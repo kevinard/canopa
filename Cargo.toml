@@ -1,0 +1,12 @@
+[package]
+name = "niribar"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+iced_layershell = "0.17.1"
+iced = "0.14"
+zbus = "5.12.0"
+kdl = "6.5.0"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"

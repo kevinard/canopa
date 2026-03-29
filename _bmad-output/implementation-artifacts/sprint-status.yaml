@@ -1,0 +1,111 @@
+# generated: 2026-03-29
+# last_updated: 2026-03-29
+# project: niribar
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-03-29
+last_updated: 2026-03-29  # epic-1 → in-progress, 1-1 → ready-for-dev
+project: niribar
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: Project Foundation — A Bar That Renders
+  epic-1: in-progress
+  1-1-initialize-cargo-project-with-pinned-dependencies: done
+  1-2-render-a-static-bar-surface-on-wayland: backlog
+  1-3-load-kdl-configuration-file: backlog
+  1-4-report-actionable-config-errors: backlog
+  1-5-report-version-via-cli-flag: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Module System — A Bar That Shows Live Data
+  epic-2: backlog
+  2-1-define-the-module-trait-and-zone-layout: backlog
+  2-2-render-modules-from-configuration: backlog
+  2-3-clock-module-with-configurable-format: backlog
+  2-4-script-module-shell-command-output-in-the-bar: backlog
+  2-5-button-module-user-defined-clickable-action: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Expand/Collapse — A Bar That Breathes
+  epic-3: backlog
+  3-1-bar-collapses-and-expands-on-explicit-trigger: backlog
+  3-2-animate-the-width-transition: backlog
+  3-3-hover-triggered-expand-collapse: backlog
+  3-4-configure-expand-collapse-parameters: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Niri Integration — A Bar That Understands Niri
+  epic-4: backlog
+  4-1-connect-to-niri-ipc-and-subscribe-to-events: backlog
+  4-2-workspace-module-live-workspace-indicators: backlog
+  4-3-workspace-module-user-defined-labels-and-icons: backlog
+  4-4-focused-window-module-current-window-title: backlog
+  4-5-graceful-degradation-on-non-niri-compositors: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: System Service Modules — A Complete Status Bar
+  epic-5: backlog
+  5-1-establish-d-bus-session-and-system-bus-connections: backlog
+  5-2-battery-module-charge-level-and-charging-state: backlog
+  5-3-network-module-connectivity-status: backlog
+  5-4-volume-module-audio-output-level-with-scroll-interaction: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Keyboard Navigation — A Bar Without Borders
+  epic-6: backlog
+  6-1-focus-the-bar-via-dedicated-keybind: backlog
+  6-2-navigate-between-modules-with-arrow-keys: backlog
+  6-3-activate-module-interactions-via-keyboard: backlog
+  6-4-toggle-expand-collapse-via-keyboard: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7: Multi-Output — A Bar For Every Screen
+  epic-7: backlog
+  7-1-spawn-a-bar-surface-on-every-connected-output: backlog
+  7-2-adapt-bar-dimensions-to-output-dpi-and-scale-factor: backlog
+  7-3-exclude-specific-outputs-via-configuration: backlog
+  7-4-per-output-configuration-overrides: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8: Packaging & Distribution — A Bar For The Ecosystem
+  epic-8: backlog
+  8-1-provide-systemd-user-service-unit-file: backlog
+  8-2-provide-nix-flake-for-reproducible-builds: backlog
+  8-3-ship-and-embed-documented-default-configuration: backlog
+  8-4-github-actions-ci-and-release-pipeline: backlog
+  8-5-verify-and-document-wcag-aa-accessibility-compliance: backlog
+  epic-8-retrospective: optional
