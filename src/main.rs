@@ -10,6 +10,10 @@ use iced_layershell::build_pattern::application;
 use iced_layershell::settings::{LayerShellSettings, Settings};
 
 fn main() {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     if let Err(e) = try_main() {
         eprintln!("error: {e}");
         std::process::exit(1);
@@ -51,5 +55,15 @@ mod tests {
     fn binary_entry_point_compiles() {
         // Smoke test: if this test runs, the binary entry point compiled
         assert!(true);
+    }
+
+    #[test]
+    fn version_string_is_non_empty() {
+        assert!(!env!("CARGO_PKG_VERSION").is_empty());
+    }
+
+    #[test]
+    fn version_string_matches_cargo_toml() {
+        assert_eq!(env!("CARGO_PKG_VERSION"), "0.1.0");
     }
 }
