@@ -7,25 +7,35 @@ mod surface;
 
 use app::App;
 use iced_layershell::build_pattern::application;
-use iced_layershell::reexport::Anchor;
 use iced_layershell::settings::{LayerShellSettings, Settings};
 
-fn main() -> iced_layershell::Result {
-    application(App::new, App::namespace, App::update, App::view)
-        .settings(Settings {
-            layer_settings: LayerShellSettings {
-                // Anchor to left edge, stretch full screen height
-                anchor: Anchor::Left | Anchor::Top | Anchor::Bottom,
-                // Reserve 48px on the left so tiled windows don't overlap the bar
-                exclusive_zone: 48,
-                // 48px wide; 0 on height = stretch between top and bottom anchors
-                size: Some((48, 0)),
-                ..Default::default()
-            },
+fn main() -> anyhow::Result<()> {
+    // Load config fully before any surface is created (AR7).
+    let config = config::load()?;
+
+    // Extract values needed for surface settings before config is moved into the closure.
+    let anchor = config.bar.edge.anchor();
+    let collapsed_width = config.bar.collapsed_width;
+    let exclusive_zone = i32::try_from(collapsed_width).unwrap_or(48);
+
+    application(
+        move || App::new(config.clone()),
+        App::namespace,
+        App::update,
+        App::view,
+    )
+    .settings(Settings {
+        layer_settings: LayerShellSettings {
+            anchor,
+            exclusive_zone,
+            size: Some((collapsed_width, 0)),
             ..Default::default()
-        })
-        .style(App::style)
-        .run()
+        },
+        ..Default::default()
+    })
+    .style(App::style)
+    .run()
+    .map_err(anyhow::Error::from)
 }
 
 #[cfg(test)]

@@ -2,15 +2,21 @@ use iced::widget::{Space, container, row};
 use iced::{Color, Element, Length, Task};
 use iced_layershell::to_layer_message;
 
-pub struct App {}
+use crate::config::Config;
+
+pub struct App {
+    // Config is used directly from Story 2.x onward (module instantiation, zone layout)
+    #[allow(dead_code)]
+    pub config: Config,
+}
 
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {}
 
 impl App {
-    pub fn new() -> Self {
-        App {}
+    pub fn new(config: Config) -> Self {
+        App { config }
     }
 
     pub fn namespace() -> String {
@@ -22,9 +28,12 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        let content_width = self.config.bar.collapsed_width.saturating_sub(1);
         row![
-            // Main content area — 47px wide (48px total minus 1px right border)
-            container(Space::new()).width(47).height(Length::Fill),
+            // Main content area — (collapsed_width - 1)px, leaving room for the 1px right border
+            container(Space::new())
+                .width(content_width)
+                .height(Length::Fill),
             // 1px right border strip in Catppuccin Mocha Surface1 (#45475a)
             container(Space::new())
                 .width(1)
@@ -57,7 +66,10 @@ mod tests {
     }
 
     #[test]
-    fn new_constructs_without_panic() {
-        let _app = App::new();
+    fn new_with_config_stores_config() {
+        let mut config = Config::default();
+        config.bar.collapsed_width = 60;
+        let app = App::new(config);
+        assert_eq!(app.config.bar.collapsed_width, 60);
     }
 }

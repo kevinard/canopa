@@ -1,6 +1,6 @@
 # Story 1.2: Render a Static Bar Surface on Wayland
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -73,6 +73,12 @@ so that I have a visible bar anchored to my screen that I can build on.
 - [x] Task 5: Add co-located unit tests (no live compositor required)
   - [x] 5.1: In `src/app.rs`, add `#[cfg(test)] mod tests` with a test that `App::namespace()` returns `"niribar"`
   - [x] 5.2: In `src/surface/mod.rs`, add a test that `SurfaceState { output_name: "test".into() }` constructs without panic
+
+### Review Findings
+
+- [x] [Review][Defer] No diagnostic output on compositor failure — `.run()` error exits silently with no message [src/main.rs] — deferred, pre-existing; anyhow integration deferred to Story 1.3 per dev notes
+- [x] [Review][Defer] Bar-width constant (48px) encoded in three unlinked places: `exclusive_zone`, `size.0`, and content width `47` [src/main.rs, src/app.rs] — deferred, pre-existing; spec prohibits constants as premature abstraction; becomes a single config value in Story 1.3
+- [x] [Review][Defer] `SurfaceState::output_name` accepts empty string with no validation [src/surface/mod.rs] — deferred, pre-existing; stub unused until Story 2.1; validate at first use
 
 ## Dev Notes
 
