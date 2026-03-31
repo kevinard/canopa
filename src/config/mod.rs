@@ -50,7 +50,9 @@ impl Edge {
             "top" => Ok(Edge::Top),
             "bottom" => Ok(Edge::Bottom),
             other => {
-                anyhow::bail!("unknown edge {other:?}; expected one of: left, right, top, bottom")
+                anyhow::bail!(
+                    "bar.edge: unknown value {other:?}. Expected: one of: left, right, top, bottom."
+                )
             }
         }
     }
@@ -93,11 +95,27 @@ pub fn load() -> anyhow::Result<Config> {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => defaults::DEFAULT_CONFIG.to_string(),
         Err(e) => {
-            return Err(e)
-                .with_context(|| format!("failed to read config file: {}", path.display()));
+            anyhow::bail!("failed to read config file {}: {e}", path.display());
         }
     };
-    parse::parse(&content)
+    let config = parse::parse(&content)?;
+    validate(&config)?;
+    Ok(config)
+}
+
+/// Validate a fully-parsed config for constraint violations.
+///
+/// Returns an error with a spec-formatted message if any constraint is violated.
+/// Called by `load()` after parsing. Invalid config → process exits with code 1 (via main).
+pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
+    if config.bar.collapsed_width < 2 {
+        anyhow::bail!(
+            "bar.collapsed-width: value {} is too small. Expected: 2 or greater \
+             (minimum 1px content + 1px border).",
+            config.bar.collapsed_width
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -138,5 +156,30 @@ mod tests {
     #[test]
     fn edge_from_str_unknown_returns_error() {
         assert!(Edge::from_str("center").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_collapsed_width_below_2() {
+        for w in [0u32, 1u32] {
+            let mut config = Config::default();
+            config.bar.collapsed_width = w;
+            let err = validate(&config).unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.starts_with("bar.collapsed-width:"),
+                "collapsed_width={w}: expected 'bar.collapsed-width:' prefix, got: {msg}"
+            );
+            assert!(
+                msg.contains("Expected:"),
+                "collapsed_width={w}: expected 'Expected:' in message, got: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_accepts_collapsed_width_at_minimum() {
+        let mut config = Config::default();
+        config.bar.collapsed_width = 2;
+        assert!(validate(&config).is_ok());
     }
 }

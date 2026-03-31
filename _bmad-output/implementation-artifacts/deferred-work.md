@@ -17,3 +17,10 @@
 - **saturating_sub(1) in view() masks collapsed_width=0 misconfiguration** — `src/app.rs`: a zero-width config value is silently clamped rather than rejected. Story 1.4 validation should reject `collapsed_width < 2`.
 - **Test coverage of view() layout behavior** — `src/app.rs`: cannot meaningfully assert on `Element` output without a live Iced renderer; revisit when integration test infrastructure exists.
 - **Edge::from_str case-sensitivity undocumented** — `"Left"` and `"LEFT"` are silently rejected; Story 1.4 error messages will document expected lowercase values.
+
+## Deferred from: code review of 1-4-report-actionable-config-errors (2026-03-31)
+
+- **`Edge::from_str` hardcodes `"bar.edge:"` field path** — error message embeds field path directly; if `from_str` is reused for another field the error will mislead. Single call site today; revisit when `std::str::FromStr` is implemented or a second `Edge` field is introduced.
+- **`expanded_width` has no lower-bound or relational validation** — `validate()` only guards `collapsed_width`; no check that `expanded_width >= collapsed_width` or `expanded_width >= 2`. Deferred to Story 3.1 when expand/collapse semantics are defined.
+- **`collapsed_width > i32::MAX` silently falls back to 48** — `src/main.rs`: `i32::try_from(collapsed_width).unwrap_or(48)` silently substitutes 48 for unrealistically large widths. Pre-existing; revisit when output dimension clamping is designed.
+- **KDL property-style `edge="left"` silently ignored** — `get_arg("edge")` only reads positional arguments; property syntax produces no error and no effect. Pre-existing `get_arg` behavior; only surfaced when expanding KDL parsing.

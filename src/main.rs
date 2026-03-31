@@ -9,7 +9,14 @@ use app::App;
 use iced_layershell::build_pattern::application;
 use iced_layershell::settings::{LayerShellSettings, Settings};
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    if let Err(e) = try_main() {
+        eprintln!("error: {e}");
+        std::process::exit(1);
+    }
+}
+
+fn try_main() -> anyhow::Result<()> {
     // Load config fully before any surface is created (AR7).
     let config = config::load()?;
 

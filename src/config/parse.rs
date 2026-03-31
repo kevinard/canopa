@@ -1,14 +1,12 @@
-use anyhow::Context;
 use kdl::KdlDocument;
 
 use super::{BarConfig, Config, Edge};
 
 /// Parse a KDL string into a fully-typed `Config`.
 ///
-/// Missing sections fall back to defaults — validation of required fields
-/// and formatted error messages are added in Story 1.4.
+/// Missing sections fall back to defaults; constraint validation happens in `validate()`.
 pub fn parse(input: &str) -> anyhow::Result<Config> {
-    let doc: KdlDocument = input.parse().context("failed to parse KDL config")?;
+    let doc: KdlDocument = input.parse().map_err(|e| anyhow::anyhow!("config: {e}"))?;
     let bar = parse_bar_section(&doc)?;
     Ok(Config { bar })
 }
@@ -25,13 +23,17 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
 
     let defaults = BarConfig::default();
 
-    let edge = children
-        .get_arg("edge")
-        .and_then(|v| v.as_string())
-        .map(Edge::from_str)
-        .transpose()
-        .context("bar.edge")?
-        .unwrap_or(defaults.edge);
+    let edge = match children.get_arg("edge") {
+        None => defaults.edge,
+        Some(v) => {
+            let s = v.as_string().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "bar.edge: expected a string value. Expected: one of: left, right, top, bottom."
+                )
+            })?;
+            Edge::from_str(s)?
+        }
+    };
 
     let collapsed_width = children
         .get_arg("collapsed-width")
@@ -97,5 +99,35 @@ bar {
         // A bar node with no children block
         let config = parse("bar\n").unwrap();
         assert_eq!(config.bar.collapsed_width, 48);
+    }
+
+    #[test]
+    fn unknown_edge_error_message() {
+        let kdl = r#"bar { edge "diagonal" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("bar.edge:"),
+            "expected 'bar.edge:' prefix, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn wrong_type_edge_error_message() {
+        let kdl = r#"bar { edge 42 }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("bar.edge:"),
+            "expected 'bar.edge:' prefix, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in message, got: {msg}"
+        );
     }
 }
