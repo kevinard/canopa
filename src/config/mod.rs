@@ -4,11 +4,32 @@ mod parse;
 use anyhow::Context;
 use iced_layershell::reexport::Anchor;
 
+/// Known module names for FR37 validation.
+/// Hardcoded so validation works before any module is implemented.
+const KNOWN_MODULE_NAMES: &[&str] = &[
+    "battery",
+    "clock",
+    "network",
+    "volume",
+    "workspaces",
+    "focused-window",
+    "script",
+    "button",
+];
+
+/// A single module entry from the config, specifying type and zone placement.
+#[derive(Debug, Clone)]
+pub struct ModuleConfig {
+    pub name: String,
+    pub zone: crate::modules::Zone,
+}
+
 /// Parsed configuration for niribar.
 /// Fully populated before any surface is created (AR7).
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub bar: BarConfig,
+    pub modules: Vec<ModuleConfig>,
 }
 
 /// Bar-level configuration: placement edge and width targets.
@@ -115,6 +136,15 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
             config.bar.collapsed_width
         );
     }
+    for (i, mc) in config.modules.iter().enumerate() {
+        if !KNOWN_MODULE_NAMES.contains(&mc.name.as_str()) {
+            anyhow::bail!(
+                "modules[{i}].type: unknown module {:?}. \
+                 Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button.",
+                mc.name
+            );
+        }
+    }
     Ok(())
 }
 
@@ -181,5 +211,74 @@ mod tests {
         let mut config = Config::default();
         config.bar.collapsed_width = 2;
         assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn validate_unknown_module_name_errors() {
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "volumee".into(),
+            zone: crate::modules::Zone::Bottom,
+        }];
+        let err = validate(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("modules[0].type:"),
+            "expected 'modules[0].type:' prefix, got: {msg}"
+        );
+        assert!(
+            msg.contains("volumee"),
+            "expected module name in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_known_module_name_passes() {
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "clock".into(),
+            zone: crate::modules::Zone::Bottom,
+        }];
+        assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn validate_error_includes_expected_list() {
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "unknown".into(),
+            zone: crate::modules::Zone::Top,
+        }];
+        let err = validate(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Expected one of:"),
+            "expected 'Expected one of:' in: {msg}"
+        );
+        assert!(
+            msg.contains("clock"),
+            "expected 'clock' in expected list: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_error_index_reflects_position() {
+        let mut config = Config::default();
+        config.modules = vec![
+            ModuleConfig {
+                name: "clock".into(),
+                zone: crate::modules::Zone::Bottom,
+            },
+            ModuleConfig {
+                name: "bad-module".into(),
+                zone: crate::modules::Zone::Top,
+            },
+        ];
+        let err = validate(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("modules[1].type:"),
+            "expected 'modules[1].type:' prefix, got: {msg}"
+        );
     }
 }

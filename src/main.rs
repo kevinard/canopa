@@ -45,6 +45,7 @@ fn try_main() -> anyhow::Result<()> {
         ..Default::default()
     })
     .style(App::style)
+    .subscription(App::subscription)
     .run()
     .map_err(anyhow::Error::from)
 }

@@ -6,3 +6,7 @@ bar {
     collapsed-width 48
     expanded-width 200
 }
+
+modules {
+    module "clock" zone="bottom"
+}

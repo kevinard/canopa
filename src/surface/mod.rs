@@ -1,3 +1,4 @@
+pub mod frame;
 pub mod layout;
 
 /// Per-output render state. Tracks surface-specific data (expand/collapse, focus).

@@ -25,6 +25,11 @@
 - **`collapsed_width > i32::MAX` silently falls back to 48** — `src/main.rs`: `i32::try_from(collapsed_width).unwrap_or(48)` silently substitutes 48 for unrealistically large widths. Pre-existing; revisit when output dimension clamping is designed.
 - **KDL property-style `edge="left"` silently ignored** — `get_arg("edge")` only reads positional arguments; property syntax produces no error and no effect. Pre-existing `get_arg` behavior; only surfaced when expanding KDL parsing.
 
+## Deferred from: code review of 2-2-render-modules-from-configuration (2026-04-01)
+
+- **Duplicate ModuleId not validated** — `src/config/mod.rs` (validate), `src/app.rs` (view): two config entries with the same module name (e.g., two `clock` entries) produce identical `ModuleId` instances; hover state highlights both simultaneously and `shared.modules` HashMap clobbers the second instance's state. Relevant only when real module instances exist (Story 2.3+).
+- **Hover stuck if surface loses focus without MouseExit** — `src/app.rs:79-83`: `hovered_module` stays `Some(id)` with no clearing mechanism if the compositor hides the surface without delivering a MouseExit event. Resolves in Story 7.1 when `hovered_module` moves to `SurfaceState` with proper lifecycle handling.
+
 ## Deferred from: code review of 2-1-define-the-module-trait-and-zone-layout (2026-04-01)
 
 - **ModuleConstructor uses bare fn pointer, can't capture config params** — `src/modules/mod.rs:84`: `fn() -> Box<dyn Module>` cannot represent closures or stateful constructors; will be insufficient in Story 2.2 when modules are config-parameterised. Consider `Box<dyn Fn() -> Box<dyn Module>>` or a constructor trait.

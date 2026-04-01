@@ -1,6 +1,7 @@
 use kdl::KdlDocument;
 
-use super::{BarConfig, Config, Edge};
+use super::{BarConfig, Config, Edge, ModuleConfig};
+use crate::modules::Zone;
 
 /// Parse a KDL string into a fully-typed `Config`.
 ///
@@ -8,7 +9,62 @@ use super::{BarConfig, Config, Edge};
 pub fn parse(input: &str) -> anyhow::Result<Config> {
     let doc: KdlDocument = input.parse().map_err(|e| anyhow::anyhow!("config: {e}"))?;
     let bar = parse_bar_section(&doc)?;
-    Ok(Config { bar })
+    let modules = parse_modules_section(&doc)?;
+    Ok(Config { bar, modules })
+}
+
+fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>> {
+    let Some(modules_node) = doc.get("modules") else {
+        return Ok(vec![]);
+    };
+    let Some(children) = modules_node.children() else {
+        return Ok(vec![]);
+    };
+
+    let mut result = Vec::new();
+    for (i, node) in children.nodes().iter().enumerate() {
+        let node_name = node.name().value();
+        if node_name != "module" {
+            anyhow::bail!("modules[{i}]: expected node name \"module\", got {node_name:?}.");
+        }
+        let name = node
+            .entries()
+            .iter()
+            .find(|e| e.name().is_none())
+            .and_then(|e| e.value().as_string())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "modules[{i}].type: missing module name. \
+                     Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button."
+                )
+            })?
+            .to_string();
+
+        let zone_str = node
+            .entries()
+            .iter()
+            .find(|e| e.name().map(|n| n.value() == "zone").unwrap_or(false))
+            .and_then(|e| e.value().as_string())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "modules[{i}].zone: missing required property. \
+                     Expected: one of: top, center, bottom."
+                )
+            })?;
+
+        let zone = match zone_str {
+            "top" => Zone::Top,
+            "center" => Zone::Center,
+            "bottom" => Zone::Bottom,
+            other => anyhow::bail!(
+                "modules[{i}].zone: unknown value {other:?}. \
+                 Expected: one of: top, center, bottom."
+            ),
+        };
+
+        result.push(ModuleConfig { name, zone });
+    }
+    Ok(result)
 }
 
 fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
@@ -128,6 +184,74 @@ bar {
         assert!(
             msg.contains("Expected:"),
             "expected 'Expected:' in message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_modules_section_absent() {
+        let config = parse("").unwrap();
+        assert!(config.modules.is_empty());
+    }
+
+    #[test]
+    fn parse_single_module_bottom_zone() {
+        let kdl = r#"modules { module "clock" zone="bottom" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.modules.len(), 1);
+        assert_eq!(config.modules[0].name, "clock");
+        assert!(matches!(config.modules[0].zone, Zone::Bottom));
+    }
+
+    #[test]
+    fn parse_multiple_modules_order_preserved() {
+        let kdl = r#"
+modules {
+    module "clock" zone="bottom"
+    module "battery" zone="top"
+}
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.modules.len(), 2);
+        assert_eq!(config.modules[0].name, "clock");
+        assert!(matches!(config.modules[0].zone, Zone::Bottom));
+        assert_eq!(config.modules[1].name, "battery");
+        assert!(matches!(config.modules[1].zone, Zone::Top));
+    }
+
+    #[test]
+    fn parse_unknown_zone_errors() {
+        let kdl = r#"modules { module "clock" zone="diagonal" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("modules[0].zone:"),
+            "expected 'modules[0].zone:' prefix, got: {msg}"
+        );
+        assert!(
+            msg.contains("diagonal"),
+            "expected unknown value in error: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_modules_empty_block() {
+        let kdl = r#"modules { }"#;
+        let config = parse(kdl).unwrap();
+        assert!(config.modules.is_empty());
+    }
+
+    #[test]
+    fn parse_wrong_node_name_errors() {
+        let kdl = r#"modules { widget "clock" zone="bottom" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("modules[0]:"),
+            "expected 'modules[0]:' prefix, got: {msg}"
+        );
+        assert!(
+            msg.contains("widget"),
+            "expected wrong node name in error: {msg}"
         );
     }
 }
