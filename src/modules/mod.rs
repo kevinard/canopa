@@ -1,3 +1,5 @@
+pub mod clock;
+
 use std::collections::HashMap;
 
 /// Unique identifier for a module instance.
@@ -29,18 +31,18 @@ pub enum ModuleState {
     #[default]
     Loading,
     /// Module's data source is unavailable. Render as nothing — zero height, no gap left.
-    // Constructed in Stories 2.3+ when a module's data source is absent.
     #[allow(dead_code)]
     Unavailable,
-    // Clock(ClockState) — Story 2.3
+    Clock(clock::ClockState),
     // Script(ScriptState) — Story 2.4
     // Button(ButtonState) — Story 2.5
 }
 
 /// Module data events routed through the Iced message bus.
-/// Concrete variants added per module (Stories 2.3+).
 #[derive(Debug, Clone)]
-pub enum ModuleEvent {}
+pub enum ModuleEvent {
+    Clock(clock::ClockEvent),
+}
 
 /// Input event from pointer or keyboard interaction.
 // Used in Story 2.2+ when `on_interaction` handlers are implemented.
@@ -75,20 +77,25 @@ pub trait Module: Send + Sync {
 }
 
 /// Type alias for a module constructor function.
-// Used in Story 2.2 when the registry is populated.
-#[allow(dead_code)]
-pub type ModuleConstructor = fn() -> Box<dyn Module>;
+pub type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>;
 
 /// Build the static module registry mapping config name → constructor.
-///
-/// Modules are registered here as they are implemented:
-/// - clock — Story 2.3
-/// - script — Story 2.4
-/// - button — Story 2.5
-// Called in Story 2.2 during app initialisation.
-#[allow(dead_code)]
 pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
-    HashMap::new()
+    let mut map = HashMap::new();
+    map.insert("clock", clock_ctor as ModuleConstructor);
+    map
+}
+
+fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    use crate::config::{ClockConfig, ModuleParams};
+    let (time_fmt, date_fmt) = match &mc.params {
+        ModuleParams::Clock(cfg) => (cfg.time_format.clone(), cfg.date_format.clone()),
+        _ => {
+            let d = ClockConfig::default();
+            (d.time_format, d.date_format)
+        }
+    };
+    Box::new(clock::ClockModule::new(time_fmt, date_fmt))
 }
 
 #[cfg(test)]
@@ -112,8 +119,9 @@ mod tests {
     }
 
     #[test]
-    fn build_registry_is_empty_initially() {
-        assert!(build_registry().is_empty());
+    fn build_registry_contains_clock() {
+        let registry = build_registry();
+        assert!(registry.contains_key("clock"));
     }
 
     #[test]

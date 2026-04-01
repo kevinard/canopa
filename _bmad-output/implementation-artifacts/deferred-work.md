@@ -34,3 +34,10 @@
 
 - **ModuleConstructor uses bare fn pointer, can't capture config params** — `src/modules/mod.rs:84`: `fn() -> Box<dyn Module>` cannot represent closures or stateful constructors; will be insufficient in Story 2.2 when modules are config-parameterised. Consider `Box<dyn Fn() -> Box<dyn Module>>` or a constructor trait.
 - **ModuleId::new accepts empty string** — `src/modules/mod.rs:11`: no guard against empty id producing a silent sentinel key in `SharedState::modules`; validation belongs at config parse time in Story 2.2 when module instances are constructed from config.
+
+## Deferred from: code review of 2-3-clock-module-with-configurable-format (2026-04-01)
+
+- **Subscription uses hardcoded `ModuleId::new("clock")` instead of self.id** — `src/modules/clock.rs::subscription`: not a current bug (both sides always produce `"clock"`) but a latent correctness risk if ID generation changes. iced 0.14's non-capturing closure constraint on `Subscription::map` forces this; revisit if subscription API expands.
+- **Multiple `module "clock"` entries share a single ModuleId** — `src/modules/clock.rs`: two clock config entries both emit `ModuleId("clock")` ticks; second write unconditionally overwrites first in `shared.modules`. Pre-existing architecture concern tracked from Story 2.2 review; needs unique-ID or per-instance keying scheme.
+- **Extra values on `time-format`/`date-format` nodes silently ignored** — `src/config/parse.rs`: `entries().first()` only reads the first positional arg; `time-format "%H:%M" "%I:%M"` silently uses only the first. Consistent with existing parser pattern; address if KDL multi-value config is ever validated.
+- **`clock_ctor` silently falls back to defaults for mismatched ModuleParams** — `src/modules/mod.rs::clock_ctor`: the `_ =>` arm is unreachable given correct parsing but would silently mask misconfiguration. Add a defensive `unreachable!()` or debug assertion when a logging layer is introduced.

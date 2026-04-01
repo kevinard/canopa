@@ -17,11 +17,37 @@ const KNOWN_MODULE_NAMES: &[&str] = &[
     "button",
 ];
 
-/// A single module entry from the config, specifying type and zone placement.
+/// Format strings for the clock module (AC: #4, #5).
+#[derive(Debug, Clone)]
+pub struct ClockConfig {
+    pub time_format: String,
+    pub date_format: String,
+}
+
+impl Default for ClockConfig {
+    fn default() -> Self {
+        ClockConfig {
+            time_format: String::from("%H:%M"),
+            date_format: String::from("%a %d %b"),
+        }
+    }
+}
+
+/// Module-specific parameters. Extensible for Stories 2.4–2.5.
+#[derive(Debug, Clone)]
+pub enum ModuleParams {
+    None,
+    Clock(ClockConfig),
+    // Script(ScriptConfig) — Story 2.4
+    // Button(ButtonConfig) — Story 2.5
+}
+
+/// A single module entry from the config, specifying type, zone placement, and module params.
 #[derive(Debug, Clone)]
 pub struct ModuleConfig {
     pub name: String,
     pub zone: crate::modules::Zone,
+    pub params: ModuleParams,
 }
 
 /// Parsed configuration for niribar.
@@ -219,6 +245,7 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "volumee".into(),
             zone: crate::modules::Zone::Bottom,
+            params: ModuleParams::None,
         }];
         let err = validate(&config).unwrap_err();
         let msg = err.to_string();
@@ -238,6 +265,7 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
             zone: crate::modules::Zone::Bottom,
+            params: ModuleParams::None,
         }];
         assert!(validate(&config).is_ok());
     }
@@ -248,6 +276,7 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "unknown".into(),
             zone: crate::modules::Zone::Top,
+            params: ModuleParams::None,
         }];
         let err = validate(&config).unwrap_err();
         let msg = err.to_string();
@@ -268,10 +297,12 @@ mod tests {
             ModuleConfig {
                 name: "clock".into(),
                 zone: crate::modules::Zone::Bottom,
+                params: ModuleParams::None,
             },
             ModuleConfig {
                 name: "bad-module".into(),
                 zone: crate::modules::Zone::Top,
+                params: ModuleParams::None,
             },
         ];
         let err = validate(&config).unwrap_err();
@@ -280,5 +311,27 @@ mod tests {
             msg.starts_with("modules[1].type:"),
             "expected 'modules[1].type:' prefix, got: {msg}"
         );
+    }
+
+    #[test]
+    fn clock_config_default_formats() {
+        let cfg = ClockConfig::default();
+        assert_eq!(cfg.time_format, "%H:%M");
+        assert_eq!(cfg.date_format, "%a %d %b");
+    }
+
+    #[test]
+    fn module_params_clock_stores_config() {
+        let params = ModuleParams::Clock(ClockConfig {
+            time_format: "%I:%M %p".into(),
+            date_format: "%Y-%m-%d".into(),
+        });
+        match params {
+            ModuleParams::Clock(cfg) => {
+                assert_eq!(cfg.time_format, "%I:%M %p");
+                assert_eq!(cfg.date_format, "%Y-%m-%d");
+            }
+            _ => panic!("expected ModuleParams::Clock"),
+        }
     }
 }

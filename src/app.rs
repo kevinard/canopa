@@ -5,6 +5,7 @@ use iced::{Color, Element, Length, Task};
 use iced_layershell::to_layer_message;
 
 use crate::config::Config;
+use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::{Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry};
 use crate::surface::frame::module_frame;
 use crate::surface::layout::zone_layout;
@@ -55,7 +56,7 @@ impl App {
             .filter_map(|mc| {
                 registry
                     .get(mc.name.as_str())
-                    .map(|ctor| (mc.zone.clone(), ctor()))
+                    .map(|ctor| (mc.zone.clone(), ctor(mc)))
             })
             .collect();
         App {
@@ -82,7 +83,12 @@ impl App {
                 }
                 Task::none()
             }
-            // Module event routing established in Story 2.3 when ModuleEvent gains variants.
+            Message::Module(id, ModuleEvent::Clock(ClockEvent::Tick { time, date })) => {
+                self.shared
+                    .modules
+                    .insert(id, ModuleState::Clock(ClockState { time, date }));
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -175,11 +181,25 @@ mod tests {
     }
 
     #[test]
-    fn new_modules_empty_with_empty_registry() {
-        // Registry is empty until Story 2.3+; no modules are instantiated.
+    fn new_modules_empty_with_no_module_config() {
+        // Config::default() has no modules in its list, so none are instantiated.
         let config = make_config();
         let app = App::new(config);
         assert!(app.modules.is_empty());
+    }
+
+    #[test]
+    fn clock_module_instantiated_from_registry() {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+        use crate::modules::Zone;
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "clock".into(),
+            zone: Zone::Bottom,
+            params: ModuleParams::Clock(ClockConfig::default()),
+        }];
+        let app = App::new(config);
+        assert_eq!(app.modules.len(), 1);
     }
 
     #[test]

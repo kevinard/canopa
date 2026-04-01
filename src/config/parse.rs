@@ -1,6 +1,6 @@
 use kdl::KdlDocument;
 
-use super::{BarConfig, Config, Edge, ModuleConfig};
+use super::{BarConfig, ClockConfig, Config, Edge, ModuleConfig, ModuleParams};
 use crate::modules::Zone;
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -62,9 +62,57 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
             ),
         };
 
-        result.push(ModuleConfig { name, zone });
+        let params = if name == "clock" {
+            ModuleParams::Clock(parse_clock_params(node, i)?)
+        } else {
+            ModuleParams::None
+        };
+        result.push(ModuleConfig { name, zone, params });
     }
     Ok(result)
+}
+
+fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
+    let Some(children) = node.children() else {
+        return Ok(ClockConfig::default());
+    };
+
+    let defaults = ClockConfig::default();
+
+    let time_format = match children.get("time-format") {
+        None => defaults.time_format,
+        Some(n) => {
+            let v = n.entries().first().map(|e| e.value());
+            match v.and_then(|v| v.as_string()) {
+                Some("") => anyhow::bail!(
+                    "modules[{idx}].clock.time-format: value must not be empty. \
+                     Expected: a chrono format string such as \"%H:%M\"."
+                ),
+                Some(s) => s.to_string(),
+                None => anyhow::bail!("modules[{idx}].clock.time-format: expected a string value."),
+            }
+        }
+    };
+
+    let date_format = match children.get("date-format") {
+        None => defaults.date_format,
+        Some(n) => {
+            let v = n.entries().first().map(|e| e.value());
+            match v.and_then(|v| v.as_string()) {
+                Some("") => anyhow::bail!(
+                    "modules[{idx}].clock.date-format: value must not be empty. \
+                     Expected: a chrono format string such as \"%a %d %b\"."
+                ),
+                Some(s) => s.to_string(),
+                None => anyhow::bail!("modules[{idx}].clock.date-format: expected a string value."),
+            }
+        }
+    };
+
+    Ok(ClockConfig {
+        time_format,
+        date_format,
+    })
 }
 
 fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
@@ -252,6 +300,83 @@ modules {
         assert!(
             msg.contains("widget"),
             "expected wrong node name in error: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_clock_with_custom_formats() {
+        let kdl = r#"
+modules {
+    module "clock" zone="bottom" {
+        time-format "%I:%M %p"
+        date-format "%Y-%m-%d"
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.modules.len(), 1);
+        match &config.modules[0].params {
+            ModuleParams::Clock(cfg) => {
+                assert_eq!(cfg.time_format, "%I:%M %p");
+                assert_eq!(cfg.date_format, "%Y-%m-%d");
+            }
+            _ => panic!("expected ModuleParams::Clock"),
+        }
+    }
+
+    #[test]
+    fn parse_clock_uses_defaults_without_children() {
+        let kdl = r#"modules { module "clock" zone="bottom" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.modules.len(), 1);
+        match &config.modules[0].params {
+            ModuleParams::Clock(cfg) => {
+                assert_eq!(cfg.time_format, "%H:%M");
+                assert_eq!(cfg.date_format, "%a %d %b");
+            }
+            _ => panic!("expected ModuleParams::Clock"),
+        }
+    }
+
+    #[test]
+    fn parse_clock_rejects_empty_time_format() {
+        let kdl = r#"
+modules {
+    module "clock" zone="bottom" {
+        time-format ""
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("time-format"),
+            "expected 'time-format' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("must not be empty"),
+            "expected 'must not be empty' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_clock_rejects_empty_date_format() {
+        let kdl = r#"
+modules {
+    module "clock" zone="bottom" {
+        date-format ""
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("date-format"),
+            "expected 'date-format' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("must not be empty"),
+            "expected 'must not be empty' in error, got: {msg}"
         );
     }
 }
