@@ -1,4 +1,5 @@
 pub mod clock;
+pub mod script;
 
 use std::collections::HashMap;
 
@@ -34,7 +35,7 @@ pub enum ModuleState {
     #[allow(dead_code)]
     Unavailable,
     Clock(clock::ClockState),
-    // Script(ScriptState) — Story 2.4
+    Script(script::ScriptState),
     // Button(ButtonState) — Story 2.5
 }
 
@@ -42,6 +43,7 @@ pub enum ModuleState {
 #[derive(Debug, Clone)]
 pub enum ModuleEvent {
     Clock(clock::ClockEvent),
+    Script(script::ScriptEvent),
 }
 
 /// Input event from pointer or keyboard interaction.
@@ -83,6 +85,7 @@ pub type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>
 pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     let mut map = HashMap::new();
     map.insert("clock", clock_ctor as ModuleConstructor);
+    map.insert("script", script_ctor as ModuleConstructor);
     map
 }
 
@@ -96,6 +99,16 @@ fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
         }
     };
     Box::new(clock::ClockModule::new(time_fmt, date_fmt))
+}
+
+fn script_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    use crate::config::ModuleParams;
+    match &mc.params {
+        ModuleParams::Script(cfg) => {
+            Box::new(script::ScriptModule::new(cfg.command.clone(), cfg.interval))
+        }
+        _ => panic!("script_ctor called with non-Script params — this is a programming error"),
+    }
 }
 
 #[cfg(test)]
@@ -122,6 +135,12 @@ mod tests {
     fn build_registry_contains_clock() {
         let registry = build_registry();
         assert!(registry.contains_key("clock"));
+    }
+
+    #[test]
+    fn build_registry_contains_script() {
+        let registry = build_registry();
+        assert!(registry.contains_key("script"));
     }
 
     #[test]

@@ -6,6 +6,7 @@ use iced_layershell::to_layer_message;
 
 use crate::config::Config;
 use crate::modules::clock::{ClockEvent, ClockState};
+use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::{Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry};
 use crate::surface::frame::module_frame;
 use crate::surface::layout::zone_layout;
@@ -87,6 +88,16 @@ impl App {
                 self.shared
                     .modules
                     .insert(id, ModuleState::Clock(ClockState { time, date }));
+                Task::none()
+            }
+            Message::Module(id, ModuleEvent::Script(ScriptEvent::Output(text))) => {
+                self.shared
+                    .modules
+                    .insert(id, ModuleState::Script(ScriptState { output: text }));
+                Task::none()
+            }
+            Message::Module(_, ModuleEvent::Script(ScriptEvent::Failed)) => {
+                // Retain previous state — do nothing (AC #3)
                 Task::none()
             }
             _ => Task::none(),
@@ -233,5 +244,76 @@ mod tests {
         let _ = app.update(Message::ModuleHoverEnter(id_a.clone()));
         let _ = app.update(Message::ModuleHoverExit(id_b));
         assert_eq!(app.hovered_module, Some(id_a));
+    }
+
+    #[test]
+    fn script_module_instantiated_from_registry() {
+        use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
+        use crate::modules::Zone;
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "script".into(),
+            zone: Zone::Bottom,
+            params: ModuleParams::Script(ScriptConfig {
+                command: "echo hi".into(),
+                interval: 5,
+            }),
+        }];
+        let app = App::new(config);
+        assert_eq!(app.modules.len(), 1);
+    }
+
+    #[test]
+    fn script_output_event_updates_state() {
+        use crate::modules::script::ScriptEvent;
+
+        let mut app = App::new(make_config());
+        let id = ModuleId::new("script");
+        let _ = app.update(Message::Module(
+            id.clone(),
+            ModuleEvent::Script(ScriptEvent::Output("hello".into())),
+        ));
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Script(s)) => assert_eq!(s.output, "hello"),
+            other => panic!("expected Script state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn script_failed_event_retains_previous_state() {
+        use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
+        use crate::modules::Zone;
+        use crate::modules::script::ScriptEvent;
+
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "script".into(),
+            zone: Zone::Bottom,
+            params: ModuleParams::Script(ScriptConfig {
+                command: "echo hi".into(),
+                interval: 5,
+            }),
+        }];
+        let mut app = App::new(config);
+
+        // Pre-populate with known output
+        let id = ModuleId::new("script");
+        app.shared.modules.insert(
+            id.clone(),
+            ModuleState::Script(crate::modules::script::ScriptState {
+                output: "prev".into(),
+            }),
+        );
+
+        // Fire a Failed event — state must remain unchanged
+        let _ = app.update(Message::Module(
+            id.clone(),
+            ModuleEvent::Script(ScriptEvent::Failed),
+        ));
+
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Script(s)) => assert_eq!(s.output, "prev"),
+            other => panic!("expected Script state, got {:?}", other),
+        }
     }
 }

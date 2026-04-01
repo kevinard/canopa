@@ -1,6 +1,6 @@
 use kdl::KdlDocument;
 
-use super::{BarConfig, ClockConfig, Config, Edge, ModuleConfig, ModuleParams};
+use super::{BarConfig, ClockConfig, Config, Edge, ModuleConfig, ModuleParams, ScriptConfig};
 use crate::modules::Zone;
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -64,6 +64,8 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
 
         let params = if name == "clock" {
             ModuleParams::Clock(parse_clock_params(node, i)?)
+        } else if name == "script" {
+            ModuleParams::Script(parse_script_params(node, i)?)
         } else {
             ModuleParams::None
         };
@@ -113,6 +115,49 @@ fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockCo
         time_format,
         date_format,
     })
+}
+
+fn parse_script_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
+    let children = node.children().ok_or_else(|| {
+        anyhow::anyhow!(
+            "modules[{idx}].script.command: missing required parameter. Expected: a string value."
+        )
+    })?;
+
+    let command = match children.get("command") {
+        None => anyhow::bail!(
+            "modules[{idx}].script.command: missing required parameter. Expected: a string value."
+        ),
+        Some(n) => {
+            let v = n.entries().first().map(|e| e.value());
+            match v.and_then(|v| v.as_string()) {
+                Some("") => anyhow::bail!(
+                    "modules[{idx}].script.command: value must not be empty. \
+                     Expected: a shell command string."
+                ),
+                Some(s) => s.to_string(),
+                None => anyhow::bail!("modules[{idx}].script.command: expected a string value."),
+            }
+        }
+    };
+
+    let interval = match children.get("interval") {
+        None => 5u64,
+        Some(n) => {
+            let v = n.entries().first().map(|e| e.value());
+            match v.and_then(|v| v.as_integer()) {
+                Some(i) if i >= 1 => i as u64,
+                Some(_) => anyhow::bail!(
+                    "modules[{idx}].script.interval: value must be at least 1. Expected: a positive integer."
+                ),
+                None => {
+                    anyhow::bail!("modules[{idx}].script.interval: expected a positive integer.")
+                }
+            }
+        }
+    };
+
+    Ok(ScriptConfig { command, interval })
 }
 
 fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
@@ -377,6 +422,100 @@ modules {
         assert!(
             msg.contains("must not be empty"),
             "expected 'must not be empty' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_script_with_command_and_interval() {
+        let kdl = r#"
+modules {
+    module "script" zone="bottom" {
+        command "date"
+        interval 10
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.modules.len(), 1);
+        match &config.modules[0].params {
+            ModuleParams::Script(cfg) => {
+                assert_eq!(cfg.command, "date");
+                assert_eq!(cfg.interval, 10);
+            }
+            _ => panic!("expected ModuleParams::Script"),
+        }
+    }
+
+    #[test]
+    fn parse_script_defaults_interval_to_5() {
+        let kdl = r#"
+modules {
+    module "script" zone="bottom" {
+        command "date"
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        match &config.modules[0].params {
+            ModuleParams::Script(cfg) => {
+                assert_eq!(cfg.command, "date");
+                assert_eq!(cfg.interval, 5);
+            }
+            _ => panic!("expected ModuleParams::Script"),
+        }
+    }
+
+    #[test]
+    fn parse_script_missing_command_errors() {
+        let kdl = r#"modules { module "script" zone="bottom" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("script.command"),
+            "expected 'script.command' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_script_empty_command_errors() {
+        let kdl = r#"
+modules {
+    module "script" zone="bottom" {
+        command ""
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("script.command"),
+            "expected 'script.command' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("must not be empty"),
+            "expected 'must not be empty' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_script_zero_interval_errors() {
+        let kdl = r#"
+modules {
+    module "script" zone="bottom" {
+        command "date"
+        interval 0
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("script.interval"),
+            "expected 'script.interval' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("at least 1"),
+            "expected 'at least 1' in error, got: {msg}"
         );
     }
 }

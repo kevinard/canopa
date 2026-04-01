@@ -33,12 +33,19 @@ impl Default for ClockConfig {
     }
 }
 
+/// Command and polling interval for the script module.
+#[derive(Debug, Clone)]
+pub struct ScriptConfig {
+    pub command: String,
+    pub interval: u64, // seconds between executions
+}
+
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
 #[derive(Debug, Clone)]
 pub enum ModuleParams {
     None,
     Clock(ClockConfig),
-    // Script(ScriptConfig) — Story 2.4
+    Script(ScriptConfig),
     // Button(ButtonConfig) — Story 2.5
 }
 
@@ -332,6 +339,31 @@ mod tests {
                 assert_eq!(cfg.date_format, "%Y-%m-%d");
             }
             _ => panic!("expected ModuleParams::Clock"),
+        }
+    }
+
+    #[test]
+    fn script_config_stores_command_and_interval() {
+        let cfg = ScriptConfig {
+            command: "echo hi".into(),
+            interval: 10,
+        };
+        assert_eq!(cfg.command, "echo hi");
+        assert_eq!(cfg.interval, 10);
+    }
+
+    #[test]
+    fn module_params_script_stores_config() {
+        let params = ModuleParams::Script(ScriptConfig {
+            command: "date".into(),
+            interval: 30,
+        });
+        match params {
+            ModuleParams::Script(cfg) => {
+                assert_eq!(cfg.command, "date");
+                assert_eq!(cfg.interval, 30);
+            }
+            _ => panic!("expected ModuleParams::Script"),
         }
     }
 }

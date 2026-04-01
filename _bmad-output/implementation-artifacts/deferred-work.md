@@ -41,3 +41,10 @@
 - **Multiple `module "clock"` entries share a single ModuleId** — `src/modules/clock.rs`: two clock config entries both emit `ModuleId("clock")` ticks; second write unconditionally overwrites first in `shared.modules`. Pre-existing architecture concern tracked from Story 2.2 review; needs unique-ID or per-instance keying scheme.
 - **Extra values on `time-format`/`date-format` nodes silently ignored** — `src/config/parse.rs`: `entries().first()` only reads the first positional arg; `time-format "%H:%M" "%I:%M"` silently uses only the first. Consistent with existing parser pattern; address if KDL multi-value config is ever validated.
 - **`clock_ctor` silently falls back to defaults for mismatched ModuleParams** — `src/modules/mod.rs::clock_ctor`: the `_ =>` arm is unreachable given correct parsing but would silently mask misconfiguration. Add a defensive `unreachable!()` or debug assertion when a logging layer is introduced.
+
+## Deferred from: code review of 2-4-script-module-shell-command-output-in-the-bar (2026-04-01)
+
+- **`ModuleId` hardcoded as `"script"` in subscription** — `src/modules/script.rs:66`: subscription always emits `ModuleId::new("script")` regardless of `self.id`; multiple `module "script"` config entries share a single ID and overwrite each other's state. Explicitly deferred per story notes; same pattern as clock. Revisit with unique-ID scheme.
+- **Non-UTF-8 output silently replaced** — `src/modules/script.rs:59`: `String::from_utf8_lossy` replaces invalid bytes with U+FFFD instead of treating it as a failure. Acceptable for bar display; revisit if scripts producing binary output need explicit error handling.
+- **Very large interval effectively infinite sleep** — `src/modules/script.rs:50`: `interval: u64` has no upper bound; `u64::MAX` is functionally never. Story spec only rejects zero. Add upper-bound validation (e.g., ≤ 3600) in a future config hardening pass.
+- **All command errors collapse to `Failed` with no logging** — `src/modules/script.rs:62`: spawn failures and non-zero exit codes are indistinguishable; stderr not captured. By-design per spec; revisit when a logging/diagnostic layer is introduced.
