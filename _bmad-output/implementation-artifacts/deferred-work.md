@@ -24,3 +24,8 @@
 - **`expanded_width` has no lower-bound or relational validation** — `validate()` only guards `collapsed_width`; no check that `expanded_width >= collapsed_width` or `expanded_width >= 2`. Deferred to Story 3.1 when expand/collapse semantics are defined.
 - **`collapsed_width > i32::MAX` silently falls back to 48** — `src/main.rs`: `i32::try_from(collapsed_width).unwrap_or(48)` silently substitutes 48 for unrealistically large widths. Pre-existing; revisit when output dimension clamping is designed.
 - **KDL property-style `edge="left"` silently ignored** — `get_arg("edge")` only reads positional arguments; property syntax produces no error and no effect. Pre-existing `get_arg` behavior; only surfaced when expanding KDL parsing.
+
+## Deferred from: code review of 2-1-define-the-module-trait-and-zone-layout (2026-04-01)
+
+- **ModuleConstructor uses bare fn pointer, can't capture config params** — `src/modules/mod.rs:84`: `fn() -> Box<dyn Module>` cannot represent closures or stateful constructors; will be insufficient in Story 2.2 when modules are config-parameterised. Consider `Box<dyn Fn() -> Box<dyn Module>>` or a constructor trait.
+- **ModuleId::new accepts empty string** — `src/modules/mod.rs:11`: no guard against empty id producing a silent sentinel key in `SharedState::modules`; validation belongs at config parse time in Story 2.2 when module instances are constructed from config.

@@ -1,3 +1,5 @@
+pub mod layout;
+
 /// Per-output render state. Tracks surface-specific data (expand/collapse, focus).
 /// Shared module data lives in SharedState (established in Story 2.1), never here.
 // Stub for Story 1.2 — fields and usage added in Stories 2.1, 3.1, 6.1
