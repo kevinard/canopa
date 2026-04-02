@@ -11,6 +11,7 @@ use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
 };
+use crate::surface::expand::ExpandState;
 use crate::surface::frame::module_frame;
 use crate::surface::layout::zone_layout;
 
@@ -40,6 +41,9 @@ pub struct App {
     pub modules: Vec<(Zone, Box<dyn Module>)>,
     /// Tracks which module is currently hovered; moves to SurfaceState in Story 7.1.
     pub hovered_module: Option<ModuleId>,
+    /// Current expand/collapse state. Single-surface for Stories 3.1–6.x;
+    /// moves to per-surface state (HashMap<SurfaceId, SurfaceState>) in Story 7.1.
+    pub expand: ExpandState,
 }
 
 #[to_layer_message]
@@ -50,6 +54,8 @@ pub enum Message {
     ModuleHoverEnter(ModuleId),
     ModuleHoverExit(ModuleId),
     ModuleClick(ModuleId),
+    /// Fires when the user clicks anywhere on the bar surface; toggles expand/collapse (Story 3.1).
+    BarClick,
 }
 
 impl App {
@@ -69,6 +75,7 @@ impl App {
             shared: SharedState::new(),
             modules,
             hovered_module: None,
+            expand: ExpandState::default(), // starts Collapsed
         }
     }
 
@@ -121,6 +128,24 @@ impl App {
                 }
                 Task::none()
             }
+            Message::BarClick => {
+                // Toggle expand/collapse state and resize the layer-shell surface.
+                self.expand = self.expand.toggle();
+                let new_width = if self.expand.is_expanded() {
+                    self.config.bar.expanded_width
+                } else {
+                    self.config.bar.collapsed_width
+                };
+                // SizeChange and ExclusiveZoneChange are injected by #[to_layer_message].
+                // SizeChange((w, h)) — h=0 means "stretch full height" (layer shell convention).
+                // ExclusiveZoneChange reserves the correct amount of desktop space.
+                Task::batch([
+                    Task::done(Message::SizeChange((new_width, 0))),
+                    Task::done(Message::ExclusiveZoneChange(
+                        i32::try_from(new_width).unwrap_or(i32::MAX),
+                    )),
+                ])
+            }
             _ => Task::none(),
         }
     }
@@ -130,7 +155,12 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let content_width = self.config.bar.collapsed_width.saturating_sub(1);
+        // Choose content width and module view method based on expand state.
+        let content_width = if self.expand.is_expanded() {
+            self.config.bar.expanded_width.saturating_sub(1)
+        } else {
+            self.config.bar.collapsed_width.saturating_sub(1)
+        };
 
         let mut top: Vec<Element<'_, Message>> = vec![];
         let mut center: Vec<Element<'_, Message>> = vec![];
@@ -145,12 +175,19 @@ impl App {
                 .unwrap_or_default();
             let id = module.id();
             let hovered = self.hovered_module.as_ref() == Some(&id);
-            let view: Element<'_, Message> =
-                mouse_area(module_frame(module.view_collapsed(&state), hovered))
-                    .on_enter(Message::ModuleHoverEnter(id.clone()))
-                    .on_exit(Message::ModuleHoverExit(id.clone()))
-                    .on_press(Message::ModuleClick(id))
-                    .into();
+
+            // Call view_expanded or view_collapsed based on current expand state (AC #4, #5).
+            let module_view = if self.expand.is_expanded() {
+                module.view_expanded(&state)
+            } else {
+                module.view_collapsed(&state)
+            };
+
+            let view: Element<'_, Message> = mouse_area(module_frame(module_view, hovered))
+                .on_enter(Message::ModuleHoverEnter(id.clone()))
+                .on_exit(Message::ModuleHoverExit(id.clone()))
+                .on_press(Message::ModuleClick(id))
+                .into();
 
             match zone {
                 Zone::Top => top.push(view),
@@ -159,8 +196,8 @@ impl App {
             }
         }
 
-        row![
-            // Main content area — zone layout fills (collapsed_width - 1)px
+        let bar_content = row![
+            // Main content area — zone layout fills (width - 1)px
             container(zone_layout(top, center, bottom))
                 .width(content_width)
                 .height(Length::Fill),
@@ -174,8 +211,11 @@ impl App {
                 }),
         ]
         .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        .height(Length::Fill);
+
+        // Wrap entire bar in mouse_area for click-to-toggle (AC #1, #2).
+        // Note: clicking a module fires both ModuleClick(id) AND BarClick (outer area).
+        mouse_area(bar_content).on_press(Message::BarClick).into()
     }
 
     pub fn style(&self, _theme: &iced::Theme) -> iced::theme::Style {
@@ -380,5 +420,29 @@ mod tests {
             Some(ModuleState::Script(s)) => assert_eq!(s.output, "prev"),
             other => panic!("expected Script state, got {:?}", other),
         }
+    }
+
+    // --- Story 3.1 tests ---
+
+    #[test]
+    fn app_starts_collapsed() {
+        let app = App::new(make_config());
+        assert_eq!(app.expand, ExpandState::Collapsed);
+    }
+
+    #[test]
+    fn bar_click_toggles_collapsed_to_expanded() {
+        let mut app = App::new(make_config());
+        assert_eq!(app.expand, ExpandState::Collapsed);
+        let _ = app.update(Message::BarClick);
+        assert_eq!(app.expand, ExpandState::Expanded);
+    }
+
+    #[test]
+    fn bar_click_toggles_expanded_to_collapsed() {
+        let mut app = App::new(make_config());
+        let _ = app.update(Message::BarClick); // → Expanded
+        let _ = app.update(Message::BarClick); // → Collapsed
+        assert_eq!(app.expand, ExpandState::Collapsed);
     }
 }

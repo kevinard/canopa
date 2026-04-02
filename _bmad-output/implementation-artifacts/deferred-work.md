@@ -56,3 +56,10 @@
 - **`ButtonConfig` does not derive `PartialEq`** — `src/config/mod.rs`: `ButtonConfig` only derives `Debug, Clone`; asymmetric with other config structs and will cause compile errors if equality checks are added. Revisit when config types are tested more broadly.
 - **No visual affordance for interactive button icon** — `src/modules/button.rs:87`: raw `text` widget in `mouse_area` gives no cursor feedback, pressed state, or accessibility semantics. Not in story spec; revisit in UX polish pass.
 - **`view_expanded` not called from `app.view()`** — `src/app.rs`: `view_expanded` is fully implemented but unreachable; `app.view()` only calls `view_collapsed`. Expand/collapse wiring is Story 3.1.
+
+## Deferred from: code review of 3-1-bar-collapses-and-expands-on-explicit-trigger (2026-04-02)
+
+- **Task::batch dispatch ordering for SizeChange/ExclusiveZoneChange** — `src/app.rs`: `Task::batch` makes no ordering guarantee; compositor could receive `ExclusiveZoneChange` before `SizeChange`. No known runtime issue observed, but protocol correctness requires size change to precede exclusive zone update. Revisit when iced_layershell ordering semantics are documented.
+- **Height=0 magic value in SizeChange undocumented** — `src/app.rs`: `Message::SizeChange((new_width, 0))` relies on iced_layershell convention that `h=0` means "stretch full height"; no comment at call site. Add inline comment when the resize pattern is touched again.
+- **Equal-width toggle fires redundant resize** — `src/app.rs`: when `config.bar.expanded_width == config.bar.collapsed_width` (now valid per Story 3.1 validation), every BarClick dispatches `SizeChange` and `ExclusiveZoneChange` to the same values. Negligible cost; guard with early-return if resize traffic becomes a concern.
+- **BarClick handler tests assert expand state only, not Task return value** — `src/app.rs`: `bar_click_toggles_*` tests verify `app.expand` after update but do not confirm the returned `Task` dispatches `SizeChange` and `ExclusiveZoneChange`. Requires task introspection infrastructure not yet available; revisit when integration test harness supports Task inspection.

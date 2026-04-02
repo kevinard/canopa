@@ -177,6 +177,14 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
             config.bar.collapsed_width
         );
     }
+    if config.bar.expanded_width < config.bar.collapsed_width {
+        anyhow::bail!(
+            "bar.expanded-width: value {} must be >= bar.collapsed-width ({}). \
+             Expected: a width greater than or equal to the collapsed width.",
+            config.bar.expanded_width,
+            config.bar.collapsed_width
+        );
+    }
     for (i, mc) in config.modules.iter().enumerate() {
         if !KNOWN_MODULE_NAMES.contains(&mc.name.as_str()) {
             anyhow::bail!(
@@ -326,6 +334,31 @@ mod tests {
             msg.starts_with("modules[1].type:"),
             "expected 'modules[1].type:' prefix, got: {msg}"
         );
+    }
+
+    #[test]
+    fn validate_rejects_expanded_width_less_than_collapsed() {
+        let mut config = Config::default();
+        config.bar.collapsed_width = 100;
+        config.bar.expanded_width = 50; // less than collapsed
+        let err = validate(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("bar.expanded-width:"),
+            "expected 'bar.expanded-width:' prefix, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_expanded_width_equal_to_collapsed() {
+        let mut config = Config::default();
+        config.bar.collapsed_width = 48;
+        config.bar.expanded_width = 48; // equal is OK
+        assert!(validate(&config).is_ok());
     }
 
     #[test]
