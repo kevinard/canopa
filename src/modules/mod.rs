@@ -1,3 +1,4 @@
+pub mod button;
 pub mod clock;
 pub mod script;
 
@@ -36,7 +37,7 @@ pub enum ModuleState {
     Unavailable,
     Clock(clock::ClockState),
     Script(script::ScriptState),
-    // Button(ButtonState) — Story 2.5
+    Button(button::ButtonState),
 }
 
 /// Module data events routed through the Iced message bus.
@@ -44,6 +45,7 @@ pub enum ModuleState {
 pub enum ModuleEvent {
     Clock(clock::ClockEvent),
     Script(script::ScriptEvent),
+    Button(button::ButtonEvent),
 }
 
 /// Input event from pointer or keyboard interaction.
@@ -84,9 +86,22 @@ pub type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>
 /// Build the static module registry mapping config name → constructor.
 pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     let mut map = HashMap::new();
+    map.insert("button", button_ctor as ModuleConstructor);
     map.insert("clock", clock_ctor as ModuleConstructor);
     map.insert("script", script_ctor as ModuleConstructor);
     map
+}
+
+fn button_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    use crate::config::ModuleParams;
+    match &mc.params {
+        ModuleParams::Button(cfg) => Box::new(button::ButtonModule::new(
+            cfg.label.clone(),
+            cfg.icon.clone(),
+            cfg.on_click.clone(),
+        )),
+        _ => panic!("button_ctor called with non-Button params — this is a programming error"),
+    }
 }
 
 fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
@@ -141,6 +156,12 @@ mod tests {
     fn build_registry_contains_script() {
         let registry = build_registry();
         assert!(registry.contains_key("script"));
+    }
+
+    #[test]
+    fn build_registry_contains_button() {
+        let registry = build_registry();
+        assert!(registry.contains_key("button"));
     }
 
     #[test]

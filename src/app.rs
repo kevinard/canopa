@@ -5,9 +5,12 @@ use iced::{Color, Element, Length, Task};
 use iced_layershell::to_layer_message;
 
 use crate::config::Config;
+use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::script::{ScriptEvent, ScriptState};
-use crate::modules::{Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry};
+use crate::modules::{
+    InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
+};
 use crate::surface::frame::module_frame;
 use crate::surface::layout::zone_layout;
 
@@ -46,6 +49,7 @@ pub enum Message {
     Module(ModuleId, ModuleEvent),
     ModuleHoverEnter(ModuleId),
     ModuleHoverExit(ModuleId),
+    ModuleClick(ModuleId),
 }
 
 impl App {
@@ -100,6 +104,23 @@ impl App {
                 // Retain previous state — do nothing (AC #3)
                 Task::none()
             }
+            Message::Module(id, ModuleEvent::Button(ButtonEvent::Ready)) => {
+                self.shared
+                    .modules
+                    .insert(id, ModuleState::Button(ButtonState));
+                Task::none()
+            }
+            Message::ModuleClick(id) => {
+                for (_, module) in &self.modules {
+                    if module.id() == id {
+                        if let Some(msg) = module.on_interaction(InteractionEvent::Clicked) {
+                            return Task::done(msg);
+                        }
+                        break;
+                    }
+                }
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -127,7 +148,8 @@ impl App {
             let view: Element<'_, Message> =
                 mouse_area(module_frame(module.view_collapsed(&state), hovered))
                     .on_enter(Message::ModuleHoverEnter(id.clone()))
-                    .on_exit(Message::ModuleHoverExit(id))
+                    .on_exit(Message::ModuleHoverExit(id.clone()))
+                    .on_press(Message::ModuleClick(id))
                     .into();
 
             match zone {
@@ -277,6 +299,49 @@ mod tests {
             Some(ModuleState::Script(s)) => assert_eq!(s.output, "hello"),
             other => panic!("expected Script state, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn button_module_instantiated_from_registry() {
+        use crate::config::{ButtonConfig, ModuleConfig, ModuleParams};
+        use crate::modules::Zone;
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "button".into(),
+            zone: Zone::Bottom,
+            params: ModuleParams::Button(ButtonConfig {
+                label: "Launch".into(),
+                icon: ">".into(),
+                on_click: "kitty".into(),
+            }),
+        }];
+        let app = App::new(config);
+        assert_eq!(app.modules.len(), 1);
+    }
+
+    #[test]
+    fn button_ready_event_updates_state() {
+        use crate::modules::button::ButtonEvent;
+
+        let mut app = App::new(make_config());
+        let id = ModuleId::new("button");
+        let _ = app.update(Message::Module(
+            id.clone(),
+            ModuleEvent::Button(ButtonEvent::Ready),
+        ));
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Button(_)) => {} // correct
+            other => panic!("expected Button state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn module_click_no_match_does_not_panic() {
+        // ModuleClick for an id with no matching module → Task::none() without panic.
+        let mut app = App::new(make_config());
+        let id = ModuleId::new("nonexistent");
+        let _ = app.update(Message::ModuleClick(id));
+        // If we reach here without panic, the test passes.
     }
 
     #[test]

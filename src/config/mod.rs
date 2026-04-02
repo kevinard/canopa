@@ -40,13 +40,21 @@ pub struct ScriptConfig {
     pub interval: u64, // seconds between executions
 }
 
+/// Configuration for the button module — all fields required.
+#[derive(Debug, Clone)]
+pub struct ButtonConfig {
+    pub label: String,
+    pub icon: String,
+    pub on_click: String,
+}
+
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
 #[derive(Debug, Clone)]
 pub enum ModuleParams {
     None,
     Clock(ClockConfig),
     Script(ScriptConfig),
-    // Button(ButtonConfig) — Story 2.5
+    Button(ButtonConfig),
 }
 
 /// A single module entry from the config, specifying type, zone placement, and module params.
@@ -364,6 +372,35 @@ mod tests {
                 assert_eq!(cfg.interval, 30);
             }
             _ => panic!("expected ModuleParams::Script"),
+        }
+    }
+
+    #[test]
+    fn button_config_stores_fields() {
+        let cfg = ButtonConfig {
+            label: "Launch Terminal".into(),
+            icon: ">".into(),
+            on_click: "kitty".into(),
+        };
+        assert_eq!(cfg.label, "Launch Terminal");
+        assert_eq!(cfg.icon, ">");
+        assert_eq!(cfg.on_click, "kitty");
+    }
+
+    #[test]
+    fn module_params_button_stores_config() {
+        let params = ModuleParams::Button(ButtonConfig {
+            label: "launch".into(),
+            icon: ">".into(),
+            on_click: "kitty".into(),
+        });
+        match params {
+            ModuleParams::Button(cfg) => {
+                assert_eq!(cfg.label, "launch");
+                assert_eq!(cfg.icon, ">");
+                assert_eq!(cfg.on_click, "kitty");
+            }
+            _ => panic!("expected ModuleParams::Button"),
         }
     }
 }

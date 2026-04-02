@@ -48,3 +48,11 @@
 - **Non-UTF-8 output silently replaced** — `src/modules/script.rs:59`: `String::from_utf8_lossy` replaces invalid bytes with U+FFFD instead of treating it as a failure. Acceptable for bar display; revisit if scripts producing binary output need explicit error handling.
 - **Very large interval effectively infinite sleep** — `src/modules/script.rs:50`: `interval: u64` has no upper bound; `u64::MAX` is functionally never. Story spec only rejects zero. Add upper-bound validation (e.g., ≤ 3600) in a future config hardening pass.
 - **All command errors collapse to `Failed` with no logging** — `src/modules/script.rs:62`: spawn failures and non-zero exit codes are indistinguishable; stderr not captured. By-design per spec; revisit when a logging/diagnostic layer is introduced.
+
+## Deferred from: code review of 2-5-button-module-user-defined-clickable-action (2026-04-02)
+
+- **Hardcoded `ModuleId("button")` prevents multiple button instances** — `src/modules/button.rs:22`: all `ButtonModule` instances share the same ID; second button's state is overwritten and click routing always hits the first match. Explicitly noted as known limitation in story Dev Notes (same as Defer-1 from Stories 2.3/2.4); revisit with unique-ID scheme.
+- **`spawn()` failure silently ignored** — `src/modules/button.rs:70`: `let _` discards `io::Result` from `tokio::process::Command::spawn()`; no log or visual feedback on failure. Deferred until a logging/diagnostic layer exists.
+- **`ButtonConfig` does not derive `PartialEq`** — `src/config/mod.rs`: `ButtonConfig` only derives `Debug, Clone`; asymmetric with other config structs and will cause compile errors if equality checks are added. Revisit when config types are tested more broadly.
+- **No visual affordance for interactive button icon** — `src/modules/button.rs:87`: raw `text` widget in `mouse_area` gives no cursor feedback, pressed state, or accessibility semantics. Not in story spec; revisit in UX polish pass.
+- **`view_expanded` not called from `app.view()`** — `src/app.rs`: `view_expanded` is fully implemented but unreachable; `app.view()` only calls `view_collapsed`. Expand/collapse wiring is Story 3.1.
