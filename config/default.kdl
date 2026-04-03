@@ -5,6 +5,7 @@ bar {
     edge "left"
     collapsed-width 48
     expanded-width 200
+    expand-trigger "click"
 }
 
 modules {

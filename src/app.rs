@@ -5,7 +5,7 @@ use iced::widget::{Space, container, mouse_area, row};
 use iced::{Color, Element, Length, Task};
 use iced_layershell::to_layer_message;
 
-use crate::config::Config;
+use crate::config::{Config, ExpandTrigger};
 use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::script::{ScriptEvent, ScriptState};
@@ -45,6 +45,10 @@ pub struct App {
     /// Current expand/collapse state. Single-surface for Stories 3.1–6.x;
     /// moves to per-surface state (HashMap<SurfaceId, SurfaceState>) in Story 7.1.
     pub expand: ExpandState,
+    /// Whether the pointer is currently inside the bar surface (Story 3.3 hover trigger).
+    pub bar_hovered: bool,
+    /// Hover dwell countdown (ms elapsed). `Some(elapsed)` = counting toward hover_delay.
+    pub hover_pending_ms: Option<f32>,
 }
 
 #[to_layer_message]
@@ -59,6 +63,10 @@ pub enum Message {
     BarClick,
     /// Animation clock tick. Fired at ~60fps only while `expand.is_animating()` (Story 3.2).
     Tick,
+    /// Pointer entered bar surface; may trigger expand when expand_trigger = Hover (Story 3.3).
+    BarHoverEnter,
+    /// Pointer left bar surface; may trigger collapse when expand_trigger = Hover (Story 3.3).
+    BarHoverExit,
 }
 
 impl App {
@@ -79,6 +87,8 @@ impl App {
             modules,
             hovered_module: None,
             expand: ExpandState::default(), // starts Collapsed
+            bar_hovered: false,
+            hover_pending_ms: None,
         }
     }
 
@@ -132,6 +142,10 @@ impl App {
                 Task::none()
             }
             Message::BarClick => {
+                // Click has no effect when hover is the expand trigger (Story 3.3 AC #6).
+                if self.config.bar.expand_trigger == ExpandTrigger::Hover {
+                    return Task::none();
+                }
                 // toggle() now returns Expanding(0.0) or Collapsing(0.0) instead of jumping
                 // directly to the final state. The Tick subscription drives the actual animation.
                 self.expand = self.expand.toggle();
@@ -148,11 +162,90 @@ impl App {
                     )),
                 ])
             }
+            Message::BarHoverEnter => {
+                self.bar_hovered = true;
+                if self.config.bar.expand_trigger != ExpandTrigger::Hover {
+                    return Task::none();
+                }
+                match self.expand {
+                    ExpandState::Collapsed => {
+                        if self.config.bar.hover_delay == 0 {
+                            self.expand = self.expand.toggle(); // → Expanding(0.0)
+                            let w = self.expand.current_width(
+                                self.config.bar.collapsed_width,
+                                self.config.bar.expanded_width,
+                            );
+                            Task::batch([
+                                Task::done(Message::SizeChange((w, 0))),
+                                Task::done(Message::ExclusiveZoneChange(
+                                    i32::try_from(w).unwrap_or(i32::MAX),
+                                )),
+                            ])
+                        } else {
+                            self.hover_pending_ms = Some(0.0);
+                            Task::none()
+                        }
+                    }
+                    ExpandState::Collapsing(_) => {
+                        // Pointer re-entered while collapsing — reverse back to expanding.
+                        self.expand = self.expand.toggle();
+                        Task::none()
+                    }
+                    _ => Task::none(), // Already expanded or expanding — no action
+                }
+            }
+            Message::BarHoverExit => {
+                self.bar_hovered = false;
+                if self.config.bar.expand_trigger != ExpandTrigger::Hover {
+                    return Task::none();
+                }
+                // Cancel any pending hover delay.
+                self.hover_pending_ms = None;
+                match self.expand {
+                    ExpandState::Expanded | ExpandState::Expanding(_) => {
+                        self.expand = self.expand.toggle(); // → Collapsing(0.0) or Collapsing(1-p)
+                        let w = self.expand.current_width(
+                            self.config.bar.collapsed_width,
+                            self.config.bar.expanded_width,
+                        );
+                        Task::batch([
+                            Task::done(Message::SizeChange((w, 0))),
+                            Task::done(Message::ExclusiveZoneChange(
+                                i32::try_from(w).unwrap_or(i32::MAX),
+                            )),
+                        ])
+                    }
+                    _ => Task::none(), // Already collapsed or collapsing — no action
+                }
+            }
             Message::Tick => {
                 // Advance animation progress by one tick (~16ms, targeting 60fps).
                 const EXPAND_MS: f32 = 280.0;
                 const COLLAPSE_MS: f32 = 200.0;
                 const TICK_MS: f32 = 16.0;
+
+                // Hover delay countdown — runs while waiting to start expand (Story 3.3).
+                if let Some(elapsed) = self.hover_pending_ms {
+                    let new_elapsed = elapsed + TICK_MS;
+                    if new_elapsed >= self.config.bar.hover_delay as f32 {
+                        // Delay expired: start expanding.
+                        self.hover_pending_ms = None;
+                        self.expand = ExpandState::Expanding(0.0);
+                        let w = self.expand.current_width(
+                            self.config.bar.collapsed_width,
+                            self.config.bar.expanded_width,
+                        );
+                        return Task::batch([
+                            Task::done(Message::SizeChange((w, 0))),
+                            Task::done(Message::ExclusiveZoneChange(
+                                i32::try_from(w).unwrap_or(i32::MAX),
+                            )),
+                        ]);
+                    } else {
+                        self.hover_pending_ms = Some(new_elapsed);
+                        return Task::none(); // Still counting down
+                    }
+                }
 
                 match self.expand {
                     ExpandState::Expanding(progress) => {
@@ -192,9 +285,8 @@ impl App {
     pub fn subscription(&self) -> iced::Subscription<Message> {
         let module_subs =
             iced::Subscription::batch(self.modules.iter().map(|(_, m)| m.subscription()));
-        if self.expand.is_animating() {
-            // Emit a Tick every ~16ms (≈60fps) while animating. Iced stops the timer
-            // automatically when this subscription is not returned (i.e., not animating).
+        if self.expand.is_animating() || self.hover_pending_ms.is_some() {
+            // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
             let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
             iced::Subscription::batch([module_subs, tick])
         } else {
@@ -267,9 +359,13 @@ impl App {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        // Wrap entire bar in mouse_area for click-to-toggle (AC #1, #2).
+        // Wrap entire bar in mouse_area for click-to-toggle and hover detection.
         // Note: clicking a module fires both ModuleClick(id) AND BarClick (outer area).
-        mouse_area(bar_content).on_press(Message::BarClick).into()
+        mouse_area(bar_content)
+            .on_press(Message::BarClick)
+            .on_enter(Message::BarHoverEnter)
+            .on_exit(Message::BarHoverExit)
+            .into()
     }
 
     pub fn style(&self, _theme: &iced::Theme) -> iced::theme::Style {
@@ -286,6 +382,13 @@ mod tests {
 
     fn make_config() -> Config {
         Config::default()
+    }
+
+    fn make_hover_config() -> Config {
+        let mut config = make_config();
+        config.bar.expand_trigger = ExpandTrigger::Hover;
+        config.bar.hover_delay = 0;
+        config
     }
 
     #[test]
@@ -560,5 +663,108 @@ mod tests {
         app.expand = ExpandState::Expanded;
         let _ = app.update(Message::Tick);
         assert_eq!(app.expand, ExpandState::Expanded);
+    }
+
+    // --- Story 3.3 tests ---
+
+    #[test]
+    fn app_starts_with_bar_hovered_false() {
+        let app = App::new(make_config());
+        assert!(!app.bar_hovered);
+    }
+
+    #[test]
+    fn hover_enter_click_trigger_does_nothing() {
+        // Click trigger: BarHoverEnter must not change expand state.
+        let mut app = App::new(make_config()); // expand_trigger = Click
+        let _ = app.update(Message::BarHoverEnter);
+        assert_eq!(app.expand, ExpandState::Collapsed);
+        assert!(app.bar_hovered); // bar_hovered is set regardless
+    }
+
+    #[test]
+    fn hover_exit_click_trigger_does_nothing() {
+        // Click trigger: BarHoverExit must not change expand state.
+        let mut app = App::new(make_config());
+        app.expand = ExpandState::Expanded;
+        let _ = app.update(Message::BarHoverExit);
+        assert_eq!(app.expand, ExpandState::Expanded);
+    }
+
+    #[test]
+    fn hover_enter_hover_trigger_zero_delay_starts_expanding() {
+        let mut app = App::new(make_hover_config());
+        let _ = app.update(Message::BarHoverEnter);
+        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+    }
+
+    #[test]
+    fn hover_exit_when_expanded_starts_collapsing() {
+        let mut app = App::new(make_hover_config());
+        app.expand = ExpandState::Expanded;
+        let _ = app.update(Message::BarHoverExit);
+        assert_eq!(app.expand, ExpandState::Collapsing(0.0));
+    }
+
+    #[test]
+    fn hover_exit_when_expanding_reverses() {
+        let mut app = App::new(make_hover_config());
+        app.expand = ExpandState::Expanding(0.3);
+        let _ = app.update(Message::BarHoverExit);
+        assert!(
+            matches!(app.expand, ExpandState::Collapsing(p) if (p - 0.7).abs() < 1e-5),
+            "expected Collapsing(~0.7), got {:?}",
+            app.expand
+        );
+    }
+
+    #[test]
+    fn hover_exit_when_collapsed_does_nothing() {
+        let mut app = App::new(make_hover_config());
+        // expand starts Collapsed
+        let _ = app.update(Message::BarHoverExit);
+        assert_eq!(app.expand, ExpandState::Collapsed);
+    }
+
+    #[test]
+    fn hover_enter_with_delay_sets_pending() {
+        let mut config = make_hover_config();
+        config.bar.hover_delay = 100;
+        let mut app = App::new(config);
+        let _ = app.update(Message::BarHoverEnter);
+        // State stays Collapsed — delay not yet elapsed.
+        assert_eq!(app.expand, ExpandState::Collapsed);
+        assert_eq!(app.hover_pending_ms, Some(0.0));
+    }
+
+    #[test]
+    fn hover_exit_cancels_pending() {
+        let mut config = make_hover_config();
+        config.bar.hover_delay = 100;
+        let mut app = App::new(config);
+        let _ = app.update(Message::BarHoverEnter); // sets pending
+        let _ = app.update(Message::BarHoverExit); // cancels pending
+        assert_eq!(app.hover_pending_ms, None);
+        assert_eq!(app.expand, ExpandState::Collapsed);
+    }
+
+    #[test]
+    fn tick_triggers_expand_when_delay_elapsed() {
+        let mut config = make_hover_config();
+        config.bar.hover_delay = 100;
+        let mut app = App::new(config);
+        // Simulate hover delay almost elapsed (90ms of 100ms done).
+        app.hover_pending_ms = Some(90.0);
+        // One tick (16ms) pushes elapsed to 106ms ≥ 100ms → expand starts.
+        let _ = app.update(Message::Tick);
+        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+        assert_eq!(app.hover_pending_ms, None);
+    }
+
+    #[test]
+    fn bar_click_noop_when_hover_trigger() {
+        let mut app = App::new(make_hover_config());
+        let _ = app.update(Message::BarClick);
+        assert_eq!(app.expand, ExpandState::Collapsed); // unchanged
     }
 }

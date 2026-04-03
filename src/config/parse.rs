@@ -1,7 +1,8 @@
 use kdl::KdlDocument;
 
 use super::{
-    BarConfig, ButtonConfig, ClockConfig, Config, Edge, ModuleConfig, ModuleParams, ScriptConfig,
+    BarConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig, ModuleParams,
+    ScriptConfig,
 };
 use crate::modules::Zone;
 
@@ -253,10 +254,31 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
         .and_then(|v| u32::try_from(v).ok())
         .unwrap_or(defaults.expanded_width);
 
+    let expand_trigger = match children.get_arg("expand-trigger") {
+        None => defaults.expand_trigger,
+        Some(v) => {
+            let s = v.as_string().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "bar.expand-trigger: expected a string value. \
+                     Expected: one of: click, hover."
+                )
+            })?;
+            ExpandTrigger::from_str(s)?
+        }
+    };
+
+    let hover_delay = children
+        .get_arg("hover-delay")
+        .and_then(|v| v.as_integer())
+        .and_then(|v| u64::try_from(v).ok())
+        .unwrap_or(defaults.hover_delay);
+
     Ok(BarConfig {
         edge,
         collapsed_width,
         expanded_width,
+        expand_trigger,
+        hover_delay,
     })
 }
 
@@ -664,6 +686,56 @@ modules {
         assert!(
             msg.contains("button.on-click"),
             "expected 'button.on-click' in error, got: {msg}"
+        );
+    }
+
+    // --- Story 3.3 tests: expand-trigger and hover-delay ---
+
+    #[test]
+    fn parse_expand_trigger_hover() {
+        let kdl = r#"bar { expand-trigger "hover" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bar.expand_trigger, ExpandTrigger::Hover);
+    }
+
+    #[test]
+    fn parse_expand_trigger_click() {
+        let kdl = r#"bar { expand-trigger "click" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bar.expand_trigger, ExpandTrigger::Click);
+    }
+
+    #[test]
+    fn parse_expand_trigger_defaults_to_click() {
+        let config = parse("").unwrap();
+        assert_eq!(config.bar.expand_trigger, ExpandTrigger::Click);
+    }
+
+    #[test]
+    fn parse_hover_delay() {
+        let kdl = r#"bar { hover-delay 200 }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bar.hover_delay, 200);
+    }
+
+    #[test]
+    fn parse_hover_delay_defaults_to_zero() {
+        let config = parse("").unwrap();
+        assert_eq!(config.bar.hover_delay, 0);
+    }
+
+    #[test]
+    fn parse_unknown_expand_trigger_errors() {
+        let kdl = r#"bar { expand-trigger "double-click" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("bar.expand-trigger:"),
+            "expected 'bar.expand-trigger:' prefix, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in message, got: {msg}"
         );
     }
 

@@ -73,14 +73,16 @@ pub struct Config {
     pub modules: Vec<ModuleConfig>,
 }
 
-/// Bar-level configuration: placement edge and width targets.
+/// Bar-level configuration: placement edge, width targets, and expand trigger.
 #[derive(Debug, Clone)]
 pub struct BarConfig {
     pub edge: Edge,
     pub collapsed_width: u32,
-    // Used in Story 3.1 (expand/collapse animation)
-    #[allow(dead_code)]
     pub expanded_width: u32,
+    /// What user action triggers expand/collapse. Default: Click.
+    pub expand_trigger: ExpandTrigger,
+    /// Dwell delay (ms) before hover expands the bar. Only used when expand_trigger = Hover.
+    pub hover_delay: u64,
 }
 
 impl Default for BarConfig {
@@ -89,6 +91,8 @@ impl Default for BarConfig {
             edge: Edge::Left,
             collapsed_width: 48,
             expanded_width: 200,
+            expand_trigger: ExpandTrigger::Click,
+            hover_delay: 0,
         }
     }
 }
@@ -129,6 +133,30 @@ impl Edge {
             Edge::Right => Anchor::Right | Anchor::Top | Anchor::Bottom,
             Edge::Top => Anchor::Top | Anchor::Left | Anchor::Right,
             Edge::Bottom => Anchor::Bottom | Anchor::Left | Anchor::Right,
+        }
+    }
+}
+
+/// Determines what user action triggers bar expand/collapse.
+///
+/// Hover and click are mutually exclusive: when `Hover` is set, click has no effect.
+/// Default: `Click`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum ExpandTrigger {
+    #[default]
+    Click,
+    Hover,
+}
+
+impl ExpandTrigger {
+    pub(crate) fn from_str(s: &str) -> anyhow::Result<ExpandTrigger> {
+        match s {
+            "click" => Ok(ExpandTrigger::Click),
+            "hover" => Ok(ExpandTrigger::Hover),
+            other => anyhow::bail!(
+                "bar.expand-trigger: unknown value {other:?}. \
+                 Expected: one of: click, hover."
+            ),
         }
     }
 }
