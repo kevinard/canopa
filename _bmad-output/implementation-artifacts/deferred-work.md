@@ -63,3 +63,12 @@
 - **Height=0 magic value in SizeChange undocumented** — `src/app.rs`: `Message::SizeChange((new_width, 0))` relies on iced_layershell convention that `h=0` means "stretch full height"; no comment at call site. Add inline comment when the resize pattern is touched again.
 - **Equal-width toggle fires redundant resize** — `src/app.rs`: when `config.bar.expanded_width == config.bar.collapsed_width` (now valid per Story 3.1 validation), every BarClick dispatches `SizeChange` and `ExclusiveZoneChange` to the same values. Negligible cost; guard with early-return if resize traffic becomes a concern.
 - **BarClick handler tests assert expand state only, not Task return value** — `src/app.rs`: `bar_click_toggles_*` tests verify `app.expand` after update but do not confirm the returned `Task` dispatches `SizeChange` and `ExclusiveZoneChange`. Requires task introspection infrastructure not yet available; revisit when integration test harness supports Task inspection.
+
+## Deferred from: code review of 3-1-bar-collapses-and-expands-on-explicit-trigger (2026-04-03, post-done re-review)
+
+- **ModuleClick + BarClick double-fire** — `src/app.rs`: the outer `mouse_area` wrapping the entire bar fires `BarClick` on every click, including module clicks. Every module interaction also toggles bar width. Spec-documented acceptable behavior for Story 3.1; Story 3.3 will introduce a separate trigger mechanism to decouple bar-background clicks from module clicks.
+- **SurfaceState.expand / App.expand divergence at Story 7.1 migration** — `src/surface/mod.rs`: `SurfaceState.expand` is a scaffold that initializes to `Collapsed` and is never updated at runtime. `App.expand` is the live field. Story 7.1 must replace `App.expand` with per-surface state from scratch — it must not adopt `SurfaceState.expand` as if it holds current state.
+
+## Deferred from: code review of 3-2-animate-the-width-transition (2026-04-02)
+
+- **Label opacity fade not implemented** — `src/app.rs` / `src/surface/expand.rs`: UX-DR6 specifies module labels fade in (opacity 0→1) with a 60ms delay after expand begins; `ExpandState::label_opacity()` computes the correct value but `iced 0.14.0` has no generic element opacity wrapper (`iced::widget::opacity` does not exist in this version). The `label_opacity()` method is retained and tested for when iced gains this capability. Width animation and collapsed/expanded content switching are fully functional.

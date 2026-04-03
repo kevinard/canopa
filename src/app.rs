@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use iced::widget::{Space, container, mouse_area, row};
 use iced::{Color, Element, Length, Task};
@@ -56,6 +57,8 @@ pub enum Message {
     ModuleClick(ModuleId),
     /// Fires when the user clicks anywhere on the bar surface; toggles expand/collapse (Story 3.1).
     BarClick,
+    /// Animation clock tick. Fired at ~60fps only while `expand.is_animating()` (Story 3.2).
+    Tick,
 }
 
 impl App {
@@ -129,20 +132,56 @@ impl App {
                 Task::none()
             }
             Message::BarClick => {
-                // Toggle expand/collapse state and resize the layer-shell surface.
+                // toggle() now returns Expanding(0.0) or Collapsing(0.0) instead of jumping
+                // directly to the final state. The Tick subscription drives the actual animation.
                 self.expand = self.expand.toggle();
-                let new_width = if self.expand.is_expanded() {
-                    self.config.bar.expanded_width
-                } else {
-                    self.config.bar.collapsed_width
-                };
+                // Issue an immediate resize to the animation start width to avoid a flash.
                 // SizeChange and ExclusiveZoneChange are injected by #[to_layer_message].
-                // SizeChange((w, h)) — h=0 means "stretch full height" (layer shell convention).
-                // ExclusiveZoneChange reserves the correct amount of desktop space.
+                let w = self.expand.current_width(
+                    self.config.bar.collapsed_width,
+                    self.config.bar.expanded_width,
+                );
                 Task::batch([
-                    Task::done(Message::SizeChange((new_width, 0))),
+                    Task::done(Message::SizeChange((w, 0))),
                     Task::done(Message::ExclusiveZoneChange(
-                        i32::try_from(new_width).unwrap_or(i32::MAX),
+                        i32::try_from(w).unwrap_or(i32::MAX),
+                    )),
+                ])
+            }
+            Message::Tick => {
+                // Advance animation progress by one tick (~16ms, targeting 60fps).
+                const EXPAND_MS: f32 = 280.0;
+                const COLLAPSE_MS: f32 = 200.0;
+                const TICK_MS: f32 = 16.0;
+
+                match self.expand {
+                    ExpandState::Expanding(progress) => {
+                        let new_progress = (progress + TICK_MS / EXPAND_MS).min(1.0);
+                        self.expand = if new_progress >= 1.0 {
+                            ExpandState::Expanded
+                        } else {
+                            ExpandState::Expanding(new_progress)
+                        };
+                    }
+                    ExpandState::Collapsing(progress) => {
+                        let new_progress = (progress + TICK_MS / COLLAPSE_MS).min(1.0);
+                        self.expand = if new_progress >= 1.0 {
+                            ExpandState::Collapsed
+                        } else {
+                            ExpandState::Collapsing(new_progress)
+                        };
+                    }
+                    _ => return Task::none(),
+                }
+                // Resize surface to the interpolated width at the new progress value.
+                let w = self.expand.current_width(
+                    self.config.bar.collapsed_width,
+                    self.config.bar.expanded_width,
+                );
+                Task::batch([
+                    Task::done(Message::SizeChange((w, 0))),
+                    Task::done(Message::ExclusiveZoneChange(
+                        i32::try_from(w).unwrap_or(i32::MAX),
                     )),
                 ])
             }
@@ -151,16 +190,30 @@ impl App {
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        iced::Subscription::batch(self.modules.iter().map(|(_, m)| m.subscription()))
+        let module_subs =
+            iced::Subscription::batch(self.modules.iter().map(|(_, m)| m.subscription()));
+        if self.expand.is_animating() {
+            // Emit a Tick every ~16ms (≈60fps) while animating. Iced stops the timer
+            // automatically when this subscription is not returned (i.e., not animating).
+            let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
+            iced::Subscription::batch([module_subs, tick])
+        } else {
+            module_subs
+        }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        // Choose content width and module view method based on expand state.
-        let content_width = if self.expand.is_expanded() {
-            self.config.bar.expanded_width.saturating_sub(1)
-        } else {
-            self.config.bar.collapsed_width.saturating_sub(1)
-        };
+        // Use the interpolated width during animation; final widths when at rest.
+        let surface_width = self.expand.current_width(
+            self.config.bar.collapsed_width,
+            self.config.bar.expanded_width,
+        );
+        let content_width = surface_width.saturating_sub(1); // 1px right border
+
+        // Decide which module view to call based on animation state.
+        // label_opacity (UX-DR6, 60ms delay fade) is deferred: iced 0.14 has no generic
+        // element opacity wrapper; see deferred-work.md.
+        let shows_expanded = self.expand.shows_expanded_content();
 
         let mut top: Vec<Element<'_, Message>> = vec![];
         let mut center: Vec<Element<'_, Message>> = vec![];
@@ -176,8 +229,9 @@ impl App {
             let id = module.id();
             let hovered = self.hovered_module.as_ref() == Some(&id);
 
-            // Call view_expanded or view_collapsed based on current expand state (AC #4, #5).
-            let module_view = if self.expand.is_expanded() {
+            // During Expanding: show expanded content (opacity fade deferred — no iced wrapper).
+            // During Collapsing: show collapsed content immediately (no reverse fade).
+            let module_view: Element<'_, Message> = if shows_expanded {
                 module.view_expanded(&state)
             } else {
                 module.view_collapsed(&state)
@@ -197,7 +251,7 @@ impl App {
         }
 
         let bar_content = row![
-            // Main content area — zone layout fills (width - 1)px
+            // Main content area — zone layout fills (surface_width - 1)px
             container(zone_layout(top, center, bottom))
                 .width(content_width)
                 .height(Length::Fill),
@@ -422,7 +476,7 @@ mod tests {
         }
     }
 
-    // --- Story 3.1 tests ---
+    // --- Story 3.1 tests (updated for Story 3.2 semantics) ---
 
     #[test]
     fn app_starts_collapsed() {
@@ -430,19 +484,81 @@ mod tests {
         assert_eq!(app.expand, ExpandState::Collapsed);
     }
 
+    // Story 3.2: BarClick now starts animation instead of jumping to final state.
     #[test]
-    fn bar_click_toggles_collapsed_to_expanded() {
+    fn bar_click_starts_expanding_from_collapsed() {
         let mut app = App::new(make_config());
         assert_eq!(app.expand, ExpandState::Collapsed);
         let _ = app.update(Message::BarClick);
+        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+    }
+
+    #[test]
+    fn bar_click_starts_collapsing_from_expanded() {
+        let mut app = App::new(make_config());
+        app.expand = ExpandState::Expanded;
+        let _ = app.update(Message::BarClick);
+        assert_eq!(app.expand, ExpandState::Collapsing(0.0));
+    }
+
+    // --- Story 3.2 tests ---
+
+    #[test]
+    fn tick_advances_expand_progress() {
+        let mut app = App::new(make_config());
+        app.expand = ExpandState::Expanding(0.0);
+        let _ = app.update(Message::Tick);
+        let expected_progress = 16.0_f32 / 280.0;
+        assert!(
+            matches!(app.expand, ExpandState::Expanding(p) if (p - expected_progress).abs() < 1e-5),
+            "expected Expanding(~{expected_progress:.4}), got {:?}",
+            app.expand
+        );
+    }
+
+    #[test]
+    fn tick_completes_expand_animation() {
+        let mut app = App::new(make_config());
+        // A progress close enough to 1.0 that one more tick completes it.
+        app.expand = ExpandState::Expanding(0.999);
+        let _ = app.update(Message::Tick);
         assert_eq!(app.expand, ExpandState::Expanded);
     }
 
     #[test]
-    fn bar_click_toggles_expanded_to_collapsed() {
+    fn tick_advances_collapse_progress() {
         let mut app = App::new(make_config());
-        let _ = app.update(Message::BarClick); // → Expanded
-        let _ = app.update(Message::BarClick); // → Collapsed
+        app.expand = ExpandState::Collapsing(0.0);
+        let _ = app.update(Message::Tick);
+        let expected_progress = 16.0_f32 / 200.0;
+        assert!(
+            matches!(app.expand, ExpandState::Collapsing(p) if (p - expected_progress).abs() < 1e-5),
+            "expected Collapsing(~{expected_progress:.4}), got {:?}",
+            app.expand
+        );
+    }
+
+    #[test]
+    fn tick_completes_collapse_animation() {
+        let mut app = App::new(make_config());
+        app.expand = ExpandState::Collapsing(0.999);
+        let _ = app.update(Message::Tick);
         assert_eq!(app.expand, ExpandState::Collapsed);
+    }
+
+    #[test]
+    fn tick_no_op_when_collapsed() {
+        let mut app = App::new(make_config());
+        assert_eq!(app.expand, ExpandState::Collapsed);
+        let _ = app.update(Message::Tick);
+        assert_eq!(app.expand, ExpandState::Collapsed);
+    }
+
+    #[test]
+    fn tick_no_op_when_expanded() {
+        let mut app = App::new(make_config());
+        app.expand = ExpandState::Expanded;
+        let _ = app.update(Message::Tick);
+        assert_eq!(app.expand, ExpandState::Expanded);
     }
 }

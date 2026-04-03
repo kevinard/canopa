@@ -425,6 +425,8 @@ None — implementation completed without errors. One clippy fix needed: `Surfac
 - [x] [Review][Defer] Height=0 magic value in SizeChange undocumented at call site [src/app.rs] — deferred, pre-existing
 - [x] [Review][Defer] Equal-width toggle fires redundant resize when expanded_width == collapsed_width [src/app.rs] — deferred, pre-existing
 - [x] [Review][Defer] BarClick handler tests assert expand state only, not Task return value [src/app.rs] — deferred, pre-existing
+- [x] [Review][Defer] ModuleClick + BarClick double-fire: every module click also toggles bar expand/collapse [src/app.rs] — deferred, spec-documented; refine in Story 3.3
+- [x] [Review][Defer] SurfaceState.expand / App.expand divergence risk at Story 7.1 migration [src/surface/mod.rs] — deferred; SurfaceState.expand is a scaffold stuck at Collapsed; Story 7.1 must not adopt it blindly
 
 ## Change Log
 

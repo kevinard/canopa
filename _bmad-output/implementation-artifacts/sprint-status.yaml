@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-29
-last_updated: 2026-04-02 # 1-3 → done, 1-2 → done, 1-4 → done, 1-5 → done, epic-2 → in-progress, 2-1 → done, 2-2 → done, 2-3 → done, 2-4 → done, 2-5 → done, epic-3 → in-progress, 3-1 → done
+last_updated: 2026-04-02 # 1-3 → done, 1-2 → done, 1-4 → done, 1-5 → done, epic-2 → in-progress, 2-1 → done, 2-2 → done, 2-3 → done, 2-4 → done, 2-5 → done, epic-3 → in-progress, 3-1 → done, 3-2 → review
 project: niribar
 project_key: NOKEY
 tracking_system: file-system
@@ -63,7 +63,7 @@ development_status:
   # Epic 3: Expand/Collapse — A Bar That Breathes
   epic-3: in-progress
   3-1-bar-collapses-and-expands-on-explicit-trigger: done
-  3-2-animate-the-width-transition: backlog
+  3-2-animate-the-width-transition: review
   3-3-hover-triggered-expand-collapse: backlog
   3-4-configure-expand-collapse-parameters: backlog
   epic-3-retrospective: optional
