@@ -1,6 +1,6 @@
 pub mod subscription;
 
-use niri_ipc::{Event, Workspace};
+use niri_ipc::{Event, Window, Workspace};
 
 /// Live Niri compositor state stored in SharedState.
 ///
@@ -12,6 +12,10 @@ pub struct NiriState {
     pub workspaces: Vec<Workspace>,
     /// ID of the currently focused window, or None if no window is focused.
     pub focused_window_id: Option<u64>,
+    /// Cache of all open windows, keyed by window ID.
+    /// Populated by WindowsChanged and WindowOpenedOrChanged events.
+    /// Used to look up the title of the currently focused window.
+    pub windows: std::collections::HashMap<u64, Window>,
     /// True once the IPC connection has established and initial state received.
     pub connected: bool,
 }
@@ -38,6 +42,12 @@ mod tests {
         assert!(!state.connected);
         assert!(state.workspaces.is_empty());
         assert!(state.focused_window_id.is_none());
+    }
+
+    #[test]
+    fn niri_state_windows_default_empty() {
+        let state = NiriState::default();
+        assert!(state.windows.is_empty());
     }
 
     #[test]

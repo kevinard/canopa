@@ -1,5 +1,6 @@
 pub mod button;
 pub mod clock;
+pub mod focused_window;
 pub mod script;
 pub mod workspaces;
 
@@ -40,6 +41,7 @@ pub enum ModuleState {
     Script(script::ScriptState),
     Button(button::ButtonState),
     Workspace(workspaces::WorkspaceState),
+    FocusedWindow(focused_window::FocusedWindowState),
 }
 
 /// Module data events routed through the Iced message bus.
@@ -92,6 +94,7 @@ pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     map.insert("clock", clock_ctor as ModuleConstructor);
     map.insert("script", script_ctor as ModuleConstructor);
     map.insert("workspaces", workspaces_ctor as ModuleConstructor);
+    map.insert("focused-window", focused_window_ctor as ModuleConstructor);
     map
 }
 
@@ -138,6 +141,10 @@ fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
     Box::new(workspaces::WorkspacesModule::new(config))
 }
 
+fn focused_window_ctor(_mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    Box::new(focused_window::FocusedWindowModule::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,6 +187,12 @@ mod tests {
     fn build_registry_contains_workspaces() {
         let registry = build_registry();
         assert!(registry.contains_key("workspaces"));
+    }
+
+    #[test]
+    fn build_registry_contains_focused_window() {
+        let registry = build_registry();
+        assert!(registry.contains_key("focused-window"));
     }
 
     #[test]

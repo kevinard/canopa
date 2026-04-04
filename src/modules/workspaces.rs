@@ -63,7 +63,7 @@ impl crate::modules::Module for WorkspacesModule {
                 } else {
                     Color::from_rgb8(0xcd, 0xd6, 0xf4) // color.text
                 };
-                let ws_num = (ws.idx as u32) + 1;
+                let ws_num = ws.idx as u32;
                 let label_cfg = self.config.workspaces.get(&ws_num);
                 // Collapsed: show icon if configured, else number (AC #2, #4).
                 let content = label_cfg
@@ -120,7 +120,7 @@ impl crate::modules::Module for WorkspacesModule {
                 } else {
                     Color::from_rgb8(0xcd, 0xd6, 0xf4)
                 };
-                let ws_num = (ws.idx as u32) + 1;
+                let ws_num = ws.idx as u32;
                 let label_cfg = self.config.workspaces.get(&ws_num);
                 let icon_str = label_cfg.and_then(|c| c.icon.as_deref());
                 let label_str = label_cfg.and_then(|c| c.label.as_deref());
@@ -129,8 +129,9 @@ impl crate::modules::Module for WorkspacesModule {
                 let mut parts: Vec<iced::Element<'_, crate::app::Message>> = Vec::new();
                 if let Some(icon) = icon_str {
                     parts.push(text(icon).size(12).color(fg).into());
+                } else {
+                    parts.push(text(format!("{ws_num}")).size(12).color(fg).into());
                 }
-                parts.push(text(format!("{ws_num}")).size(12).color(fg).into());
                 if let Some(lbl) = label_str {
                     parts.push(text(lbl).size(12).color(fg).into());
                 }

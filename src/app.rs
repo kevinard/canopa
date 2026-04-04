@@ -8,6 +8,7 @@ use iced_layershell::to_layer_message;
 use crate::config::{Config, ExpandTrigger};
 use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
+use crate::modules::focused_window;
 use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::workspaces;
 use crate::modules::{
@@ -253,6 +254,12 @@ impl App {
                     }
                     Event::WindowFocusChanged { id } => {
                         self.shared.niri.focused_window_id = id;
+                        // Only push when focusing an actual window. When id is None, focus moved
+                        // to a layer-shell surface (e.g. hovering the bar); retain the last
+                        // known title so the module doesn't blank on bar hover.
+                        if id.is_some() {
+                            self.push_focused_window_state(); // AC #1 — update within one frame
+                        }
                     }
                     Event::WorkspaceActivated { id, focused } => {
                         // Update is_active per output and is_focused globally.
@@ -286,7 +293,30 @@ impl App {
                             }
                         }
                     }
-                    _ => {} // Other events ignored; Stories 4.3/4.4 extend this
+                    Event::WindowsChanged { windows } => {
+                        // Full snapshot — rebuild window cache and derive focused id.
+                        self.shared.niri.focused_window_id =
+                            windows.iter().find(|w| w.is_focused).map(|w| w.id);
+                        self.shared.niri.windows =
+                            windows.into_iter().map(|w| (w.id, w)).collect();
+                        self.push_focused_window_state();
+                    }
+                    Event::WindowOpenedOrChanged { window } => {
+                        // If this window is now focused, update focused_window_id.
+                        if window.is_focused {
+                            self.shared.niri.focused_window_id = Some(window.id);
+                        }
+                        self.shared.niri.windows.insert(window.id, window);
+                        self.push_focused_window_state();
+                    }
+                    Event::WindowClosed { id } => {
+                        self.shared.niri.windows.remove(&id);
+                        if self.shared.niri.focused_window_id == Some(id) {
+                            self.shared.niri.focused_window_id = None;
+                        }
+                        self.push_focused_window_state();
+                    }
+                    _ => {} // Other events (keyboard layouts, urgency, etc.) not used yet
                 }
                 Task::none()
             }
@@ -445,6 +475,27 @@ impl App {
         iced::theme::Style {
             background_color: Color::from_rgb8(0x1e, 0x1e, 0x2e), // Catppuccin Mocha Base
             text_color: Color::from_rgb8(0xcd, 0xd6, 0xf4),       // Catppuccin Mocha Text
+        }
+    }
+
+    /// Derive the current focused window title from NiriState and push it to all
+    /// focused-window module instances in shared.modules.
+    fn push_focused_window_state(&mut self) {
+        let title = self
+            .shared
+            .niri
+            .focused_window_id
+            .and_then(|id| self.shared.niri.windows.get(&id))
+            .and_then(|w| w.title.clone());
+        for (_, module) in &self.modules {
+            if module.id() == ModuleId::new("focused-window") {
+                self.shared.modules.insert(
+                    module.id(),
+                    ModuleState::FocusedWindow(focused_window::FocusedWindowState {
+                        title: title.clone(),
+                    }),
+                );
+            }
         }
     }
 }
@@ -1055,5 +1106,165 @@ mod tests {
         })));
         // No panic; no workspaces in state yet.
         assert!(app.shared.niri.workspaces.is_empty());
+    }
+
+    // --- Story 4.4 helpers and tests ---
+
+    fn make_focused_window_app() -> App {
+        use crate::config::{ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "focused-window".into(),
+            zone: Zone::Center,
+            params: ModuleParams::None,
+        }];
+        App::new(config)
+    }
+
+    fn make_window(id: u64, title: Option<&str>, is_focused: bool) -> niri_ipc::Window {
+        niri_ipc::Window {
+            id,
+            title: title.map(|t| t.to_string()),
+            app_id: None,
+            pid: None,
+            workspace_id: None,
+            is_focused,
+            is_floating: false,
+            is_urgent: false,
+            layout: niri_ipc::WindowLayout {
+                pos_in_scrolling_layout: None,
+                tile_size: (0.0, 0.0),
+                window_size: (0, 0),
+                tile_pos_in_workspace_view: None,
+                window_offset_in_tile: (0.0, 0.0),
+            },
+            focus_timestamp: None,
+        }
+    }
+
+    #[test]
+    fn focused_window_state_updated_on_window_focus_changed() {
+        use niri_ipc::Event;
+        let mut app = make_focused_window_app();
+        // Pre-populate window cache with a window that has a title.
+        let win = make_window(1, Some("Firefox"), false);
+        app.shared.niri.windows.insert(1, win);
+        // Send focus event for that window.
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+            id: Some(1),
+        })));
+        let id = ModuleId::new("focused-window");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::FocusedWindow(s)) => {
+                assert_eq!(s.title.as_deref(), Some("Firefox"));
+            }
+            other => panic!("expected FocusedWindow state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn focused_window_title_retained_when_focus_moves_to_none() {
+        // When WindowFocusChanged { id: None } fires (bar hover / layer-shell focus),
+        // the module should retain the last known title rather than blanking.
+        use niri_ipc::Event;
+        let mut app = make_focused_window_app();
+        // First, focus a real window so the module has a title.
+        let win = make_window(1, Some("Firefox"), false);
+        app.shared.niri.windows.insert(1, win);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+            id: Some(1),
+        })));
+        // Now simulate bar hover: niri sends WindowFocusChanged { id: None }.
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+            id: None,
+        })));
+        let id = ModuleId::new("focused-window");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::FocusedWindow(s)) => {
+                // Title must be retained — NOT cleared by the None focus event.
+                assert_eq!(s.title.as_deref(), Some("Firefox"));
+            }
+            other => panic!("expected FocusedWindow state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn focused_window_state_updated_on_windows_changed() {
+        // WindowsChanged must derive focused_window_id from is_focused — not rely on prior state.
+        // This covers the startup case where WindowsChanged arrives before any WindowFocusChanged.
+        use niri_ipc::Event;
+        let mut app = make_focused_window_app();
+        // No pre-existing focused_window_id — simulates bar startup.
+        assert!(app.shared.niri.focused_window_id.is_none());
+        let win = make_window(2, Some("Helix"), true);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowsChanged {
+            windows: vec![win],
+        })));
+        let id = ModuleId::new("focused-window");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::FocusedWindow(s)) => {
+                assert_eq!(s.title.as_deref(), Some("Helix"));
+            }
+            other => panic!("expected FocusedWindow state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn focused_window_state_updated_on_window_opened_or_changed() {
+        use niri_ipc::Event;
+        let mut app = make_focused_window_app();
+        let win = make_window(3, Some("Terminal"), true);
+        let _ = app.update(Message::Niri(NiriEvent::Event(
+            Event::WindowOpenedOrChanged { window: win },
+        )));
+        let id = ModuleId::new("focused-window");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::FocusedWindow(s)) => {
+                assert_eq!(s.title.as_deref(), Some("Terminal"));
+            }
+            other => panic!("expected FocusedWindow state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn focused_window_state_cleared_on_window_closed() {
+        use niri_ipc::Event;
+        let mut app = make_focused_window_app();
+        // Seed focused window.
+        let win = make_window(4, Some("Nautilus"), true);
+        app.shared.niri.windows.insert(4, win);
+        app.shared.niri.focused_window_id = Some(4);
+        app.shared.modules.insert(
+            ModuleId::new("focused-window"),
+            ModuleState::FocusedWindow(crate::modules::focused_window::FocusedWindowState {
+                title: Some("Nautilus".into()),
+            }),
+        );
+        // Close the focused window.
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowClosed {
+            id: 4,
+        })));
+        let id = ModuleId::new("focused-window");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::FocusedWindow(s)) => {
+                assert!(
+                    s.title.is_none(),
+                    "title should be None after window closed"
+                );
+            }
+            other => panic!("expected FocusedWindow state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn focused_window_state_not_updated_without_focused_window_module() {
+        use niri_ipc::Event;
+        let mut app = App::new(make_config()); // no focused-window module
+        let win = make_window(1, Some("Firefox"), true);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowsChanged {
+            windows: vec![win],
+        })));
+        let id = ModuleId::new("focused-window");
+        assert!(!app.shared.modules.contains_key(&id));
     }
 }
