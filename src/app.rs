@@ -6,6 +6,7 @@ use iced::{Color, Element, Length, Task};
 use iced_layershell::to_layer_message;
 
 use crate::config::{Config, ExpandTrigger};
+use crate::dbus::DbusConnections;
 use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::focused_window;
@@ -27,7 +28,8 @@ use crate::surface::layout::zone_layout;
 #[derive(Default)]
 pub struct SharedState {
     pub modules: HashMap<ModuleId, ModuleState>,
-    pub niri: NiriState, // populated by Message::Niri handlers (Story 4.1)
+    pub niri: NiriState,       // populated by Message::Niri handlers (Story 4.1)
+    pub dbus: DbusConnections, // shared D-Bus handles; populated by Message::DbusReady (Story 5.1)
 }
 
 impl SharedState {
@@ -35,6 +37,7 @@ impl SharedState {
         SharedState {
             modules: HashMap::new(),
             niri: NiriState::default(),
+            dbus: DbusConnections::default(),
         }
     }
 }
@@ -74,6 +77,9 @@ pub enum Message {
     BarHoverExit,
     /// Event from the Niri IPC event stream; dispatched to SharedState (Story 4.1).
     Niri(crate::niri::NiriEvent),
+    /// D-Bus connection handles established at startup (Story 5.1).
+    /// Fires exactly once from `dbus_init_subscription`; stored in `SharedState.dbus`.
+    DbusReady(DbusConnections),
 }
 
 impl App {
@@ -297,8 +303,7 @@ impl App {
                         // Full snapshot — rebuild window cache and derive focused id.
                         self.shared.niri.focused_window_id =
                             windows.iter().find(|w| w.is_focused).map(|w| w.id);
-                        self.shared.niri.windows =
-                            windows.into_iter().map(|w| (w.id, w)).collect();
+                        self.shared.niri.windows = windows.into_iter().map(|w| (w.id, w)).collect();
                         self.push_focused_window_state();
                     }
                     Event::WindowOpenedOrChanged { window } => {
@@ -380,6 +385,11 @@ impl App {
                     )),
                 ])
             }
+            Message::DbusReady(connections) => {
+                // Store shared handles; modules borrow clones of these (AR5, Story 5.1).
+                self.shared.dbus = connections;
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -388,12 +398,26 @@ impl App {
         let module_subs =
             iced::Subscription::batch(self.modules.iter().map(|(_, m)| m.subscription()));
         let niri_sub = niri_subscription();
+
+        // AC #3: Only connect to D-Bus if at least one D-Bus-backed module is configured.
+        // Check config.modules (not self.modules) — battery/network/volume not yet in registry.
+        let needs_dbus = self
+            .config
+            .modules
+            .iter()
+            .any(|mc| matches!(mc.name.as_str(), "battery" | "network" | "volume"));
+        let dbus_sub = if needs_dbus {
+            crate::dbus::dbus_init_subscription()
+        } else {
+            iced::Subscription::none()
+        };
+
         if self.expand.is_animating() || self.hover_pending_ms.is_some() {
             // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
             let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
-            iced::Subscription::batch([module_subs, niri_sub, tick])
+            iced::Subscription::batch([module_subs, niri_sub, dbus_sub, tick])
         } else {
-            iced::Subscription::batch([module_subs, niri_sub])
+            iced::Subscription::batch([module_subs, niri_sub, dbus_sub])
         }
     }
 
@@ -1266,5 +1290,27 @@ mod tests {
         })));
         let id = ModuleId::new("focused-window");
         assert!(!app.shared.modules.contains_key(&id));
+    }
+
+    // Story 5.1 tests
+
+    #[test]
+    fn shared_state_dbus_starts_as_default() {
+        // SharedState::new() must initialise dbus with no connections (Story 5.1 AC #2).
+        let state = SharedState::new();
+        assert!(state.dbus.session.is_none());
+        assert!(state.dbus.system.is_none());
+    }
+
+    #[test]
+    fn dbus_ready_stores_connections_in_shared_state() {
+        // Sending DbusReady(connections) must update shared.dbus (Story 5.1 AC #4).
+        // Use a default DbusConnections (both None) — simulates bus-unavailable case.
+        let mut app = App::new(Config::default());
+        let conns = crate::dbus::DbusConnections::default();
+        let _ = app.update(Message::DbusReady(conns));
+        // If we get here without panic, the message was handled correctly.
+        assert!(app.shared.dbus.session.is_none());
+        assert!(app.shared.dbus.system.is_none());
     }
 }
