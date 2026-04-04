@@ -129,8 +129,13 @@ fn script_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
     }
 }
 
-fn workspaces_ctor(_mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    Box::new(workspaces::WorkspacesModule::new())
+fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    use crate::config::ModuleParams;
+    let config = match &mc.params {
+        ModuleParams::Workspaces(c) => c.clone(),
+        _ => crate::config::WorkspacesConfig::default(),
+    };
+    Box::new(workspaces::WorkspacesModule::new(config))
 }
 
 #[cfg(test)]

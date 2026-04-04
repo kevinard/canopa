@@ -10,12 +10,14 @@ pub struct WorkspaceState {
 /// Workspace module: shows all niri workspaces as pills, fed by niri IPC via SharedState.
 pub struct WorkspacesModule {
     id: crate::modules::ModuleId,
+    config: crate::config::WorkspacesConfig,
 }
 
 impl WorkspacesModule {
-    pub fn new() -> Self {
+    pub fn new(config: crate::config::WorkspacesConfig) -> Self {
         WorkspacesModule {
             id: crate::modules::ModuleId::new("workspaces"),
+            config,
         }
     }
 }
@@ -43,7 +45,7 @@ impl crate::modules::Module for WorkspacesModule {
             _ => return iced::widget::Space::new().into(), // Loading/Unavailable → empty (UX-DR16)
         };
 
-        // Sort by idx to match Niri's scrollable-tiling order (AC #6).
+        // Sort by idx to match Niri's scrollable-tiling order.
         let mut sorted: Vec<_> = workspaces.iter().collect();
         sorted.sort_by_key(|ws| ws.idx);
 
@@ -61,7 +63,14 @@ impl crate::modules::Module for WorkspacesModule {
                 } else {
                     Color::from_rgb8(0xcd, 0xd6, 0xf4) // color.text
                 };
-                container(text(format!("{}", ws.idx + 1)).size(10).color(fg))
+                let ws_num = (ws.idx as u32) + 1;
+                let label_cfg = self.config.workspaces.get(&ws_num);
+                // Collapsed: show icon if configured, else number (AC #2, #4).
+                let content = label_cfg
+                    .and_then(|c| c.icon.as_deref())
+                    .map(|icon| icon.to_string())
+                    .unwrap_or_else(|| format!("{ws_num}"));
+                container(text(content).size(10).color(fg))
                     .width(32)
                     .height(20)
                     .align_x(Alignment::Center)
@@ -86,7 +95,7 @@ impl crate::modules::Module for WorkspacesModule {
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{column, container, text};
+        use iced::widget::{column, container, row, text};
         use iced::{Alignment, Background, Color, Length};
 
         let workspaces = match state {
@@ -111,13 +120,27 @@ impl crate::modules::Module for WorkspacesModule {
                 } else {
                     Color::from_rgb8(0xcd, 0xd6, 0xf4)
                 };
-                // Story 4.3 will add label alongside number.
-                // For 4.2, full-width pill shows number only.
-                container(text(format!("{}", ws.idx + 1)).size(12).color(fg))
+                let ws_num = (ws.idx as u32) + 1;
+                let label_cfg = self.config.workspaces.get(&ws_num);
+                let icon_str = label_cfg.and_then(|c| c.icon.as_deref());
+                let label_str = label_cfg.and_then(|c| c.label.as_deref());
+
+                // Expanded: icon (if any) + number + label (if any), space-separated (AC #1, #3).
+                let mut parts: Vec<iced::Element<'_, crate::app::Message>> = Vec::new();
+                if let Some(icon) = icon_str {
+                    parts.push(text(icon).size(12).color(fg).into());
+                }
+                parts.push(text(format!("{ws_num}")).size(12).color(fg).into());
+                if let Some(lbl) = label_str {
+                    parts.push(text(lbl).size(12).color(fg).into());
+                }
+
+                container(row(parts).spacing(4).align_y(Alignment::Center))
                     .width(Length::Fill)
                     .height(20)
-                    .align_x(Alignment::Center)
+                    .align_x(Alignment::Start)
                     .align_y(Alignment::Center)
+                    .padding([0, 6])
                     .style(move |_theme| container::Style {
                         background: Some(Background::Color(bg)),
                         border: iced::Border {
@@ -154,7 +177,7 @@ mod tests {
 
     #[test]
     fn workspaces_module_id_is_workspaces() {
-        let m = WorkspacesModule::new();
+        let m = WorkspacesModule::new(crate::config::WorkspacesConfig::default());
         assert_eq!(m.id().0, "workspaces");
     }
 
@@ -172,5 +195,52 @@ mod tests {
         };
         assert_eq!(state.workspaces.len(), 1);
         assert!(state.workspaces[0].is_focused);
+    }
+
+    // --- Story 4.3 tests: WorkspacesConfig ---
+
+    #[test]
+    fn workspaces_config_default_is_empty() {
+        let cfg = crate::config::WorkspacesConfig::default();
+        assert!(cfg.workspaces.is_empty());
+    }
+
+    #[test]
+    fn workspaces_config_lookup_returns_none_for_unconfigured() {
+        let cfg = crate::config::WorkspacesConfig::default();
+        assert!(cfg.workspaces.get(&1).is_none());
+    }
+
+    #[test]
+    fn workspaces_config_stores_label_and_icon() {
+        use crate::config::{WorkspaceLabelConfig, WorkspacesConfig};
+        let mut cfg = WorkspacesConfig::default();
+        cfg.workspaces.insert(
+            1,
+            WorkspaceLabelConfig {
+                label: Some("web".to_string()),
+                icon: Some(">".to_string()),
+            },
+        );
+        let ws1 = cfg.workspaces.get(&1).unwrap();
+        assert_eq!(ws1.label.as_deref(), Some("web"));
+        assert_eq!(ws1.icon.as_deref(), Some(">"));
+    }
+
+    #[test]
+    fn workspaces_module_accepts_config() {
+        use crate::config::{WorkspaceLabelConfig, WorkspacesConfig};
+        let mut cfg = WorkspacesConfig::default();
+        cfg.workspaces.insert(
+            2,
+            WorkspaceLabelConfig {
+                label: Some("code".to_string()),
+                icon: None,
+            },
+        );
+        let m = WorkspacesModule::new(cfg);
+        assert_eq!(m.id().0, "workspaces");
+        assert!(m.config.workspaces.get(&2).is_some());
+        assert!(m.config.workspaces.get(&1).is_none());
     }
 }

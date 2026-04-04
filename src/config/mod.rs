@@ -48,6 +48,21 @@ pub struct ButtonConfig {
     pub on_click: String,
 }
 
+/// Per-workspace label and icon for the workspaces module.
+#[derive(Debug, Clone)]
+pub struct WorkspaceLabelConfig {
+    pub label: Option<String>,
+    pub icon: Option<String>,
+}
+
+/// Configuration for the workspaces module — optional label/icon per workspace number.
+#[derive(Debug, Clone, Default)]
+pub struct WorkspacesConfig {
+    /// Maps workspace number (1-based: ws.idx + 1) to label/icon config.
+    /// Absent key → workspace shows number only.
+    pub workspaces: std::collections::HashMap<u32, WorkspaceLabelConfig>,
+}
+
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
 #[derive(Debug, Clone)]
 pub enum ModuleParams {
@@ -55,6 +70,7 @@ pub enum ModuleParams {
     Clock(ClockConfig),
     Script(ScriptConfig),
     Button(ButtonConfig),
+    Workspaces(WorkspacesConfig),
 }
 
 /// A single module entry from the config, specifying type, zone placement, and module params.

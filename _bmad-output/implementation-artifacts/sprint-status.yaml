@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-29
-last_updated: 2026-04-04 # 1-3 → done, 1-2 → done, 1-4 → done, 1-5 → done, epic-2 → in-progress, 2-1 → done, 2-2 → done, 2-3 → done, 2-4 → done, 2-5 → done, epic-3 → in-progress, 3-1 → done, 3-2 → review, 3-3 → review, epic-4 → in-progress, 4-1 → review, 4-2 → ready-for-dev
+last_updated: 2026-04-04 # 1-3 → done, 1-2 → done, 1-4 → done, 1-5 → done, epic-2 → in-progress, 2-1 → done, 2-2 → done, 2-3 → done, 2-4 → done, 2-5 → done, epic-3 → in-progress, 3-1 → done, 3-2 → review, 3-3 → review, epic-4 → in-progress, 4-1 → review, 4-2 → ready-for-dev, 4-3 → review
 project: niribar
 project_key: NOKEY
 tracking_system: file-system
@@ -72,7 +72,7 @@ development_status:
   epic-4: in-progress
   4-1-connect-to-niri-ipc-and-subscribe-to-events: review
   4-2-workspace-module-live-workspace-indicators: review
-  4-3-workspace-module-user-defined-labels-and-icons: backlog
+  4-3-workspace-module-user-defined-labels-and-icons: review
   4-4-focused-window-module-current-window-title: backlog
   4-5-graceful-degradation-on-non-niri-compositors: backlog
   epic-4-retrospective: optional
