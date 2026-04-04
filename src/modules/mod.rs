@@ -1,6 +1,7 @@
 pub mod button;
 pub mod clock;
 pub mod script;
+pub mod workspaces;
 
 use std::collections::HashMap;
 
@@ -38,6 +39,7 @@ pub enum ModuleState {
     Clock(clock::ClockState),
     Script(script::ScriptState),
     Button(button::ButtonState),
+    Workspace(workspaces::WorkspaceState),
 }
 
 /// Module data events routed through the Iced message bus.
@@ -89,6 +91,7 @@ pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     map.insert("button", button_ctor as ModuleConstructor);
     map.insert("clock", clock_ctor as ModuleConstructor);
     map.insert("script", script_ctor as ModuleConstructor);
+    map.insert("workspaces", workspaces_ctor as ModuleConstructor);
     map
 }
 
@@ -124,6 +127,10 @@ fn script_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
         }
         _ => panic!("script_ctor called with non-Script params — this is a programming error"),
     }
+}
+
+fn workspaces_ctor(_mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    Box::new(workspaces::WorkspacesModule::new())
 }
 
 #[cfg(test)]
@@ -162,6 +169,12 @@ mod tests {
     fn build_registry_contains_button() {
         let registry = build_registry();
         assert!(registry.contains_key("button"));
+    }
+
+    #[test]
+    fn build_registry_contains_workspaces() {
+        let registry = build_registry();
+        assert!(registry.contains_key("workspaces"));
     }
 
     #[test]

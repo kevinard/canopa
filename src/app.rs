@@ -9,6 +9,7 @@ use crate::config::{Config, ExpandTrigger};
 use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::script::{ScriptEvent, ScriptState};
+use crate::modules::workspaces;
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
 };
@@ -237,12 +238,55 @@ impl App {
                 use niri_ipc::Event;
                 match event {
                     Event::WorkspacesChanged { workspaces } => {
+                        // Update each workspace module's ModuleState so view_*() gets fresh data (AC #7).
+                        for (_, module) in &self.modules {
+                            if module.id() == ModuleId::new("workspaces") {
+                                self.shared.modules.insert(
+                                    module.id(),
+                                    ModuleState::Workspace(workspaces::WorkspaceState {
+                                        workspaces: workspaces.clone(),
+                                    }),
+                                );
+                            }
+                        }
                         self.shared.niri.workspaces = workspaces;
                     }
                     Event::WindowFocusChanged { id } => {
                         self.shared.niri.focused_window_id = id;
                     }
-                    _ => {} // Other events ignored in Story 4.1; Stories 4.2/4.4 extend this
+                    Event::WorkspaceActivated { id, focused } => {
+                        // Update is_active per output and is_focused globally.
+                        let output = self
+                            .shared
+                            .niri
+                            .workspaces
+                            .iter()
+                            .find(|ws| ws.id == id)
+                            .and_then(|ws| ws.output.clone());
+
+                        for ws in &mut self.shared.niri.workspaces {
+                            if output.is_some() && ws.output == output {
+                                ws.is_active = ws.id == id;
+                            }
+                            if focused {
+                                ws.is_focused = ws.id == id;
+                            }
+                        }
+
+                        // Propagate updated workspace list to module state.
+                        let updated = self.shared.niri.workspaces.clone();
+                        for (_, module) in &self.modules {
+                            if module.id() == ModuleId::new("workspaces") {
+                                self.shared.modules.insert(
+                                    module.id(),
+                                    ModuleState::Workspace(workspaces::WorkspaceState {
+                                        workspaces: updated.clone(),
+                                    }),
+                                );
+                            }
+                        }
+                    }
+                    _ => {} // Other events ignored; Stories 4.3/4.4 extend this
                 }
                 Task::none()
             }
@@ -858,12 +902,158 @@ mod tests {
     fn niri_unknown_event_is_ignored() {
         use niri_ipc::Event;
         let mut app = App::new(make_config());
+        // KeyboardLayoutsChanged is not handled — verify no panic and no state change.
+        let _ = app.update(Message::Niri(NiriEvent::Event(
+            Event::KeyboardLayoutsChanged {
+                keyboard_layouts: niri_ipc::KeyboardLayouts {
+                    names: vec![],
+                    current_idx: 0,
+                },
+            },
+        )));
+        assert!(!app.shared.niri.connected);
+        assert!(app.shared.niri.workspaces.is_empty());
+    }
+
+    // --- Story 4.2 tests ---
+
+    fn make_workspaces_app() -> App {
+        use crate::config::{ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "workspaces".into(),
+            zone: Zone::Top,
+            params: ModuleParams::None,
+        }];
+        App::new(config)
+    }
+
+    fn make_workspace(idx: u8, is_focused: bool) -> niri_ipc::Workspace {
+        niri_ipc::Workspace {
+            id: idx as u64 + 1,
+            idx,
+            name: None,
+            output: Some("eDP-1".to_string()),
+            is_urgent: false,
+            is_active: is_focused,
+            is_focused,
+            active_window_id: None,
+        }
+    }
+
+    #[test]
+    fn workspaces_module_state_updated_on_workspace_change() {
+        use niri_ipc::Event;
+        let mut app = make_workspaces_app();
+        let ws = make_workspace(0, true);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![ws],
+        })));
+        let id = ModuleId::new("workspaces");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Workspace(s)) => assert_eq!(s.workspaces.len(), 1),
+            other => panic!("expected Workspace state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn workspace_module_focused_workspace_reflected_in_state() {
+        use niri_ipc::Event;
+        let mut app = make_workspaces_app();
+        let ws0 = make_workspace(0, false);
+        let ws1 = make_workspace(1, true);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![ws0, ws1],
+        })));
+        let id = ModuleId::new("workspaces");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Workspace(s)) => {
+                assert_eq!(s.workspaces.len(), 2);
+                let focused: Vec<_> = s.workspaces.iter().filter(|w| w.is_focused).collect();
+                assert_eq!(focused.len(), 1);
+                assert_eq!(focused[0].idx, 1);
+            }
+            other => panic!("expected Workspace state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn workspaces_module_state_not_updated_without_workspaces_module_in_config() {
+        use niri_ipc::Event;
+        let mut app = App::new(make_config()); // no workspaces module
+        let ws = make_workspace(0, true);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![ws],
+        })));
+        let id = ModuleId::new("workspaces");
+        assert!(!app.shared.modules.contains_key(&id));
+    }
+
+    #[test]
+    fn workspaces_changed_order_preserved_in_state() {
+        use niri_ipc::Event;
+        let mut app = make_workspaces_app();
+        // Send in non-sorted order — state stores as-received; view sorts by idx
+        let ws2 = make_workspace(2, false);
+        let ws0 = make_workspace(0, true);
+        let ws1 = make_workspace(1, false);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![ws2, ws0, ws1],
+        })));
+        let id = ModuleId::new("workspaces");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Workspace(s)) => {
+                assert_eq!(s.workspaces.len(), 3);
+                // Stored in arrival order (idx: 2, 0, 1) — view sorts, state doesn't
+                assert_eq!(s.workspaces[0].idx, 2);
+                assert_eq!(s.workspaces[1].idx, 0);
+                assert_eq!(s.workspaces[2].idx, 1);
+            }
+            other => panic!("expected Workspace state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn workspace_activated_updates_focused_pill() {
+        use niri_ipc::Event;
+        let mut app = make_workspaces_app();
+        // Seed two workspaces; idx=0 starts focused.
+        let ws0 = make_workspace(0, true);
+        let ws1 = make_workspace(1, false);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![ws0, ws1],
+        })));
+
+        // User switches to workspace 2 (id=2, idx=1).
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
+            id: 2,
+            focused: true,
+        })));
+
+        let id = ModuleId::new("workspaces");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Workspace(s)) => {
+                let focused: Vec<_> = s.workspaces.iter().filter(|w| w.is_focused).collect();
+                assert_eq!(focused.len(), 1, "exactly one workspace should be focused");
+                assert_eq!(
+                    focused[0].idx, 1,
+                    "workspace with idx=1 should now be focused"
+                );
+            }
+            other => panic!("expected Workspace state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn workspace_activated_no_panic_when_workspaces_empty() {
+        use niri_ipc::Event;
+        let mut app = make_workspaces_app();
+        // WorkspaceActivated fires before WorkspacesChanged seeds the list — must not panic.
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
             id: 1,
             focused: true,
         })));
-        // No panic, state unchanged
-        assert!(!app.shared.niri.connected);
+        // No panic; no workspaces in state yet.
         assert!(app.shared.niri.workspaces.is_empty());
     }
 }
