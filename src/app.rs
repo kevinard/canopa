@@ -12,6 +12,8 @@ use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
 };
+use crate::niri::subscription::niri_subscription;
+use crate::niri::{NiriEvent, NiriState};
 use crate::surface::expand::ExpandState;
 use crate::surface::frame::module_frame;
 use crate::surface::layout::zone_layout;
@@ -23,13 +25,14 @@ use crate::surface::layout::zone_layout;
 #[derive(Default)]
 pub struct SharedState {
     pub modules: HashMap<ModuleId, ModuleState>,
-    // niri: NiriState — added in Story 4.1
+    pub niri: NiriState, // populated by Message::Niri handlers (Story 4.1)
 }
 
 impl SharedState {
     pub fn new() -> Self {
         SharedState {
             modules: HashMap::new(),
+            niri: NiriState::default(),
         }
     }
 }
@@ -67,6 +70,8 @@ pub enum Message {
     BarHoverEnter,
     /// Pointer left bar surface; may trigger collapse when expand_trigger = Hover (Story 3.3).
     BarHoverExit,
+    /// Event from the Niri IPC event stream; dispatched to SharedState (Story 4.1).
+    Niri(crate::niri::NiriEvent),
 }
 
 impl App {
@@ -218,6 +223,29 @@ impl App {
                     _ => Task::none(), // Already collapsed or collapsing — no action
                 }
             }
+            Message::Niri(NiriEvent::Connected) => {
+                self.shared.niri.connected = true;
+                Task::none()
+            }
+            Message::Niri(NiriEvent::Unavailable) => {
+                // Running on a non-Niri compositor or connection dropped.
+                // Set connected = false (already default); niri modules will render nothing.
+                self.shared.niri.connected = false;
+                Task::none()
+            }
+            Message::Niri(NiriEvent::Event(event)) => {
+                use niri_ipc::Event;
+                match event {
+                    Event::WorkspacesChanged { workspaces } => {
+                        self.shared.niri.workspaces = workspaces;
+                    }
+                    Event::WindowFocusChanged { id } => {
+                        self.shared.niri.focused_window_id = id;
+                    }
+                    _ => {} // Other events ignored in Story 4.1; Stories 4.2/4.4 extend this
+                }
+                Task::none()
+            }
             Message::Tick => {
                 // Advance animation progress by one tick (~16ms, targeting 60fps).
                 const EXPAND_MS: f32 = 280.0;
@@ -285,12 +313,13 @@ impl App {
     pub fn subscription(&self) -> iced::Subscription<Message> {
         let module_subs =
             iced::Subscription::batch(self.modules.iter().map(|(_, m)| m.subscription()));
+        let niri_sub = niri_subscription();
         if self.expand.is_animating() || self.hover_pending_ms.is_some() {
             // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
             let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
-            iced::Subscription::batch([module_subs, tick])
+            iced::Subscription::batch([module_subs, niri_sub, tick])
         } else {
-            module_subs
+            iced::Subscription::batch([module_subs, niri_sub])
         }
     }
 
@@ -766,5 +795,75 @@ mod tests {
         let mut app = App::new(make_hover_config());
         let _ = app.update(Message::BarClick);
         assert_eq!(app.expand, ExpandState::Collapsed); // unchanged
+    }
+
+    // --- Story 4.1 tests ---
+
+    #[test]
+    fn niri_connected_event_sets_connected() {
+        let mut app = App::new(make_config());
+        let _ = app.update(Message::Niri(NiriEvent::Connected));
+        assert!(app.shared.niri.connected);
+    }
+
+    #[test]
+    fn niri_unavailable_event_does_not_crash() {
+        let mut app = App::new(make_config());
+        let _ = app.update(Message::Niri(NiriEvent::Unavailable));
+        assert!(!app.shared.niri.connected);
+    }
+
+    #[test]
+    fn niri_workspaces_changed_stores_workspaces() {
+        use niri_ipc::{Event, Workspace};
+        let mut app = App::new(make_config());
+        let ws = Workspace {
+            id: 1,
+            idx: 0,
+            name: None,
+            output: Some("eDP-1".to_string()),
+            is_urgent: false,
+            is_active: true,
+            is_focused: true,
+            active_window_id: None,
+        };
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![ws],
+        })));
+        assert_eq!(app.shared.niri.workspaces.len(), 1);
+    }
+
+    #[test]
+    fn niri_window_focus_changed_stores_id() {
+        use niri_ipc::Event;
+        let mut app = App::new(make_config());
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+            id: Some(42),
+        })));
+        assert_eq!(app.shared.niri.focused_window_id, Some(42));
+    }
+
+    #[test]
+    fn niri_window_focus_cleared() {
+        use niri_ipc::Event;
+        let mut app = App::new(make_config());
+        app.shared.niri.focused_window_id = Some(99);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+            id: None,
+        })));
+        assert_eq!(app.shared.niri.focused_window_id, None);
+    }
+
+    #[test]
+    fn niri_unknown_event_is_ignored() {
+        use niri_ipc::Event;
+        let mut app = App::new(make_config());
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
+            id: 1,
+            focused: true,
+        })));
+        // No panic, state unchanged
+        assert!(!app.shared.niri.connected);
+        assert!(app.shared.niri.workspaces.is_empty());
     }
 }

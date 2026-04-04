@@ -11,3 +11,4 @@ kdl = "6.5.0"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 chrono = { version = "0.4", features = ["clock"] }
+niri-ipc = "25.11.0"
