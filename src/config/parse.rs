@@ -2,7 +2,8 @@ use kdl::KdlDocument;
 
 use super::{
     BarConfig, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig,
-    ModuleParams, NetworkConfig, ScriptConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    ModuleParams, NetworkConfig, ScriptConfig, VolumeConfig, WorkspaceLabelConfig,
+    WorkspacesConfig,
 };
 use crate::modules::Zone;
 
@@ -69,6 +70,8 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
             ModuleParams::Battery(parse_battery_params(node, i)?)
         } else if name == "network" {
             ModuleParams::Network(NetworkConfig)
+        } else if name == "volume" {
+            ModuleParams::Volume(parse_volume_params(node, i)?)
         } else if name == "clock" {
             ModuleParams::Clock(parse_clock_params(node, i)?)
         } else if name == "script" {
@@ -107,6 +110,27 @@ fn parse_battery_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Batte
         }
     };
     Ok(BatteryConfig { critical_threshold })
+}
+
+fn parse_volume_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> {
+    let Some(children) = node.children() else {
+        return Ok(VolumeConfig::default());
+    };
+    let step = match children.get("step") {
+        None => VolumeConfig::default().step,
+        Some(n) => {
+            let v = n.entries().first().map(|e| e.value());
+            match v.and_then(|v| v.as_integer()) {
+                Some(n) if (1..=100).contains(&n) => n as u8,
+                Some(n) => anyhow::bail!(
+                    "modules[{idx}].volume.step: value {n} out of range. \
+                     Expected: integer 1–100."
+                ),
+                None => anyhow::bail!("modules[{idx}].volume.step: expected an integer value."),
+            }
+        }
+    };
+    Ok(VolumeConfig { step })
 }
 
 fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {

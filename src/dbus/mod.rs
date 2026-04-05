@@ -1,5 +1,6 @@
 pub mod networkmanager;
 pub mod upower;
+pub mod wireplumber;
 
 /// Shared D-Bus connections, established once at startup (Story 5.1).
 ///

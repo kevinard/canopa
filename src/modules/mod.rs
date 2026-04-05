@@ -4,6 +4,7 @@ pub mod clock;
 pub mod focused_window;
 pub mod network;
 pub mod script;
+pub mod volume;
 pub mod workspaces;
 
 use std::collections::HashMap;
@@ -41,6 +42,7 @@ pub enum ModuleState {
     Unavailable,
     Battery(battery::BatteryState),
     Network(network::NetworkState),
+    Volume(volume::VolumeState),
     Clock(clock::ClockState),
     Script(script::ScriptState),
     Button(button::ButtonState),
@@ -97,6 +99,7 @@ pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     map.insert("battery", battery_ctor as ModuleConstructor);
     map.insert("button", button_ctor as ModuleConstructor);
     map.insert("network", network_ctor as ModuleConstructor);
+    map.insert("volume", volume_ctor as ModuleConstructor);
     map.insert("clock", clock_ctor as ModuleConstructor);
     map.insert("script", script_ctor as ModuleConstructor);
     map.insert("workspaces", workspaces_ctor as ModuleConstructor);
@@ -106,6 +109,15 @@ pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
 
 fn network_ctor(_mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
     Box::new(network::NetworkModule::new())
+}
+
+fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    use crate::config::{ModuleParams, VolumeConfig};
+    let step = match &mc.params {
+        ModuleParams::Volume(cfg) => cfg.step,
+        _ => VolumeConfig::default().step,
+    };
+    Box::new(volume::VolumeModule::new(step))
 }
 
 fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {

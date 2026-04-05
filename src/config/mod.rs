@@ -83,12 +83,26 @@ impl Default for BatteryConfig {
 #[derive(Debug, Clone, Default)]
 pub struct NetworkConfig;
 
+/// Configuration for the volume module — scroll step in percent.
+#[derive(Debug, Clone)]
+pub struct VolumeConfig {
+    /// Volume adjustment step per scroll event (percent, 1–100). Default: 5.
+    pub step: u8,
+}
+
+impl Default for VolumeConfig {
+    fn default() -> Self {
+        VolumeConfig { step: 5 }
+    }
+}
+
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
 #[derive(Debug, Clone)]
 pub enum ModuleParams {
     None,
     Battery(BatteryConfig),
     Network(NetworkConfig),
+    Volume(VolumeConfig),
     Clock(ClockConfig),
     Script(ScriptConfig),
     Button(ButtonConfig),

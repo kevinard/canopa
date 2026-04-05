@@ -13,6 +13,7 @@ use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::focused_window;
 use crate::modules::network::{NetworkEvent, NetworkState};
 use crate::modules::script::{ScriptEvent, ScriptState};
+use crate::modules::volume::{VolumeEvent, VolumeState};
 use crate::modules::workspaces;
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
@@ -83,6 +84,17 @@ pub enum Message {
     Battery(BatteryEvent),
     /// Network connectivity state from D-Bus subscription (Story 5.3).
     Network(NetworkEvent),
+    /// Volume state from PA compat subscription (Story 5.4).
+    Volume(VolumeEvent),
+    /// Scroll-triggered volume adjustment (Story 5.4).
+    VolumeAdjust {
+        step: u8,
+        up: bool,
+    },
+    /// Scroll-up event on a module (Story 5.4).
+    ModuleScrollUp(ModuleId),
+    /// Scroll-down event on a module (Story 5.4).
+    ModuleScrollDown(ModuleId),
     /// D-Bus connection handles established at startup (Story 5.1).
     /// Fires exactly once from `dbus_init_subscription`; stored in `SharedState.dbus`.
     DbusReady(DbusConnections),
@@ -408,6 +420,58 @@ impl App {
                 }
                 Task::none()
             }
+            Message::Volume(VolumeEvent::StateChanged { volume, muted }) => {
+                self.push_volume_state(volume, muted);
+                Task::none()
+            }
+            Message::Volume(VolumeEvent::Unavailable) => {
+                for (_, module) in &self.modules {
+                    if module.id().0 == "volume" {
+                        self.shared
+                            .modules
+                            .insert(module.id(), ModuleState::Unavailable);
+                    }
+                }
+                Task::none()
+            }
+            Message::VolumeAdjust { step, up } => {
+                let arg = if up {
+                    format!("{step}%+")
+                } else {
+                    format!("{step}%-")
+                };
+                // Fire-and-forget: wpctl adjusts PA volume; PA subscription emits StateChanged.
+                // "-l 1" caps at 100%.
+                tokio::task::spawn(async move {
+                    let _ = tokio::process::Command::new("wpctl")
+                        .args(["set-volume", "-l", "1", "@DEFAULT_AUDIO_SINK@", &arg])
+                        .status()
+                        .await;
+                });
+                Task::none()
+            }
+            Message::ModuleScrollUp(id) => {
+                for (_, module) in &self.modules {
+                    if module.id() == id {
+                        if let Some(msg) = module.on_interaction(InteractionEvent::ScrollUp) {
+                            return Task::done(msg);
+                        }
+                        break;
+                    }
+                }
+                Task::none()
+            }
+            Message::ModuleScrollDown(id) => {
+                for (_, module) in &self.modules {
+                    if module.id() == id {
+                        if let Some(msg) = module.on_interaction(InteractionEvent::ScrollDown) {
+                            return Task::done(msg);
+                        }
+                        break;
+                    }
+                }
+                Task::none()
+            }
             Message::Battery(BatteryEvent::StateChanged {
                 percentage,
                 is_charging,
@@ -476,6 +540,14 @@ impl App {
             iced::Subscription::none()
         };
 
+        // AC #9: Only subscribe if volume module is present.
+        // No zbus connection needed — PA auto-discovers its socket.
+        let volume_sub = if self.modules.iter().any(|(_, m)| m.id().0 == "volume") {
+            crate::dbus::wireplumber::volume_subscription()
+        } else {
+            iced::Subscription::none()
+        };
+
         if self.expand.is_animating() || self.hover_pending_ms.is_some() {
             // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
             let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
@@ -485,10 +557,18 @@ impl App {
                 dbus_sub,
                 battery_sub,
                 network_sub,
+                volume_sub,
                 tick,
             ])
         } else {
-            iced::Subscription::batch([module_subs, niri_sub, dbus_sub, battery_sub, network_sub])
+            iced::Subscription::batch([
+                module_subs,
+                niri_sub,
+                dbus_sub,
+                battery_sub,
+                network_sub,
+                volume_sub,
+            ])
         }
     }
 
@@ -527,10 +607,22 @@ impl App {
                 module.view_collapsed(&state)
             };
 
+            let scroll_id = id.clone();
             let view: Element<'_, Message> = mouse_area(module_frame(module_view, hovered))
                 .on_enter(Message::ModuleHoverEnter(id.clone()))
                 .on_exit(Message::ModuleHoverExit(id.clone()))
                 .on_press(Message::ModuleClick(id))
+                .on_scroll(move |delta| {
+                    let up = match delta {
+                        iced::mouse::ScrollDelta::Lines { y, .. }
+                        | iced::mouse::ScrollDelta::Pixels { y, .. } => y > 0.0,
+                    };
+                    if up {
+                        Message::ModuleScrollUp(scroll_id.clone())
+                    } else {
+                        Message::ModuleScrollDown(scroll_id.clone())
+                    }
+                })
                 .into();
 
             match zone {
@@ -601,6 +693,17 @@ impl App {
                         connectivity: connectivity.clone(),
                         label: label.clone(),
                     }),
+                );
+            }
+        }
+    }
+
+    fn push_volume_state(&mut self, volume: f64, muted: bool) {
+        for (_, module) in &self.modules {
+            if module.id().0 == "volume" {
+                self.shared.modules.insert(
+                    module.id(),
+                    ModuleState::Volume(VolumeState { volume, muted }),
                 );
             }
         }
@@ -1523,6 +1626,58 @@ mod tests {
             label: None,
         }));
         let id = ModuleId::new("network");
+        assert!(!app.shared.modules.contains_key(&id));
+    }
+
+    // Story 5.4 tests
+
+    fn make_volume_app() -> App {
+        use crate::config::{ModuleConfig, ModuleParams, VolumeConfig};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "volume".into(),
+            zone: Zone::Bottom,
+            params: ModuleParams::Volume(VolumeConfig { step: 5 }),
+        }];
+        App::new(config)
+    }
+
+    #[test]
+    fn volume_state_changed_updates_module() {
+        let mut app = make_volume_app();
+        let _ = app.update(Message::Volume(VolumeEvent::StateChanged {
+            volume: 60.0,
+            muted: false,
+        }));
+        let id = ModuleId::new("volume");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Volume(s)) => {
+                assert!((s.volume - 60.0).abs() < 0.001);
+                assert!(!s.muted);
+            }
+            other => panic!("expected Volume state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn volume_unavailable_marks_module_unavailable() {
+        let mut app = make_volume_app();
+        let _ = app.update(Message::Volume(VolumeEvent::Unavailable));
+        let id = ModuleId::new("volume");
+        assert!(matches!(
+            app.shared.modules.get(&id),
+            Some(ModuleState::Unavailable)
+        ));
+    }
+
+    #[test]
+    fn volume_state_not_updated_without_volume_module() {
+        let mut app = App::new(Config::default()); // no volume module
+        let _ = app.update(Message::Volume(VolumeEvent::StateChanged {
+            volume: 50.0,
+            muted: false,
+        }));
+        let id = ModuleId::new("volume");
         assert!(!app.shared.modules.contains_key(&id));
     }
 }
