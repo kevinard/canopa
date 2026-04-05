@@ -108,6 +108,14 @@ pub enum Message {
     BarFocusLost,
     /// Escape key pressed while bar has keyboard focus (Story 6.1).
     EscapePressed,
+    /// Down arrow key pressed while bar is focused — move to next module in zone (Story 6.2).
+    FocusMoveNext,
+    /// Up arrow key pressed while bar is focused — move to previous module in zone (Story 6.2).
+    FocusMovePrev,
+    /// Tab pressed while bar is focused — jump to first module in next zone (Story 6.2).
+    FocusNextZone,
+    /// Shift+Tab pressed while bar is focused — jump to first module in previous zone (Story 6.2).
+    FocusPrevZone,
 }
 
 impl App {
@@ -537,6 +545,54 @@ impl App {
                     KeyboardInteractivity::None,
                 ))
             }
+            Message::FocusMoveNext => {
+                if self.focused_module.is_none() {
+                    // Bar has Wayland keyboard focus (we received this event) but BarFocusGained
+                    // didn't fire — iced-layershell only emits Window::Focused when
+                    // current_surface changes, so re-focus after Escape is silently dropped.
+                    // Delegate to BarFocusGained to acquire focus first; user re-presses to navigate.
+                    return Task::done(Message::BarFocusGained);
+                }
+                if let Some(ref current) = self.focused_module.clone()
+                    && let Some(next) = self.nav_next(current)
+                {
+                    self.focused_module = Some(next);
+                }
+                Task::none()
+            }
+            Message::FocusMovePrev => {
+                if self.focused_module.is_none() {
+                    return Task::done(Message::BarFocusGained);
+                }
+                if let Some(ref current) = self.focused_module.clone()
+                    && let Some(prev) = self.nav_prev(current)
+                {
+                    self.focused_module = Some(prev);
+                }
+                Task::none()
+            }
+            Message::FocusNextZone => {
+                if self.focused_module.is_none() {
+                    return Task::done(Message::BarFocusGained);
+                }
+                if let Some(ref current) = self.focused_module.clone()
+                    && let Some(next) = self.nav_next_zone(current)
+                {
+                    self.focused_module = Some(next);
+                }
+                Task::none()
+            }
+            Message::FocusPrevZone => {
+                if self.focused_module.is_none() {
+                    return Task::done(Message::BarFocusGained);
+                }
+                if let Some(ref current) = self.focused_module.clone()
+                    && let Some(prev) = self.nav_prev_zone(current)
+                {
+                    self.focused_module = Some(prev);
+                }
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -711,6 +767,51 @@ impl App {
             background_color: Color::from_rgb8(0x1e, 0x1e, 0x2e), // Catppuccin Mocha Base
             text_color: Color::from_rgb8(0xcd, 0xd6, 0xf4),       // Catppuccin Mocha Text
         }
+    }
+
+    /// Returns the ID of the next module in the bar (global order, wraps from last to first).
+    fn nav_next(&self, current: &ModuleId) -> Option<ModuleId> {
+        let idx = self.modules.iter().position(|(_, m)| m.id() == *current)?;
+        let next_idx = (idx + 1) % self.modules.len();
+        Some(self.modules[next_idx].1.id())
+    }
+
+    /// Returns the ID of the previous module in the bar (global order, wraps from first to last).
+    fn nav_prev(&self, current: &ModuleId) -> Option<ModuleId> {
+        let idx = self.modules.iter().position(|(_, m)| m.id() == *current)?;
+        let prev_idx = (idx + self.modules.len() - 1) % self.modules.len();
+        Some(self.modules[prev_idx].1.id())
+    }
+
+    /// Returns the ID of the first module in the next non-empty zone (Tab cycle: Top→Center→Bottom→Top).
+    fn nav_next_zone(&self, current: &ModuleId) -> Option<ModuleId> {
+        let idx = self.modules.iter().position(|(_, m)| m.id() == *current)?;
+        let current_zone = &self.modules[idx].0;
+        let cycle = [Zone::Top, Zone::Center, Zone::Bottom];
+        let start = cycle.iter().position(|z| z == current_zone).unwrap_or(0);
+        for step in 1..=3 {
+            let next_zone = &cycle[(start + step) % 3];
+            if let Some((_, m)) = self.modules.iter().find(|(z, _)| z == next_zone) {
+                return Some(m.id());
+            }
+        }
+        None
+    }
+
+    /// Returns the ID of the first module in the previous non-empty zone (Shift+Tab cycle: Top→Bottom→Center→Top).
+    fn nav_prev_zone(&self, current: &ModuleId) -> Option<ModuleId> {
+        let idx = self.modules.iter().position(|(_, m)| m.id() == *current)?;
+        let current_zone = &self.modules[idx].0;
+        // Reverse cycle: Top(0)→Bottom(2)→Center(1)→Top(0)
+        let cycle = [Zone::Top, Zone::Bottom, Zone::Center];
+        let start = cycle.iter().position(|z| z == current_zone).unwrap_or(0);
+        for step in 1..=3 {
+            let prev_zone = &cycle[(start + step) % 3];
+            if let Some((_, m)) = self.modules.iter().find(|(z, _)| z == prev_zone) {
+                return Some(m.id());
+            }
+        }
+        None
     }
 
     /// Push new battery state to all battery module instances in shared.modules.
@@ -1812,5 +1913,146 @@ mod tests {
         let mut app = App::new(make_config());
         let _ = app.update(Message::BarFocusGained);
         assert!(app.focused_module.is_none());
+    }
+
+    // --- Story 6.2 tests ---
+
+    fn make_nav_app() -> App {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![
+            ModuleConfig {
+                name: "clock".into(),
+                zone: Zone::Top,
+                params: ModuleParams::Clock(ClockConfig::default()),
+            },
+            ModuleConfig {
+                name: "battery".into(),
+                zone: Zone::Top,
+                params: ModuleParams::None,
+            },
+            ModuleConfig {
+                name: "network".into(),
+                zone: Zone::Center,
+                params: ModuleParams::None,
+            },
+            ModuleConfig {
+                name: "workspaces".into(),
+                zone: Zone::Bottom,
+                params: ModuleParams::None,
+            },
+        ];
+        App::new(config)
+    }
+
+    #[test]
+    fn focus_move_next_advances_to_next_module() {
+        let mut app = make_nav_app();
+        let _ = app.update(Message::BarFocusGained); // focused = clock (index 0)
+        let _ = app.update(Message::FocusMoveNext);
+        assert_eq!(app.focused_module, Some(ModuleId::new("battery"))); // index 1
+    }
+
+    #[test]
+    fn focus_move_next_crosses_zone_boundary() {
+        // Down from battery (top zone, index 1) should move to network (center zone, index 2).
+        let mut app = make_nav_app();
+        let _ = app.update(Message::BarFocusGained);
+        let _ = app.update(Message::FocusMoveNext); // clock → battery
+        let _ = app.update(Message::FocusMoveNext); // battery → network (crosses zone)
+        assert_eq!(app.focused_module, Some(ModuleId::new("network")));
+    }
+
+    #[test]
+    fn focus_move_next_wraps_from_last_to_first() {
+        // Down from workspaces (last module) wraps back to clock (first module).
+        let mut app = make_nav_app();
+        app.focused_module = Some(ModuleId::new("workspaces")); // last module
+        let _ = app.update(Message::FocusMoveNext);
+        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+    }
+
+    #[test]
+    fn focus_move_prev_retreats_to_previous_module() {
+        let mut app = make_nav_app();
+        let _ = app.update(Message::BarFocusGained);
+        let _ = app.update(Message::FocusMoveNext); // → battery
+        let _ = app.update(Message::FocusMovePrev); // → clock
+        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+    }
+
+    #[test]
+    fn focus_move_prev_wraps_from_first_to_last() {
+        // Up from clock (first module) wraps to workspaces (last module).
+        let mut app = make_nav_app();
+        let _ = app.update(Message::BarFocusGained); // focused = clock
+        let _ = app.update(Message::FocusMovePrev);
+        assert_eq!(app.focused_module, Some(ModuleId::new("workspaces")));
+    }
+
+    #[test]
+    fn focus_next_zone_jumps_to_center() {
+        let mut app = make_nav_app();
+        let _ = app.update(Message::BarFocusGained); // top: clock
+        let _ = app.update(Message::FocusNextZone); // → center: network
+        assert_eq!(app.focused_module, Some(ModuleId::new("network")));
+    }
+
+    #[test]
+    fn focus_next_zone_wraps_bottom_to_top() {
+        let mut app = make_nav_app();
+        app.focused_module = Some(ModuleId::new("workspaces")); // bottom zone
+        let _ = app.update(Message::FocusNextZone); // → top: clock
+        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+    }
+
+    #[test]
+    fn focus_prev_zone_from_top_jumps_to_bottom() {
+        let mut app = make_nav_app();
+        let _ = app.update(Message::BarFocusGained); // top: clock
+        let _ = app.update(Message::FocusPrevZone); // reverse cycle: top → bottom
+        assert_eq!(app.focused_module, Some(ModuleId::new("workspaces")));
+    }
+
+    #[test]
+    fn focus_next_zone_skips_empty_zone() {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+        // Only top and bottom; center is empty.
+        let mut config = Config::default();
+        config.modules = vec![
+            ModuleConfig {
+                name: "clock".into(),
+                zone: Zone::Top,
+                params: ModuleParams::Clock(ClockConfig::default()),
+            },
+            ModuleConfig {
+                name: "workspaces".into(),
+                zone: Zone::Bottom,
+                params: ModuleParams::None,
+            },
+        ];
+        let mut app = App::new(config);
+        let _ = app.update(Message::BarFocusGained); // top: clock
+        let _ = app.update(Message::FocusNextZone); // skip empty center → bottom
+        assert_eq!(app.focused_module, Some(ModuleId::new("workspaces")));
+    }
+
+    #[test]
+    fn navigation_keys_when_not_focused_are_noop() {
+        let mut app = make_nav_app();
+        // Bar not focused — focused_module is None
+        let _ = app.update(Message::FocusMoveNext);
+        let _ = app.update(Message::FocusMovePrev);
+        let _ = app.update(Message::FocusNextZone);
+        let _ = app.update(Message::FocusPrevZone);
+        assert!(app.focused_module.is_none());
+    }
+
+    #[test]
+    fn focus_prev_zone_from_center_jumps_to_top() {
+        let mut app = make_nav_app();
+        app.focused_module = Some(ModuleId::new("network")); // center zone
+        let _ = app.update(Message::FocusPrevZone); // reverse cycle: center → top
+        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
     }
 }

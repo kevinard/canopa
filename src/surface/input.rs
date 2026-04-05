@@ -15,6 +15,25 @@ pub fn keyboard_focus_subscription() -> Subscription<Message> {
             key: keyboard::Key::Named(Named::Escape),
             ..
         }) => Some(Message::EscapePressed),
+        Event::Keyboard(keyboard::Event::KeyPressed {
+            key: keyboard::Key::Named(Named::ArrowDown),
+            ..
+        }) => Some(Message::FocusMoveNext),
+        Event::Keyboard(keyboard::Event::KeyPressed {
+            key: keyboard::Key::Named(Named::ArrowUp),
+            ..
+        }) => Some(Message::FocusMovePrev),
+        Event::Keyboard(keyboard::Event::KeyPressed {
+            key: keyboard::Key::Named(Named::Tab),
+            modifiers,
+            ..
+        }) => {
+            if modifiers.shift() {
+                Some(Message::FocusPrevZone)
+            } else {
+                Some(Message::FocusNextZone)
+            }
+        }
         _ => None,
     })
 }
