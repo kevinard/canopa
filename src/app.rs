@@ -5,7 +5,7 @@ use iced::widget::{Space, column, container, mouse_area, row};
 use iced::{Element, Length, Task};
 use iced_layershell::to_layer_message;
 
-use crate::config::{Config, ExpandTrigger};
+use crate::config::{Config, Edge, ExpandTrigger};
 use crate::dbus::DbusConnections;
 use crate::modules::battery::{BatteryEvent, BatteryState};
 use crate::modules::button::{ButtonEvent, ButtonState};
@@ -845,16 +845,12 @@ impl App {
             .height(border_h)
             .style(border_style);
 
-        let bar_content: Element<'_, Message> = if is_horizontal {
-            column![content, border_strip]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            row![content, border_strip]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+        // Border strip sits on the inner screen edge (the side facing screen content).
+        let bar_content: Element<'_, Message> = match self.config.bar.edge {
+            Edge::Left => row![content, border_strip].width(Length::Fill).height(Length::Fill).into(),
+            Edge::Right => row![border_strip, content].width(Length::Fill).height(Length::Fill).into(),
+            Edge::Top => column![content, border_strip].width(Length::Fill).height(Length::Fill).into(),
+            Edge::Bottom => column![border_strip, content].width(Length::Fill).height(Length::Fill).into(),
         };
 
         // Wrap entire bar in mouse_area for click-to-toggle and hover detection.
