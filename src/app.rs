@@ -741,32 +741,24 @@ impl App {
         let focus_sub = keyboard_focus_subscription();
         let ipc_sub = ipc_subscription();
 
-        if self.expand.is_animating() || self.hover_pending_ms.is_some() {
-            // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
-            let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
-            iced::Subscription::batch([
-                module_subs,
-                niri_sub,
-                dbus_sub,
-                battery_sub,
-                network_sub,
-                volume_sub,
-                focus_sub,
-                ipc_sub,
-                tick,
-            ])
+        // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
+        let tick_sub = if self.expand.is_animating() || self.hover_pending_ms.is_some() {
+            iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick)
         } else {
-            iced::Subscription::batch([
-                module_subs,
-                niri_sub,
-                dbus_sub,
-                battery_sub,
-                network_sub,
-                volume_sub,
-                focus_sub,
-                ipc_sub,
-            ])
-        }
+            iced::Subscription::none()
+        };
+
+        iced::Subscription::batch([
+            module_subs,
+            niri_sub,
+            dbus_sub,
+            battery_sub,
+            network_sub,
+            volume_sub,
+            focus_sub,
+            ipc_sub,
+            tick_sub,
+        ])
     }
 
     pub fn view(&self) -> Element<'_, Message> {
