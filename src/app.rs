@@ -57,6 +57,9 @@ pub struct App {
     /// Which module currently has keyboard focus; None when bar is unfocused.
     /// Moves to per-surface SurfaceState in Story 7.1.
     pub focused_module: Option<ModuleId>,
+    /// Whether the focused module is in keyboard-interaction mode (Story 6.3).
+    /// When true, arrow keys scroll the active module; Escape deactivates back to navigation.
+    pub module_activated: bool,
     /// Current expand/collapse state. Single-surface for Stories 3.1–6.x;
     /// moves to per-surface state (HashMap<SurfaceId, SurfaceState>) in Story 7.1.
     pub expand: ExpandState,
@@ -116,6 +119,8 @@ pub enum Message {
     FocusNextZone,
     /// Shift+Tab pressed while bar is focused — jump to first module in previous zone (Story 6.2).
     FocusPrevZone,
+    /// Enter or Space pressed while bar is focused — activate focused module (Story 6.3).
+    KeyboardActivate,
 }
 
 impl App {
@@ -136,6 +141,7 @@ impl App {
             modules,
             hovered_module: None,
             focused_module: None,
+            module_activated: false,
             expand: ExpandState::default(), // starts Collapsed
             bar_hovered: false,
             hover_pending_ms: None,
@@ -524,10 +530,12 @@ impl App {
                     .or_else(|| self.modules.iter().find(|(z, _)| *z == Zone::Bottom))
                     .map(|(_, m)| m.id());
                 self.focused_module = first;
+                self.module_activated = false;
                 Task::none()
             }
             Message::BarFocusLost => {
                 self.focused_module = None;
+                self.module_activated = false;
                 // Restore OnDemand so the bar can be focused again (AC #3).
                 use iced_layershell::reexport::KeyboardInteractivity;
                 Task::done(Message::KeyboardInteractivityChange(
@@ -535,6 +543,11 @@ impl App {
                 ))
             }
             Message::EscapePressed => {
+                // If a module is activated, Escape deactivates it (returns to navigation mode).
+                if self.module_activated {
+                    self.module_activated = false;
+                    return Task::none();
+                }
                 if self.focused_module.is_none() {
                     return Task::none();
                 }
@@ -553,6 +566,21 @@ impl App {
                     // Delegate to BarFocusGained to acquire focus first; user re-presses to navigate.
                     return Task::done(Message::BarFocusGained);
                 }
+                // Interaction mode (Story 6.3): module is activated — arrow key scrolls it.
+                if self.module_activated {
+                    if let Some(ref id) = self.focused_module.clone() {
+                        for (_, m) in &self.modules {
+                            if m.id() == *id {
+                                if let Some(msg) = m.on_interaction(InteractionEvent::ScrollDown) {
+                                    return Task::done(msg);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    return Task::none();
+                }
+                // Navigation mode: move to next module.
                 if let Some(ref current) = self.focused_module.clone()
                     && let Some(next) = self.nav_next(current)
                 {
@@ -564,6 +592,21 @@ impl App {
                 if self.focused_module.is_none() {
                     return Task::done(Message::BarFocusGained);
                 }
+                // Interaction mode (Story 6.3): module is activated — arrow key scrolls it.
+                if self.module_activated {
+                    if let Some(ref id) = self.focused_module.clone() {
+                        for (_, m) in &self.modules {
+                            if m.id() == *id {
+                                if let Some(msg) = m.on_interaction(InteractionEvent::ScrollUp) {
+                                    return Task::done(msg);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    return Task::none();
+                }
+                // Navigation mode: move to previous module.
                 if let Some(ref current) = self.focused_module.clone()
                     && let Some(prev) = self.nav_prev(current)
                 {
@@ -575,6 +618,7 @@ impl App {
                 if self.focused_module.is_none() {
                     return Task::done(Message::BarFocusGained);
                 }
+                self.module_activated = false; // deactivate on zone jump
                 if let Some(ref current) = self.focused_module.clone()
                     && let Some(next) = self.nav_next_zone(current)
                 {
@@ -586,10 +630,36 @@ impl App {
                 if self.focused_module.is_none() {
                     return Task::done(Message::BarFocusGained);
                 }
+                self.module_activated = false; // deactivate on zone jump
                 if let Some(ref current) = self.focused_module.clone()
                     && let Some(prev) = self.nav_prev_zone(current)
                 {
                     self.focused_module = Some(prev);
+                }
+                Task::none()
+            }
+            Message::KeyboardActivate => {
+                if self.focused_module.is_none() {
+                    return Task::none();
+                }
+                if let Some(ref id) = self.focused_module.clone() {
+                    for (_, module) in &self.modules {
+                        if module.id() == *id {
+                            // Scrollable module: Enter/Space enters interaction mode.
+                            // Check scroll capability without side effects (VolumeModule constructs
+                            // VolumeAdjust and returns it — no I/O).
+                            if module.on_interaction(InteractionEvent::ScrollDown).is_some() {
+                                self.module_activated = true;
+                                return Task::none();
+                            }
+                            // Clickable module: fire the click action.
+                            // ButtonModule spawns the command as a side effect and returns None.
+                            if let Some(msg) = module.on_interaction(InteractionEvent::Clicked) {
+                                return Task::done(msg);
+                            }
+                            break;
+                        }
+                    }
                 }
                 Task::none()
             }
@@ -2054,5 +2124,162 @@ mod tests {
         app.focused_module = Some(ModuleId::new("network")); // center zone
         let _ = app.update(Message::FocusPrevZone); // reverse cycle: center → top
         assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+    }
+
+    // --- Story 6.3 tests ---
+
+    fn make_interact_app() -> App {
+        use crate::config::{ButtonConfig, ClockConfig, ModuleConfig, ModuleParams, VolumeConfig};
+        let mut config = Config::default();
+        config.modules = vec![
+            ModuleConfig {
+                name: "clock".into(),
+                zone: Zone::Top,
+                params: ModuleParams::Clock(ClockConfig::default()),
+            },
+            ModuleConfig {
+                name: "volume".into(),
+                zone: Zone::Top,
+                params: ModuleParams::Volume(VolumeConfig::default()),
+            },
+            ModuleConfig {
+                name: "button".into(),
+                zone: Zone::Center,
+                params: ModuleParams::Button(ButtonConfig {
+                    label: "test".into(),
+                    icon: ">".into(),
+                    on_click: "true".into(), // harmless no-op command
+                }),
+            },
+        ];
+        App::new(config)
+    }
+
+    #[test]
+    fn keyboard_activate_when_not_focused_is_noop() {
+        let mut app = make_interact_app();
+        let _ = app.update(Message::KeyboardActivate);
+        assert!(app.focused_module.is_none());
+        assert!(!app.module_activated);
+    }
+
+    #[test]
+    fn keyboard_activate_on_volume_enters_interaction_mode() {
+        let mut app = make_interact_app();
+        let _ = app.update(Message::BarFocusGained); // → clock
+        let _ = app.update(Message::FocusMoveNext); // → volume
+        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
+        assert!(!app.module_activated);
+        let _ = app.update(Message::KeyboardActivate);
+        // Volume is scrollable → interaction mode entered, focus unchanged
+        assert!(app.module_activated);
+        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
+    }
+
+    #[test]
+    fn arrow_keys_scroll_when_module_activated() {
+        let mut app = make_interact_app();
+        let _ = app.update(Message::BarFocusGained); // → clock
+        let _ = app.update(Message::FocusMoveNext); // → volume
+        let _ = app.update(Message::KeyboardActivate); // activate volume
+        assert!(app.module_activated);
+        // Down arrow scrolls (fires VolumeAdjust via Task::done), focus stays on volume
+        let _ = app.update(Message::FocusMoveNext);
+        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
+        assert!(app.module_activated); // still activated
+        // Up arrow scrolls too
+        let _ = app.update(Message::FocusMovePrev);
+        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
+    }
+
+    #[test]
+    fn escape_deactivates_without_releasing_focus() {
+        let mut app = make_interact_app();
+        let _ = app.update(Message::BarFocusGained); // → clock
+        let _ = app.update(Message::FocusMoveNext); // → volume
+        let _ = app.update(Message::KeyboardActivate); // activate volume
+        assert!(app.module_activated);
+        let _ = app.update(Message::EscapePressed);
+        // Deactivates, focus remains on volume
+        assert!(!app.module_activated);
+        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
+    }
+
+    #[test]
+    fn arrow_keys_navigate_when_module_not_activated() {
+        let mut app = make_interact_app();
+        let _ = app.update(Message::BarFocusGained); // → clock
+        // Down arrow without activation navigates normally (even on volume)
+        let _ = app.update(Message::FocusMoveNext); // clock → volume
+        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
+        assert!(!app.module_activated);
+        // Down again: volume is NOT activated, so navigate (wraps to button)
+        let _ = app.update(Message::FocusMoveNext); // volume → button (global wrap)
+        assert_eq!(app.focused_module, Some(ModuleId::new("button")));
+    }
+
+    #[test]
+    fn tab_deactivates_and_navigates_zone() {
+        let mut app = make_interact_app();
+        let _ = app.update(Message::BarFocusGained); // → clock
+        let _ = app.update(Message::FocusMoveNext); // → volume
+        let _ = app.update(Message::KeyboardActivate); // activate volume
+        assert!(app.module_activated);
+        // Tab deactivates and jumps to next zone
+        let _ = app.update(Message::FocusNextZone); // → button (center)
+        assert!(!app.module_activated);
+        assert_eq!(app.focused_module, Some(ModuleId::new("button")));
+    }
+
+    #[test]
+    fn shift_tab_deactivates_and_navigates_zone() {
+        let mut app = make_interact_app();
+        let _ = app.update(Message::BarFocusGained); // → clock
+        let _ = app.update(Message::FocusMoveNext); // → volume
+        let _ = app.update(Message::KeyboardActivate); // activate volume
+        assert!(app.module_activated);
+        let _ = app.update(Message::FocusPrevZone); // deactivates, jumps to prev zone
+        assert!(!app.module_activated);
+    }
+
+    #[test]
+    fn keyboard_activate_on_button_does_not_panic_and_does_not_set_activated() {
+        let mut app = make_interact_app();
+        let _ = app.update(Message::BarFocusGained); // → clock
+        let _ = app.update(Message::FocusNextZone); // → button (center)
+        assert_eq!(app.focused_module, Some(ModuleId::new("button")));
+        // Button is not scrollable → fires click (side effect: spawns "true"), no interaction mode
+        let _ = app.update(Message::KeyboardActivate);
+        assert!(!app.module_activated);
+        assert_eq!(app.focused_module, Some(ModuleId::new("button")));
+    }
+
+    #[test]
+    fn keyboard_activate_on_non_interactive_module_is_noop() {
+        let mut app = make_interact_app();
+        let _ = app.update(Message::BarFocusGained); // → clock
+        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+        let _ = app.update(Message::KeyboardActivate);
+        // clock handles neither scroll nor click — no state change
+        assert!(!app.module_activated);
+        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+    }
+
+    #[test]
+    fn focus_move_next_on_unfocused_delegates_to_bar_focus_gained() {
+        let mut app = make_interact_app();
+        assert!(app.focused_module.is_none());
+        let _ = app.update(Message::FocusMoveNext);
+        let _ = app.update(Message::BarFocusGained);
+        assert!(app.focused_module.is_some());
+    }
+
+    #[test]
+    fn focus_move_prev_on_unfocused_delegates_to_bar_focus_gained() {
+        let mut app = make_interact_app();
+        assert!(app.focused_module.is_none());
+        let _ = app.update(Message::FocusMovePrev);
+        let _ = app.update(Message::BarFocusGained);
+        assert!(app.focused_module.is_some());
     }
 }

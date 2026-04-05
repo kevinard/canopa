@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-29
-last_updated: 2026-04-05 # 1-3 → done, 1-2 → done, 1-4 → done, 1-5 → done, epic-2 → in-progress, 2-1 → done, 2-2 → done, 2-3 → done, 2-4 → done, 2-5 → done, epic-3 → in-progress, 3-1 → done, 3-2 → review, 3-3 → review, epic-4 → in-progress, 4-1 → review, 4-2 → ready-for-dev, 4-3 → review, 4-4 → review, epic-5 → in-progress, 5-1 → review, 5-4 → review, epic-6 → in-progress, 6-1 → review, 6-2 → ready-for-dev
+last_updated: 2026-04-05 # 1-3 → done, 1-2 → done, 1-4 → done, 1-5 → done, epic-2 → in-progress, 2-1 → done, 2-2 → done, 2-3 → done, 2-4 → done, 2-5 → done, epic-3 → in-progress, 3-1 → done, 3-2 → review, 3-3 → review, epic-4 → in-progress, 4-1 → review, 4-2 → ready-for-dev, 4-3 → review, 4-4 → review, epic-5 → in-progress, 5-1 → review, 5-4 → review, epic-6 → in-progress, 6-1 → review, 6-2 → ready-for-dev, 6-3 → review
 project: niribar
 project_key: NOKEY
 tracking_system: file-system
@@ -89,7 +89,7 @@ development_status:
   epic-6: in-progress
   6-1-focus-the-bar-via-dedicated-keybind: review
   6-2-navigate-between-modules-with-arrow-keys: review
-  6-3-activate-module-interactions-via-keyboard: backlog
+  6-3-activate-module-interactions-via-keyboard: review
   6-4-toggle-expand-collapse-via-keyboard: backlog
   epic-6-retrospective: optional
 

@@ -34,6 +34,14 @@ pub fn keyboard_focus_subscription() -> Subscription<Message> {
                 Some(Message::FocusNextZone)
             }
         }
+        Event::Keyboard(keyboard::Event::KeyPressed {
+            key: keyboard::Key::Named(Named::Enter),
+            ..
+        }) => Some(Message::KeyboardActivate),
+        Event::Keyboard(keyboard::Event::KeyPressed {
+            key: keyboard::Key::Named(Named::Space),
+            ..
+        }) => Some(Message::KeyboardActivate),
         _ => None,
     })
 }
