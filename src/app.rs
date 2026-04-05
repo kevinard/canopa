@@ -22,6 +22,7 @@ use crate::niri::subscription::niri_subscription;
 use crate::niri::{NiriEvent, NiriState};
 use crate::surface::expand::ExpandState;
 use crate::surface::frame::module_frame;
+use crate::surface::input::keyboard_focus_subscription;
 use crate::surface::layout::zone_layout;
 
 /// Shared state: module data visible to all surfaces.
@@ -53,6 +54,9 @@ pub struct App {
     pub modules: Vec<(Zone, Box<dyn Module>)>,
     /// Tracks which module is currently hovered; moves to SurfaceState in Story 7.1.
     pub hovered_module: Option<ModuleId>,
+    /// Which module currently has keyboard focus; None when bar is unfocused.
+    /// Moves to per-surface SurfaceState in Story 7.1.
+    pub focused_module: Option<ModuleId>,
     /// Current expand/collapse state. Single-surface for Stories 3.1–6.x;
     /// moves to per-surface state (HashMap<SurfaceId, SurfaceState>) in Story 7.1.
     pub expand: ExpandState,
@@ -98,6 +102,12 @@ pub enum Message {
     /// D-Bus connection handles established at startup (Story 5.1).
     /// Fires exactly once from `dbus_init_subscription`; stored in `SharedState.dbus`.
     DbusReady(DbusConnections),
+    /// Layer surface received keyboard focus (Story 6.1).
+    BarFocusGained,
+    /// Layer surface lost keyboard focus (Story 6.1).
+    BarFocusLost,
+    /// Escape key pressed while bar has keyboard focus (Story 6.1).
+    EscapePressed,
 }
 
 impl App {
@@ -117,6 +127,7 @@ impl App {
             shared: SharedState::new(),
             modules,
             hovered_module: None,
+            focused_module: None,
             expand: ExpandState::default(), // starts Collapsed
             bar_hovered: false,
             hover_pending_ms: None,
@@ -495,6 +506,37 @@ impl App {
                 self.shared.dbus = connections;
                 Task::none()
             }
+            Message::BarFocusGained => {
+                // Highlight first module in top zone (AC #1); fall back to center/bottom.
+                let first = self
+                    .modules
+                    .iter()
+                    .find(|(z, _)| *z == Zone::Top)
+                    .or_else(|| self.modules.iter().find(|(z, _)| *z == Zone::Center))
+                    .or_else(|| self.modules.iter().find(|(z, _)| *z == Zone::Bottom))
+                    .map(|(_, m)| m.id());
+                self.focused_module = first;
+                Task::none()
+            }
+            Message::BarFocusLost => {
+                self.focused_module = None;
+                // Restore OnDemand so the bar can be focused again (AC #3).
+                use iced_layershell::reexport::KeyboardInteractivity;
+                Task::done(Message::KeyboardInteractivityChange(
+                    KeyboardInteractivity::OnDemand,
+                ))
+            }
+            Message::EscapePressed => {
+                if self.focused_module.is_none() {
+                    return Task::none();
+                }
+                // Tell compositor to remove keyboard focus from this surface (AC #2).
+                // BarFocusLost fires in response and restores OnDemand.
+                use iced_layershell::reexport::KeyboardInteractivity;
+                Task::done(Message::KeyboardInteractivityChange(
+                    KeyboardInteractivity::None,
+                ))
+            }
             _ => Task::none(),
         }
     }
@@ -548,6 +590,8 @@ impl App {
             iced::Subscription::none()
         };
 
+        let focus_sub = keyboard_focus_subscription();
+
         if self.expand.is_animating() || self.hover_pending_ms.is_some() {
             // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
             let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
@@ -558,6 +602,7 @@ impl App {
                 battery_sub,
                 network_sub,
                 volume_sub,
+                focus_sub,
                 tick,
             ])
         } else {
@@ -568,6 +613,7 @@ impl App {
                 battery_sub,
                 network_sub,
                 volume_sub,
+                focus_sub,
             ])
         }
     }
@@ -598,6 +644,7 @@ impl App {
                 .unwrap_or_default();
             let id = module.id();
             let hovered = self.hovered_module.as_ref() == Some(&id);
+            let focused = self.focused_module.as_ref() == Some(&id);
 
             // During Expanding: show expanded content (opacity fade deferred — no iced wrapper).
             // During Collapsing: show collapsed content immediately (no reverse fade).
@@ -608,7 +655,8 @@ impl App {
             };
 
             let scroll_id = id.clone();
-            let view: Element<'_, Message> = mouse_area(module_frame(module_view, hovered))
+            // module_frame treats hover and keyboard focus identically (UX-DR3).
+            let view: Element<'_, Message> = mouse_area(module_frame(module_view, hovered || focused))
                 .on_enter(Message::ModuleHoverEnter(id.clone()))
                 .on_exit(Message::ModuleHoverExit(id.clone()))
                 .on_press(Message::ModuleClick(id))
@@ -1679,5 +1727,90 @@ mod tests {
         }));
         let id = ModuleId::new("volume");
         assert!(!app.shared.modules.contains_key(&id));
+    }
+
+    // --- Story 6.1 tests ---
+
+    #[test]
+    fn focused_module_starts_none() {
+        let app = App::new(make_config());
+        assert!(app.focused_module.is_none());
+    }
+
+    #[test]
+    fn bar_focus_gained_sets_first_top_module() {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "clock".into(),
+            zone: Zone::Top,
+            params: ModuleParams::Clock(ClockConfig::default()),
+        }];
+        let mut app = App::new(config);
+        let _ = app.update(Message::BarFocusGained);
+        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+    }
+
+    #[test]
+    fn bar_focus_lost_clears_focused_module() {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "clock".into(),
+            zone: Zone::Top,
+            params: ModuleParams::Clock(ClockConfig::default()),
+        }];
+        let mut app = App::new(config);
+        let _ = app.update(Message::BarFocusGained);
+        assert!(app.focused_module.is_some());
+        let _ = app.update(Message::BarFocusLost);
+        assert!(app.focused_module.is_none());
+    }
+
+    #[test]
+    fn escape_pressed_when_focused_does_not_immediately_clear_state() {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "clock".into(),
+            zone: Zone::Top,
+            params: ModuleParams::Clock(ClockConfig::default()),
+        }];
+        let mut app = App::new(config);
+        let _ = app.update(Message::BarFocusGained);
+        assert!(app.focused_module.is_some());
+        // EscapePressed returns KeyboardInteractivityChange(None) — state is cleared by
+        // the subsequent BarFocusLost (after the Wayland round-trip), not immediately.
+        let _ = app.update(Message::EscapePressed);
+        assert!(app.focused_module.is_some());
+    }
+
+    #[test]
+    fn escape_pressed_when_not_focused_is_noop() {
+        let mut app = App::new(make_config());
+        assert!(app.focused_module.is_none());
+        let _ = app.update(Message::EscapePressed);
+        assert!(app.focused_module.is_none());
+    }
+
+    #[test]
+    fn bar_focus_gained_falls_back_to_center_if_no_top_zone() {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "clock".into(),
+            zone: Zone::Center,
+            params: ModuleParams::Clock(ClockConfig::default()),
+        }];
+        let mut app = App::new(config);
+        let _ = app.update(Message::BarFocusGained);
+        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+    }
+
+    #[test]
+    fn bar_focus_gained_with_no_modules_is_noop() {
+        let mut app = App::new(make_config());
+        let _ = app.update(Message::BarFocusGained);
+        assert!(app.focused_module.is_none());
     }
 }

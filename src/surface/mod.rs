@@ -1,7 +1,9 @@
 pub mod expand;
 pub mod frame;
+pub mod input;
 pub mod layout;
 
+use crate::modules::ModuleId;
 use crate::surface::expand::ExpandState;
 
 /// Per-output render state. Tracks surface-specific data (expand/collapse, focus).
@@ -11,7 +13,7 @@ use crate::surface::expand::ExpandState;
 pub struct SurfaceState {
     pub output_name: String,
     pub expand: ExpandState,
-    // focused_module: Option<ModuleId> — added in Story 6.1
+    pub focused_module: Option<ModuleId>,
 }
 
 impl SurfaceState {
@@ -20,6 +22,7 @@ impl SurfaceState {
         SurfaceState {
             output_name,
             expand: ExpandState::default(), // starts Collapsed
+            focused_module: None,
         }
     }
 }
@@ -45,7 +48,14 @@ mod tests {
         let state = SurfaceState {
             output_name: "DP-1".into(),
             expand: ExpandState::Expanded,
+            focused_module: None,
         };
         assert!(state.expand.is_expanded());
+    }
+
+    #[test]
+    fn surface_state_focused_module_starts_none() {
+        let state = SurfaceState::new("DP-1".into());
+        assert!(state.focused_module.is_none());
     }
 }
