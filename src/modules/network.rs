@@ -1,5 +1,5 @@
 use crate::theme;
-use crate::modules::view::{collapsed_icon, expanded_icon_label};
+use crate::modules::view::{collapsed_icon, expanded_icon_label, horizontal_icon_label};
 
 /// Connectivity level reported by the active backend.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -100,6 +100,33 @@ impl crate::modules::Module for NetworkModule {
         });
 
         expanded_icon_label(
+            icon_str(&net.connectivity),
+            icon_color(&net.connectivity),
+            label_text,
+        )
+    }
+
+    fn view_horizontal(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
+        use crate::modules::ModuleState;
+
+        let net = match state {
+            ModuleState::Network(s) => s,
+            _ => return iced::widget::Space::new().into(),
+        };
+
+        let label_text = net.label.clone().unwrap_or_else(|| {
+            match &net.connectivity {
+                NetworkConnectivity::Full => "online",
+                NetworkConnectivity::Limited => "limited",
+                NetworkConnectivity::None => "offline",
+            }
+            .to_owned()
+        });
+
+        horizontal_icon_label(
             icon_str(&net.connectivity),
             icon_color(&net.connectivity),
             label_text,

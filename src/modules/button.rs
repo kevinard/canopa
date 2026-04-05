@@ -115,6 +115,21 @@ impl crate::modules::Module for ButtonModule {
             _ => iced::widget::Space::new().into(),
         }
     }
+
+    fn view_horizontal(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
+        use crate::modules::ModuleState;
+        use crate::modules::view::horizontal_icon_label;
+
+        match state {
+            ModuleState::Button(_) => {
+                horizontal_icon_label(self.icon.clone(), crate::theme::TEXT, self.label.clone())
+            }
+            _ => iced::widget::Space::new().into(),
+        }
+    }
 }
 
 #[cfg(test)]

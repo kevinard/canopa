@@ -1,5 +1,5 @@
 use crate::theme;
-use crate::modules::view::expanded_icon_label;
+use crate::modules::view::{expanded_icon_label, horizontal_icon_label};
 
 /// Runtime state for the battery module, fed by UPower D-Bus signals via app.rs.
 #[derive(Debug, Clone, Default)]
@@ -162,6 +162,32 @@ impl crate::modules::Module for BatteryModule {
         let pct_label = format!("{}%", battery.percentage.round() as u8);
 
         expanded_icon_label(icon_str, color, pct_label)
+    }
+
+    fn view_horizontal(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
+        use crate::modules::ModuleState;
+
+        let battery = match state {
+            ModuleState::Battery(s) => s,
+            _ => return iced::widget::Space::new().into(),
+        };
+
+        let icon_str = if battery.is_charging {
+            "⚡"
+        } else {
+            tier_icon(charge_tier(battery.percentage, self.critical_threshold))
+        };
+        let color = icon_color(
+            battery.percentage,
+            battery.is_charging,
+            self.critical_threshold,
+        );
+        let pct_label = format!("{}%", battery.percentage.round() as u8);
+
+        horizontal_icon_label(icon_str, color, pct_label)
     }
 }
 

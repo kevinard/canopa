@@ -1,6 +1,6 @@
-/// Shared view helpers for collapsed and expanded module layouts.
+/// Shared view helpers for collapsed, expanded, and horizontal module layouts.
 ///
-/// These cover the two layout patterns that repeat across battery, network, volume,
+/// These cover the layout patterns that repeat across battery, network, volume,
 /// and focused-window. Keeping them here avoids duplicating widget construction code
 /// in every module.
 use iced::widget::{container, row, text};
@@ -22,6 +22,37 @@ pub fn collapsed_icon<'a>(icon: impl ToString, color: iced::Color) -> Element<'a
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
         .into()
+}
+
+/// Icon + label row that fills available height — the standard horizontal bar view.
+///
+/// Unlike `expanded_icon_label`, width shrinks to content (no `Length::Fill`), making
+/// it suitable for modules laid out side-by-side in a horizontal bar.
+///
+/// ```text
+/// ┌──────────────┐  height: Fill, padding [0, 6]
+/// │ ⚡  75%      │  icon size 16 + label size 12 (subtext colour)
+/// └──────────────┘
+/// ```
+pub fn horizontal_icon_label<'a>(
+    icon: impl ToString,
+    icon_color: iced::Color,
+    label: impl ToString,
+) -> Element<'a, Message> {
+    container(
+        row![
+            text(icon.to_string()).size(16).color(icon_color),
+            text(label.to_string())
+                .size(12)
+                .color(crate::theme::SUBTEXT),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center),
+    )
+    .height(Length::Fill)
+    .align_y(Alignment::Center)
+    .padding([0, 6])
+    .into()
 }
 
 /// Icon + label row in a padded 20 px-tall container — the standard expanded view.

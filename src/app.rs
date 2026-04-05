@@ -815,7 +815,9 @@ impl App {
 
             // During Expanding: show expanded content (opacity fade deferred — no iced wrapper).
             // During Collapsing: show collapsed content immediately (no reverse fade).
-            let module_view: Element<'_, Message> = if shows_expanded {
+            let module_view: Element<'_, Message> = if is_horizontal {
+                module.view_horizontal(&state)
+            } else if shows_expanded {
                 module.view_expanded(&state)
             } else {
                 module.view_collapsed(&state)

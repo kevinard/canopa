@@ -150,6 +150,57 @@ impl crate::modules::Module for WorkspacesModule {
 
         column(pills).spacing(2).width(Length::Fill).into()
     }
+
+    fn view_horizontal(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
+        use crate::modules::ModuleState;
+        use iced::widget::{container, row, text};
+        use iced::{Alignment, Background, Length};
+
+        let workspaces = match state {
+            ModuleState::Workspace(s) => &s.workspaces,
+            _ => return iced::widget::Space::new().into(),
+        };
+
+        let mut sorted: Vec<_> = workspaces.iter().collect();
+        sorted.sort_by_key(|ws| ws.idx);
+
+        let pills: Vec<iced::Element<'_, crate::app::Message>> = sorted
+            .iter()
+            .map(|ws| {
+                let (bg, fg) = pill_colors(ws.is_focused);
+                let ws_num = ws.idx as u32;
+                let label_cfg = self.config.workspaces.get(&ws_num);
+                // Horizontal: show icon if configured, else number — same as collapsed.
+                let content = label_cfg
+                    .and_then(|c| c.icon.as_deref())
+                    .map(|icon| icon.to_string())
+                    .unwrap_or_else(|| format!("{ws_num}"));
+                container(text(content).size(10).color(fg))
+                    .width(32)
+                    .height(20)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .style(move |_theme| container::Style {
+                        background: Some(Background::Color(bg)),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .into()
+            })
+            .collect();
+
+        container(row(pills).spacing(2))
+            .height(Length::Fill)
+            .align_y(Alignment::Center)
+            .padding([0, 4])
+            .into()
+    }
 }
 
 #[cfg(test)]

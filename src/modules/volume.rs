@@ -1,5 +1,5 @@
 use crate::theme;
-use crate::modules::view::{collapsed_icon, expanded_icon_label};
+use crate::modules::view::{collapsed_icon, expanded_icon_label, horizontal_icon_label};
 
 /// Runtime state for the volume module.
 #[derive(Debug, Clone, Default)]
@@ -104,6 +104,26 @@ impl crate::modules::Module for VolumeModule {
         };
 
         expanded_icon_label(tier_icon(tier), tier_color(tier), pct_label)
+    }
+
+    fn view_horizontal(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
+        use crate::modules::ModuleState;
+
+        let vol = match state {
+            ModuleState::Volume(s) => s,
+            _ => return iced::widget::Space::new().into(),
+        };
+        let tier = volume_tier(vol.volume, vol.muted);
+        let pct_label = if vol.muted {
+            "muted".to_owned()
+        } else {
+            format!("{}%", vol.volume.round() as u64)
+        };
+
+        horizontal_icon_label(tier_icon(tier), tier_color(tier), pct_label)
     }
 
     fn on_interaction(

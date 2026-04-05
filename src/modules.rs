@@ -86,6 +86,11 @@ pub trait Module: Send + Sync {
     fn subscription(&self) -> iced::Subscription<crate::app::Message>;
     fn view_collapsed(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message>;
     fn view_expanded(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message>;
+    /// View for horizontal bars (top/bottom). Modules render single-line, shrink-width content
+    /// suited for a side-by-side row layout. Defaults to `view_expanded`.
+    fn view_horizontal(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
+        self.view_expanded(state)
+    }
     fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {
         None
     }

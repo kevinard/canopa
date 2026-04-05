@@ -115,6 +115,19 @@ impl crate::modules::Module for ScriptModule {
             _ => iced::widget::Space::new().into(),
         }
     }
+
+    fn view_horizontal(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
+        use crate::modules::ModuleState;
+        use crate::modules::view::horizontal_icon_label;
+
+        match state {
+            ModuleState::Script(s) => horizontal_icon_label(">_", crate::theme::TEXT, &s.output),
+            _ => iced::widget::Space::new().into(),
+        }
+    }
 }
 
 #[cfg(test)]

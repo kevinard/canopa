@@ -88,6 +88,37 @@ impl crate::modules::Module for FocusedWindowModule {
         .padding([0, 6])
         .into()
     }
+
+    fn view_horizontal(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
+        use crate::modules::ModuleState;
+        use iced::widget::{container, text};
+        use iced::{Alignment, Length};
+
+        let title = match state {
+            ModuleState::FocusedWindow(s) => &s.title,
+            _ => return iced::widget::Space::new().into(),
+        };
+
+        let Some(title_str) = title.clone() else {
+            return iced::widget::Space::new().into();
+        };
+
+        container(
+            text(title_str)
+                .size(12)
+                .color(theme::TEXT)
+                .wrapping(iced::widget::text::Wrapping::None),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Start)
+        .align_y(Alignment::Center)
+        .padding([0, 6])
+        .into()
+    }
 }
 
 #[cfg(test)]
