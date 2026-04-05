@@ -1,3 +1,6 @@
+use crate::theme;
+use crate::modules::view::expanded_icon_label;
+
 /// Runtime state for the battery module, fed by UPower D-Bus signals via app.rs.
 #[derive(Debug, Clone, Default)]
 pub struct BatteryState {
@@ -45,13 +48,13 @@ fn tier_icon(tier: u8) -> &'static str {
 /// Priority: charging > critical > warning > normal
 fn icon_color(percentage: f64, is_charging: bool, critical_threshold: u8) -> iced::Color {
     if is_charging {
-        return iced::Color::from_rgb8(0xa6, 0xe3, 0xa1); // color.success (green)
+        return theme::SUCCESS;
     }
     let tier = charge_tier(percentage, critical_threshold);
     match tier {
-        0 => iced::Color::from_rgb8(0xf3, 0x8b, 0xa8), // color.critical (red)
-        1 => iced::Color::from_rgb8(0xf9, 0xe2, 0xaf), // color.warning (yellow)
-        _ => iced::Color::from_rgb8(0x89, 0xb4, 0xfa), // color.accent (blue)
+        0 => theme::CRITICAL,
+        1 => theme::WARNING,
+        _ => theme::ACCENT,
     }
 }
 
@@ -104,6 +107,8 @@ impl crate::modules::Module for BatteryModule {
             self.critical_threshold,
         );
 
+        // Battery needs the raw container (not the helper) because it may be stacked
+        // with the CriticalBadge overlay below.
         let icon = container(text(icon_str).size(16).color(color))
             .width(Length::Fill)
             .height(20)
@@ -116,13 +121,11 @@ impl crate::modules::Module for BatteryModule {
             let badge = container(
                 text(badge_label)
                     .size(9)
-                    .color(iced::Color::from_rgb8(0x1e, 0x1e, 0x2e)), // color.base
+                    .color(theme::BASE),
             )
             .padding([1, 3])
             .style(|_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(
-                    iced::Color::from_rgb8(0xf3, 0x8b, 0xa8), // color.critical
-                )),
+                background: Some(iced::Background::Color(theme::CRITICAL)),
                 border: iced::Border {
                     radius: iced::border::Radius::from(4.0),
                     ..Default::default()
@@ -140,8 +143,6 @@ impl crate::modules::Module for BatteryModule {
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{container, row, text};
-        use iced::{Alignment, Length};
 
         let battery = match state {
             ModuleState::Battery(s) => s,
@@ -160,22 +161,7 @@ impl crate::modules::Module for BatteryModule {
         );
         let pct_label = format!("{}%", battery.percentage.round() as u8);
 
-        container(
-            row![
-                text(icon_str).size(16).color(color),
-                text(pct_label)
-                    .size(12)
-                    .color(iced::Color::from_rgb8(0xa6, 0xad, 0xc8)) // color.subtext
-                    .width(Length::Fill),
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center),
-        )
-        .width(Length::Fill)
-        .height(20)
-        .align_y(Alignment::Center)
-        .padding([0, 6])
-        .into()
+        expanded_icon_label(icon_str, color, pct_label)
     }
 }
 
@@ -216,25 +202,21 @@ mod tests {
 
     #[test]
     fn icon_color_charging_returns_success() {
-        let color = icon_color(10.0, true, 15);
-        assert_eq!(color, iced::Color::from_rgb8(0xa6, 0xe3, 0xa1));
+        assert_eq!(icon_color(10.0, true, 15), theme::SUCCESS);
     }
 
     #[test]
     fn icon_color_critical_not_charging_returns_critical() {
-        let color = icon_color(10.0, false, 15);
-        assert_eq!(color, iced::Color::from_rgb8(0xf3, 0x8b, 0xa8));
+        assert_eq!(icon_color(10.0, false, 15), theme::CRITICAL);
     }
 
     #[test]
     fn icon_color_warning_not_charging_returns_warning() {
-        let color = icon_color(25.0, false, 15);
-        assert_eq!(color, iced::Color::from_rgb8(0xf9, 0xe2, 0xaf));
+        assert_eq!(icon_color(25.0, false, 15), theme::WARNING);
     }
 
     #[test]
     fn icon_color_normal_returns_accent() {
-        let color = icon_color(80.0, false, 15);
-        assert_eq!(color, iced::Color::from_rgb8(0x89, 0xb4, 0xfa));
+        assert_eq!(icon_color(80.0, false, 15), theme::ACCENT);
     }
 }

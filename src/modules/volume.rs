@@ -1,3 +1,6 @@
+use crate::theme;
+use crate::modules::view::{collapsed_icon, expanded_icon_label};
+
 /// Runtime state for the volume module.
 #[derive(Debug, Clone, Default)]
 pub struct VolumeState {
@@ -39,9 +42,9 @@ fn tier_icon(tier: u8) -> &'static str {
 
 fn tier_color(tier: u8) -> iced::Color {
     if tier == 0 {
-        iced::Color::from_rgb8(0x6c, 0x70, 0x86) // color.overlay0 — muted/dim
+        theme::OVERLAY0 // muted/dim
     } else {
-        iced::Color::from_rgb8(0x89, 0xb4, 0xfa) // color.accent — normal
+        theme::ACCENT // normal
     }
 }
 
@@ -73,8 +76,6 @@ impl crate::modules::Module for VolumeModule {
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{container, text};
-        use iced::{Alignment, Length};
 
         let vol = match state {
             ModuleState::Volume(s) => s,
@@ -82,12 +83,7 @@ impl crate::modules::Module for VolumeModule {
         };
         let tier = volume_tier(vol.volume, vol.muted);
 
-        container(text(tier_icon(tier)).size(16).color(tier_color(tier)))
-            .width(Length::Fill)
-            .height(20)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .into()
+        collapsed_icon(tier_icon(tier), tier_color(tier))
     }
 
     fn view_expanded(
@@ -95,8 +91,6 @@ impl crate::modules::Module for VolumeModule {
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{container, row, text};
-        use iced::{Alignment, Length};
 
         let vol = match state {
             ModuleState::Volume(s) => s,
@@ -109,22 +103,7 @@ impl crate::modules::Module for VolumeModule {
             format!("{}%", vol.volume.round() as u64)
         };
 
-        container(
-            row![
-                text(tier_icon(tier)).size(16).color(tier_color(tier)),
-                text(pct_label)
-                    .size(12)
-                    .color(iced::Color::from_rgb8(0xa6, 0xad, 0xc8)) // color.subtext
-                    .width(Length::Fill),
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center),
-        )
-        .width(Length::Fill)
-        .height(20)
-        .align_y(Alignment::Center)
-        .padding([0, 6])
-        .into()
+        expanded_icon_label(tier_icon(tier), tier_color(tier), pct_label)
     }
 
     fn on_interaction(

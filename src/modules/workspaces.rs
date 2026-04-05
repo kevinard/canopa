@@ -1,3 +1,5 @@
+use crate::theme;
+
 /// Runtime state for the workspaces module — current workspace list from niri.
 ///
 /// Populated by the WorkspacesChanged niri IPC event via app.rs update().
@@ -5,6 +7,18 @@
 #[derive(Debug, Clone, Default)]
 pub struct WorkspaceState {
     pub workspaces: Vec<niri_ipc::Workspace>,
+}
+
+/// Returns `(background, foreground)` colours for a workspace pill.
+///
+/// Focused workspace: accent background with base-coloured text.
+/// Unfocused workspace: transparent background with normal text colour.
+fn pill_colors(is_focused: bool) -> (iced::Color, iced::Color) {
+    if is_focused {
+        (theme::ACCENT, theme::BASE)
+    } else {
+        (iced::Color::TRANSPARENT, theme::TEXT)
+    }
 }
 
 /// Workspace module: shows all niri workspaces as pills, fed by niri IPC via SharedState.
@@ -38,7 +52,7 @@ impl crate::modules::Module for WorkspacesModule {
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
         use iced::widget::{column, container, text};
-        use iced::{Alignment, Background, Color, Length};
+        use iced::{Alignment, Background, Length};
 
         let workspaces = match state {
             ModuleState::Workspace(s) => &s.workspaces,
@@ -52,17 +66,7 @@ impl crate::modules::Module for WorkspacesModule {
         let pills: Vec<iced::Element<'_, crate::app::Message>> = sorted
             .iter()
             .map(|ws| {
-                let is_focused = ws.is_focused;
-                let bg = if is_focused {
-                    Color::from_rgb8(0x89, 0xb4, 0xfa) // color.accent
-                } else {
-                    Color::from_rgba(0.0, 0.0, 0.0, 0.0) // transparent
-                };
-                let fg = if is_focused {
-                    Color::from_rgb8(0x1e, 0x1e, 0x2e) // color.background (dark on accent)
-                } else {
-                    Color::from_rgb8(0xcd, 0xd6, 0xf4) // color.text
-                };
+                let (bg, fg) = pill_colors(ws.is_focused);
                 let ws_num = ws.idx as u32;
                 let label_cfg = self.config.workspaces.get(&ws_num);
                 // Collapsed: show icon if configured, else number (AC #2, #4).
@@ -96,7 +100,7 @@ impl crate::modules::Module for WorkspacesModule {
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
         use iced::widget::{column, container, row, text};
-        use iced::{Alignment, Background, Color, Length};
+        use iced::{Alignment, Background, Length};
 
         let workspaces = match state {
             ModuleState::Workspace(s) => &s.workspaces,
@@ -109,17 +113,7 @@ impl crate::modules::Module for WorkspacesModule {
         let pills: Vec<iced::Element<'_, crate::app::Message>> = sorted
             .iter()
             .map(|ws| {
-                let is_focused = ws.is_focused;
-                let bg = if is_focused {
-                    Color::from_rgb8(0x89, 0xb4, 0xfa)
-                } else {
-                    Color::from_rgba(0.0, 0.0, 0.0, 0.0)
-                };
-                let fg = if is_focused {
-                    Color::from_rgb8(0x1e, 0x1e, 0x2e)
-                } else {
-                    Color::from_rgb8(0xcd, 0xd6, 0xf4)
-                };
+                let (bg, fg) = pill_colors(ws.is_focused);
                 let ws_num = ws.idx as u32;
                 let label_cfg = self.config.workspaces.get(&ws_num);
                 let icon_str = label_cfg.and_then(|c| c.icon.as_deref());
@@ -196,6 +190,20 @@ mod tests {
         };
         assert_eq!(state.workspaces.len(), 1);
         assert!(state.workspaces[0].is_focused);
+    }
+
+    #[test]
+    fn pill_colors_focused_returns_accent_base() {
+        let (bg, fg) = pill_colors(true);
+        assert_eq!(bg, theme::ACCENT);
+        assert_eq!(fg, theme::BASE);
+    }
+
+    #[test]
+    fn pill_colors_unfocused_returns_transparent_text() {
+        let (bg, fg) = pill_colors(false);
+        assert_eq!(bg, iced::Color::TRANSPARENT);
+        assert_eq!(fg, theme::TEXT);
     }
 
     // --- Story 4.3 tests: WorkspacesConfig ---

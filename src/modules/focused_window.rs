@@ -1,3 +1,6 @@
+use crate::theme;
+use crate::modules::view::collapsed_icon;
+
 /// Runtime state for the focused-window module.
 ///
 /// `title = None` means no window is focused → module renders nothing (UX-DR16).
@@ -36,8 +39,6 @@ impl crate::modules::Module for FocusedWindowModule {
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{container, text};
-        use iced::{Alignment, Color, Length};
 
         let title = match state {
             ModuleState::FocusedWindow(s) => &s.title,
@@ -51,14 +52,7 @@ impl crate::modules::Module for FocusedWindowModule {
 
         // Window is focused → show icon placeholder (AC #2).
         // "□" (U+25A1) is a window-shape placeholder; replaced when icon system is added.
-        container(
-            text("□").size(16).color(Color::from_rgb8(0xcd, 0xd6, 0xf4)), // color.text
-        )
-        .width(Length::Fill)
-        .height(20)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .into()
+        collapsed_icon("□", theme::TEXT)
     }
 
     fn view_expanded(
@@ -67,7 +61,7 @@ impl crate::modules::Module for FocusedWindowModule {
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
         use iced::widget::{container, text};
-        use iced::{Alignment, Color, Length};
+        use iced::{Alignment, Length};
 
         let title = match state {
             ModuleState::FocusedWindow(s) => &s.title,
@@ -84,7 +78,7 @@ impl crate::modules::Module for FocusedWindowModule {
         container(
             text(title_str)
                 .size(12)
-                .color(Color::from_rgb8(0xcd, 0xd6, 0xf4)) // color.text
+                .color(theme::TEXT)
                 .wrapping(iced::widget::text::Wrapping::None),
         )
         .width(Length::Fill)

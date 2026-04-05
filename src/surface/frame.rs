@@ -1,5 +1,5 @@
 use iced::widget::container;
-use iced::{Color, Element};
+use iced::Element;
 
 /// Wrap module content with the `ModuleFrame` visual treatment.
 ///
@@ -17,7 +17,7 @@ pub fn module_frame<'a, Message: 'a>(
         .style(move |_| {
             if hovered {
                 container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgb8(0x31, 0x32, 0x44))),
+                    background: Some(iced::Background::Color(crate::theme::SURFACE0)),
                     border: iced::Border {
                         radius: 4.0.into(),
                         ..Default::default()

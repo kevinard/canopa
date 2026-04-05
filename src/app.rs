@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use iced::widget::{Space, container, mouse_area, row};
-use iced::{Color, Element, Length, Task};
+use iced::{Element, Length, Task};
 use iced_layershell::to_layer_message;
 
 use crate::config::{Config, ExpandTrigger};
@@ -841,7 +841,7 @@ impl App {
                 .width(1)
                 .height(Length::Fill)
                 .style(|_theme| container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgb8(0x45, 0x47, 0x5a))),
+                    background: Some(iced::Background::Color(crate::theme::SURFACE1)),
                     ..Default::default()
                 }),
         ]
@@ -859,8 +859,8 @@ impl App {
 
     pub fn style(&self, _theme: &iced::Theme) -> iced::theme::Style {
         iced::theme::Style {
-            background_color: Color::from_rgb8(0x1e, 0x1e, 0x2e), // Catppuccin Mocha Base
-            text_color: Color::from_rgb8(0xcd, 0xd6, 0xf4),       // Catppuccin Mocha Text
+            background_color: crate::theme::BASE,
+            text_color: crate::theme::TEXT,
         }
     }
 

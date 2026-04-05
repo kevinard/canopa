@@ -5,6 +5,7 @@ mod ipc;
 mod modules;
 mod niri;
 mod surface;
+mod theme;
 
 use app::App;
 use iced_layershell::build_pattern::application;

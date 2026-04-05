@@ -4,6 +4,7 @@ pub mod clock;
 pub mod focused_window;
 pub mod network;
 pub mod script;
+pub mod view;
 pub mod volume;
 pub mod workspaces;
 

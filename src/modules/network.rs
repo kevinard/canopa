@@ -1,3 +1,6 @@
+use crate::theme;
+use crate::modules::view::{collapsed_icon, expanded_icon_label};
+
 /// Connectivity level reported by the active backend.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum NetworkConnectivity {
@@ -35,9 +38,9 @@ fn icon_str(connectivity: &NetworkConnectivity) -> &'static str {
 
 fn icon_color(connectivity: &NetworkConnectivity) -> iced::Color {
     match connectivity {
-        NetworkConnectivity::Full => iced::Color::from_rgb8(0x89, 0xb4, 0xfa), // accent
-        NetworkConnectivity::Limited => iced::Color::from_rgb8(0xf9, 0xe2, 0xaf), // warning
-        NetworkConnectivity::None => iced::Color::from_rgb8(0xf3, 0x8b, 0xa8), // critical
+        NetworkConnectivity::Full => theme::ACCENT,
+        NetworkConnectivity::Limited => theme::WARNING,
+        NetworkConnectivity::None => theme::CRITICAL,
     }
 }
 
@@ -67,24 +70,13 @@ impl crate::modules::Module for NetworkModule {
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{container, text};
-        use iced::{Alignment, Length};
 
         let net = match state {
             ModuleState::Network(s) => s,
             _ => return iced::widget::Space::new().into(),
         };
 
-        container(
-            text(icon_str(&net.connectivity))
-                .size(16)
-                .color(icon_color(&net.connectivity)),
-        )
-        .width(Length::Fill)
-        .height(20)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .into()
+        collapsed_icon(icon_str(&net.connectivity), icon_color(&net.connectivity))
     }
 
     fn view_expanded(
@@ -92,8 +84,6 @@ impl crate::modules::Module for NetworkModule {
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{container, row, text};
-        use iced::{Alignment, Length};
 
         let net = match state {
             ModuleState::Network(s) => s,
@@ -109,24 +99,11 @@ impl crate::modules::Module for NetworkModule {
             .to_owned()
         });
 
-        container(
-            row![
-                text(icon_str(&net.connectivity))
-                    .size(16)
-                    .color(icon_color(&net.connectivity)),
-                text(label_text)
-                    .size(12)
-                    .color(iced::Color::from_rgb8(0xa6, 0xad, 0xc8)) // color.subtext
-                    .width(Length::Fill),
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center),
+        expanded_icon_label(
+            icon_str(&net.connectivity),
+            icon_color(&net.connectivity),
+            label_text,
         )
-        .width(Length::Fill)
-        .height(20)
-        .align_y(Alignment::Center)
-        .padding([0, 6])
-        .into()
     }
 }
 
