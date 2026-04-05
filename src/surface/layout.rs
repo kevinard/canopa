@@ -1,4 +1,4 @@
-use iced::widget::{column, container};
+use iced::widget::{column, container, row};
 use iced::{Alignment, Element, Length, Padding};
 
 /// Edge padding applied on all sides of the bar content area (px).
@@ -7,11 +7,13 @@ pub const BAR_PADDING: f32 = 4.0;
 /// Gap between modules within a zone (px).
 pub const MODULE_GAP: f32 = 4.0;
 
-/// Render three zones (top / center / bottom) in a full-height column.
+/// Render three zones in a column (vertical bar) or row (horizontal bar).
 ///
-/// - **Top zone:** modules stack downward from the top edge.
-/// - **Center zone:** fills remaining space (`Length::Fill`); modules centred within it.
-/// - **Bottom zone:** modules stack upward from the bottom edge.
+/// **Vertical** (`horizontal = false`, left/right bars):
+/// - Top zone stacks downward; center fills and centres; bottom stacks upward.
+///
+/// **Horizontal** (`horizontal = true`, top/bottom bars):
+/// - "Top" zone aligns to the start (left); center fills and centres; "bottom" aligns to the end (right).
 ///
 /// `BAR_PADDING` is applied as padding on all four edges of the outer container.
 /// `MODULE_GAP` separates modules within each zone.
@@ -20,25 +22,44 @@ pub fn zone_layout<'a, Message: Clone + 'a>(
     top: Vec<Element<'a, Message>>,
     center: Vec<Element<'a, Message>>,
     bottom: Vec<Element<'a, Message>>,
+    horizontal: bool,
 ) -> Element<'a, Message> {
-    let top_col: Element<'a, Message> = column(top).spacing(MODULE_GAP).into();
-    let center_fill: Element<'a, Message> = container(column(center).spacing(MODULE_GAP))
-        .height(Length::Fill)
-        .width(Length::Fill)
-        .align_y(Alignment::Center)
-        .into();
-    let bottom_col: Element<'a, Message> = column(bottom).spacing(MODULE_GAP).into();
+    let zone = |items: Vec<Element<'a, Message>>| -> Element<'a, Message> {
+        if horizontal {
+            row(items).spacing(MODULE_GAP).into()
+        } else {
+            column(items).spacing(MODULE_GAP).into()
+        }
+    };
 
-    container(
-        column(vec![top_col, center_fill, bottom_col])
+    let center_zone = zone(center);
+    let center_fill: Element<'a, Message> = if horizontal {
+        container(center_zone)
+            .height(Length::Fill)
             .width(Length::Fill)
-            .height(Length::Fill),
-    )
-    .padding(Padding::new(BAR_PADDING))
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .clip(true)
-    .into()
+            .align_x(Alignment::Center)
+            .into()
+    } else {
+        container(center_zone)
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .align_y(Alignment::Center)
+            .into()
+    };
+
+    let parts = vec![zone(top), center_fill, zone(bottom)];
+    let body: Element<'a, Message> = if horizontal {
+        row(parts).width(Length::Fill).height(Length::Fill).into()
+    } else {
+        column(parts).width(Length::Fill).height(Length::Fill).into()
+    };
+
+    container(body)
+        .padding(Padding::new(BAR_PADDING))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .clip(true)
+        .into()
 }
 
 #[cfg(test)]

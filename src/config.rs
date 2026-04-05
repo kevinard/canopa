@@ -180,6 +180,11 @@ impl Edge {
         }
     }
 
+    /// Returns `true` for edges that span the full screen width (top/bottom).
+    pub fn is_horizontal(&self) -> bool {
+        matches!(self, Edge::Top | Edge::Bottom)
+    }
+
     /// Map this edge to iced_layershell anchor bits.
     ///
     /// Side edges (left/right) stretch the full screen height.

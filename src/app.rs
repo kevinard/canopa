@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use iced::widget::{Space, container, mouse_area, row};
+use iced::widget::{Space, column, container, mouse_area, row};
 use iced::{Element, Length, Task};
 use iced_layershell::to_layer_message;
 
@@ -762,12 +762,15 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        // Use the interpolated width during animation; final widths when at rest.
-        let surface_width = self.expand.current_width(
+        let is_horizontal = self.config.bar.edge.is_horizontal();
+
+        // Interpolated size along the expanding axis (width for vertical bars, height for horizontal).
+        let surface_size = self.expand.current_width(
             self.config.bar.collapsed_width,
             self.config.bar.expanded_width,
         );
-        let content_width = surface_width.saturating_sub(1); // 1px right border
+        // Reserve 1px for the border strip on the inner screen edge.
+        let content_size = surface_size.saturating_sub(1);
 
         // Decide which module view to call based on animation state.
         // label_opacity (UX-DR6, 60ms delay fade) is deferred: iced 0.14 has no generic
@@ -823,22 +826,36 @@ impl App {
             }
         }
 
-        let bar_content = row![
-            // Main content area — zone layout fills (surface_width - 1)px
-            container(zone_layout(top, center, bottom))
-                .width(content_width)
-                .height(Length::Fill),
-            // 1px right border strip in Catppuccin Mocha Surface1 (#45475a)
-            container(Space::new())
-                .width(1)
+        let border_style = |_theme: &_| container::Style {
+            background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+            ..Default::default()
+        };
+
+        let (content_w, content_h, border_w, border_h) = if is_horizontal {
+            (Length::Fill, Length::from(content_size), Length::Fill, Length::from(1))
+        } else {
+            (Length::from(content_size), Length::Fill, Length::from(1), Length::Fill)
+        };
+
+        let content = container(zone_layout(top, center, bottom, is_horizontal))
+            .width(content_w)
+            .height(content_h);
+        let border_strip = container(Space::new())
+            .width(border_w)
+            .height(border_h)
+            .style(border_style);
+
+        let bar_content: Element<'_, Message> = if is_horizontal {
+            column![content, border_strip]
+                .width(Length::Fill)
                 .height(Length::Fill)
-                .style(|_theme| container::Style {
-                    background: Some(iced::Background::Color(crate::theme::SURFACE1)),
-                    ..Default::default()
-                }),
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill);
+                .into()
+        } else {
+            row![content, border_strip]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        };
 
         // Wrap entire bar in mouse_area for click-to-toggle and hover detection.
         // Note: clicking a module fires both ModuleClick(id) AND BarClick (outer area).

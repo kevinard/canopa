@@ -48,6 +48,12 @@ fn try_main() -> anyhow::Result<()> {
     let anchor = config.bar.edge.anchor();
     let collapsed_width = config.bar.collapsed_width;
     let exclusive_zone = i32::try_from(collapsed_width).unwrap_or(48);
+    // For horizontal bars (top/bottom) the fixed dimension is the height; for vertical it's width.
+    let size = if config.bar.edge.is_horizontal() {
+        Some((0, collapsed_width))
+    } else {
+        Some((collapsed_width, 0))
+    };
 
     application(
         move || App::new(config.clone()),
@@ -59,7 +65,7 @@ fn try_main() -> anyhow::Result<()> {
         layer_settings: LayerShellSettings {
             anchor,
             exclusive_zone,
-            size: Some((collapsed_width, 0)),
+            size,
             ..Default::default()
         },
         ..Default::default()
