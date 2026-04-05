@@ -1,4 +1,5 @@
 mod app;
+mod cli;
 mod config;
 mod dbus;
 mod ipc;
@@ -12,17 +13,15 @@ use iced_layershell::build_pattern::application;
 use iced_layershell::settings::{LayerShellSettings, Settings};
 
 fn main() {
-    if std::env::args().any(|a| a == "--version" || a == "-V") {
-        println!("{}", env!("CARGO_PKG_VERSION"));
-        return;
-    }
-    if std::env::args().any(|a| a == "--toggle-expand") {
-        send_ipc_command("toggle-expand");
-        return;
-    }
-    if let Err(e) = try_main() {
-        eprintln!("error: {e}");
-        std::process::exit(1);
+    match cli::parse() {
+        cli::Command::PrintVersion => println!("{}", env!("CARGO_PKG_VERSION")),
+        cli::Command::IpcCommand(cmd) => send_ipc_command(&cmd),
+        cli::Command::Run => {
+            if let Err(e) = try_main() {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
