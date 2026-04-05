@@ -2,6 +2,7 @@ pub mod battery;
 pub mod button;
 pub mod clock;
 pub mod focused_window;
+pub mod network;
 pub mod script;
 pub mod workspaces;
 
@@ -39,6 +40,7 @@ pub enum ModuleState {
     #[allow(dead_code)]
     Unavailable,
     Battery(battery::BatteryState),
+    Network(network::NetworkState),
     Clock(clock::ClockState),
     Script(script::ScriptState),
     Button(button::ButtonState),
@@ -94,11 +96,16 @@ pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     let mut map = HashMap::new();
     map.insert("battery", battery_ctor as ModuleConstructor);
     map.insert("button", button_ctor as ModuleConstructor);
+    map.insert("network", network_ctor as ModuleConstructor);
     map.insert("clock", clock_ctor as ModuleConstructor);
     map.insert("script", script_ctor as ModuleConstructor);
     map.insert("workspaces", workspaces_ctor as ModuleConstructor);
     map.insert("focused-window", focused_window_ctor as ModuleConstructor);
     map
+}
+
+fn network_ctor(_mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    Box::new(network::NetworkModule::new())
 }
 
 fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {

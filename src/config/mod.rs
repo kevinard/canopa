@@ -79,11 +79,16 @@ impl Default for BatteryConfig {
     }
 }
 
+/// Configuration for the network module (no user-configurable params for MVP).
+#[derive(Debug, Clone, Default)]
+pub struct NetworkConfig;
+
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
 #[derive(Debug, Clone)]
 pub enum ModuleParams {
     None,
     Battery(BatteryConfig),
+    Network(NetworkConfig),
     Clock(ClockConfig),
     Script(ScriptConfig),
     Button(ButtonConfig),

@@ -2,7 +2,7 @@ use kdl::KdlDocument;
 
 use super::{
     BarConfig, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig,
-    ModuleParams, ScriptConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    ModuleParams, NetworkConfig, ScriptConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 use crate::modules::Zone;
 
@@ -67,6 +67,8 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
 
         let params = if name == "battery" {
             ModuleParams::Battery(parse_battery_params(node, i)?)
+        } else if name == "network" {
+            ModuleParams::Network(NetworkConfig)
         } else if name == "clock" {
             ModuleParams::Clock(parse_clock_params(node, i)?)
         } else if name == "script" {

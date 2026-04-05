@@ -11,6 +11,7 @@ use crate::modules::battery::{BatteryEvent, BatteryState};
 use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::focused_window;
+use crate::modules::network::{NetworkEvent, NetworkState};
 use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::workspaces;
 use crate::modules::{
@@ -80,6 +81,8 @@ pub enum Message {
     Niri(crate::niri::NiriEvent),
     /// Battery charge state from UPower D-Bus subscription (Story 5.2).
     Battery(BatteryEvent),
+    /// Network connectivity state from D-Bus subscription (Story 5.3).
+    Network(NetworkEvent),
     /// D-Bus connection handles established at startup (Story 5.1).
     /// Fires exactly once from `dbus_init_subscription`; stored in `SharedState.dbus`.
     DbusReady(DbusConnections),
@@ -388,6 +391,23 @@ impl App {
                     )),
                 ])
             }
+            Message::Network(NetworkEvent::StateChanged {
+                connectivity,
+                label,
+            }) => {
+                self.push_network_state(connectivity, label);
+                Task::none()
+            }
+            Message::Network(NetworkEvent::Unavailable) => {
+                for (_, module) in &self.modules {
+                    if module.id().0 == "network" {
+                        self.shared
+                            .modules
+                            .insert(module.id(), ModuleState::Unavailable);
+                    }
+                }
+                Task::none()
+            }
             Message::Battery(BatteryEvent::StateChanged {
                 percentage,
                 is_charging,
@@ -445,12 +465,30 @@ impl App {
             iced::Subscription::none()
         };
 
+        // AC #9: Only subscribe if network module is present AND system bus is connected.
+        let network_sub = if let Some(conn) = self.shared.dbus.system.clone() {
+            if self.modules.iter().any(|(_, m)| m.id().0 == "network") {
+                crate::dbus::networkmanager::network_subscription(conn)
+            } else {
+                iced::Subscription::none()
+            }
+        } else {
+            iced::Subscription::none()
+        };
+
         if self.expand.is_animating() || self.hover_pending_ms.is_some() {
             // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
             let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
-            iced::Subscription::batch([module_subs, niri_sub, dbus_sub, battery_sub, tick])
+            iced::Subscription::batch([
+                module_subs,
+                niri_sub,
+                dbus_sub,
+                battery_sub,
+                network_sub,
+                tick,
+            ])
         } else {
-            iced::Subscription::batch([module_subs, niri_sub, dbus_sub, battery_sub])
+            iced::Subscription::batch([module_subs, niri_sub, dbus_sub, battery_sub, network_sub])
         }
     }
 
@@ -544,6 +582,24 @@ impl App {
                     ModuleState::Battery(BatteryState {
                         percentage,
                         is_charging,
+                    }),
+                );
+            }
+        }
+    }
+
+    fn push_network_state(
+        &mut self,
+        connectivity: crate::modules::network::NetworkConnectivity,
+        label: Option<String>,
+    ) {
+        for (_, module) in &self.modules {
+            if module.id().0 == "network" {
+                self.shared.modules.insert(
+                    module.id(),
+                    ModuleState::Network(NetworkState {
+                        connectivity: connectivity.clone(),
+                        label: label.clone(),
                     }),
                 );
             }
@@ -1413,6 +1469,60 @@ mod tests {
             is_charging: true,
         }));
         let id = ModuleId::new("battery");
+        assert!(!app.shared.modules.contains_key(&id));
+    }
+
+    // Story 5.3 tests
+
+    fn make_network_app() -> App {
+        use crate::config::{ModuleConfig, ModuleParams, NetworkConfig};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "network".into(),
+            zone: Zone::Bottom,
+            params: ModuleParams::Network(NetworkConfig),
+        }];
+        App::new(config)
+    }
+
+    #[test]
+    fn network_state_changed_updates_module() {
+        use crate::modules::network::NetworkConnectivity;
+        let mut app = make_network_app();
+        let _ = app.update(Message::Network(NetworkEvent::StateChanged {
+            connectivity: NetworkConnectivity::Full,
+            label: Some("Home".into()),
+        }));
+        let id = ModuleId::new("network");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Network(s)) => {
+                assert_eq!(s.connectivity, NetworkConnectivity::Full);
+                assert_eq!(s.label.as_deref(), Some("Home"));
+            }
+            other => panic!("expected Network state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn network_unavailable_marks_module_unavailable() {
+        let mut app = make_network_app();
+        let _ = app.update(Message::Network(NetworkEvent::Unavailable));
+        let id = ModuleId::new("network");
+        assert!(matches!(
+            app.shared.modules.get(&id),
+            Some(ModuleState::Unavailable)
+        ));
+    }
+
+    #[test]
+    fn network_state_not_updated_without_network_module() {
+        use crate::modules::network::NetworkConnectivity;
+        let mut app = App::new(Config::default()); // no network module
+        let _ = app.update(Message::Network(NetworkEvent::StateChanged {
+            connectivity: NetworkConnectivity::Full,
+            label: None,
+        }));
+        let id = ModuleId::new("network");
         assert!(!app.shared.modules.contains_key(&id));
     }
 }

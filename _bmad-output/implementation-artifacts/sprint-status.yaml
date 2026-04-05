@@ -81,7 +81,7 @@ development_status:
   epic-5: in-progress
   5-1-establish-d-bus-session-and-system-bus-connections: review
   5-2-battery-module-charge-level-and-charging-state: review
-  5-3-network-module-connectivity-status: backlog
+  5-3-network-module-connectivity-status: review
   5-4-volume-module-audio-output-level-with-scroll-interaction: backlog
   epic-5-retrospective: optional
 
