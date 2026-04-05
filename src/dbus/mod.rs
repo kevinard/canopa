@@ -1,3 +1,5 @@
+pub mod upower;
+
 /// Shared D-Bus connections, established once at startup (Story 5.1).
 ///
 /// `zbus::Connection` is `Clone` + Arc-backed — cloning gives a reference to the

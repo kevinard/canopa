@@ -1,8 +1,8 @@
 use kdl::KdlDocument;
 
 use super::{
-    BarConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig, ModuleParams,
-    ScriptConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    BarConfig, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig,
+    ModuleParams, ScriptConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 use crate::modules::Zone;
 
@@ -65,7 +65,9 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
             ),
         };
 
-        let params = if name == "clock" {
+        let params = if name == "battery" {
+            ModuleParams::Battery(parse_battery_params(node, i)?)
+        } else if name == "clock" {
             ModuleParams::Clock(parse_clock_params(node, i)?)
         } else if name == "script" {
             ModuleParams::Script(parse_script_params(node, i)?)
@@ -79,6 +81,30 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         result.push(ModuleConfig { name, zone, params });
     }
     Ok(result)
+}
+
+fn parse_battery_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<BatteryConfig> {
+    // Optional `critical-threshold <int>` child node.
+    let Some(children) = node.children() else {
+        return Ok(BatteryConfig::default());
+    };
+    let critical_threshold = match children.get("critical-threshold") {
+        None => BatteryConfig::default().critical_threshold,
+        Some(n) => {
+            let v = n.entries().first().map(|e| e.value());
+            match v.and_then(|v| v.as_integer()) {
+                Some(n) if (0..=100).contains(&n) => n as u8,
+                Some(n) => anyhow::bail!(
+                    "modules[{idx}].battery.critical-threshold: value {n} out of range. \
+                     Expected: integer 0–100."
+                ),
+                None => anyhow::bail!(
+                    "modules[{idx}].battery.critical-threshold: expected an integer value."
+                ),
+            }
+        }
+    };
+    Ok(BatteryConfig { critical_threshold })
 }
 
 fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {

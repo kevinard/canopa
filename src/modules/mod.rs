@@ -1,3 +1,4 @@
+pub mod battery;
 pub mod button;
 pub mod clock;
 pub mod focused_window;
@@ -37,6 +38,7 @@ pub enum ModuleState {
     /// Module's data source is unavailable. Render as nothing — zero height, no gap left.
     #[allow(dead_code)]
     Unavailable,
+    Battery(battery::BatteryState),
     Clock(clock::ClockState),
     Script(script::ScriptState),
     Button(button::ButtonState),
@@ -90,12 +92,22 @@ pub type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>
 /// Build the static module registry mapping config name → constructor.
 pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     let mut map = HashMap::new();
+    map.insert("battery", battery_ctor as ModuleConstructor);
     map.insert("button", button_ctor as ModuleConstructor);
     map.insert("clock", clock_ctor as ModuleConstructor);
     map.insert("script", script_ctor as ModuleConstructor);
     map.insert("workspaces", workspaces_ctor as ModuleConstructor);
     map.insert("focused-window", focused_window_ctor as ModuleConstructor);
     map
+}
+
+fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    use crate::config::{BatteryConfig, ModuleParams};
+    let threshold = match &mc.params {
+        ModuleParams::Battery(cfg) => cfg.critical_threshold,
+        _ => BatteryConfig::default().critical_threshold,
+    };
+    Box::new(battery::BatteryModule::new(threshold))
 }
 
 fn button_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {

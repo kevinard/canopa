@@ -80,7 +80,7 @@ development_status:
   # Epic 5: System Service Modules — A Complete Status Bar
   epic-5: in-progress
   5-1-establish-d-bus-session-and-system-bus-connections: review
-  5-2-battery-module-charge-level-and-charging-state: backlog
+  5-2-battery-module-charge-level-and-charging-state: review
   5-3-network-module-connectivity-status: backlog
   5-4-volume-module-audio-output-level-with-scroll-interaction: backlog
   epic-5-retrospective: optional

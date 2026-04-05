@@ -63,10 +63,27 @@ pub struct WorkspacesConfig {
     pub workspaces: std::collections::HashMap<u32, WorkspaceLabelConfig>,
 }
 
+/// Configuration for the battery module.
+#[derive(Debug, Clone)]
+pub struct BatteryConfig {
+    /// Percentage at or below which the critical badge and red icon appear.
+    /// Default: 15. Valid range: 0–100.
+    pub critical_threshold: u8,
+}
+
+impl Default for BatteryConfig {
+    fn default() -> Self {
+        BatteryConfig {
+            critical_threshold: 15,
+        }
+    }
+}
+
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
 #[derive(Debug, Clone)]
 pub enum ModuleParams {
     None,
+    Battery(BatteryConfig),
     Clock(ClockConfig),
     Script(ScriptConfig),
     Button(ButtonConfig),

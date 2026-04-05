@@ -7,6 +7,7 @@ use iced_layershell::to_layer_message;
 
 use crate::config::{Config, ExpandTrigger};
 use crate::dbus::DbusConnections;
+use crate::modules::battery::{BatteryEvent, BatteryState};
 use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::focused_window;
@@ -77,6 +78,8 @@ pub enum Message {
     BarHoverExit,
     /// Event from the Niri IPC event stream; dispatched to SharedState (Story 4.1).
     Niri(crate::niri::NiriEvent),
+    /// Battery charge state from UPower D-Bus subscription (Story 5.2).
+    Battery(BatteryEvent),
     /// D-Bus connection handles established at startup (Story 5.1).
     /// Fires exactly once from `dbus_init_subscription`; stored in `SharedState.dbus`.
     DbusReady(DbusConnections),
@@ -385,6 +388,24 @@ impl App {
                     )),
                 ])
             }
+            Message::Battery(BatteryEvent::StateChanged {
+                percentage,
+                is_charging,
+            }) => {
+                self.push_battery_state(percentage, is_charging);
+                Task::none()
+            }
+            Message::Battery(BatteryEvent::Unavailable) => {
+                // Mark all battery instances unavailable — renders nothing (UX-DR16).
+                for (_, module) in &self.modules {
+                    if module.id().0 == "battery" {
+                        self.shared
+                            .modules
+                            .insert(module.id(), ModuleState::Unavailable);
+                    }
+                }
+                Task::none()
+            }
             Message::DbusReady(connections) => {
                 // Store shared handles; modules borrow clones of these (AR5, Story 5.1).
                 self.shared.dbus = connections;
@@ -412,12 +433,24 @@ impl App {
             iced::Subscription::none()
         };
 
+        // AC #9: Only subscribe if battery module is present AND system bus is connected.
+        // UPower runs on the system bus (org.freedesktop.UPower), not the session bus.
+        let battery_sub = if let Some(conn) = self.shared.dbus.system.clone() {
+            if self.modules.iter().any(|(_, m)| m.id().0 == "battery") {
+                crate::dbus::upower::battery_subscription(conn)
+            } else {
+                iced::Subscription::none()
+            }
+        } else {
+            iced::Subscription::none()
+        };
+
         if self.expand.is_animating() || self.hover_pending_ms.is_some() {
             // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
             let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
-            iced::Subscription::batch([module_subs, niri_sub, dbus_sub, tick])
+            iced::Subscription::batch([module_subs, niri_sub, dbus_sub, battery_sub, tick])
         } else {
-            iced::Subscription::batch([module_subs, niri_sub, dbus_sub])
+            iced::Subscription::batch([module_subs, niri_sub, dbus_sub, battery_sub])
         }
     }
 
@@ -499,6 +532,21 @@ impl App {
         iced::theme::Style {
             background_color: Color::from_rgb8(0x1e, 0x1e, 0x2e), // Catppuccin Mocha Base
             text_color: Color::from_rgb8(0xcd, 0xd6, 0xf4),       // Catppuccin Mocha Text
+        }
+    }
+
+    /// Push new battery state to all battery module instances in shared.modules.
+    fn push_battery_state(&mut self, percentage: f64, is_charging: bool) {
+        for (_, module) in &self.modules {
+            if module.id().0 == "battery" {
+                self.shared.modules.insert(
+                    module.id(),
+                    ModuleState::Battery(BatteryState {
+                        percentage,
+                        is_charging,
+                    }),
+                );
+            }
         }
     }
 
@@ -1312,5 +1360,59 @@ mod tests {
         // If we get here without panic, the message was handled correctly.
         assert!(app.shared.dbus.session.is_none());
         assert!(app.shared.dbus.system.is_none());
+    }
+
+    // Story 5.2 tests
+
+    fn make_battery_app() -> App {
+        use crate::config::{BatteryConfig, ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "battery".into(),
+            zone: Zone::Bottom,
+            params: ModuleParams::Battery(BatteryConfig {
+                critical_threshold: 15,
+            }),
+        }];
+        App::new(config)
+    }
+
+    #[test]
+    fn battery_state_changed_updates_module() {
+        let mut app = make_battery_app();
+        let _ = app.update(Message::Battery(BatteryEvent::StateChanged {
+            percentage: 72.0,
+            is_charging: false,
+        }));
+        let id = ModuleId::new("battery");
+        match app.shared.modules.get(&id) {
+            Some(ModuleState::Battery(s)) => {
+                assert!((s.percentage - 72.0).abs() < 0.001);
+                assert!(!s.is_charging);
+            }
+            other => panic!("expected Battery state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn battery_unavailable_marks_module_unavailable() {
+        let mut app = make_battery_app();
+        let _ = app.update(Message::Battery(BatteryEvent::Unavailable));
+        let id = ModuleId::new("battery");
+        assert!(matches!(
+            app.shared.modules.get(&id),
+            Some(ModuleState::Unavailable)
+        ));
+    }
+
+    #[test]
+    fn battery_state_not_updated_without_battery_module() {
+        let mut app = App::new(Config::default()); // no battery module
+        let _ = app.update(Message::Battery(BatteryEvent::StateChanged {
+            percentage: 50.0,
+            is_charging: true,
+        }));
+        let id = ModuleId::new("battery");
+        assert!(!app.shared.modules.contains_key(&id));
     }
 }
