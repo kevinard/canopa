@@ -206,6 +206,10 @@ impl App {
                 Task::none()
             }
             Message::BarClick => {
+                // Horizontal bars have no expand/collapse feature.
+                if self.config.bar.edge.is_horizontal() {
+                    return Task::none();
+                }
                 // Click has no effect when hover is the expand trigger (Story 3.3 AC #6).
                 if self.config.bar.expand_trigger == ExpandTrigger::Hover {
                     return Task::none();
@@ -228,6 +232,10 @@ impl App {
             }
             Message::BarHoverEnter => {
                 self.bar_hovered = true;
+                // Horizontal bars have no expand/collapse feature.
+                if self.config.bar.edge.is_horizontal() {
+                    return Task::none();
+                }
                 if self.config.bar.expand_trigger != ExpandTrigger::Hover {
                     return Task::none();
                 }
@@ -260,6 +268,10 @@ impl App {
             }
             Message::BarHoverExit => {
                 self.bar_hovered = false;
+                // Horizontal bars have no expand/collapse feature.
+                if self.config.bar.edge.is_horizontal() {
+                    return Task::none();
+                }
                 if self.config.bar.expand_trigger != ExpandTrigger::Hover {
                     return Task::none();
                 }
@@ -672,6 +684,10 @@ impl App {
                 Task::none()
             }
             Message::ToggleExpand => {
+                // Horizontal bars have no expand/collapse feature.
+                if self.config.bar.edge.is_horizontal() {
+                    return Task::none();
+                }
                 // Keyboard keybind always toggles — no expand_trigger check (unlike BarClick).
                 self.expand = self.expand.toggle();
                 let w = self.expand.current_width(
@@ -764,18 +780,23 @@ impl App {
     pub fn view(&self) -> Element<'_, Message> {
         let is_horizontal = self.config.bar.edge.is_horizontal();
 
-        // Interpolated size along the expanding axis (width for vertical bars, height for horizontal).
-        let surface_size = self.expand.current_width(
-            self.config.bar.collapsed_width,
-            self.config.bar.expanded_width,
-        );
+        // Horizontal bars (top/bottom) are always expanded — no expand/collapse feature.
+        // Vertical bars animate between collapsed_width and expanded_width.
+        let surface_size = if is_horizontal {
+            self.config.bar.collapsed_width
+        } else {
+            self.expand.current_width(
+                self.config.bar.collapsed_width,
+                self.config.bar.expanded_width,
+            )
+        };
         // Reserve 1px for the border strip on the inner screen edge.
         let content_size = surface_size.saturating_sub(1);
 
-        // Decide which module view to call based on animation state.
+        // Horizontal bars always render expanded content; vertical bars follow animation state.
         // label_opacity (UX-DR6, 60ms delay fade) is deferred: iced 0.14 has no generic
         // element opacity wrapper; see deferred-work.md.
-        let shows_expanded = self.expand.shows_expanded_content();
+        let shows_expanded = is_horizontal || self.expand.shows_expanded_content();
 
         let mut top: Vec<Element<'_, Message>> = vec![];
         let mut center: Vec<Element<'_, Message>> = vec![];
