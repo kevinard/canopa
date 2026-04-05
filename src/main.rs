@@ -1,6 +1,7 @@
 mod app;
 mod config;
 mod dbus;
+mod ipc;
 mod modules;
 mod niri;
 mod surface;
@@ -14,9 +15,28 @@ fn main() {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return;
     }
+    if std::env::args().any(|a| a == "--toggle-expand") {
+        send_ipc_command("toggle-expand");
+        return;
+    }
     if let Err(e) = try_main() {
         eprintln!("error: {e}");
         std::process::exit(1);
+    }
+}
+
+fn send_ipc_command(cmd: &str) {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    let path = ipc::socket_path();
+    match UnixStream::connect(&path) {
+        Ok(mut stream) => {
+            let _ = writeln!(stream, "{cmd}");
+        }
+        Err(e) => {
+            eprintln!("niribar: cannot connect to socket at {}: {e}", path.display());
+            std::process::exit(1);
+        }
     }
 }
 

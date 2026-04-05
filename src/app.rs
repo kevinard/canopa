@@ -18,11 +18,12 @@ use crate::modules::workspaces;
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
 };
+use crate::ipc::ipc_subscription;
 use crate::niri::subscription::niri_subscription;
 use crate::niri::{NiriEvent, NiriState};
 use crate::surface::expand::ExpandState;
 use crate::surface::frame::module_frame;
-use crate::surface::input::keyboard_focus_subscription;
+use crate::surface::input::{init_expand_keybind, keyboard_focus_subscription};
 use crate::surface::layout::zone_layout;
 
 /// Shared state: module data visible to all surfaces.
@@ -121,10 +122,17 @@ pub enum Message {
     FocusPrevZone,
     /// Enter or Space pressed while bar is focused — activate focused module (Story 6.3).
     KeyboardActivate,
+    /// Keyboard-triggered expand/collapse toggle via Unix socket IPC (Story 6.4).
+    /// Works regardless of bar focus state and expand_trigger setting.
+    ToggleExpand,
 }
 
 impl App {
     pub fn new(config: Config) -> Self {
+        // Initialize the in-bar keybind for expand/collapse once at startup.
+        // Subsequent calls are silently ignored (OnceLock semantics).
+        init_expand_keybind(config.bar.expand_keybind.as_deref());
+
         let registry = build_registry();
         let modules: Vec<(Zone, Box<dyn Module>)> = config
             .modules
@@ -663,6 +671,20 @@ impl App {
                 }
                 Task::none()
             }
+            Message::ToggleExpand => {
+                // Keyboard keybind always toggles — no expand_trigger check (unlike BarClick).
+                self.expand = self.expand.toggle();
+                let w = self.expand.current_width(
+                    self.config.bar.collapsed_width,
+                    self.config.bar.expanded_width,
+                );
+                Task::batch([
+                    Task::done(Message::SizeChange((w, 0))),
+                    Task::done(Message::ExclusiveZoneChange(
+                        i32::try_from(w).unwrap_or(i32::MAX),
+                    )),
+                ])
+            }
             _ => Task::none(),
         }
     }
@@ -717,6 +739,7 @@ impl App {
         };
 
         let focus_sub = keyboard_focus_subscription();
+        let ipc_sub = ipc_subscription();
 
         if self.expand.is_animating() || self.hover_pending_ms.is_some() {
             // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
@@ -729,6 +752,7 @@ impl App {
                 network_sub,
                 volume_sub,
                 focus_sub,
+                ipc_sub,
                 tick,
             ])
         } else {
@@ -740,6 +764,7 @@ impl App {
                 network_sub,
                 volume_sub,
                 focus_sub,
+                ipc_sub,
             ])
         }
     }
@@ -2281,5 +2306,65 @@ mod tests {
         let _ = app.update(Message::FocusMovePrev);
         let _ = app.update(Message::BarFocusGained);
         assert!(app.focused_module.is_some());
+    }
+
+    // --- Story 6.4 tests ---
+
+    #[test]
+    fn toggle_expand_from_collapsed_starts_expanding() {
+        let mut app = App::new(make_config());
+        assert_eq!(app.expand, ExpandState::Collapsed);
+        let _ = app.update(Message::ToggleExpand);
+        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+    }
+
+    #[test]
+    fn toggle_expand_from_expanded_starts_collapsing() {
+        let mut app = App::new(make_config());
+        app.expand = ExpandState::Expanded;
+        let _ = app.update(Message::ToggleExpand);
+        assert_eq!(app.expand, ExpandState::Collapsing(0.0));
+    }
+
+    #[test]
+    fn toggle_expand_reverses_expanding_mid_animation() {
+        let mut app = App::new(make_config());
+        app.expand = ExpandState::Expanding(0.4);
+        let _ = app.update(Message::ToggleExpand);
+        assert!(
+            matches!(app.expand, ExpandState::Collapsing(p) if (p - 0.6).abs() < 1e-5),
+            "expected Collapsing(~0.6), got {:?}",
+            app.expand
+        );
+    }
+
+    #[test]
+    fn toggle_expand_reverses_collapsing_mid_animation() {
+        let mut app = App::new(make_config());
+        app.expand = ExpandState::Collapsing(0.3);
+        let _ = app.update(Message::ToggleExpand);
+        assert!(
+            matches!(app.expand, ExpandState::Expanding(p) if (p - 0.7).abs() < 1e-5),
+            "expected Expanding(~0.7), got {:?}",
+            app.expand
+        );
+    }
+
+    #[test]
+    fn toggle_expand_works_with_hover_trigger() {
+        // Unlike BarClick (no-op for hover trigger), ToggleExpand always fires.
+        let mut app = App::new(make_hover_config());
+        assert_eq!(app.expand, ExpandState::Collapsed);
+        let _ = app.update(Message::ToggleExpand);
+        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+    }
+
+    #[test]
+    fn toggle_expand_double_toggle_collapses() {
+        let mut app = App::new(make_config());
+        let _ = app.update(Message::ToggleExpand); // → Expanding(0.0)
+        app.expand = ExpandState::Expanded; // simulate animation complete
+        let _ = app.update(Message::ToggleExpand); // → Collapsing(0.0)
+        assert_eq!(app.expand, ExpandState::Collapsing(0.0));
     }
 }

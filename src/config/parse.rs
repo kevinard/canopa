@@ -379,12 +379,18 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
         .and_then(|v| u64::try_from(v).ok())
         .unwrap_or(defaults.hover_delay);
 
+    let expand_keybind = children
+        .get_arg("expand-keybind")
+        .and_then(|v| v.as_string())
+        .map(|s| s.to_string());
+
     Ok(BarConfig {
         edge,
         collapsed_width,
         expanded_width,
         expand_trigger,
         hover_delay,
+        expand_keybind,
     })
 }
 
@@ -828,6 +834,28 @@ modules {
     fn parse_hover_delay_defaults_to_zero() {
         let config = parse("").unwrap();
         assert_eq!(config.bar.hover_delay, 0);
+    }
+
+    // --- Story 6.4 tests: expand-keybind ---
+
+    #[test]
+    fn parse_expand_keybind() {
+        let kdl = r#"bar { expand-keybind "Super+e" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bar.expand_keybind, Some("Super+e".to_string()));
+    }
+
+    #[test]
+    fn parse_expand_keybind_defaults_to_none() {
+        let config = parse("").unwrap();
+        assert_eq!(config.bar.expand_keybind, None);
+    }
+
+    #[test]
+    fn parse_bar_without_expand_keybind_uses_none() {
+        let kdl = r#"bar { edge "left" }"#;
+        let config = parse(kdl).unwrap();
+        assert!(config.bar.expand_keybind.is_none());
     }
 
     #[test]
