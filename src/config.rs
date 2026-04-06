@@ -121,12 +121,24 @@ pub struct ModuleConfig {
     pub params: ModuleParams,
 }
 
+/// Per-output configuration, parsed from `output "name" { ... }` KDL blocks.
+/// A connected output not in this list receives the global defaults.
+#[derive(Debug, Clone)]
+pub struct OutputConfig {
+    /// The Wayland output name (e.g. "eDP-1", "DP-1", "HDMI-A-1").
+    pub name: String,
+    /// Whether to create a bar surface on this output. Default: true.
+    pub enabled: bool,
+}
+
 /// Parsed configuration for niribar.
 /// Fully populated before any surface is created (AR7).
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub bar: BarConfig,
     pub modules: Vec<ModuleConfig>,
+    /// Per-output overrides. Outputs not listed here use global defaults.
+    pub outputs: Vec<OutputConfig>,
 }
 
 /// Per-zone ordered list of module names for the bar layout.
@@ -304,6 +316,17 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
                 "modules[{i}].type: unknown module type {:?}. \
                  Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button.",
                 mc.module_type
+            );
+        }
+    }
+    // Check for duplicate output names
+    let mut seen_output_names = std::collections::HashSet::new();
+    for oc in &config.outputs {
+        if !seen_output_names.insert(&oc.name) {
+            anyhow::bail!(
+                "output {:?}: duplicate output name. \
+                 Expected: each output name to appear at most once.",
+                oc.name
             );
         }
     }
@@ -558,5 +581,112 @@ mod tests {
     #[test]
     fn bar_config_default_expand_is_true() {
         assert!(BarConfig::default().expand);
+    }
+
+    // --- Story 7.3: Output exclusion config tests ---
+
+    // --- Story 7.3: Output exclusion config tests ---
+    // KDL syntax: output "name" { enabled #true } or output "name" { enabled #false }
+    // KDL 6.5.0 (v2) uses #true/##false for booleans, matching bar.expand syntax.
+
+    #[test]
+    fn output_config_enabled_true_parses() {
+        let config = parse::parse(r#"output "eDP-1" { enabled #true }"#).unwrap();
+        assert_eq!(config.outputs.len(), 1);
+        assert_eq!(config.outputs[0].name, "eDP-1");
+        assert!(config.outputs[0].enabled);
+    }
+
+    #[test]
+    fn output_config_enabled_false_parses() {
+        let config = parse::parse(r#"output "DP-1" { enabled #false }"#).unwrap();
+        assert_eq!(config.outputs.len(), 1);
+        assert_eq!(config.outputs[0].name, "DP-1");
+        assert!(!config.outputs[0].enabled);
+    }
+
+    #[test]
+    fn output_config_empty_block_defaults_enabled_true() {
+        let config = parse::parse(r#"output "HDMI-1" {}"#).unwrap();
+        assert_eq!(config.outputs.len(), 1);
+        assert!(config.outputs[0].enabled);
+    }
+
+    #[test]
+    fn config_with_no_output_blocks_has_empty_vec() {
+        let config = parse::parse("").unwrap();
+        assert!(config.outputs.is_empty());
+    }
+
+    #[test]
+    fn config_with_multiple_output_blocks_parses() {
+        let kdl = r#"output "eDP-1" { enabled #true }
+output "DP-1" { enabled #false }"#;
+        let config = parse::parse(kdl).unwrap();
+        assert_eq!(config.outputs.len(), 2);
+        let dp1 = config.outputs.iter().find(|o| o.name == "DP-1").unwrap();
+        assert!(!dp1.enabled);
+    }
+
+    #[test]
+    fn output_unknown_key_errors() {
+        let result = parse::parse(r#"output "DP-1" { zoom 2 }"#);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("unknown key"), "got: {msg}");
+    }
+
+    #[test]
+    fn output_missing_name_errors() {
+        let result = parse::parse("output {}");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_duplicate_output_name_errors() {
+        let kdl = r#"output "DP-1" { enabled #false }
+output "DP-1" { enabled #true }"#;
+        let parsed = parse::parse(kdl).unwrap();
+        let err = validate(&parsed).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("DP-1"), "got: {msg}");
+        assert!(msg.contains("duplicate"), "got: {msg}");
+    }
+
+    #[test]
+    fn excluded_outputs_computed_from_config() {
+        let kdl = r#"output "eDP-1" { enabled #true }
+output "DP-1" { enabled #false }"#;
+        let config = parse::parse(kdl).unwrap();
+        let excluded: std::collections::HashSet<String> = config
+            .outputs
+            .iter()
+            .filter(|o| !o.enabled)
+            .map(|o| o.name.clone())
+            .collect();
+        assert!(excluded.contains("DP-1"));
+        assert!(!excluded.contains("eDP-1"));
+    }
+
+    #[test]
+    fn output_not_in_config_is_implicitly_allowed() {
+        let kdl = r#"output "DP-1" { enabled #false }"#;
+        let config = parse::parse(kdl).unwrap();
+        let excluded: std::collections::HashSet<String> = config
+            .outputs
+            .iter()
+            .filter(|o| !o.enabled)
+            .map(|o| o.name.clone())
+            .collect();
+        // HDMI-1 is not mentioned → not excluded
+        assert!(!excluded.contains("HDMI-1"));
+    }
+
+    #[test]
+    fn validate_unique_output_names_passes() {
+        let kdl = r#"output "eDP-1" { enabled #true }
+output "DP-1" { enabled #false }"#;
+        let config = parse::parse(kdl).unwrap();
+        assert!(validate(&config).is_ok());
     }
 }

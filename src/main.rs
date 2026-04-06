@@ -8,6 +8,8 @@ mod niri;
 mod surface;
 mod theme;
 
+use std::collections::HashSet;
+
 use app::App;
 use iced_layershell::build_pattern::daemon;
 use iced_layershell::settings::{LayerShellSettings, Settings, StartMode};
@@ -40,6 +42,16 @@ fn send_ipc_command(cmd: &str) {
     }
 }
 
+/// Synchronously query Niri IPC for connected output names.
+/// Returns `None` if Niri is not running or the IPC call fails.
+fn fetch_niri_outputs() -> Option<Vec<String>> {
+    let mut socket = niri_ipc::socket::Socket::connect().ok()?;
+    match socket.send(niri_ipc::Request::Outputs).ok()? {
+        Ok(niri_ipc::Response::Outputs(map)) => Some(map.into_keys().collect()),
+        _ => None,
+    }
+}
+
 fn try_main() -> anyhow::Result<()> {
     // Load config fully before any surface is created (AR7).
     let config = config::load()?;
@@ -57,8 +69,38 @@ fn try_main() -> anyhow::Result<()> {
         Some((collapsed_width, 0)) // logical width for vertical bar
     };
 
+    // Determine which outputs to show the bar on (Story 7.3).
+    // If no outputs have enabled=false, skip Niri query and keep AllScreens (zero behavior change).
+    let excluded: HashSet<String> = config
+        .outputs
+        .iter()
+        .filter(|o| !o.enabled)
+        .map(|o| o.name.clone())
+        .collect();
+
+    let (start_mode, allowed_outputs) = if excluded.is_empty() {
+        // No exclusions configured — use AllScreens as before (Story 7.1 behavior).
+        (StartMode::AllScreens, Vec::new())
+    } else {
+        match fetch_niri_outputs() {
+            Some(all) => {
+                let allowed: Vec<String> =
+                    all.into_iter().filter(|n| !excluded.contains(n)).collect();
+                (StartMode::Background, allowed)
+            }
+            None => {
+                // Niri unavailable — warn and fall back to AllScreens (exclusions ignored).
+                eprintln!(
+                    "warning: niribar: output exclusion configured but Niri IPC unavailable; \
+                     bar will appear on all outputs."
+                );
+                (StartMode::AllScreens, Vec::new())
+            }
+        }
+    };
+
     daemon(
-        move || App::boot(config.clone()),
+        move || App::boot(config.clone(), allowed_outputs.clone()),
         App::namespace,
         App::update,
         App::view,
@@ -68,7 +110,7 @@ fn try_main() -> anyhow::Result<()> {
             anchor,
             exclusive_zone,
             size,
-            start_mode: StartMode::AllScreens,
+            start_mode,
             ..Default::default()
         },
         ..Default::default()

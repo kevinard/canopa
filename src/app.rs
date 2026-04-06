@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use iced::widget::{Space, column, container, mouse_area, row};
 use iced::{Element, Length, Task};
+use iced_layershell::reexport::{NewLayerShellSettings, OutputOption};
 use iced_layershell::to_layer_message;
 
 use crate::config::{
@@ -59,6 +60,10 @@ pub struct App {
     /// Per-output render state, keyed by iced::window::Id (Story 7.1).
     /// One entry per Wayland output; lazily initialised on first event or view call.
     pub surfaces: HashMap<iced::window::Id, SurfaceState>,
+    /// Window IDs pre-assigned to output names during manual window creation (Story 7.3).
+    /// Entry is consumed on first `surface_mut()` call for that id.
+    /// Empty when using StartMode::AllScreens (no output exclusions configured).
+    pub pending_output_names: HashMap<iced::window::Id, String>,
 }
 
 #[to_layer_message(multi)]
@@ -134,7 +139,9 @@ fn default_params_for_type(module_type: &str) -> Option<ModuleParams> {
 }
 
 impl App {
-    pub fn boot(config: Config) -> (Self, Task<Message>) {
+    /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
+    /// Empty means `StartMode::AllScreens` handles window creation (no exclusions configured).
+    pub fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
         // Initialize the in-bar keybind for expand/collapse once at startup.
         // Subsequent calls are silently ignored (OnceLock semantics).
         init_expand_keybind(config.bar.expand_keybind.as_deref());
@@ -171,18 +178,58 @@ impl App {
                 }
             }
         }
+        // Create windows for each allowed output when using manual per-output creation (Story 7.3).
+        // When allowed_outputs is empty, StartMode::AllScreens handles window creation automatically.
+        let mut pending_output_names: HashMap<iced::window::Id, String> = HashMap::new();
+        let window_tasks: Vec<Task<Message>> = if !allowed_outputs.is_empty() {
+            let anchor = config.bar.edge.anchor();
+            let collapsed_width = config.bar.collapsed_width;
+            let exclusive_zone = i32::try_from(collapsed_width).unwrap_or(48);
+            let size = if config.bar.edge.is_horizontal() {
+                Some((0, collapsed_width))
+            } else {
+                Some((collapsed_width, 0))
+            };
+            allowed_outputs
+                .iter()
+                .map(|name| {
+                    let settings = NewLayerShellSettings {
+                        anchor,
+                        exclusive_zone: Some(exclusive_zone),
+                        size,
+                        output_option: OutputOption::OutputName(name.clone()),
+                        namespace: Some(Self::namespace()),
+                        ..Default::default()
+                    };
+                    let (id, task) = Message::layershell_open(settings);
+                    pending_output_names.insert(id, name.clone());
+                    task
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+
         let app = App {
             config,
             shared: SharedState::new(),
             modules,
-            surfaces: HashMap::new(), // lazily populated on first view/event per window
+            surfaces: HashMap::new(),
+            pending_output_names,
         };
-        (app, Task::none())
+        (app, Task::batch(window_tasks))
     }
 
     /// Returns a mutable reference to the `SurfaceState` for `id`, inserting a default if absent.
+    /// Uses the pending output name (Story 7.3) when initialising a new entry.
     pub fn surface_mut(&mut self, id: iced::window::Id) -> &mut SurfaceState {
-        self.surfaces.entry(id).or_default()
+        if !self.surfaces.contains_key(&id) {
+            // Pop the pending output name assigned during window creation (Story 7.3).
+            // Falls back to "" when using StartMode::AllScreens (no exclusions configured).
+            let name = self.pending_output_names.remove(&id).unwrap_or_default();
+            self.surfaces.insert(id, SurfaceState::new(name));
+        }
+        self.surfaces.get_mut(&id).unwrap()
     }
 
     /// Returns a reference to the `SurfaceState` for `id`, or `None` if the surface is unknown.
@@ -1071,10 +1118,18 @@ mod tests {
     }
 
     #[test]
+    fn boot_with_empty_allowed_outputs_uses_allscreens_mode() {
+        // Empty allowed_outputs → pending_output_names is empty (AllScreens handles creation)
+        let config = make_config();
+        let (app, _) = App::boot(config, vec![]);
+        assert!(app.pending_output_names.is_empty());
+    }
+
+    #[test]
     fn boot_with_config_stores_config() {
         let mut config = Config::default();
         config.bar.collapsed_width = 60;
-        let (app, _) = App::boot(config);
+        let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.config.bar.collapsed_width, 60);
     }
 
@@ -1087,7 +1142,7 @@ mod tests {
     #[test]
     fn boot_modules_empty_with_no_module_config() {
         let config = make_config();
-        let (app, _) = App::boot(config);
+        let (app, _) = App::boot(config, vec![]);
         assert!(app.modules.is_empty());
     }
 
@@ -1095,7 +1150,7 @@ mod tests {
     fn undeclared_known_type_in_bar_modules_uses_defaults() {
         let mut config = Config::default();
         config.bar.modules.bottom = vec!["clock".into()];
-        let (app, _) = App::boot(config);
+        let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
 
@@ -1103,7 +1158,7 @@ mod tests {
     fn undeclared_unknown_name_in_bar_modules_is_skipped() {
         let mut config = Config::default();
         config.bar.modules.bottom = vec!["my-script".into()];
-        let (app, _) = App::boot(config);
+        let (app, _) = App::boot(config, vec![]);
         assert!(app.modules.is_empty());
     }
 
@@ -1117,13 +1172,13 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.bottom = vec!["clock".into()];
-        let (app, _) = App::boot(config);
+        let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
 
     #[test]
     fn hover_enter_sets_hovered_module() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         let id = ModuleId::new("clock");
         let _ = app.update(Message::ModuleHoverEnter(id.clone(), wid));
@@ -1132,7 +1187,7 @@ mod tests {
 
     #[test]
     fn hover_exit_clears_hovered_module() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         let id = ModuleId::new("clock");
         let _ = app.update(Message::ModuleHoverEnter(id.clone(), wid));
@@ -1142,7 +1197,7 @@ mod tests {
 
     #[test]
     fn hover_exit_different_id_does_not_clear() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         let id_a = ModuleId::new("clock");
         let id_b = ModuleId::new("battery");
@@ -1164,7 +1219,7 @@ mod tests {
             }),
         }];
         config.bar.modules.bottom = vec!["script".into()];
-        let (app, _) = App::boot(config);
+        let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
 
@@ -1172,7 +1227,7 @@ mod tests {
     fn script_output_event_updates_state() {
         use crate::modules::script::ScriptEvent;
 
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let id = ModuleId::new("script");
         let _ = app.update(Message::Module(
             id.clone(),
@@ -1198,7 +1253,7 @@ mod tests {
             }),
         }];
         config.bar.modules.bottom = vec!["button".into()];
-        let (app, _) = App::boot(config);
+        let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
 
@@ -1206,7 +1261,7 @@ mod tests {
     fn button_ready_event_updates_state() {
         use crate::modules::button::ButtonEvent;
 
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let id = ModuleId::new("button");
         let _ = app.update(Message::Module(
             id.clone(),
@@ -1220,7 +1275,7 @@ mod tests {
 
     #[test]
     fn module_click_no_match_does_not_panic() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         let id = ModuleId::new("nonexistent");
         let _ = app.update(Message::ModuleClick(id, wid));
@@ -1241,7 +1296,7 @@ mod tests {
             }),
         }];
         config.bar.modules.bottom = vec!["script".into()];
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
 
         let id = ModuleId::new("script");
         app.shared.modules.insert(
@@ -1266,13 +1321,13 @@ mod tests {
 
     #[test]
     fn app_starts_with_no_surfaces() {
-        let (app, _) = App::boot(make_config());
+        let (app, _) = App::boot(make_config(), vec![]);
         assert!(app.surfaces.is_empty());
     }
 
     #[test]
     fn bar_click_starts_expanding_from_collapsed() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarClick(wid));
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
@@ -1280,7 +1335,7 @@ mod tests {
 
     #[test]
     fn bar_click_starts_collapsing_from_expanded() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::BarClick(wid));
@@ -1291,7 +1346,7 @@ mod tests {
 
     #[test]
     fn tick_advances_expand_progress() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanding(0.0);
         let _ = app.update(Message::Tick);
@@ -1305,7 +1360,7 @@ mod tests {
 
     #[test]
     fn tick_completes_expand_animation() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanding(0.999);
         let _ = app.update(Message::Tick);
@@ -1314,7 +1369,7 @@ mod tests {
 
     #[test]
     fn tick_advances_collapse_progress() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Collapsing(0.0);
         let _ = app.update(Message::Tick);
@@ -1328,7 +1383,7 @@ mod tests {
 
     #[test]
     fn tick_completes_collapse_animation() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Collapsing(0.999);
         let _ = app.update(Message::Tick);
@@ -1337,7 +1392,7 @@ mod tests {
 
     #[test]
     fn tick_no_op_when_collapsed() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Collapsed;
         let _ = app.update(Message::Tick);
@@ -1346,7 +1401,7 @@ mod tests {
 
     #[test]
     fn tick_no_op_when_expanded() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::Tick);
@@ -1357,14 +1412,14 @@ mod tests {
 
     #[test]
     fn app_starts_with_bar_hovered_false() {
-        let (app, _) = App::boot(make_config());
+        let (app, _) = App::boot(make_config(), vec![]);
         // No surfaces yet, so bar_hovered is not tracked — passes trivially.
         assert!(app.surfaces.values().all(|s| !s.bar_hovered));
     }
 
     #[test]
     fn hover_enter_click_trigger_does_nothing() {
-        let (mut app, _) = App::boot(make_config()); // expand_trigger = Click
+        let (mut app, _) = App::boot(make_config(), vec![]); // expand_trigger = Click
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
@@ -1373,7 +1428,7 @@ mod tests {
 
     #[test]
     fn hover_exit_click_trigger_does_nothing() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::BarHoverExit(wid));
@@ -1382,7 +1437,7 @@ mod tests {
 
     #[test]
     fn hover_enter_hover_trigger_zero_delay_starts_expanding() {
-        let (mut app, _) = App::boot(make_hover_config());
+        let (mut app, _) = App::boot(make_hover_config(), vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
@@ -1390,7 +1445,7 @@ mod tests {
 
     #[test]
     fn hover_exit_when_expanded_starts_collapsing() {
-        let (mut app, _) = App::boot(make_hover_config());
+        let (mut app, _) = App::boot(make_hover_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::BarHoverExit(wid));
@@ -1399,7 +1454,7 @@ mod tests {
 
     #[test]
     fn hover_exit_when_expanding_reverses() {
-        let (mut app, _) = App::boot(make_hover_config());
+        let (mut app, _) = App::boot(make_hover_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanding(0.3);
         let _ = app.update(Message::BarHoverExit(wid));
@@ -1412,7 +1467,7 @@ mod tests {
 
     #[test]
     fn hover_exit_when_collapsed_does_nothing() {
-        let (mut app, _) = App::boot(make_hover_config());
+        let (mut app, _) = App::boot(make_hover_config(), vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverExit(wid));
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
@@ -1422,7 +1477,7 @@ mod tests {
     fn hover_enter_with_delay_sets_pending() {
         let mut config = make_hover_config();
         config.bar.hover_delay = 100;
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
@@ -1433,7 +1488,7 @@ mod tests {
     fn hover_exit_cancels_pending() {
         let mut config = make_hover_config();
         config.bar.hover_delay = 100;
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
         let _ = app.update(Message::BarHoverExit(wid));
@@ -1445,7 +1500,7 @@ mod tests {
     fn tick_triggers_expand_when_delay_elapsed() {
         let mut config = make_hover_config();
         config.bar.hover_delay = 100;
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid).hover_pending_ms = Some(90.0);
         let _ = app.update(Message::Tick);
@@ -1455,7 +1510,7 @@ mod tests {
 
     #[test]
     fn bar_click_noop_when_hover_trigger() {
-        let (mut app, _) = App::boot(make_hover_config());
+        let (mut app, _) = App::boot(make_hover_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // initialize so surface exists before early-return
         let _ = app.update(Message::BarClick(wid));
@@ -1466,14 +1521,14 @@ mod tests {
 
     #[test]
     fn niri_connected_event_sets_connected() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let _ = app.update(Message::Niri(NiriEvent::Connected));
         assert!(app.shared.niri.connected);
     }
 
     #[test]
     fn niri_unavailable_event_does_not_crash() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let _ = app.update(Message::Niri(NiriEvent::Unavailable));
         assert!(!app.shared.niri.connected);
     }
@@ -1481,7 +1536,7 @@ mod tests {
     #[test]
     fn niri_workspaces_changed_stores_workspaces() {
         use niri_ipc::{Event, Workspace};
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let ws = Workspace {
             id: 1,
             idx: 0,
@@ -1501,7 +1556,7 @@ mod tests {
     #[test]
     fn niri_window_focus_changed_stores_id() {
         use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
             id: Some(42),
         })));
@@ -1511,7 +1566,7 @@ mod tests {
     #[test]
     fn niri_window_focus_cleared() {
         use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         app.shared.niri.focused_window_id = Some(99);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
             id: None,
@@ -1522,7 +1577,7 @@ mod tests {
     #[test]
     fn niri_unknown_event_is_ignored() {
         use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let _ = app.update(Message::Niri(NiriEvent::Event(
             Event::KeyboardLayoutsChanged {
                 keyboard_layouts: niri_ipc::KeyboardLayouts {
@@ -1546,7 +1601,7 @@ mod tests {
             params: ModuleParams::None,
         }];
         config.bar.modules.top = vec!["workspaces".into()];
-        App::boot(config).0
+        App::boot(config, vec![]).0
     }
 
     fn make_workspace(idx: u8, is_focused: bool) -> niri_ipc::Workspace {
@@ -1601,7 +1656,7 @@ mod tests {
     #[test]
     fn workspaces_module_state_not_updated_without_workspaces_module_in_config() {
         use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let ws = make_workspace(0, true);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws],
@@ -1680,7 +1735,7 @@ mod tests {
             params: ModuleParams::None,
         }];
         config.bar.modules.center = vec!["focused-window".into()];
-        App::boot(config).0
+        App::boot(config, vec![]).0
     }
 
     fn make_window(id: u64, title: Option<&str>, is_focused: bool) -> niri_ipc::Window {
@@ -1806,7 +1861,7 @@ mod tests {
     #[test]
     fn focused_window_state_not_updated_without_focused_window_module() {
         use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let win = make_window(1, Some("Firefox"), true);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowsChanged {
             windows: vec![win],
@@ -1826,7 +1881,7 @@ mod tests {
 
     #[test]
     fn dbus_ready_stores_connections_in_shared_state() {
-        let (mut app, _) = App::boot(Config::default());
+        let (mut app, _) = App::boot(Config::default(), vec![]);
         let conns = crate::dbus::DbusConnections::default();
         let _ = app.update(Message::DbusReady(conns));
         assert!(app.shared.dbus.session.is_none());
@@ -1846,7 +1901,7 @@ mod tests {
             }),
         }];
         config.bar.modules.bottom = vec!["battery".into()];
-        App::boot(config).0
+        App::boot(config, vec![]).0
     }
 
     #[test]
@@ -1879,7 +1934,7 @@ mod tests {
 
     #[test]
     fn battery_state_not_updated_without_battery_module() {
-        let (mut app, _) = App::boot(Config::default());
+        let (mut app, _) = App::boot(Config::default(), vec![]);
         let _ = app.update(Message::Battery(BatteryEvent::StateChanged {
             percentage: 50.0,
             is_charging: true,
@@ -1899,7 +1954,7 @@ mod tests {
             params: ModuleParams::Network(NetworkConfig),
         }];
         config.bar.modules.bottom = vec!["network".into()];
-        App::boot(config).0
+        App::boot(config, vec![]).0
     }
 
     #[test]
@@ -1934,7 +1989,7 @@ mod tests {
     #[test]
     fn network_state_not_updated_without_network_module() {
         use crate::modules::network::NetworkConnectivity;
-        let (mut app, _) = App::boot(Config::default());
+        let (mut app, _) = App::boot(Config::default(), vec![]);
         let _ = app.update(Message::Network(NetworkEvent::StateChanged {
             connectivity: NetworkConnectivity::Full,
             label: None,
@@ -1954,7 +2009,7 @@ mod tests {
             params: ModuleParams::Volume(VolumeConfig { step: 5 }),
         }];
         config.bar.modules.bottom = vec!["volume".into()];
-        App::boot(config).0
+        App::boot(config, vec![]).0
     }
 
     #[test]
@@ -1987,7 +2042,7 @@ mod tests {
 
     #[test]
     fn volume_state_not_updated_without_volume_module() {
-        let (mut app, _) = App::boot(Config::default());
+        let (mut app, _) = App::boot(Config::default(), vec![]);
         let _ = app.update(Message::Volume(VolumeEvent::StateChanged {
             volume: 50.0,
             muted: false,
@@ -2000,7 +2055,7 @@ mod tests {
 
     #[test]
     fn focused_module_starts_none_for_new_surface() {
-        let (app, _) = App::boot(make_config());
+        let (app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         assert!(app.surfaces.get(&wid).map(|s| s.focused_module.is_none()).unwrap_or(true));
     }
@@ -2015,7 +2070,7 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.top = vec!["clock".into()];
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
         assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
@@ -2031,7 +2086,7 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.top = vec!["clock".into()];
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
         assert!(app.surfaces[&wid].focused_module.is_some());
@@ -2049,7 +2104,7 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.top = vec!["clock".into()];
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
         assert!(app.surfaces[&wid].focused_module.is_some());
@@ -2059,7 +2114,7 @@ mod tests {
 
     #[test]
     fn escape_pressed_when_not_focused_is_noop() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         let _ = app.update(Message::EscapePressed(wid));
         assert!(app.surfaces[&wid].focused_module.is_none());
@@ -2075,7 +2130,7 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.center = vec!["clock".into()];
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
         assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
@@ -2083,7 +2138,7 @@ mod tests {
 
     #[test]
     fn bar_focus_gained_with_no_modules_is_noop() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
         assert!(app.surfaces[&wid].focused_module.is_none());
@@ -2119,7 +2174,7 @@ mod tests {
         config.bar.modules.top = vec!["clock".into(), "battery".into()];
         config.bar.modules.center = vec!["network".into()];
         config.bar.modules.bottom = vec!["workspaces".into()];
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // pre-initialize surface
         (app, wid)
@@ -2209,7 +2264,7 @@ mod tests {
         ];
         config.bar.modules.top = vec!["clock".into()];
         config.bar.modules.bottom = vec!["workspaces".into()];
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusNextZone(wid));
@@ -2265,7 +2320,7 @@ mod tests {
         ];
         config.bar.modules.top = vec!["clock".into(), "volume".into()];
         config.bar.modules.center = vec!["button".into()];
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // pre-initialize
         (app, wid)
@@ -2385,7 +2440,7 @@ mod tests {
 
     #[test]
     fn toggle_expand_from_collapsed_starts_expanding() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // initialize surface so ToggleExpand can find it
         let _ = app.update(Message::ToggleExpand);
@@ -2394,7 +2449,7 @@ mod tests {
 
     #[test]
     fn toggle_expand_from_expanded_starts_collapsing() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::ToggleExpand);
@@ -2403,7 +2458,7 @@ mod tests {
 
     #[test]
     fn toggle_expand_reverses_expanding_mid_animation() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanding(0.4);
         let _ = app.update(Message::ToggleExpand);
@@ -2416,7 +2471,7 @@ mod tests {
 
     #[test]
     fn toggle_expand_reverses_collapsing_mid_animation() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Collapsing(0.3);
         let _ = app.update(Message::ToggleExpand);
@@ -2429,7 +2484,7 @@ mod tests {
 
     #[test]
     fn toggle_expand_works_with_hover_trigger() {
-        let (mut app, _) = App::boot(make_hover_config());
+        let (mut app, _) = App::boot(make_hover_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // initialize
         let _ = app.update(Message::ToggleExpand);
@@ -2438,7 +2493,7 @@ mod tests {
 
     #[test]
     fn toggle_expand_double_toggle_collapses() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // initialize
         let _ = app.update(Message::ToggleExpand); // → Expanding(0.0)
@@ -2451,7 +2506,7 @@ mod tests {
 
     #[test]
     fn bar_click_noop_when_expand_disabled() {
-        let (mut app, _) = App::boot(make_expand_disabled_config());
+        let (mut app, _) = App::boot(make_expand_disabled_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // initialize so surface exists before early-return
         let _ = app.update(Message::BarClick(wid));
@@ -2460,7 +2515,7 @@ mod tests {
 
     #[test]
     fn toggle_expand_noop_when_expand_disabled() {
-        let (mut app, _) = App::boot(make_expand_disabled_config());
+        let (mut app, _) = App::boot(make_expand_disabled_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // initialize
         let _ = app.update(Message::ToggleExpand);
@@ -2472,7 +2527,7 @@ mod tests {
         let mut config = make_expand_disabled_config();
         config.bar.expand_trigger = ExpandTrigger::Hover;
         config.bar.hover_delay = 0;
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
@@ -2483,7 +2538,7 @@ mod tests {
     fn hover_exit_noop_when_expand_disabled() {
         let mut config = make_expand_disabled_config();
         config.bar.expand_trigger = ExpandTrigger::Hover;
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::BarHoverExit(wid));
@@ -2494,7 +2549,7 @@ mod tests {
 
     #[test]
     fn bar_click_horizontal_bar_starts_expanding() {
-        let (mut app, _) = App::boot(make_horizontal_config());
+        let (mut app, _) = App::boot(make_horizontal_config(), vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarClick(wid));
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
@@ -2502,7 +2557,7 @@ mod tests {
 
     #[test]
     fn toggle_expand_horizontal_bar_starts_expanding() {
-        let (mut app, _) = App::boot(make_horizontal_config());
+        let (mut app, _) = App::boot(make_horizontal_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // initialize
         let _ = app.update(Message::ToggleExpand);
@@ -2514,7 +2569,7 @@ mod tests {
         let mut config = make_horizontal_config();
         config.bar.expand_trigger = ExpandTrigger::Hover;
         config.bar.hover_delay = 0;
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
@@ -2522,7 +2577,7 @@ mod tests {
 
     #[test]
     fn overlay_size_change_vertical_bar_uses_width() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.config.bar.collapsed_width = 48;
         app.config.bar.expanded_width = 200;
@@ -2533,7 +2588,7 @@ mod tests {
 
     #[test]
     fn overlay_size_change_horizontal_bar_uses_height() {
-        let (mut app, _) = App::boot(make_horizontal_config());
+        let (mut app, _) = App::boot(make_horizontal_config(), vec![]);
         let wid = test_wid();
         app.config.bar.collapsed_width = 48;
         app.config.bar.expanded_width = 200;
@@ -2546,13 +2601,13 @@ mod tests {
 
     #[test]
     fn boot_returns_app_and_task() {
-        let (app, _task) = App::boot(make_config());
+        let (app, _task) = App::boot(make_config(), vec![]);
         assert!(app.surfaces.is_empty()); // no surfaces before first view/event
     }
 
     #[test]
     fn surface_mut_creates_default_state_for_new_window() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         assert!(app.surfaces.get(&wid).is_none());
         let s = app.surface_mut(wid);
@@ -2561,7 +2616,7 @@ mod tests {
 
     #[test]
     fn two_surfaces_have_independent_expand_state() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid_a = test_wid();
         let wid_b = test_wid();
         app.surface_mut(wid_a).expand = ExpandState::Expanded;
@@ -2572,7 +2627,7 @@ mod tests {
 
     #[test]
     fn two_surfaces_have_independent_focus_state() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid_a = test_wid();
         let wid_b = test_wid();
         let focus_id = ModuleId::new("clock");
@@ -2583,14 +2638,14 @@ mod tests {
 
     #[test]
     fn tick_not_needed_when_no_surfaces() {
-        let (app, _) = App::boot(make_config());
+        let (app, _) = App::boot(make_config(), vec![]);
         let needs_tick = app.surfaces.values().any(|s| s.expand.is_animating());
         assert!(!needs_tick);
     }
 
     #[test]
     fn tick_needed_when_any_surface_animating() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanding(0.5);
         let needs_tick = app.surfaces.values().any(|s| s.expand.is_animating());
@@ -2599,7 +2654,7 @@ mod tests {
 
     #[test]
     fn bar_click_only_affects_clicked_surface() {
-        let (mut app, _) = App::boot(make_config());
+        let (mut app, _) = App::boot(make_config(), vec![]);
         let wid_a = test_wid();
         let wid_b = test_wid();
         app.surface_mut(wid_b); // initialize surface B in Collapsed
@@ -2620,7 +2675,7 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.top = vec!["clock".into()];
-        let (mut app, _) = App::boot(config);
+        let (mut app, _) = App::boot(config, vec![]);
         let wid_a = test_wid();
         let wid_b = test_wid();
         app.surface_mut(wid_b); // initialize surface B without focus

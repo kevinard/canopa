@@ -2,8 +2,8 @@ use kdl::KdlDocument;
 
 use super::{
     BarConfig, BarModules, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger,
-    ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, VolumeConfig, WorkspaceLabelConfig,
-    WorkspacesConfig,
+    ModuleConfig, ModuleParams, NetworkConfig, OutputConfig, ScriptConfig, VolumeConfig,
+    WorkspaceLabelConfig, WorkspacesConfig,
 };
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -13,7 +13,56 @@ pub fn parse(input: &str) -> anyhow::Result<Config> {
     let doc: KdlDocument = input.parse().map_err(|e| anyhow::anyhow!("config: {e}"))?;
     let bar = parse_bar_section(&doc)?;
     let modules = parse_modules_section(&doc)?;
-    Ok(Config { bar, modules })
+    let outputs = parse_output_sections(&doc)?;
+    Ok(Config { bar, modules, outputs })
+}
+
+fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>> {
+    let mut result = Vec::new();
+    for node in doc.nodes() {
+        if node.name().value() != "output" {
+            continue;
+        }
+        // output name is the first positional argument
+        let name = node
+            .entries()
+            .iter()
+            .find(|e| e.name().is_none())
+            .and_then(|e| e.value().as_string())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "output: missing name argument. \
+                     Expected: output \"<name>\" {{ ... }}, e.g. output \"DP-1\" {{ enabled #false }}"
+                )
+            })?
+            .to_string();
+        let mut enabled = true;
+        if let Some(children) = node.children() {
+            for child in children.nodes() {
+                match child.name().value() {
+                    "enabled" => {
+                        enabled = child
+                            .entries()
+                            .iter()
+                            .find(|e| e.name().is_none())
+                            .and_then(|e| e.value().as_bool())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "output {name:?}: enabled: expected a boolean value (#true or #false)."
+                                )
+                            })?;
+                    }
+                    other => {
+                        anyhow::bail!(
+                            "output {name:?}: unknown key {other:?}. Expected: one of: enabled."
+                        );
+                    }
+                }
+            }
+        }
+        result.push(OutputConfig { name, enabled });
+    }
+    Ok(result)
 }
 
 fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>> {
