@@ -639,13 +639,14 @@ impl App {
             }
             Message::BarFocusGained(window) => {
                 // Highlight first module in top zone (AC #1); fall back to center/bottom.
-                let first = self
-                    .modules
+                // Use the effective nav list so per-output module overrides are respected.
+                let nav = self.effective_nav_list(window);
+                let first = nav
                     .iter()
                     .find(|(z, _)| *z == Zone::Top)
-                    .or_else(|| self.modules.iter().find(|(z, _)| *z == Zone::Center))
-                    .or_else(|| self.modules.iter().find(|(z, _)| *z == Zone::Bottom))
-                    .map(|(_, m)| m.id());
+                    .or_else(|| nav.iter().find(|(z, _)| *z == Zone::Center))
+                    .or_else(|| nav.iter().find(|(z, _)| *z == Zone::Bottom))
+                    .map(|(_, id)| id.clone());
                 let s = self.surface_mut(window);
                 s.focused_module = first;
                 s.module_activated = false;
@@ -702,7 +703,7 @@ impl App {
                 }
                 // Navigation mode: move to next module.
                 if let Some(ref current) = s.focused_module.clone()
-                    && let Some(next) = self.nav_next(current)
+                    && let Some(next) = self.nav_next(current, window)
                 {
                     self.surface_mut(window).focused_module = Some(next);
                 }
@@ -729,7 +730,7 @@ impl App {
                 }
                 // Navigation mode: move to previous module.
                 if let Some(ref current) = s.focused_module.clone()
-                    && let Some(prev) = self.nav_prev(current)
+                    && let Some(prev) = self.nav_prev(current, window)
                 {
                     self.surface_mut(window).focused_module = Some(prev);
                 }
@@ -742,7 +743,7 @@ impl App {
                 }
                 s.module_activated = false; // deactivate on zone jump
                 if let Some(ref current) = s.focused_module.clone()
-                    && let Some(next) = self.nav_next_zone(current)
+                    && let Some(next) = self.nav_next_zone(current, window)
                 {
                     self.surface_mut(window).focused_module = Some(next);
                 }
@@ -755,7 +756,7 @@ impl App {
                 }
                 s.module_activated = false; // deactivate on zone jump
                 if let Some(ref current) = s.focused_module.clone()
-                    && let Some(prev) = self.nav_prev_zone(current)
+                    && let Some(prev) = self.nav_prev_zone(current, window)
                 {
                     self.surface_mut(window).focused_module = Some(prev);
                 }
@@ -1013,46 +1014,77 @@ impl App {
         }
     }
 
-    /// Returns the ID of the next module in the bar (global order, wraps from last to first).
-    fn nav_next(&self, current: &ModuleId) -> Option<ModuleId> {
-        let idx = self.modules.iter().position(|(_, m)| m.id() == *current)?;
-        let next_idx = (idx + 1) % self.modules.len();
-        Some(self.modules[next_idx].1.id())
+    /// Build an ordered list of (zone, module_id) for the given surface's effective module layout.
+    /// This filters self.modules to only those visible on that output, in the correct zone order.
+    fn effective_nav_list(&self, window: iced::window::Id) -> Vec<(Zone, ModuleId)> {
+        let output_name = self
+            .surfaces
+            .get(&window)
+            .map(|s| s.output_name.as_str())
+            .unwrap_or("");
+        let bar = self.config.effective_bar_for(output_name);
+        // Rebuild the ordered (zone, name) list from the effective bar modules.
+        let mut result = Vec::new();
+        for (zone, names) in [
+            (Zone::Top, &bar.modules.top),
+            (Zone::Center, &bar.modules.center),
+            (Zone::Bottom, &bar.modules.bottom),
+        ] {
+            for name in names {
+                if let Some((_, m)) = self.modules.iter().find(|(_, m)| m.id().0 == *name) {
+                    result.push((zone.clone(), m.id()));
+                }
+            }
+        }
+        result
     }
 
-    /// Returns the ID of the previous module in the bar (global order, wraps from first to last).
-    fn nav_prev(&self, current: &ModuleId) -> Option<ModuleId> {
-        let idx = self.modules.iter().position(|(_, m)| m.id() == *current)?;
-        let prev_idx = (idx + self.modules.len() - 1) % self.modules.len();
-        Some(self.modules[prev_idx].1.id())
+    /// Returns the ID of the next module in the surface's effective layout (wraps last→first).
+    fn nav_next(&self, current: &ModuleId, window: iced::window::Id) -> Option<ModuleId> {
+        let list = self.effective_nav_list(window);
+        let idx = list.iter().position(|(_, id)| id == current)?;
+        let next_idx = (idx + 1) % list.len();
+        Some(list[next_idx].1.clone())
     }
 
-    /// Returns the ID of the first module in the next non-empty zone (Tab cycle: Top→Center→Bottom→Top).
-    fn nav_next_zone(&self, current: &ModuleId) -> Option<ModuleId> {
-        let idx = self.modules.iter().position(|(_, m)| m.id() == *current)?;
-        let current_zone = &self.modules[idx].0;
+    /// Returns the ID of the previous module in the surface's effective layout (wraps first→last).
+    fn nav_prev(&self, current: &ModuleId, window: iced::window::Id) -> Option<ModuleId> {
+        let list = self.effective_nav_list(window);
+        let idx = list.iter().position(|(_, id)| id == current)?;
+        let prev_idx = (idx + list.len() - 1) % list.len();
+        Some(list[prev_idx].1.clone())
+    }
+
+    /// Returns the ID of the first module in the next non-empty zone for this surface
+    /// (Tab cycle: Top→Center→Bottom→Top).
+    fn nav_next_zone(&self, current: &ModuleId, window: iced::window::Id) -> Option<ModuleId> {
+        let list = self.effective_nav_list(window);
+        let idx = list.iter().position(|(_, id)| id == current)?;
+        let current_zone = &list[idx].0;
         let cycle = [Zone::Top, Zone::Center, Zone::Bottom];
         let start = cycle.iter().position(|z| z == current_zone).unwrap_or(0);
         for step in 1..=3 {
             let next_zone = &cycle[(start + step) % 3];
-            if let Some((_, m)) = self.modules.iter().find(|(z, _)| z == next_zone) {
-                return Some(m.id());
+            if let Some((_, id)) = list.iter().find(|(z, _)| z == next_zone) {
+                return Some(id.clone());
             }
         }
         None
     }
 
-    /// Returns the ID of the first module in the previous non-empty zone (Shift+Tab cycle: Top→Bottom→Center→Top).
-    fn nav_prev_zone(&self, current: &ModuleId) -> Option<ModuleId> {
-        let idx = self.modules.iter().position(|(_, m)| m.id() == *current)?;
-        let current_zone = &self.modules[idx].0;
+    /// Returns the ID of the first module in the previous non-empty zone for this surface
+    /// (Shift+Tab cycle: Top→Bottom→Center→Top).
+    fn nav_prev_zone(&self, current: &ModuleId, window: iced::window::Id) -> Option<ModuleId> {
+        let list = self.effective_nav_list(window);
+        let idx = list.iter().position(|(_, id)| id == current)?;
+        let current_zone = &list[idx].0;
         // Reverse cycle: Top(0)→Bottom(2)→Center(1)→Top(0)
         let cycle = [Zone::Top, Zone::Bottom, Zone::Center];
         let start = cycle.iter().position(|z| z == current_zone).unwrap_or(0);
         for step in 1..=3 {
             let prev_zone = &cycle[(start + step) % 3];
-            if let Some((_, m)) = self.modules.iter().find(|(z, _)| z == prev_zone) {
-                return Some(m.id());
+            if let Some((_, id)) = list.iter().find(|(z, _)| z == prev_zone) {
+                return Some(id.clone());
             }
         }
         None

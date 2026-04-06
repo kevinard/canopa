@@ -89,7 +89,9 @@ fn keyboard_handler(
                 && modifiers == *kb_mods
                 && key == *kb_key
             {
-                return Some(Message::ToggleExpand);
+                // Per-surface toggle: only affect the focused bar, not all bars.
+                // (Message::ToggleExpand is reserved for the IPC path which toggles all surfaces.)
+                return Some(Message::BarClick(window));
             }
             match key {
                 keyboard::Key::Named(Named::Escape) => Some(Message::EscapePressed(window)),
