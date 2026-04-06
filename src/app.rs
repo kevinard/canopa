@@ -206,6 +206,9 @@ impl App {
                 Task::none()
             }
             Message::BarClick => {
+                if !self.config.bar.expand {
+                    return Task::none();
+                }
                 // Click has no effect when hover is the expand trigger (Story 3.3 AC #6).
                 if self.config.bar.expand_trigger == ExpandTrigger::Hover {
                     return Task::none();
@@ -219,6 +222,9 @@ impl App {
             }
             Message::BarHoverEnter => {
                 self.bar_hovered = true;
+                if !self.config.bar.expand {
+                    return Task::none();
+                }
                 if self.config.bar.expand_trigger != ExpandTrigger::Hover {
                     return Task::none();
                 }
@@ -242,6 +248,9 @@ impl App {
             }
             Message::BarHoverExit => {
                 self.bar_hovered = false;
+                if !self.config.bar.expand {
+                    return Task::none();
+                }
                 if self.config.bar.expand_trigger != ExpandTrigger::Hover {
                     return Task::none();
                 }
@@ -628,6 +637,9 @@ impl App {
                 Task::none()
             }
             Message::ToggleExpand => {
+                if !self.config.bar.expand {
+                    return Task::none();
+                }
                 // Keyboard keybind always toggles — no expand_trigger check (unlike BarClick).
                 // Overlay mode: exclusive zone never changes.
                 self.expand = self.expand.toggle();
@@ -2340,6 +2352,49 @@ mod tests {
         app.expand = ExpandState::Expanded; // simulate animation complete
         let _ = app.update(Message::ToggleExpand); // → Collapsing(0.0)
         assert_eq!(app.expand, ExpandState::Collapsing(0.0));
+    }
+
+    // --- Expand disabled tests ---
+
+    fn make_expand_disabled_config() -> Config {
+        let mut config = make_config();
+        config.bar.expand = false;
+        config
+    }
+
+    #[test]
+    fn bar_click_noop_when_expand_disabled() {
+        let mut app = App::new(make_expand_disabled_config());
+        let _ = app.update(Message::BarClick);
+        assert_eq!(app.expand, ExpandState::Collapsed);
+    }
+
+    #[test]
+    fn toggle_expand_noop_when_expand_disabled() {
+        let mut app = App::new(make_expand_disabled_config());
+        let _ = app.update(Message::ToggleExpand);
+        assert_eq!(app.expand, ExpandState::Collapsed);
+    }
+
+    #[test]
+    fn hover_enter_noop_when_expand_disabled() {
+        let mut config = make_expand_disabled_config();
+        config.bar.expand_trigger = ExpandTrigger::Hover;
+        config.bar.hover_delay = 0;
+        let mut app = App::new(config);
+        let _ = app.update(Message::BarHoverEnter);
+        assert_eq!(app.expand, ExpandState::Collapsed);
+        assert!(app.bar_hovered); // bar_hovered is still set
+    }
+
+    #[test]
+    fn hover_exit_noop_when_expand_disabled() {
+        let mut config = make_expand_disabled_config();
+        config.bar.expand_trigger = ExpandTrigger::Hover;
+        let mut app = App::new(config);
+        app.expand = ExpandState::Expanded;
+        let _ = app.update(Message::BarHoverExit);
+        assert_eq!(app.expand, ExpandState::Expanded); // unchanged
     }
 
     // --- Overlay mode tests ---

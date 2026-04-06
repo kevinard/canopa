@@ -131,6 +131,9 @@ pub struct BarConfig {
     pub edge: Edge,
     pub collapsed_width: u32,
     pub expanded_width: u32,
+    /// Whether the expand/collapse overlay feature is enabled. Default: true.
+    /// When false, the bar is permanently collapsed and all expand actions are ignored.
+    pub expand: bool,
     /// What user action triggers expand/collapse. Default: Click.
     pub expand_trigger: ExpandTrigger,
     /// Dwell delay (ms) before hover expands the bar. Only used when expand_trigger = Hover.
@@ -147,6 +150,7 @@ impl Default for BarConfig {
             edge: Edge::Left,
             collapsed_width: 48,
             expanded_width: 200,
+            expand: true,
             expand_trigger: ExpandTrigger::Click,
             hover_delay: 0,
             expand_keybind: None,
@@ -530,5 +534,10 @@ mod tests {
     #[test]
     fn bar_config_default_expand_keybind_is_none() {
         assert!(BarConfig::default().expand_keybind.is_none());
+    }
+
+    #[test]
+    fn bar_config_default_expand_is_true() {
+        assert!(BarConfig::default().expand);
     }
 }

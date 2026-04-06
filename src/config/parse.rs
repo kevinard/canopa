@@ -2,8 +2,7 @@ use kdl::KdlDocument;
 
 use super::{
     BarConfig, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig,
-    ModuleParams, NetworkConfig, ScriptConfig, VolumeConfig, WorkspaceLabelConfig,
-    WorkspacesConfig,
+    ModuleParams, NetworkConfig, ScriptConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 use crate::modules::Zone;
 
@@ -379,6 +378,15 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
         .and_then(|v| u64::try_from(v).ok())
         .unwrap_or(defaults.hover_delay);
 
+    let expand = match children.get_arg("expand") {
+        None => defaults.expand,
+        Some(v) => v.as_bool().ok_or_else(|| {
+            anyhow::anyhow!(
+                "bar.expand: expected a boolean value. Expected: #true or #false."
+            )
+        })?,
+    };
+
     let expand_keybind = children
         .get_arg("expand-keybind")
         .and_then(|v| v.as_string())
@@ -388,6 +396,7 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
         edge,
         collapsed_width,
         expanded_width,
+        expand,
         expand_trigger,
         hover_delay,
         expand_keybind,
@@ -856,6 +865,41 @@ modules {
         let kdl = r#"bar { edge "left" }"#;
         let config = parse(kdl).unwrap();
         assert!(config.bar.expand_keybind.is_none());
+    }
+
+    #[test]
+    fn parse_expand_false_disables_expand() {
+        let kdl = r#"bar { expand #false }"#;
+        let config = parse(kdl).unwrap();
+        assert!(!config.bar.expand);
+    }
+
+    #[test]
+    fn parse_expand_true_enables_expand() {
+        let kdl = r#"bar { expand #true }"#;
+        let config = parse(kdl).unwrap();
+        assert!(config.bar.expand);
+    }
+
+    #[test]
+    fn parse_expand_defaults_to_true() {
+        let config = parse("").unwrap();
+        assert!(config.bar.expand);
+    }
+
+    #[test]
+    fn parse_expand_wrong_type_errors() {
+        let kdl = r#"bar { expand "yes" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("bar.expand:"),
+            "expected 'bar.expand:' prefix, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in message, got: {msg}"
+        );
     }
 
     #[test]
