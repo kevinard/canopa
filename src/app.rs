@@ -134,15 +134,26 @@ impl App {
         init_expand_keybind(config.bar.expand_keybind.as_deref());
 
         let registry = build_registry();
-        let modules: Vec<(Zone, Box<dyn Module>)> = config
+        let module_map: std::collections::HashMap<&str, &crate::config::ModuleConfig> = config
             .modules
             .iter()
-            .filter_map(|mc| {
-                registry
-                    .get(mc.module_type.as_str())
-                    .map(|ctor| (mc.zone.clone(), ctor(mc)))
-            })
+            .map(|mc| (mc.name.as_str(), mc))
             .collect();
+        let bar_mods = &config.bar.modules;
+        let mut modules: Vec<(Zone, Box<dyn Module>)> = Vec::new();
+        for (zone, names) in [
+            (Zone::Top, &bar_mods.top),
+            (Zone::Center, &bar_mods.center),
+            (Zone::Bottom, &bar_mods.bottom),
+        ] {
+            for name in names {
+                if let Some(mc) = module_map.get(name.as_str()) {
+                    if let Some(ctor) = registry.get(mc.module_type.as_str()) {
+                        modules.push((zone.clone(), ctor(mc)));
+                    }
+                }
+            }
+        }
         App {
             config,
             shared: SharedState::new(),
@@ -1006,14 +1017,13 @@ mod tests {
     #[test]
     fn clock_module_instantiated_from_registry() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        use crate::modules::Zone;
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
-            zone: Zone::Bottom,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
+        config.bar.modules.bottom = vec!["clock".into()];
         let app = App::new(config);
         assert_eq!(app.modules.len(), 1);
     }
@@ -1054,17 +1064,16 @@ mod tests {
     #[test]
     fn script_module_instantiated_from_registry() {
         use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
-        use crate::modules::Zone;
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "script".into(),
             module_type: "script".into(),
-            zone: Zone::Bottom,
             params: ModuleParams::Script(ScriptConfig {
                 command: "echo hi".into(),
                 interval: 5,
             }),
         }];
+        config.bar.modules.bottom = vec!["script".into()];
         let app = App::new(config);
         assert_eq!(app.modules.len(), 1);
     }
@@ -1088,18 +1097,17 @@ mod tests {
     #[test]
     fn button_module_instantiated_from_registry() {
         use crate::config::{ButtonConfig, ModuleConfig, ModuleParams};
-        use crate::modules::Zone;
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "button".into(),
             module_type: "button".into(),
-            zone: Zone::Bottom,
             params: ModuleParams::Button(ButtonConfig {
                 label: "Launch".into(),
                 icon: ">".into(),
                 on_click: "kitty".into(),
             }),
         }];
+        config.bar.modules.bottom = vec!["button".into()];
         let app = App::new(config);
         assert_eq!(app.modules.len(), 1);
     }
@@ -1132,19 +1140,18 @@ mod tests {
     #[test]
     fn script_failed_event_retains_previous_state() {
         use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
-        use crate::modules::Zone;
         use crate::modules::script::ScriptEvent;
 
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "script".into(),
             module_type: "script".into(),
-            zone: Zone::Bottom,
             params: ModuleParams::Script(ScriptConfig {
                 command: "echo hi".into(),
                 interval: 5,
             }),
         }];
+        config.bar.modules.bottom = vec!["script".into()];
         let mut app = App::new(config);
 
         // Pre-populate with known output
@@ -1439,9 +1446,9 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "workspaces".into(),
             module_type: "workspaces".into(),
-            zone: Zone::Top,
             params: ModuleParams::None,
         }];
+        config.bar.modules.top = vec!["workspaces".into()];
         App::new(config)
     }
 
@@ -1582,9 +1589,9 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "focused-window".into(),
             module_type: "focused-window".into(),
-            zone: Zone::Center,
             params: ModuleParams::None,
         }];
+        config.bar.modules.center = vec!["focused-window".into()];
         App::new(config)
     }
 
@@ -1765,11 +1772,11 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "battery".into(),
             module_type: "battery".into(),
-            zone: Zone::Bottom,
             params: ModuleParams::Battery(BatteryConfig {
                 critical_threshold: 15,
             }),
         }];
+        config.bar.modules.bottom = vec!["battery".into()];
         App::new(config)
     }
 
@@ -1820,9 +1827,9 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "network".into(),
             module_type: "network".into(),
-            zone: Zone::Bottom,
             params: ModuleParams::Network(NetworkConfig),
         }];
+        config.bar.modules.bottom = vec!["network".into()];
         App::new(config)
     }
 
@@ -1875,9 +1882,9 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "volume".into(),
             module_type: "volume".into(),
-            zone: Zone::Bottom,
             params: ModuleParams::Volume(VolumeConfig { step: 5 }),
         }];
+        config.bar.modules.bottom = vec!["volume".into()];
         App::new(config)
     }
 
@@ -1935,9 +1942,9 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
-            zone: Zone::Top,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
+        config.bar.modules.top = vec!["clock".into()];
         let mut app = App::new(config);
         let _ = app.update(Message::BarFocusGained);
         assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
@@ -1950,9 +1957,9 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
-            zone: Zone::Top,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
+        config.bar.modules.top = vec!["clock".into()];
         let mut app = App::new(config);
         let _ = app.update(Message::BarFocusGained);
         assert!(app.focused_module.is_some());
@@ -1967,9 +1974,9 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
-            zone: Zone::Top,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
+        config.bar.modules.top = vec!["clock".into()];
         let mut app = App::new(config);
         let _ = app.update(Message::BarFocusGained);
         assert!(app.focused_module.is_some());
@@ -1994,9 +2001,9 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
-            zone: Zone::Center,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
+        config.bar.modules.center = vec!["clock".into()];
         let mut app = App::new(config);
         let _ = app.update(Message::BarFocusGained);
         assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
@@ -2017,29 +2024,28 @@ mod tests {
         config.modules = vec![
             ModuleConfig {
                 name: "clock".into(),
-            module_type: "clock".into(),
-                zone: Zone::Top,
+                module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
             },
             ModuleConfig {
                 name: "battery".into(),
-            module_type: "battery".into(),
-                zone: Zone::Top,
+                module_type: "battery".into(),
                 params: ModuleParams::None,
             },
             ModuleConfig {
                 name: "network".into(),
-            module_type: "network".into(),
-                zone: Zone::Center,
+                module_type: "network".into(),
                 params: ModuleParams::None,
             },
             ModuleConfig {
                 name: "workspaces".into(),
-            module_type: "workspaces".into(),
-                zone: Zone::Bottom,
+                module_type: "workspaces".into(),
                 params: ModuleParams::None,
             },
         ];
+        config.bar.modules.top = vec!["clock".into(), "battery".into()];
+        config.bar.modules.center = vec!["network".into()];
+        config.bar.modules.bottom = vec!["workspaces".into()];
         App::new(config)
     }
 
@@ -2120,17 +2126,17 @@ mod tests {
         config.modules = vec![
             ModuleConfig {
                 name: "clock".into(),
-            module_type: "clock".into(),
-                zone: Zone::Top,
+                module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
             },
             ModuleConfig {
                 name: "workspaces".into(),
-            module_type: "workspaces".into(),
-                zone: Zone::Bottom,
+                module_type: "workspaces".into(),
                 params: ModuleParams::None,
             },
         ];
+        config.bar.modules.top = vec!["clock".into()];
+        config.bar.modules.bottom = vec!["workspaces".into()];
         let mut app = App::new(config);
         let _ = app.update(Message::BarFocusGained); // top: clock
         let _ = app.update(Message::FocusNextZone); // skip empty center → bottom
@@ -2164,20 +2170,17 @@ mod tests {
         config.modules = vec![
             ModuleConfig {
                 name: "clock".into(),
-            module_type: "clock".into(),
-                zone: Zone::Top,
+                module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
             },
             ModuleConfig {
                 name: "volume".into(),
-            module_type: "volume".into(),
-                zone: Zone::Top,
+                module_type: "volume".into(),
                 params: ModuleParams::Volume(VolumeConfig::default()),
             },
             ModuleConfig {
                 name: "button".into(),
-            module_type: "button".into(),
-                zone: Zone::Center,
+                module_type: "button".into(),
                 params: ModuleParams::Button(ButtonConfig {
                     label: "test".into(),
                     icon: ">".into(),
@@ -2185,6 +2188,8 @@ mod tests {
                 }),
             },
         ];
+        config.bar.modules.top = vec!["clock".into(), "volume".into()];
+        config.bar.modules.center = vec!["button".into()];
         App::new(config)
     }
 

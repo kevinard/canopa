@@ -6,10 +6,11 @@ bar {
     collapsed-width 48
     expanded-width 200
     expand-trigger "click"
+    modules {
+        bottom "clock"
+    }
 }
 
 modules {
-    bottom {
-        module "clock"
-    }
+    module "clock"
 }

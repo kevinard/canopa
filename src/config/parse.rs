@@ -1,10 +1,10 @@
 use kdl::KdlDocument;
 
 use super::{
-    BarConfig, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig,
-    ModuleParams, NetworkConfig, ScriptConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    BarConfig, BarModules, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger,
+    ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, VolumeConfig, WorkspaceLabelConfig,
+    WorkspacesConfig,
 };
-use crate::modules::Zone;
 
 /// Parse a KDL string into a fully-typed `Config`.
 ///
@@ -25,78 +25,61 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
     };
 
     let mut result = Vec::new();
-    for zone_node in children.nodes() {
-        let zone_name = zone_node.name().value();
-        let zone = match zone_name {
-            "top" => Zone::Top,
-            "center" => Zone::Center,
-            "bottom" => Zone::Bottom,
-            other => anyhow::bail!(
-                "modules: unknown zone {other:?}. \
-                 Expected: one of: top, center, bottom."
-            ),
-        };
+    for (i, node) in children.nodes().iter().enumerate() {
+        let node_name = node.name().value();
+        if node_name != "module" {
+            anyhow::bail!(
+                "modules[{i}]: expected node name \"module\", got {node_name:?}."
+            );
+        }
+        let name = node
+            .entries()
+            .iter()
+            .find(|e| e.name().is_none())
+            .and_then(|e| e.value().as_string())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "modules[{i}]: missing module name. \
+                     Expected: a string argument, e.g. module \"clock\"."
+                )
+            })?
+            .to_string();
 
-        let Some(zone_children) = zone_node.children() else {
-            continue; // Empty zone block — no modules.
-        };
-
-        for (i, node) in zone_children.nodes().iter().enumerate() {
-            let node_name = node.name().value();
-            if node_name != "module" {
-                anyhow::bail!(
-                    "modules.{zone_name}[{i}]: expected node name \"module\", got {node_name:?}."
-                );
-            }
-            let name = node
-                .entries()
-                .iter()
-                .find(|e| e.name().is_none())
+        let module_type = if super::KNOWN_MODULE_TYPES.contains(&name.as_str()) {
+            name.clone()
+        } else {
+            node.children()
+                .and_then(|c| c.get("type"))
+                .and_then(|n| n.entries().first())
                 .and_then(|e| e.value().as_string())
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "modules.{zone_name}[{i}]: missing module name. \
-                         Expected: a string argument, e.g. module \"clock\"."
+                        "modules[{i}] \"{name}\": name is not a known module type. \
+                         Add a `type \"<module type>\"` child to specify the type. \
+                         Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button."
                     )
                 })?
-                .to_string();
+                .to_string()
+        };
 
-            let module_type = if super::KNOWN_MODULE_TYPES.contains(&name.as_str()) {
-                name.clone()
-            } else {
-                node.children()
-                    .and_then(|c| c.get("type"))
-                    .and_then(|n| n.entries().first())
-                    .and_then(|e| e.value().as_string())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "modules.{zone_name}[{i}] \"{name}\": name is not a known module type. \
-                             Add a `type \"<module type>\"` child to specify the type. \
-                             Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button."
-                        )
-                    })?
-                    .to_string()
-            };
-
-            let params = if module_type == "battery" {
-                ModuleParams::Battery(parse_battery_params(node, i)?)
-            } else if module_type == "network" {
-                ModuleParams::Network(NetworkConfig)
-            } else if module_type == "volume" {
-                ModuleParams::Volume(parse_volume_params(node, i)?)
-            } else if module_type == "clock" {
-                ModuleParams::Clock(parse_clock_params(node, i)?)
-            } else if module_type == "script" {
-                ModuleParams::Script(parse_script_params(node, i)?)
-            } else if module_type == "button" {
-                ModuleParams::Button(parse_button_params(node, i)?)
-            } else if module_type == "workspaces" {
-                ModuleParams::Workspaces(parse_workspaces_params(node, i)?)
-            } else {
-                ModuleParams::None
-            };
-            result.push(ModuleConfig { name, module_type, zone: zone.clone(), params });
-        }
+        let params = if module_type == "battery" {
+            ModuleParams::Battery(parse_battery_params(node, i)?)
+        } else if module_type == "network" {
+            ModuleParams::Network(NetworkConfig)
+        } else if module_type == "volume" {
+            ModuleParams::Volume(parse_volume_params(node, i)?)
+        } else if module_type == "clock" {
+            ModuleParams::Clock(parse_clock_params(node, i)?)
+        } else if module_type == "script" {
+            ModuleParams::Script(parse_script_params(node, i)?)
+        } else if module_type == "button" {
+            ModuleParams::Button(parse_button_params(node, i)?)
+        } else if module_type == "workspaces" {
+            ModuleParams::Workspaces(parse_workspaces_params(node, i)?)
+        } else {
+            ModuleParams::None
+        };
+        result.push(ModuleConfig { name, module_type, params });
     }
     Ok(result)
 }
@@ -406,6 +389,8 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
         .and_then(|v| v.as_string())
         .map(|s| s.to_string());
 
+    let modules = parse_bar_modules(children)?;
+
     Ok(BarConfig {
         edge,
         collapsed_width,
@@ -414,7 +399,39 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
         expand_trigger,
         hover_delay,
         expand_keybind,
+        modules,
     })
+}
+
+fn parse_bar_modules(children: &kdl::KdlDocument) -> anyhow::Result<BarModules> {
+    let Some(modules_node) = children.get("modules") else {
+        return Ok(BarModules::default());
+    };
+    let Some(zone_doc) = modules_node.children() else {
+        return Ok(BarModules::default());
+    };
+
+    let mut result = BarModules::default();
+    for zone_node in zone_doc.nodes() {
+        let zone_name = zone_node.name().value();
+        let names: Vec<String> = zone_node
+            .entries()
+            .iter()
+            .filter(|e| e.name().is_none())
+            .filter_map(|e| e.value().as_string())
+            .map(|s| s.to_string())
+            .collect();
+        match zone_name {
+            "top" => result.top = names,
+            "center" => result.center = names,
+            "bottom" => result.bottom = names,
+            other => anyhow::bail!(
+                "bar.modules: unknown zone {other:?}. \
+                 Expected: one of: top, center, bottom."
+            ),
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -501,43 +518,25 @@ bar {
     }
 
     #[test]
-    fn parse_single_module_bottom_zone() {
-        let kdl = r#"modules { bottom { module "clock" } }"#;
+    fn parse_single_module() {
+        let kdl = r#"modules { module "clock" }"#;
         let config = parse(kdl).unwrap();
         assert_eq!(config.modules.len(), 1);
         assert_eq!(config.modules[0].name, "clock");
-        assert!(matches!(config.modules[0].zone, Zone::Bottom));
     }
 
     #[test]
     fn parse_multiple_modules_order_preserved() {
         let kdl = r#"
 modules {
-    bottom { module "clock" }
-    top { module "battery" }
+    module "clock"
+    module "battery"
 }
 "#;
         let config = parse(kdl).unwrap();
         assert_eq!(config.modules.len(), 2);
         assert_eq!(config.modules[0].name, "clock");
-        assert!(matches!(config.modules[0].zone, Zone::Bottom));
         assert_eq!(config.modules[1].name, "battery");
-        assert!(matches!(config.modules[1].zone, Zone::Top));
-    }
-
-    #[test]
-    fn parse_unknown_zone_errors() {
-        let kdl = r#"modules { diagonal { module "clock" } }"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.starts_with("modules:"),
-            "expected 'modules:' prefix, got: {msg}"
-        );
-        assert!(
-            msg.contains("diagonal"),
-            "expected unknown zone name in error: {msg}"
-        );
     }
 
     #[test]
@@ -548,20 +547,13 @@ modules {
     }
 
     #[test]
-    fn parse_empty_zone_block_is_ok() {
-        let kdl = r#"modules { top { } }"#;
-        let config = parse(kdl).unwrap();
-        assert!(config.modules.is_empty());
-    }
-
-    #[test]
     fn parse_wrong_node_name_errors() {
-        let kdl = r#"modules { bottom { widget "clock" } }"#;
+        let kdl = r#"modules { widget "clock" }"#;
         let err = parse(kdl).unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.starts_with("modules.bottom[0]:"),
-            "expected 'modules.bottom[0]:' prefix, got: {msg}"
+            msg.starts_with("modules[0]:"),
+            "expected 'modules[0]:' prefix, got: {msg}"
         );
         assert!(
             msg.contains("widget"),
@@ -573,11 +565,9 @@ modules {
     fn parse_clock_with_custom_formats() {
         let kdl = r#"
 modules {
-    bottom {
-        module "clock" {
-            time-format "%I:%M %p"
-            date-format "%Y-%m-%d"
-        }
+    module "clock" {
+        time-format "%I:%M %p"
+        date-format "%Y-%m-%d"
     }
 }
 "#;
@@ -594,7 +584,7 @@ modules {
 
     #[test]
     fn parse_clock_uses_defaults_without_children() {
-        let kdl = r#"modules { bottom { module "clock" } }"#;
+        let kdl = r#"modules { module "clock" }"#;
         let config = parse(kdl).unwrap();
         assert_eq!(config.modules.len(), 1);
         match &config.modules[0].params {
@@ -610,10 +600,8 @@ modules {
     fn parse_clock_rejects_empty_time_format() {
         let kdl = r#"
 modules {
-    bottom {
-        module "clock" {
-            time-format ""
-        }
+    module "clock" {
+        time-format ""
     }
 }
 "#;
@@ -633,10 +621,8 @@ modules {
     fn parse_clock_rejects_empty_date_format() {
         let kdl = r#"
 modules {
-    bottom {
-        module "clock" {
-            date-format ""
-        }
+    module "clock" {
+        date-format ""
     }
 }
 "#;
@@ -656,11 +642,9 @@ modules {
     fn parse_script_with_command_and_interval() {
         let kdl = r#"
 modules {
-    bottom {
-        module "script" {
-            command "date"
-            interval 10
-        }
+    module "script" {
+        command "date"
+        interval 10
     }
 }
 "#;
@@ -679,10 +663,8 @@ modules {
     fn parse_script_defaults_interval_to_5() {
         let kdl = r#"
 modules {
-    bottom {
-        module "script" {
-            command "date"
-        }
+    module "script" {
+        command "date"
     }
 }
 "#;
@@ -698,7 +680,7 @@ modules {
 
     #[test]
     fn parse_script_missing_command_errors() {
-        let kdl = r#"modules { bottom { module "script" } }"#;
+        let kdl = r#"modules { module "script" }"#;
         let err = parse(kdl).unwrap_err();
         let msg = err.to_string();
         assert!(
@@ -711,10 +693,8 @@ modules {
     fn parse_script_empty_command_errors() {
         let kdl = r#"
 modules {
-    bottom {
-        module "script" {
-            command ""
-        }
+    module "script" {
+        command ""
     }
 }
 "#;
@@ -734,11 +714,9 @@ modules {
     fn parse_script_zero_interval_errors() {
         let kdl = r#"
 modules {
-    bottom {
-        module "script" {
-            command "date"
-            interval 0
-        }
+    module "script" {
+        command "date"
+        interval 0
     }
 }
 "#;
@@ -758,12 +736,10 @@ modules {
     fn parse_button_with_all_params() {
         let kdl = r#"
 modules {
-    bottom {
-        module "button" {
-            label "Launch Terminal"
-            icon ">"
-            on-click "kitty"
-        }
+    module "button" {
+        label "Launch Terminal"
+        icon ">"
+        on-click "kitty"
     }
 }
 "#;
@@ -782,7 +758,7 @@ modules {
     #[test]
     fn parse_button_missing_block_errors() {
         // No child block at all — distinct from a missing individual field.
-        let kdl = r#"modules { bottom { module "button" } }"#;
+        let kdl = r#"modules { module "button" }"#;
         let err = parse(kdl).unwrap_err();
         let msg = err.to_string();
         assert!(
@@ -796,11 +772,9 @@ modules {
         // Child block present but label node absent.
         let kdl = r#"
 modules {
-    bottom {
-        module "button" {
-            icon ">"
-            on-click "kitty"
-        }
+    module "button" {
+        icon ">"
+        on-click "kitty"
     }
 }
 "#;
@@ -817,11 +791,9 @@ modules {
         // Child block present but icon node absent.
         let kdl = r#"
 modules {
-    bottom {
-        module "button" {
-            label "Launch"
-            on-click "kitty"
-        }
+    module "button" {
+        label "Launch"
+        on-click "kitty"
     }
 }
 "#;
@@ -837,11 +809,9 @@ modules {
     fn parse_button_missing_on_click_errors() {
         let kdl = r#"
 modules {
-    bottom {
-        module "button" {
-            label "Launch"
-            icon ">"
-        }
+    module "button" {
+        label "Launch"
+        icon ">"
     }
 }
 "#;
@@ -964,12 +934,10 @@ modules {
     fn parse_button_wrong_type_errors() {
         let kdl = r#"
 modules {
-    bottom {
-        module "button" {
-            label 42
-            icon ">"
-            on-click "kitty"
-        }
+    module "button" {
+        label 42
+        icon ">"
+        on-click "kitty"
     }
 }
 "#;
@@ -987,12 +955,10 @@ modules {
     fn parse_workspaces_with_label_and_icon() {
         let kdl = r#"
 modules {
-    top {
-        module "workspaces" {
-            workspace 1 {
-                label "web"
-                icon ">"
-            }
+    module "workspaces" {
+        workspace 1 {
+            label "web"
+            icon ">"
         }
     }
 }
@@ -1014,7 +980,7 @@ modules {
 
     #[test]
     fn parse_workspaces_no_children_is_empty() {
-        let kdl = r#"modules { top { module "workspaces" } }"#;
+        let kdl = r#"modules { module "workspaces" }"#;
         let config = parse(kdl).unwrap();
         match &config.modules[0].params {
             ModuleParams::Workspaces(cfg) => {
@@ -1028,11 +994,9 @@ modules {
     fn parse_workspaces_label_only() {
         let kdl = r#"
 modules {
-    top {
-        module "workspaces" {
-            workspace 2 {
-                label "code"
-            }
+    module "workspaces" {
+        workspace 2 {
+            label "code"
         }
     }
 }
@@ -1055,11 +1019,9 @@ modules {
     fn parse_workspaces_icon_only() {
         let kdl = r#"
 modules {
-    top {
-        module "workspaces" {
-            workspace 3 {
-                icon ">"
-            }
+    module "workspaces" {
+        workspace 3 {
+            icon ">"
         }
     }
 }
@@ -1082,11 +1044,9 @@ modules {
     fn parse_workspaces_multiple_workspaces() {
         let kdl = r#"
 modules {
-    top {
-        module "workspaces" {
-            workspace 1 { label "web" }
-            workspace 3 { label "media" icon ">" }
-        }
+    module "workspaces" {
+        workspace 1 { label "web" }
+        workspace 3 { label "media" icon ">" }
     }
 }
 "#;
@@ -1107,7 +1067,7 @@ modules {
     #[test]
     fn parse_named_module_infers_type_from_name() {
         // When name matches a known type, module_type is inferred automatically.
-        let kdl = r#"modules { bottom { module "clock" } }"#;
+        let kdl = r#"modules { module "clock" }"#;
         let config = parse(kdl).unwrap();
         assert_eq!(config.modules[0].name, "clock");
         assert_eq!(config.modules[0].module_type, "clock");
@@ -1115,14 +1075,12 @@ modules {
 
     #[test]
     fn parse_named_module_explicit_type() {
-        // When name doesn't match a known type, explicit `module "type"` child is required.
+        // When name doesn't match a known type, explicit `type` child is required.
         let kdl = r#"
 modules {
-    bottom {
-        module "work-clock" {
-            type "clock"
-            time-format "%H:%M"
-        }
+    module "work-clock" {
+        type "clock"
+        time-format "%H:%M"
     }
 }
 "#;
@@ -1137,7 +1095,7 @@ modules {
 
     #[test]
     fn parse_named_module_missing_explicit_type_errors() {
-        let kdl = r#"modules { bottom { module "my-custom" } }"#;
+        let kdl = r#"modules { module "my-custom" }"#;
         let err = parse(kdl).unwrap_err();
         let msg = err.to_string();
         assert!(
@@ -1154,12 +1112,10 @@ modules {
     fn parse_two_instances_same_type() {
         let kdl = r#"
 modules {
-    bottom {
-        module "clock"
-        module "clock2" {
-            type "clock"
-            time-format "%I:%M %p"
-        }
+    module "clock"
+    module "clock2" {
+        type "clock"
+        time-format "%I:%M %p"
     }
 }
 "#;
@@ -1175,10 +1131,8 @@ modules {
     fn parse_workspaces_zero_workspace_number_errors() {
         let kdl = r#"
 modules {
-    top {
-        module "workspaces" {
-            workspace 0 { label "bad" }
-        }
+    module "workspaces" {
+        workspace 0 { label "bad" }
     }
 }
 "#;

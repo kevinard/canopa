@@ -109,7 +109,8 @@ pub enum ModuleParams {
     Workspaces(WorkspacesConfig),
 }
 
-/// A single module entry from the config, specifying name, type, zone placement, and module params.
+/// A single module entry from the config, specifying name, type, and module params.
+/// Zone placement is determined by `bar.modules`, not by this struct.
 #[derive(Debug, Clone)]
 pub struct ModuleConfig {
     /// Instance name — unique identifier for this module instance (e.g. "clock", "work-status").
@@ -117,7 +118,6 @@ pub struct ModuleConfig {
     /// Module type — determines which module implementation to use (e.g. "clock", "script").
     /// Inferred from `name` when the name matches a known module type; otherwise explicit.
     pub module_type: String,
-    pub zone: crate::modules::Zone,
     pub params: ModuleParams,
 }
 
@@ -127,6 +127,14 @@ pub struct ModuleConfig {
 pub struct Config {
     pub bar: BarConfig,
     pub modules: Vec<ModuleConfig>,
+}
+
+/// Per-zone ordered list of module names for the bar layout.
+#[derive(Debug, Clone, Default)]
+pub struct BarModules {
+    pub top: Vec<String>,
+    pub center: Vec<String>,
+    pub bottom: Vec<String>,
 }
 
 /// Bar-level configuration: placement edge, width targets, and expand trigger.
@@ -146,6 +154,8 @@ pub struct BarConfig {
     /// Also documents the compositor keybind the user should bind to `niribar --toggle-expand`
     /// for global (unfocused) toggling.
     pub expand_keybind: Option<String>,
+    /// Ordered module names per zone. Empty lists mean no modules in that zone.
+    pub modules: BarModules,
 }
 
 impl Default for BarConfig {
@@ -158,6 +168,7 @@ impl Default for BarConfig {
             expand_trigger: ExpandTrigger::Click,
             hover_delay: 0,
             expand_keybind: None,
+            modules: BarModules::default(),
         }
     }
 }
@@ -366,7 +377,6 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "volumee".into(),
             module_type: "volumee".into(),
-            zone: crate::modules::Zone::Bottom,
             params: ModuleParams::None,
         }];
         let err = validate(&config).unwrap_err();
@@ -387,7 +397,6 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
-            zone: crate::modules::Zone::Bottom,
             params: ModuleParams::None,
         }];
         assert!(validate(&config).is_ok());
@@ -399,7 +408,6 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "unknown".into(),
             module_type: "unknown".into(),
-            zone: crate::modules::Zone::Top,
             params: ModuleParams::None,
         }];
         let err = validate(&config).unwrap_err();
@@ -420,14 +428,12 @@ mod tests {
         config.modules = vec![
             ModuleConfig {
                 name: "clock".into(),
-            module_type: "clock".into(),
-                zone: crate::modules::Zone::Bottom,
+                module_type: "clock".into(),
                 params: ModuleParams::None,
             },
             ModuleConfig {
                 name: "bad-module".into(),
-            module_type: "bad-module".into(),
-                zone: crate::modules::Zone::Top,
+                module_type: "bad-module".into(),
                 params: ModuleParams::None,
             },
         ];
