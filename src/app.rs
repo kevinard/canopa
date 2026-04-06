@@ -243,11 +243,22 @@ impl App {
             vec![]
         };
 
+        // Pre-populate surfaces so that view() has the correct output_name from the very first
+        // render, before any update event has fired.  Without this, surface(window) returns None
+        // and unwrap_or_default() gives output_name="" — causing effective_bar_for to always
+        // return the global config, ignoring per-output overrides.
+        let surfaces: HashMap<iced::window::Id, SurfaceState> = pending_output_names
+            .iter()
+            .map(|(&id, name)| (id, SurfaceState::new(name.clone())))
+            .collect();
+
+        // pending_output_names is still kept for surface_mut() lazy-init compat,
+        // but surfaces already contains the pre-initialized entries.
         let app = App {
             config,
             shared: SharedState::new(),
             modules,
-            surfaces: HashMap::new(),
+            surfaces,
             pending_output_names,
         };
         (app, Task::batch(window_tasks))
