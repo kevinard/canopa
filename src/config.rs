@@ -129,6 +129,12 @@ pub struct OutputConfig {
     pub name: String,
     /// Whether to create a bar surface on this output. Default: true.
     pub enabled: bool,
+    /// Override for bar.collapsed-width. `None` → inherit from global `bar`.
+    pub collapsed_width: Option<u32>,
+    /// Override for bar.expanded-width. `None` → inherit from global `bar`.
+    pub expanded_width: Option<u32>,
+    /// Override for bar.modules zone layout. `None` → inherit from global `bar`.
+    pub modules: Option<BarModules>,
 }
 
 /// Parsed configuration for niribar.
@@ -139,6 +145,31 @@ pub struct Config {
     pub modules: Vec<ModuleConfig>,
     /// Per-output overrides. Outputs not listed here use global defaults.
     pub outputs: Vec<OutputConfig>,
+}
+
+impl Config {
+    /// Return the effective `BarConfig` for the given output name.
+    ///
+    /// Per-output overrides take precedence; absent fields inherit from the global `bar`.
+    /// Returns a clone of the global `bar` when the output has no config block,
+    /// or when `output_name` is `""` (AllScreens mode — no output name assigned).
+    pub fn effective_bar_for(&self, output_name: &str) -> BarConfig {
+        let global = &self.bar;
+        let Some(oc) = self.outputs.iter().find(|o| o.name == output_name) else {
+            return global.clone();
+        };
+        BarConfig {
+            collapsed_width: oc.collapsed_width.unwrap_or(global.collapsed_width),
+            expanded_width: oc.expanded_width.unwrap_or(global.expanded_width),
+            modules: oc.modules.clone().unwrap_or_else(|| global.modules.clone()),
+            // Non-overridable fields always inherit from global
+            edge: global.edge.clone(),
+            expand: global.expand,
+            expand_trigger: global.expand_trigger,
+            hover_delay: global.hover_delay,
+            expand_keybind: global.expand_keybind.clone(),
+        }
+    }
 }
 
 /// Per-zone ordered list of module names for the bar layout.
@@ -327,6 +358,32 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
                 "output {:?}: duplicate output name. \
                  Expected: each output name to appear at most once.",
                 oc.name
+            );
+        }
+    }
+    // Validate per-output width overrides
+    for oc in &config.outputs {
+        if let Some(cw) = oc.collapsed_width
+            && cw < 2
+        {
+            anyhow::bail!(
+                "output {:?}: collapsed-width: value {} is too small. \
+                 Expected: 2 or greater.",
+                oc.name,
+                cw
+            );
+        }
+        // effective collapsed width: per-output override OR global
+        let effective_collapsed = oc.collapsed_width.unwrap_or(config.bar.collapsed_width);
+        if let Some(ew) = oc.expanded_width
+            && ew < effective_collapsed
+        {
+            anyhow::bail!(
+                "output {:?}: expanded-width: value {} must be >= effective collapsed-width ({}). \
+                 Expected: a width >= collapsed-width.",
+                oc.name,
+                ew,
+                effective_collapsed
             );
         }
     }
@@ -688,5 +745,187 @@ output "DP-1" { enabled #false }"#;
 output "DP-1" { enabled #false }"#;
         let config = parse::parse(kdl).unwrap();
         assert!(validate(&config).is_ok());
+    }
+
+    // --- Story 7.4: Per-output configuration override tests ---
+
+    #[test]
+    fn effective_bar_for_unknown_output_returns_global() {
+        let config = Config::default();
+        let bar = config.effective_bar_for("DP-1");
+        assert_eq!(bar.collapsed_width, config.bar.collapsed_width);
+        assert_eq!(bar.expanded_width, config.bar.expanded_width);
+    }
+
+    #[test]
+    fn effective_bar_for_empty_name_returns_global() {
+        // AllScreens mode: output_name is "" — must return global defaults.
+        let config = Config::default();
+        let bar = config.effective_bar_for("");
+        assert_eq!(bar.collapsed_width, config.bar.collapsed_width);
+        assert_eq!(bar.expanded_width, config.bar.expanded_width);
+    }
+
+    #[test]
+    fn effective_bar_for_applies_collapsed_width_override() {
+        let mut config = Config::default();
+        config.outputs = vec![OutputConfig {
+            name: "eDP-1".into(),
+            enabled: true,
+            collapsed_width: Some(60),
+            expanded_width: None,
+            modules: None,
+        }];
+        let bar = config.effective_bar_for("eDP-1");
+        assert_eq!(bar.collapsed_width, 60);
+        // expanded_width inherits from global
+        assert_eq!(bar.expanded_width, config.bar.expanded_width);
+    }
+
+    #[test]
+    fn effective_bar_for_applies_expanded_width_override() {
+        let mut config = Config::default();
+        config.outputs = vec![OutputConfig {
+            name: "eDP-1".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: Some(300),
+            modules: None,
+        }];
+        let bar = config.effective_bar_for("eDP-1");
+        assert_eq!(bar.expanded_width, 300);
+        // collapsed_width inherits from global
+        assert_eq!(bar.collapsed_width, config.bar.collapsed_width);
+    }
+
+    #[test]
+    fn effective_bar_for_applies_modules_override() {
+        let mut config = Config::default();
+        let override_mods = BarModules {
+            top: vec!["clock".into()],
+            center: vec![],
+            bottom: vec![],
+        };
+        config.outputs = vec![OutputConfig {
+            name: "eDP-1".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: Some(override_mods.clone()),
+        }];
+        let bar = config.effective_bar_for("eDP-1");
+        assert_eq!(bar.modules.top, override_mods.top);
+        assert!(bar.modules.center.is_empty());
+        assert!(bar.modules.bottom.is_empty());
+    }
+
+    #[test]
+    fn effective_bar_for_partial_override_inherits_rest() {
+        let mut config = Config::default();
+        config.bar.collapsed_width = 48;
+        config.bar.expanded_width = 200;
+        config.bar.modules.center = vec!["clock".into()];
+        config.outputs = vec![OutputConfig {
+            name: "eDP-1".into(),
+            enabled: true,
+            collapsed_width: Some(60),
+            expanded_width: None,
+            modules: None,
+        }];
+        let bar = config.effective_bar_for("eDP-1");
+        assert_eq!(bar.collapsed_width, 60);     // overridden
+        assert_eq!(bar.expanded_width, 200);      // inherited
+        assert_eq!(bar.modules.center, vec!["clock"]); // inherited
+    }
+
+    #[test]
+    fn validate_per_output_collapsed_width_too_small_errors() {
+        let config = Config {
+            bar: BarConfig::default(),
+            modules: vec![],
+            outputs: vec![OutputConfig {
+                name: "DP-1".into(),
+                enabled: true,
+                collapsed_width: Some(1),
+                expanded_width: None,
+                modules: None,
+            }],
+        };
+        let err = validate(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("DP-1"), "got: {msg}");
+        assert!(msg.contains("collapsed-width"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_per_output_expanded_less_than_collapsed_errors() {
+        let config = Config {
+            bar: BarConfig::default(),
+            modules: vec![],
+            outputs: vec![OutputConfig {
+                name: "DP-1".into(),
+                enabled: true,
+                collapsed_width: Some(100),
+                expanded_width: Some(50),
+                modules: None,
+            }],
+        };
+        let err = validate(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("DP-1"), "got: {msg}");
+        assert!(msg.contains("expanded-width"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_per_output_expanded_less_than_global_collapsed_errors() {
+        // If only expanded-width is overridden, effective collapsed is the global value.
+        // expanded < global_collapsed should error.
+        let mut config = Config::default();
+        config.bar.collapsed_width = 80;
+        config.outputs = vec![OutputConfig {
+            name: "DP-1".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: Some(50), // 50 < 80 → error
+            modules: None,
+        }];
+        let err = validate(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("DP-1"), "got: {msg}");
+        assert!(msg.contains("expanded-width"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_per_output_valid_overrides_pass() {
+        let config = Config {
+            bar: BarConfig::default(),
+            modules: vec![],
+            outputs: vec![OutputConfig {
+                name: "eDP-1".into(),
+                enabled: true,
+                collapsed_width: Some(60),
+                expanded_width: Some(250),
+                modules: None,
+            }],
+        };
+        assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn effective_bar_for_non_overridable_fields_always_inherit() {
+        let mut config = Config::default();
+        config.bar.expand = false;
+        config.bar.hover_delay = 500;
+        config.outputs = vec![OutputConfig {
+            name: "eDP-1".into(),
+            enabled: true,
+            collapsed_width: Some(60),
+            expanded_width: Some(250),
+            modules: None,
+        }];
+        let bar = config.effective_bar_for("eDP-1");
+        // Non-overridable fields inherit from global
+        assert!(!bar.expand);
+        assert_eq!(bar.hover_delay, 500);
     }
 }

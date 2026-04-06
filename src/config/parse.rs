@@ -36,7 +36,12 @@ fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>>
                 )
             })?
             .to_string();
+
         let mut enabled = true;
+        let mut collapsed_width: Option<u32> = None;
+        let mut expanded_width: Option<u32> = None;
+        let mut modules: Option<BarModules> = None;
+
         if let Some(children) = node.children() {
             for child in children.nodes() {
                 match child.name().value() {
@@ -52,15 +57,52 @@ fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>>
                                 )
                             })?;
                     }
+                    "collapsed-width" => {
+                        let v = child
+                            .entries()
+                            .iter()
+                            .find(|e| e.name().is_none())
+                            .and_then(|e| e.value().as_integer())
+                            .and_then(|v| u32::try_from(v).ok())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "output {name:?}: collapsed-width: expected a positive integer."
+                                )
+                            })?;
+                        collapsed_width = Some(v);
+                    }
+                    "expanded-width" => {
+                        let v = child
+                            .entries()
+                            .iter()
+                            .find(|e| e.name().is_none())
+                            .and_then(|e| e.value().as_integer())
+                            .and_then(|v| u32::try_from(v).ok())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "output {name:?}: expanded-width: expected a positive integer."
+                                )
+                            })?;
+                        expanded_width = Some(v);
+                    }
+                    "modules" => {
+                        let mods = if let Some(zone_doc) = child.children() {
+                            parse_bar_modules_from_doc(zone_doc)?
+                        } else {
+                            BarModules::default()
+                        };
+                        modules = Some(mods);
+                    }
                     other => {
                         anyhow::bail!(
-                            "output {name:?}: unknown key {other:?}. Expected: one of: enabled."
+                            "output {name:?}: unknown key {other:?}. \
+                             Expected: one of: enabled, collapsed-width, expanded-width, modules."
                         );
                     }
                 }
             }
         }
-        result.push(OutputConfig { name, enabled });
+        result.push(OutputConfig { name, enabled, collapsed_width, expanded_width, modules });
     }
     Ok(result)
 }
@@ -459,7 +501,12 @@ fn parse_bar_modules(children: &kdl::KdlDocument) -> anyhow::Result<BarModules> 
     let Some(zone_doc) = modules_node.children() else {
         return Ok(BarModules::default());
     };
+    parse_bar_modules_from_doc(zone_doc)
+}
 
+/// Parse `top`, `center`, `bottom` zone nodes from a `KdlDocument`.
+/// Shared by the global `bar.modules` section and per-output `modules` overrides.
+fn parse_bar_modules_from_doc(zone_doc: &kdl::KdlDocument) -> anyhow::Result<BarModules> {
     let mut result = BarModules::default();
     for zone_node in zone_doc.nodes() {
         let zone_name = zone_node.name().value();
@@ -475,7 +522,7 @@ fn parse_bar_modules(children: &kdl::KdlDocument) -> anyhow::Result<BarModules> 
             "center" => result.center = names,
             "bottom" => result.bottom = names,
             other => anyhow::bail!(
-                "bar.modules: unknown zone {other:?}. \
+                "modules: unknown zone {other:?}. \
                  Expected: one of: top, center, bottom."
             ),
         }
@@ -1191,5 +1238,61 @@ modules {
             msg.contains("workspace number"),
             "expected 'workspace number' in error, got: {msg}"
         );
+    }
+
+    // --- Story 7.4: Per-output override parsing tests ---
+
+    #[test]
+    fn output_collapsed_width_override_parses() {
+        let config = parse(r#"output "eDP-1" { collapsed-width 60 }"#).unwrap();
+        assert_eq!(config.outputs[0].collapsed_width, Some(60));
+        assert!(config.outputs[0].expanded_width.is_none());
+        assert!(config.outputs[0].modules.is_none());
+    }
+
+    #[test]
+    fn output_expanded_width_override_parses() {
+        let config = parse(r#"output "eDP-1" { expanded-width 300 }"#).unwrap();
+        assert_eq!(config.outputs[0].expanded_width, Some(300));
+        assert!(config.outputs[0].collapsed_width.is_none());
+    }
+
+    #[test]
+    fn output_both_widths_override_parse() {
+        let kdl = "output \"eDP-1\" {\n    collapsed-width 60\n    expanded-width 250\n}";
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.outputs[0].collapsed_width, Some(60));
+        assert_eq!(config.outputs[0].expanded_width, Some(250));
+    }
+
+    #[test]
+    fn output_modules_override_parses() {
+        let kdl = r#"output "eDP-1" { modules { top "clock" "battery" } }"#;
+        let config = parse(kdl).unwrap();
+        let mods = config.outputs[0].modules.as_ref().unwrap();
+        assert_eq!(mods.top, vec!["clock", "battery"]);
+        assert!(mods.center.is_empty());
+        assert!(mods.bottom.is_empty());
+    }
+
+    #[test]
+    fn output_no_override_fields_are_none() {
+        let config = parse(r#"output "eDP-1" { enabled #true }"#).unwrap();
+        let oc = &config.outputs[0];
+        assert!(oc.collapsed_width.is_none());
+        assert!(oc.expanded_width.is_none());
+        assert!(oc.modules.is_none());
+    }
+
+    #[test]
+    fn output_unknown_key_error_lists_new_keys() {
+        // The unknown-key error should now mention the new valid keys
+        let result = parse(r#"output "DP-1" { zoom 2 }"#);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("unknown key"), "got: {msg}");
+        assert!(msg.contains("collapsed-width"), "error should list new keys: {msg}");
+        assert!(msg.contains("expanded-width"), "error should list new keys: {msg}");
+        assert!(msg.contains("modules"), "error should list new keys: {msg}");
     }
 }

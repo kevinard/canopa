@@ -17,13 +17,13 @@ use crate::surface::expand::ExpandState;
 /// rendering automatically — this crate never computes physical pixel values directly.
 #[derive(Clone)]
 pub struct SurfaceState {
-    // Intentionally stored for output name matching in Story 7.3.
-    #[allow(dead_code)]
+    /// Wayland output name for this surface. Used by Story 7.4 to resolve per-output config overrides.
+    /// Set from `pending_output_names` in `App::surface_mut()`. Empty (`""`) in AllScreens mode.
     pub output_name: String,
     /// Scale factor reported by the compositor for this output.
     /// 1.0 for standard displays, 2.0 for 2× HiDPI, 1.5 for fractional HiDPI.
     /// Set when the compositor reports scale via wlr-layer-shell (Story 7.2).
-    /// Used for observability and future per-output dimension overrides (Story 7.4).
+    /// Used for observability and per-output dimension overrides (Story 7.4).
     // Intentionally stored; read by tests and will be used in Stories 7.3/7.4.
     #[allow(dead_code)]
     pub scale_factor: f64,

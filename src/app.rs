@@ -152,51 +152,84 @@ impl App {
             .iter()
             .map(|mc| (mc.name.as_str(), mc))
             .collect();
-        let bar_mods = &config.bar.modules;
-        let mut modules: Vec<(Zone, Box<dyn Module>)> = Vec::new();
+        // Build an ordered list of (zone, name) pairs from the global bar.modules, then append
+        // any additional module names that appear only in per-output overrides (using the zone
+        // from the first override that names them).  This ensures that:
+        //  • Modules present in an output override but absent from global bar.modules get
+        //    instantiated (fixing the bug where they silently disappeared).
+        //  • The boot-zone stored in self.modules is correct for global modules so that
+        //    zone-based keyboard navigation (nav_next_zone / nav_prev_zone) still works.
+        let mut ordered: Vec<(Zone, String)> = Vec::new();
+        let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let global_mods = &config.bar.modules;
         for (zone, names) in [
-            (Zone::Top, &bar_mods.top),
-            (Zone::Center, &bar_mods.center),
-            (Zone::Bottom, &bar_mods.bottom),
+            (Zone::Top, &global_mods.top),
+            (Zone::Center, &global_mods.center),
+            (Zone::Bottom, &global_mods.bottom),
         ] {
             for name in names {
-                let synthesized;
-                let mc: &ModuleConfig = if let Some(mc) = module_map.get(name.as_str()) {
-                    mc
-                } else if let Some(params) = default_params_for_type(name) {
-                    synthesized = ModuleConfig {
-                        name: name.clone(),
-                        module_type: name.clone(),
-                        params,
-                    };
-                    &synthesized
-                } else {
-                    continue;
-                };
-                if let Some(ctor) = registry.get(mc.module_type.as_str()) {
-                    modules.push((zone.clone(), ctor(mc)));
+                if seen_names.insert(name.clone()) {
+                    ordered.push((zone.clone(), name.clone()));
                 }
+            }
+        }
+        for oc in &config.outputs {
+            if let Some(ref mods) = oc.modules {
+                for (zone, names) in [
+                    (Zone::Top, &mods.top),
+                    (Zone::Center, &mods.center),
+                    (Zone::Bottom, &mods.bottom),
+                ] {
+                    for name in names {
+                        if seen_names.insert(name.clone()) {
+                            ordered.push((zone.clone(), name.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        let mut modules: Vec<(Zone, Box<dyn Module>)> = Vec::new();
+        for (zone, name) in &ordered {
+            let synthesized;
+            let mc: &ModuleConfig = if let Some(mc) = module_map.get(name.as_str()) {
+                mc
+            } else if let Some(params) = default_params_for_type(name) {
+                synthesized = ModuleConfig {
+                    name: name.clone(),
+                    module_type: name.clone(),
+                    params,
+                };
+                &synthesized
+            } else {
+                continue;
+            };
+            if let Some(ctor) = registry.get(mc.module_type.as_str()) {
+                modules.push((zone.clone(), ctor(mc)));
             }
         }
         // Create windows for each allowed output when using manual per-output creation (Story 7.3).
         // When allowed_outputs is empty, StartMode::AllScreens handles window creation automatically.
         let mut pending_output_names: HashMap<iced::window::Id, String> = HashMap::new();
         let window_tasks: Vec<Task<Message>> = if !allowed_outputs.is_empty() {
+            // Edge is global-only (not per-output overridable); compute anchor once.
             let anchor = config.bar.edge.anchor();
-            let collapsed_width = config.bar.collapsed_width;
-            let exclusive_zone = i32::try_from(collapsed_width).unwrap_or(48);
-            let size = if config.bar.edge.is_horizontal() {
-                Some((0, collapsed_width))
-            } else {
-                Some((collapsed_width, 0))
-            };
             allowed_outputs
                 .iter()
                 .map(|name| {
+                    // Use per-output collapsed_width if configured (Story 7.4).
+                    // Ensures exclusive zone and window size match the rendered bar width.
+                    let eff = config.effective_bar_for(name);
+                    let eff_collapsed = eff.collapsed_width;
+                    let eff_exclusive_zone = i32::try_from(eff_collapsed).unwrap_or(48);
+                    let eff_size = if eff.edge.is_horizontal() {
+                        Some((0, eff_collapsed))
+                    } else {
+                        Some((eff_collapsed, 0))
+                    };
                     let settings = NewLayerShellSettings {
                         anchor,
-                        exclusive_zone: Some(exclusive_zone),
-                        size,
+                        exclusive_zone: Some(eff_exclusive_zone),
+                        size: eff_size,
                         output_option: OutputOption::OutputName(name.clone()),
                         namespace: Some(Self::namespace()),
                         ..Default::default()
@@ -835,14 +868,17 @@ impl App {
     }
 
     pub fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
-        let is_horizontal = self.config.bar.edge.is_horizontal();
         let surface = self.surface(window).cloned().unwrap_or_default();
+        // Resolve per-output overrides; falls back to global bar config for AllScreens mode
+        // (output_name is "" when using StartMode::AllScreens — effective_bar_for returns global).
+        let bar = self.config.effective_bar_for(&surface.output_name);
+        let is_horizontal = bar.edge.is_horizontal();
 
         // All bars animate between collapsed_width and expanded_width.
         // Overlay mode: the surface grows over the desktop without changing the exclusive zone.
         let surface_size = surface.expand.current_width(
-            self.config.bar.collapsed_width,
-            self.config.bar.expanded_width,
+            bar.collapsed_width,
+            bar.expanded_width,
         );
         // Reserve 1px for the border strip on the inner screen edge.
         let content_size = surface_size.saturating_sub(1);
@@ -856,7 +892,25 @@ impl App {
         let mut center: Vec<Element<'_, Message>> = vec![];
         let mut bottom: Vec<Element<'_, Message>> = vec![];
 
-        for (zone, module) in &self.modules {
+        // Build a name→zone map from the effective (possibly per-output) module list.
+        // This filters which modules appear on this surface and their zone assignment.
+        let mut effective_zone: HashMap<String, Zone> = HashMap::new();
+        for name in &bar.modules.top {
+            effective_zone.insert(name.clone(), Zone::Top);
+        }
+        for name in &bar.modules.center {
+            effective_zone.insert(name.clone(), Zone::Center);
+        }
+        for name in &bar.modules.bottom {
+            effective_zone.insert(name.clone(), Zone::Bottom);
+        }
+
+        for (_boot_zone, module) in &self.modules {
+            let module_name = &module.id().0;
+            let Some(zone) = effective_zone.get(module_name) else {
+                continue; // not in this output's effective module list
+            };
+
             let state = self
                 .shared
                 .modules
@@ -925,7 +979,7 @@ impl App {
             .style(border_style);
 
         // Border strip sits on the inner screen edge (the side facing screen content).
-        let bar_content: Element<'_, Message> = match self.config.bar.edge {
+        let bar_content: Element<'_, Message> = match bar.edge {
             Edge::Left => row![content, border_strip].width(Length::Fill).height(Length::Fill).into(),
             Edge::Right => row![border_strip, content].width(Length::Fill).height(Length::Fill).into(),
             Edge::Top => column![content, border_strip].width(Length::Fill).height(Length::Fill).into(),
@@ -998,16 +1052,12 @@ impl App {
     /// Overlay mode: the surface grows over the desktop — exclusive zone is never changed.
     /// For horizontal bars the animated dimension is height `(0, size)`; for vertical it's width `(size, 0)`.
     fn overlay_size_change_for(&self, window: iced::window::Id) -> Task<Message> {
-        let expand = self
-            .surfaces
-            .get(&window)
-            .map(|s| s.expand)
-            .unwrap_or_default();
-        let size = expand.current_width(
-            self.config.bar.collapsed_width,
-            self.config.bar.expanded_width,
-        );
-        if self.config.bar.edge.is_horizontal() {
+        let surface = self.surfaces.get(&window);
+        let expand = surface.map(|s| s.expand).unwrap_or_default();
+        let output_name = surface.map(|s| s.output_name.as_str()).unwrap_or("");
+        let bar = self.config.effective_bar_for(output_name);
+        let size = expand.current_width(bar.collapsed_width, bar.expanded_width);
+        if bar.edge.is_horizontal() {
             Task::done(Message::SizeChange { id: window, size: (0, size) })
         } else {
             Task::done(Message::SizeChange { id: window, size: (size, 0) })
@@ -2684,5 +2734,42 @@ mod tests {
         assert!(app.surfaces[&wid_a].focused_module.is_some());
         // Surface B unfocused
         assert!(app.surfaces[&wid_b].focused_module.is_none());
+    }
+
+    #[test]
+    fn per_output_modules_override_instantiates_modules_absent_from_global() {
+        // Bug regression: a module listed only in a per-output override must be instantiated
+        // so that view() can render it for that output.
+        use crate::config::{BarModules, ClockConfig, ModuleConfig, ModuleParams, OutputConfig};
+        let mut config = Config::default();
+        // Global bar has only workspaces
+        config.bar.modules.top = vec!["workspaces".into()];
+        // Per-output override for DP-1 has clock instead, which is NOT in global bar.modules
+        config.outputs = vec![OutputConfig {
+            name: "DP-1".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: Some(BarModules {
+                top: vec!["clock".into()],
+                center: vec![],
+                bottom: vec![],
+            }),
+        }];
+        config.modules = vec![ModuleConfig {
+            name: "clock".into(),
+            module_type: "clock".into(),
+            params: ModuleParams::Clock(ClockConfig::default()),
+        }];
+        let (app, _) = App::boot(config, vec![]);
+        let instantiated: Vec<String> = app.modules.iter().map(|(_, m)| m.id().0.clone()).collect();
+        assert!(
+            instantiated.iter().any(|n| n == "clock"),
+            "clock must be instantiated even though it is only in a per-output override; got: {instantiated:?}"
+        );
+        assert!(
+            instantiated.iter().any(|n| n == "workspaces"),
+            "workspaces must still be instantiated from global; got: {instantiated:?}"
+        );
     }
 }
