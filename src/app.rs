@@ -5,7 +5,10 @@ use iced::widget::{Space, column, container, mouse_area, row};
 use iced::{Element, Length, Task};
 use iced_layershell::to_layer_message;
 
-use crate::config::{Config, Edge, ExpandTrigger};
+use crate::config::{
+    BatteryConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig, ModuleParams,
+    NetworkConfig, VolumeConfig, WorkspacesConfig,
+};
 use crate::dbus::DbusConnections;
 use crate::modules::battery::{BatteryEvent, BatteryState};
 use crate::modules::button::{ButtonEvent, ButtonState};
@@ -127,6 +130,20 @@ pub enum Message {
     ToggleExpand,
 }
 
+/// Return default params for a module type name, or `None` if the type requires mandatory
+/// fields that have no sensible default (script, button).
+fn default_params_for_type(module_type: &str) -> Option<ModuleParams> {
+    match module_type {
+        "battery" => Some(ModuleParams::Battery(BatteryConfig::default())),
+        "clock" => Some(ModuleParams::Clock(ClockConfig::default())),
+        "network" => Some(ModuleParams::Network(NetworkConfig)),
+        "volume" => Some(ModuleParams::Volume(VolumeConfig::default())),
+        "workspaces" => Some(ModuleParams::Workspaces(WorkspacesConfig::default())),
+        "focused-window" => Some(ModuleParams::None),
+        _ => None,
+    }
+}
+
 impl App {
     pub fn new(config: Config) -> Self {
         // Initialize the in-bar keybind for expand/collapse once at startup.
@@ -147,10 +164,21 @@ impl App {
             (Zone::Bottom, &bar_mods.bottom),
         ] {
             for name in names {
-                if let Some(mc) = module_map.get(name.as_str()) {
-                    if let Some(ctor) = registry.get(mc.module_type.as_str()) {
-                        modules.push((zone.clone(), ctor(mc)));
-                    }
+                let synthesized;
+                let mc: &ModuleConfig = if let Some(mc) = module_map.get(name.as_str()) {
+                    mc
+                } else if let Some(params) = default_params_for_type(name) {
+                    synthesized = ModuleConfig {
+                        name: name.clone(),
+                        module_type: name.clone(),
+                        params,
+                    };
+                    &synthesized
+                } else {
+                    continue;
+                };
+                if let Some(ctor) = registry.get(mc.module_type.as_str()) {
+                    modules.push((zone.clone(), ctor(mc)));
                 }
             }
         }
@@ -665,13 +693,11 @@ impl App {
             iced::Subscription::batch(self.modules.iter().map(|(_, m)| m.subscription()));
         let niri_sub = niri_subscription();
 
-        // AC #3: Only connect to D-Bus if at least one D-Bus-backed module is configured.
-        // Check config.modules (not self.modules) — battery/network/volume not yet in registry.
+        // AC #3: Only connect to D-Bus if at least one D-Bus-backed module is present.
         let needs_dbus = self
-            .config
             .modules
             .iter()
-            .any(|mc| matches!(mc.module_type.as_str(), "battery" | "network" | "volume"));
+            .any(|(_, m)| matches!(m.module_type(), "battery" | "network" | "volume"));
         let dbus_sub = if needs_dbus {
             crate::dbus::dbus_init_subscription()
         } else {
@@ -1010,6 +1036,24 @@ mod tests {
     fn new_modules_empty_with_no_module_config() {
         // Config::default() has no modules in its list, so none are instantiated.
         let config = make_config();
+        let app = App::new(config);
+        assert!(app.modules.is_empty());
+    }
+
+    #[test]
+    fn undeclared_known_type_in_bar_modules_uses_defaults() {
+        // "clock" listed in bar.modules but not in modules section → instantiated with defaults.
+        let mut config = Config::default();
+        config.bar.modules.bottom = vec!["clock".into()];
+        let app = App::new(config);
+        assert_eq!(app.modules.len(), 1);
+    }
+
+    #[test]
+    fn undeclared_unknown_name_in_bar_modules_is_skipped() {
+        // An unrecognised name with no declaration and no matching type → silently skipped.
+        let mut config = Config::default();
+        config.bar.modules.bottom = vec!["my-script".into()];
         let app = App::new(config);
         assert!(app.modules.is_empty());
     }
