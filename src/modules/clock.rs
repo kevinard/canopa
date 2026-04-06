@@ -21,12 +21,8 @@ pub struct ClockModule {
 }
 
 impl ClockModule {
-    pub fn new(time_format: String, date_format: String) -> Self {
-        ClockModule {
-            id: crate::modules::ModuleId::new("clock"),
-            time_format,
-            date_format,
-        }
+    pub fn new(id: crate::modules::ModuleId, time_format: String, date_format: String) -> Self {
+        ClockModule { id, time_format, date_format }
     }
 }
 
@@ -35,18 +31,21 @@ impl crate::modules::Module for ClockModule {
         self.id.clone()
     }
 
+    fn module_type(&self) -> &str {
+        "clock"
+    }
+
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         // Tick every second; first tick fires at t=1s (within the 1-second contract).
-        // Format strings are passed via `with()` so the map closure captures nothing
-        // (required by Subscription::map — closures must be non-capturing).
+        // The id is included in the key tuple so multiple clock instances subscribe independently.
         iced::time::every(std::time::Duration::from_secs(1))
-            .with((self.time_format.clone(), self.date_format.clone()))
-            .map(|((time_fmt, date_fmt), _)| {
+            .with((self.id.clone(), self.time_format.clone(), self.date_format.clone()))
+            .map(|((id, time_fmt, date_fmt), _)| {
                 let now = chrono::Local::now();
                 let time = now.format(&time_fmt).to_string();
                 let date = now.format(&date_fmt).to_string();
                 crate::app::Message::Module(
-                    crate::modules::ModuleId::new("clock"),
+                    id,
                     crate::modules::ModuleEvent::Clock(ClockEvent::Tick { time, date }),
                 )
             })
@@ -115,8 +114,16 @@ mod tests {
 
     #[test]
     fn clock_module_id_is_clock() {
-        let m = ClockModule::new("%H:%M".into(), "%a %d %b".into());
+        let m = ClockModule::new(crate::modules::ModuleId::new("clock"), "%H:%M".into(), "%a %d %b".into());
         assert_eq!(m.id().0, "clock");
+        assert_eq!(m.module_type(), "clock");
+    }
+
+    #[test]
+    fn clock_module_custom_id() {
+        let m = ClockModule::new(crate::modules::ModuleId::new("my-clock"), "%H:%M".into(), "%a %d %b".into());
+        assert_eq!(m.id().0, "my-clock");
+        assert_eq!(m.module_type(), "clock");
     }
 
     #[test]

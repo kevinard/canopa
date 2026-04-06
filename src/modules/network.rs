@@ -49,16 +49,18 @@ pub struct NetworkModule {
 }
 
 impl NetworkModule {
-    pub fn new() -> Self {
-        NetworkModule {
-            id: crate::modules::ModuleId::new("network"),
-        }
+    pub fn new(id: crate::modules::ModuleId) -> Self {
+        NetworkModule { id }
     }
 }
 
 impl crate::modules::Module for NetworkModule {
     fn id(&self) -> crate::modules::ModuleId {
         self.id.clone()
+    }
+
+    fn module_type(&self) -> &str {
+        "network"
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
@@ -141,7 +143,9 @@ mod tests {
 
     #[test]
     fn network_module_id_is_network() {
-        assert_eq!(NetworkModule::new().id().0, "network");
+        let m = NetworkModule::new(crate::modules::ModuleId::new("network"));
+        assert_eq!(m.id().0, "network");
+        assert_eq!(m.module_type(), "network");
     }
 
     #[test]

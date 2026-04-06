@@ -65,17 +65,18 @@ pub struct BatteryModule {
 }
 
 impl BatteryModule {
-    pub fn new(critical_threshold: u8) -> Self {
-        BatteryModule {
-            id: crate::modules::ModuleId::new("battery"),
-            critical_threshold,
-        }
+    pub fn new(id: crate::modules::ModuleId, critical_threshold: u8) -> Self {
+        BatteryModule { id, critical_threshold }
     }
 }
 
 impl crate::modules::Module for BatteryModule {
     fn id(&self) -> crate::modules::ModuleId {
         self.id.clone()
+    }
+
+    fn module_type(&self) -> &str {
+        "battery"
     }
 
     /// No independent subscription — fed via Message::Battery in app.rs (AR5, Story 5.1).
@@ -198,7 +199,9 @@ mod tests {
 
     #[test]
     fn battery_module_id_is_battery() {
-        assert_eq!(BatteryModule::new(15).id().0, "battery");
+        let m = BatteryModule::new(crate::modules::ModuleId::new("battery"), 15);
+        assert_eq!(m.id().0, "battery");
+        assert_eq!(m.module_type(), "battery");
     }
 
     #[test]

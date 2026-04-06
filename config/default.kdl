@@ -9,5 +9,7 @@ bar {
 }
 
 modules {
-    module "clock" zone="bottom"
+    bottom {
+        module "clock"
+    }
 }

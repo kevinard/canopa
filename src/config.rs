@@ -6,7 +6,7 @@ use iced_layershell::reexport::Anchor;
 
 /// Known module names for FR37 validation.
 /// Hardcoded so validation works before any module is implemented.
-const KNOWN_MODULE_NAMES: &[&str] = &[
+const KNOWN_MODULE_TYPES: &[&str] = &[
     "battery",
     "clock",
     "network",
@@ -109,10 +109,14 @@ pub enum ModuleParams {
     Workspaces(WorkspacesConfig),
 }
 
-/// A single module entry from the config, specifying type, zone placement, and module params.
+/// A single module entry from the config, specifying name, type, zone placement, and module params.
 #[derive(Debug, Clone)]
 pub struct ModuleConfig {
+    /// Instance name — unique identifier for this module instance (e.g. "clock", "work-status").
     pub name: String,
+    /// Module type — determines which module implementation to use (e.g. "clock", "script").
+    /// Inferred from `name` when the name matches a known module type; otherwise explicit.
+    pub module_type: String,
     pub zone: crate::modules::Zone,
     pub params: ModuleParams,
 }
@@ -280,11 +284,11 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
         );
     }
     for (i, mc) in config.modules.iter().enumerate() {
-        if !KNOWN_MODULE_NAMES.contains(&mc.name.as_str()) {
+        if !KNOWN_MODULE_TYPES.contains(&mc.module_type.as_str()) {
             anyhow::bail!(
-                "modules[{i}].type: unknown module {:?}. \
+                "modules[{i}].type: unknown module type {:?}. \
                  Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button.",
-                mc.name
+                mc.module_type
             );
         }
     }
@@ -361,6 +365,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "volumee".into(),
+            module_type: "volumee".into(),
             zone: crate::modules::Zone::Bottom,
             params: ModuleParams::None,
         }];
@@ -381,6 +386,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
+            module_type: "clock".into(),
             zone: crate::modules::Zone::Bottom,
             params: ModuleParams::None,
         }];
@@ -392,6 +398,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "unknown".into(),
+            module_type: "unknown".into(),
             zone: crate::modules::Zone::Top,
             params: ModuleParams::None,
         }];
@@ -413,11 +420,13 @@ mod tests {
         config.modules = vec![
             ModuleConfig {
                 name: "clock".into(),
+            module_type: "clock".into(),
                 zone: crate::modules::Zone::Bottom,
                 params: ModuleParams::None,
             },
             ModuleConfig {
                 name: "bad-module".into(),
+            module_type: "bad-module".into(),
                 zone: crate::modules::Zone::Top,
                 params: ModuleParams::None,
             },

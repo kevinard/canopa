@@ -28,17 +28,18 @@ pub struct WorkspacesModule {
 }
 
 impl WorkspacesModule {
-    pub fn new(config: crate::config::WorkspacesConfig) -> Self {
-        WorkspacesModule {
-            id: crate::modules::ModuleId::new("workspaces"),
-            config,
-        }
+    pub fn new(id: crate::modules::ModuleId, config: crate::config::WorkspacesConfig) -> Self {
+        WorkspacesModule { id, config }
     }
 }
 
 impl crate::modules::Module for WorkspacesModule {
     fn id(&self) -> crate::modules::ModuleId {
         self.id.clone()
+    }
+
+    fn module_type(&self) -> &str {
+        "workspaces"
     }
 
     /// Workspace module has no independent data source — fed via Message::Niri in app.rs.
@@ -223,8 +224,12 @@ mod tests {
 
     #[test]
     fn workspaces_module_id_is_workspaces() {
-        let m = WorkspacesModule::new(crate::config::WorkspacesConfig::default());
+        let m = WorkspacesModule::new(
+            crate::modules::ModuleId::new("workspaces"),
+            crate::config::WorkspacesConfig::default(),
+        );
         assert_eq!(m.id().0, "workspaces");
+        assert_eq!(m.module_type(), "workspaces");
     }
 
     #[test]
@@ -298,7 +303,7 @@ mod tests {
                 icon: None,
             },
         );
-        let m = WorkspacesModule::new(cfg);
+        let m = WorkspacesModule::new(crate::modules::ModuleId::new("workspaces"), cfg);
         assert_eq!(m.id().0, "workspaces");
         assert!(m.config.workspaces.get(&2).is_some());
         assert!(m.config.workspaces.get(&1).is_none());

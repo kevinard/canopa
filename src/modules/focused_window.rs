@@ -17,16 +17,18 @@ pub struct FocusedWindowModule {
 }
 
 impl FocusedWindowModule {
-    pub fn new() -> Self {
-        FocusedWindowModule {
-            id: crate::modules::ModuleId::new("focused-window"),
-        }
+    pub fn new(id: crate::modules::ModuleId) -> Self {
+        FocusedWindowModule { id }
     }
 }
 
 impl crate::modules::Module for FocusedWindowModule {
     fn id(&self) -> crate::modules::ModuleId {
         self.id.clone()
+    }
+
+    fn module_type(&self) -> &str {
+        "focused-window"
     }
 
     /// No independent data source — fed via Message::Niri in app.rs (same pattern as workspaces).
@@ -128,8 +130,9 @@ mod tests {
 
     #[test]
     fn focused_window_module_id_is_focused_window() {
-        let m = FocusedWindowModule::new();
+        let m = FocusedWindowModule::new(crate::modules::ModuleId::new("focused-window"));
         assert_eq!(m.id().0, "focused-window");
+        assert_eq!(m.module_type(), "focused-window");
     }
 
     #[test]

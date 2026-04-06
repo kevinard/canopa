@@ -139,7 +139,7 @@ impl App {
             .iter()
             .filter_map(|mc| {
                 registry
-                    .get(mc.name.as_str())
+                    .get(mc.module_type.as_str())
                     .map(|ctor| (mc.zone.clone(), ctor(mc)))
             })
             .collect();
@@ -280,7 +280,7 @@ impl App {
                     Event::WorkspacesChanged { workspaces } => {
                         // Update each workspace module's ModuleState so view_*() gets fresh data (AC #7).
                         for (_, module) in &self.modules {
-                            if module.id() == ModuleId::new("workspaces") {
+                            if module.module_type() == "workspaces" {
                                 self.shared.modules.insert(
                                     module.id(),
                                     ModuleState::Workspace(workspaces::WorkspaceState {
@@ -322,7 +322,7 @@ impl App {
                         // Propagate updated workspace list to module state.
                         let updated = self.shared.niri.workspaces.clone();
                         for (_, module) in &self.modules {
-                            if module.id() == ModuleId::new("workspaces") {
+                            if module.module_type() == "workspaces" {
                                 self.shared.modules.insert(
                                     module.id(),
                                     ModuleState::Workspace(workspaces::WorkspaceState {
@@ -410,7 +410,7 @@ impl App {
             }
             Message::Network(NetworkEvent::Unavailable) => {
                 for (_, module) in &self.modules {
-                    if module.id().0 == "network" {
+                    if module.module_type() == "network" {
                         self.shared
                             .modules
                             .insert(module.id(), ModuleState::Unavailable);
@@ -424,7 +424,7 @@ impl App {
             }
             Message::Volume(VolumeEvent::Unavailable) => {
                 for (_, module) in &self.modules {
-                    if module.id().0 == "volume" {
+                    if module.module_type() == "volume" {
                         self.shared
                             .modules
                             .insert(module.id(), ModuleState::Unavailable);
@@ -480,7 +480,7 @@ impl App {
             Message::Battery(BatteryEvent::Unavailable) => {
                 // Mark all battery instances unavailable — renders nothing (UX-DR16).
                 for (_, module) in &self.modules {
-                    if module.id().0 == "battery" {
+                    if module.module_type() == "battery" {
                         self.shared
                             .modules
                             .insert(module.id(), ModuleState::Unavailable);
@@ -660,7 +660,7 @@ impl App {
             .config
             .modules
             .iter()
-            .any(|mc| matches!(mc.name.as_str(), "battery" | "network" | "volume"));
+            .any(|mc| matches!(mc.module_type.as_str(), "battery" | "network" | "volume"));
         let dbus_sub = if needs_dbus {
             crate::dbus::dbus_init_subscription()
         } else {
@@ -670,7 +670,7 @@ impl App {
         // AC #9: Only subscribe if battery module is present AND system bus is connected.
         // UPower runs on the system bus (org.freedesktop.UPower), not the session bus.
         let battery_sub = if let Some(conn) = self.shared.dbus.system.clone() {
-            if self.modules.iter().any(|(_, m)| m.id().0 == "battery") {
+            if self.modules.iter().any(|(_, m)| m.module_type() == "battery") {
                 crate::dbus::upower::battery_subscription(conn)
             } else {
                 iced::Subscription::none()
@@ -681,7 +681,7 @@ impl App {
 
         // AC #9: Only subscribe if network module is present AND system bus is connected.
         let network_sub = if let Some(conn) = self.shared.dbus.system.clone() {
-            if self.modules.iter().any(|(_, m)| m.id().0 == "network") {
+            if self.modules.iter().any(|(_, m)| m.module_type() == "network") {
                 crate::dbus::networkmanager::network_subscription(conn)
             } else {
                 iced::Subscription::none()
@@ -692,7 +692,7 @@ impl App {
 
         // AC #9: Only subscribe if volume module is present.
         // No zbus connection needed — PA auto-discovers its socket.
-        let volume_sub = if self.modules.iter().any(|(_, m)| m.id().0 == "volume") {
+        let volume_sub = if self.modules.iter().any(|(_, m)| m.module_type() == "volume") {
             crate::dbus::wireplumber::volume_subscription()
         } else {
             iced::Subscription::none()
@@ -898,7 +898,7 @@ impl App {
     /// Push new battery state to all battery module instances in shared.modules.
     fn push_battery_state(&mut self, percentage: f64, is_charging: bool) {
         for (_, module) in &self.modules {
-            if module.id().0 == "battery" {
+            if module.module_type() == "battery" {
                 self.shared.modules.insert(
                     module.id(),
                     ModuleState::Battery(BatteryState {
@@ -916,7 +916,7 @@ impl App {
         label: Option<String>,
     ) {
         for (_, module) in &self.modules {
-            if module.id().0 == "network" {
+            if module.module_type() == "network" {
                 self.shared.modules.insert(
                     module.id(),
                     ModuleState::Network(NetworkState {
@@ -930,7 +930,7 @@ impl App {
 
     fn push_volume_state(&mut self, volume: f64, muted: bool) {
         for (_, module) in &self.modules {
-            if module.id().0 == "volume" {
+            if module.module_type() == "volume" {
                 self.shared.modules.insert(
                     module.id(),
                     ModuleState::Volume(VolumeState { volume, muted }),
@@ -949,7 +949,7 @@ impl App {
             .and_then(|id| self.shared.niri.windows.get(&id))
             .and_then(|w| w.title.clone());
         for (_, module) in &self.modules {
-            if module.id() == ModuleId::new("focused-window") {
+            if module.module_type() == "focused-window" {
                 self.shared.modules.insert(
                     module.id(),
                     ModuleState::FocusedWindow(focused_window::FocusedWindowState {
@@ -1010,6 +1010,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
+            module_type: "clock".into(),
             zone: Zone::Bottom,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
@@ -1057,6 +1058,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "script".into(),
+            module_type: "script".into(),
             zone: Zone::Bottom,
             params: ModuleParams::Script(ScriptConfig {
                 command: "echo hi".into(),
@@ -1090,6 +1092,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "button".into(),
+            module_type: "button".into(),
             zone: Zone::Bottom,
             params: ModuleParams::Button(ButtonConfig {
                 label: "Launch".into(),
@@ -1135,6 +1138,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "script".into(),
+            module_type: "script".into(),
             zone: Zone::Bottom,
             params: ModuleParams::Script(ScriptConfig {
                 command: "echo hi".into(),
@@ -1434,6 +1438,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "workspaces".into(),
+            module_type: "workspaces".into(),
             zone: Zone::Top,
             params: ModuleParams::None,
         }];
@@ -1576,6 +1581,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "focused-window".into(),
+            module_type: "focused-window".into(),
             zone: Zone::Center,
             params: ModuleParams::None,
         }];
@@ -1758,6 +1764,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "battery".into(),
+            module_type: "battery".into(),
             zone: Zone::Bottom,
             params: ModuleParams::Battery(BatteryConfig {
                 critical_threshold: 15,
@@ -1812,6 +1819,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "network".into(),
+            module_type: "network".into(),
             zone: Zone::Bottom,
             params: ModuleParams::Network(NetworkConfig),
         }];
@@ -1866,6 +1874,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "volume".into(),
+            module_type: "volume".into(),
             zone: Zone::Bottom,
             params: ModuleParams::Volume(VolumeConfig { step: 5 }),
         }];
@@ -1925,6 +1934,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
+            module_type: "clock".into(),
             zone: Zone::Top,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
@@ -1939,6 +1949,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
+            module_type: "clock".into(),
             zone: Zone::Top,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
@@ -1955,6 +1966,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
+            module_type: "clock".into(),
             zone: Zone::Top,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
@@ -1981,6 +1993,7 @@ mod tests {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
+            module_type: "clock".into(),
             zone: Zone::Center,
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
@@ -2004,21 +2017,25 @@ mod tests {
         config.modules = vec![
             ModuleConfig {
                 name: "clock".into(),
+            module_type: "clock".into(),
                 zone: Zone::Top,
                 params: ModuleParams::Clock(ClockConfig::default()),
             },
             ModuleConfig {
                 name: "battery".into(),
+            module_type: "battery".into(),
                 zone: Zone::Top,
                 params: ModuleParams::None,
             },
             ModuleConfig {
                 name: "network".into(),
+            module_type: "network".into(),
                 zone: Zone::Center,
                 params: ModuleParams::None,
             },
             ModuleConfig {
                 name: "workspaces".into(),
+            module_type: "workspaces".into(),
                 zone: Zone::Bottom,
                 params: ModuleParams::None,
             },
@@ -2103,11 +2120,13 @@ mod tests {
         config.modules = vec![
             ModuleConfig {
                 name: "clock".into(),
+            module_type: "clock".into(),
                 zone: Zone::Top,
                 params: ModuleParams::Clock(ClockConfig::default()),
             },
             ModuleConfig {
                 name: "workspaces".into(),
+            module_type: "workspaces".into(),
                 zone: Zone::Bottom,
                 params: ModuleParams::None,
             },
@@ -2145,16 +2164,19 @@ mod tests {
         config.modules = vec![
             ModuleConfig {
                 name: "clock".into(),
+            module_type: "clock".into(),
                 zone: Zone::Top,
                 params: ModuleParams::Clock(ClockConfig::default()),
             },
             ModuleConfig {
                 name: "volume".into(),
+            module_type: "volume".into(),
                 zone: Zone::Top,
                 params: ModuleParams::Volume(VolumeConfig::default()),
             },
             ModuleConfig {
                 name: "button".into(),
+            module_type: "button".into(),
                 zone: Zone::Center,
                 params: ModuleParams::Button(ButtonConfig {
                     label: "test".into(),

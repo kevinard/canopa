@@ -83,6 +83,9 @@ pub enum InteractionEvent {
 #[allow(dead_code)]
 pub trait Module: Send + Sync {
     fn id(&self) -> ModuleId;
+    /// Returns the module type name (e.g. `"clock"`, `"script"`).
+    /// Used for type-based state routing; distinct from the instance name returned by `id()`.
+    fn module_type(&self) -> &str;
     fn subscription(&self) -> iced::Subscription<crate::app::Message>;
     fn view_collapsed(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message>;
     fn view_expanded(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message>;
@@ -113,8 +116,8 @@ pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     map
 }
 
-fn network_ctor(_mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    Box::new(network::NetworkModule::new())
+fn network_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    Box::new(network::NetworkModule::new(ModuleId::new(&mc.name)))
 }
 
 fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
@@ -123,7 +126,7 @@ fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
         ModuleParams::Volume(cfg) => cfg.step,
         _ => VolumeConfig::default().step,
     };
-    Box::new(volume::VolumeModule::new(step))
+    Box::new(volume::VolumeModule::new(ModuleId::new(&mc.name), step))
 }
 
 fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
@@ -132,13 +135,14 @@ fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
         ModuleParams::Battery(cfg) => cfg.critical_threshold,
         _ => BatteryConfig::default().critical_threshold,
     };
-    Box::new(battery::BatteryModule::new(threshold))
+    Box::new(battery::BatteryModule::new(ModuleId::new(&mc.name), threshold))
 }
 
 fn button_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
     use crate::config::ModuleParams;
     match &mc.params {
         ModuleParams::Button(cfg) => Box::new(button::ButtonModule::new(
+            ModuleId::new(&mc.name),
             cfg.label.clone(),
             cfg.icon.clone(),
             cfg.on_click.clone(),
@@ -156,15 +160,17 @@ fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
             (d.time_format, d.date_format)
         }
     };
-    Box::new(clock::ClockModule::new(time_fmt, date_fmt))
+    Box::new(clock::ClockModule::new(ModuleId::new(&mc.name), time_fmt, date_fmt))
 }
 
 fn script_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
     use crate::config::ModuleParams;
     match &mc.params {
-        ModuleParams::Script(cfg) => {
-            Box::new(script::ScriptModule::new(cfg.command.clone(), cfg.interval))
-        }
+        ModuleParams::Script(cfg) => Box::new(script::ScriptModule::new(
+            ModuleId::new(&mc.name),
+            cfg.command.clone(),
+            cfg.interval,
+        )),
         _ => panic!("script_ctor called with non-Script params — this is a programming error"),
     }
 }
@@ -175,11 +181,11 @@ fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
         ModuleParams::Workspaces(c) => c.clone(),
         _ => crate::config::WorkspacesConfig::default(),
     };
-    Box::new(workspaces::WorkspacesModule::new(config))
+    Box::new(workspaces::WorkspacesModule::new(ModuleId::new(&mc.name), config))
 }
 
-fn focused_window_ctor(_mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    Box::new(focused_window::FocusedWindowModule::new())
+fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    Box::new(focused_window::FocusedWindowModule::new(ModuleId::new(&mc.name)))
 }
 
 #[cfg(test)]

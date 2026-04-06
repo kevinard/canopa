@@ -54,17 +54,18 @@ pub struct VolumeModule {
 }
 
 impl VolumeModule {
-    pub fn new(step: u8) -> Self {
-        VolumeModule {
-            id: crate::modules::ModuleId::new("volume"),
-            step,
-        }
+    pub fn new(id: crate::modules::ModuleId, step: u8) -> Self {
+        VolumeModule { id, step }
     }
 }
 
 impl crate::modules::Module for VolumeModule {
     fn id(&self) -> crate::modules::ModuleId {
         self.id.clone()
+    }
+
+    fn module_type(&self) -> &str {
+        "volume"
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
@@ -152,7 +153,9 @@ mod tests {
 
     #[test]
     fn volume_module_id_is_volume() {
-        assert_eq!(VolumeModule::new(5).id().0, "volume");
+        let m = VolumeModule::new(crate::modules::ModuleId::new("volume"), 5);
+        assert_eq!(m.id().0, "volume");
+        assert_eq!(m.module_type(), "volume");
     }
 
     #[test]

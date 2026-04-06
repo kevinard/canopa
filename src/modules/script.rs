@@ -20,12 +20,8 @@ pub struct ScriptModule {
 }
 
 impl ScriptModule {
-    pub fn new(command: String, interval: u64) -> Self {
-        ScriptModule {
-            id: crate::modules::ModuleId::new("script"),
-            command,
-            interval,
-        }
+    pub fn new(id: crate::modules::ModuleId, command: String, interval: u64) -> Self {
+        ScriptModule { id, command, interval }
     }
 }
 
@@ -34,45 +30,47 @@ impl crate::modules::Module for ScriptModule {
         self.id.clone()
     }
 
+    fn module_type(&self) -> &str {
+        "script"
+    }
+
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         use iced::futures::stream;
 
-        // Pass command and interval as subscription identity data.
-        // `run_with` takes a fn pointer (not closure) so the builder must not
-        // capture any outer variables — it receives only its `&D` parameter.
-        iced::Subscription::run_with((self.command.clone(), self.interval), |(cmd, interval)| {
-            let cmd = cmd.clone();
-            let interval = *interval;
+        // The id is included in the key tuple so multiple script instances subscribe independently.
+        iced::Subscription::run_with(
+            (self.id.clone(), self.command.clone(), self.interval),
+            |(id, cmd, interval)| {
+                let id = id.clone();
+                let cmd = cmd.clone();
+                let interval = *interval;
 
-            // `unfold` carries the state forward each iteration, avoiding
-            // captures in the outer (fn-pointer) builder.
-            // `first` skips the initial sleep so the bar populates within ~1s
-            // of startup, satisfying the subscription contract.
-            stream::unfold((cmd, interval, true), |(cmd, interval, first)| async move {
-                if !first {
-                    tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
-                }
-
-                let event = match tokio::process::Command::new("sh")
-                    .arg("-c")
-                    .arg(&cmd)
-                    .output()
-                    .await
-                {
-                    Ok(out) if out.status.success() => {
-                        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        ScriptEvent::Output(text)
+                stream::unfold((id, cmd, interval, true), |(id, cmd, interval, first)| async move {
+                    if !first {
+                        tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
                     }
-                    _ => ScriptEvent::Failed,
-                };
 
-                let msg = crate::app::Message::Module(
-                    crate::modules::ModuleId::new("script"),
-                    crate::modules::ModuleEvent::Script(event),
-                );
-                Some((msg, (cmd, interval, false)))
-            })
-        })
+                    let event = match tokio::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(&cmd)
+                        .output()
+                        .await
+                    {
+                        Ok(out) if out.status.success() => {
+                            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                            ScriptEvent::Output(text)
+                        }
+                        _ => ScriptEvent::Failed,
+                    };
+
+                    let msg = crate::app::Message::Module(
+                        id.clone(),
+                        crate::modules::ModuleEvent::Script(event),
+                    );
+                    Some((msg, (id, cmd, interval, false)))
+                })
+            },
+        )
     }
 
     fn view_collapsed(
@@ -137,8 +135,16 @@ mod tests {
 
     #[test]
     fn script_module_id_is_script() {
-        let m = ScriptModule::new("echo hi".into(), 5);
+        let m = ScriptModule::new(crate::modules::ModuleId::new("script"), "echo hi".into(), 5);
         assert_eq!(m.id().0, "script");
+        assert_eq!(m.module_type(), "script");
+    }
+
+    #[test]
+    fn script_module_custom_id() {
+        let m = ScriptModule::new(crate::modules::ModuleId::new("status"), "date".into(), 5);
+        assert_eq!(m.id().0, "status");
+        assert_eq!(m.module_type(), "script");
     }
 
     #[test]
