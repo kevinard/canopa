@@ -77,13 +77,14 @@ pub fn init_expand_keybind(s: Option<&str>) {
 fn keyboard_handler(
     event: Event,
     _status: iced::event::Status,
-    _window: iced::window::Id,
+    window: iced::window::Id,
 ) -> Option<Message> {
     match event {
-        Event::Window(window::Event::Focused) => Some(Message::BarFocusGained),
-        Event::Window(window::Event::Unfocused) => Some(Message::BarFocusLost),
+        Event::Window(window::Event::Focused) => Some(Message::BarFocusGained(window)),
+        Event::Window(window::Event::Unfocused) => Some(Message::BarFocusLost(window)),
         Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
             // Expand keybind check takes priority over navigation bindings.
+            // ToggleExpand is global (IPC design) — no per-surface window ID needed.
             if let Some(Some((kb_mods, kb_key))) = EXPAND_KEYBIND.get()
                 && modifiers == *kb_mods
                 && key == *kb_key
@@ -91,18 +92,18 @@ fn keyboard_handler(
                 return Some(Message::ToggleExpand);
             }
             match key {
-                keyboard::Key::Named(Named::Escape) => Some(Message::EscapePressed),
-                keyboard::Key::Named(Named::ArrowDown) => Some(Message::FocusMoveNext),
-                keyboard::Key::Named(Named::ArrowUp) => Some(Message::FocusMovePrev),
+                keyboard::Key::Named(Named::Escape) => Some(Message::EscapePressed(window)),
+                keyboard::Key::Named(Named::ArrowDown) => Some(Message::FocusMoveNext(window)),
+                keyboard::Key::Named(Named::ArrowUp) => Some(Message::FocusMovePrev(window)),
                 keyboard::Key::Named(Named::Tab) => {
                     if modifiers.shift() {
-                        Some(Message::FocusPrevZone)
+                        Some(Message::FocusPrevZone(window))
                     } else {
-                        Some(Message::FocusNextZone)
+                        Some(Message::FocusNextZone(window))
                     }
                 }
                 keyboard::Key::Named(Named::Enter | Named::Space) => {
-                    Some(Message::KeyboardActivate)
+                    Some(Message::KeyboardActivate(window))
                 }
                 _ => None,
             }

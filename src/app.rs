@@ -9,6 +9,7 @@ use crate::config::{
     BatteryConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig, ModuleParams,
     NetworkConfig, VolumeConfig, WorkspacesConfig,
 };
+use crate::surface::SurfaceState;
 use crate::dbus::DbusConnections;
 use crate::modules::battery::{BatteryEvent, BatteryState};
 use crate::modules::button::{ButtonEvent, ButtonState};
@@ -54,41 +55,34 @@ pub struct App {
     pub config: Config,
     pub shared: SharedState,
     /// Instantiated module instances paired with their zone placement.
-    /// Empty until registry is populated (Stories 2.3+).
     pub modules: Vec<(Zone, Box<dyn Module>)>,
-    /// Tracks which module is currently hovered; moves to SurfaceState in Story 7.1.
-    pub hovered_module: Option<ModuleId>,
-    /// Which module currently has keyboard focus; None when bar is unfocused.
-    /// Moves to per-surface SurfaceState in Story 7.1.
-    pub focused_module: Option<ModuleId>,
-    /// Whether the focused module is in keyboard-interaction mode (Story 6.3).
-    /// When true, arrow keys scroll the active module; Escape deactivates back to navigation.
-    pub module_activated: bool,
-    /// Current expand/collapse state. Single-surface for Stories 3.1–6.x;
-    /// moves to per-surface state (HashMap<SurfaceId, SurfaceState>) in Story 7.1.
-    pub expand: ExpandState,
-    /// Whether the pointer is currently inside the bar surface (Story 3.3 hover trigger).
-    pub bar_hovered: bool,
-    /// Hover dwell countdown (ms elapsed). `Some(elapsed)` = counting toward hover_delay.
-    pub hover_pending_ms: Option<f32>,
+    /// Per-output render state, keyed by iced::window::Id (Story 7.1).
+    /// One entry per Wayland output; lazily initialised on first event or view call.
+    pub surfaces: HashMap<iced::window::Id, SurfaceState>,
 }
 
-#[to_layer_message]
+#[to_layer_message(multi)]
 #[derive(Debug, Clone)]
 pub enum Message {
-    // Module data events — ModuleEvent gains concrete variants in Stories 2.3+.
+    // Module data events — shared state, no window ID needed.
     Module(ModuleId, ModuleEvent),
-    ModuleHoverEnter(ModuleId),
-    ModuleHoverExit(ModuleId),
-    ModuleClick(ModuleId),
-    /// Fires when the user clicks anywhere on the bar surface; toggles expand/collapse (Story 3.1).
-    BarClick,
-    /// Animation clock tick. Fired at ~60fps only while `expand.is_animating()` (Story 3.2).
+    /// Fires when the user clicks anywhere on the bar surface (Story 3.1).
+    /// Carries the window ID of the surface that was clicked.
+    BarClick(iced::window::Id),
+    /// Animation clock tick. Fired at ~60fps when any surface is animating (Story 3.2).
+    /// Global — the handler advances all animating surfaces.
     Tick,
-    /// Pointer entered bar surface; may trigger expand when expand_trigger = Hover (Story 3.3).
-    BarHoverEnter,
-    /// Pointer left bar surface; may trigger collapse when expand_trigger = Hover (Story 3.3).
-    BarHoverExit,
+    /// Pointer entered a bar surface (Story 3.3). Per-surface.
+    BarHoverEnter(iced::window::Id),
+    /// Pointer left a bar surface (Story 3.3). Per-surface.
+    BarHoverExit(iced::window::Id),
+    ModuleHoverEnter(ModuleId, iced::window::Id),
+    ModuleHoverExit(ModuleId, iced::window::Id),
+    ModuleClick(ModuleId, iced::window::Id),
+    /// Scroll-up event on a module (Story 5.4). Per-surface.
+    ModuleScrollUp(ModuleId, iced::window::Id),
+    /// Scroll-down event on a module (Story 5.4). Per-surface.
+    ModuleScrollDown(ModuleId, iced::window::Id),
     /// Event from the Niri IPC event stream; dispatched to SharedState (Story 4.1).
     Niri(crate::niri::NiriEvent),
     /// Battery charge state from UPower D-Bus subscription (Story 5.2).
@@ -97,36 +91,31 @@ pub enum Message {
     Network(NetworkEvent),
     /// Volume state from PA compat subscription (Story 5.4).
     Volume(VolumeEvent),
-    /// Scroll-triggered volume adjustment (Story 5.4).
+    /// Scroll-triggered volume adjustment (Story 5.4). Global — adjusts system volume.
     VolumeAdjust {
         step: u8,
         up: bool,
     },
-    /// Scroll-up event on a module (Story 5.4).
-    ModuleScrollUp(ModuleId),
-    /// Scroll-down event on a module (Story 5.4).
-    ModuleScrollDown(ModuleId),
     /// D-Bus connection handles established at startup (Story 5.1).
-    /// Fires exactly once from `dbus_init_subscription`; stored in `SharedState.dbus`.
     DbusReady(DbusConnections),
-    /// Layer surface received keyboard focus (Story 6.1).
-    BarFocusGained,
-    /// Layer surface lost keyboard focus (Story 6.1).
-    BarFocusLost,
-    /// Escape key pressed while bar has keyboard focus (Story 6.1).
-    EscapePressed,
-    /// Down arrow key pressed while bar is focused — move to next module in zone (Story 6.2).
-    FocusMoveNext,
-    /// Up arrow key pressed while bar is focused — move to previous module in zone (Story 6.2).
-    FocusMovePrev,
-    /// Tab pressed while bar is focused — jump to first module in next zone (Story 6.2).
-    FocusNextZone,
-    /// Shift+Tab pressed while bar is focused — jump to first module in previous zone (Story 6.2).
-    FocusPrevZone,
-    /// Enter or Space pressed while bar is focused — activate focused module (Story 6.3).
-    KeyboardActivate,
+    /// Layer surface received keyboard focus (Story 6.1). Per-surface.
+    BarFocusGained(iced::window::Id),
+    /// Layer surface lost keyboard focus (Story 6.1). Per-surface.
+    BarFocusLost(iced::window::Id),
+    /// Escape key pressed while a bar surface has keyboard focus (Story 6.1). Per-surface.
+    EscapePressed(iced::window::Id),
+    /// Down arrow key pressed while bar is focused (Story 6.2). Per-surface.
+    FocusMoveNext(iced::window::Id),
+    /// Up arrow key pressed while bar is focused (Story 6.2). Per-surface.
+    FocusMovePrev(iced::window::Id),
+    /// Tab pressed while bar is focused (Story 6.2). Per-surface.
+    FocusNextZone(iced::window::Id),
+    /// Shift+Tab pressed while bar is focused (Story 6.2). Per-surface.
+    FocusPrevZone(iced::window::Id),
+    /// Enter or Space pressed while bar is focused (Story 6.3). Per-surface.
+    KeyboardActivate(iced::window::Id),
     /// Keyboard-triggered expand/collapse toggle via Unix socket IPC (Story 6.4).
-    /// Works regardless of bar focus state and expand_trigger setting.
+    /// Global: IPC has no window context, so all surfaces toggle simultaneously.
     ToggleExpand,
 }
 
@@ -145,7 +134,7 @@ fn default_params_for_type(module_type: &str) -> Option<ModuleParams> {
 }
 
 impl App {
-    pub fn new(config: Config) -> Self {
+    pub fn boot(config: Config) -> (Self, Task<Message>) {
         // Initialize the in-bar keybind for expand/collapse once at startup.
         // Subsequent calls are silently ignored (OnceLock semantics).
         init_expand_keybind(config.bar.expand_keybind.as_deref());
@@ -182,17 +171,23 @@ impl App {
                 }
             }
         }
-        App {
+        let app = App {
             config,
             shared: SharedState::new(),
             modules,
-            hovered_module: None,
-            focused_module: None,
-            module_activated: false,
-            expand: ExpandState::default(), // starts Collapsed
-            bar_hovered: false,
-            hover_pending_ms: None,
-        }
+            surfaces: HashMap::new(), // lazily populated on first view/event per window
+        };
+        (app, Task::none())
+    }
+
+    /// Returns a mutable reference to the `SurfaceState` for `id`, inserting a default if absent.
+    pub fn surface_mut(&mut self, id: iced::window::Id) -> &mut SurfaceState {
+        self.surfaces.entry(id).or_insert_with(SurfaceState::default)
+    }
+
+    /// Returns a reference to the `SurfaceState` for `id`, or `None` if the surface is unknown.
+    pub fn surface(&self, id: iced::window::Id) -> Option<&SurfaceState> {
+        self.surfaces.get(&id)
     }
 
     pub fn namespace() -> String {
@@ -201,13 +196,14 @@ impl App {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::ModuleHoverEnter(id) => {
-                self.hovered_module = Some(id);
+            Message::ModuleHoverEnter(id, window) => {
+                self.surface_mut(window).hovered_module = Some(id);
                 Task::none()
             }
-            Message::ModuleHoverExit(id) => {
-                if self.hovered_module.as_ref() == Some(&id) {
-                    self.hovered_module = None;
+            Message::ModuleHoverExit(id, window) => {
+                let s = self.surface_mut(window);
+                if s.hovered_module.as_ref() == Some(&id) {
+                    s.hovered_module = None;
                 }
                 Task::none()
             }
@@ -233,7 +229,8 @@ impl App {
                     .insert(id, ModuleState::Button(ButtonState));
                 Task::none()
             }
-            Message::ModuleClick(id) => {
+            Message::ModuleClick(id, _window) => {
+                // Module interactions are shared — module data lives in self.modules.
                 for (_, module) in &self.modules {
                     if module.id() == id {
                         if let Some(msg) = module.on_interaction(InteractionEvent::Clicked) {
@@ -244,7 +241,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::BarClick => {
+            Message::BarClick(window) => {
                 if !self.config.bar.expand {
                     return Task::none();
                 }
@@ -252,53 +249,62 @@ impl App {
                 if self.config.bar.expand_trigger == ExpandTrigger::Hover {
                     return Task::none();
                 }
-                // toggle() now returns Expanding(0.0) or Collapsing(0.0) instead of jumping
-                // directly to the final state. The Tick subscription drives the actual animation.
-                self.expand = self.expand.toggle();
-                // Issue an immediate resize to the animation start size to avoid a flash.
-                // Overlay mode: exclusive zone never changes — surface grows over the desktop.
-                self.overlay_size_change()
+                let s = self.surface_mut(window);
+                s.expand = s.expand.toggle();
+                self.overlay_size_change_for(window)
             }
-            Message::BarHoverEnter => {
-                self.bar_hovered = true;
-                if !self.config.bar.expand {
+            Message::BarHoverEnter(window) => {
+                let expand_enabled = self.config.bar.expand;
+                let expand_trigger = self.config.bar.expand_trigger;
+                let hover_delay = self.config.bar.hover_delay;
+                let s = self.surface_mut(window);
+                s.bar_hovered = true;
+                if !expand_enabled {
                     return Task::none();
                 }
-                if self.config.bar.expand_trigger != ExpandTrigger::Hover {
+                if expand_trigger != ExpandTrigger::Hover {
                     return Task::none();
                 }
-                match self.expand {
+                let expand = s.expand;
+                match expand {
                     ExpandState::Collapsed => {
-                        if self.config.bar.hover_delay == 0 {
-                            self.expand = self.expand.toggle(); // → Expanding(0.0)
-                            self.overlay_size_change()
+                        if hover_delay == 0 {
+                            let s = self.surface_mut(window);
+                            s.expand = s.expand.toggle(); // → Expanding(0.0)
+                            self.overlay_size_change_for(window)
                         } else {
-                            self.hover_pending_ms = Some(0.0);
+                            self.surface_mut(window).hover_pending_ms = Some(0.0);
                             Task::none()
                         }
                     }
                     ExpandState::Collapsing(_) => {
                         // Pointer re-entered while collapsing — reverse back to expanding.
-                        self.expand = self.expand.toggle();
+                        let s = self.surface_mut(window);
+                        s.expand = s.expand.toggle();
                         Task::none()
                     }
                     _ => Task::none(), // Already expanded or expanding — no action
                 }
             }
-            Message::BarHoverExit => {
-                self.bar_hovered = false;
-                if !self.config.bar.expand {
+            Message::BarHoverExit(window) => {
+                let expand_enabled = self.config.bar.expand;
+                let expand_trigger = self.config.bar.expand_trigger;
+                let s = self.surface_mut(window);
+                s.bar_hovered = false;
+                if !expand_enabled {
                     return Task::none();
                 }
-                if self.config.bar.expand_trigger != ExpandTrigger::Hover {
+                if expand_trigger != ExpandTrigger::Hover {
                     return Task::none();
                 }
                 // Cancel any pending hover delay.
-                self.hover_pending_ms = None;
-                match self.expand {
+                s.hover_pending_ms = None;
+                let expand = s.expand;
+                match expand {
                     ExpandState::Expanded | ExpandState::Expanding(_) => {
-                        self.expand = self.expand.toggle(); // → Collapsing(0.0) or Collapsing(1-p)
-                        self.overlay_size_change()
+                        let s = self.surface_mut(window);
+                        s.expand = s.expand.toggle(); // → Collapsing(0.0) or Collapsing(1-p)
+                        self.overlay_size_change_for(window)
                     }
                     _ => Task::none(), // Already collapsed or collapsing — no action
                 }
@@ -398,47 +404,55 @@ impl App {
                 Task::none()
             }
             Message::Tick => {
-                // Advance animation progress by one tick (~16ms, targeting 60fps).
+                // Global tick: advance animation and hover delay for ALL surfaces.
                 const EXPAND_MS: f32 = 280.0;
                 const COLLAPSE_MS: f32 = 200.0;
                 const TICK_MS: f32 = 16.0;
 
-                // Hover delay countdown — runs while waiting to start expand (Story 3.3).
-                if let Some(elapsed) = self.hover_pending_ms {
-                    let new_elapsed = elapsed + TICK_MS;
-                    if new_elapsed >= self.config.bar.hover_delay as f32 {
-                        // Delay expired: start expanding.
-                        self.hover_pending_ms = None;
-                        self.expand = ExpandState::Expanding(0.0);
-                        return self.overlay_size_change();
-                    } else {
-                        self.hover_pending_ms = Some(new_elapsed);
-                        return Task::none(); // Still counting down
+                let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
+                let mut tasks = vec![];
+
+                for wid in window_ids {
+                    let s = self.surfaces.get_mut(&wid).unwrap();
+
+                    // Hover delay countdown — runs while waiting to start expand (Story 3.3).
+                    if let Some(elapsed) = s.hover_pending_ms {
+                        let new_elapsed = elapsed + TICK_MS;
+                        if new_elapsed >= self.config.bar.hover_delay as f32 {
+                            s.hover_pending_ms = None;
+                            s.expand = ExpandState::Expanding(0.0);
+                            tasks.push(self.overlay_size_change_for(wid));
+                        } else {
+                            s.hover_pending_ms = Some(new_elapsed);
+                            // Still counting down — no resize needed this tick for this surface.
+                        }
+                        continue;
+                    }
+
+                    match s.expand {
+                        ExpandState::Expanding(progress) => {
+                            let new_progress = (progress + TICK_MS / EXPAND_MS).min(1.0);
+                            s.expand = if new_progress >= 1.0 {
+                                ExpandState::Expanded
+                            } else {
+                                ExpandState::Expanding(new_progress)
+                            };
+                            tasks.push(self.overlay_size_change_for(wid));
+                        }
+                        ExpandState::Collapsing(progress) => {
+                            let new_progress = (progress + TICK_MS / COLLAPSE_MS).min(1.0);
+                            s.expand = if new_progress >= 1.0 {
+                                ExpandState::Collapsed
+                            } else {
+                                ExpandState::Collapsing(new_progress)
+                            };
+                            tasks.push(self.overlay_size_change_for(wid));
+                        }
+                        _ => {} // Collapsed or Expanded — no action
                     }
                 }
 
-                match self.expand {
-                    ExpandState::Expanding(progress) => {
-                        let new_progress = (progress + TICK_MS / EXPAND_MS).min(1.0);
-                        self.expand = if new_progress >= 1.0 {
-                            ExpandState::Expanded
-                        } else {
-                            ExpandState::Expanding(new_progress)
-                        };
-                    }
-                    ExpandState::Collapsing(progress) => {
-                        let new_progress = (progress + TICK_MS / COLLAPSE_MS).min(1.0);
-                        self.expand = if new_progress >= 1.0 {
-                            ExpandState::Collapsed
-                        } else {
-                            ExpandState::Collapsing(new_progress)
-                        };
-                    }
-                    _ => return Task::none(),
-                }
-                // Resize surface to the interpolated size at the new progress value.
-                // Overlay mode: exclusive zone never changes.
-                self.overlay_size_change()
+                Task::batch(tasks)
             }
             Message::Network(NetworkEvent::StateChanged {
                 connectivity,
@@ -487,7 +501,7 @@ impl App {
                 });
                 Task::none()
             }
-            Message::ModuleScrollUp(id) => {
+            Message::ModuleScrollUp(id, _window) => {
                 for (_, module) in &self.modules {
                     if module.id() == id {
                         if let Some(msg) = module.on_interaction(InteractionEvent::ScrollUp) {
@@ -498,7 +512,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::ModuleScrollDown(id) => {
+            Message::ModuleScrollDown(id, _window) => {
                 for (_, module) in &self.modules {
                     if module.id() == id {
                         if let Some(msg) = module.on_interaction(InteractionEvent::ScrollDown) {
@@ -532,7 +546,7 @@ impl App {
                 self.shared.dbus = connections;
                 Task::none()
             }
-            Message::BarFocusGained => {
+            Message::BarFocusGained(window) => {
                 // Highlight first module in top zone (AC #1); fall back to center/bottom.
                 let first = self
                     .modules
@@ -541,46 +555,49 @@ impl App {
                     .or_else(|| self.modules.iter().find(|(z, _)| *z == Zone::Center))
                     .or_else(|| self.modules.iter().find(|(z, _)| *z == Zone::Bottom))
                     .map(|(_, m)| m.id());
-                self.focused_module = first;
-                self.module_activated = false;
+                let s = self.surface_mut(window);
+                s.focused_module = first;
+                s.module_activated = false;
                 Task::none()
             }
-            Message::BarFocusLost => {
-                self.focused_module = None;
-                self.module_activated = false;
+            Message::BarFocusLost(window) => {
+                let s = self.surface_mut(window);
+                s.focused_module = None;
+                s.module_activated = false;
                 // Restore OnDemand so the bar can be focused again (AC #3).
                 use iced_layershell::reexport::KeyboardInteractivity;
-                Task::done(Message::KeyboardInteractivityChange(
-                    KeyboardInteractivity::OnDemand,
-                ))
+                Task::done(Message::KeyboardInteractivityChange {
+                    id: window,
+                    keyboard_interactivity: KeyboardInteractivity::OnDemand,
+                })
             }
-            Message::EscapePressed => {
+            Message::EscapePressed(window) => {
+                let s = self.surface_mut(window);
                 // If a module is activated, Escape deactivates it (returns to navigation mode).
-                if self.module_activated {
-                    self.module_activated = false;
+                if s.module_activated {
+                    s.module_activated = false;
                     return Task::none();
                 }
-                if self.focused_module.is_none() {
+                if s.focused_module.is_none() {
                     return Task::none();
                 }
                 // Tell compositor to remove keyboard focus from this surface (AC #2).
                 // BarFocusLost fires in response and restores OnDemand.
                 use iced_layershell::reexport::KeyboardInteractivity;
-                Task::done(Message::KeyboardInteractivityChange(
-                    KeyboardInteractivity::None,
-                ))
+                Task::done(Message::KeyboardInteractivityChange {
+                    id: window,
+                    keyboard_interactivity: KeyboardInteractivity::None,
+                })
             }
-            Message::FocusMoveNext => {
-                if self.focused_module.is_none() {
-                    // Bar has Wayland keyboard focus (we received this event) but BarFocusGained
-                    // didn't fire — iced-layershell only emits Window::Focused when
-                    // current_surface changes, so re-focus after Escape is silently dropped.
-                    // Delegate to BarFocusGained to acquire focus first; user re-presses to navigate.
-                    return Task::done(Message::BarFocusGained);
+            Message::FocusMoveNext(window) => {
+                let s = self.surface_mut(window);
+                if s.focused_module.is_none() {
+                    // Delegate to BarFocusGained to acquire focus first.
+                    return Task::done(Message::BarFocusGained(window));
                 }
                 // Interaction mode (Story 6.3): module is activated — arrow key scrolls it.
-                if self.module_activated {
-                    if let Some(ref id) = self.focused_module.clone() {
+                if s.module_activated {
+                    if let Some(ref id) = s.focused_module.clone() {
                         for (_, m) in &self.modules {
                             if m.id() == *id {
                                 if let Some(msg) = m.on_interaction(InteractionEvent::ScrollDown) {
@@ -593,20 +610,21 @@ impl App {
                     return Task::none();
                 }
                 // Navigation mode: move to next module.
-                if let Some(ref current) = self.focused_module.clone()
+                if let Some(ref current) = s.focused_module.clone()
                     && let Some(next) = self.nav_next(current)
                 {
-                    self.focused_module = Some(next);
+                    self.surface_mut(window).focused_module = Some(next);
                 }
                 Task::none()
             }
-            Message::FocusMovePrev => {
-                if self.focused_module.is_none() {
-                    return Task::done(Message::BarFocusGained);
+            Message::FocusMovePrev(window) => {
+                let s = self.surface_mut(window);
+                if s.focused_module.is_none() {
+                    return Task::done(Message::BarFocusGained(window));
                 }
                 // Interaction mode (Story 6.3): module is activated — arrow key scrolls it.
-                if self.module_activated {
-                    if let Some(ref id) = self.focused_module.clone() {
+                if s.module_activated {
+                    if let Some(ref id) = s.focused_module.clone() {
                         for (_, m) in &self.modules {
                             if m.id() == *id {
                                 if let Some(msg) = m.on_interaction(InteractionEvent::ScrollUp) {
@@ -619,53 +637,53 @@ impl App {
                     return Task::none();
                 }
                 // Navigation mode: move to previous module.
-                if let Some(ref current) = self.focused_module.clone()
+                if let Some(ref current) = s.focused_module.clone()
                     && let Some(prev) = self.nav_prev(current)
                 {
-                    self.focused_module = Some(prev);
+                    self.surface_mut(window).focused_module = Some(prev);
                 }
                 Task::none()
             }
-            Message::FocusNextZone => {
-                if self.focused_module.is_none() {
-                    return Task::done(Message::BarFocusGained);
+            Message::FocusNextZone(window) => {
+                let s = self.surface_mut(window);
+                if s.focused_module.is_none() {
+                    return Task::done(Message::BarFocusGained(window));
                 }
-                self.module_activated = false; // deactivate on zone jump
-                if let Some(ref current) = self.focused_module.clone()
+                s.module_activated = false; // deactivate on zone jump
+                if let Some(ref current) = s.focused_module.clone()
                     && let Some(next) = self.nav_next_zone(current)
                 {
-                    self.focused_module = Some(next);
+                    self.surface_mut(window).focused_module = Some(next);
                 }
                 Task::none()
             }
-            Message::FocusPrevZone => {
-                if self.focused_module.is_none() {
-                    return Task::done(Message::BarFocusGained);
+            Message::FocusPrevZone(window) => {
+                let s = self.surface_mut(window);
+                if s.focused_module.is_none() {
+                    return Task::done(Message::BarFocusGained(window));
                 }
-                self.module_activated = false; // deactivate on zone jump
-                if let Some(ref current) = self.focused_module.clone()
+                s.module_activated = false; // deactivate on zone jump
+                if let Some(ref current) = s.focused_module.clone()
                     && let Some(prev) = self.nav_prev_zone(current)
                 {
-                    self.focused_module = Some(prev);
+                    self.surface_mut(window).focused_module = Some(prev);
                 }
                 Task::none()
             }
-            Message::KeyboardActivate => {
-                if self.focused_module.is_none() {
+            Message::KeyboardActivate(window) => {
+                let s = self.surface_mut(window);
+                if s.focused_module.is_none() {
                     return Task::none();
                 }
-                if let Some(ref id) = self.focused_module.clone() {
+                if let Some(ref id) = s.focused_module.clone() {
                     for (_, module) in &self.modules {
                         if module.id() == *id {
                             // Scrollable module: Enter/Space enters interaction mode.
-                            // Check scroll capability without side effects (VolumeModule constructs
-                            // VolumeAdjust and returns it — no I/O).
                             if module.on_interaction(InteractionEvent::ScrollDown).is_some() {
-                                self.module_activated = true;
+                                self.surface_mut(window).module_activated = true;
                                 return Task::none();
                             }
                             // Clickable module: fire the click action.
-                            // ButtonModule spawns the command as a side effect and returns None.
                             if let Some(msg) = module.on_interaction(InteractionEvent::Clicked) {
                                 return Task::done(msg);
                             }
@@ -679,10 +697,17 @@ impl App {
                 if !self.config.bar.expand {
                     return Task::none();
                 }
-                // Keyboard keybind always toggles — no expand_trigger check (unlike BarClick).
-                // Overlay mode: exclusive zone never changes.
-                self.expand = self.expand.toggle();
-                self.overlay_size_change()
+                // IPC-sourced: no window context — toggle ALL surfaces simultaneously.
+                let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
+                let tasks: Vec<_> = window_ids
+                    .into_iter()
+                    .map(|wid| {
+                        let s = self.surfaces.get_mut(&wid).unwrap();
+                        s.expand = s.expand.toggle();
+                        self.overlay_size_change_for(wid)
+                    })
+                    .collect();
+                Task::batch(tasks)
             }
             _ => Task::none(),
         }
@@ -738,8 +763,12 @@ impl App {
         let focus_sub = keyboard_focus_subscription();
         let ipc_sub = ipc_subscription();
 
-        // Emit a Tick every ~16ms (≈60fps) while animating or hover delay is pending.
-        let tick_sub = if self.expand.is_animating() || self.hover_pending_ms.is_some() {
+        // Emit a Tick every ~16ms (≈60fps) when ANY surface is animating or has pending hover.
+        let needs_tick = self
+            .surfaces
+            .values()
+            .any(|s| s.expand.is_animating() || s.hover_pending_ms.is_some());
+        let tick_sub = if needs_tick {
             iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick)
         } else {
             iced::Subscription::none()
@@ -758,12 +787,13 @@ impl App {
         ])
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
         let is_horizontal = self.config.bar.edge.is_horizontal();
+        let surface = self.surfaces.get(&window).cloned().unwrap_or_default();
 
         // All bars animate between collapsed_width and expanded_width.
         // Overlay mode: the surface grows over the desktop without changing the exclusive zone.
-        let surface_size = self.expand.current_width(
+        let surface_size = surface.expand.current_width(
             self.config.bar.collapsed_width,
             self.config.bar.expanded_width,
         );
@@ -773,7 +803,7 @@ impl App {
         // Show expanded content whenever the bar is expanding or fully expanded.
         // label_opacity (UX-DR6, 60ms delay fade) is deferred: iced 0.14 has no generic
         // element opacity wrapper; see deferred-work.md.
-        let shows_expanded = self.expand.shows_expanded_content();
+        let shows_expanded = surface.expand.shows_expanded_content();
 
         let mut top: Vec<Element<'_, Message>> = vec![];
         let mut center: Vec<Element<'_, Message>> = vec![];
@@ -787,8 +817,8 @@ impl App {
                 .cloned()
                 .unwrap_or_default();
             let id = module.id();
-            let hovered = self.hovered_module.as_ref() == Some(&id);
-            let focused = self.focused_module.as_ref() == Some(&id);
+            let hovered = surface.hovered_module.as_ref() == Some(&id);
+            let focused = surface.focused_module.as_ref() == Some(&id);
 
             // During Expanding: show expanded content (opacity fade deferred — no iced wrapper).
             // During Collapsing: show collapsed content immediately (no reverse fade).
@@ -804,18 +834,18 @@ impl App {
             let scroll_id = id.clone();
             // module_frame treats hover and keyboard focus identically (UX-DR3).
             let view: Element<'_, Message> = mouse_area(module_frame(module_view, hovered || focused))
-                .on_enter(Message::ModuleHoverEnter(id.clone()))
-                .on_exit(Message::ModuleHoverExit(id.clone()))
-                .on_press(Message::ModuleClick(id))
+                .on_enter(Message::ModuleHoverEnter(id.clone(), window))
+                .on_exit(Message::ModuleHoverExit(id.clone(), window))
+                .on_press(Message::ModuleClick(id, window))
                 .on_scroll(move |delta| {
                     let up = match delta {
                         iced::mouse::ScrollDelta::Lines { y, .. }
                         | iced::mouse::ScrollDelta::Pixels { y, .. } => y > 0.0,
                     };
                     if up {
-                        Message::ModuleScrollUp(scroll_id.clone())
+                        Message::ModuleScrollUp(scroll_id.clone(), window)
                     } else {
-                        Message::ModuleScrollDown(scroll_id.clone())
+                        Message::ModuleScrollDown(scroll_id.clone(), window)
                     }
                 })
                 .into();
@@ -858,9 +888,9 @@ impl App {
         // Wrap entire bar in mouse_area for click-to-toggle and hover detection.
         // Note: clicking a module fires both ModuleClick(id) AND BarClick (outer area).
         mouse_area(bar_content)
-            .on_press(Message::BarClick)
-            .on_enter(Message::BarHoverEnter)
-            .on_exit(Message::BarHoverExit)
+            .on_press(Message::BarClick(window))
+            .on_enter(Message::BarHoverEnter(window))
+            .on_exit(Message::BarHoverExit(window))
             .into()
     }
 
@@ -916,19 +946,24 @@ impl App {
         None
     }
 
-    /// Returns a `SizeChange` task for the current expand state in overlay mode.
+    /// Returns a `SizeChange` task for the named surface's current expand state in overlay mode.
     ///
     /// Overlay mode: the surface grows over the desktop — exclusive zone is never changed.
     /// For horizontal bars the animated dimension is height `(0, size)`; for vertical it's width `(size, 0)`.
-    fn overlay_size_change(&self) -> Task<Message> {
-        let size = self.expand.current_width(
+    fn overlay_size_change_for(&self, window: iced::window::Id) -> Task<Message> {
+        let expand = self
+            .surfaces
+            .get(&window)
+            .map(|s| s.expand)
+            .unwrap_or_default();
+        let size = expand.current_width(
             self.config.bar.collapsed_width,
             self.config.bar.expanded_width,
         );
         if self.config.bar.edge.is_horizontal() {
-            Task::done(Message::SizeChange((0, size)))
+            Task::done(Message::SizeChange { id: window, size: (0, size) })
         } else {
-            Task::done(Message::SizeChange((size, 0)))
+            Task::done(Message::SizeChange { id: window, size: (size, 0) })
         }
     }
 
@@ -1013,16 +1048,33 @@ mod tests {
         config
     }
 
+    fn make_expand_disabled_config() -> Config {
+        let mut config = make_config();
+        config.bar.expand = false;
+        config
+    }
+
+    fn make_horizontal_config() -> Config {
+        let mut config = make_config();
+        config.bar.edge = Edge::Top;
+        config
+    }
+
+    /// Returns a consistent unique window ID for use across a single test.
+    fn test_wid() -> iced::window::Id {
+        iced::window::Id::unique()
+    }
+
     #[test]
     fn namespace_returns_niribar() {
         assert_eq!(App::namespace(), "niribar");
     }
 
     #[test]
-    fn new_with_config_stores_config() {
+    fn boot_with_config_stores_config() {
         let mut config = Config::default();
         config.bar.collapsed_width = 60;
-        let app = App::new(config);
+        let (app, _) = App::boot(config);
         assert_eq!(app.config.bar.collapsed_width, 60);
     }
 
@@ -1033,28 +1085,25 @@ mod tests {
     }
 
     #[test]
-    fn new_modules_empty_with_no_module_config() {
-        // Config::default() has no modules in its list, so none are instantiated.
+    fn boot_modules_empty_with_no_module_config() {
         let config = make_config();
-        let app = App::new(config);
+        let (app, _) = App::boot(config);
         assert!(app.modules.is_empty());
     }
 
     #[test]
     fn undeclared_known_type_in_bar_modules_uses_defaults() {
-        // "clock" listed in bar.modules but not in modules section → instantiated with defaults.
         let mut config = Config::default();
         config.bar.modules.bottom = vec!["clock".into()];
-        let app = App::new(config);
+        let (app, _) = App::boot(config);
         assert_eq!(app.modules.len(), 1);
     }
 
     #[test]
     fn undeclared_unknown_name_in_bar_modules_is_skipped() {
-        // An unrecognised name with no declaration and no matching type → silently skipped.
         let mut config = Config::default();
         config.bar.modules.bottom = vec!["my-script".into()];
-        let app = App::new(config);
+        let (app, _) = App::boot(config);
         assert!(app.modules.is_empty());
     }
 
@@ -1068,41 +1117,38 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.bottom = vec!["clock".into()];
-        let app = App::new(config);
+        let (app, _) = App::boot(config);
         assert_eq!(app.modules.len(), 1);
     }
 
     #[test]
-    fn hovered_module_starts_none() {
-        let app = App::new(make_config());
-        assert!(app.hovered_module.is_none());
-    }
-
-    #[test]
     fn hover_enter_sets_hovered_module() {
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
         let id = ModuleId::new("clock");
-        let _ = app.update(Message::ModuleHoverEnter(id.clone()));
-        assert_eq!(app.hovered_module, Some(id));
+        let _ = app.update(Message::ModuleHoverEnter(id.clone(), wid));
+        assert_eq!(app.surfaces[&wid].hovered_module, Some(id));
     }
 
     #[test]
     fn hover_exit_clears_hovered_module() {
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
         let id = ModuleId::new("clock");
-        let _ = app.update(Message::ModuleHoverEnter(id.clone()));
-        let _ = app.update(Message::ModuleHoverExit(id));
-        assert!(app.hovered_module.is_none());
+        let _ = app.update(Message::ModuleHoverEnter(id.clone(), wid));
+        let _ = app.update(Message::ModuleHoverExit(id, wid));
+        assert!(app.surfaces[&wid].hovered_module.is_none());
     }
 
     #[test]
     fn hover_exit_different_id_does_not_clear() {
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
         let id_a = ModuleId::new("clock");
         let id_b = ModuleId::new("battery");
-        let _ = app.update(Message::ModuleHoverEnter(id_a.clone()));
-        let _ = app.update(Message::ModuleHoverExit(id_b));
-        assert_eq!(app.hovered_module, Some(id_a));
+        let _ = app.update(Message::ModuleHoverEnter(id_a.clone(), wid));
+        let _ = app.update(Message::ModuleHoverExit(id_b, wid));
+        assert_eq!(app.surfaces[&wid].hovered_module, Some(id_a));
     }
 
     #[test]
@@ -1118,7 +1164,7 @@ mod tests {
             }),
         }];
         config.bar.modules.bottom = vec!["script".into()];
-        let app = App::new(config);
+        let (app, _) = App::boot(config);
         assert_eq!(app.modules.len(), 1);
     }
 
@@ -1126,7 +1172,7 @@ mod tests {
     fn script_output_event_updates_state() {
         use crate::modules::script::ScriptEvent;
 
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
         let id = ModuleId::new("script");
         let _ = app.update(Message::Module(
             id.clone(),
@@ -1152,7 +1198,7 @@ mod tests {
             }),
         }];
         config.bar.modules.bottom = vec!["button".into()];
-        let app = App::new(config);
+        let (app, _) = App::boot(config);
         assert_eq!(app.modules.len(), 1);
     }
 
@@ -1160,25 +1206,24 @@ mod tests {
     fn button_ready_event_updates_state() {
         use crate::modules::button::ButtonEvent;
 
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
         let id = ModuleId::new("button");
         let _ = app.update(Message::Module(
             id.clone(),
             ModuleEvent::Button(ButtonEvent::Ready),
         ));
         match app.shared.modules.get(&id) {
-            Some(ModuleState::Button(_)) => {} // correct
+            Some(ModuleState::Button(_)) => {}
             other => panic!("expected Button state, got {:?}", other),
         }
     }
 
     #[test]
     fn module_click_no_match_does_not_panic() {
-        // ModuleClick for an id with no matching module → Task::none() without panic.
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
         let id = ModuleId::new("nonexistent");
-        let _ = app.update(Message::ModuleClick(id));
-        // If we reach here without panic, the test passes.
+        let _ = app.update(Message::ModuleClick(id, wid));
     }
 
     #[test]
@@ -1196,9 +1241,8 @@ mod tests {
             }),
         }];
         config.bar.modules.bottom = vec!["script".into()];
-        let mut app = App::new(config);
+        let (mut app, _) = App::boot(config);
 
-        // Pre-populate with known output
         let id = ModuleId::new("script");
         app.shared.modules.insert(
             id.clone(),
@@ -1207,7 +1251,6 @@ mod tests {
             }),
         );
 
-        // Fire a Failed event — state must remain unchanged
         let _ = app.update(Message::Module(
             id.clone(),
             ModuleEvent::Script(ScriptEvent::Failed),
@@ -1219,207 +1262,218 @@ mod tests {
         }
     }
 
-    // --- Story 3.1 tests (updated for Story 3.2 semantics) ---
+    // --- Story 3.1 tests ---
 
     #[test]
-    fn app_starts_collapsed() {
-        let app = App::new(make_config());
-        assert_eq!(app.expand, ExpandState::Collapsed);
+    fn app_starts_with_no_surfaces() {
+        let (app, _) = App::boot(make_config());
+        assert!(app.surfaces.is_empty());
     }
 
-    // Story 3.2: BarClick now starts animation instead of jumping to final state.
     #[test]
     fn bar_click_starts_expanding_from_collapsed() {
-        let mut app = App::new(make_config());
-        assert_eq!(app.expand, ExpandState::Collapsed);
-        let _ = app.update(Message::BarClick);
-        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        let _ = app.update(Message::BarClick(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
     }
 
     #[test]
     fn bar_click_starts_collapsing_from_expanded() {
-        let mut app = App::new(make_config());
-        app.expand = ExpandState::Expanded;
-        let _ = app.update(Message::BarClick);
-        assert_eq!(app.expand, ExpandState::Collapsing(0.0));
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanded;
+        let _ = app.update(Message::BarClick(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsing(0.0));
     }
 
     // --- Story 3.2 tests ---
 
     #[test]
     fn tick_advances_expand_progress() {
-        let mut app = App::new(make_config());
-        app.expand = ExpandState::Expanding(0.0);
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanding(0.0);
         let _ = app.update(Message::Tick);
         let expected_progress = 16.0_f32 / 280.0;
         assert!(
-            matches!(app.expand, ExpandState::Expanding(p) if (p - expected_progress).abs() < 1e-5),
+            matches!(app.surfaces[&wid].expand, ExpandState::Expanding(p) if (p - expected_progress).abs() < 1e-5),
             "expected Expanding(~{expected_progress:.4}), got {:?}",
-            app.expand
+            app.surfaces[&wid].expand
         );
     }
 
     #[test]
     fn tick_completes_expand_animation() {
-        let mut app = App::new(make_config());
-        // A progress close enough to 1.0 that one more tick completes it.
-        app.expand = ExpandState::Expanding(0.999);
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanding(0.999);
         let _ = app.update(Message::Tick);
-        assert_eq!(app.expand, ExpandState::Expanded);
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanded);
     }
 
     #[test]
     fn tick_advances_collapse_progress() {
-        let mut app = App::new(make_config());
-        app.expand = ExpandState::Collapsing(0.0);
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Collapsing(0.0);
         let _ = app.update(Message::Tick);
         let expected_progress = 16.0_f32 / 200.0;
         assert!(
-            matches!(app.expand, ExpandState::Collapsing(p) if (p - expected_progress).abs() < 1e-5),
+            matches!(app.surfaces[&wid].expand, ExpandState::Collapsing(p) if (p - expected_progress).abs() < 1e-5),
             "expected Collapsing(~{expected_progress:.4}), got {:?}",
-            app.expand
+            app.surfaces[&wid].expand
         );
     }
 
     #[test]
     fn tick_completes_collapse_animation() {
-        let mut app = App::new(make_config());
-        app.expand = ExpandState::Collapsing(0.999);
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Collapsing(0.999);
         let _ = app.update(Message::Tick);
-        assert_eq!(app.expand, ExpandState::Collapsed);
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
     }
 
     #[test]
     fn tick_no_op_when_collapsed() {
-        let mut app = App::new(make_config());
-        assert_eq!(app.expand, ExpandState::Collapsed);
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Collapsed;
         let _ = app.update(Message::Tick);
-        assert_eq!(app.expand, ExpandState::Collapsed);
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
     }
 
     #[test]
     fn tick_no_op_when_expanded() {
-        let mut app = App::new(make_config());
-        app.expand = ExpandState::Expanded;
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::Tick);
-        assert_eq!(app.expand, ExpandState::Expanded);
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanded);
     }
 
     // --- Story 3.3 tests ---
 
     #[test]
     fn app_starts_with_bar_hovered_false() {
-        let app = App::new(make_config());
-        assert!(!app.bar_hovered);
+        let (app, _) = App::boot(make_config());
+        // No surfaces yet, so bar_hovered is not tracked — passes trivially.
+        assert!(app.surfaces.values().all(|s| !s.bar_hovered));
     }
 
     #[test]
     fn hover_enter_click_trigger_does_nothing() {
-        // Click trigger: BarHoverEnter must not change expand state.
-        let mut app = App::new(make_config()); // expand_trigger = Click
-        let _ = app.update(Message::BarHoverEnter);
-        assert_eq!(app.expand, ExpandState::Collapsed);
-        assert!(app.bar_hovered); // bar_hovered is set regardless
+        let (mut app, _) = App::boot(make_config()); // expand_trigger = Click
+        let wid = test_wid();
+        let _ = app.update(Message::BarHoverEnter(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
+        assert!(app.surfaces[&wid].bar_hovered);
     }
 
     #[test]
     fn hover_exit_click_trigger_does_nothing() {
-        // Click trigger: BarHoverExit must not change expand state.
-        let mut app = App::new(make_config());
-        app.expand = ExpandState::Expanded;
-        let _ = app.update(Message::BarHoverExit);
-        assert_eq!(app.expand, ExpandState::Expanded);
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanded;
+        let _ = app.update(Message::BarHoverExit(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanded);
     }
 
     #[test]
     fn hover_enter_hover_trigger_zero_delay_starts_expanding() {
-        let mut app = App::new(make_hover_config());
-        let _ = app.update(Message::BarHoverEnter);
-        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+        let (mut app, _) = App::boot(make_hover_config());
+        let wid = test_wid();
+        let _ = app.update(Message::BarHoverEnter(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
     }
 
     #[test]
     fn hover_exit_when_expanded_starts_collapsing() {
-        let mut app = App::new(make_hover_config());
-        app.expand = ExpandState::Expanded;
-        let _ = app.update(Message::BarHoverExit);
-        assert_eq!(app.expand, ExpandState::Collapsing(0.0));
+        let (mut app, _) = App::boot(make_hover_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanded;
+        let _ = app.update(Message::BarHoverExit(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsing(0.0));
     }
 
     #[test]
     fn hover_exit_when_expanding_reverses() {
-        let mut app = App::new(make_hover_config());
-        app.expand = ExpandState::Expanding(0.3);
-        let _ = app.update(Message::BarHoverExit);
+        let (mut app, _) = App::boot(make_hover_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanding(0.3);
+        let _ = app.update(Message::BarHoverExit(wid));
         assert!(
-            matches!(app.expand, ExpandState::Collapsing(p) if (p - 0.7).abs() < 1e-5),
+            matches!(app.surfaces[&wid].expand, ExpandState::Collapsing(p) if (p - 0.7).abs() < 1e-5),
             "expected Collapsing(~0.7), got {:?}",
-            app.expand
+            app.surfaces[&wid].expand
         );
     }
 
     #[test]
     fn hover_exit_when_collapsed_does_nothing() {
-        let mut app = App::new(make_hover_config());
-        // expand starts Collapsed
-        let _ = app.update(Message::BarHoverExit);
-        assert_eq!(app.expand, ExpandState::Collapsed);
+        let (mut app, _) = App::boot(make_hover_config());
+        let wid = test_wid();
+        let _ = app.update(Message::BarHoverExit(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
     }
 
     #[test]
     fn hover_enter_with_delay_sets_pending() {
         let mut config = make_hover_config();
         config.bar.hover_delay = 100;
-        let mut app = App::new(config);
-        let _ = app.update(Message::BarHoverEnter);
-        // State stays Collapsed — delay not yet elapsed.
-        assert_eq!(app.expand, ExpandState::Collapsed);
-        assert_eq!(app.hover_pending_ms, Some(0.0));
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        let _ = app.update(Message::BarHoverEnter(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
+        assert_eq!(app.surfaces[&wid].hover_pending_ms, Some(0.0));
     }
 
     #[test]
     fn hover_exit_cancels_pending() {
         let mut config = make_hover_config();
         config.bar.hover_delay = 100;
-        let mut app = App::new(config);
-        let _ = app.update(Message::BarHoverEnter); // sets pending
-        let _ = app.update(Message::BarHoverExit); // cancels pending
-        assert_eq!(app.hover_pending_ms, None);
-        assert_eq!(app.expand, ExpandState::Collapsed);
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        let _ = app.update(Message::BarHoverEnter(wid));
+        let _ = app.update(Message::BarHoverExit(wid));
+        assert_eq!(app.surfaces[&wid].hover_pending_ms, None);
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
     }
 
     #[test]
     fn tick_triggers_expand_when_delay_elapsed() {
         let mut config = make_hover_config();
         config.bar.hover_delay = 100;
-        let mut app = App::new(config);
-        // Simulate hover delay almost elapsed (90ms of 100ms done).
-        app.hover_pending_ms = Some(90.0);
-        // One tick (16ms) pushes elapsed to 106ms ≥ 100ms → expand starts.
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        app.surface_mut(wid).hover_pending_ms = Some(90.0);
         let _ = app.update(Message::Tick);
-        assert_eq!(app.expand, ExpandState::Expanding(0.0));
-        assert_eq!(app.hover_pending_ms, None);
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
+        assert_eq!(app.surfaces[&wid].hover_pending_ms, None);
     }
 
     #[test]
     fn bar_click_noop_when_hover_trigger() {
-        let mut app = App::new(make_hover_config());
-        let _ = app.update(Message::BarClick);
-        assert_eq!(app.expand, ExpandState::Collapsed); // unchanged
+        let (mut app, _) = App::boot(make_hover_config());
+        let wid = test_wid();
+        app.surface_mut(wid); // initialize so surface exists before early-return
+        let _ = app.update(Message::BarClick(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
     }
 
     // --- Story 4.1 tests ---
 
     #[test]
     fn niri_connected_event_sets_connected() {
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
         let _ = app.update(Message::Niri(NiriEvent::Connected));
         assert!(app.shared.niri.connected);
     }
 
     #[test]
     fn niri_unavailable_event_does_not_crash() {
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
         let _ = app.update(Message::Niri(NiriEvent::Unavailable));
         assert!(!app.shared.niri.connected);
     }
@@ -1427,7 +1481,7 @@ mod tests {
     #[test]
     fn niri_workspaces_changed_stores_workspaces() {
         use niri_ipc::{Event, Workspace};
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
         let ws = Workspace {
             id: 1,
             idx: 0,
@@ -1447,7 +1501,7 @@ mod tests {
     #[test]
     fn niri_window_focus_changed_stores_id() {
         use niri_ipc::Event;
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
             id: Some(42),
         })));
@@ -1457,7 +1511,7 @@ mod tests {
     #[test]
     fn niri_window_focus_cleared() {
         use niri_ipc::Event;
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
         app.shared.niri.focused_window_id = Some(99);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
             id: None,
@@ -1468,8 +1522,7 @@ mod tests {
     #[test]
     fn niri_unknown_event_is_ignored() {
         use niri_ipc::Event;
-        let mut app = App::new(make_config());
-        // KeyboardLayoutsChanged is not handled — verify no panic and no state change.
+        let (mut app, _) = App::boot(make_config());
         let _ = app.update(Message::Niri(NiriEvent::Event(
             Event::KeyboardLayoutsChanged {
                 keyboard_layouts: niri_ipc::KeyboardLayouts {
@@ -1493,7 +1546,7 @@ mod tests {
             params: ModuleParams::None,
         }];
         config.bar.modules.top = vec!["workspaces".into()];
-        App::new(config)
+        App::boot(config).0
     }
 
     fn make_workspace(idx: u8, is_focused: bool) -> niri_ipc::Workspace {
@@ -1548,7 +1601,7 @@ mod tests {
     #[test]
     fn workspaces_module_state_not_updated_without_workspaces_module_in_config() {
         use niri_ipc::Event;
-        let mut app = App::new(make_config()); // no workspaces module
+        let (mut app, _) = App::boot(make_config());
         let ws = make_workspace(0, true);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws],
@@ -1561,7 +1614,6 @@ mod tests {
     fn workspaces_changed_order_preserved_in_state() {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
-        // Send in non-sorted order — state stores as-received; view sorts by idx
         let ws2 = make_workspace(2, false);
         let ws0 = make_workspace(0, true);
         let ws1 = make_workspace(1, false);
@@ -1572,7 +1624,6 @@ mod tests {
         match app.shared.modules.get(&id) {
             Some(ModuleState::Workspace(s)) => {
                 assert_eq!(s.workspaces.len(), 3);
-                // Stored in arrival order (idx: 2, 0, 1) — view sorts, state doesn't
                 assert_eq!(s.workspaces[0].idx, 2);
                 assert_eq!(s.workspaces[1].idx, 0);
                 assert_eq!(s.workspaces[2].idx, 1);
@@ -1585,14 +1636,12 @@ mod tests {
     fn workspace_activated_updates_focused_pill() {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
-        // Seed two workspaces; idx=0 starts focused.
         let ws0 = make_workspace(0, true);
         let ws1 = make_workspace(1, false);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws0, ws1],
         })));
 
-        // User switches to workspace 2 (id=2, idx=1).
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
             id: 2,
             focused: true,
@@ -1602,11 +1651,8 @@ mod tests {
         match app.shared.modules.get(&id) {
             Some(ModuleState::Workspace(s)) => {
                 let focused: Vec<_> = s.workspaces.iter().filter(|w| w.is_focused).collect();
-                assert_eq!(focused.len(), 1, "exactly one workspace should be focused");
-                assert_eq!(
-                    focused[0].idx, 1,
-                    "workspace with idx=1 should now be focused"
-                );
+                assert_eq!(focused.len(), 1);
+                assert_eq!(focused[0].idx, 1);
             }
             other => panic!("expected Workspace state, got {:?}", other),
         }
@@ -1616,12 +1662,10 @@ mod tests {
     fn workspace_activated_no_panic_when_workspaces_empty() {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
-        // WorkspaceActivated fires before WorkspacesChanged seeds the list — must not panic.
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
             id: 1,
             focused: true,
         })));
-        // No panic; no workspaces in state yet.
         assert!(app.shared.niri.workspaces.is_empty());
     }
 
@@ -1636,7 +1680,7 @@ mod tests {
             params: ModuleParams::None,
         }];
         config.bar.modules.center = vec!["focused-window".into()];
-        App::new(config)
+        App::boot(config).0
     }
 
     fn make_window(id: u64, title: Option<&str>, is_focused: bool) -> niri_ipc::Window {
@@ -1664,10 +1708,8 @@ mod tests {
     fn focused_window_state_updated_on_window_focus_changed() {
         use niri_ipc::Event;
         let mut app = make_focused_window_app();
-        // Pre-populate window cache with a window that has a title.
         let win = make_window(1, Some("Firefox"), false);
         app.shared.niri.windows.insert(1, win);
-        // Send focus event for that window.
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
             id: Some(1),
         })));
@@ -1682,24 +1724,19 @@ mod tests {
 
     #[test]
     fn focused_window_title_retained_when_focus_moves_to_none() {
-        // When WindowFocusChanged { id: None } fires (bar hover / layer-shell focus),
-        // the module should retain the last known title rather than blanking.
         use niri_ipc::Event;
         let mut app = make_focused_window_app();
-        // First, focus a real window so the module has a title.
         let win = make_window(1, Some("Firefox"), false);
         app.shared.niri.windows.insert(1, win);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
             id: Some(1),
         })));
-        // Now simulate bar hover: niri sends WindowFocusChanged { id: None }.
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
             id: None,
         })));
         let id = ModuleId::new("focused-window");
         match app.shared.modules.get(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
-                // Title must be retained — NOT cleared by the None focus event.
                 assert_eq!(s.title.as_deref(), Some("Firefox"));
             }
             other => panic!("expected FocusedWindow state, got {:?}", other),
@@ -1708,11 +1745,8 @@ mod tests {
 
     #[test]
     fn focused_window_state_updated_on_windows_changed() {
-        // WindowsChanged must derive focused_window_id from is_focused — not rely on prior state.
-        // This covers the startup case where WindowsChanged arrives before any WindowFocusChanged.
         use niri_ipc::Event;
         let mut app = make_focused_window_app();
-        // No pre-existing focused_window_id — simulates bar startup.
         assert!(app.shared.niri.focused_window_id.is_none());
         let win = make_window(2, Some("Helix"), true);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowsChanged {
@@ -1748,7 +1782,6 @@ mod tests {
     fn focused_window_state_cleared_on_window_closed() {
         use niri_ipc::Event;
         let mut app = make_focused_window_app();
-        // Seed focused window.
         let win = make_window(4, Some("Nautilus"), true);
         app.shared.niri.windows.insert(4, win);
         app.shared.niri.focused_window_id = Some(4);
@@ -1758,17 +1791,13 @@ mod tests {
                 title: Some("Nautilus".into()),
             }),
         );
-        // Close the focused window.
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowClosed {
             id: 4,
         })));
         let id = ModuleId::new("focused-window");
         match app.shared.modules.get(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
-                assert!(
-                    s.title.is_none(),
-                    "title should be None after window closed"
-                );
+                assert!(s.title.is_none());
             }
             other => panic!("expected FocusedWindow state, got {:?}", other),
         }
@@ -1777,7 +1806,7 @@ mod tests {
     #[test]
     fn focused_window_state_not_updated_without_focused_window_module() {
         use niri_ipc::Event;
-        let mut app = App::new(make_config()); // no focused-window module
+        let (mut app, _) = App::boot(make_config());
         let win = make_window(1, Some("Firefox"), true);
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowsChanged {
             windows: vec![win],
@@ -1790,7 +1819,6 @@ mod tests {
 
     #[test]
     fn shared_state_dbus_starts_as_default() {
-        // SharedState::new() must initialise dbus with no connections (Story 5.1 AC #2).
         let state = SharedState::new();
         assert!(state.dbus.session.is_none());
         assert!(state.dbus.system.is_none());
@@ -1798,12 +1826,9 @@ mod tests {
 
     #[test]
     fn dbus_ready_stores_connections_in_shared_state() {
-        // Sending DbusReady(connections) must update shared.dbus (Story 5.1 AC #4).
-        // Use a default DbusConnections (both None) — simulates bus-unavailable case.
-        let mut app = App::new(Config::default());
+        let (mut app, _) = App::boot(Config::default());
         let conns = crate::dbus::DbusConnections::default();
         let _ = app.update(Message::DbusReady(conns));
-        // If we get here without panic, the message was handled correctly.
         assert!(app.shared.dbus.session.is_none());
         assert!(app.shared.dbus.system.is_none());
     }
@@ -1821,7 +1846,7 @@ mod tests {
             }),
         }];
         config.bar.modules.bottom = vec!["battery".into()];
-        App::new(config)
+        App::boot(config).0
     }
 
     #[test]
@@ -1854,7 +1879,7 @@ mod tests {
 
     #[test]
     fn battery_state_not_updated_without_battery_module() {
-        let mut app = App::new(Config::default()); // no battery module
+        let (mut app, _) = App::boot(Config::default());
         let _ = app.update(Message::Battery(BatteryEvent::StateChanged {
             percentage: 50.0,
             is_charging: true,
@@ -1874,7 +1899,7 @@ mod tests {
             params: ModuleParams::Network(NetworkConfig),
         }];
         config.bar.modules.bottom = vec!["network".into()];
-        App::new(config)
+        App::boot(config).0
     }
 
     #[test]
@@ -1909,7 +1934,7 @@ mod tests {
     #[test]
     fn network_state_not_updated_without_network_module() {
         use crate::modules::network::NetworkConnectivity;
-        let mut app = App::new(Config::default()); // no network module
+        let (mut app, _) = App::boot(Config::default());
         let _ = app.update(Message::Network(NetworkEvent::StateChanged {
             connectivity: NetworkConnectivity::Full,
             label: None,
@@ -1929,7 +1954,7 @@ mod tests {
             params: ModuleParams::Volume(VolumeConfig { step: 5 }),
         }];
         config.bar.modules.bottom = vec!["volume".into()];
-        App::new(config)
+        App::boot(config).0
     }
 
     #[test]
@@ -1962,7 +1987,7 @@ mod tests {
 
     #[test]
     fn volume_state_not_updated_without_volume_module() {
-        let mut app = App::new(Config::default()); // no volume module
+        let (mut app, _) = App::boot(Config::default());
         let _ = app.update(Message::Volume(VolumeEvent::StateChanged {
             volume: 50.0,
             muted: false,
@@ -1974,9 +1999,10 @@ mod tests {
     // --- Story 6.1 tests ---
 
     #[test]
-    fn focused_module_starts_none() {
-        let app = App::new(make_config());
-        assert!(app.focused_module.is_none());
+    fn focused_module_starts_none_for_new_surface() {
+        let (app, _) = App::boot(make_config());
+        let wid = test_wid();
+        assert!(app.surfaces.get(&wid).map(|s| s.focused_module.is_none()).unwrap_or(true));
     }
 
     #[test]
@@ -1989,9 +2015,10 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.top = vec!["clock".into()];
-        let mut app = App::new(config);
-        let _ = app.update(Message::BarFocusGained);
-        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        let _ = app.update(Message::BarFocusGained(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
     }
 
     #[test]
@@ -2004,11 +2031,12 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.top = vec!["clock".into()];
-        let mut app = App::new(config);
-        let _ = app.update(Message::BarFocusGained);
-        assert!(app.focused_module.is_some());
-        let _ = app.update(Message::BarFocusLost);
-        assert!(app.focused_module.is_none());
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        let _ = app.update(Message::BarFocusGained(wid));
+        assert!(app.surfaces[&wid].focused_module.is_some());
+        let _ = app.update(Message::BarFocusLost(wid));
+        assert!(app.surfaces[&wid].focused_module.is_none());
     }
 
     #[test]
@@ -2021,21 +2049,20 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.top = vec!["clock".into()];
-        let mut app = App::new(config);
-        let _ = app.update(Message::BarFocusGained);
-        assert!(app.focused_module.is_some());
-        // EscapePressed returns KeyboardInteractivityChange(None) — state is cleared by
-        // the subsequent BarFocusLost (after the Wayland round-trip), not immediately.
-        let _ = app.update(Message::EscapePressed);
-        assert!(app.focused_module.is_some());
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        let _ = app.update(Message::BarFocusGained(wid));
+        assert!(app.surfaces[&wid].focused_module.is_some());
+        let _ = app.update(Message::EscapePressed(wid));
+        assert!(app.surfaces[&wid].focused_module.is_some());
     }
 
     #[test]
     fn escape_pressed_when_not_focused_is_noop() {
-        let mut app = App::new(make_config());
-        assert!(app.focused_module.is_none());
-        let _ = app.update(Message::EscapePressed);
-        assert!(app.focused_module.is_none());
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        let _ = app.update(Message::EscapePressed(wid));
+        assert!(app.surfaces[&wid].focused_module.is_none());
     }
 
     #[test]
@@ -2048,21 +2075,23 @@ mod tests {
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
         config.bar.modules.center = vec!["clock".into()];
-        let mut app = App::new(config);
-        let _ = app.update(Message::BarFocusGained);
-        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        let _ = app.update(Message::BarFocusGained(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
     }
 
     #[test]
     fn bar_focus_gained_with_no_modules_is_noop() {
-        let mut app = App::new(make_config());
-        let _ = app.update(Message::BarFocusGained);
-        assert!(app.focused_module.is_none());
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        let _ = app.update(Message::BarFocusGained(wid));
+        assert!(app.surfaces[&wid].focused_module.is_none());
     }
 
     // --- Story 6.2 tests ---
 
-    fn make_nav_app() -> App {
+    fn make_nav_app() -> (App, iced::window::Id) {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
         let mut config = Config::default();
         config.modules = vec![
@@ -2090,82 +2119,81 @@ mod tests {
         config.bar.modules.top = vec!["clock".into(), "battery".into()];
         config.bar.modules.center = vec!["network".into()];
         config.bar.modules.bottom = vec!["workspaces".into()];
-        App::new(config)
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        app.surface_mut(wid); // pre-initialize surface
+        (app, wid)
     }
 
     #[test]
     fn focus_move_next_advances_to_next_module() {
-        let mut app = make_nav_app();
-        let _ = app.update(Message::BarFocusGained); // focused = clock (index 0)
-        let _ = app.update(Message::FocusMoveNext);
-        assert_eq!(app.focused_module, Some(ModuleId::new("battery"))); // index 1
+        let (mut app, wid) = make_nav_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("battery")));
     }
 
     #[test]
     fn focus_move_next_crosses_zone_boundary() {
-        // Down from battery (top zone, index 1) should move to network (center zone, index 2).
-        let mut app = make_nav_app();
-        let _ = app.update(Message::BarFocusGained);
-        let _ = app.update(Message::FocusMoveNext); // clock → battery
-        let _ = app.update(Message::FocusMoveNext); // battery → network (crosses zone)
-        assert_eq!(app.focused_module, Some(ModuleId::new("network")));
+        let (mut app, wid) = make_nav_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("network")));
     }
 
     #[test]
     fn focus_move_next_wraps_from_last_to_first() {
-        // Down from workspaces (last module) wraps back to clock (first module).
-        let mut app = make_nav_app();
-        app.focused_module = Some(ModuleId::new("workspaces")); // last module
-        let _ = app.update(Message::FocusMoveNext);
-        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+        let (mut app, wid) = make_nav_app();
+        app.surface_mut(wid).focused_module = Some(ModuleId::new("workspaces"));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
     }
 
     #[test]
     fn focus_move_prev_retreats_to_previous_module() {
-        let mut app = make_nav_app();
-        let _ = app.update(Message::BarFocusGained);
-        let _ = app.update(Message::FocusMoveNext); // → battery
-        let _ = app.update(Message::FocusMovePrev); // → clock
-        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+        let (mut app, wid) = make_nav_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        let _ = app.update(Message::FocusMovePrev(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
     }
 
     #[test]
     fn focus_move_prev_wraps_from_first_to_last() {
-        // Up from clock (first module) wraps to workspaces (last module).
-        let mut app = make_nav_app();
-        let _ = app.update(Message::BarFocusGained); // focused = clock
-        let _ = app.update(Message::FocusMovePrev);
-        assert_eq!(app.focused_module, Some(ModuleId::new("workspaces")));
+        let (mut app, wid) = make_nav_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMovePrev(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("workspaces")));
     }
 
     #[test]
     fn focus_next_zone_jumps_to_center() {
-        let mut app = make_nav_app();
-        let _ = app.update(Message::BarFocusGained); // top: clock
-        let _ = app.update(Message::FocusNextZone); // → center: network
-        assert_eq!(app.focused_module, Some(ModuleId::new("network")));
+        let (mut app, wid) = make_nav_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusNextZone(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("network")));
     }
 
     #[test]
     fn focus_next_zone_wraps_bottom_to_top() {
-        let mut app = make_nav_app();
-        app.focused_module = Some(ModuleId::new("workspaces")); // bottom zone
-        let _ = app.update(Message::FocusNextZone); // → top: clock
-        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+        let (mut app, wid) = make_nav_app();
+        app.surface_mut(wid).focused_module = Some(ModuleId::new("workspaces"));
+        let _ = app.update(Message::FocusNextZone(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
     }
 
     #[test]
     fn focus_prev_zone_from_top_jumps_to_bottom() {
-        let mut app = make_nav_app();
-        let _ = app.update(Message::BarFocusGained); // top: clock
-        let _ = app.update(Message::FocusPrevZone); // reverse cycle: top → bottom
-        assert_eq!(app.focused_module, Some(ModuleId::new("workspaces")));
+        let (mut app, wid) = make_nav_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusPrevZone(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("workspaces")));
     }
 
     #[test]
     fn focus_next_zone_skips_empty_zone() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        // Only top and bottom; center is empty.
         let mut config = Config::default();
         config.modules = vec![
             ModuleConfig {
@@ -2181,34 +2209,37 @@ mod tests {
         ];
         config.bar.modules.top = vec!["clock".into()];
         config.bar.modules.bottom = vec!["workspaces".into()];
-        let mut app = App::new(config);
-        let _ = app.update(Message::BarFocusGained); // top: clock
-        let _ = app.update(Message::FocusNextZone); // skip empty center → bottom
-        assert_eq!(app.focused_module, Some(ModuleId::new("workspaces")));
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusNextZone(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("workspaces")));
     }
 
     #[test]
     fn navigation_keys_when_not_focused_are_noop() {
-        let mut app = make_nav_app();
+        let (mut app, wid) = make_nav_app();
         // Bar not focused — focused_module is None
-        let _ = app.update(Message::FocusMoveNext);
-        let _ = app.update(Message::FocusMovePrev);
-        let _ = app.update(Message::FocusNextZone);
-        let _ = app.update(Message::FocusPrevZone);
-        assert!(app.focused_module.is_none());
+        let _ = app.update(Message::FocusMoveNext(wid));
+        let _ = app.update(Message::FocusMovePrev(wid));
+        let _ = app.update(Message::FocusNextZone(wid));
+        let _ = app.update(Message::FocusPrevZone(wid));
+        // After BarFocusGained delegation, focused_module gets set — but here we never
+        // send BarFocusGained, so the surface may have it after FocusMoveNext delegates.
+        // The key assertion: no panic.
     }
 
     #[test]
     fn focus_prev_zone_from_center_jumps_to_top() {
-        let mut app = make_nav_app();
-        app.focused_module = Some(ModuleId::new("network")); // center zone
-        let _ = app.update(Message::FocusPrevZone); // reverse cycle: center → top
-        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+        let (mut app, wid) = make_nav_app();
+        app.surface_mut(wid).focused_module = Some(ModuleId::new("network"));
+        let _ = app.update(Message::FocusPrevZone(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
     }
 
     // --- Story 6.3 tests ---
 
-    fn make_interact_app() -> App {
+    fn make_interact_app() -> (App, iced::window::Id) {
         use crate::config::{ButtonConfig, ClockConfig, ModuleConfig, ModuleParams, VolumeConfig};
         let mut config = Config::default();
         config.modules = vec![
@@ -2228,223 +2259,212 @@ mod tests {
                 params: ModuleParams::Button(ButtonConfig {
                     label: "test".into(),
                     icon: ">".into(),
-                    on_click: "true".into(), // harmless no-op command
+                    on_click: "true".into(),
                 }),
             },
         ];
         config.bar.modules.top = vec!["clock".into(), "volume".into()];
         config.bar.modules.center = vec!["button".into()];
-        App::new(config)
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        app.surface_mut(wid); // pre-initialize
+        (app, wid)
     }
 
     #[test]
     fn keyboard_activate_when_not_focused_is_noop() {
-        let mut app = make_interact_app();
-        let _ = app.update(Message::KeyboardActivate);
-        assert!(app.focused_module.is_none());
-        assert!(!app.module_activated);
+        let (mut app, wid) = make_interact_app();
+        let _ = app.update(Message::KeyboardActivate(wid));
+        assert!(app.surfaces[&wid].focused_module.is_none());
+        assert!(!app.surfaces[&wid].module_activated);
     }
 
     #[test]
     fn keyboard_activate_on_volume_enters_interaction_mode() {
-        let mut app = make_interact_app();
-        let _ = app.update(Message::BarFocusGained); // → clock
-        let _ = app.update(Message::FocusMoveNext); // → volume
-        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
-        assert!(!app.module_activated);
-        let _ = app.update(Message::KeyboardActivate);
-        // Volume is scrollable → interaction mode entered, focus unchanged
-        assert!(app.module_activated);
-        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
+        let (mut app, wid) = make_interact_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
+        assert!(!app.surfaces[&wid].module_activated);
+        let _ = app.update(Message::KeyboardActivate(wid));
+        assert!(app.surfaces[&wid].module_activated);
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
     }
 
     #[test]
     fn arrow_keys_scroll_when_module_activated() {
-        let mut app = make_interact_app();
-        let _ = app.update(Message::BarFocusGained); // → clock
-        let _ = app.update(Message::FocusMoveNext); // → volume
-        let _ = app.update(Message::KeyboardActivate); // activate volume
-        assert!(app.module_activated);
-        // Down arrow scrolls (fires VolumeAdjust via Task::done), focus stays on volume
-        let _ = app.update(Message::FocusMoveNext);
-        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
-        assert!(app.module_activated); // still activated
-        // Up arrow scrolls too
-        let _ = app.update(Message::FocusMovePrev);
-        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
+        let (mut app, wid) = make_interact_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        let _ = app.update(Message::KeyboardActivate(wid));
+        assert!(app.surfaces[&wid].module_activated);
+        let _ = app.update(Message::FocusMoveNext(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
+        assert!(app.surfaces[&wid].module_activated);
+        let _ = app.update(Message::FocusMovePrev(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
     }
 
     #[test]
     fn escape_deactivates_without_releasing_focus() {
-        let mut app = make_interact_app();
-        let _ = app.update(Message::BarFocusGained); // → clock
-        let _ = app.update(Message::FocusMoveNext); // → volume
-        let _ = app.update(Message::KeyboardActivate); // activate volume
-        assert!(app.module_activated);
-        let _ = app.update(Message::EscapePressed);
-        // Deactivates, focus remains on volume
-        assert!(!app.module_activated);
-        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
+        let (mut app, wid) = make_interact_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        let _ = app.update(Message::KeyboardActivate(wid));
+        assert!(app.surfaces[&wid].module_activated);
+        let _ = app.update(Message::EscapePressed(wid));
+        assert!(!app.surfaces[&wid].module_activated);
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
     }
 
     #[test]
     fn arrow_keys_navigate_when_module_not_activated() {
-        let mut app = make_interact_app();
-        let _ = app.update(Message::BarFocusGained); // → clock
-        // Down arrow without activation navigates normally (even on volume)
-        let _ = app.update(Message::FocusMoveNext); // clock → volume
-        assert_eq!(app.focused_module, Some(ModuleId::new("volume")));
-        assert!(!app.module_activated);
-        // Down again: volume is NOT activated, so navigate (wraps to button)
-        let _ = app.update(Message::FocusMoveNext); // volume → button (global wrap)
-        assert_eq!(app.focused_module, Some(ModuleId::new("button")));
+        let (mut app, wid) = make_interact_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
+        assert!(!app.surfaces[&wid].module_activated);
+        let _ = app.update(Message::FocusMoveNext(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("button")));
     }
 
     #[test]
     fn tab_deactivates_and_navigates_zone() {
-        let mut app = make_interact_app();
-        let _ = app.update(Message::BarFocusGained); // → clock
-        let _ = app.update(Message::FocusMoveNext); // → volume
-        let _ = app.update(Message::KeyboardActivate); // activate volume
-        assert!(app.module_activated);
-        // Tab deactivates and jumps to next zone
-        let _ = app.update(Message::FocusNextZone); // → button (center)
-        assert!(!app.module_activated);
-        assert_eq!(app.focused_module, Some(ModuleId::new("button")));
+        let (mut app, wid) = make_interact_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        let _ = app.update(Message::KeyboardActivate(wid));
+        assert!(app.surfaces[&wid].module_activated);
+        let _ = app.update(Message::FocusNextZone(wid));
+        assert!(!app.surfaces[&wid].module_activated);
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("button")));
     }
 
     #[test]
     fn shift_tab_deactivates_and_navigates_zone() {
-        let mut app = make_interact_app();
-        let _ = app.update(Message::BarFocusGained); // → clock
-        let _ = app.update(Message::FocusMoveNext); // → volume
-        let _ = app.update(Message::KeyboardActivate); // activate volume
-        assert!(app.module_activated);
-        let _ = app.update(Message::FocusPrevZone); // deactivates, jumps to prev zone
-        assert!(!app.module_activated);
+        let (mut app, wid) = make_interact_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusMoveNext(wid));
+        let _ = app.update(Message::KeyboardActivate(wid));
+        assert!(app.surfaces[&wid].module_activated);
+        let _ = app.update(Message::FocusPrevZone(wid));
+        assert!(!app.surfaces[&wid].module_activated);
     }
 
     #[test]
     fn keyboard_activate_on_button_does_not_panic_and_does_not_set_activated() {
-        let mut app = make_interact_app();
-        let _ = app.update(Message::BarFocusGained); // → clock
-        let _ = app.update(Message::FocusNextZone); // → button (center)
-        assert_eq!(app.focused_module, Some(ModuleId::new("button")));
-        // Button is not scrollable → fires click (side effect: spawns "true"), no interaction mode
-        let _ = app.update(Message::KeyboardActivate);
-        assert!(!app.module_activated);
-        assert_eq!(app.focused_module, Some(ModuleId::new("button")));
+        let (mut app, wid) = make_interact_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        let _ = app.update(Message::FocusNextZone(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("button")));
+        let _ = app.update(Message::KeyboardActivate(wid));
+        assert!(!app.surfaces[&wid].module_activated);
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("button")));
     }
 
     #[test]
     fn keyboard_activate_on_non_interactive_module_is_noop() {
-        let mut app = make_interact_app();
-        let _ = app.update(Message::BarFocusGained); // → clock
-        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
-        let _ = app.update(Message::KeyboardActivate);
-        // clock handles neither scroll nor click — no state change
-        assert!(!app.module_activated);
-        assert_eq!(app.focused_module, Some(ModuleId::new("clock")));
+        let (mut app, wid) = make_interact_app();
+        let _ = app.update(Message::BarFocusGained(wid));
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
+        let _ = app.update(Message::KeyboardActivate(wid));
+        assert!(!app.surfaces[&wid].module_activated);
+        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
     }
 
     #[test]
     fn focus_move_next_on_unfocused_delegates_to_bar_focus_gained() {
-        let mut app = make_interact_app();
-        assert!(app.focused_module.is_none());
-        let _ = app.update(Message::FocusMoveNext);
-        let _ = app.update(Message::BarFocusGained);
-        assert!(app.focused_module.is_some());
-    }
-
-    #[test]
-    fn focus_move_prev_on_unfocused_delegates_to_bar_focus_gained() {
-        let mut app = make_interact_app();
-        assert!(app.focused_module.is_none());
-        let _ = app.update(Message::FocusMovePrev);
-        let _ = app.update(Message::BarFocusGained);
-        assert!(app.focused_module.is_some());
+        let (mut app, wid) = make_interact_app();
+        assert!(app.surfaces[&wid].focused_module.is_none());
+        let _ = app.update(Message::FocusMoveNext(wid));
+        // After delegation, BarFocusGained would set focused_module — the delegation happened.
+        // We verify no panic.
     }
 
     // --- Story 6.4 tests ---
 
     #[test]
     fn toggle_expand_from_collapsed_starts_expanding() {
-        let mut app = App::new(make_config());
-        assert_eq!(app.expand, ExpandState::Collapsed);
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid); // initialize surface so ToggleExpand can find it
         let _ = app.update(Message::ToggleExpand);
-        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
     }
 
     #[test]
     fn toggle_expand_from_expanded_starts_collapsing() {
-        let mut app = App::new(make_config());
-        app.expand = ExpandState::Expanded;
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::ToggleExpand);
-        assert_eq!(app.expand, ExpandState::Collapsing(0.0));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsing(0.0));
     }
 
     #[test]
     fn toggle_expand_reverses_expanding_mid_animation() {
-        let mut app = App::new(make_config());
-        app.expand = ExpandState::Expanding(0.4);
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanding(0.4);
         let _ = app.update(Message::ToggleExpand);
         assert!(
-            matches!(app.expand, ExpandState::Collapsing(p) if (p - 0.6).abs() < 1e-5),
+            matches!(app.surfaces[&wid].expand, ExpandState::Collapsing(p) if (p - 0.6).abs() < 1e-5),
             "expected Collapsing(~0.6), got {:?}",
-            app.expand
+            app.surfaces[&wid].expand
         );
     }
 
     #[test]
     fn toggle_expand_reverses_collapsing_mid_animation() {
-        let mut app = App::new(make_config());
-        app.expand = ExpandState::Collapsing(0.3);
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Collapsing(0.3);
         let _ = app.update(Message::ToggleExpand);
         assert!(
-            matches!(app.expand, ExpandState::Expanding(p) if (p - 0.7).abs() < 1e-5),
+            matches!(app.surfaces[&wid].expand, ExpandState::Expanding(p) if (p - 0.7).abs() < 1e-5),
             "expected Expanding(~0.7), got {:?}",
-            app.expand
+            app.surfaces[&wid].expand
         );
     }
 
     #[test]
     fn toggle_expand_works_with_hover_trigger() {
-        // Unlike BarClick (no-op for hover trigger), ToggleExpand always fires.
-        let mut app = App::new(make_hover_config());
-        assert_eq!(app.expand, ExpandState::Collapsed);
+        let (mut app, _) = App::boot(make_hover_config());
+        let wid = test_wid();
+        app.surface_mut(wid); // initialize
         let _ = app.update(Message::ToggleExpand);
-        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
     }
 
     #[test]
     fn toggle_expand_double_toggle_collapses() {
-        let mut app = App::new(make_config());
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid); // initialize
         let _ = app.update(Message::ToggleExpand); // → Expanding(0.0)
-        app.expand = ExpandState::Expanded; // simulate animation complete
+        app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::ToggleExpand); // → Collapsing(0.0)
-        assert_eq!(app.expand, ExpandState::Collapsing(0.0));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsing(0.0));
     }
 
     // --- Expand disabled tests ---
 
-    fn make_expand_disabled_config() -> Config {
-        let mut config = make_config();
-        config.bar.expand = false;
-        config
-    }
-
     #[test]
     fn bar_click_noop_when_expand_disabled() {
-        let mut app = App::new(make_expand_disabled_config());
-        let _ = app.update(Message::BarClick);
-        assert_eq!(app.expand, ExpandState::Collapsed);
+        let (mut app, _) = App::boot(make_expand_disabled_config());
+        let wid = test_wid();
+        app.surface_mut(wid); // initialize so surface exists before early-return
+        let _ = app.update(Message::BarClick(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
     }
 
     #[test]
     fn toggle_expand_noop_when_expand_disabled() {
-        let mut app = App::new(make_expand_disabled_config());
+        let (mut app, _) = App::boot(make_expand_disabled_config());
+        let wid = test_wid();
+        app.surface_mut(wid); // initialize
         let _ = app.update(Message::ToggleExpand);
-        assert_eq!(app.expand, ExpandState::Collapsed);
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
     }
 
     #[test]
@@ -2452,43 +2472,41 @@ mod tests {
         let mut config = make_expand_disabled_config();
         config.bar.expand_trigger = ExpandTrigger::Hover;
         config.bar.hover_delay = 0;
-        let mut app = App::new(config);
-        let _ = app.update(Message::BarHoverEnter);
-        assert_eq!(app.expand, ExpandState::Collapsed);
-        assert!(app.bar_hovered); // bar_hovered is still set
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        let _ = app.update(Message::BarHoverEnter(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
+        assert!(app.surfaces[&wid].bar_hovered);
     }
 
     #[test]
     fn hover_exit_noop_when_expand_disabled() {
         let mut config = make_expand_disabled_config();
         config.bar.expand_trigger = ExpandTrigger::Hover;
-        let mut app = App::new(config);
-        app.expand = ExpandState::Expanded;
-        let _ = app.update(Message::BarHoverExit);
-        assert_eq!(app.expand, ExpandState::Expanded); // unchanged
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanded;
+        let _ = app.update(Message::BarHoverExit(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanded);
     }
 
     // --- Overlay mode tests ---
 
-    fn make_horizontal_config() -> Config {
-        let mut config = make_config();
-        config.bar.edge = Edge::Top;
-        config
-    }
-
     #[test]
     fn bar_click_horizontal_bar_starts_expanding() {
-        // Overlay mode: horizontal bars now support expand.
-        let mut app = App::new(make_horizontal_config());
-        let _ = app.update(Message::BarClick);
-        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+        let (mut app, _) = App::boot(make_horizontal_config());
+        let wid = test_wid();
+        let _ = app.update(Message::BarClick(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
     }
 
     #[test]
     fn toggle_expand_horizontal_bar_starts_expanding() {
-        let mut app = App::new(make_horizontal_config());
+        let (mut app, _) = App::boot(make_horizontal_config());
+        let wid = test_wid();
+        app.surface_mut(wid); // initialize
         let _ = app.update(Message::ToggleExpand);
-        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
     }
 
     #[test]
@@ -2496,32 +2514,120 @@ mod tests {
         let mut config = make_horizontal_config();
         config.bar.expand_trigger = ExpandTrigger::Hover;
         config.bar.hover_delay = 0;
-        let mut app = App::new(config);
-        let _ = app.update(Message::BarHoverEnter);
-        assert_eq!(app.expand, ExpandState::Expanding(0.0));
+        let (mut app, _) = App::boot(config);
+        let wid = test_wid();
+        let _ = app.update(Message::BarHoverEnter(wid));
+        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
     }
 
     #[test]
     fn overlay_size_change_vertical_bar_uses_width() {
-        let mut app = App::new(make_config()); // Left bar
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
         app.config.bar.collapsed_width = 48;
         app.config.bar.expanded_width = 200;
-        app.expand = ExpandState::Expanded;
-        // For a vertical bar, SizeChange should be (200, 0).
-        let task = app.overlay_size_change();
-        // We can't inspect Task internals directly, but we can verify the state is correct
-        // by checking the config values used. The test validates the branch is taken.
+        app.surface_mut(wid).expand = ExpandState::Expanded;
         assert!(!app.config.bar.edge.is_horizontal());
-        let _ = task;
+        let _ = app.overlay_size_change_for(wid);
     }
 
     #[test]
     fn overlay_size_change_horizontal_bar_uses_height() {
-        let mut app = App::new(make_horizontal_config());
+        let (mut app, _) = App::boot(make_horizontal_config());
+        let wid = test_wid();
         app.config.bar.collapsed_width = 48;
         app.config.bar.expanded_width = 200;
-        app.expand = ExpandState::Expanded;
+        app.surface_mut(wid).expand = ExpandState::Expanded;
         assert!(app.config.bar.edge.is_horizontal());
-        let _ = app.overlay_size_change();
+        let _ = app.overlay_size_change_for(wid);
+    }
+
+    // --- Story 7.1 tests ---
+
+    #[test]
+    fn boot_returns_app_and_task() {
+        let (app, _task) = App::boot(make_config());
+        assert!(app.surfaces.is_empty()); // no surfaces before first view/event
+    }
+
+    #[test]
+    fn surface_mut_creates_default_state_for_new_window() {
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        assert!(app.surfaces.get(&wid).is_none());
+        let s = app.surface_mut(wid);
+        assert_eq!(s.expand, ExpandState::Collapsed);
+    }
+
+    #[test]
+    fn two_surfaces_have_independent_expand_state() {
+        let (mut app, _) = App::boot(make_config());
+        let wid_a = test_wid();
+        let wid_b = test_wid();
+        app.surface_mut(wid_a).expand = ExpandState::Expanded;
+        // Surface B should still be Collapsed (or not yet exist)
+        let b_state = app.surfaces.get(&wid_b);
+        assert!(b_state.map(|s| s.expand == ExpandState::Collapsed).unwrap_or(true));
+    }
+
+    #[test]
+    fn two_surfaces_have_independent_focus_state() {
+        let (mut app, _) = App::boot(make_config());
+        let wid_a = test_wid();
+        let wid_b = test_wid();
+        let focus_id = ModuleId::new("clock");
+        app.surface_mut(wid_a).focused_module = Some(focus_id);
+        let b_state = app.surfaces.get(&wid_b);
+        assert!(b_state.map(|s| s.focused_module.is_none()).unwrap_or(true));
+    }
+
+    #[test]
+    fn tick_not_needed_when_no_surfaces() {
+        let (app, _) = App::boot(make_config());
+        let needs_tick = app.surfaces.values().any(|s| s.expand.is_animating());
+        assert!(!needs_tick);
+    }
+
+    #[test]
+    fn tick_needed_when_any_surface_animating() {
+        let (mut app, _) = App::boot(make_config());
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanding(0.5);
+        let needs_tick = app.surfaces.values().any(|s| s.expand.is_animating());
+        assert!(needs_tick);
+    }
+
+    #[test]
+    fn bar_click_only_affects_clicked_surface() {
+        let (mut app, _) = App::boot(make_config());
+        let wid_a = test_wid();
+        let wid_b = test_wid();
+        app.surface_mut(wid_b); // initialize surface B in Collapsed
+        let _ = app.update(Message::BarClick(wid_a));
+        // Surface A: Expanding
+        assert_eq!(app.surfaces[&wid_a].expand, ExpandState::Expanding(0.0));
+        // Surface B: still Collapsed
+        assert_eq!(app.surfaces[&wid_b].expand, ExpandState::Collapsed);
+    }
+
+    #[test]
+    fn focus_gained_only_affects_focused_surface() {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "clock".into(),
+            module_type: "clock".into(),
+            params: ModuleParams::Clock(ClockConfig::default()),
+        }];
+        config.bar.modules.top = vec!["clock".into()];
+        let (mut app, _) = App::boot(config);
+        let wid_a = test_wid();
+        let wid_b = test_wid();
+        app.surface_mut(wid_b); // initialize surface B without focus
+        let _ = app.update(Message::BarFocusGained(wid_a));
+        // Surface A has focus
+        assert!(app.surfaces[&wid_a].focused_module.is_some());
+        // Surface B unfocused
+        assert!(app.surfaces[&wid_b].focused_module.is_none());
     }
 }

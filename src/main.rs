@@ -9,8 +9,8 @@ mod surface;
 mod theme;
 
 use app::App;
-use iced_layershell::build_pattern::application;
-use iced_layershell::settings::{LayerShellSettings, Settings};
+use iced_layershell::build_pattern::daemon;
+use iced_layershell::settings::{LayerShellSettings, Settings, StartMode};
 
 fn main() {
     match cli::parse() {
@@ -55,8 +55,8 @@ fn try_main() -> anyhow::Result<()> {
         Some((collapsed_width, 0))
     };
 
-    application(
-        move || App::new(config.clone()),
+    daemon(
+        move || App::boot(config.clone()),
         App::namespace,
         App::update,
         App::view,
@@ -66,6 +66,7 @@ fn try_main() -> anyhow::Result<()> {
             anchor,
             exclusive_zone,
             size,
+            start_mode: StartMode::AllScreens,
             ..Default::default()
         },
         ..Default::default()

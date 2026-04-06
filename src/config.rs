@@ -222,7 +222,7 @@ impl Edge {
 ///
 /// Hover and click are mutually exclusive: when `Hover` is set, click has no effect.
 /// Default: `Click`.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ExpandTrigger {
     #[default]
     Click,
