@@ -141,7 +141,11 @@ pub struct BarModules {
 #[derive(Debug, Clone)]
 pub struct BarConfig {
     pub edge: Edge,
+    /// Collapsed bar width, in **logical pixels**.
+    /// The compositor multiplies this by the output scale factor for physical rendering (NFR11).
     pub collapsed_width: u32,
+    /// Expanded bar width, in **logical pixels**.
+    /// The compositor multiplies this by the output scale factor for physical rendering (NFR11).
     pub expanded_width: u32,
     /// Whether the expand/collapse overlay feature is enabled. Default: true.
     /// When false, the bar is permanently collapsed and all expand actions are ignored.

@@ -47,12 +47,14 @@ fn try_main() -> anyhow::Result<()> {
     // Extract values needed for surface settings before config is moved into the closure.
     let anchor = config.bar.edge.anchor();
     let collapsed_width = config.bar.collapsed_width;
+    // All dimensions passed to iced_layershell are in logical pixels (NFR11 / Story 7.2).
+    // The compositor multiplies by each output's scale factor for physical rendering.
     let exclusive_zone = i32::try_from(collapsed_width).unwrap_or(48);
     // For horizontal bars (top/bottom) the fixed dimension is the height; for vertical it's width.
     let size = if config.bar.edge.is_horizontal() {
-        Some((0, collapsed_width))
+        Some((0, collapsed_width)) // logical height for horizontal bar
     } else {
-        Some((collapsed_width, 0))
+        Some((collapsed_width, 0)) // logical width for vertical bar
     };
 
     daemon(

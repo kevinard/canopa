@@ -182,7 +182,7 @@ impl App {
 
     /// Returns a mutable reference to the `SurfaceState` for `id`, inserting a default if absent.
     pub fn surface_mut(&mut self, id: iced::window::Id) -> &mut SurfaceState {
-        self.surfaces.entry(id).or_insert_with(SurfaceState::default)
+        self.surfaces.entry(id).or_default()
     }
 
     /// Returns a reference to the `SurfaceState` for `id`, or `None` if the surface is unknown.
@@ -789,7 +789,7 @@ impl App {
 
     pub fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
         let is_horizontal = self.config.bar.edge.is_horizontal();
-        let surface = self.surfaces.get(&window).cloned().unwrap_or_default();
+        let surface = self.surface(window).cloned().unwrap_or_default();
 
         // All bars animate between collapsed_width and expanded_width.
         // Overlay mode: the surface grows over the desktop without changing the exclusive zone.
