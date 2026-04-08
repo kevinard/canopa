@@ -923,12 +923,22 @@ impl App {
                 continue; // not in this output's effective module list
             };
 
-            let state = self
-                .shared
-                .modules
-                .get(&module.id())
-                .cloned()
-                .unwrap_or_default();
+            let state = {
+                use crate::modules::ModuleState;
+                let raw = self
+                    .shared
+                    .modules
+                    .get(&module.id())
+                    .cloned()
+                    .unwrap_or_default();
+                // Filter workspace state to only show workspaces on this output.
+                match raw {
+                    ModuleState::Workspace(ref ws) => {
+                        ModuleState::Workspace(ws.filtered_for_output(&surface.output_name))
+                    }
+                    other => other,
+                }
+            };
             let id = module.id();
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);

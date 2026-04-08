@@ -9,13 +9,34 @@ pub struct WorkspaceState {
     pub workspaces: Vec<niri_ipc::Workspace>,
 }
 
+impl WorkspaceState {
+    /// Returns a new state containing only workspaces assigned to `output`.
+    /// If `output` is empty (AllScreens mode), returns all workspaces unfiltered.
+    pub fn filtered_for_output(&self, output: &str) -> WorkspaceState {
+        if output.is_empty() {
+            return self.clone();
+        }
+        WorkspaceState {
+            workspaces: self
+                .workspaces
+                .iter()
+                .filter(|ws| ws.output.as_deref() == Some(output))
+                .cloned()
+                .collect(),
+        }
+    }
+}
+
 /// Returns `(background, foreground)` colours for a workspace pill.
 ///
 /// Focused workspace: accent background with base-coloured text.
-/// Unfocused workspace: transparent background with normal text colour.
-fn pill_colors(is_focused: bool) -> (iced::Color, iced::Color) {
+/// Active (visible on its output) but not globally focused: surface1 background with normal text.
+/// Inactive workspace: transparent background with normal text colour.
+fn pill_colors(is_focused: bool, is_active: bool) -> (iced::Color, iced::Color) {
     if is_focused {
         (theme::ACCENT, theme::BASE)
+    } else if is_active {
+        (theme::SURFACE1, theme::TEXT)
     } else {
         (iced::Color::TRANSPARENT, theme::TEXT)
     }
@@ -67,7 +88,7 @@ impl crate::modules::Module for WorkspacesModule {
         let pills: Vec<iced::Element<'_, crate::app::Message>> = sorted
             .iter()
             .map(|ws| {
-                let (bg, fg) = pill_colors(ws.is_focused);
+                let (bg, fg) = pill_colors(ws.is_focused, ws.is_active);
                 let ws_num = ws.idx as u32;
                 let label_cfg = self.config.workspaces.get(&ws_num);
                 // Collapsed: show icon if configured, else number (AC #2, #4).
@@ -114,7 +135,7 @@ impl crate::modules::Module for WorkspacesModule {
         let pills: Vec<iced::Element<'_, crate::app::Message>> = sorted
             .iter()
             .map(|ws| {
-                let (bg, fg) = pill_colors(ws.is_focused);
+                let (bg, fg) = pill_colors(ws.is_focused, ws.is_active);
                 let ws_num = ws.idx as u32;
                 let label_cfg = self.config.workspaces.get(&ws_num);
                 let icon_str = label_cfg.and_then(|c| c.icon.as_deref());
@@ -171,7 +192,7 @@ impl crate::modules::Module for WorkspacesModule {
         let pills: Vec<iced::Element<'_, crate::app::Message>> = sorted
             .iter()
             .map(|ws| {
-                let (bg, fg) = pill_colors(ws.is_focused);
+                let (bg, fg) = pill_colors(ws.is_focused, ws.is_active);
                 let ws_num = ws.idx as u32;
                 let label_cfg = self.config.workspaces.get(&ws_num);
                 // Horizontal: show icon if configured, else number — same as collapsed.
@@ -210,11 +231,15 @@ mod tests {
     use crate::modules::Module;
 
     fn make_workspace(idx: u8, is_focused: bool) -> niri_ipc::Workspace {
+        make_workspace_on(idx, is_focused, "eDP-1")
+    }
+
+    fn make_workspace_on(idx: u8, is_focused: bool, output: &str) -> niri_ipc::Workspace {
         niri_ipc::Workspace {
             id: idx as u64 + 1,
             idx,
             name: None,
-            output: Some("eDP-1".to_string()),
+            output: Some(output.to_string()),
             is_urgent: false,
             is_active: is_focused,
             is_focused,
@@ -250,14 +275,21 @@ mod tests {
 
     #[test]
     fn pill_colors_focused_returns_accent_base() {
-        let (bg, fg) = pill_colors(true);
+        let (bg, fg) = pill_colors(true, true);
         assert_eq!(bg, theme::ACCENT);
         assert_eq!(fg, theme::BASE);
     }
 
     #[test]
-    fn pill_colors_unfocused_returns_transparent_text() {
-        let (bg, fg) = pill_colors(false);
+    fn pill_colors_active_not_focused_returns_surface1_text() {
+        let (bg, fg) = pill_colors(false, true);
+        assert_eq!(bg, theme::SURFACE1);
+        assert_eq!(fg, theme::TEXT);
+    }
+
+    #[test]
+    fn pill_colors_inactive_returns_transparent_text() {
+        let (bg, fg) = pill_colors(false, false);
         assert_eq!(bg, iced::Color::TRANSPARENT);
         assert_eq!(fg, theme::TEXT);
     }
@@ -307,5 +339,55 @@ mod tests {
         assert_eq!(m.id().0, "workspaces");
         assert!(m.config.workspaces.get(&2).is_some());
         assert!(m.config.workspaces.get(&1).is_none());
+    }
+
+    // --- filtered_for_output tests ---
+
+    #[test]
+    fn filtered_for_output_keeps_matching_output() {
+        let state = WorkspaceState {
+            workspaces: vec![
+                make_workspace_on(0, false, "eDP-1"),
+                make_workspace_on(1, true, "DP-1"),
+                make_workspace_on(2, false, "eDP-1"),
+            ],
+        };
+        let filtered = state.filtered_for_output("eDP-1");
+        assert_eq!(filtered.workspaces.len(), 2);
+        assert!(filtered.workspaces.iter().all(|ws| ws.output.as_deref() == Some("eDP-1")));
+    }
+
+    #[test]
+    fn filtered_for_output_excludes_other_outputs() {
+        let state = WorkspaceState {
+            workspaces: vec![
+                make_workspace_on(0, false, "eDP-1"),
+                make_workspace_on(1, true, "DP-1"),
+            ],
+        };
+        let filtered = state.filtered_for_output("DP-1");
+        assert_eq!(filtered.workspaces.len(), 1);
+        assert_eq!(filtered.workspaces[0].idx, 1);
+    }
+
+    #[test]
+    fn filtered_for_output_empty_string_returns_all() {
+        let state = WorkspaceState {
+            workspaces: vec![
+                make_workspace_on(0, false, "eDP-1"),
+                make_workspace_on(1, true, "DP-1"),
+            ],
+        };
+        let filtered = state.filtered_for_output("");
+        assert_eq!(filtered.workspaces.len(), 2);
+    }
+
+    #[test]
+    fn filtered_for_output_no_match_returns_empty() {
+        let state = WorkspaceState {
+            workspaces: vec![make_workspace_on(0, false, "eDP-1")],
+        };
+        let filtered = state.filtered_for_output("HDMI-1");
+        assert!(filtered.workspaces.is_empty());
     }
 }
