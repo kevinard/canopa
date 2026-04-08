@@ -64,6 +64,10 @@ pub struct App {
     /// Entry is consumed on first `surface_mut()` call for that id.
     /// Empty when using StartMode::AllScreens (no output exclusions configured).
     pub pending_output_names: HashMap<iced::window::Id, String>,
+    /// `true` when using Background/manual mode (output exclusions or per-output overrides
+    /// are configured). In this mode, niribar must open new windows when a new output is
+    /// connected at runtime, because `StartMode::AllScreens` is not active.
+    pub manual_outputs: bool,
 }
 
 #[to_layer_message(multi)]
@@ -210,56 +214,24 @@ impl App {
         // Create windows for each allowed output when using manual per-output creation (Story 7.3).
         // When allowed_outputs is empty, StartMode::AllScreens handles window creation automatically.
         let mut pending_output_names: HashMap<iced::window::Id, String> = HashMap::new();
-        let window_tasks: Vec<Task<Message>> = if !allowed_outputs.is_empty() {
-            // Edge is global-only (not per-output overridable); compute anchor once.
-            let anchor = config.bar.edge.anchor();
-            allowed_outputs
-                .iter()
-                .map(|name| {
-                    // Use per-output collapsed_width if configured (Story 7.4).
-                    // Ensures exclusive zone and window size match the rendered bar width.
-                    let eff = config.effective_bar_for(name);
-                    let eff_collapsed = eff.collapsed_width;
-                    let eff_exclusive_zone = i32::try_from(eff_collapsed).unwrap_or(48);
-                    let eff_size = if eff.edge.is_horizontal() {
-                        Some((0, eff_collapsed))
-                    } else {
-                        Some((eff_collapsed, 0))
-                    };
-                    let settings = NewLayerShellSettings {
-                        anchor,
-                        exclusive_zone: Some(eff_exclusive_zone),
-                        size: eff_size,
-                        output_option: OutputOption::OutputName(name.clone()),
-                        namespace: Some(Self::namespace()),
-                        ..Default::default()
-                    };
-                    let (id, task) = Message::layershell_open(settings);
-                    pending_output_names.insert(id, name.clone());
-                    task
-                })
-                .collect()
-        } else {
-            vec![]
-        };
-
-        // Pre-populate surfaces so that view() has the correct output_name from the very first
-        // render, before any update event has fired.  Without this, surface(window) returns None
-        // and unwrap_or_default() gives output_name="" — causing effective_bar_for to always
-        // return the global config, ignoring per-output overrides.
-        let surfaces: HashMap<iced::window::Id, SurfaceState> = pending_output_names
+        let mut surfaces: HashMap<iced::window::Id, SurfaceState> = HashMap::new();
+        let window_tasks: Vec<Task<Message>> = allowed_outputs
             .iter()
-            .map(|(&id, name)| (id, SurfaceState::new(name.clone())))
+            .map(|name| {
+                Self::spawn_output_window(&config, name, &mut pending_output_names, &mut surfaces)
+            })
             .collect();
 
         // pending_output_names is still kept for surface_mut() lazy-init compat,
         // but surfaces already contains the pre-initialized entries.
+        let manual_outputs = !allowed_outputs.is_empty();
         let app = App {
             config,
             shared: SharedState::new(),
             modules,
             surfaces,
             pending_output_names,
+            manual_outputs,
         };
         (app, Task::batch(window_tasks))
     }
@@ -279,6 +251,75 @@ impl App {
     /// Returns a reference to the `SurfaceState` for `id`, or `None` if the surface is unknown.
     pub fn surface(&self, id: iced::window::Id) -> Option<&SurfaceState> {
         self.surfaces.get(&id)
+    }
+
+    /// Opens a layer-shell window for `name`, records it in `pending` and `surfaces`, and
+    /// returns the open task.  Shared by `boot` (where maps are local) and
+    /// `open_new_output_windows` (where they are `&mut self` fields).
+    fn spawn_output_window(
+        config: &Config,
+        name: &str,
+        pending: &mut HashMap<iced::window::Id, String>,
+        surfaces: &mut HashMap<iced::window::Id, SurfaceState>,
+    ) -> Task<Message> {
+        let anchor = config.bar.edge.anchor();
+        let eff = config.effective_bar_for(name);
+        let eff_collapsed = eff.collapsed_width;
+        let eff_exclusive_zone = i32::try_from(eff_collapsed).unwrap_or(48);
+        let eff_size = if eff.edge.is_horizontal() {
+            Some((0, eff_collapsed))
+        } else {
+            Some((eff_collapsed, 0))
+        };
+        let settings = NewLayerShellSettings {
+            anchor,
+            exclusive_zone: Some(eff_exclusive_zone),
+            size: eff_size,
+            output_option: OutputOption::OutputName(name.to_string()),
+            namespace: Some(Self::namespace()),
+            ..Default::default()
+        };
+        let (id, task) = Message::layershell_open(settings);
+        pending.insert(id, name.to_string());
+        surfaces.insert(id, SurfaceState::new(name.to_string()));
+        task
+    }
+
+    /// In manual-output mode, opens new layer-shell windows for any output names present in
+    /// `workspaces` that do not already have a surface.  Called from the `WorkspacesChanged`
+    /// handler so that outputs hotplugged while the bar is running get a bar immediately.
+    fn open_new_output_windows(&mut self, workspaces: &[niri_ipc::Workspace]) -> Vec<Task<Message>> {
+        let excluded: std::collections::HashSet<&str> = self
+            .config
+            .outputs
+            .iter()
+            .filter(|o| !o.enabled)
+            .map(|o| o.name.as_str())
+            .collect();
+
+        let known: std::collections::HashSet<&str> = self
+            .surfaces
+            .values()
+            .map(|s| s.output_name.as_str())
+            .filter(|n| !n.is_empty())
+            .collect();
+
+        workspaces
+            .iter()
+            .filter_map(|ws| ws.output.as_deref())
+            .filter(|n| !n.is_empty() && !known.contains(*n) && !excluded.contains(*n))
+            .map(|n| n.to_string())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .map(|name| {
+                Self::spawn_output_window(
+                    &self.config,
+                    &name,
+                    &mut self.pending_output_names,
+                    &mut self.surfaces,
+                )
+            })
+            .collect()
     }
 
     pub fn namespace() -> String {
@@ -425,7 +466,19 @@ impl App {
                                 );
                             }
                         }
+                        // In manual-output mode, open bars for any newly connected outputs.
+                        // WorkspacesChanged fires when a new output is hotplugged, and the
+                        // new output's workspaces appear in this event with an output name we
+                        // haven't seen before.
+                        let open_tasks = if self.manual_outputs {
+                            self.open_new_output_windows(&workspaces)
+                        } else {
+                            vec![]
+                        };
                         self.shared.niri.workspaces = workspaces;
+                        if !open_tasks.is_empty() {
+                            return Task::batch(open_tasks);
+                        }
                     }
                     Event::WindowFocusChanged { id } => {
                         self.shared.niri.focused_window_id = id;
@@ -2823,6 +2876,135 @@ mod tests {
         assert!(
             instantiated.iter().any(|n| n == "workspaces"),
             "workspaces must still be instantiated from global; got: {instantiated:?}"
+        );
+    }
+
+    // --- Hotplug output detection tests ---
+
+    #[test]
+    fn boot_manual_outputs_false_when_no_allowed_outputs() {
+        let (app, _) = App::boot(make_config(), vec![]);
+        assert!(!app.manual_outputs);
+    }
+
+    #[test]
+    fn boot_manual_outputs_true_when_allowed_outputs_given() {
+        let (app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
+        assert!(app.manual_outputs);
+    }
+
+    #[test]
+    fn workspaces_changed_allscreens_mode_does_not_open_new_surfaces() {
+        // In AllScreens mode (manual_outputs = false) the compositor manages surfaces;
+        // WorkspacesChanged must not try to open additional windows.
+        use niri_ipc::Event;
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        assert!(!app.manual_outputs);
+        let before = app.surfaces.len();
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![niri_ipc::Workspace {
+                id: 1,
+                idx: 0,
+                name: None,
+                output: Some("DP-1".to_string()),
+                is_urgent: false,
+                is_active: true,
+                is_focused: true,
+                active_window_id: None,
+            }],
+        })));
+        assert_eq!(app.surfaces.len(), before, "no new surfaces in AllScreens mode");
+    }
+
+    #[test]
+    fn workspaces_changed_manual_mode_opens_surface_for_new_output() {
+        // In manual mode a WorkspacesChanged event that includes a previously unseen output
+        // name must cause a new surface (bar) to be created for that output.
+        use niri_ipc::Event;
+        let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
+        assert!(app.manual_outputs);
+        // "DP-1" was not in the initial allowed_outputs — it is newly connected.
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![niri_ipc::Workspace {
+                id: 10,
+                idx: 0,
+                name: None,
+                output: Some("DP-1".to_string()),
+                is_urgent: false,
+                is_active: true,
+                is_focused: false,
+                active_window_id: None,
+            }],
+        })));
+        let known_names: Vec<&str> = app
+            .surfaces
+            .values()
+            .map(|s| s.output_name.as_str())
+            .collect();
+        assert!(
+            known_names.contains(&"DP-1"),
+            "new output DP-1 must get a surface; got: {known_names:?}"
+        );
+    }
+
+    #[test]
+    fn workspaces_changed_manual_mode_no_duplicate_for_known_output() {
+        // An output already tracked in surfaces must not get a second surface.
+        use niri_ipc::Event;
+        let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
+        let before = app.surfaces.len();
+        // Fire WorkspacesChanged for eDP-1 which is already in surfaces.
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![niri_ipc::Workspace {
+                id: 1,
+                idx: 0,
+                name: None,
+                output: Some("eDP-1".to_string()),
+                is_urgent: false,
+                is_active: true,
+                is_focused: true,
+                active_window_id: None,
+            }],
+        })));
+        assert_eq!(
+            app.surfaces.len(),
+            before,
+            "no duplicate surface for already-known output"
+        );
+    }
+
+    #[test]
+    fn workspaces_changed_manual_mode_skips_excluded_output() {
+        // An output listed as enabled=false in config must not get a surface on hotplug.
+        use niri_ipc::Event;
+        use crate::config::OutputConfig;
+        let mut config = make_config();
+        config.outputs = vec![OutputConfig {
+            name: "HDMI-A-1".to_string(),
+            enabled: false,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: None,
+        }];
+        // Boot without "HDMI-A-1" in allowed (it was excluded at startup).
+        let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
+        let before = app.surfaces.len();
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![niri_ipc::Workspace {
+                id: 99,
+                idx: 0,
+                name: None,
+                output: Some("HDMI-A-1".to_string()),
+                is_urgent: false,
+                is_active: true,
+                is_focused: false,
+                active_window_id: None,
+            }],
+        })));
+        assert_eq!(
+            app.surfaces.len(),
+            before,
+            "excluded output HDMI-A-1 must not get a surface"
         );
     }
 }
