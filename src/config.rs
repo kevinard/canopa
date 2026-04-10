@@ -135,6 +135,17 @@ pub struct OutputConfig {
     pub expanded_width: Option<u32>,
     /// Override for bar.modules zone layout. `None` → inherit from global `bar`.
     pub modules: Option<BarModules>,
+    // New in Story 7.5:
+    /// Override for bar.edge. `None` → inherit from global.
+    pub edge: Option<Edge>,
+    /// Override for bar.expand. `None` → inherit from global.
+    pub expand: Option<bool>,
+    /// Override for bar.expand-trigger. `None` → inherit from global.
+    pub expand_trigger: Option<ExpandTrigger>,
+    /// Override for bar.hover-delay. `None` → inherit from global.
+    pub hover_delay: Option<u64>,
+    /// Override for bar.expand-keybind. `None` → inherit from global.
+    pub expand_keybind: Option<String>,
 }
 
 /// Parsed configuration for niribar.
@@ -162,12 +173,11 @@ impl Config {
             collapsed_width: oc.collapsed_width.unwrap_or(global.collapsed_width),
             expanded_width: oc.expanded_width.unwrap_or(global.expanded_width),
             modules: oc.modules.clone().unwrap_or_else(|| global.modules.clone()),
-            // Non-overridable fields always inherit from global
-            edge: global.edge.clone(),
-            expand: global.expand,
-            expand_trigger: global.expand_trigger,
-            hover_delay: global.hover_delay,
-            expand_keybind: global.expand_keybind.clone(),
+            edge: oc.edge.clone().unwrap_or_else(|| global.edge.clone()),
+            expand: oc.expand.unwrap_or(global.expand),
+            expand_trigger: oc.expand_trigger.unwrap_or(global.expand_trigger),
+            hover_delay: oc.hover_delay.unwrap_or(global.hover_delay),
+            expand_keybind: oc.expand_keybind.clone().or_else(|| global.expand_keybind.clone()),
         }
     }
 }
@@ -775,6 +785,11 @@ output "DP-1" { enabled #false }"#;
             collapsed_width: Some(60),
             expanded_width: None,
             modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
         assert_eq!(bar.collapsed_width, 60);
@@ -791,6 +806,11 @@ output "DP-1" { enabled #false }"#;
             collapsed_width: None,
             expanded_width: Some(300),
             modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
         assert_eq!(bar.expanded_width, 300);
@@ -812,6 +832,11 @@ output "DP-1" { enabled #false }"#;
             collapsed_width: None,
             expanded_width: None,
             modules: Some(override_mods.clone()),
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
         assert_eq!(bar.modules.top, override_mods.top);
@@ -831,6 +856,11 @@ output "DP-1" { enabled #false }"#;
             collapsed_width: Some(60),
             expanded_width: None,
             modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
         assert_eq!(bar.collapsed_width, 60);     // overridden
@@ -849,6 +879,11 @@ output "DP-1" { enabled #false }"#;
                 collapsed_width: Some(1),
                 expanded_width: None,
                 modules: None,
+                edge: None,
+                expand: None,
+                expand_trigger: None,
+                hover_delay: None,
+                expand_keybind: None,
             }],
         };
         let err = validate(&config).unwrap_err();
@@ -868,6 +903,11 @@ output "DP-1" { enabled #false }"#;
                 collapsed_width: Some(100),
                 expanded_width: Some(50),
                 modules: None,
+                edge: None,
+                expand: None,
+                expand_trigger: None,
+                hover_delay: None,
+                expand_keybind: None,
             }],
         };
         let err = validate(&config).unwrap_err();
@@ -888,6 +928,11 @@ output "DP-1" { enabled #false }"#;
             collapsed_width: None,
             expanded_width: Some(50), // 50 < 80 → error
             modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
         }];
         let err = validate(&config).unwrap_err();
         let msg = err.to_string();
@@ -906,6 +951,11 @@ output "DP-1" { enabled #false }"#;
                 collapsed_width: Some(60),
                 expanded_width: Some(250),
                 modules: None,
+                edge: None,
+                expand: None,
+                expand_trigger: None,
+                hover_delay: None,
+                expand_keybind: None,
             }],
         };
         assert!(validate(&config).is_ok());
@@ -922,10 +972,142 @@ output "DP-1" { enabled #false }"#;
             collapsed_width: Some(60),
             expanded_width: Some(250),
             modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
-        // Non-overridable fields inherit from global
+        // Fields are now overridable; None means inherit from global
         assert!(!bar.expand);
         assert_eq!(bar.hover_delay, 500);
+    }
+
+    // --- Story 7.5: All bar params per-output override tests ---
+
+    #[test]
+    fn effective_bar_for_applies_edge_override() {
+        let mut config = Config::default();
+        config.outputs = vec![OutputConfig {
+            name: "DP-2".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: None,
+            edge: Some(Edge::Top),
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
+        }];
+        let bar = config.effective_bar_for("DP-2");
+        assert!(matches!(bar.edge, Edge::Top));
+        // other fields inherit global defaults
+        assert_eq!(bar.collapsed_width, config.bar.collapsed_width);
+    }
+
+    #[test]
+    fn effective_bar_for_applies_expand_override() {
+        let mut config = Config::default();
+        config.bar.expand = true; // global: expand on
+        config.outputs = vec![OutputConfig {
+            name: "DP-2".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: None,
+            edge: None,
+            expand: Some(false), // per-output: expand off
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
+        }];
+        let bar = config.effective_bar_for("DP-2");
+        assert!(!bar.expand);
+        // global config unchanged
+        let global_bar = config.effective_bar_for("unknown");
+        assert!(global_bar.expand);
+    }
+
+    #[test]
+    fn effective_bar_for_applies_expand_trigger_override() {
+        let mut config = Config::default();
+        config.outputs = vec![OutputConfig {
+            name: "DP-2".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: Some(ExpandTrigger::Hover),
+            hover_delay: None,
+            expand_keybind: None,
+        }];
+        let bar = config.effective_bar_for("DP-2");
+        assert_eq!(bar.expand_trigger, ExpandTrigger::Hover);
+    }
+
+    #[test]
+    fn effective_bar_for_applies_hover_delay_override() {
+        let mut config = Config::default();
+        config.outputs = vec![OutputConfig {
+            name: "DP-2".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: Some(300),
+            expand_keybind: None,
+        }];
+        let bar = config.effective_bar_for("DP-2");
+        assert_eq!(bar.hover_delay, 300);
+    }
+
+    #[test]
+    fn effective_bar_for_applies_expand_keybind_override() {
+        let mut config = Config::default();
+        config.bar.expand_keybind = Some("Super+e".into());
+        config.outputs = vec![OutputConfig {
+            name: "DP-2".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: Some("Ctrl+b".into()),
+        }];
+        let bar = config.effective_bar_for("DP-2");
+        assert_eq!(bar.expand_keybind, Some("Ctrl+b".into()));
+        // global still has Super+e
+        let global_bar = config.effective_bar_for("other");
+        assert_eq!(global_bar.expand_keybind, Some("Super+e".into()));
+    }
+
+    #[test]
+    fn effective_bar_for_inherits_expand_keybind_when_not_overridden() {
+        let mut config = Config::default();
+        config.bar.expand_keybind = Some("Super+e".into());
+        config.outputs = vec![OutputConfig {
+            name: "DP-2".into(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None, // not overridden → inherit
+        }];
+        let bar = config.effective_bar_for("DP-2");
+        assert_eq!(bar.expand_keybind, Some("Super+e".into()));
     }
 }

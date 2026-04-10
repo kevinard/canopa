@@ -81,10 +81,16 @@ fn try_main() -> anyhow::Result<()> {
     // Also require manual per-output mode when any output has width or modules overrides,
     // because AllScreens mode never assigns output_name to surfaces — making effective_bar_for("")
     // always return global defaults regardless of per-output config.
-    let has_per_output_overrides = config
-        .outputs
-        .iter()
-        .any(|o| o.collapsed_width.is_some() || o.expanded_width.is_some() || o.modules.is_some());
+    let has_per_output_overrides = config.outputs.iter().any(|o| {
+        o.collapsed_width.is_some()
+            || o.expanded_width.is_some()
+            || o.modules.is_some()
+            || o.edge.is_some()
+            || o.expand.is_some()
+            || o.expand_trigger.is_some()
+            || o.hover_delay.is_some()
+            || o.expand_keybind.is_some()
+    });
 
     let (start_mode, allowed_outputs) = if excluded.is_empty() && !has_per_output_overrides {
         // No exclusions or per-output overrides — use AllScreens as before (Story 7.1 behavior).

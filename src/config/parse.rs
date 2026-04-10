@@ -41,6 +41,11 @@ fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>>
         let mut collapsed_width: Option<u32> = None;
         let mut expanded_width: Option<u32> = None;
         let mut modules: Option<BarModules> = None;
+        let mut edge: Option<Edge> = None;
+        let mut expand: Option<bool> = None;
+        let mut expand_trigger: Option<ExpandTrigger> = None;
+        let mut hover_delay: Option<u64> = None;
+        let mut expand_keybind: Option<String> = None;
 
         if let Some(children) = node.children() {
             for child in children.nodes() {
@@ -93,16 +98,95 @@ fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>>
                         };
                         modules = Some(mods);
                     }
+                    "edge" => {
+                        let s = child
+                            .entries()
+                            .iter()
+                            .find(|e| e.name().is_none())
+                            .and_then(|e| e.value().as_string())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "output {name:?}: edge: expected a string value."
+                                )
+                            })?;
+                        edge = Some(Edge::from_str(s)?);
+                    }
+                    "expand" => {
+                        let v = child
+                            .entries()
+                            .iter()
+                            .find(|e| e.name().is_none())
+                            .and_then(|e| e.value().as_bool())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "output {name:?}: expand: expected a boolean value (#true or #false)."
+                                )
+                            })?;
+                        expand = Some(v);
+                    }
+                    "expand-trigger" => {
+                        let s = child
+                            .entries()
+                            .iter()
+                            .find(|e| e.name().is_none())
+                            .and_then(|e| e.value().as_string())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "output {name:?}: expand-trigger: expected a string value."
+                                )
+                            })?;
+                        expand_trigger = Some(ExpandTrigger::from_str(s)?);
+                    }
+                    "hover-delay" => {
+                        let v = child
+                            .entries()
+                            .iter()
+                            .find(|e| e.name().is_none())
+                            .and_then(|e| e.value().as_integer())
+                            .and_then(|v| u64::try_from(v).ok())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "output {name:?}: hover-delay: expected a non-negative integer."
+                                )
+                            })?;
+                        hover_delay = Some(v);
+                    }
+                    "expand-keybind" => {
+                        let s = child
+                            .entries()
+                            .iter()
+                            .find(|e| e.name().is_none())
+                            .and_then(|e| e.value().as_string())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "output {name:?}: expand-keybind: expected a string value."
+                                )
+                            })?
+                            .to_string();
+                        expand_keybind = Some(s);
+                    }
                     other => {
                         anyhow::bail!(
                             "output {name:?}: unknown key {other:?}. \
-                             Expected: one of: enabled, collapsed-width, expanded-width, modules."
+                             Expected: one of: enabled, edge, collapsed-width, expanded-width, \
+                             expand, expand-trigger, hover-delay, expand-keybind, modules."
                         );
                     }
                 }
             }
         }
-        result.push(OutputConfig { name, enabled, collapsed_width, expanded_width, modules });
+        result.push(OutputConfig {
+            name,
+            enabled,
+            collapsed_width,
+            expanded_width,
+            modules,
+            edge,
+            expand,
+            expand_trigger,
+            hover_delay,
+            expand_keybind,
+        });
     }
     Ok(result)
 }
@@ -1294,5 +1378,65 @@ modules {
         assert!(msg.contains("collapsed-width"), "error should list new keys: {msg}");
         assert!(msg.contains("expanded-width"), "error should list new keys: {msg}");
         assert!(msg.contains("modules"), "error should list new keys: {msg}");
+    }
+
+    // --- Story 7.5: Parse tests for 5 new per-output fields ---
+
+    #[test]
+    fn output_edge_override_parses() {
+        let config = parse(r#"output "DP-2" { edge "top" }"#).unwrap();
+        assert!(matches!(config.outputs[0].edge, Some(Edge::Top)));
+    }
+
+    #[test]
+    fn output_edge_invalid_errors() {
+        let result = parse(r#"output "DP-2" { edge "diagonal" }"#);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("edge"), "got: {msg}");
+    }
+
+    #[test]
+    fn output_expand_override_parses() {
+        let config = parse(r#"output "DP-2" { expand #false }"#).unwrap();
+        assert_eq!(config.outputs[0].expand, Some(false));
+    }
+
+    #[test]
+    fn output_expand_trigger_override_parses() {
+        let config = parse(r#"output "DP-2" { expand-trigger "hover" }"#).unwrap();
+        assert_eq!(config.outputs[0].expand_trigger, Some(ExpandTrigger::Hover));
+    }
+
+    #[test]
+    fn output_hover_delay_override_parses() {
+        let config = parse(r#"output "DP-2" { hover-delay 300 }"#).unwrap();
+        assert_eq!(config.outputs[0].hover_delay, Some(300));
+    }
+
+    #[test]
+    fn output_expand_keybind_override_parses() {
+        let config = parse(r#"output "DP-2" { expand-keybind "Ctrl+b" }"#).unwrap();
+        assert_eq!(config.outputs[0].expand_keybind, Some("Ctrl+b".into()));
+    }
+
+    #[test]
+    fn output_new_fields_default_to_none_when_absent() {
+        let config = parse(r#"output "DP-2" { enabled #true }"#).unwrap();
+        let oc = &config.outputs[0];
+        assert!(oc.edge.is_none());
+        assert!(oc.expand.is_none());
+        assert!(oc.expand_trigger.is_none());
+        assert!(oc.hover_delay.is_none());
+        assert!(oc.expand_keybind.is_none());
+    }
+
+    #[test]
+    fn output_unknown_key_error_lists_all_valid_keys() {
+        let result = parse(r#"output "DP-1" { zoom 2 }"#);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("edge"), "error should mention 'edge': {msg}");
+        assert!(msg.contains("expand"), "error should mention 'expand': {msg}");
     }
 }

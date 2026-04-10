@@ -262,8 +262,8 @@ impl App {
         pending: &mut HashMap<iced::window::Id, String>,
         surfaces: &mut HashMap<iced::window::Id, SurfaceState>,
     ) -> Task<Message> {
-        let anchor = config.bar.edge.anchor();
         let eff = config.effective_bar_for(name);
+        let anchor = eff.edge.anchor();
         let eff_collapsed = eff.collapsed_width;
         let eff_exclusive_zone = i32::try_from(eff_collapsed).unwrap_or(48);
         let eff_size = if eff.edge.is_horizontal() {
@@ -374,11 +374,13 @@ impl App {
                 Task::none()
             }
             Message::BarClick(window) => {
-                if !self.config.bar.expand {
+                let output_name = self.surface(window).map(|s| s.output_name.clone()).unwrap_or_default();
+                let bar = self.config.effective_bar_for(&output_name);
+                if !bar.expand {
                     return Task::none();
                 }
                 // Click has no effect when hover is the expand trigger (Story 3.3 AC #6).
-                if self.config.bar.expand_trigger == ExpandTrigger::Hover {
+                if bar.expand_trigger == ExpandTrigger::Hover {
                     return Task::none();
                 }
                 let s = self.surface_mut(window);
@@ -386,9 +388,11 @@ impl App {
                 self.overlay_size_change_for(window)
             }
             Message::BarHoverEnter(window) => {
-                let expand_enabled = self.config.bar.expand;
-                let expand_trigger = self.config.bar.expand_trigger;
-                let hover_delay = self.config.bar.hover_delay;
+                let output_name = self.surface(window).map(|s| s.output_name.clone()).unwrap_or_default();
+                let bar = self.config.effective_bar_for(&output_name);
+                let expand_enabled = bar.expand;
+                let expand_trigger = bar.expand_trigger;
+                let hover_delay = bar.hover_delay;
                 let s = self.surface_mut(window);
                 s.bar_hovered = true;
                 if !expand_enabled {
@@ -419,8 +423,10 @@ impl App {
                 }
             }
             Message::BarHoverExit(window) => {
-                let expand_enabled = self.config.bar.expand;
-                let expand_trigger = self.config.bar.expand_trigger;
+                let output_name = self.surface(window).map(|s| s.output_name.clone()).unwrap_or_default();
+                let bar = self.config.effective_bar_for(&output_name);
+                let expand_enabled = bar.expand;
+                let expand_trigger = bar.expand_trigger;
                 let s = self.surface_mut(window);
                 s.bar_hovered = false;
                 if !expand_enabled {
@@ -557,12 +563,15 @@ impl App {
                 let mut tasks = vec![];
 
                 for wid in window_ids {
+                    // Resolve per-output hover_delay before taking a mutable borrow of the surface.
+                    let output_name = self.surfaces.get(&wid).map(|s| s.output_name.clone()).unwrap_or_default();
+                    let effective_hover_delay = self.config.effective_bar_for(&output_name).hover_delay;
                     let s = self.surfaces.get_mut(&wid).unwrap();
 
                     // Hover delay countdown — runs while waiting to start expand (Story 3.3).
                     if let Some(elapsed) = s.hover_pending_ms {
                         let new_elapsed = elapsed + TICK_MS;
-                        if new_elapsed >= self.config.bar.hover_delay as f32 {
+                        if new_elapsed >= effective_hover_delay as f32 {
                             s.hover_pending_ms = None;
                             s.expand = ExpandState::Expanding(0.0);
                             tasks.push(self.overlay_size_change_for(wid));
@@ -2861,6 +2870,11 @@ mod tests {
                 center: vec![],
                 bottom: vec![],
             }),
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
         }];
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
@@ -2985,6 +2999,11 @@ mod tests {
             collapsed_width: None,
             expanded_width: None,
             modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
         }];
         // Boot without "HDMI-A-1" in allowed (it was excluded at startup).
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
