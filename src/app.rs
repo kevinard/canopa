@@ -57,16 +57,15 @@ pub struct App {
     pub shared: SharedState,
     /// Instantiated module instances paired with their zone placement.
     pub modules: Vec<(Zone, Box<dyn Module>)>,
-    /// Per-output render state, keyed by iced::window::Id (Story 7.1).
-    /// One entry per Wayland output; lazily initialised on first event or view call.
+    /// Per-surface render state, keyed by iced::window::Id (Story 7.1).
+    /// One entry per (output, bar) surface pair; lazily initialised on first event or view call.
     pub surfaces: HashMap<iced::window::Id, SurfaceState>,
-    /// Window IDs pre-assigned to output names during manual window creation (Story 7.3).
-    /// Entry is consumed on first `surface_mut()` call for that id.
-    /// Empty when using StartMode::AllScreens (no output exclusions configured).
-    pub pending_output_names: HashMap<iced::window::Id, String>,
-    /// `true` when using Background/manual mode (output exclusions or per-output overrides
-    /// are configured). In this mode, niribar must open new windows when a new output is
-    /// connected at runtime, because `StartMode::AllScreens` is not active.
+    /// Window IDs pre-assigned to (output_name, bar_name) pairs during manual window creation
+    /// (Stories 7.3, 9.1). Entry is consumed on first `surface_mut()` call for that id.
+    /// Empty when using StartMode::AllScreens.
+    pub pending_surface_keys: HashMap<iced::window::Id, (String, String)>,
+    /// `true` when using Background/manual mode. In this mode, niribar must open new windows
+    /// when a new output is connected at runtime (StartMode::AllScreens is not active).
     pub manual_outputs: bool,
 }
 
@@ -144,11 +143,11 @@ fn default_params_for_type(module_type: &str) -> Option<ModuleParams> {
 
 impl App {
     /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
-    /// Empty means `StartMode::AllScreens` handles window creation (no exclusions configured).
+    /// Empty means `StartMode::AllScreens` handles window creation (single "all" bar case).
     pub fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
         // Initialize the in-bar keybind for expand/collapse once at startup.
         // Subsequent calls are silently ignored (OnceLock semantics).
-        init_expand_keybind(config.bar.expand_keybind.as_deref());
+        init_expand_keybind(config.bars[0].expand_keybind.as_deref());
 
         let registry = build_registry();
         let module_map: std::collections::HashMap<&str, &crate::config::ModuleConfig> = config
@@ -156,38 +155,19 @@ impl App {
             .iter()
             .map(|mc| (mc.name.as_str(), mc))
             .collect();
-        // Build an ordered list of (zone, name) pairs from the global bar.modules, then append
-        // any additional module names that appear only in per-output overrides (using the zone
-        // from the first override that names them).  This ensures that:
-        //  • Modules present in an output override but absent from global bar.modules get
-        //    instantiated (fixing the bug where they silently disappeared).
-        //  • The boot-zone stored in self.modules is correct for global modules so that
-        //    zone-based keyboard navigation (nav_next_zone / nav_prev_zone) still works.
+        // Build an ordered (zone, name) list by walking all bar sections. A module name that
+        // appears in multiple bars is registered only once — first appearance wins the zone.
         let mut ordered: Vec<(Zone, String)> = Vec::new();
         let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let global_mods = &config.bar.modules;
-        for (zone, names) in [
-            (Zone::Top, &global_mods.top),
-            (Zone::Center, &global_mods.center),
-            (Zone::Bottom, &global_mods.bottom),
-        ] {
-            for name in names {
-                if seen_names.insert(name.clone()) {
-                    ordered.push((zone.clone(), name.clone()));
-                }
-            }
-        }
-        for oc in &config.outputs {
-            if let Some(ref mods) = oc.modules {
-                for (zone, names) in [
-                    (Zone::Top, &mods.top),
-                    (Zone::Center, &mods.center),
-                    (Zone::Bottom, &mods.bottom),
-                ] {
-                    for name in names {
-                        if seen_names.insert(name.clone()) {
-                            ordered.push((zone.clone(), name.clone()));
-                        }
+        for bar in &config.bars {
+            for (zone, names) in [
+                (Zone::Top, &bar.modules.top),
+                (Zone::Center, &bar.modules.center),
+                (Zone::Bottom, &bar.modules.bottom),
+            ] {
+                for name in names {
+                    if seen_names.insert(name.clone()) {
+                        ordered.push((zone.clone(), name.clone()));
                     }
                 }
             }
@@ -211,39 +191,47 @@ impl App {
                 modules.push((zone.clone(), ctor(mc)));
             }
         }
-        // Create windows for each allowed output when using manual per-output creation (Story 7.3).
-        // When allowed_outputs is empty, StartMode::AllScreens handles window creation automatically.
-        let mut pending_output_names: HashMap<iced::window::Id, String> = HashMap::new();
+        // Create one surface per (output_name, bar_name) pair when in manual mode.
+        // When allowed_outputs is empty, StartMode::AllScreens handles window creation.
+        let mut pending_surface_keys: HashMap<iced::window::Id, (String, String)> = HashMap::new();
         let mut surfaces: HashMap<iced::window::Id, SurfaceState> = HashMap::new();
-        let window_tasks: Vec<Task<Message>> = allowed_outputs
-            .iter()
-            .map(|name| {
-                Self::spawn_output_window(&config, name, &mut pending_output_names, &mut surfaces)
-            })
-            .collect();
+        let window_tasks: Vec<Task<Message>> = {
+            let mut tasks = vec![];
+            for output_name in &allowed_outputs {
+                for bar in config.bars_for_output(output_name) {
+                    tasks.push(Self::spawn_bar_on_output(
+                        bar,
+                        output_name,
+                        &mut pending_surface_keys,
+                        &mut surfaces,
+                    ));
+                }
+            }
+            tasks
+        };
 
-        // pending_output_names is still kept for surface_mut() lazy-init compat,
-        // but surfaces already contains the pre-initialized entries.
         let manual_outputs = !allowed_outputs.is_empty();
         let app = App {
             config,
             shared: SharedState::new(),
             modules,
             surfaces,
-            pending_output_names,
+            pending_surface_keys,
             manual_outputs,
         };
         (app, Task::batch(window_tasks))
     }
 
     /// Returns a mutable reference to the `SurfaceState` for `id`, inserting a default if absent.
-    /// Uses the pending output name (Story 7.3) when initialising a new entry.
+    /// Uses the pending (output_name, bar_name) pair (Story 9.1) when initialising a new entry.
     pub fn surface_mut(&mut self, id: iced::window::Id) -> &mut SurfaceState {
         if !self.surfaces.contains_key(&id) {
-            // Pop the pending output name assigned during window creation (Story 7.3).
-            // Falls back to "" when using StartMode::AllScreens (no exclusions configured).
-            let name = self.pending_output_names.remove(&id).unwrap_or_default();
-            self.surfaces.insert(id, SurfaceState::new(name));
+            // Pop the pending surface key assigned during window creation.
+            // Falls back to ("", "") when using StartMode::AllScreens.
+            let (output_name, bar_name) =
+                self.pending_surface_keys.remove(&id).unwrap_or_default();
+            self.surfaces
+                .insert(id, SurfaceState::new(output_name, bar_name));
         }
         self.surfaces.get_mut(&id).unwrap()
     }
@@ -253,80 +241,120 @@ impl App {
         self.surfaces.get(&id)
     }
 
-    /// Opens a layer-shell window for `name`, records it in `pending` and `surfaces`, and
-    /// returns the open task.  Shared by `boot` (where maps are local) and
-    /// `open_new_output_windows` (where they are `&mut self` fields).
-    fn spawn_output_window(
-        config: &Config,
-        name: &str,
-        pending: &mut HashMap<iced::window::Id, String>,
+    /// Opens a layer-shell window for one (bar, output) pair, records it in `pending` and
+    /// `surfaces`, and returns the open task. Shared by `boot` and `open_new_output_windows`.
+    fn spawn_bar_on_output(
+        bar: &crate::config::BarConfig,
+        output_name: &str,
+        pending: &mut HashMap<iced::window::Id, (String, String)>,
         surfaces: &mut HashMap<iced::window::Id, SurfaceState>,
     ) -> Task<Message> {
-        let eff = config.effective_bar_for(name);
-        let anchor = eff.edge.anchor();
-        let eff_collapsed = eff.collapsed_width;
-        let eff_exclusive_zone = i32::try_from(eff_collapsed).unwrap_or(48);
-        let eff_size = if eff.edge.is_horizontal() {
-            Some((0, eff_collapsed))
+        let anchor = bar.edge.anchor();
+        let collapsed = bar.collapsed_width;
+        let exclusive_zone = i32::try_from(collapsed).unwrap_or(48);
+        let size = if bar.edge.is_horizontal() {
+            Some((0, collapsed))
         } else {
-            Some((eff_collapsed, 0))
+            Some((collapsed, 0))
         };
         let settings = NewLayerShellSettings {
             anchor,
-            exclusive_zone: Some(eff_exclusive_zone),
-            size: eff_size,
-            output_option: OutputOption::OutputName(name.to_string()),
+            exclusive_zone: Some(exclusive_zone),
+            size,
+            output_option: OutputOption::OutputName(output_name.to_string()),
             namespace: Some(Self::namespace()),
             ..Default::default()
         };
         let (id, task) = Message::layershell_open(settings);
-        pending.insert(id, name.to_string());
-        surfaces.insert(id, SurfaceState::new(name.to_string()));
+        pending.insert(id, (output_name.to_string(), bar.name.clone()));
+        surfaces.insert(id, SurfaceState::new(output_name.to_string(), bar.name.clone()));
         task
     }
 
-    /// In manual-output mode, opens new layer-shell windows for any output names present in
-    /// `workspaces` that do not already have a surface.  Called from the `WorkspacesChanged`
-    /// handler so that outputs hotplugged while the bar is running get a bar immediately.
+    /// In manual-output mode, opens new layer-shell windows for any (output, bar) pairs present
+    /// in `workspaces` that do not already have a surface.  Called from the `WorkspacesChanged`
+    /// handler so that outputs hotplugged while the bar is running get bars immediately.
     fn open_new_output_windows(
         &mut self,
         workspaces: &[niri_ipc::Workspace],
     ) -> Vec<Task<Message>> {
-        let excluded: std::collections::HashSet<&str> = self
-            .config
-            .outputs
-            .iter()
-            .filter(|o| !o.enabled)
-            .map(|o| o.name.as_str())
-            .collect();
-
-        let known: std::collections::HashSet<&str> = self
+        // Build the set of (output_name, bar_name) pairs already running.
+        let known_pairs: std::collections::HashSet<(String, String)> = self
             .surfaces
             .values()
-            .map(|s| s.output_name.as_str())
-            .filter(|n| !n.is_empty())
+            .filter(|s| !s.output_name.is_empty())
+            .map(|s| (s.output_name.clone(), s.bar_name.clone()))
             .collect();
 
-        workspaces
+        // For each newly-seen output, collect the (bar_idx, output_name) pairs to spawn.
+        // Using bar index avoids lifetime issues with borrowing config.bars at spawn time.
+        let to_spawn: Vec<(usize, String)> = workspaces
             .iter()
             .filter_map(|ws| ws.output.as_deref())
-            .filter(|n| !n.is_empty() && !known.contains(*n) && !excluded.contains(*n))
-            .map(|n| n.to_string())
+            .filter(|n| !n.is_empty())
+            .flat_map(|output_name| {
+                self.config
+                    .bars
+                    .iter()
+                    .enumerate()
+                    .filter(move |(_, b)| b.output == "all" || b.output == output_name)
+                    .filter(|(_, b)| {
+                        !known_pairs.contains(&(output_name.to_string(), b.name.clone()))
+                    })
+                    .map(move |(i, _)| (i, output_name.to_string()))
+            })
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
-            .map(|name| {
-                Self::spawn_output_window(
-                    &self.config,
-                    &name,
-                    &mut self.pending_output_names,
-                    &mut self.surfaces,
-                )
+            .collect();
+
+        to_spawn
+            .into_iter()
+            .map(|(bar_idx, output_name)| {
+                let anchor = self.config.bars[bar_idx].edge.anchor();
+                let collapsed = self.config.bars[bar_idx].collapsed_width;
+                let is_horizontal = self.config.bars[bar_idx].edge.is_horizontal();
+                let bar_name = self.config.bars[bar_idx].name.clone();
+                let exclusive_zone = i32::try_from(collapsed).unwrap_or(48);
+                let size = if is_horizontal {
+                    Some((0, collapsed))
+                } else {
+                    Some((collapsed, 0))
+                };
+                let settings = NewLayerShellSettings {
+                    anchor,
+                    exclusive_zone: Some(exclusive_zone),
+                    size,
+                    output_option: OutputOption::OutputName(output_name.clone()),
+                    namespace: Some(Self::namespace()),
+                    ..Default::default()
+                };
+                let (id, task) = Message::layershell_open(settings);
+                self.pending_surface_keys
+                    .insert(id, (output_name.clone(), bar_name.clone()));
+                self.surfaces
+                    .insert(id, SurfaceState::new(output_name, bar_name));
+                task
             })
             .collect()
     }
 
     pub fn namespace() -> String {
         String::from("niribar")
+    }
+
+    /// Look up the `BarConfig` for a surface by its `bar_name`.
+    /// Falls back to the first bar when the name is empty (AllScreens mode) or not found.
+    fn bar_for_surface_name<'a>(
+        bars: &'a [crate::config::BarConfig],
+        bar_name: &str,
+    ) -> &'a crate::config::BarConfig {
+        if bar_name.is_empty() {
+            bars.first().expect("at least one bar configured")
+        } else {
+            bars.iter()
+                .find(|b| b.name == bar_name)
+                .unwrap_or_else(|| bars.first().expect("at least one bar configured"))
+        }
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -377,11 +405,11 @@ impl App {
                 Task::none()
             }
             Message::BarClick(window) => {
-                let output_name = self
+                let bar_name = self
                     .surface(window)
-                    .map(|s| s.output_name.clone())
+                    .map(|s| s.bar_name.clone())
                     .unwrap_or_default();
-                let bar = self.config.effective_bar_for(&output_name);
+                let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
                 if !bar.expand {
                     return Task::none();
                 }
@@ -394,11 +422,11 @@ impl App {
                 self.overlay_size_change_for(window)
             }
             Message::BarHoverEnter(window) => {
-                let output_name = self
+                let bar_name = self
                     .surface(window)
-                    .map(|s| s.output_name.clone())
+                    .map(|s| s.bar_name.clone())
                     .unwrap_or_default();
-                let bar = self.config.effective_bar_for(&output_name);
+                let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
                 let expand_enabled = bar.expand;
                 let expand_trigger = bar.expand_trigger;
                 let hover_delay = bar.hover_delay;
@@ -432,11 +460,11 @@ impl App {
                 }
             }
             Message::BarHoverExit(window) => {
-                let output_name = self
+                let bar_name = self
                     .surface(window)
-                    .map(|s| s.output_name.clone())
+                    .map(|s| s.bar_name.clone())
                     .unwrap_or_default();
-                let bar = self.config.effective_bar_for(&output_name);
+                let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
                 let expand_enabled = bar.expand;
                 let expand_trigger = bar.expand_trigger;
                 let s = self.surface_mut(window);
@@ -581,13 +609,14 @@ impl App {
                 let mut tasks = vec![];
 
                 for wid in window_ids {
-                    // Resolve per-output config before taking a mutable borrow of the surface.
-                    let output_name = self
+                    // Resolve bar config before taking a mutable borrow of the surface.
+                    let bar_name = self
                         .surfaces
                         .get(&wid)
-                        .map(|s| s.output_name.clone())
+                        .map(|s| s.bar_name.clone())
                         .unwrap_or_default();
-                    let effective_bar = self.config.effective_bar_for(&output_name);
+                    let effective_bar =
+                        Self::bar_for_surface_name(&self.config.bars, &bar_name);
                     let effective_hover_delay = effective_bar.hover_delay;
                     let effective_expand_ms = effective_bar.animation.expand_ms;
                     let effective_collapse_ms = effective_bar.animation.collapse_ms;
@@ -877,19 +906,23 @@ impl App {
                 Task::none()
             }
             Message::ToggleExpand => {
-                if !self.config.bar.expand {
-                    return Task::none();
-                }
-                // IPC-sourced: no window context — toggle ALL surfaces simultaneously.
+                // IPC-sourced: no window context — toggle each surface if its bar has expand enabled.
                 let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
-                let tasks: Vec<_> = window_ids
-                    .into_iter()
-                    .map(|wid| {
+                let mut tasks = vec![];
+                for wid in window_ids {
+                    let bar_name = self
+                        .surfaces
+                        .get(&wid)
+                        .map(|s| s.bar_name.clone())
+                        .unwrap_or_default();
+                    let expand_enabled = Self::bar_for_surface_name(&self.config.bars, &bar_name)
+                        .expand;
+                    if expand_enabled {
                         let s = self.surfaces.get_mut(&wid).unwrap();
                         s.expand = s.expand.toggle();
-                        self.overlay_size_change_for(wid)
-                    })
-                    .collect();
+                        tasks.push(self.overlay_size_change_for(wid));
+                    }
+                }
                 Task::batch(tasks)
             }
             _ => Task::none(),
@@ -984,9 +1017,8 @@ impl App {
 
     pub fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
         let surface = self.surface(window).cloned().unwrap_or_default();
-        // Resolve per-output overrides; falls back to global bar config for AllScreens mode
-        // (output_name is "" when using StartMode::AllScreens — effective_bar_for returns global).
-        let bar = self.config.effective_bar_for(&surface.output_name);
+        // Look up bar by name; falls back to first bar for AllScreens mode (bar_name is "").
+        let bar = Self::bar_for_surface_name(&self.config.bars, &surface.bar_name);
         let is_horizontal = bar.edge.is_horizontal();
 
         // All bars animate between collapsed_width and expanded_width.
@@ -1173,14 +1205,14 @@ impl App {
     }
 
     /// Build an ordered list of (zone, module_id) for the given surface's effective module layout.
-    /// This filters self.modules to only those visible on that output, in the correct zone order.
+    /// This filters self.modules to only those visible on this bar's module list, in zone order.
     fn effective_nav_list(&self, window: iced::window::Id) -> Vec<(Zone, ModuleId)> {
-        let output_name = self
+        let bar_name = self
             .surfaces
             .get(&window)
-            .map(|s| s.output_name.as_str())
+            .map(|s| s.bar_name.as_str())
             .unwrap_or("");
-        let bar = self.config.effective_bar_for(output_name);
+        let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
         // Rebuild the ordered (zone, name) list from the effective bar modules.
         let mut result = Vec::new();
         for (zone, names) in [
@@ -1255,8 +1287,8 @@ impl App {
     fn overlay_size_change_for(&self, window: iced::window::Id) -> Task<Message> {
         let surface = self.surfaces.get(&window);
         let expand = surface.map(|s| s.expand).unwrap_or_default();
-        let output_name = surface.map(|s| s.output_name.as_str()).unwrap_or("");
-        let bar = self.config.effective_bar_for(output_name);
+        let bar_name = surface.map(|s| s.bar_name.as_str()).unwrap_or("");
+        let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
         let size = expand.current_width(bar.collapsed_width, bar.expanded_width);
         if bar.edge.is_horizontal() {
             Task::done(Message::SizeChange {
@@ -1347,20 +1379,20 @@ mod tests {
 
     fn make_hover_config() -> Config {
         let mut config = make_config();
-        config.bar.expand_trigger = ExpandTrigger::Hover;
-        config.bar.hover_delay = 0;
+        config.bars[0].expand_trigger = ExpandTrigger::Hover;
+        config.bars[0].hover_delay = 0;
         config
     }
 
     fn make_expand_disabled_config() -> Config {
         let mut config = make_config();
-        config.bar.expand = false;
+        config.bars[0].expand = false;
         config
     }
 
     fn make_horizontal_config() -> Config {
         let mut config = make_config();
-        config.bar.edge = Edge::Top;
+        config.bars[0].edge = Edge::Top;
         config
     }
 
@@ -1376,18 +1408,18 @@ mod tests {
 
     #[test]
     fn boot_with_empty_allowed_outputs_uses_allscreens_mode() {
-        // Empty allowed_outputs → pending_output_names is empty (AllScreens handles creation)
+        // Empty allowed_outputs → pending_surface_keys is empty (AllScreens handles creation)
         let config = make_config();
         let (app, _) = App::boot(config, vec![]);
-        assert!(app.pending_output_names.is_empty());
+        assert!(app.pending_surface_keys.is_empty());
     }
 
     #[test]
     fn boot_with_config_stores_config() {
         let mut config = Config::default();
-        config.bar.collapsed_width = 60;
+        config.bars[0].collapsed_width = 60;
         let (app, _) = App::boot(config, vec![]);
-        assert_eq!(app.config.bar.collapsed_width, 60);
+        assert_eq!(app.config.bars[0].collapsed_width, 60);
     }
 
     #[test]
@@ -1406,7 +1438,7 @@ mod tests {
     #[test]
     fn undeclared_known_type_in_bar_modules_uses_defaults() {
         let mut config = Config::default();
-        config.bar.modules.bottom = vec!["clock".into()];
+        config.bars[0].modules.bottom = vec!["clock".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
@@ -1414,7 +1446,7 @@ mod tests {
     #[test]
     fn undeclared_unknown_name_in_bar_modules_is_skipped() {
         let mut config = Config::default();
-        config.bar.modules.bottom = vec!["my-script".into()];
+        config.bars[0].modules.bottom = vec!["my-script".into()];
         let (app, _) = App::boot(config, vec![]);
         assert!(app.modules.is_empty());
     }
@@ -1428,7 +1460,7 @@ mod tests {
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
-        config.bar.modules.bottom = vec!["clock".into()];
+        config.bars[0].modules.bottom = vec!["clock".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
@@ -1475,7 +1507,7 @@ mod tests {
                 interval: 5,
             }),
         }];
-        config.bar.modules.bottom = vec!["script".into()];
+        config.bars[0].modules.bottom = vec!["script".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
@@ -1509,7 +1541,7 @@ mod tests {
                 on_click: "kitty".into(),
             }),
         }];
-        config.bar.modules.bottom = vec!["button".into()];
+        config.bars[0].modules.bottom = vec!["button".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
@@ -1552,7 +1584,7 @@ mod tests {
                 interval: 5,
             }),
         }];
-        config.bar.modules.bottom = vec!["script".into()];
+        config.bars[0].modules.bottom = vec!["script".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
         let id = ModuleId::new("script");
@@ -1670,7 +1702,7 @@ mod tests {
     #[test]
     fn tick_uses_custom_expand_duration() {
         let mut config = make_config();
-        config.bar.animation.expand_ms = 100.0;
+        config.bars[0].animation.expand_ms = 100.0;
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanding(0.0);
@@ -1686,7 +1718,7 @@ mod tests {
     #[test]
     fn tick_uses_custom_collapse_duration() {
         let mut config = make_config();
-        config.bar.animation.collapse_ms = 50.0;
+        config.bars[0].animation.collapse_ms = 50.0;
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Collapsing(0.0);
@@ -1767,7 +1799,7 @@ mod tests {
     #[test]
     fn hover_enter_with_delay_sets_pending() {
         let mut config = make_hover_config();
-        config.bar.hover_delay = 100;
+        config.bars[0].hover_delay = 100;
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
@@ -1778,7 +1810,7 @@ mod tests {
     #[test]
     fn hover_exit_cancels_pending() {
         let mut config = make_hover_config();
-        config.bar.hover_delay = 100;
+        config.bars[0].hover_delay = 100;
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
@@ -1790,7 +1822,7 @@ mod tests {
     #[test]
     fn tick_triggers_expand_when_delay_elapsed() {
         let mut config = make_hover_config();
-        config.bar.hover_delay = 100;
+        config.bars[0].hover_delay = 100;
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid).hover_pending_ms = Some(90.0);
@@ -1855,7 +1887,7 @@ mod tests {
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
-        config.bar.modules.center = vec!["clock".into()];
+        config.bars[0].modules.center = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let _ = app.update(Message::Niri(NiriEvent::Unavailable));
         let id = ModuleId::new("clock");
@@ -1933,7 +1965,7 @@ mod tests {
             module_type: "workspaces".into(),
             params: ModuleParams::None,
         }];
-        config.bar.modules.top = vec!["workspaces".into()];
+        config.bars[0].modules.top = vec!["workspaces".into()];
         App::boot(config, vec![]).0
     }
 
@@ -2067,7 +2099,7 @@ mod tests {
             module_type: "focused-window".into(),
             params: ModuleParams::None,
         }];
-        config.bar.modules.center = vec!["focused-window".into()];
+        config.bars[0].modules.center = vec!["focused-window".into()];
         App::boot(config, vec![]).0
     }
 
@@ -2233,7 +2265,7 @@ mod tests {
                 critical_threshold: 15,
             }),
         }];
-        config.bar.modules.bottom = vec!["battery".into()];
+        config.bars[0].modules.bottom = vec!["battery".into()];
         App::boot(config, vec![]).0
     }
 
@@ -2286,7 +2318,7 @@ mod tests {
             module_type: "network".into(),
             params: ModuleParams::Network(NetworkConfig),
         }];
-        config.bar.modules.bottom = vec!["network".into()];
+        config.bars[0].modules.bottom = vec!["network".into()];
         App::boot(config, vec![]).0
     }
 
@@ -2341,7 +2373,7 @@ mod tests {
             module_type: "volume".into(),
             params: ModuleParams::Volume(VolumeConfig { step: 5 }),
         }];
-        config.bar.modules.bottom = vec!["volume".into()];
+        config.bars[0].modules.bottom = vec!["volume".into()];
         App::boot(config, vec![]).0
     }
 
@@ -2407,7 +2439,7 @@ mod tests {
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
-        config.bar.modules.top = vec!["clock".into()];
+        config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
@@ -2426,7 +2458,7 @@ mod tests {
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
-        config.bar.modules.top = vec!["clock".into()];
+        config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
@@ -2444,7 +2476,7 @@ mod tests {
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
-        config.bar.modules.top = vec!["clock".into()];
+        config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
@@ -2470,7 +2502,7 @@ mod tests {
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
-        config.bar.modules.center = vec!["clock".into()];
+        config.bars[0].modules.center = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
@@ -2515,9 +2547,9 @@ mod tests {
                 params: ModuleParams::None,
             },
         ];
-        config.bar.modules.top = vec!["clock".into(), "battery".into()];
-        config.bar.modules.center = vec!["network".into()];
-        config.bar.modules.bottom = vec!["workspaces".into()];
+        config.bars[0].modules.top = vec!["clock".into(), "battery".into()];
+        config.bars[0].modules.center = vec!["network".into()];
+        config.bars[0].modules.bottom = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // pre-initialize surface
@@ -2630,8 +2662,8 @@ mod tests {
                 params: ModuleParams::None,
             },
         ];
-        config.bar.modules.top = vec!["clock".into()];
-        config.bar.modules.bottom = vec!["workspaces".into()];
+        config.bars[0].modules.top = vec!["clock".into()];
+        config.bars[0].modules.bottom = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
@@ -2692,8 +2724,8 @@ mod tests {
                 }),
             },
         ];
-        config.bar.modules.top = vec!["clock".into(), "volume".into()];
-        config.bar.modules.center = vec!["button".into()];
+        config.bars[0].modules.top = vec!["clock".into(), "volume".into()];
+        config.bars[0].modules.center = vec!["button".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // pre-initialize
@@ -2935,8 +2967,8 @@ mod tests {
     #[test]
     fn hover_enter_noop_when_expand_disabled() {
         let mut config = make_expand_disabled_config();
-        config.bar.expand_trigger = ExpandTrigger::Hover;
-        config.bar.hover_delay = 0;
+        config.bars[0].expand_trigger = ExpandTrigger::Hover;
+        config.bars[0].hover_delay = 0;
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
@@ -2947,7 +2979,7 @@ mod tests {
     #[test]
     fn hover_exit_noop_when_expand_disabled() {
         let mut config = make_expand_disabled_config();
-        config.bar.expand_trigger = ExpandTrigger::Hover;
+        config.bars[0].expand_trigger = ExpandTrigger::Hover;
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid).expand = ExpandState::Expanded;
@@ -2977,8 +3009,8 @@ mod tests {
     #[test]
     fn hover_enter_horizontal_bar_hover_trigger_starts_expanding() {
         let mut config = make_horizontal_config();
-        config.bar.expand_trigger = ExpandTrigger::Hover;
-        config.bar.hover_delay = 0;
+        config.bars[0].expand_trigger = ExpandTrigger::Hover;
+        config.bars[0].hover_delay = 0;
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarHoverEnter(wid));
@@ -2989,10 +3021,10 @@ mod tests {
     fn overlay_size_change_vertical_bar_uses_width() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
-        app.config.bar.collapsed_width = 48;
-        app.config.bar.expanded_width = 200;
+        app.config.bars[0].collapsed_width = 48;
+        app.config.bars[0].expanded_width = 200;
         app.surface_mut(wid).expand = ExpandState::Expanded;
-        assert!(!app.config.bar.edge.is_horizontal());
+        assert!(!app.config.bars[0].edge.is_horizontal());
         let _ = app.overlay_size_change_for(wid);
     }
 
@@ -3000,10 +3032,10 @@ mod tests {
     fn overlay_size_change_horizontal_bar_uses_height() {
         let (mut app, _) = App::boot(make_horizontal_config(), vec![]);
         let wid = test_wid();
-        app.config.bar.collapsed_width = 48;
-        app.config.bar.expanded_width = 200;
+        app.config.bars[0].collapsed_width = 48;
+        app.config.bars[0].expanded_width = 200;
         app.surface_mut(wid).expand = ExpandState::Expanded;
-        assert!(app.config.bar.edge.is_horizontal());
+        assert!(app.config.bars[0].edge.is_horizontal());
         let _ = app.overlay_size_change_for(wid);
     }
 
@@ -3088,7 +3120,7 @@ mod tests {
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
         }];
-        config.bar.modules.top = vec!["clock".into()];
+        config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid_a = test_wid();
         let wid_b = test_wid();
@@ -3101,45 +3133,48 @@ mod tests {
     }
 
     #[test]
-    fn per_output_modules_override_instantiates_modules_absent_from_global() {
-        // Bug regression: a module listed only in a per-output override must be instantiated
-        // so that view() can render it for that output.
-        use crate::config::{BarModules, ClockConfig, ModuleConfig, ModuleParams, OutputConfig};
-        let mut config = Config::default();
-        // Global bar has only workspaces
-        config.bar.modules.top = vec!["workspaces".into()];
-        // Per-output override for DP-1 has clock instead, which is NOT in global bar.modules
-        config.outputs = vec![OutputConfig {
-            name: "DP-1".into(),
-            enabled: true,
-            collapsed_width: None,
-            expanded_width: None,
-            modules: Some(BarModules {
-                top: vec!["clock".into()],
-                center: vec![],
-                bottom: vec![],
-            }),
-            edge: None,
-            expand: None,
-            expand_trigger: None,
-            hover_delay: None,
-            expand_keybind: None,
-            animation: None,
-        }];
-        config.modules = vec![ModuleConfig {
-            name: "clock".into(),
-            module_type: "clock".into(),
-            params: ModuleParams::Clock(ClockConfig::default()),
-        }];
+    fn modules_from_all_bar_sections_are_instantiated() {
+        // All module names across all bar sections must be instantiated so view() can render
+        // them for each surface's respective bar.
+        use crate::config::{BarConfig, ClockConfig, ModuleConfig, ModuleParams};
+        let config = Config {
+            bars: vec![
+                BarConfig {
+                    name: "main".into(),
+                    output: "all".into(),
+                    modules: crate::config::BarModules {
+                        top: vec!["workspaces".into()],
+                        center: vec![],
+                        bottom: vec![],
+                    },
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "secondary".into(),
+                    output: "DP-1".into(),
+                    modules: crate::config::BarModules {
+                        top: vec!["clock".into()],
+                        center: vec![],
+                        bottom: vec![],
+                    },
+                    ..BarConfig::default()
+                },
+            ],
+            modules: vec![ModuleConfig {
+                name: "clock".into(),
+                module_type: "clock".into(),
+                params: ModuleParams::Clock(ClockConfig::default()),
+            }],
+        };
         let (app, _) = App::boot(config, vec![]);
         let instantiated: Vec<String> = app.modules.iter().map(|(_, m)| m.id().0.clone()).collect();
         assert!(
             instantiated.iter().any(|n| n == "clock"),
-            "clock must be instantiated even though it is only in a per-output override; got: {instantiated:?}"
+            "clock must be instantiated from secondary bar section; got: {instantiated:?}"
         );
         assert!(
             instantiated.iter().any(|n| n == "workspaces"),
-            "workspaces must still be instantiated from global; got: {instantiated:?}"
+            "workspaces must be instantiated from main bar section; got: {instantiated:?}"
         );
     }
 
@@ -3242,25 +3277,19 @@ mod tests {
     }
 
     #[test]
-    fn workspaces_changed_manual_mode_skips_excluded_output() {
-        // An output listed as enabled=false in config must not get a surface on hotplug.
-        use crate::config::OutputConfig;
+    fn workspaces_changed_manual_mode_skips_untargeted_output() {
+        // When the bar targets "eDP-1" only, hotplugging "HDMI-A-1" must not create a surface.
+        use crate::config::BarConfig;
         use niri_ipc::Event;
-        let mut config = make_config();
-        config.outputs = vec![OutputConfig {
-            name: "HDMI-A-1".to_string(),
-            enabled: false,
-            collapsed_width: None,
-            expanded_width: None,
-            modules: None,
-            edge: None,
-            expand: None,
-            expand_trigger: None,
-            hover_delay: None,
-            expand_keybind: None,
-            animation: None,
-        }];
-        // Boot without "HDMI-A-1" in allowed (it was excluded at startup).
+        let config = Config {
+            bars: vec![BarConfig {
+                name: "main".into(),
+                output: "eDP-1".into(), // only targets eDP-1, not HDMI-A-1
+                ..BarConfig::default()
+            }],
+            modules: vec![],
+        };
+        // Boot without "HDMI-A-1" in allowed (bar does not target it).
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len();
         let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
@@ -3278,7 +3307,159 @@ mod tests {
         assert_eq!(
             app.surfaces.len(),
             before,
-            "excluded output HDMI-A-1 must not get a surface"
+            "HDMI-A-1 must not get a surface — no bar targets it"
         );
+    }
+
+    // --- Story 9.1: App-level multi-bar tests ---
+
+    #[test]
+    fn bar_for_surface_name_returns_first_when_name_empty() {
+        let config = make_config();
+        let bars = &config.bars;
+        let bar = App::bar_for_surface_name(bars, "");
+        assert_eq!(bar.name, "main");
+    }
+
+    #[test]
+    fn bar_for_surface_name_returns_matching_bar() {
+        use crate::config::BarConfig;
+        let config = Config {
+            bars: vec![
+                BarConfig { name: "main".into(), ..BarConfig::default() },
+                BarConfig { name: "side".into(), output: "DP-1".into(), ..BarConfig::default() },
+            ],
+            modules: vec![],
+        };
+        let bar = App::bar_for_surface_name(&config.bars, "side");
+        assert_eq!(bar.name, "side");
+    }
+
+    #[test]
+    fn bar_for_surface_name_falls_back_to_first_on_miss() {
+        use crate::config::BarConfig;
+        let config = Config {
+            bars: vec![
+                BarConfig { name: "main".into(), ..BarConfig::default() },
+            ],
+            modules: vec![],
+        };
+        // "nonexistent" not found → falls back to first
+        let bar = App::bar_for_surface_name(&config.bars, "nonexistent");
+        assert_eq!(bar.name, "main");
+    }
+
+    #[test]
+    fn boot_manual_mode_creates_surface_per_bar_per_output() {
+        use crate::config::BarConfig;
+        let config = Config {
+            bars: vec![
+                BarConfig { name: "main".into(), output: "all".into(), ..BarConfig::default() },
+                BarConfig { name: "top".into(), output: "all".into(), edge: crate::config::Edge::Top, ..BarConfig::default() },
+            ],
+            modules: vec![],
+        };
+        // Both bars target "all" → eDP-1 should get 2 surfaces
+        let (app, _) = App::boot(config, vec!["eDP-1".into()]);
+        assert_eq!(app.surfaces.len(), 2, "two bars on one output → two surfaces");
+    }
+
+    #[test]
+    fn surface_bar_name_set_from_pending_surface_key() {
+        use crate::config::BarConfig;
+        let config = Config {
+            bars: vec![
+                BarConfig { name: "main".into(), output: "eDP-1".into(), ..BarConfig::default() },
+            ],
+            modules: vec![],
+        };
+        let (app, _) = App::boot(config, vec!["eDP-1".into()]);
+        // Surface is pre-initialized from pending_surface_keys; check bar_name
+        let bar_names: Vec<&str> = app.surfaces.values()
+            .map(|s| s.bar_name.as_str())
+            .collect();
+        assert!(bar_names.contains(&"main"), "surface must carry bar_name 'main'; got: {bar_names:?}");
+    }
+
+    #[test]
+    fn surface_output_name_set_from_pending_surface_key() {
+        use crate::config::BarConfig;
+        let config = Config {
+            bars: vec![
+                BarConfig { name: "main".into(), output: "eDP-1".into(), ..BarConfig::default() },
+            ],
+            modules: vec![],
+        };
+        let (app, _) = App::boot(config, vec!["eDP-1".into()]);
+        let output_names: Vec<&str> = app.surfaces.values()
+            .map(|s| s.output_name.as_str())
+            .collect();
+        assert!(output_names.contains(&"eDP-1"), "surface must carry output_name 'eDP-1'; got: {output_names:?}");
+    }
+
+    #[test]
+    fn hotplug_output_gets_all_targeting_bar() {
+        use crate::config::BarConfig;
+        use niri_ipc::Event;
+        let config = Config {
+            bars: vec![
+                BarConfig { name: "main".into(), output: "all".into(), ..BarConfig::default() },
+            ],
+            modules: vec![],
+        };
+        let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
+        app.manual_outputs = true; // simulate manual mode
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![niri_ipc::Workspace {
+                id: 5,
+                idx: 0,
+                name: None,
+                output: Some("DP-1".to_string()),
+                is_urgent: false,
+                is_active: true,
+                is_focused: false,
+                active_window_id: None,
+            }],
+        })));
+        let output_names: Vec<&str> = app.surfaces.values()
+            .map(|s| s.output_name.as_str())
+            .filter(|n| !n.is_empty())
+            .collect();
+        assert!(output_names.contains(&"DP-1"), "hotplugged DP-1 must get a surface; got: {output_names:?}");
+    }
+
+    #[test]
+    fn hotplug_creates_one_surface_per_bar_targeting_output() {
+        use crate::config::BarConfig;
+        use niri_ipc::Event;
+        let config = Config {
+            bars: vec![
+                BarConfig { name: "main".into(), output: "all".into(), ..BarConfig::default() },
+                BarConfig {
+                    name: "top".into(),
+                    output: "all".into(),
+                    edge: crate::config::Edge::Top,
+                    ..BarConfig::default()
+                },
+            ],
+            modules: vec![],
+        };
+        let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
+        let before = app.surfaces.len(); // 2 surfaces for eDP-1 (2 bars × 1 output)
+        app.manual_outputs = true;
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![niri_ipc::Workspace {
+                id: 5,
+                idx: 0,
+                name: None,
+                output: Some("DP-1".to_string()),
+                is_urgent: false,
+                is_active: true,
+                is_focused: false,
+                active_window_id: None,
+            }],
+        })));
+        // After hotplug: should have 2 more surfaces for DP-1 (both bars target "all")
+        assert_eq!(app.surfaces.len(), before + 2, "DP-1 should get one surface per bar");
     }
 }

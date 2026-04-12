@@ -6,9 +6,12 @@ pub mod layout;
 use crate::modules::ModuleId;
 use crate::surface::expand::ExpandState;
 
-/// Per-output render state. Tracks surface-specific data (expand/collapse, focus, hover, scale).
+/// Per-surface render state. Tracks surface-specific data (expand/collapse, focus, hover, scale).
 /// Shared module data lives in SharedState (established in Story 2.1), never here.
 /// Keyed by iced::window::Id in App::surfaces (Story 7.1).
+///
+/// Each surface corresponds to one (output_name, bar_name) pair (Story 9.1). Multiple surfaces
+/// can exist on the same output when multiple bar sections target it.
 ///
 /// ## HiDPI model (Story 7.2)
 ///
@@ -17,14 +20,15 @@ use crate::surface::expand::ExpandState;
 /// rendering automatically — this crate never computes physical pixel values directly.
 #[derive(Clone)]
 pub struct SurfaceState {
-    /// Wayland output name for this surface. Used by Story 7.4 to resolve per-output config overrides.
-    /// Set from `pending_output_names` in `App::surface_mut()`. Empty (`""`) in AllScreens mode.
+    /// Wayland output name for this surface.
+    /// Set from `pending_surface_keys` in `App::surface_mut()`. Empty (`""`) in AllScreens mode.
     pub output_name: String,
+    /// Name of the bar section this surface renders (Story 9.1).
+    /// Matches `BarConfig::name`. Empty (`""`) in AllScreens mode (falls back to first bar).
+    pub bar_name: String,
     /// Scale factor reported by the compositor for this output.
     /// 1.0 for standard displays, 2.0 for 2× HiDPI, 1.5 for fractional HiDPI.
     /// Set when the compositor reports scale via wlr-layer-shell (Story 7.2).
-    /// Used for observability and per-output dimension overrides (Story 7.4).
-    // Intentionally stored; read by tests and will be used in Stories 7.3/7.4.
     #[allow(dead_code)]
     pub scale_factor: f64,
     pub expand: ExpandState,
@@ -36,9 +40,10 @@ pub struct SurfaceState {
 }
 
 impl SurfaceState {
-    pub fn new(output_name: String) -> Self {
+    pub fn new(output_name: String, bar_name: String) -> Self {
         SurfaceState {
             output_name,
+            bar_name,
             scale_factor: 1.0, // updated if compositor reports scale > 1
             expand: ExpandState::default(), // starts Collapsed
             focused_module: None,
@@ -52,7 +57,7 @@ impl SurfaceState {
 
 impl Default for SurfaceState {
     fn default() -> Self {
-        SurfaceState::new(String::new())
+        SurfaceState::new(String::new(), String::new())
     }
 }
 
@@ -62,13 +67,13 @@ mod tests {
 
     #[test]
     fn surface_state_constructs() {
-        let state = SurfaceState::new(String::from("test"));
+        let state = SurfaceState::new(String::from("test"), String::from("main"));
         assert_eq!(state.output_name, "test");
     }
 
     #[test]
     fn surface_state_new_starts_collapsed() {
-        let state = SurfaceState::new("HDMI-1".into());
+        let state = SurfaceState::new("HDMI-1".into(), "main".into());
         assert_eq!(state.expand, ExpandState::Collapsed);
     }
 
@@ -76,6 +81,7 @@ mod tests {
     fn surface_state_expand_field_is_set() {
         let state = SurfaceState {
             output_name: "DP-1".into(),
+            bar_name: "main".into(),
             scale_factor: 1.0,
             expand: ExpandState::Expanded,
             focused_module: None,
@@ -89,7 +95,7 @@ mod tests {
 
     #[test]
     fn surface_state_focused_module_starts_none() {
-        let state = SurfaceState::new("DP-1".into());
+        let state = SurfaceState::new("DP-1".into(), String::new());
         assert!(state.focused_module.is_none());
     }
 
@@ -106,15 +112,51 @@ mod tests {
 
     #[test]
     fn surface_state_new_output_name_stored() {
-        let s = SurfaceState::new("eDP-1".into());
+        let s = SurfaceState::new("eDP-1".into(), String::new());
         assert_eq!(s.output_name, "eDP-1");
+    }
+
+    #[test]
+    fn surface_state_bar_name_stored() {
+        let s = SurfaceState::new("eDP-1".into(), "top-strip".into());
+        assert_eq!(s.bar_name, "top-strip");
+    }
+
+    #[test]
+    fn surface_state_default_bar_name_is_empty() {
+        let s = SurfaceState::default();
+        assert_eq!(s.bar_name, "");
+    }
+
+    #[test]
+    fn surface_state_new_stores_both_output_and_bar_name() {
+        let s = SurfaceState::new("DP-1".into(), "secondary".into());
+        assert_eq!(s.output_name, "DP-1");
+        assert_eq!(s.bar_name, "secondary");
+    }
+
+    #[test]
+    fn surface_state_bar_name_independent_of_output_name() {
+        let mut s1 = SurfaceState::new("eDP-1".into(), "main".into());
+        let s2 = SurfaceState::new("DP-1".into(), "side".into());
+        s1.bar_name = "updated".into();
+        // s2 must be unaffected
+        assert_eq!(s2.bar_name, "side");
+    }
+
+    #[test]
+    fn surface_state_clone_preserves_bar_name() {
+        let s = SurfaceState::new("eDP-1".into(), "main".into());
+        let cloned = s.clone();
+        assert_eq!(cloned.bar_name, "main");
+        assert_eq!(cloned.output_name, "eDP-1");
     }
 
     // --- Story 7.2: HiDPI / scale factor tests ---
 
     #[test]
     fn surface_state_scale_factor_defaults_to_1() {
-        let s = SurfaceState::new("eDP-1".into());
+        let s = SurfaceState::new("eDP-1".into(), String::new());
         assert_eq!(s.scale_factor, 1.0);
     }
 
@@ -126,14 +168,14 @@ mod tests {
 
     #[test]
     fn surface_state_scale_factor_can_be_set_to_2x() {
-        let mut s = SurfaceState::new("DP-1".into());
+        let mut s = SurfaceState::new("DP-1".into(), String::new());
         s.scale_factor = 2.0;
         assert_eq!(s.scale_factor, 2.0);
     }
 
     #[test]
     fn surface_state_scale_factor_can_be_set_to_fractional() {
-        let mut s = SurfaceState::new("HDMI-1".into());
+        let mut s = SurfaceState::new("HDMI-1".into(), String::new());
         s.scale_factor = 1.5;
         assert_eq!(s.scale_factor, 1.5);
     }
@@ -166,8 +208,8 @@ mod tests {
 
     #[test]
     fn surface_state_two_outputs_have_independent_scale_factors() {
-        let mut s1 = SurfaceState::new("eDP-1".into());
-        let s2 = SurfaceState::new("HDMI-1".into());
+        let mut s1 = SurfaceState::new("eDP-1".into(), String::new());
+        let s2 = SurfaceState::new("HDMI-1".into(), String::new());
         s1.scale_factor = 2.0;
         // s2 is unaffected — scale factors are independent per surface
         assert_eq!(s2.scale_factor, 1.0);
@@ -175,7 +217,7 @@ mod tests {
 
     #[test]
     fn scale_factor_1_means_logical_equals_physical() {
-        let s = SurfaceState::new("DP-1".into());
+        let s = SurfaceState::new("DP-1".into(), String::new());
         // At 1.0 scale, logical and physical pixels are identical
         let logical: u32 = 48;
         let physical = f64::from(logical) * s.scale_factor;
@@ -185,7 +227,7 @@ mod tests {
     #[test]
     fn scale_factor_field_does_not_affect_expand_state() {
         // Modifying scale_factor does not change other per-surface state
-        let mut s = SurfaceState::new("eDP-1".into());
+        let mut s = SurfaceState::new("eDP-1".into(), String::new());
         s.scale_factor = 2.0;
         assert_eq!(s.expand, ExpandState::Collapsed);
         assert!(s.focused_module.is_none());
