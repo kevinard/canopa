@@ -465,8 +465,16 @@ impl App {
             }
             Message::Niri(NiriEvent::Unavailable) => {
                 // Running on a non-Niri compositor or connection dropped.
-                // Set connected = false (already default); niri modules will render nothing.
+                // Set connected = false; push Unavailable to all niri-dependent modules
+                // so they render as nothing (zero size, no gap) — FR21, AC #1, UX-DR16.
                 self.shared.niri.connected = false;
+                for (_, module) in &self.modules {
+                    if matches!(module.module_type(), "workspaces" | "focused-window") {
+                        self.shared
+                            .modules
+                            .insert(module.id(), ModuleState::Unavailable);
+                    }
+                }
                 Task::none()
             }
             Message::Niri(NiriEvent::Event(event)) => {
@@ -1814,6 +1822,48 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let _ = app.update(Message::Niri(NiriEvent::Unavailable));
         assert!(!app.shared.niri.connected);
+    }
+
+    #[test]
+    fn niri_unavailable_sets_workspaces_module_unavailable() {
+        let mut app = make_workspaces_app();
+        let _ = app.update(Message::Niri(NiriEvent::Unavailable));
+        let id = ModuleId::new("workspaces");
+        assert!(matches!(
+            app.shared.modules.get(&id),
+            Some(ModuleState::Unavailable)
+        ));
+    }
+
+    #[test]
+    fn niri_unavailable_sets_focused_window_module_unavailable() {
+        let mut app = make_focused_window_app();
+        let _ = app.update(Message::Niri(NiriEvent::Unavailable));
+        let id = ModuleId::new("focused-window");
+        assert!(matches!(
+            app.shared.modules.get(&id),
+            Some(ModuleState::Unavailable)
+        ));
+    }
+
+    #[test]
+    fn niri_unavailable_does_not_affect_non_niri_modules() {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "clock".into(),
+            module_type: "clock".into(),
+            params: ModuleParams::Clock(ClockConfig::default()),
+        }];
+        config.bar.modules.center = vec!["clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let _ = app.update(Message::Niri(NiriEvent::Unavailable));
+        let id = ModuleId::new("clock");
+        // Clock state is Loading (default) — niri Unavailable must not touch non-niri modules.
+        assert!(!matches!(
+            app.shared.modules.get(&id),
+            Some(ModuleState::Unavailable)
+        ));
     }
 
     #[test]
