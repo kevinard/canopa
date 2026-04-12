@@ -1,1 +1,12 @@
-# placeholder — Story 8.1 populates the systemd user service unit here
+[Unit]
+Description=niribar status bar
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/niribar
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

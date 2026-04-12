@@ -1,3 +1,13 @@
+// To start niribar automatically with your Wayland session:
+//
+//   # Copy the service file (if not installed by your package manager)
+//   cp contrib/systemd/niribar.service ~/.config/systemd/user/
+//
+//   # Enable and start the service
+//   systemctl --user enable --now niribar.service
+//
+// The service starts after graphical-session.target and restarts on failure.
+//
 // niribar default configuration
 // Override by placing your config at $XDG_CONFIG_HOME/niribar/config.kdl
 
