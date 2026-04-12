@@ -10,8 +10,8 @@ use crate::config::{
     BatteryConfig, ClockConfig, Config, Edge, ExpandTrigger, ModuleConfig, ModuleParams,
     NetworkConfig, VolumeConfig, WorkspacesConfig,
 };
-use crate::surface::SurfaceState;
 use crate::dbus::DbusConnections;
+use crate::ipc::ipc_subscription;
 use crate::modules::battery::{BatteryEvent, BatteryState};
 use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
@@ -23,9 +23,9 @@ use crate::modules::workspaces;
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
 };
-use crate::ipc::ipc_subscription;
 use crate::niri::subscription::niri_subscription;
 use crate::niri::{NiriEvent, NiriState};
+use crate::surface::SurfaceState;
 use crate::surface::expand::ExpandState;
 use crate::surface::frame::module_frame;
 use crate::surface::input::{init_expand_keybind, keyboard_focus_subscription};
@@ -288,7 +288,10 @@ impl App {
     /// In manual-output mode, opens new layer-shell windows for any output names present in
     /// `workspaces` that do not already have a surface.  Called from the `WorkspacesChanged`
     /// handler so that outputs hotplugged while the bar is running get a bar immediately.
-    fn open_new_output_windows(&mut self, workspaces: &[niri_ipc::Workspace]) -> Vec<Task<Message>> {
+    fn open_new_output_windows(
+        &mut self,
+        workspaces: &[niri_ipc::Workspace],
+    ) -> Vec<Task<Message>> {
         let excluded: std::collections::HashSet<&str> = self
             .config
             .outputs
@@ -374,7 +377,10 @@ impl App {
                 Task::none()
             }
             Message::BarClick(window) => {
-                let output_name = self.surface(window).map(|s| s.output_name.clone()).unwrap_or_default();
+                let output_name = self
+                    .surface(window)
+                    .map(|s| s.output_name.clone())
+                    .unwrap_or_default();
                 let bar = self.config.effective_bar_for(&output_name);
                 if !bar.expand {
                     return Task::none();
@@ -388,7 +394,10 @@ impl App {
                 self.overlay_size_change_for(window)
             }
             Message::BarHoverEnter(window) => {
-                let output_name = self.surface(window).map(|s| s.output_name.clone()).unwrap_or_default();
+                let output_name = self
+                    .surface(window)
+                    .map(|s| s.output_name.clone())
+                    .unwrap_or_default();
                 let bar = self.config.effective_bar_for(&output_name);
                 let expand_enabled = bar.expand;
                 let expand_trigger = bar.expand_trigger;
@@ -423,7 +432,10 @@ impl App {
                 }
             }
             Message::BarHoverExit(window) => {
-                let output_name = self.surface(window).map(|s| s.output_name.clone()).unwrap_or_default();
+                let output_name = self
+                    .surface(window)
+                    .map(|s| s.output_name.clone())
+                    .unwrap_or_default();
                 let bar = self.config.effective_bar_for(&output_name);
                 let expand_enabled = bar.expand;
                 let expand_trigger = bar.expand_trigger;
@@ -555,17 +567,22 @@ impl App {
             }
             Message::Tick => {
                 // Global tick: advance animation and hover delay for ALL surfaces.
-                const EXPAND_MS: f32 = 280.0;
-                const COLLAPSE_MS: f32 = 200.0;
                 const TICK_MS: f32 = 16.0;
 
                 let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
                 let mut tasks = vec![];
 
                 for wid in window_ids {
-                    // Resolve per-output hover_delay before taking a mutable borrow of the surface.
-                    let output_name = self.surfaces.get(&wid).map(|s| s.output_name.clone()).unwrap_or_default();
-                    let effective_hover_delay = self.config.effective_bar_for(&output_name).hover_delay;
+                    // Resolve per-output config before taking a mutable borrow of the surface.
+                    let output_name = self
+                        .surfaces
+                        .get(&wid)
+                        .map(|s| s.output_name.clone())
+                        .unwrap_or_default();
+                    let effective_bar = self.config.effective_bar_for(&output_name);
+                    let effective_hover_delay = effective_bar.hover_delay;
+                    let effective_expand_ms = effective_bar.animation.expand_ms;
+                    let effective_collapse_ms = effective_bar.animation.collapse_ms;
                     let s = self.surfaces.get_mut(&wid).unwrap();
 
                     // Hover delay countdown — runs while waiting to start expand (Story 3.3).
@@ -584,7 +601,7 @@ impl App {
 
                     match s.expand {
                         ExpandState::Expanding(progress) => {
-                            let new_progress = (progress + TICK_MS / EXPAND_MS).min(1.0);
+                            let new_progress = (progress + TICK_MS / effective_expand_ms).min(1.0);
                             s.expand = if new_progress >= 1.0 {
                                 ExpandState::Expanded
                             } else {
@@ -593,7 +610,8 @@ impl App {
                             tasks.push(self.overlay_size_change_for(wid));
                         }
                         ExpandState::Collapsing(progress) => {
-                            let new_progress = (progress + TICK_MS / COLLAPSE_MS).min(1.0);
+                            let new_progress =
+                                (progress + TICK_MS / effective_collapse_ms).min(1.0);
                             s.expand = if new_progress >= 1.0 {
                                 ExpandState::Collapsed
                             } else {
@@ -833,7 +851,10 @@ impl App {
                     for (_, module) in &self.modules {
                         if module.id() == *id {
                             // Scrollable module: Enter/Space enters interaction mode.
-                            if module.on_interaction(InteractionEvent::ScrollDown).is_some() {
+                            if module
+                                .on_interaction(InteractionEvent::ScrollDown)
+                                .is_some()
+                            {
                                 self.surface_mut(window).module_activated = true;
                                 return Task::none();
                             }
@@ -886,7 +907,11 @@ impl App {
         // AC #9: Only subscribe if battery module is present AND system bus is connected.
         // UPower runs on the system bus (org.freedesktop.UPower), not the session bus.
         let battery_sub = if let Some(conn) = self.shared.dbus.system.clone() {
-            if self.modules.iter().any(|(_, m)| m.module_type() == "battery") {
+            if self
+                .modules
+                .iter()
+                .any(|(_, m)| m.module_type() == "battery")
+            {
                 crate::dbus::upower::battery_subscription(conn)
             } else {
                 iced::Subscription::none()
@@ -897,7 +922,11 @@ impl App {
 
         // AC #9: Only subscribe if network module is present AND system bus is connected.
         let network_sub = if let Some(conn) = self.shared.dbus.system.clone() {
-            if self.modules.iter().any(|(_, m)| m.module_type() == "network") {
+            if self
+                .modules
+                .iter()
+                .any(|(_, m)| m.module_type() == "network")
+            {
                 crate::dbus::networkmanager::network_subscription(conn)
             } else {
                 iced::Subscription::none()
@@ -908,7 +937,11 @@ impl App {
 
         // AC #9: Only subscribe if volume module is present.
         // No zbus connection needed — PA auto-discovers its socket.
-        let volume_sub = if self.modules.iter().any(|(_, m)| m.module_type() == "volume") {
+        let volume_sub = if self
+            .modules
+            .iter()
+            .any(|(_, m)| m.module_type() == "volume")
+        {
             crate::dbus::wireplumber::volume_subscription()
         } else {
             iced::Subscription::none()
@@ -950,10 +983,9 @@ impl App {
 
         // All bars animate between collapsed_width and expanded_width.
         // Overlay mode: the surface grows over the desktop without changing the exclusive zone.
-        let surface_size = surface.expand.current_width(
-            bar.collapsed_width,
-            bar.expanded_width,
-        );
+        let surface_size = surface
+            .expand
+            .current_width(bar.collapsed_width, bar.expanded_width);
         // Reserve 1px for the border strip on the inner screen edge.
         let content_size = surface_size.saturating_sub(1);
 
@@ -1012,9 +1044,9 @@ impl App {
                                     if fo.is_none() || fo == Some(surface.output_name.as_str()) {
                                         fw.title.clone()
                                     } else {
-                                        self.shared.niri.active_window_title_for_output(
-                                            &surface.output_name,
-                                        )
+                                        self.shared
+                                            .niri
+                                            .active_window_title_for_output(&surface.output_name)
                                     }
                                 }
                             }
@@ -1041,22 +1073,23 @@ impl App {
 
             let scroll_id = id.clone();
             // module_frame treats hover and keyboard focus identically (UX-DR3).
-            let view: Element<'_, Message> = mouse_area(module_frame(module_view, hovered || focused))
-                .on_enter(Message::ModuleHoverEnter(id.clone(), window))
-                .on_exit(Message::ModuleHoverExit(id.clone(), window))
-                .on_press(Message::ModuleClick(id, window))
-                .on_scroll(move |delta| {
-                    let up = match delta {
-                        iced::mouse::ScrollDelta::Lines { y, .. }
-                        | iced::mouse::ScrollDelta::Pixels { y, .. } => y > 0.0,
-                    };
-                    if up {
-                        Message::ModuleScrollUp(scroll_id.clone(), window)
-                    } else {
-                        Message::ModuleScrollDown(scroll_id.clone(), window)
-                    }
-                })
-                .into();
+            let view: Element<'_, Message> =
+                mouse_area(module_frame(module_view, hovered || focused))
+                    .on_enter(Message::ModuleHoverEnter(id.clone(), window))
+                    .on_exit(Message::ModuleHoverExit(id.clone(), window))
+                    .on_press(Message::ModuleClick(id, window))
+                    .on_scroll(move |delta| {
+                        let up = match delta {
+                            iced::mouse::ScrollDelta::Lines { y, .. }
+                            | iced::mouse::ScrollDelta::Pixels { y, .. } => y > 0.0,
+                        };
+                        if up {
+                            Message::ModuleScrollUp(scroll_id.clone(), window)
+                        } else {
+                            Message::ModuleScrollDown(scroll_id.clone(), window)
+                        }
+                    })
+                    .into();
 
             match zone {
                 Zone::Top => top.push(view),
@@ -1072,9 +1105,19 @@ impl App {
 
         // For horizontal bars the animated dimension is height; for vertical bars it's width.
         let (content_w, content_h, border_w, border_h) = if is_horizontal {
-            (Length::Fill, Length::from(content_size), Length::Fill, Length::from(1))
+            (
+                Length::Fill,
+                Length::from(content_size),
+                Length::Fill,
+                Length::from(1),
+            )
         } else {
-            (Length::from(content_size), Length::Fill, Length::from(1), Length::Fill)
+            (
+                Length::from(content_size),
+                Length::Fill,
+                Length::from(1),
+                Length::Fill,
+            )
         };
 
         let content = container(zone_layout(top, center, bottom, is_horizontal))
@@ -1087,10 +1130,22 @@ impl App {
 
         // Border strip sits on the inner screen edge (the side facing screen content).
         let bar_content: Element<'_, Message> = match bar.edge {
-            Edge::Left => row![content, border_strip].width(Length::Fill).height(Length::Fill).into(),
-            Edge::Right => row![border_strip, content].width(Length::Fill).height(Length::Fill).into(),
-            Edge::Top => column![content, border_strip].width(Length::Fill).height(Length::Fill).into(),
-            Edge::Bottom => column![border_strip, content].width(Length::Fill).height(Length::Fill).into(),
+            Edge::Left => row![content, border_strip]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+            Edge::Right => row![border_strip, content]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+            Edge::Top => column![content, border_strip]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+            Edge::Bottom => column![border_strip, content]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
         };
 
         // Wrap entire bar in mouse_area for click-to-toggle and hover detection.
@@ -1196,9 +1251,15 @@ impl App {
         let bar = self.config.effective_bar_for(output_name);
         let size = expand.current_width(bar.collapsed_width, bar.expanded_width);
         if bar.edge.is_horizontal() {
-            Task::done(Message::SizeChange { id: window, size: (0, size) })
+            Task::done(Message::SizeChange {
+                id: window,
+                size: (0, size),
+            })
         } else {
-            Task::done(Message::SizeChange { id: window, size: (size, 0) })
+            Task::done(Message::SizeChange {
+                id: window,
+                size: (size, 0),
+            })
         }
     }
 
@@ -1594,6 +1655,40 @@ mod tests {
         app.surface_mut(wid).expand = ExpandState::Expanded;
         let _ = app.update(Message::Tick);
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanded);
+    }
+
+    // --- Story 3.4 tests ---
+
+    #[test]
+    fn tick_uses_custom_expand_duration() {
+        let mut config = make_config();
+        config.bar.animation.expand_ms = 100.0;
+        let (mut app, _) = App::boot(config, vec![]);
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanding(0.0);
+        let _ = app.update(Message::Tick);
+        let expected_progress = 16.0_f32 / 100.0;
+        assert!(
+            matches!(app.surfaces[&wid].expand, ExpandState::Expanding(p) if (p - expected_progress).abs() < 1e-5),
+            "expected Expanding(~{expected_progress:.4}), got {:?}",
+            app.surfaces[&wid].expand
+        );
+    }
+
+    #[test]
+    fn tick_uses_custom_collapse_duration() {
+        let mut config = make_config();
+        config.bar.animation.collapse_ms = 50.0;
+        let (mut app, _) = App::boot(config, vec![]);
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Collapsing(0.0);
+        let _ = app.update(Message::Tick);
+        let expected_progress = 16.0_f32 / 50.0;
+        assert!(
+            matches!(app.surfaces[&wid].expand, ExpandState::Collapsing(p) if (p - expected_progress).abs() < 1e-5),
+            "expected Collapsing(~{expected_progress:.4}), got {:?}",
+            app.surfaces[&wid].expand
+        );
     }
 
     // --- Story 3.3 tests ---
@@ -2245,7 +2340,12 @@ mod tests {
     fn focused_module_starts_none_for_new_surface() {
         let (app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
-        assert!(app.surfaces.get(&wid).map(|s| s.focused_module.is_none()).unwrap_or(true));
+        assert!(
+            app.surfaces
+                .get(&wid)
+                .map(|s| s.focused_module.is_none())
+                .unwrap_or(true)
+        );
     }
 
     #[test]
@@ -2261,7 +2361,10 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("clock"))
+        );
     }
 
     #[test]
@@ -2321,7 +2424,10 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("clock"))
+        );
     }
 
     #[test]
@@ -2373,7 +2479,10 @@ mod tests {
         let (mut app, wid) = make_nav_app();
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusMoveNext(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("battery")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("battery"))
+        );
     }
 
     #[test]
@@ -2382,7 +2491,10 @@ mod tests {
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusMoveNext(wid));
         let _ = app.update(Message::FocusMoveNext(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("network")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("network"))
+        );
     }
 
     #[test]
@@ -2390,7 +2502,10 @@ mod tests {
         let (mut app, wid) = make_nav_app();
         app.surface_mut(wid).focused_module = Some(ModuleId::new("workspaces"));
         let _ = app.update(Message::FocusMoveNext(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("clock"))
+        );
     }
 
     #[test]
@@ -2399,7 +2514,10 @@ mod tests {
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusMoveNext(wid));
         let _ = app.update(Message::FocusMovePrev(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("clock"))
+        );
     }
 
     #[test]
@@ -2407,7 +2525,10 @@ mod tests {
         let (mut app, wid) = make_nav_app();
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusMovePrev(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("workspaces")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("workspaces"))
+        );
     }
 
     #[test]
@@ -2415,7 +2536,10 @@ mod tests {
         let (mut app, wid) = make_nav_app();
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusNextZone(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("network")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("network"))
+        );
     }
 
     #[test]
@@ -2423,7 +2547,10 @@ mod tests {
         let (mut app, wid) = make_nav_app();
         app.surface_mut(wid).focused_module = Some(ModuleId::new("workspaces"));
         let _ = app.update(Message::FocusNextZone(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("clock"))
+        );
     }
 
     #[test]
@@ -2431,7 +2558,10 @@ mod tests {
         let (mut app, wid) = make_nav_app();
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusPrevZone(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("workspaces")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("workspaces"))
+        );
     }
 
     #[test]
@@ -2456,7 +2586,10 @@ mod tests {
         let wid = test_wid();
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusNextZone(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("workspaces")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("workspaces"))
+        );
     }
 
     #[test]
@@ -2477,7 +2610,10 @@ mod tests {
         let (mut app, wid) = make_nav_app();
         app.surface_mut(wid).focused_module = Some(ModuleId::new("network"));
         let _ = app.update(Message::FocusPrevZone(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("clock"))
+        );
     }
 
     // --- Story 6.3 tests ---
@@ -2527,11 +2663,17 @@ mod tests {
         let (mut app, wid) = make_interact_app();
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusMoveNext(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("volume"))
+        );
         assert!(!app.surfaces[&wid].module_activated);
         let _ = app.update(Message::KeyboardActivate(wid));
         assert!(app.surfaces[&wid].module_activated);
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("volume"))
+        );
     }
 
     #[test]
@@ -2542,10 +2684,16 @@ mod tests {
         let _ = app.update(Message::KeyboardActivate(wid));
         assert!(app.surfaces[&wid].module_activated);
         let _ = app.update(Message::FocusMoveNext(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("volume"))
+        );
         assert!(app.surfaces[&wid].module_activated);
         let _ = app.update(Message::FocusMovePrev(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("volume"))
+        );
     }
 
     #[test]
@@ -2557,7 +2705,10 @@ mod tests {
         assert!(app.surfaces[&wid].module_activated);
         let _ = app.update(Message::EscapePressed(wid));
         assert!(!app.surfaces[&wid].module_activated);
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("volume"))
+        );
     }
 
     #[test]
@@ -2565,10 +2716,16 @@ mod tests {
         let (mut app, wid) = make_interact_app();
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusMoveNext(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("volume")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("volume"))
+        );
         assert!(!app.surfaces[&wid].module_activated);
         let _ = app.update(Message::FocusMoveNext(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("button")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("button"))
+        );
     }
 
     #[test]
@@ -2580,7 +2737,10 @@ mod tests {
         assert!(app.surfaces[&wid].module_activated);
         let _ = app.update(Message::FocusNextZone(wid));
         assert!(!app.surfaces[&wid].module_activated);
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("button")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("button"))
+        );
     }
 
     #[test]
@@ -2599,20 +2759,32 @@ mod tests {
         let (mut app, wid) = make_interact_app();
         let _ = app.update(Message::BarFocusGained(wid));
         let _ = app.update(Message::FocusNextZone(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("button")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("button"))
+        );
         let _ = app.update(Message::KeyboardActivate(wid));
         assert!(!app.surfaces[&wid].module_activated);
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("button")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("button"))
+        );
     }
 
     #[test]
     fn keyboard_activate_on_non_interactive_module_is_noop() {
         let (mut app, wid) = make_interact_app();
         let _ = app.update(Message::BarFocusGained(wid));
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("clock"))
+        );
         let _ = app.update(Message::KeyboardActivate(wid));
         assert!(!app.surfaces[&wid].module_activated);
-        assert_eq!(app.surfaces[&wid].focused_module, Some(ModuleId::new("clock")));
+        assert_eq!(
+            app.surfaces[&wid].focused_module,
+            Some(ModuleId::new("clock"))
+        );
     }
 
     #[test]
@@ -2810,7 +2982,11 @@ mod tests {
         app.surface_mut(wid_a).expand = ExpandState::Expanded;
         // Surface B should still be Collapsed (or not yet exist)
         let b_state = app.surfaces.get(&wid_b);
-        assert!(b_state.map(|s| s.expand == ExpandState::Collapsed).unwrap_or(true));
+        assert!(
+            b_state
+                .map(|s| s.expand == ExpandState::Collapsed)
+                .unwrap_or(true)
+        );
     }
 
     #[test]
@@ -2898,6 +3074,7 @@ mod tests {
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
@@ -2950,7 +3127,11 @@ mod tests {
                 active_window_id: None,
             }],
         })));
-        assert_eq!(app.surfaces.len(), before, "no new surfaces in AllScreens mode");
+        assert_eq!(
+            app.surfaces.len(),
+            before,
+            "no new surfaces in AllScreens mode"
+        );
     }
 
     #[test]
@@ -3013,8 +3194,8 @@ mod tests {
     #[test]
     fn workspaces_changed_manual_mode_skips_excluded_output() {
         // An output listed as enabled=false in config must not get a surface on hotplug.
-        use niri_ipc::Event;
         use crate::config::OutputConfig;
+        use niri_ipc::Event;
         let mut config = make_config();
         config.outputs = vec![OutputConfig {
             name: "HDMI-A-1".to_string(),
@@ -3027,6 +3208,7 @@ mod tests {
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         // Boot without "HDMI-A-1" in allowed (it was excluded at startup).
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);

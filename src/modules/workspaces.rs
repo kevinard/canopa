@@ -354,7 +354,12 @@ mod tests {
         };
         let filtered = state.filtered_for_output("eDP-1");
         assert_eq!(filtered.workspaces.len(), 2);
-        assert!(filtered.workspaces.iter().all(|ws| ws.output.as_deref() == Some("eDP-1")));
+        assert!(
+            filtered
+                .workspaces
+                .iter()
+                .all(|ws| ws.output.as_deref() == Some("eDP-1"))
+        );
     }
 
     #[test]

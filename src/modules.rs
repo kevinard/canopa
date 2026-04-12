@@ -135,7 +135,10 @@ fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
         ModuleParams::Battery(cfg) => cfg.critical_threshold,
         _ => BatteryConfig::default().critical_threshold,
     };
-    Box::new(battery::BatteryModule::new(ModuleId::new(&mc.name), threshold))
+    Box::new(battery::BatteryModule::new(
+        ModuleId::new(&mc.name),
+        threshold,
+    ))
 }
 
 fn button_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
@@ -160,7 +163,11 @@ fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
             (d.time_format, d.date_format)
         }
     };
-    Box::new(clock::ClockModule::new(ModuleId::new(&mc.name), time_fmt, date_fmt))
+    Box::new(clock::ClockModule::new(
+        ModuleId::new(&mc.name),
+        time_fmt,
+        date_fmt,
+    ))
 }
 
 fn script_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
@@ -181,11 +188,16 @@ fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
         ModuleParams::Workspaces(c) => c.clone(),
         _ => crate::config::WorkspacesConfig::default(),
     };
-    Box::new(workspaces::WorkspacesModule::new(ModuleId::new(&mc.name), config))
+    Box::new(workspaces::WorkspacesModule::new(
+        ModuleId::new(&mc.name),
+        config,
+    ))
 }
 
 fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    Box::new(focused_window::FocusedWindowModule::new(ModuleId::new(&mc.name)))
+    Box::new(focused_window::FocusedWindowModule::new(ModuleId::new(
+        &mc.name,
+    )))
 }
 
 #[cfg(test)]

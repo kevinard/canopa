@@ -146,6 +146,8 @@ pub struct OutputConfig {
     pub hover_delay: Option<u64>,
     /// Override for bar.expand-keybind. `None` → inherit from global.
     pub expand_keybind: Option<String>,
+    /// Override for bar.animation. `None` → inherit from global.
+    pub animation: Option<AnimationConfig>,
 }
 
 /// Parsed configuration for niribar.
@@ -177,7 +179,14 @@ impl Config {
             expand: oc.expand.unwrap_or(global.expand),
             expand_trigger: oc.expand_trigger.unwrap_or(global.expand_trigger),
             hover_delay: oc.hover_delay.unwrap_or(global.hover_delay),
-            expand_keybind: oc.expand_keybind.clone().or_else(|| global.expand_keybind.clone()),
+            expand_keybind: oc
+                .expand_keybind
+                .clone()
+                .or_else(|| global.expand_keybind.clone()),
+            animation: oc
+                .animation
+                .clone()
+                .unwrap_or_else(|| global.animation.clone()),
         }
     }
 }
@@ -188,6 +197,24 @@ pub struct BarModules {
     pub top: Vec<String>,
     pub center: Vec<String>,
     pub bottom: Vec<String>,
+}
+
+/// Animation timing for expand/collapse transitions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnimationConfig {
+    /// Duration of the expand animation in milliseconds. Default: 280.0.
+    pub expand_ms: f32,
+    /// Duration of the collapse animation in milliseconds. Default: 200.0.
+    pub collapse_ms: f32,
+}
+
+impl Default for AnimationConfig {
+    fn default() -> Self {
+        AnimationConfig {
+            expand_ms: 280.0,
+            collapse_ms: 200.0,
+        }
+    }
 }
 
 /// Bar-level configuration: placement edge, width targets, and expand trigger.
@@ -211,6 +238,8 @@ pub struct BarConfig {
     /// Also documents the compositor keybind the user should bind to `niribar --toggle-expand`
     /// for global (unfocused) toggling.
     pub expand_keybind: Option<String>,
+    /// Animation timing for expand/collapse transitions.
+    pub animation: AnimationConfig,
     /// Ordered module names per zone. Empty lists mean no modules in that zone.
     pub modules: BarModules,
 }
@@ -225,6 +254,7 @@ impl Default for BarConfig {
             expand_trigger: ExpandTrigger::Click,
             hover_delay: 0,
             expand_keybind: None,
+            animation: AnimationConfig::default(),
             modules: BarModules::default(),
         }
     }
@@ -790,6 +820,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
         assert_eq!(bar.collapsed_width, 60);
@@ -811,6 +842,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
         assert_eq!(bar.expanded_width, 300);
@@ -837,6 +869,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
         assert_eq!(bar.modules.top, override_mods.top);
@@ -861,10 +894,11 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
-        assert_eq!(bar.collapsed_width, 60);     // overridden
-        assert_eq!(bar.expanded_width, 200);      // inherited
+        assert_eq!(bar.collapsed_width, 60); // overridden
+        assert_eq!(bar.expanded_width, 200); // inherited
         assert_eq!(bar.modules.center, vec!["clock"]); // inherited
     }
 
@@ -884,6 +918,7 @@ output "DP-1" { enabled #false }"#;
                 expand_trigger: None,
                 hover_delay: None,
                 expand_keybind: None,
+                animation: None,
             }],
         };
         let err = validate(&config).unwrap_err();
@@ -908,6 +943,7 @@ output "DP-1" { enabled #false }"#;
                 expand_trigger: None,
                 hover_delay: None,
                 expand_keybind: None,
+                animation: None,
             }],
         };
         let err = validate(&config).unwrap_err();
@@ -933,6 +969,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         let err = validate(&config).unwrap_err();
         let msg = err.to_string();
@@ -956,6 +993,7 @@ output "DP-1" { enabled #false }"#;
                 expand_trigger: None,
                 hover_delay: None,
                 expand_keybind: None,
+                animation: None,
             }],
         };
         assert!(validate(&config).is_ok());
@@ -977,6 +1015,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         let bar = config.effective_bar_for("eDP-1");
         // Fields are now overridable; None means inherit from global
@@ -1000,6 +1039,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         let bar = config.effective_bar_for("DP-2");
         assert!(matches!(bar.edge, Edge::Top));
@@ -1022,6 +1062,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         let bar = config.effective_bar_for("DP-2");
         assert!(!bar.expand);
@@ -1044,6 +1085,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: Some(ExpandTrigger::Hover),
             hover_delay: None,
             expand_keybind: None,
+            animation: None,
         }];
         let bar = config.effective_bar_for("DP-2");
         assert_eq!(bar.expand_trigger, ExpandTrigger::Hover);
@@ -1063,6 +1105,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: Some(300),
             expand_keybind: None,
+            animation: None,
         }];
         let bar = config.effective_bar_for("DP-2");
         assert_eq!(bar.hover_delay, 300);
@@ -1083,6 +1126,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: Some("Ctrl+b".into()),
+            animation: None,
         }];
         let bar = config.effective_bar_for("DP-2");
         assert_eq!(bar.expand_keybind, Some("Ctrl+b".into()));
@@ -1106,6 +1150,7 @@ output "DP-1" { enabled #false }"#;
             expand_trigger: None,
             hover_delay: None,
             expand_keybind: None, // not overridden → inherit
+            animation: None,
         }];
         let bar = config.effective_bar_for("DP-2");
         assert_eq!(bar.expand_keybind, Some("Super+e".into()));

@@ -22,7 +22,11 @@ pub struct ClockModule {
 
 impl ClockModule {
     pub fn new(id: crate::modules::ModuleId, time_format: String, date_format: String) -> Self {
-        ClockModule { id, time_format, date_format }
+        ClockModule {
+            id,
+            time_format,
+            date_format,
+        }
     }
 }
 
@@ -39,7 +43,11 @@ impl crate::modules::Module for ClockModule {
         // Tick every second; first tick fires at t=1s (within the 1-second contract).
         // The id is included in the key tuple so multiple clock instances subscribe independently.
         iced::time::every(std::time::Duration::from_secs(1))
-            .with((self.id.clone(), self.time_format.clone(), self.date_format.clone()))
+            .with((
+                self.id.clone(),
+                self.time_format.clone(),
+                self.date_format.clone(),
+            ))
             .map(|((id, time_fmt, date_fmt), _)| {
                 let now = chrono::Local::now();
                 let time = now.format(&time_fmt).to_string();
@@ -114,14 +122,22 @@ mod tests {
 
     #[test]
     fn clock_module_id_is_clock() {
-        let m = ClockModule::new(crate::modules::ModuleId::new("clock"), "%H:%M".into(), "%a %d %b".into());
+        let m = ClockModule::new(
+            crate::modules::ModuleId::new("clock"),
+            "%H:%M".into(),
+            "%a %d %b".into(),
+        );
         assert_eq!(m.id().0, "clock");
         assert_eq!(m.module_type(), "clock");
     }
 
     #[test]
     fn clock_module_custom_id() {
-        let m = ClockModule::new(crate::modules::ModuleId::new("my-clock"), "%H:%M".into(), "%a %d %b".into());
+        let m = ClockModule::new(
+            crate::modules::ModuleId::new("my-clock"),
+            "%H:%M".into(),
+            "%a %d %b".into(),
+        );
         assert_eq!(m.id().0, "my-clock");
         assert_eq!(m.module_type(), "clock");
     }

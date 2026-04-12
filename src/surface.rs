@@ -48,7 +48,6 @@ impl SurfaceState {
             hover_pending_ms: None,
         }
     }
-
 }
 
 impl Default for SurfaceState {

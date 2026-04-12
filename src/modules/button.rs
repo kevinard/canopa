@@ -18,8 +18,18 @@ pub struct ButtonModule {
 }
 
 impl ButtonModule {
-    pub fn new(id: crate::modules::ModuleId, label: String, icon: String, on_click: String) -> Self {
-        ButtonModule { id, label, icon, on_click }
+    pub fn new(
+        id: crate::modules::ModuleId,
+        label: String,
+        icon: String,
+        on_click: String,
+    ) -> Self {
+        ButtonModule {
+            id,
+            label,
+            icon,
+            on_click,
+        }
     }
 }
 
@@ -138,7 +148,12 @@ mod tests {
 
     #[test]
     fn button_module_id_is_button() {
-        let m = ButtonModule::new(crate::modules::ModuleId::new("button"), "Launch".into(), ">".into(), "kitty".into());
+        let m = ButtonModule::new(
+            crate::modules::ModuleId::new("button"),
+            "Launch".into(),
+            ">".into(),
+            "kitty".into(),
+        );
         assert_eq!(m.id().0, "button");
         assert_eq!(m.module_type(), "button");
     }

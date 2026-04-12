@@ -51,7 +51,10 @@ pub fn zone_layout<'a, Message: Clone + 'a>(
     let body: Element<'a, Message> = if horizontal {
         row(parts).width(Length::Fill).height(Length::Fill).into()
     } else {
-        column(parts).width(Length::Fill).height(Length::Fill).into()
+        column(parts)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     };
 
     container(body)

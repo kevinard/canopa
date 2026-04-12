@@ -1,5 +1,5 @@
-use crate::theme;
 use crate::modules::view::{expanded_icon_label, horizontal_icon_label};
+use crate::theme;
 
 /// Runtime state for the battery module, fed by UPower D-Bus signals via app.rs.
 #[derive(Debug, Clone, Default)]
@@ -66,7 +66,10 @@ pub struct BatteryModule {
 
 impl BatteryModule {
     pub fn new(id: crate::modules::ModuleId, critical_threshold: u8) -> Self {
-        BatteryModule { id, critical_threshold }
+        BatteryModule {
+            id,
+            critical_threshold,
+        }
     }
 }
 
@@ -119,20 +122,16 @@ impl crate::modules::Module for BatteryModule {
         // CriticalBadge: shown when collapsed AND at/below threshold (AC: #3, UX-DR17).
         if battery.percentage <= self.critical_threshold as f64 {
             let badge_label = format!("{}%", battery.percentage.round() as u8);
-            let badge = container(
-                text(badge_label)
-                    .size(9)
-                    .color(theme::BASE),
-            )
-            .padding([1, 3])
-            .style(|_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(theme::CRITICAL)),
-                border: iced::Border {
-                    radius: iced::border::Radius::from(4.0),
+            let badge = container(text(badge_label).size(9).color(theme::BASE))
+                .padding([1, 3])
+                .style(|_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(theme::CRITICAL)),
+                    border: iced::Border {
+                        radius: iced::border::Radius::from(4.0),
+                        ..Default::default()
+                    },
                     ..Default::default()
-                },
-                ..Default::default()
-            });
+                });
             stack![icon, badge].into()
         } else {
             icon.into()

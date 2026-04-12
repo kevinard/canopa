@@ -36,7 +36,10 @@ fn send_ipc_command(cmd: &str) {
             let _ = writeln!(stream, "{cmd}");
         }
         Err(e) => {
-            eprintln!("niribar: cannot connect to socket at {}: {e}", path.display());
+            eprintln!(
+                "niribar: cannot connect to socket at {}: {e}",
+                path.display()
+            );
             std::process::exit(1);
         }
     }

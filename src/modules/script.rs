@@ -21,7 +21,11 @@ pub struct ScriptModule {
 
 impl ScriptModule {
     pub fn new(id: crate::modules::ModuleId, command: String, interval: u64) -> Self {
-        ScriptModule { id, command, interval }
+        ScriptModule {
+            id,
+            command,
+            interval,
+        }
     }
 }
 
@@ -45,30 +49,33 @@ impl crate::modules::Module for ScriptModule {
                 let cmd = cmd.clone();
                 let interval = *interval;
 
-                stream::unfold((id, cmd, interval, true), |(id, cmd, interval, first)| async move {
-                    if !first {
-                        tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
-                    }
-
-                    let event = match tokio::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(&cmd)
-                        .output()
-                        .await
-                    {
-                        Ok(out) if out.status.success() => {
-                            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                            ScriptEvent::Output(text)
+                stream::unfold(
+                    (id, cmd, interval, true),
+                    |(id, cmd, interval, first)| async move {
+                        if !first {
+                            tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
                         }
-                        _ => ScriptEvent::Failed,
-                    };
 
-                    let msg = crate::app::Message::Module(
-                        id.clone(),
-                        crate::modules::ModuleEvent::Script(event),
-                    );
-                    Some((msg, (id, cmd, interval, false)))
-                })
+                        let event = match tokio::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(&cmd)
+                            .output()
+                            .await
+                        {
+                            Ok(out) if out.status.success() => {
+                                let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                                ScriptEvent::Output(text)
+                            }
+                            _ => ScriptEvent::Failed,
+                        };
+
+                        let msg = crate::app::Message::Module(
+                            id.clone(),
+                            crate::modules::ModuleEvent::Script(event),
+                        );
+                        Some((msg, (id, cmd, interval, false)))
+                    },
+                )
             },
         )
     }

@@ -1,5 +1,5 @@
-use crate::theme;
 use crate::modules::view::collapsed_icon;
+use crate::theme;
 
 /// Runtime state for the focused-window module.
 ///

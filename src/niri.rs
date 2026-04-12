@@ -89,7 +89,13 @@ mod tests {
         assert_eq!(state.workspaces.len(), 1);
     }
 
-    fn make_workspace(id: u64, output: &str, is_active: bool, is_focused: bool, active_window_id: Option<u64>) -> Workspace {
+    fn make_workspace(
+        id: u64,
+        output: &str,
+        is_active: bool,
+        is_focused: bool,
+        active_window_id: Option<u64>,
+    ) -> Workspace {
         Workspace {
             id,
             idx: 0,
@@ -144,9 +150,7 @@ mod tests {
     #[test]
     fn focused_output_returns_none_when_no_workspace_is_focused() {
         let mut state = NiriState::default();
-        state.workspaces = vec![
-            make_workspace(1, "eDP-1", true, false, None),
-        ];
+        state.workspaces = vec![make_workspace(1, "eDP-1", true, false, None)];
         assert!(state.focused_output().is_none());
     }
 
@@ -175,8 +179,14 @@ mod tests {
         ];
         state.windows.insert(5, make_window(5, Some("Helix")));
         state.windows.insert(10, make_window(10, Some("Firefox")));
-        assert_eq!(state.active_window_title_for_output("eDP-1"), Some("Helix".to_string()));
-        assert_eq!(state.active_window_title_for_output("DP-1"), Some("Firefox".to_string()));
+        assert_eq!(
+            state.active_window_title_for_output("eDP-1"),
+            Some("Helix".to_string())
+        );
+        assert_eq!(
+            state.active_window_title_for_output("DP-1"),
+            Some("Firefox".to_string())
+        );
     }
 
     #[test]

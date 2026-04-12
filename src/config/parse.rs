@@ -1,9 +1,9 @@
 use kdl::KdlDocument;
 
 use super::{
-    BarConfig, BarModules, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge, ExpandTrigger,
-    ModuleConfig, ModuleParams, NetworkConfig, OutputConfig, ScriptConfig, VolumeConfig,
-    WorkspaceLabelConfig, WorkspacesConfig,
+    AnimationConfig, BarConfig, BarModules, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge,
+    ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig, OutputConfig, ScriptConfig,
+    VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -14,7 +14,11 @@ pub fn parse(input: &str) -> anyhow::Result<Config> {
     let bar = parse_bar_section(&doc)?;
     let modules = parse_modules_section(&doc)?;
     let outputs = parse_output_sections(&doc)?;
-    Ok(Config { bar, modules, outputs })
+    Ok(Config {
+        bar,
+        modules,
+        outputs,
+    })
 }
 
 fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>> {
@@ -46,6 +50,7 @@ fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>>
         let mut expand_trigger: Option<ExpandTrigger> = None;
         let mut hover_delay: Option<u64> = None;
         let mut expand_keybind: Option<String> = None;
+        let mut animation: Option<AnimationConfig> = None;
 
         if let Some(children) = node.children() {
             for child in children.nodes() {
@@ -105,9 +110,7 @@ fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>>
                             .find(|e| e.name().is_none())
                             .and_then(|e| e.value().as_string())
                             .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "output {name:?}: edge: expected a string value."
-                                )
+                                anyhow::anyhow!("output {name:?}: edge: expected a string value.")
                             })?;
                         edge = Some(Edge::from_str(s)?);
                     }
@@ -165,11 +168,14 @@ fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>>
                             .to_string();
                         expand_keybind = Some(s);
                     }
+                    "animation" => {
+                        animation = Some(parse_animation_node(child, &format!("output {name:?}"))?);
+                    }
                     other => {
                         anyhow::bail!(
                             "output {name:?}: unknown key {other:?}. \
                              Expected: one of: enabled, edge, collapsed-width, expanded-width, \
-                             expand, expand-trigger, hover-delay, expand-keybind, modules."
+                             expand, expand-trigger, hover-delay, expand-keybind, animation, modules."
                         );
                     }
                 }
@@ -186,6 +192,7 @@ fn parse_output_sections(doc: &KdlDocument) -> anyhow::Result<Vec<OutputConfig>>
             expand_trigger,
             hover_delay,
             expand_keybind,
+            animation,
         });
     }
     Ok(result)
@@ -203,9 +210,7 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
     for (i, node) in children.nodes().iter().enumerate() {
         let node_name = node.name().value();
         if node_name != "module" {
-            anyhow::bail!(
-                "modules[{i}]: expected node name \"module\", got {node_name:?}."
-            );
+            anyhow::bail!("modules[{i}]: expected node name \"module\", got {node_name:?}.");
         }
         let name = node
             .entries()
@@ -254,7 +259,11 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         } else {
             ModuleParams::None
         };
-        result.push(ModuleConfig { name, module_type, params });
+        result.push(ModuleConfig {
+            name,
+            module_type,
+            params,
+        });
     }
     Ok(result)
 }
@@ -495,6 +504,58 @@ fn parse_workspaces_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Wo
     Ok(config)
 }
 
+/// Parse an `animation { expand-ms N collapse-ms N }` KDL node into an `AnimationConfig`.
+///
+/// `prefix` is prepended in error messages (e.g. `"bar"` → `"bar.animation.expand-ms: ..."`).
+/// Returns `AnimationConfig::default()` when the node has no children block.
+fn parse_animation_node(anim_node: &kdl::KdlNode, prefix: &str) -> anyhow::Result<AnimationConfig> {
+    let Some(anim_children) = anim_node.children() else {
+        return Ok(AnimationConfig::default());
+    };
+    let defaults = AnimationConfig::default();
+
+    let expand_ms = match anim_children.get_arg("expand-ms") {
+        None => defaults.expand_ms,
+        Some(v) => {
+            let n = v.as_integer().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{prefix}.animation.expand-ms: expected a positive integer. \
+                     Expected: a duration in milliseconds, e.g. 280."
+                )
+            })?;
+            u32::try_from(n).map_err(|_| {
+                anyhow::anyhow!(
+                    "{prefix}.animation.expand-ms: expected a positive integer. \
+                     Expected: a duration in milliseconds, e.g. 280."
+                )
+            })? as f32
+        }
+    };
+
+    let collapse_ms = match anim_children.get_arg("collapse-ms") {
+        None => defaults.collapse_ms,
+        Some(v) => {
+            let n = v.as_integer().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{prefix}.animation.collapse-ms: expected a positive integer. \
+                     Expected: a duration in milliseconds, e.g. 200."
+                )
+            })?;
+            u32::try_from(n).map_err(|_| {
+                anyhow::anyhow!(
+                    "{prefix}.animation.collapse-ms: expected a positive integer. \
+                     Expected: a duration in milliseconds, e.g. 200."
+                )
+            })? as f32
+        }
+    };
+
+    Ok(AnimationConfig {
+        expand_ms,
+        collapse_ms,
+    })
+}
+
 fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
     let Some(bar_node) = doc.get("bar") else {
         return Ok(BarConfig::default());
@@ -519,17 +580,41 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
         }
     };
 
-    let collapsed_width = children
-        .get_arg("collapsed-width")
-        .and_then(|v| v.as_integer())
-        .and_then(|v| u32::try_from(v).ok())
-        .unwrap_or(defaults.collapsed_width);
+    let collapsed_width = match children.get_arg("collapsed-width") {
+        None => defaults.collapsed_width,
+        Some(v) => {
+            let n = v.as_integer().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "bar.collapsed-width: expected a positive integer. \
+                     Expected: a width in logical pixels, e.g. 48."
+                )
+            })?;
+            u32::try_from(n).map_err(|_| {
+                anyhow::anyhow!(
+                    "bar.collapsed-width: expected a positive integer. \
+                     Expected: a width in logical pixels, e.g. 48."
+                )
+            })?
+        }
+    };
 
-    let expanded_width = children
-        .get_arg("expanded-width")
-        .and_then(|v| v.as_integer())
-        .and_then(|v| u32::try_from(v).ok())
-        .unwrap_or(defaults.expanded_width);
+    let expanded_width = match children.get_arg("expanded-width") {
+        None => defaults.expanded_width,
+        Some(v) => {
+            let n = v.as_integer().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "bar.expanded-width: expected a positive integer. \
+                     Expected: a width in logical pixels, e.g. 200."
+                )
+            })?;
+            u32::try_from(n).map_err(|_| {
+                anyhow::anyhow!(
+                    "bar.expanded-width: expected a positive integer. \
+                     Expected: a width in logical pixels, e.g. 200."
+                )
+            })?
+        }
+    };
 
     let expand_trigger = match children.get_arg("expand-trigger") {
         None => defaults.expand_trigger,
@@ -553,9 +638,7 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
     let expand = match children.get_arg("expand") {
         None => defaults.expand,
         Some(v) => v.as_bool().ok_or_else(|| {
-            anyhow::anyhow!(
-                "bar.expand: expected a boolean value. Expected: #true or #false."
-            )
+            anyhow::anyhow!("bar.expand: expected a boolean value. Expected: #true or #false.")
         })?,
     };
 
@@ -563,6 +646,11 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
         .get_arg("expand-keybind")
         .and_then(|v| v.as_string())
         .map(|s| s.to_string());
+
+    let animation = match children.get("animation") {
+        None => AnimationConfig::default(),
+        Some(node) => parse_animation_node(node, "bar")?,
+    };
 
     let modules = parse_bar_modules(children)?;
 
@@ -574,6 +662,7 @@ fn parse_bar_section(doc: &KdlDocument) -> anyhow::Result<BarConfig> {
         expand_trigger,
         hover_delay,
         expand_keybind,
+        animation,
         modules,
     })
 }
@@ -1375,8 +1464,14 @@ modules {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("unknown key"), "got: {msg}");
-        assert!(msg.contains("collapsed-width"), "error should list new keys: {msg}");
-        assert!(msg.contains("expanded-width"), "error should list new keys: {msg}");
+        assert!(
+            msg.contains("collapsed-width"),
+            "error should list new keys: {msg}"
+        );
+        assert!(
+            msg.contains("expanded-width"),
+            "error should list new keys: {msg}"
+        );
         assert!(msg.contains("modules"), "error should list new keys: {msg}");
     }
 
@@ -1429,6 +1524,7 @@ modules {
         assert!(oc.expand_trigger.is_none());
         assert!(oc.hover_delay.is_none());
         assert!(oc.expand_keybind.is_none());
+        assert!(oc.animation.is_none());
     }
 
     #[test]
@@ -1437,6 +1533,158 @@ modules {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("edge"), "error should mention 'edge': {msg}");
-        assert!(msg.contains("expand"), "error should mention 'expand': {msg}");
+        assert!(
+            msg.contains("expand"),
+            "error should mention 'expand': {msg}"
+        );
+        assert!(
+            msg.contains("animation"),
+            "error should list 'animation': {msg}"
+        );
+    }
+
+    // ── Story 3.4: AnimationConfig parsing ─────────────────────────────────
+
+    #[test]
+    fn parse_animation_expand_ms() {
+        let config = parse("bar { animation { expand-ms 400 } }").unwrap();
+        assert_eq!(config.bar.animation.expand_ms, 400.0);
+        assert_eq!(config.bar.animation.collapse_ms, 200.0); // default unchanged
+    }
+
+    #[test]
+    fn parse_animation_collapse_ms() {
+        let config = parse("bar { animation { collapse-ms 100 } }").unwrap();
+        assert_eq!(config.bar.animation.collapse_ms, 100.0);
+        assert_eq!(config.bar.animation.expand_ms, 280.0); // default unchanged
+    }
+
+    #[test]
+    fn parse_animation_defaults_when_omitted() {
+        let config = parse("").unwrap();
+        assert_eq!(config.bar.animation.expand_ms, 280.0);
+        assert_eq!(config.bar.animation.collapse_ms, 200.0);
+    }
+
+    #[test]
+    fn parse_animation_node_no_children_uses_defaults() {
+        // `animation` node with no children block → defaults
+        let config = parse("bar { animation }").unwrap();
+        assert_eq!(config.bar.animation.expand_ms, 280.0);
+        assert_eq!(config.bar.animation.collapse_ms, 200.0);
+    }
+
+    #[test]
+    fn parse_animation_negative_expand_ms_errors() {
+        let result = parse("bar { animation { expand-ms -1 } }");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("bar.animation.expand-ms"),
+            "error should contain 'bar.animation.expand-ms': {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "error should contain 'Expected:': {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_animation_negative_collapse_ms_errors() {
+        let result = parse("bar { animation { collapse-ms -1 } }");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("bar.animation.collapse-ms"),
+            "error should contain 'bar.animation.collapse-ms': {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "error should contain 'Expected:': {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_negative_collapsed_width_errors() {
+        let result = parse("bar { collapsed-width -5 }");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("bar.collapsed-width"),
+            "error should contain 'bar.collapsed-width': {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "error should contain 'Expected:': {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_negative_expanded_width_errors() {
+        let result = parse("bar { expanded-width -10 }");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("bar.expanded-width"),
+            "error should contain 'bar.expanded-width': {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "error should contain 'Expected:': {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_output_animation_expand_ms_override() {
+        let config = parse(r#"output "eDP-1" { animation { expand-ms 150 } }"#).unwrap();
+        let anim = config.outputs[0].animation.as_ref().unwrap();
+        assert_eq!(anim.expand_ms, 150.0);
+        assert_eq!(anim.collapse_ms, 200.0); // default for the other field
+    }
+
+    #[test]
+    fn parse_output_animation_collapse_ms_override() {
+        let config = parse(r#"output "DP-1" { animation { collapse-ms 80 } }"#).unwrap();
+        let anim = config.outputs[0].animation.as_ref().unwrap();
+        assert_eq!(anim.collapse_ms, 80.0);
+        assert_eq!(anim.expand_ms, 280.0); // default for the other field
+    }
+
+    #[test]
+    fn parse_output_animation_none_when_omitted() {
+        let config = parse(r#"output "eDP-1" { }"#).unwrap();
+        assert!(config.outputs[0].animation.is_none());
+    }
+
+    #[test]
+    fn effective_bar_uses_output_animation_override() {
+        let mut config = Config::default();
+        config.bar.animation.expand_ms = 280.0;
+        config.bar.animation.collapse_ms = 200.0;
+        config.outputs.push(OutputConfig {
+            name: "eDP-1".to_string(),
+            enabled: true,
+            collapsed_width: None,
+            expanded_width: None,
+            modules: None,
+            edge: None,
+            expand: None,
+            expand_trigger: None,
+            hover_delay: None,
+            expand_keybind: None,
+            animation: Some(AnimationConfig {
+                expand_ms: 150.0,
+                collapse_ms: 90.0,
+            }),
+        });
+
+        let effective = config.effective_bar_for("eDP-1");
+        assert_eq!(effective.animation.expand_ms, 150.0);
+        assert_eq!(effective.animation.collapse_ms, 90.0);
+
+        // Other output falls back to global
+        let global_effective = config.effective_bar_for("DP-1");
+        assert_eq!(global_effective.animation.expand_ms, 280.0);
+        assert_eq!(global_effective.animation.collapse_ms, 200.0);
     }
 }

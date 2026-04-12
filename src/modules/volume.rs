@@ -1,5 +1,5 @@
-use crate::theme;
 use crate::modules::view::{collapsed_icon, expanded_icon_label, horizontal_icon_label};
+use crate::theme;
 
 /// Runtime state for the volume module.
 #[derive(Debug, Clone, Default)]

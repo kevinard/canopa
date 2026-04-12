@@ -1,5 +1,5 @@
-use crate::theme;
 use crate::modules::view::{collapsed_icon, expanded_icon_label, horizontal_icon_label};
+use crate::theme;
 
 /// Connectivity level reported by the active backend.
 #[derive(Debug, Clone, Default, PartialEq)]

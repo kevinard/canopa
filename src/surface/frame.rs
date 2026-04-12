@@ -1,5 +1,5 @@
-use iced::widget::container;
 use iced::Element;
+use iced::widget::container;
 
 /// Wrap module content with the `ModuleFrame` visual treatment.
 ///
