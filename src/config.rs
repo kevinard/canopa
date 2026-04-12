@@ -439,6 +439,22 @@ mod tests {
         let config = parse::parse(defaults::DEFAULT_CONFIG).unwrap();
         assert_eq!(config.bar.collapsed_width, 48);
         assert_eq!(config.bar.expanded_width, 200);
+        // UX-DR18: zone assignments
+        assert_eq!(config.bar.modules.top, vec!["workspaces"]);
+        assert_eq!(config.bar.modules.center, vec!["focused-window"]);
+        assert_eq!(
+            config.bar.modules.bottom,
+            vec!["volume", "network", "battery", "clock"]
+        );
+        // All 6 default modules declared
+        assert_eq!(config.modules.len(), 6);
+        let names: Vec<&str> = config.modules.iter().map(|m| m.name.as_str()).collect();
+        assert!(names.contains(&"workspaces"));
+        assert!(names.contains(&"focused-window"));
+        assert!(names.contains(&"volume"));
+        assert!(names.contains(&"network"));
+        assert!(names.contains(&"battery"));
+        assert!(names.contains(&"clock"));
     }
 
     #[test]
