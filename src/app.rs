@@ -993,10 +993,33 @@ impl App {
                     .get(&module.id())
                     .cloned()
                     .unwrap_or_default();
-                // Filter workspace state to only show workspaces on this output.
+                // Filter state to be output-aware where required.
                 match raw {
                     ModuleState::Workspace(ref ws) => {
                         ModuleState::Workspace(ws.filtered_for_output(&surface.output_name))
+                    }
+                    ModuleState::FocusedWindow(ref fw) => {
+                        // AllScreens mode (output_name is ""): show global title unchanged.
+                        // Per-output mode: when the globally focused window is on a different
+                        // output, fall back to the active window on this output instead.
+                        let title = if surface.output_name.is_empty() {
+                            fw.title.clone()
+                        } else {
+                            match self.shared.niri.focused_window_id {
+                                None => fw.title.clone(),
+                                Some(_) => {
+                                    let fo = self.shared.niri.focused_output();
+                                    if fo.is_none() || fo == Some(surface.output_name.as_str()) {
+                                        fw.title.clone()
+                                    } else {
+                                        self.shared.niri.active_window_title_for_output(
+                                            &surface.output_name,
+                                        )
+                                    }
+                                }
+                            }
+                        };
+                        ModuleState::FocusedWindow(focused_window::FocusedWindowState { title })
                     }
                     other => other,
                 }
