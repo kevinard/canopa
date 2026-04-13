@@ -506,7 +506,7 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "tray".into(),
             module_type: "tray".into(),
-            params: ModuleParams::None,
+            params: ModuleParams::Tray(TrayConfig),
         }];
         assert!(validate(&config).is_ok());
     }

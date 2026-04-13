@@ -2,7 +2,7 @@ use kdl::KdlDocument;
 
 use super::{
     AnimationConfig, BarConfig, BarModules, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge,
-    ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, VolumeConfig,
+    ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, TrayConfig, VolumeConfig,
     WorkspaceLabelConfig, WorkspacesConfig,
 };
 
@@ -226,6 +226,8 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
             ModuleParams::Button(parse_button_params(node, i)?)
         } else if module_type == "workspaces" {
             ModuleParams::Workspaces(parse_workspaces_params(node, i)?)
+        } else if module_type == "tray" {
+            ModuleParams::Tray(TrayConfig)
         } else {
             ModuleParams::None
         };
