@@ -1,4 +1,6 @@
 pub mod networkmanager;
+pub mod sni_host;
+pub mod sni_watcher;
 pub mod upower;
 pub mod wireplumber;
 
