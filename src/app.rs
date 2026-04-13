@@ -293,7 +293,7 @@ impl App {
 
         // For each newly-seen output, collect the (bar_idx, output_name) pairs to spawn.
         // Using bar index avoids lifetime issues with borrowing config.bars at spawn time.
-        let to_spawn: Vec<(usize, String)> = workspaces
+        let mut to_spawn: Vec<(usize, String)> = workspaces
             .iter()
             .filter_map(|ws| ws.output.as_deref())
             .filter(|n| !n.is_empty())
@@ -315,42 +315,22 @@ impl App {
         // Horizontal bars must be registered before side bars so their exclusive zones are
         // established first.  The compositor then automatically constrains side bars to the
         // remaining work area, preventing overlap during expand.
-        let mut to_spawn = to_spawn;
-        to_spawn.sort_by(|(a_idx, a_out), (b_idx, b_out)| {
-            let a_is_side = !self.config.bars[*a_idx].edge.is_horizontal();
-            let b_is_side = !self.config.bars[*b_idx].edge.is_horizontal();
-            a_out.cmp(b_out).then(a_is_side.cmp(&b_is_side))
+        to_spawn.sort_by_key(|(idx, out)| {
+            let is_side = !self.config.bars[*idx].edge.is_horizontal();
+            (out.clone(), is_side)
         });
 
-        to_spawn
-            .into_iter()
-            .map(|(bar_idx, output_name)| {
-                let anchor = self.config.bars[bar_idx].edge.anchor();
-                let collapsed = self.config.bars[bar_idx].collapsed_width;
-                let is_horizontal = self.config.bars[bar_idx].edge.is_horizontal();
-                let bar_name = self.config.bars[bar_idx].name.clone();
-                let exclusive_zone = i32::try_from(collapsed).unwrap_or(48);
-                let size = if is_horizontal {
-                    Some((0, collapsed))
-                } else {
-                    Some((collapsed, 0))
-                };
-                let settings = NewLayerShellSettings {
-                    anchor,
-                    exclusive_zone: Some(exclusive_zone),
-                    size,
-                    output_option: OutputOption::OutputName(output_name.clone()),
-                    namespace: Some(Self::namespace()),
-                    ..Default::default()
-                };
-                let (id, task) = Message::layershell_open(settings);
-                self.pending_surface_keys
-                    .insert(id, (output_name.clone(), bar_name.clone()));
-                self.surfaces
-                    .insert(id, SurfaceState::new(output_name, bar_name));
-                task
-            })
-            .collect()
+        let mut tasks = Vec::with_capacity(to_spawn.len());
+        for (bar_idx, output_name) in to_spawn {
+            let task = Self::spawn_bar_on_output(
+                &self.config.bars[bar_idx],
+                &output_name,
+                &mut self.pending_surface_keys,
+                &mut self.surfaces,
+            );
+            tasks.push(task);
+        }
+        tasks
     }
 
     pub fn namespace() -> String {
