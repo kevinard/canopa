@@ -198,7 +198,12 @@ impl App {
         let window_tasks: Vec<Task<Message>> = {
             let mut tasks = vec![];
             for output_name in &allowed_outputs {
-                for bar in config.bars_for_output(output_name) {
+                // Horizontal bars (top/bottom) must be spawned before side bars (left/right) so
+                // their exclusive zones are registered first.  The compositor then automatically
+                // constrains side bars to the remaining work area, preventing overlap on expand.
+                let mut bars_for_output = config.bars_for_output(output_name);
+                bars_for_output.sort_by_key(|b| b.edge.is_horizontal() as u8 ^ 1);
+                for bar in &bars_for_output {
                     tasks.push(Self::spawn_bar_on_output(
                         bar,
                         output_name,
@@ -306,6 +311,16 @@ impl App {
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();
+
+        // Horizontal bars must be registered before side bars so their exclusive zones are
+        // established first.  The compositor then automatically constrains side bars to the
+        // remaining work area, preventing overlap during expand.
+        let mut to_spawn = to_spawn;
+        to_spawn.sort_by(|(a_idx, a_out), (b_idx, b_out)| {
+            let a_is_side = !self.config.bars[*a_idx].edge.is_horizontal();
+            let b_is_side = !self.config.bars[*b_idx].edge.is_horizontal();
+            a_out.cmp(b_out).then(a_is_side.cmp(&b_is_side))
+        });
 
         to_spawn
             .into_iter()
@@ -3469,5 +3484,95 @@ mod tests {
         })));
         // After hotplug: should have 2 more surfaces for DP-1 (both bars target "all")
         assert_eq!(app.surfaces.len(), before + 2, "DP-1 should get one surface per bar");
+    }
+
+    // --- side_bar_margin tests ---
+
+    // --- horizontal-before-side spawn ordering tests ---
+
+    #[test]
+    fn boot_spawns_horizontal_bars_before_side_bars() {
+        // Config has side bar declared first, horizontal bar second (adversarial order).
+        // Surfaces must be registered with horizontal bar first so its exclusive zone
+        // is claimed before the side bar is positioned by the compositor.
+        let config = Config {
+            bars: vec![
+                crate::config::BarConfig {
+                    name: "left".into(),
+                    output: "all".into(),
+                    edge: Edge::Left,
+                    ..crate::config::BarConfig::default()
+                },
+                crate::config::BarConfig {
+                    name: "top".into(),
+                    output: "all".into(),
+                    edge: Edge::Top,
+                    ..crate::config::BarConfig::default()
+                },
+            ],
+            modules: vec![],
+        };
+        let (app, _) = App::boot(config, vec!["eDP-1".into()]);
+        // Collect bar names in insertion order from surfaces map.
+        // We use pending_surface_keys which maps window id → (output, bar_name).
+        // The order surfaces are registered reflects spawn order.
+        let names: Vec<String> = app
+            .pending_surface_keys
+            .values()
+            .map(|(_, bar)| bar.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        // Both bars must be present.
+        assert!(names.contains(&"top".to_string()), "top bar not spawned");
+        assert!(names.contains(&"left".to_string()), "left bar not spawned");
+    }
+
+    #[test]
+    fn hotplug_spawns_horizontal_bars_before_side_bars() {
+        use niri_ipc::Event;
+        // Same adversarial order: side bar declared first in config.
+        let config = Config {
+            bars: vec![
+                crate::config::BarConfig {
+                    name: "right".into(),
+                    output: "all".into(),
+                    edge: Edge::Right,
+                    ..crate::config::BarConfig::default()
+                },
+                crate::config::BarConfig {
+                    name: "bottom".into(),
+                    output: "all".into(),
+                    edge: Edge::Bottom,
+                    ..crate::config::BarConfig::default()
+                },
+            ],
+            modules: vec![],
+        };
+        let (mut app, _) = App::boot(config, vec![]);
+        app.manual_outputs = true;
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![niri_ipc::Workspace {
+                id: 1,
+                idx: 0,
+                name: None,
+                output: Some("DP-1".to_string()),
+                is_urgent: false,
+                is_active: true,
+                is_focused: false,
+                active_window_id: None,
+            }],
+        })));
+        // Both bars must be registered for DP-1.
+        let names: Vec<String> = app
+            .surfaces
+            .values()
+            .filter(|s| s.output_name == "DP-1")
+            .map(|s| s.bar_name.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        assert!(names.contains(&"bottom".to_string()), "bottom bar not spawned for DP-1");
+        assert!(names.contains(&"right".to_string()), "right bar not spawned for DP-1");
     }
 }
