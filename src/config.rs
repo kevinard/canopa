@@ -15,6 +15,7 @@ const KNOWN_MODULE_TYPES: &[&str] = &[
     "focused-window",
     "script",
     "button",
+    "tray",
 ];
 
 /// Format strings for the clock module (AC: #4, #5).
@@ -83,6 +84,10 @@ impl Default for BatteryConfig {
 #[derive(Debug, Clone, Default)]
 pub struct NetworkConfig;
 
+/// Configuration for the tray module.
+#[derive(Debug, Clone, Default)]
+pub struct TrayConfig;
+
 /// Configuration for the volume module — scroll step in percent.
 #[derive(Debug, Clone)]
 pub struct VolumeConfig {
@@ -107,6 +112,7 @@ pub enum ModuleParams {
     Script(ScriptConfig),
     Button(ButtonConfig),
     Workspaces(WorkspacesConfig),
+    Tray(TrayConfig),
 }
 
 /// A single module entry from the config, specifying name, type, and module params.
@@ -372,7 +378,7 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
         if !KNOWN_MODULE_TYPES.contains(&mc.module_type.as_str()) {
             anyhow::bail!(
                 "modules[{i}].type: unknown module type {:?}. \
-                 Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button.",
+                 Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray.",
                 mc.module_type
             );
         }
@@ -489,6 +495,17 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
+            params: ModuleParams::None,
+        }];
+        assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn validate_tray_module_type_passes() {
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "tray".into(),
+            module_type: "tray".into(),
             params: ModuleParams::None,
         }];
         assert!(validate(&config).is_ok());

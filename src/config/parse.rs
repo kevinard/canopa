@@ -206,7 +206,7 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
                     anyhow::anyhow!(
                         "modules[{i}] \"{name}\": name is not a known module type. \
                          Add a `type \"<module type>\"` child to specify the type. \
-                         Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button."
+                         Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray."
                     )
                 })?
                 .to_string()
