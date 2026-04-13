@@ -1073,17 +1073,25 @@ impl App {
                     ModuleState::FocusedWindow(ref fw) => {
                         // AllScreens mode (output_name is ""): show global title unchanged.
                         // Per-output mode: when the globally focused window is on a different
-                        // output, fall back to the active window on this output instead.
+                        // output, show nothing rather than leaking another output's title.
                         let title = if surface.output_name.is_empty() {
                             fw.title.clone()
                         } else {
                             match self.shared.niri.focused_window_id {
-                                None => fw.title.clone(),
+                                // No window focused (bar hover or empty workspace/output).
+                                // Use the active window on this output's workspace so the title
+                                // is correct on bar hover, and blank when the output is empty.
+                                None => self
+                                    .shared
+                                    .niri
+                                    .active_window_title_for_output(&surface.output_name),
                                 Some(_) => {
                                     let fo = self.shared.niri.focused_output();
                                     if fo.is_none() || fo == Some(surface.output_name.as_str()) {
                                         fw.title.clone()
                                     } else {
+                                        // Focused window is on a different output — show the
+                                        // active window on this output's workspace instead.
                                         self.shared
                                             .niri
                                             .active_window_title_for_output(&surface.output_name)
