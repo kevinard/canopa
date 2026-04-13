@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 use zbus::{interface, object_server::SignalEmitter};
 
 #[allow(dead_code)]
+#[derive(Default)]
 pub struct StatusNotifierWatcher {
     pub items: Arc<Mutex<Vec<String>>>,
     pub hosts: Arc<Mutex<Vec<String>>>,
@@ -12,10 +13,7 @@ pub struct StatusNotifierWatcher {
 impl StatusNotifierWatcher {
     #[allow(dead_code)]
     pub fn new() -> Self {
-        StatusNotifierWatcher {
-            items: Arc::new(Mutex::new(Vec::new())),
-            hosts: Arc::new(Mutex::new(Vec::new())),
-        }
+        StatusNotifierWatcher::default()
     }
 }
 
@@ -24,10 +22,14 @@ impl StatusNotifierWatcher {
     async fn register_status_notifier_item(
         &self,
         service: &str,
+        #[zbus(header)] header: zbus::message::Header<'_>,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
         let full = if service.starts_with('/') {
-            service.split('/').next().unwrap_or(service).to_string()
+            let sender = header
+                .sender()
+                .ok_or_else(|| zbus::fdo::Error::InvalidArgs("no sender".into()))?;
+            format!("{}{}", sender, service)
         } else {
             service.to_string()
         };
@@ -48,11 +50,8 @@ impl StatusNotifierWatcher {
         let mut hosts = self.hosts.lock().await;
         if !hosts.contains(&service.to_string()) {
             hosts.push(service.to_string());
-            let is_first = hosts.len() == 1;
             drop(hosts);
-            if is_first {
-                Self::status_notifier_host_registered(&emitter).await?;
-            }
+            Self::status_notifier_host_registered(&emitter).await?;
         }
         Ok(())
     }
@@ -73,13 +72,13 @@ impl StatusNotifierWatcher {
     async fn status_notifier_host_registered(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(property)]
-    fn registered_status_notifier_items(&self) -> Vec<String> {
-        self.items.blocking_lock().clone()
+    async fn registered_status_notifier_items(&self) -> Vec<String> {
+        self.items.lock().await.clone()
     }
 
     #[zbus(property)]
-    fn is_status_notifier_host_registered(&self) -> bool {
-        !self.hosts.blocking_lock().is_empty()
+    async fn is_status_notifier_host_registered(&self) -> bool {
+        !self.hosts.lock().await.is_empty()
     }
 
     #[zbus(property)]
@@ -109,7 +108,13 @@ pub async fn start_watcher(
     match conn.request_name("org.kde.StatusNotifierWatcher").await {
         Ok(()) => Ok(Some(items)),
         Err(zbus::Error::NameTaken) => Ok(None),
-        Err(e) => Err(e),
+        Err(e) => {
+            let _ = conn
+                .object_server()
+                .remove::<StatusNotifierWatcher, _>("/StatusNotifierWatcher")
+                .await;
+            Err(e)
+        }
     }
 }
 
