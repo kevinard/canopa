@@ -82,6 +82,9 @@ fn keyboard_handler(
     match event {
         Event::Window(window::Event::Focused) => Some(Message::BarFocusGained(window)),
         Event::Window(window::Event::Unfocused) => Some(Message::BarFocusLost(window)),
+        Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+            Some(Message::CursorMoved(window, position))
+        }
         Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
             // Expand keybind check takes priority over navigation bindings.
             // ToggleExpand is global (IPC design) — no per-surface window ID needed.

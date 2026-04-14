@@ -85,6 +85,22 @@ pub struct App {
             crate::surface::menu_popup::MenuTree,
         )>,
     >,
+    /// Active popup windows: window_id -> (service, menu_path, tree, bar_name).
+    /// bar_name lets view() look up the bar edge for positioning the menu widget.
+    pub menu_popups: HashMap<
+        iced::window::Id,
+        (
+            String,
+            zbus::zvariant::OwnedObjectPath,
+            crate::surface::menu_popup::MenuTree,
+            String,
+        ),
+    >,
+    /// Currently hovered menu item per popup window: window_id -> item_id string.
+    pub menu_popup_hovered: HashMap<iced::window::Id, String>,
+    /// Last known cursor position and the window it occurred in.
+    /// `None` until the first CursorMoved event. Used to anchor the tray menu popup.
+    pub last_cursor: Option<(iced::window::Id, iced::Point)>,
 }
 
 #[to_layer_message(multi)]
@@ -178,6 +194,24 @@ pub enum Message {
     /// The menu popup was dismissed without a selection.
     #[allow(dead_code)]
     MenuClosed,
+    /// Pointer entered a menu item row in the popup.
+    #[allow(dead_code)]
+    MenuItemHoverEnter {
+        window: iced::window::Id,
+        item_id: String,
+    },
+    /// Pointer left a menu item row in the popup.
+    #[allow(dead_code)]
+    MenuItemHoverExit(iced::window::Id),
+    /// Menu data fetched successfully -- spawn the popup surface.
+    #[allow(dead_code)]
+    OpenMenu {
+        service: String,
+        menu_path: zbus::zvariant::OwnedObjectPath,
+        tree: crate::surface::menu_popup::MenuTree,
+    },
+    /// Cursor moved within a bar surface window. Used to track anchor position for menu popups.
+    CursorMoved(iced::window::Id, iced::Point),
 }
 
 /// Return default params for a module type name, or `None` if the type requires mandatory
@@ -190,6 +224,7 @@ fn default_params_for_type(module_type: &str) -> Option<ModuleParams> {
         "volume" => Some(ModuleParams::Volume(VolumeConfig::default())),
         "workspaces" => Some(ModuleParams::Workspaces(WorkspacesConfig::default())),
         "focused-window" => Some(ModuleParams::None),
+        "tray" => Some(ModuleParams::Tray(crate::config::TrayConfig)),
         _ => None,
     }
 }
@@ -285,6 +320,9 @@ impl App {
             manual_outputs,
             menu_tx,
             menu_rx,
+            menu_popups: HashMap::new(),
+            menu_popup_hovered: HashMap::new(),
+            last_cursor: None,
         };
         (app, Task::batch(window_tasks))
     }
@@ -416,6 +454,10 @@ impl App {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::CursorMoved(window, pos) => {
+                self.last_cursor = Some((window, pos));
+                Task::none()
+            }
             Message::ModuleHoverEnter(id, window) => {
                 self.surface_mut(window).hovered_module = Some(id);
                 Task::none()
@@ -462,6 +504,10 @@ impl App {
                 Task::none()
             }
             Message::BarClick(window) => {
+                // Dismiss any open popup menus before processing the bar click.
+                if !self.menu_popups.is_empty() {
+                    return Task::done(Message::MenuClosed);
+                }
                 let bar_name = self
                     .surface(window)
                     .map(|s| s.bar_name.clone())
@@ -1059,9 +1105,136 @@ impl App {
                 });
                 Task::none()
             }
-            Message::TrayMenuRequest { .. }
-            | Message::MenuItemSelected { .. }
-            | Message::MenuClosed => Task::none(),
+            Message::TrayMenuRequest { service, menu_path } => {
+                let conn = self.shared.dbus.session.clone();
+                if let (Some(conn), Some(menu_path)) = (conn, menu_path) {
+                    let service_clone = service.clone();
+                    let menu_path_clone = menu_path.clone();
+                    // Capture the cursor position at the moment of right-click.
+                    // For vertical bars: window-local y == screen y; x is within bar width.
+                    // For horizontal bars: window-local x == screen x; y is within bar height.
+                    let cursor_pos = self.last_cursor.map(|(_, p)| p).unwrap_or(iced::Point::ORIGIN);
+                    let anchor_x = cursor_pos.x as i32;
+                    let anchor_y = cursor_pos.y as i32;
+                    return Task::perform(
+                        async move {
+                            crate::dbus::sni_host::fetch_menu(
+                                &conn,
+                                &service_clone,
+                                &menu_path_clone,
+                            )
+                            .await
+                        },
+                        move |tree_opt| {
+                            if let Some(mut tree) = tree_opt {
+                                tree.anchor = (anchor_x, anchor_y);
+                                Message::OpenMenu {
+                                    service: service.clone(),
+                                    menu_path: menu_path.clone(),
+                                    tree,
+                                }
+                            } else {
+                                // Menu fetch failed -- fall back to Activate.
+                                Message::TrayActivate {
+                                    service: service.clone(),
+                                }
+                            }
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::OpenMenu {
+                service,
+                menu_path,
+                tree,
+            } => {
+                // Close any existing popup first.
+                let existing_ids: Vec<iced::window::Id> =
+                    self.menu_popups.keys().copied().collect();
+                let mut tasks: Vec<Task<Message>> = existing_ids
+                    .into_iter()
+                    .map(|id| {
+                        self.menu_popups.remove(&id);
+                        Task::done(Message::RemoveWindow(id))
+                    })
+                    .collect();
+
+                // Full-screen overlay: covers the entire output so clicks on the transparent
+                // area outside the menu widget trigger MenuClosed. The bar background is now
+                // drawn by a container widget (style() returns transparent).
+                let bar_name = self
+                    .last_cursor
+                    .and_then(|(w, _)| self.surfaces.get(&w))
+                    .map(|s| s.bar_name.clone())
+                    .unwrap_or_default();
+                let settings = iced_layershell::reexport::NewLayerShellSettings {
+                    anchor: iced_layershell::reexport::Anchor::Left
+                        | iced_layershell::reexport::Anchor::Right
+                        | iced_layershell::reexport::Anchor::Top
+                        | iced_layershell::reexport::Anchor::Bottom,
+                    exclusive_zone: Some(-1),
+                    size: Some((0, 0)),
+                    layer: iced_layershell::reexport::Layer::Overlay,
+                    keyboard_interactivity:
+                        iced_layershell::reexport::KeyboardInteractivity::OnDemand,
+                    ..Default::default()
+                };
+                let (popup_id, open_task) = Message::layershell_open(settings);
+                self.menu_popups.insert(popup_id, (service, menu_path, tree, bar_name));
+                tasks.push(open_task);
+                Task::batch(tasks)
+            }
+            Message::MenuItemSelected {
+                service,
+                menu_item_id,
+                menu_path,
+            } => {
+                let conn = self.shared.dbus.session.clone();
+                tokio::task::spawn(async move {
+                    if let Some(conn) = conn {
+                        let _ = crate::dbus::sni_host::send_menu_event(
+                            &conn,
+                            &service,
+                            &menu_path,
+                            menu_item_id,
+                            "clicked",
+                        )
+                        .await;
+                    }
+                });
+                // Close all popups.
+                let ids: Vec<iced::window::Id> = self.menu_popups.keys().copied().collect();
+                let tasks: Vec<Task<Message>> = ids
+                    .into_iter()
+                    .map(|id| {
+                        self.menu_popups.remove(&id);
+                        self.menu_popup_hovered.remove(&id);
+                        Task::done(Message::RemoveWindow(id))
+                    })
+                    .collect();
+                Task::batch(tasks)
+            }
+            Message::MenuClosed => {
+                let ids: Vec<iced::window::Id> = self.menu_popups.keys().copied().collect();
+                let tasks: Vec<Task<Message>> = ids
+                    .into_iter()
+                    .map(|id| {
+                        self.menu_popups.remove(&id);
+                        self.menu_popup_hovered.remove(&id);
+                        Task::done(Message::RemoveWindow(id))
+                    })
+                    .collect();
+                Task::batch(tasks)
+            }
+            Message::MenuItemHoverEnter { window, item_id } => {
+                self.menu_popup_hovered.insert(window, item_id);
+                Task::none()
+            }
+            Message::MenuItemHoverExit(window) => {
+                self.menu_popup_hovered.remove(&window);
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -1165,6 +1338,59 @@ impl App {
     }
 
     pub fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
+        // Popup window -- full-screen transparent overlay; menu widget positioned inside.
+        if let Some((service, menu_path, tree, bar_name)) = self.menu_popups.get(&window) {
+            use crate::surface::menu_popup::view_menu_popup;
+            let hovered_item = self.menu_popup_hovered.get(&window).map(|s| s.as_str());
+            let menu = view_menu_popup(tree, service.as_str(), menu_path, window, hovered_item);
+
+            let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
+            let bar_size = bar.collapsed_width as f32;
+            let cursor_x = tree.anchor.0 as f32;
+            let cursor_y = tree.anchor.1 as f32;
+
+            let (h_align, v_align, padding) = match &bar.edge {
+                crate::config::Edge::Left => (
+                    iced::alignment::Horizontal::Left,
+                    iced::alignment::Vertical::Top,
+                    iced::Padding { top: cursor_y, left: bar_size, ..Default::default() },
+                ),
+                crate::config::Edge::Right => (
+                    iced::alignment::Horizontal::Right,
+                    iced::alignment::Vertical::Top,
+                    iced::Padding { top: cursor_y, right: bar_size, ..Default::default() },
+                ),
+                crate::config::Edge::Top => (
+                    iced::alignment::Horizontal::Left,
+                    iced::alignment::Vertical::Top,
+                    iced::Padding { top: bar_size, left: cursor_x, ..Default::default() },
+                ),
+                crate::config::Edge::Bottom => (
+                    iced::alignment::Horizontal::Left,
+                    iced::alignment::Vertical::Bottom,
+                    iced::Padding { bottom: bar_size, left: cursor_x, ..Default::default() },
+                ),
+            };
+
+            // Pin the menu to its computed size so Fill items inside don't expand to
+            // screen width, and so the outer Fill container doesn't collapse it.
+            let (popup_w, popup_h) = crate::surface::menu_popup::popup_size(tree);
+            let menu_sized = iced::widget::container(menu)
+                .width(popup_w)
+                .height(popup_h);
+
+            return iced::widget::mouse_area(
+                iced::widget::container(menu_sized)
+                    .width(iced::Length::Fill)
+                    .height(iced::Length::Fill)
+                    .align_x(h_align)
+                    .align_y(v_align)
+                    .padding(padding),
+            )
+            .on_press(Message::MenuClosed)
+            .into();
+        }
+
         let surface = self.surface(window).cloned().unwrap_or_default();
         // Look up bar by name; falls back to first bar for AllScreens mode (bar_name is "").
         let bar = Self::bar_for_surface_name(&self.config.bars, &surface.bar_name);
@@ -1345,9 +1571,19 @@ impl App {
                 .into(),
         };
 
+        // The window background is transparent (style() returns Color::TRANSPARENT) so the
+        // popup overlay works. The bar draws its own background via this container.
+        let bar_with_bg = iced::widget::container(bar_content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(crate::theme::BASE)),
+                ..Default::default()
+            });
+
         // Wrap entire bar in mouse_area for click-to-toggle and hover detection.
         // Note: clicking a module fires both ModuleClick(id) AND BarClick (outer area).
-        mouse_area(bar_content)
+        mouse_area(bar_with_bg)
             .on_press(Message::BarClick(window))
             .on_enter(Message::BarHoverEnter(window))
             .on_exit(Message::BarHoverExit(window))
@@ -1356,7 +1592,9 @@ impl App {
 
     pub fn style(&self, _theme: &iced::Theme) -> iced::theme::Style {
         iced::theme::Style {
-            background_color: crate::theme::BASE,
+            // Transparent so full-screen popup overlays show correctly; bar draws its
+            // own background via a container widget in view_bar().
+            background_color: iced::Color::TRANSPARENT,
             text_color: crate::theme::TEXT,
         }
     }
@@ -3738,5 +3976,65 @@ mod tests {
         };
         // Must not panic.
         app.update(Message::TrayUpdated(vec![item]));
+    }
+
+    // --- Menu item hover tests ---
+
+    fn make_popup_wid(app: &mut App) -> iced::window::Id {
+        use crate::surface::menu_popup::{MenuTree, MenuItem};
+        let wid = test_wid();
+        let tree = MenuTree {
+            items: vec![MenuItem {
+                id: "1".into(),
+                label: "Open".into(),
+                enabled: true,
+                visible: true,
+                icon_name: None,
+                children: vec![],
+                is_separator: false,
+            }],
+            anchor: (0, 0),
+        };
+        let path = zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap();
+        app.menu_popups.insert(wid, ("org.test".into(), path, tree, String::new()));
+        wid
+    }
+
+    #[test]
+    fn menu_item_hover_enter_sets_hovered_item() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid = make_popup_wid(&mut app);
+        let _ = app.update(Message::MenuItemHoverEnter { window: wid, item_id: "1".into() });
+        assert_eq!(app.menu_popup_hovered.get(&wid).map(|s| s.as_str()), Some("1"));
+    }
+
+    #[test]
+    fn menu_item_hover_exit_clears_hovered_item() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid = make_popup_wid(&mut app);
+        let _ = app.update(Message::MenuItemHoverEnter { window: wid, item_id: "1".into() });
+        let _ = app.update(Message::MenuItemHoverExit(wid));
+        assert!(app.menu_popup_hovered.get(&wid).is_none());
+    }
+
+    #[test]
+    fn menu_item_hover_enter_different_popups_are_independent() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid_a = make_popup_wid(&mut app);
+        let wid_b = make_popup_wid(&mut app);
+        let _ = app.update(Message::MenuItemHoverEnter { window: wid_a, item_id: "1".into() });
+        // wid_b should have no hovered item
+        assert!(app.menu_popup_hovered.get(&wid_b).is_none());
+    }
+
+    #[test]
+    fn menu_item_hover_enter_on_second_item_replaces_first_without_exit() {
+        // Moving from item A directly to item B must not require an explicit exit from A.
+        // The on_enter for B alone should update the hovered item.
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid = make_popup_wid(&mut app);
+        let _ = app.update(Message::MenuItemHoverEnter { window: wid, item_id: "1".into() });
+        let _ = app.update(Message::MenuItemHoverEnter { window: wid, item_id: "2".into() });
+        assert_eq!(app.menu_popup_hovered.get(&wid).map(|s| s.as_str()), Some("2"));
     }
 }

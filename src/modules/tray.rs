@@ -19,21 +19,56 @@ impl TrayModule {
         TrayModule { id, edge }
     }
 
-    /// Resolve a file path for a named icon by checking common XDG icon theme paths.
+    /// Resolve a file path for a named icon by searching XDG icon theme directories.
     ///
-    /// Checks hicolor at 22px and 16px, then pixmaps. Returns `None` if not found.
+    /// Checks hicolor at multiple sizes (preferring sizes closest to 22px), then pixmaps.
+    /// Searches both system and user icon directories. Returns `None` if not found.
     fn resolve_icon_path(name: &str) -> Option<std::path::PathBuf> {
-        let candidates = [
-            format!("/usr/share/icons/hicolor/22x22/apps/{name}.png"),
-            format!("/usr/share/icons/hicolor/16x16/apps/{name}.png"),
-            format!("/usr/share/icons/hicolor/scalable/apps/{name}.svg"),
-            format!("/usr/share/pixmaps/{name}.png"),
-            format!("/usr/share/pixmaps/{name}.xpm"),
+        // Base directories to search, in priority order.
+        let home = std::env::var("HOME").unwrap_or_default();
+        let xdg_data_home =
+            std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{home}/.local/share"));
+        let xdg_data_dirs = std::env::var("XDG_DATA_DIRS")
+            .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string());
+
+        let mut data_dirs: Vec<String> = vec![xdg_data_home];
+        data_dirs.extend(xdg_data_dirs.split(':').map(|s| s.to_string()));
+
+        // Sizes to probe, ordered closest-to-22 first.
+        let sizes = [
+            "22x22", "24x24", "16x16", "32x32", "48x48", "64x64", "128x128", "256x256",
         ];
-        candidates
-            .into_iter()
-            .map(std::path::PathBuf::from)
-            .find(|p| p.exists())
+        let exts = ["png", "svg", "xpm"];
+
+        for base in &data_dirs {
+            // Scalable first (SVG scales perfectly).
+            let svg =
+                std::path::PathBuf::from(format!("{base}/icons/hicolor/scalable/apps/{name}.svg"));
+            if svg.exists() {
+                return Some(svg);
+            }
+            // Fixed-size rasters.
+            for size in &sizes {
+                for ext in &exts {
+                    let p = std::path::PathBuf::from(format!(
+                        "{base}/icons/hicolor/{size}/apps/{name}.{ext}"
+                    ));
+                    if p.exists() {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+
+        // Pixmap fallback.
+        for ext in &["png", "svg", "xpm"] {
+            let p = std::path::PathBuf::from(format!("/usr/share/pixmaps/{name}.{ext}"));
+            if p.exists() {
+                return Some(p);
+            }
+        }
+
+        None
     }
 
     /// Build an iced widget for one tray item icon.
@@ -75,8 +110,7 @@ impl TrayModule {
                     crate::dbus::sni_host::pick_best_pixmap(pixmaps, ICON_SIZE as i32)
                 {
                     let rgba = crate::dbus::sni_host::argb_to_rgba(argb);
-                    let handle =
-                        iced::widget::image::Handle::from_rgba(*w as u32, *h as u32, rgba);
+                    let handle = iced::widget::image::Handle::from_rgba(*w as u32, *h as u32, rgba);
                     iced::widget::image(handle)
                         .width(ICON_SIZE as u32)
                         .height(ICON_SIZE as u32)
@@ -89,19 +123,14 @@ impl TrayModule {
 
         // NeedsAttention: overlay a small accent dot.
         if item.status == ItemStatus::NeedsAttention {
-            let dot =
-                iced::widget::container(
-                    iced::widget::Space::new().width(6u32).height(6u32),
-                )
-                .style(|_| {
-                    iced::widget::container::Style {
-                        background: Some(iced::Background::Color(crate::theme::ACCENT)),
-                        border: iced::Border {
-                            radius: iced::border::Radius::from(3.0),
-                            ..Default::default()
-                        },
+            let dot = iced::widget::container(iced::widget::Space::new().width(6u32).height(6u32))
+                .style(|_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(crate::theme::ACCENT)),
+                    border: iced::Border {
+                        radius: iced::border::Radius::from(3.0),
                         ..Default::default()
-                    }
+                    },
+                    ..Default::default()
                 });
             iced::widget::stack![icon_element, dot].into()
         } else {

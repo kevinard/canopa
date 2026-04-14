@@ -272,33 +272,45 @@ trait DbusMenu {
 type Props = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
 
 /// Extract the `label` string from a DBusMenu item's property map.
+///
+/// Dict values in `a{sv}` are D-Bus variants, so each OwnedValue wraps
+/// `Value::Value(Box<inner>)`. `downcast_ref` unwraps that layer before casting.
 pub fn extract_label_from_props(props: &Props) -> String {
     props
         .get("label")
-        .and_then(|v| <&str>::try_from(v).ok())
-        .unwrap_or("")
-        .to_string()
+        .and_then(|ov| (&**ov).downcast_ref::<String>().ok())
+        .unwrap_or_default()
 }
 
 fn prop_bool(props: &Props, key: &str, default: bool) -> bool {
     props
         .get(key)
-        .and_then(|v| bool::try_from(v).ok())
+        .and_then(|ov| (&**ov).downcast_ref::<bool>().ok())
         .unwrap_or(default)
 }
 
-fn prop_str<'a>(props: &'a Props, key: &str) -> &'a str {
+fn prop_str(props: &Props, key: &str) -> String {
     props
         .get(key)
-        .and_then(|v| <&str>::try_from(v).ok())
-        .unwrap_or("")
+        .and_then(|ov| (&**ov).downcast_ref::<String>().ok())
+        .unwrap_or_default()
 }
 
 /// Convert one `OwnedValue` (which should be a Structure) to a `MenuItem`.
 ///
+/// DBusMenu `GetLayout` returns children as `av` (array of variants). Each element
+/// is `Value::Value(Box<Value::Structure(...)>)`. We unwrap the variant layer before
+/// casting to Structure. If the value is already a Structure (no variant wrapper),
+/// the direct cast is used instead.
+///
 /// Returns `None` if the value is not the expected DBusMenu item structure.
 fn owned_value_to_menu_item(v: &zbus::zvariant::OwnedValue) -> Option<crate::surface::menu_popup::MenuItem> {
-    let s = <&zbus::zvariant::Structure<'_>>::try_from(v).ok()?;
+    use zbus::zvariant::Value;
+    // OwnedValue derefs to Value<'static>. Unwrap variant wrapper if present.
+    let s: &zbus::zvariant::Structure<'_> = match &**v {
+        Value::Value(inner) => <&zbus::zvariant::Structure<'_>>::try_from(inner.as_ref()).ok()?,
+        _ => <&zbus::zvariant::Structure<'_>>::try_from(v).ok()?,
+    };
     let fields = s.fields();
     if fields.len() < 2 {
         return None;
@@ -331,7 +343,7 @@ fn owned_value_to_menu_item(v: &zbus::zvariant::OwnedValue) -> Option<crate::sur
     let visible = prop_bool(&props, "visible", true);
     let icon_name = {
         let s = prop_str(&props, "icon-name");
-        if s.is_empty() { None } else { Some(s.to_string()) }
+        if s.is_empty() { None } else { Some(s) }
     };
 
     Some(crate::surface::menu_popup::MenuItem {
@@ -455,6 +467,22 @@ pub fn sni_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app
     })
 }
 
+/// Parse a registered service string into (service, object_path).
+///
+/// The SNI watcher stores items as either:
+/// - A well-known name: `"org.kde.konsole"` → service=`"org.kde.konsole"`, path=`"/StatusNotifierItem"`
+/// - A unique name + path: `":1.42/StatusNotifierItem"` → service=`":1.42"`, path=`"/StatusNotifierItem"`
+fn parse_service_string(s: &str) -> (&str, &str) {
+    // Find the first '/' that is not at position 0 (unique names start with ':').
+    // Well-known names contain only dots and alphanumerics, no slashes.
+    if let Some(slash_pos) = s[1..].find('/') {
+        let slash_pos = slash_pos + 1; // adjust for the skipped leading char
+        (&s[..slash_pos], &s[slash_pos..])
+    } else {
+        (s, "/StatusNotifierItem")
+    }
+}
+
 /// Drives the SNI watcher and host.
 ///
 /// 1. Starts the watcher (or falls back to connecting to an existing one).
@@ -511,10 +539,12 @@ async fn run_sni_task(
         .await
         .unwrap_or_default();
     let mut items: HashMap<String, TrayItem> = HashMap::new();
-    for service in initial_services {
-        let path = zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
-        if let Some(item) = fetch_item(&conn, &service, &path).await {
-            items.insert(service, item);
+    for service_str in initial_services {
+        let (svc, path_str) = parse_service_string(&service_str);
+        if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str) {
+            if let Some(item) = fetch_item(&conn, svc, &path).await {
+                items.insert(service_str, item);
+            }
         }
     }
     let snapshot: Vec<TrayItem> = items.values().cloned().collect();
@@ -527,12 +557,14 @@ async fn run_sni_task(
         tokio::select! {
             Some(signal) = item_registered.next() => {
                 if let Ok(args) = signal.args() {
-                    let service = args.service.to_string();
-                    let path = zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
-                    if let Some(item) = fetch_item(&conn, &service, &path).await {
-                        items.insert(service, item);
-                        let snapshot: Vec<TrayItem> = items.values().cloned().collect();
-                        if tx.send(snapshot).is_err() { break; }
+                    let service_str = args.service.to_string();
+                    let (svc, path_str) = parse_service_string(&service_str);
+                    if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str) {
+                        if let Some(item) = fetch_item(&conn, svc, &path).await {
+                            items.insert(service_str, item);
+                            let snapshot: Vec<TrayItem> = items.values().cloned().collect();
+                            if tx.send(snapshot).is_err() { break; }
+                        }
                     }
                 }
             }
@@ -615,6 +647,27 @@ mod tests {
     #[test]
     fn item_status_from_str_passive() {
         assert_eq!(ItemStatus::from_str("Passive"), ItemStatus::Passive);
+    }
+
+    #[test]
+    fn parse_service_string_well_known_name() {
+        let (svc, path) = parse_service_string("org.kde.konsole");
+        assert_eq!(svc, "org.kde.konsole");
+        assert_eq!(path, "/StatusNotifierItem");
+    }
+
+    #[test]
+    fn parse_service_string_unique_name_with_path() {
+        let (svc, path) = parse_service_string(":1.42/StatusNotifierItem");
+        assert_eq!(svc, ":1.42");
+        assert_eq!(path, "/StatusNotifierItem");
+    }
+
+    #[test]
+    fn parse_service_string_unique_name_custom_path() {
+        let (svc, path) = parse_service_string(":1.99/org/kde/tray");
+        assert_eq!(svc, ":1.99");
+        assert_eq!(path, "/org/kde/tray");
     }
 
     #[test]
