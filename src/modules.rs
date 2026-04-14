@@ -4,6 +4,7 @@ pub mod clock;
 pub mod focused_window;
 pub mod network;
 pub mod script;
+pub mod tray;
 pub mod view;
 pub mod volume;
 pub mod workspaces;
@@ -49,6 +50,7 @@ pub enum ModuleState {
     Button(button::ButtonState),
     Workspace(workspaces::WorkspaceState),
     FocusedWindow(focused_window::FocusedWindowState),
+    Tray(tray::TrayState),
 }
 
 /// Module data events routed through the Iced message bus.
@@ -113,6 +115,7 @@ pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     map.insert("script", script_ctor as ModuleConstructor);
     map.insert("workspaces", workspaces_ctor as ModuleConstructor);
     map.insert("focused-window", focused_window_ctor as ModuleConstructor);
+    map.insert("tray", tray_ctor as ModuleConstructor);
     map
 }
 
@@ -200,6 +203,13 @@ fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
     )))
 }
 
+fn tray_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+    Box::new(tray::TrayModule::new(
+        ModuleId::new(&mc.name),
+        crate::config::Edge::Left,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,6 +258,12 @@ mod tests {
     fn build_registry_contains_focused_window() {
         let registry = build_registry();
         assert!(registry.contains_key("focused-window"));
+    }
+
+    #[test]
+    fn build_registry_contains_tray() {
+        let registry = build_registry();
+        assert!(registry.contains_key("tray"));
     }
 
     #[test]

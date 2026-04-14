@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 iced_layershell = "0.17.1"
-iced = { version = "0.14", features = ["tokio"] }
+iced = { version = "0.14", features = ["image", "svg", "tokio"] }
 zbus = "5.12.0"
 kdl = "6.5.0"
 tokio = { version = "1", features = ["full"] }

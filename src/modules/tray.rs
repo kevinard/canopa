@@ -1,0 +1,247 @@
+use crate::config::Edge;
+use crate::dbus::sni_host::{ItemStatus, TrayIcon, TrayItem};
+use crate::modules::{InteractionEvent, ModuleId, ModuleState};
+
+/// Runtime state for the tray module -- the current list of live SNI items.
+#[derive(Debug, Clone, Default)]
+pub struct TrayState {
+    pub items: Vec<TrayItem>,
+}
+
+pub struct TrayModule {
+    id: ModuleId,
+    /// Bar edge -- determines row vs column layout.
+    edge: Edge,
+}
+
+impl TrayModule {
+    pub fn new(id: ModuleId, edge: Edge) -> Self {
+        TrayModule { id, edge }
+    }
+
+    /// Resolve a file path for a named icon by checking common XDG icon theme paths.
+    ///
+    /// Checks hicolor at 22px and 16px, then pixmaps. Returns `None` if not found.
+    fn resolve_icon_path(name: &str) -> Option<std::path::PathBuf> {
+        let candidates = [
+            format!("/usr/share/icons/hicolor/22x22/apps/{name}.png"),
+            format!("/usr/share/icons/hicolor/16x16/apps/{name}.png"),
+            format!("/usr/share/icons/hicolor/scalable/apps/{name}.svg"),
+            format!("/usr/share/pixmaps/{name}.png"),
+            format!("/usr/share/pixmaps/{name}.xpm"),
+        ];
+        candidates
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .find(|p| p.exists())
+    }
+
+    /// Build an iced widget for one tray item icon.
+    ///
+    /// All widget data is owned (handles, cloned strings) so the element lifetime
+    /// is not tied to the input reference.
+    fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Message> {
+        const ICON_SIZE: u16 = 20;
+
+        let icon_element: iced::Element<'static, crate::app::Message> = match &item.icon {
+            TrayIcon::Named(name) => {
+                if let Some(path) = Self::resolve_icon_path(name) {
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if ext == "svg" {
+                        iced::widget::svg(iced::widget::svg::Handle::from_path(&path))
+                            .width(ICON_SIZE as u32)
+                            .height(ICON_SIZE as u32)
+                            .into()
+                    } else {
+                        iced::widget::image(iced::widget::image::Handle::from_path(&path))
+                            .width(ICON_SIZE as u32)
+                            .height(ICON_SIZE as u32)
+                            .into()
+                    }
+                } else {
+                    // Icon not found -- render a single character fallback.
+                    let ch = name
+                        .chars()
+                        .next()
+                        .unwrap_or('?')
+                        .to_uppercase()
+                        .next()
+                        .unwrap_or('?');
+                    iced::widget::text(ch.to_string()).size(14).into()
+                }
+            }
+            TrayIcon::Pixmap(pixmaps) => {
+                if let Some((w, h, argb)) =
+                    crate::dbus::sni_host::pick_best_pixmap(pixmaps, ICON_SIZE as i32)
+                {
+                    let rgba = crate::dbus::sni_host::argb_to_rgba(argb);
+                    let handle =
+                        iced::widget::image::Handle::from_rgba(*w as u32, *h as u32, rgba);
+                    iced::widget::image(handle)
+                        .width(ICON_SIZE as u32)
+                        .height(ICON_SIZE as u32)
+                        .into()
+                } else {
+                    iced::widget::text("?").size(14).into()
+                }
+            }
+        };
+
+        // NeedsAttention: overlay a small accent dot.
+        if item.status == ItemStatus::NeedsAttention {
+            let dot =
+                iced::widget::container(
+                    iced::widget::Space::new().width(6u32).height(6u32),
+                )
+                .style(|_| {
+                    iced::widget::container::Style {
+                        background: Some(iced::Background::Color(crate::theme::ACCENT)),
+                        border: iced::Border {
+                            radius: iced::border::Radius::from(3.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                });
+            iced::widget::stack![icon_element, dot].into()
+        } else {
+            icon_element
+        }
+    }
+
+    fn render_icons(&self, items: &[TrayItem]) -> iced::Element<'_, crate::app::Message> {
+        use iced::widget::mouse_area;
+
+        let visible: Vec<&TrayItem> = items
+            .iter()
+            .filter(|i| i.status != ItemStatus::Passive)
+            .collect();
+
+        if visible.is_empty() {
+            return iced::widget::Space::new().into();
+        }
+
+        let icons: Vec<iced::Element<'static, crate::app::Message>> = visible
+            .iter()
+            .map(|item| {
+                let service = item.service.clone();
+                let menu_path = item.menu_path.clone();
+                let icon = Self::icon_widget(item);
+                mouse_area(icon)
+                    .on_press(crate::app::Message::TrayActivate {
+                        service: service.clone(),
+                    })
+                    .on_right_press(crate::app::Message::TrayMenuRequest {
+                        service: service.clone(),
+                        menu_path,
+                    })
+                    .on_middle_press(crate::app::Message::TraySecondaryActivate {
+                        service: service.clone(),
+                    })
+                    .on_scroll(move |delta| {
+                        let (delta_val, orientation) = match delta {
+                            iced::mouse::ScrollDelta::Lines { x, y } => {
+                                if y.abs() >= x.abs() {
+                                    (y as i32, "vertical")
+                                } else {
+                                    (x as i32, "horizontal")
+                                }
+                            }
+                            iced::mouse::ScrollDelta::Pixels { x, y } => {
+                                if y.abs() >= x.abs() {
+                                    (y as i32, "vertical")
+                                } else {
+                                    (x as i32, "horizontal")
+                                }
+                            }
+                        };
+                        crate::app::Message::TrayScroll {
+                            service: service.clone(),
+                            delta: delta_val,
+                            orientation: orientation.to_string(),
+                        }
+                    })
+                    .into()
+            })
+            .collect();
+
+        if self.edge.is_horizontal() {
+            iced::widget::row(icons).spacing(4).into()
+        } else {
+            iced::widget::column(icons).spacing(4).into()
+        }
+    }
+}
+
+impl crate::modules::Module for TrayModule {
+    fn id(&self) -> ModuleId {
+        self.id.clone()
+    }
+
+    fn module_type(&self) -> &str {
+        "tray"
+    }
+
+    fn subscription(&self) -> iced::Subscription<crate::app::Message> {
+        // Fed via Message::TrayUpdated from app.rs -- no independent subscription (AR5).
+        iced::Subscription::none()
+    }
+
+    fn view_collapsed(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
+        let items = match state {
+            ModuleState::Tray(s) => &s.items,
+            _ => return iced::widget::Space::new().into(),
+        };
+        self.render_icons(items)
+    }
+
+    fn view_expanded(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
+        // Identical to collapsed -- tray is always icon-only.
+        self.view_collapsed(state)
+    }
+
+    fn view_horizontal(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
+        self.view_collapsed(state)
+    }
+
+    fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::Module;
+
+    fn make_module(edge: crate::config::Edge) -> TrayModule {
+        TrayModule::new(ModuleId::new("tray"), edge)
+    }
+
+    #[test]
+    fn tray_module_id_is_tray() {
+        let m = make_module(crate::config::Edge::Left);
+        assert_eq!(m.id().0, "tray");
+        assert_eq!(m.module_type(), "tray");
+    }
+
+    #[test]
+    fn tray_state_default_is_empty() {
+        let state = TrayState::default();
+        assert!(state.items.is_empty());
+    }
+
+    #[test]
+    fn tray_state_stores_items() {
+        let item = TrayItem {
+            service: "test".into(),
+            object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
+            icon: TrayIcon::Named("test".into()),
+            tooltip: None,
+            status: ItemStatus::Active,
+            menu_path: None,
+        };
+        let state = TrayState { items: vec![item] };
+        assert_eq!(state.items.len(), 1);
+    }
+}

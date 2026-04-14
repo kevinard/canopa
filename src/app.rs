@@ -125,6 +125,28 @@ pub enum Message {
     /// Keyboard-triggered expand/collapse toggle via Unix socket IPC (Story 6.4).
     /// Global: IPC has no window context, so all surfaces toggle simultaneously.
     ToggleExpand,
+    /// System tray items updated from SNI host (Task 4).
+    #[allow(dead_code)]
+    TrayUpdated(Vec<crate::dbus::sni_host::TrayItem>),
+    /// Left-click on a tray icon -- sends Activate to the SNI item.
+    #[allow(dead_code)]
+    TrayActivate { service: String },
+    /// Right-click on a tray icon -- opens the DBusMenu context menu.
+    #[allow(dead_code)]
+    TrayMenuRequest {
+        service: String,
+        menu_path: Option<zbus::zvariant::OwnedObjectPath>,
+    },
+    /// Middle-click on a tray icon -- sends SecondaryActivate.
+    #[allow(dead_code)]
+    TraySecondaryActivate { service: String },
+    /// Scroll on a tray icon -- sends Scroll to the SNI item.
+    #[allow(dead_code)]
+    TrayScroll {
+        service: String,
+        delta: i32,
+        orientation: String,
+    },
 }
 
 /// Return default params for a module type name, or `None` if the type requires mandatory
