@@ -19,6 +19,7 @@ use crate::modules::focused_window;
 use crate::modules::network::{NetworkEvent, NetworkState};
 use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::volume::{VolumeEvent, VolumeState};
+use crate::modules::tray::TrayState;
 use crate::modules::workspaces;
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
@@ -147,6 +148,19 @@ pub enum Message {
         delta: i32,
         orientation: String,
     },
+    /// A menu item was selected in the popup. `menu_item_id` is the DBusMenu integer item ID.
+    #[allow(dead_code)]
+    MenuItemSelected {
+        /// The SNI service that owns this menu.
+        service: String,
+        /// DBusMenu integer item ID.
+        menu_item_id: i32,
+        /// D-Bus path of the DBusMenu object.
+        menu_path: zbus::zvariant::OwnedObjectPath,
+    },
+    /// The menu popup was dismissed without a selection.
+    #[allow(dead_code)]
+    MenuClosed,
 }
 
 /// Return default params for a module type name, or `None` if the type requires mandatory
@@ -942,6 +956,23 @@ impl App {
                 }
                 Task::batch(tasks)
             }
+            Message::TrayUpdated(items) => {
+                for (_, module) in &self.modules {
+                    if module.module_type() == "tray" {
+                        self.shared.modules.insert(
+                            module.id(),
+                            ModuleState::Tray(TrayState { items: items.clone() }),
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::TrayActivate { .. }
+            | Message::TraySecondaryActivate { .. }
+            | Message::TrayScroll { .. }
+            | Message::TrayMenuRequest { .. }
+            | Message::MenuItemSelected { .. }
+            | Message::MenuClosed => Task::none(),
             _ => Task::none(),
         }
     }
@@ -3576,5 +3607,28 @@ mod tests {
             .collect();
         assert!(names.contains(&"bottom".to_string()), "bottom bar not spawned for DP-1");
         assert!(names.contains(&"right".to_string()), "right bar not spawned for DP-1");
+    }
+
+    #[test]
+    fn tray_updated_message_stores_items_in_shared_state() {
+        use crate::dbus::sni_host::{ItemStatus, TrayIcon, TrayItem};
+        use crate::modules::ModuleId;
+        use zbus::zvariant::OwnedObjectPath;
+
+        let (mut app, _) = App::boot(Config::default(), vec![]);
+        // Inject a tray module id into the modules list manually.
+        let id = ModuleId::new("tray");
+        app.shared.modules.insert(id.clone(), ModuleState::Loading);
+
+        let item = TrayItem {
+            service: "org.test".into(),
+            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
+            icon: TrayIcon::Named("test".into()),
+            tooltip: None,
+            status: ItemStatus::Active,
+            menu_path: None,
+        };
+        // Must not panic.
+        app.update(Message::TrayUpdated(vec![item]));
     }
 }
