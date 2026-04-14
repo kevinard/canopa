@@ -1037,14 +1037,48 @@ impl App {
                 Task::batch(tasks)
             }
             Message::TrayUpdated(items) => {
-                for (_, module) in &self.modules {
-                    if module.module_type() == "tray" {
-                        self.shared.modules.insert(
-                            module.id(),
-                            ModuleState::Tray(TrayState { items: items.clone() }),
-                        );
+                use crate::modules::tray::TrayIconModule;
+
+                // Find the zone and config name of each TrayModule placeholder so we can
+                // insert icon modules at the same position.
+                let tray_slots: Vec<(usize, Zone, String)> = self
+                    .modules
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (_, m))| m.module_type() == "tray")
+                    .map(|(i, (z, m))| (i, z.clone(), m.id().0.clone()))
+                    .collect();
+
+                // Remove all existing tray icon modules (keep the TrayModule placeholders).
+                self.modules.retain(|(_, m)| m.module_type() != "tray_icon");
+
+                // Clear focused/hovered module on every surface if they pointed at a tray icon
+                // that may no longer exist after this rebuild.
+                for s in self.surfaces.values_mut() {
+                    if s.focused_module.as_ref().map(|id| id.0.starts_with("tray:")).unwrap_or(false) {
+                        s.focused_module = None;
+                    }
+                    if s.hovered_module.as_ref().map(|id| id.0.starts_with("tray:")).unwrap_or(false) {
+                        s.hovered_module = None;
                     }
                 }
+
+                // For each TrayModule slot, insert one TrayIconModule per active item
+                // immediately after the placeholder's current index.
+                // Insert in reverse slot order so earlier slots' indices remain valid.
+                let active_items: Vec<&crate::dbus::sni_host::TrayItem> = items
+                    .iter()
+                    .filter(|i| i.status != crate::dbus::sni_host::ItemStatus::Passive)
+                    .collect();
+
+                for (slot_idx, zone, config_name) in tray_slots.iter().rev() {
+                    let insert_at = slot_idx + 1;
+                    for item in active_items.iter().rev() {
+                        let icon_module = TrayIconModule::new((*item).clone(), config_name.clone());
+                        self.modules.insert(insert_at, (zone.clone(), Box::new(icon_module)));
+                    }
+                }
+
                 Task::none()
             }
             Message::TrayActivate { service } => {
@@ -1443,14 +1477,17 @@ impl App {
         // Build a name→zone map from the effective (possibly per-output) module list.
         // This filters which modules appear on this surface and their zone assignment.
         let mut effective_zone: HashMap<String, Zone> = HashMap::new();
-        for name in &bar.modules.top {
-            effective_zone.insert(name.clone(), Zone::Top);
-        }
-        for name in &bar.modules.center {
-            effective_zone.insert(name.clone(), Zone::Center);
-        }
-        for name in &bar.modules.bottom {
-            effective_zone.insert(name.clone(), Zone::Bottom);
+        for (name, zone) in bar.modules.top.iter().map(|n| (n, Zone::Top))
+            .chain(bar.modules.center.iter().map(|n| (n, Zone::Center)))
+            .chain(bar.modules.bottom.iter().map(|n| (n, Zone::Bottom)))
+        {
+            effective_zone.insert(name.clone(), zone.clone());
+            // Expand tray config entries: add all icon modules that carry this config name.
+            for (_, m) in &self.modules {
+                if m.config_name() == Some(name.as_str()) {
+                    effective_zone.insert(m.id().0.clone(), zone.clone());
+                }
+            }
         }
 
         for (_boot_zone, module) in &self.modules {
@@ -1643,7 +1680,19 @@ impl App {
             (Zone::Bottom, &bar.modules.bottom),
         ] {
             for name in names {
-                if let Some((_, m)) = self.modules.iter().find(|(_, m)| m.id().0 == *name) {
+                // For tray config entries, expand to all active icon modules that carry
+                // this config name; for all other modules, look up by id as before.
+                let icon_ids: Vec<ModuleId> = self
+                    .modules
+                    .iter()
+                    .filter(|(_, m)| m.config_name() == Some(name.as_str()))
+                    .map(|(_, m)| m.id())
+                    .collect();
+                if !icon_ids.is_empty() {
+                    for id in icon_ids {
+                        result.push((zone.clone(), id));
+                    }
+                } else if let Some((_, m)) = self.modules.iter().find(|(_, m)| m.id().0 == *name) {
                     result.push((zone.clone(), m.id()));
                 }
             }

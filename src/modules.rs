@@ -99,6 +99,12 @@ pub trait Module: Send + Sync {
     fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {
         None
     }
+    /// For dynamically-expanded modules (e.g. tray icons), returns the config module name
+    /// this instance was expanded from (e.g. `"tray"`). Used for zone and nav-list lookup.
+    /// Returns `None` for all statically-configured modules.
+    fn config_name(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// Type alias for a module constructor function.
