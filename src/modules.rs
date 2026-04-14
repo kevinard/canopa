@@ -204,10 +204,7 @@ fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
 }
 
 fn tray_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    Box::new(tray::TrayModule::new(
-        ModuleId::new(&mc.name),
-        crate::config::Edge::Left,
-    ))
+    Box::new(tray::TrayModule::new(ModuleId::new(&mc.name)))
 }
 
 #[cfg(test)]

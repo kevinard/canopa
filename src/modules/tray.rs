@@ -1,4 +1,3 @@
-use crate::config::Edge;
 use crate::dbus::sni_host::{ItemStatus, TrayIcon, TrayItem};
 use crate::modules::{InteractionEvent, ModuleId, ModuleState};
 
@@ -10,13 +9,11 @@ pub struct TrayState {
 
 pub struct TrayModule {
     id: ModuleId,
-    /// Bar edge -- determines row vs column layout.
-    edge: Edge,
 }
 
 impl TrayModule {
-    pub fn new(id: ModuleId, edge: Edge) -> Self {
-        TrayModule { id, edge }
+    pub fn new(id: ModuleId) -> Self {
+        TrayModule { id }
     }
 
     /// Resolve a file path for a named icon by searching XDG icon theme directories.
@@ -138,7 +135,7 @@ impl TrayModule {
         }
     }
 
-    fn render_icons(&self, items: &[TrayItem]) -> iced::Element<'_, crate::app::Message> {
+    fn render_icons(&self, items: &[TrayItem], horizontal: bool) -> iced::Element<'_, crate::app::Message> {
         use iced::widget::mouse_area;
 
         let visible: Vec<&TrayItem> = items
@@ -194,10 +191,18 @@ impl TrayModule {
             })
             .collect();
 
-        if self.edge.is_horizontal() {
-            iced::widget::row(icons).spacing(4).into()
+        if horizontal {
+            iced::widget::row(icons)
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .height(iced::Length::Fill)
+                .into()
         } else {
-            iced::widget::column(icons).spacing(4).into()
+            iced::widget::column(icons)
+                .spacing(8)
+                .align_x(iced::Alignment::Center)
+                .width(iced::Length::Fill)
+                .into()
         }
     }
 }
@@ -221,16 +226,19 @@ impl crate::modules::Module for TrayModule {
             ModuleState::Tray(s) => &s.items,
             _ => return iced::widget::Space::new().into(),
         };
-        self.render_icons(items)
+        self.render_icons(items, false)
     }
 
     fn view_expanded(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
-        // Identical to collapsed -- tray is always icon-only.
         self.view_collapsed(state)
     }
 
     fn view_horizontal(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
-        self.view_collapsed(state)
+        let items = match state {
+            ModuleState::Tray(s) => &s.items,
+            _ => return iced::widget::Space::new().into(),
+        };
+        self.render_icons(items, true)
     }
 
     fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {
@@ -243,13 +251,13 @@ mod tests {
     use super::*;
     use crate::modules::Module;
 
-    fn make_module(edge: crate::config::Edge) -> TrayModule {
-        TrayModule::new(ModuleId::new("tray"), edge)
+    fn make_module() -> TrayModule {
+        TrayModule::new(ModuleId::new("tray"))
     }
 
     #[test]
     fn tray_module_id_is_tray() {
-        let m = make_module(crate::config::Edge::Left);
+        let m = make_module();
         assert_eq!(m.id().0, "tray");
         assert_eq!(m.module_type(), "tray");
     }
