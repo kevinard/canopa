@@ -36,22 +36,29 @@ impl TrayModule {
             "22x22", "24x24", "16x16", "32x32", "48x48", "64x64", "128x128", "256x256",
         ];
         let exts = ["png", "svg", "xpm"];
+        // Categories tray icons commonly live in, in priority order.
+        let categories = ["apps", "status", "devices"];
 
         for base in &data_dirs {
             // Scalable first (SVG scales perfectly).
-            let svg =
-                std::path::PathBuf::from(format!("{base}/icons/hicolor/scalable/apps/{name}.svg"));
-            if svg.exists() {
-                return Some(svg);
+            for cat in &categories {
+                let svg = std::path::PathBuf::from(format!(
+                    "{base}/icons/hicolor/scalable/{cat}/{name}.svg"
+                ));
+                if svg.exists() {
+                    return Some(svg);
+                }
             }
             // Fixed-size rasters.
             for size in &sizes {
-                for ext in &exts {
-                    let p = std::path::PathBuf::from(format!(
-                        "{base}/icons/hicolor/{size}/apps/{name}.{ext}"
-                    ));
-                    if p.exists() {
-                        return Some(p);
+                for cat in &categories {
+                    for ext in &exts {
+                        let p = std::path::PathBuf::from(format!(
+                            "{base}/icons/hicolor/{size}/{cat}/{name}.{ext}"
+                        ));
+                        if p.exists() {
+                            return Some(p);
+                        }
                     }
                 }
             }
