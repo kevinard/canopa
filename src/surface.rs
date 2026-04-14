@@ -2,6 +2,7 @@ pub mod expand;
 pub mod frame;
 pub mod input;
 pub mod layout;
+pub mod menu_popup;
 
 use crate::modules::ModuleId;
 use crate::surface::expand::ExpandState;

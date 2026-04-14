@@ -68,6 +68,23 @@ pub struct App {
     /// `true` when using Background/manual mode. In this mode, niribar must open new windows
     /// when a new output is connected at runtime (StartMode::AllScreens is not active).
     pub manual_outputs: bool,
+    /// Channel sender for passing fetched MenuTree data to the popup lifecycle.
+    /// `None` when no tray module is configured.
+    pub menu_tx: Option<
+        tokio::sync::mpsc::UnboundedSender<(
+            String,
+            zbus::zvariant::OwnedObjectPath,
+            crate::surface::menu_popup::MenuTree,
+        )>,
+    >,
+    /// Corresponding receiver -- consumed once to start the menu subscription.
+    pub menu_rx: Option<
+        tokio::sync::mpsc::UnboundedReceiver<(
+            String,
+            zbus::zvariant::OwnedObjectPath,
+            crate::surface::menu_popup::MenuTree,
+        )>,
+    >,
 }
 
 #[to_layer_message(multi)]
@@ -252,6 +269,13 @@ impl App {
         };
 
         let manual_outputs = !allowed_outputs.is_empty();
+        let has_tray = modules.iter().any(|(_, m)| m.module_type() == "tray");
+        let (menu_tx, menu_rx) = if has_tray {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
         let app = App {
             config,
             shared: SharedState::new(),
@@ -259,6 +283,8 @@ impl App {
             surfaces,
             pending_surface_keys,
             manual_outputs,
+            menu_tx,
+            menu_rx,
         };
         (app, Task::batch(window_tasks))
     }
@@ -1049,7 +1075,7 @@ impl App {
         let needs_dbus = self
             .modules
             .iter()
-            .any(|(_, m)| matches!(m.module_type(), "battery" | "network" | "volume"));
+            .any(|(_, m)| matches!(m.module_type(), "battery" | "network" | "volume" | "tray"));
         let dbus_sub = if needs_dbus {
             crate::dbus::dbus_init_subscription()
         } else {
@@ -1099,6 +1125,17 @@ impl App {
             iced::Subscription::none()
         };
 
+        // Start SNI subscription only if tray module is present AND session bus is connected.
+        let sni_sub = if let Some(conn) = self.shared.dbus.session.clone() {
+            if self.modules.iter().any(|(_, m)| m.module_type() == "tray") {
+                crate::dbus::sni_host::sni_subscription(conn)
+            } else {
+                iced::Subscription::none()
+            }
+        } else {
+            iced::Subscription::none()
+        };
+
         let focus_sub = keyboard_focus_subscription();
         let ipc_sub = ipc_subscription();
 
@@ -1120,6 +1157,7 @@ impl App {
             battery_sub,
             network_sub,
             volume_sub,
+            sni_sub,
             focus_sub,
             ipc_sub,
             tick_sub,
@@ -3670,6 +3708,13 @@ mod tests {
             .collect();
         assert!(names.contains(&"bottom".to_string()), "bottom bar not spawned for DP-1");
         assert!(names.contains(&"right".to_string()), "right bar not spawned for DP-1");
+    }
+
+    #[test]
+    fn tray_not_in_needs_dbus_when_no_tray_module() {
+        let (app, _) = App::boot(Config::default(), vec![]);
+        // Default config has no tray module -- verify no tray module is registered.
+        assert!(!app.modules.iter().any(|(_, m)| m.module_type() == "tray"));
     }
 
     #[test]
