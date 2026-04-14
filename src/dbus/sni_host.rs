@@ -385,7 +385,8 @@ pub async fn fetch_menu(
 
     Some(crate::surface::menu_popup::MenuTree {
         items,
-        anchor: (0, 0), // Caller fills in the actual anchor position.
+        anchor: (0, 0),      // Caller fills in the actual anchor position.
+        screen_size: (0, 0), // Caller fills in the screen size for edge clamping.
     })
 }
 

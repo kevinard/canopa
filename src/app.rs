@@ -212,6 +212,8 @@ pub enum Message {
     },
     /// Cursor moved within a bar surface window. Used to track anchor position for menu popups.
     CursorMoved(iced::window::Id, iced::Point),
+    /// Bar surface window was opened or resized; carries its logical size in pixels.
+    WindowSized(iced::window::Id, u32, u32),
 }
 
 /// Return default params for a module type name, or `None` if the type requires mandatory
@@ -456,6 +458,12 @@ impl App {
         match message {
             Message::CursorMoved(window, pos) => {
                 self.last_cursor = Some((window, pos));
+                Task::none()
+            }
+            Message::WindowSized(window, w, h) => {
+                if let Some(s) = self.surfaces.get_mut(&window) {
+                    s.screen_size = (w, h);
+                }
                 Task::none()
             }
             Message::ModuleHoverEnter(id, window) => {
@@ -1116,6 +1124,10 @@ impl App {
                     let cursor_pos = self.last_cursor.map(|(_, p)| p).unwrap_or(iced::Point::ORIGIN);
                     let anchor_x = cursor_pos.x as i32;
                     let anchor_y = cursor_pos.y as i32;
+                    let screen_size = self.last_cursor
+                        .and_then(|(w, _)| self.surfaces.get(&w))
+                        .map(|s| s.screen_size)
+                        .unwrap_or((0, 0));
                     return Task::perform(
                         async move {
                             crate::dbus::sni_host::fetch_menu(
@@ -1128,6 +1140,7 @@ impl App {
                         move |tree_opt| {
                             if let Some(mut tree) = tree_opt {
                                 tree.anchor = (anchor_x, anchor_y);
+                                tree.screen_size = screen_size;
                                 Message::OpenMenu {
                                     service: service.clone(),
                                     menu_path: menu_path.clone(),
@@ -1346,8 +1359,23 @@ impl App {
 
             let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
             let bar_size = bar.collapsed_width as f32;
-            let cursor_x = tree.anchor.0 as f32;
-            let cursor_y = tree.anchor.1 as f32;
+
+            // Clamp the anchor so the popup stays within screen bounds.
+            let (popup_w, popup_h) = crate::surface::menu_popup::popup_size(tree);
+            let screen_w = tree.screen_size.0 as f32;
+            let screen_h = tree.screen_size.1 as f32;
+            let raw_cursor_x = tree.anchor.0 as f32;
+            let raw_cursor_y = tree.anchor.1 as f32;
+            let cursor_x = if screen_w > 0.0 {
+                raw_cursor_x.min(screen_w - popup_w as f32).max(0.0)
+            } else {
+                raw_cursor_x
+            };
+            let cursor_y = if screen_h > 0.0 {
+                raw_cursor_y.min(screen_h - popup_h as f32).max(0.0)
+            } else {
+                raw_cursor_y
+            };
 
             let (h_align, v_align, padding) = match &bar.edge {
                 crate::config::Edge::Left => (
@@ -1374,7 +1402,6 @@ impl App {
 
             // Pin the menu to its computed size so Fill items inside don't expand to
             // screen width, and so the outer Fill container doesn't collapse it.
-            let (popup_w, popup_h) = crate::surface::menu_popup::popup_size(tree);
             let menu_sized = iced::widget::container(menu)
                 .width(popup_w)
                 .height(popup_h);
@@ -3994,6 +4021,7 @@ mod tests {
                 is_separator: false,
             }],
             anchor: (0, 0),
+            screen_size: (0, 0),
         };
         let path = zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap();
         app.menu_popups.insert(wid, ("org.test".into(), path, tree, String::new()));

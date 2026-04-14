@@ -5,6 +5,9 @@ pub struct MenuTree {
     pub items: Vec<MenuItem>,
     /// Screen position (x, y) adjacent to which the popup should appear.
     pub anchor: (i32, i32),
+    /// Logical screen size (width, height) of the output the menu appears on.
+    /// Used to clamp the popup so it does not overflow screen edges.
+    pub screen_size: (u32, u32),
 }
 
 /// One item in a `MenuTree`. Children are ignored for MVP (no nested submenus).
@@ -174,6 +177,7 @@ mod tests {
                 is_separator: false,
             }],
             anchor: (0, 0),
+            screen_size: (0, 0),
         };
         let (w, h) = popup_size(&tree);
         // height: 1 item * 26 + 8 outer = 34
@@ -200,6 +204,7 @@ mod tests {
                 },
             ],
             anchor: (0, 0),
+            screen_size: (0, 0),
         };
         let (_, h) = popup_size(&tree);
         // 2 items * 26 + 1 sep * 5 + 8 outer = 65
@@ -220,6 +225,7 @@ mod tests {
                 },
             ],
             anchor: (0, 0),
+            screen_size: (0, 0),
         };
         let (_, h) = popup_size(&tree);
         // Only 1 visible item: 26 + 8 = 34
@@ -240,6 +246,7 @@ mod tests {
                 },
             ],
             anchor: (0, 0),
+            screen_size: (0, 0),
         };
         let (w, _) = popup_size(&tree);
         // width: max(150, 23*8 + 24 + 8) = max(150, 216) = 216
@@ -259,6 +266,7 @@ mod tests {
                 is_separator: false,
             }],
             anchor: (100, 200),
+            screen_size: (0, 0),
         };
         assert_eq!(tree.items.len(), 1);
         assert_eq!(tree.anchor, (100, 200));

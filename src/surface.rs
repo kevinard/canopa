@@ -38,6 +38,9 @@ pub struct SurfaceState {
     pub module_activated: bool,
     pub bar_hovered: bool,
     pub hover_pending_ms: Option<f32>,
+    /// Logical size (width, height) of this surface as last reported by the compositor.
+    /// Used to clamp tray menu popup positions near screen edges.
+    pub screen_size: (u32, u32),
 }
 
 impl SurfaceState {
@@ -52,6 +55,7 @@ impl SurfaceState {
             module_activated: false,
             bar_hovered: false,
             hover_pending_ms: None,
+            screen_size: (0, 0),
         }
     }
 }
@@ -90,6 +94,7 @@ mod tests {
             module_activated: false,
             bar_hovered: false,
             hover_pending_ms: None,
+            screen_size: (0, 0),
         };
         assert!(state.expand.is_expanded());
     }
