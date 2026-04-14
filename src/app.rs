@@ -967,10 +967,73 @@ impl App {
                 }
                 Task::none()
             }
-            Message::TrayActivate { .. }
-            | Message::TraySecondaryActivate { .. }
-            | Message::TrayScroll { .. }
-            | Message::TrayMenuRequest { .. }
+            Message::TrayActivate { service } => {
+                let conn = self.shared.dbus.session.clone();
+                tokio::task::spawn(async move {
+                    if let Some(conn) = conn {
+                        let path =
+                            zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
+                        if let Some(item) =
+                            crate::dbus::sni_host::fetch_item(&conn, &service, &path).await
+                        {
+                            let _ = crate::dbus::sni_host::call_activate(
+                                &conn,
+                                &item.service,
+                                &item.object_path,
+                            )
+                            .await;
+                        }
+                    }
+                });
+                Task::none()
+            }
+            Message::TraySecondaryActivate { service } => {
+                let conn = self.shared.dbus.session.clone();
+                tokio::task::spawn(async move {
+                    if let Some(conn) = conn {
+                        let path =
+                            zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
+                        if let Some(item) =
+                            crate::dbus::sni_host::fetch_item(&conn, &service, &path).await
+                        {
+                            let _ = crate::dbus::sni_host::call_secondary_activate(
+                                &conn,
+                                &item.service,
+                                &item.object_path,
+                            )
+                            .await;
+                        }
+                    }
+                });
+                Task::none()
+            }
+            Message::TrayScroll {
+                service,
+                delta,
+                orientation,
+            } => {
+                let conn = self.shared.dbus.session.clone();
+                tokio::task::spawn(async move {
+                    if let Some(conn) = conn {
+                        let path =
+                            zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
+                        if let Some(item) =
+                            crate::dbus::sni_host::fetch_item(&conn, &service, &path).await
+                        {
+                            let _ = crate::dbus::sni_host::call_scroll(
+                                &conn,
+                                &item.service,
+                                &item.object_path,
+                                delta,
+                                &orientation,
+                            )
+                            .await;
+                        }
+                    }
+                });
+                Task::none()
+            }
+            Message::TrayMenuRequest { .. }
             | Message::MenuItemSelected { .. }
             | Message::MenuClosed => Task::none(),
             _ => Task::none(),
