@@ -232,6 +232,173 @@ pub async fn call_scroll(
     proxy.scroll(delta, orientation).await
 }
 
+// -- DBusMenu proxy -----------------------------------------------------------
+
+#[zbus::proxy(
+    interface = "com.canonical.dbusmenu",
+    default_service = "com.canonical.dbusmenu",
+    default_path = "/MenuBar"
+)]
+trait DbusMenu {
+    /// Fetch the full menu layout.
+    /// Returns (revision, root_item) where root_item is (id: i32, properties: a{sv}, children: av).
+    fn get_layout(
+        &self,
+        parent_id: i32,
+        recursion_depth: i32,
+        property_names: &[&str],
+    ) -> zbus::Result<(
+        u32,
+        (
+            i32,
+            std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+            Vec<zbus::zvariant::OwnedValue>,
+        ),
+    )>;
+
+    fn about_to_show(&self, id: i32) -> zbus::Result<bool>;
+
+    fn event(
+        &self,
+        id: i32,
+        event_id: &str,
+        data: &zbus::zvariant::Value<'_>,
+        timestamp: u32,
+    ) -> zbus::Result<()>;
+}
+
+// -- DBusMenu helpers ---------------------------------------------------------
+
+type Props = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
+
+/// Extract the `label` string from a DBusMenu item's property map.
+pub fn extract_label_from_props(props: &Props) -> String {
+    props
+        .get("label")
+        .and_then(|v| <&str>::try_from(v).ok())
+        .unwrap_or("")
+        .to_string()
+}
+
+fn prop_bool(props: &Props, key: &str, default: bool) -> bool {
+    props
+        .get(key)
+        .and_then(|v| bool::try_from(v).ok())
+        .unwrap_or(default)
+}
+
+fn prop_str<'a>(props: &'a Props, key: &str) -> &'a str {
+    props
+        .get(key)
+        .and_then(|v| <&str>::try_from(v).ok())
+        .unwrap_or("")
+}
+
+/// Convert one `OwnedValue` (which should be a Structure) to a `MenuItem`.
+///
+/// Returns `None` if the value is not the expected DBusMenu item structure.
+fn owned_value_to_menu_item(v: &zbus::zvariant::OwnedValue) -> Option<crate::surface::menu_popup::MenuItem> {
+    let s = <&zbus::zvariant::Structure<'_>>::try_from(v).ok()?;
+    let fields = s.fields();
+    if fields.len() < 2 {
+        return None;
+    }
+    let id = if let zbus::zvariant::Value::I32(i) = &fields[0] {
+        *i
+    } else {
+        return None;
+    };
+    // props: field[1] is a Dict a{sv} — convert to HashMap<String, OwnedValue>
+    let props: Props = if let zbus::zvariant::Value::Dict(dict) = &fields[1] {
+        dict.iter()
+            .filter_map(|(k, v)| {
+                let key = if let zbus::zvariant::Value::Str(s) = k {
+                    s.to_string()
+                } else {
+                    return None;
+                };
+                Some((key, zbus::zvariant::OwnedValue::try_from(v.clone()).ok()?))
+            })
+            .collect()
+    } else {
+        Props::new()
+    };
+
+    let item_type = prop_str(&props, "type");
+    let is_separator = item_type == "separator";
+    let label = extract_label_from_props(&props);
+    let enabled = prop_bool(&props, "enabled", true);
+    let visible = prop_bool(&props, "visible", true);
+    let icon_name = {
+        let s = prop_str(&props, "icon-name");
+        if s.is_empty() { None } else { Some(s.to_string()) }
+    };
+
+    Some(crate::surface::menu_popup::MenuItem {
+        id: id.to_string(),
+        label,
+        enabled,
+        visible,
+        icon_name,
+        children: vec![], // MVP: submenus not rendered
+        is_separator,
+    })
+}
+
+/// Fetch a DBusMenu layout from `menu_path` on `service` and convert it to a `MenuTree`.
+///
+/// Returns `None` if the menu D-Bus call fails.
+pub async fn fetch_menu(
+    conn: &zbus::Connection,
+    service: &str,
+    menu_path: &zbus::zvariant::OwnedObjectPath,
+) -> Option<crate::surface::menu_popup::MenuTree> {
+    let proxy = DbusMenuProxy::builder(conn)
+        .destination(service)
+        .ok()?
+        .path(menu_path.as_ref())
+        .ok()?
+        .build()
+        .await
+        .ok()?;
+
+    let _ = proxy.about_to_show(0).await; // best-effort; ignore result
+
+    let (_, root) = proxy.get_layout(0, -1, &[]).await.ok()?;
+    let (_, _, children) = &root;
+
+    // Root node's children are the top-level menu items.
+    let items: Vec<crate::surface::menu_popup::MenuItem> =
+        children.iter().filter_map(owned_value_to_menu_item).collect();
+
+    Some(crate::surface::menu_popup::MenuTree {
+        items,
+        anchor: (0, 0), // Caller fills in the actual anchor position.
+    })
+}
+
+/// Send `Event("clicked")` to the DBusMenu for the selected item.
+pub async fn send_menu_event(
+    conn: &zbus::Connection,
+    service: &str,
+    menu_path: &zbus::zvariant::OwnedObjectPath,
+    item_id: i32,
+    event_id: &str,
+) -> zbus::Result<()> {
+    let proxy = DbusMenuProxy::builder(conn)
+        .destination(service)?
+        .path(menu_path.as_ref())?
+        .build()
+        .await?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as u32;
+    proxy
+        .event(item_id, event_id, &zbus::zvariant::Value::I32(0), ts)
+        .await
+}
+
 // -- Iced subscription --------------------------------------------------------
 
 struct SniConnData(zbus::Connection);
@@ -476,5 +643,25 @@ mod tests {
             TrayIcon::Pixmap(v) => assert_eq!(v[0].0, 22),
             _ => panic!("expected Pixmap"),
         }
+    }
+
+    #[test]
+    fn convert_dbusmenu_props_extracts_label() {
+        use std::collections::HashMap;
+        use zbus::zvariant::{OwnedValue, Value};
+        let mut props: HashMap<String, OwnedValue> = HashMap::new();
+        props.insert(
+            "label".to_string(),
+            OwnedValue::try_from(Value::from("Open")).unwrap(),
+        );
+        let label = extract_label_from_props(&props);
+        assert_eq!(label, "Open");
+    }
+
+    #[test]
+    fn convert_dbusmenu_props_returns_empty_for_missing_label() {
+        use std::collections::HashMap;
+        let props: HashMap<String, zbus::zvariant::OwnedValue> = HashMap::new();
+        assert_eq!(extract_label_from_props(&props), "");
     }
 }

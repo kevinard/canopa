@@ -16,6 +16,8 @@ pub const BASE: Color = Color::from_rgb8(0x1e, 0x1e, 0x2e);
 pub const SURFACE0: Color = Color::from_rgb8(0x31, 0x32, 0x44);
 /// Second surface layer — bar border strip.
 pub const SURFACE1: Color = Color::from_rgb8(0x45, 0x47, 0x5a);
+/// Border colour for popup surfaces and frames.
+pub const BORDER: Color = Color::from_rgb8(0x58, 0x5b, 0x70);
 /// Dim overlay — muted/zero-volume icon.
 pub const OVERLAY0: Color = Color::from_rgb8(0x6c, 0x70, 0x86);
 /// Error / critical state — low battery badge, battery-critical icon, network-offline icon.

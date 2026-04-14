@@ -16,8 +16,73 @@ pub struct MenuItem {
     pub enabled: bool,
     pub visible: bool,
     pub icon_name: Option<String>,
+    /// Submenus -- not rendered in MVP.
     pub children: Vec<MenuItem>,
     pub is_separator: bool,
+}
+
+/// Render a popup menu from a `MenuTree`.
+///
+/// Returns an Iced `Element` that renders a vertical list of menu items.
+/// Separators become thin horizontal rules. Disabled items are dimmed.
+/// The caller must wrap this in a mouse_area for outside-click dismissal.
+pub fn view_menu_popup<'a>(
+    tree: &'a MenuTree,
+    service: &'a str,
+    menu_path: &'a zbus::zvariant::OwnedObjectPath,
+) -> iced::Element<'a, crate::app::Message> {
+    use iced::widget::{column, container, rule, text};
+    use iced::Length;
+
+    let items: Vec<iced::Element<'_, crate::app::Message>> = tree
+        .items
+        .iter()
+        .filter(|i| i.visible)
+        .map(|item| {
+            if item.is_separator {
+                container(rule::horizontal(1))
+                    .padding([2, 8])
+                    .width(Length::Fill)
+                    .into()
+            } else {
+                let color = if item.enabled {
+                    crate::theme::TEXT
+                } else {
+                    crate::theme::OVERLAY0
+                };
+                let label = text(&item.label).size(13).color(color);
+                let row = container(label).padding([4, 12]).width(Length::Fill);
+
+                if item.enabled {
+                    let menu_item_id: i32 = item.id.parse().unwrap_or(0);
+                    let menu_path = menu_path.clone();
+                    let service = service.to_string();
+                    iced::widget::mouse_area(row)
+                        .on_press(crate::app::Message::MenuItemSelected {
+                            service,
+                            menu_item_id,
+                            menu_path,
+                        })
+                        .into()
+                } else {
+                    row.into()
+                }
+            }
+        })
+        .collect();
+
+    container(column(items).spacing(0))
+        .style(|_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+            border: iced::Border {
+                color: crate::theme::BORDER,
+                width: 1.0,
+                radius: iced::border::Radius::from(4.0),
+            },
+            ..Default::default()
+        })
+        .padding(4)
+        .into()
 }
 
 #[cfg(test)]
