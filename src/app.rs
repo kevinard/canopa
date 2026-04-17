@@ -886,25 +886,8 @@ impl App {
                 })
             }
             Message::FocusMoveNext(window) => {
-                if let Some((_, _, tree, _)) = self.menu_popups.get(&window) {
-                    let navigable: Vec<String> = tree
-                        .items
-                        .iter()
-                        .filter(|i| i.visible && i.enabled && !i.is_separator)
-                        .map(|i| i.id.clone())
-                        .collect();
-                    if navigable.is_empty() {
-                        return Task::none();
-                    }
-                    let current = self.menu_focused_item.get(&window).cloned();
-                    let next = match current {
-                        None => navigable[0].clone(),
-                        Some(c) => {
-                            let idx = navigable.iter().position(|id| id == &c).unwrap_or(0);
-                            navigable[(idx + 1) % navigable.len()].clone()
-                        }
-                    };
-                    self.menu_focused_item.insert(window, next);
+                if self.menu_popups.contains_key(&window) {
+                    self.popup_nav_step(window, true);
                     return Task::none();
                 }
                 let s = self.surface_mut(window);
@@ -935,25 +918,8 @@ impl App {
                 Task::none()
             }
             Message::FocusMovePrev(window) => {
-                if let Some((_, _, tree, _)) = self.menu_popups.get(&window) {
-                    let navigable: Vec<String> = tree
-                        .items
-                        .iter()
-                        .filter(|i| i.visible && i.enabled && !i.is_separator)
-                        .map(|i| i.id.clone())
-                        .collect();
-                    if navigable.is_empty() {
-                        return Task::none();
-                    }
-                    let current = self.menu_focused_item.get(&window).cloned();
-                    let prev = match current {
-                        None => navigable[navigable.len() - 1].clone(),
-                        Some(c) => {
-                            let idx = navigable.iter().position(|id| id == &c).unwrap_or(0);
-                            navigable[(idx + navigable.len() - 1) % navigable.len()].clone()
-                        }
-                    };
-                    self.menu_focused_item.insert(window, prev);
+                if self.menu_popups.contains_key(&window) {
+                    self.popup_nav_step(window, false);
                     return Task::none();
                 }
                 let s = self.surface_mut(window);
@@ -1317,17 +1283,15 @@ impl App {
                 let conn = self.shared.dbus.session.clone();
                 let ids: Vec<iced::window::Id> = self.menu_popups.keys().copied().collect();
                 for id in &ids {
-                    if let Some((service, menu_path, _, _)) = self.menu_popups.get(id) {
-                        if let Some(conn) = conn.clone() {
-                            let service = service.clone();
-                            let menu_path = menu_path.clone();
-                            tokio::task::spawn(async move {
-                                let _ = crate::dbus::sni_host::send_menu_event(
-                                    &conn, &service, &menu_path, 0, "closed",
-                                )
-                                .await;
-                            });
-                        }
+                    if let Some((service, menu_path, _, _)) = self.menu_popups.get(id) && let Some(conn) = conn.clone() {
+                        let service = service.clone();
+                        let menu_path = menu_path.clone();
+                        tokio::task::spawn(async move {
+                            let _ = crate::dbus::sni_host::send_menu_event(
+                                &conn, &service, &menu_path, 0, "closed",
+                            )
+                            .await;
+                        });
                     }
                 }
                 let tasks: Vec<Task<Message>> = ids
@@ -1868,6 +1832,31 @@ impl App {
         None
     }
 
+    fn popup_nav_step(&mut self, window: iced::window::Id, forward: bool) {
+        let Some((_, _, tree, _)) = self.menu_popups.get(&window) else { return; };
+        let navigable: Vec<String> = tree
+            .items
+            .iter()
+            .filter(|i| i.visible && i.enabled && !i.is_separator)
+            .map(|i| i.id.clone())
+            .collect();
+        if navigable.is_empty() { return; }
+        let current = self.menu_focused_item.get(&window).cloned();
+        let len = navigable.len();
+        let next = match current {
+            None => if forward { navigable[0].clone() } else { navigable[len - 1].clone() },
+            Some(c) => {
+                let idx = navigable.iter().position(|id| id == &c).unwrap_or(0);
+                if forward {
+                    navigable[(idx + 1) % len].clone()
+                } else {
+                    navigable[(idx + len - 1) % len].clone()
+                }
+            }
+        };
+        self.menu_focused_item.insert(window, next);
+    }
+
     /// Returns a `SizeChange` task for the named surface's current expand state in overlay mode.
     ///
     /// Overlay mode: the surface grows over the desktop — exclusive zone is never changed.
@@ -2042,12 +2031,11 @@ mod tests {
     #[test]
     fn clock_module_instantiated_from_registry() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.bottom = vec!["clock".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
@@ -2086,15 +2074,14 @@ mod tests {
     #[test]
     fn script_module_instantiated_from_registry() {
         use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "script".into(),
             module_type: "script".into(),
             params: ModuleParams::Script(ScriptConfig {
                 command: "echo hi".into(),
                 interval: 5,
             }),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.bottom = vec!["script".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
@@ -2119,8 +2106,7 @@ mod tests {
     #[test]
     fn button_module_instantiated_from_registry() {
         use crate::config::{ButtonConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "button".into(),
             module_type: "button".into(),
             params: ModuleParams::Button(ButtonConfig {
@@ -2128,7 +2114,7 @@ mod tests {
                 icon: ">".into(),
                 on_click: "kitty".into(),
             }),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.bottom = vec!["button".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
@@ -2163,15 +2149,14 @@ mod tests {
         use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
         use crate::modules::script::ScriptEvent;
 
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "script".into(),
             module_type: "script".into(),
             params: ModuleParams::Script(ScriptConfig {
                 command: "echo hi".into(),
                 interval: 5,
             }),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.bottom = vec!["script".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
@@ -2469,12 +2454,11 @@ mod tests {
     #[test]
     fn niri_unavailable_does_not_affect_non_niri_modules() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.center = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let _ = app.update(Message::Niri(NiriEvent::Unavailable));
@@ -2547,12 +2531,11 @@ mod tests {
 
     fn make_workspaces_app() -> App {
         use crate::config::{ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "workspaces".into(),
             module_type: "workspaces".into(),
             params: ModuleParams::None,
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.top = vec!["workspaces".into()];
         App::boot(config, vec![]).0
     }
@@ -2681,12 +2664,11 @@ mod tests {
 
     fn make_focused_window_app() -> App {
         use crate::config::{ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "focused-window".into(),
             module_type: "focused-window".into(),
             params: ModuleParams::None,
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.center = vec!["focused-window".into()];
         App::boot(config, vec![]).0
     }
@@ -2845,14 +2827,13 @@ mod tests {
 
     fn make_battery_app() -> App {
         use crate::config::{BatteryConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "battery".into(),
             module_type: "battery".into(),
             params: ModuleParams::Battery(BatteryConfig {
                 critical_threshold: 15,
             }),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.bottom = vec!["battery".into()];
         App::boot(config, vec![]).0
     }
@@ -2900,12 +2881,11 @@ mod tests {
 
     fn make_network_app() -> App {
         use crate::config::{ModuleConfig, ModuleParams, NetworkConfig};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "network".into(),
             module_type: "network".into(),
             params: ModuleParams::Network(NetworkConfig),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.bottom = vec!["network".into()];
         App::boot(config, vec![]).0
     }
@@ -2955,12 +2935,11 @@ mod tests {
 
     fn make_volume_app() -> App {
         use crate::config::{ModuleConfig, ModuleParams, VolumeConfig};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "volume".into(),
             module_type: "volume".into(),
             params: ModuleParams::Volume(VolumeConfig { step: 5 }),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.bottom = vec!["volume".into()];
         App::boot(config, vec![]).0
     }
@@ -3021,12 +3000,11 @@ mod tests {
     #[test]
     fn bar_focus_gained_sets_first_top_module() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
@@ -3040,12 +3018,11 @@ mod tests {
     #[test]
     fn bar_focus_lost_clears_focused_module() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
@@ -3058,12 +3035,11 @@ mod tests {
     #[test]
     fn escape_pressed_when_focused_does_not_immediately_clear_state() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
@@ -3084,12 +3060,11 @@ mod tests {
     #[test]
     fn bar_focus_gained_falls_back_to_center_if_no_top_zone() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.center = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
@@ -3112,8 +3087,7 @@ mod tests {
 
     fn make_nav_app() -> (App, iced::window::Id) {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![
+        let mut config = Config{ modules: vec![
             ModuleConfig {
                 name: "clock".into(),
                 module_type: "clock".into(),
@@ -3134,7 +3108,7 @@ mod tests {
                 module_type: "workspaces".into(),
                 params: ModuleParams::None,
             },
-        ];
+        ], ..Default::default() };
         config.bars[0].modules.top = vec!["clock".into(), "battery".into()];
         config.bars[0].modules.center = vec!["network".into()];
         config.bars[0].modules.bottom = vec!["workspaces".into()];
@@ -3237,8 +3211,7 @@ mod tests {
     #[test]
     fn focus_next_zone_skips_empty_zone() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![
+        let mut config = Config{ modules: vec![
             ModuleConfig {
                 name: "clock".into(),
                 module_type: "clock".into(),
@@ -3249,7 +3222,7 @@ mod tests {
                 module_type: "workspaces".into(),
                 params: ModuleParams::None,
             },
-        ];
+        ], ..Default::default() };
         config.bars[0].modules.top = vec!["clock".into()];
         config.bars[0].modules.bottom = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
@@ -3290,8 +3263,7 @@ mod tests {
 
     fn make_interact_app() -> (App, iced::window::Id) {
         use crate::config::{ButtonConfig, ClockConfig, ModuleConfig, ModuleParams, VolumeConfig};
-        let mut config = Config::default();
-        config.modules = vec![
+        let mut config = Config{ modules: vec![
             ModuleConfig {
                 name: "clock".into(),
                 module_type: "clock".into(),
@@ -3311,7 +3283,7 @@ mod tests {
                     on_click: "true".into(),
                 }),
             },
-        ];
+        ], ..Default::default() };
         config.bars[0].modules.top = vec!["clock".into(), "volume".into()];
         config.bars[0].modules.center = vec!["button".into()];
         let (mut app, _) = App::boot(config, vec![]);
@@ -3639,7 +3611,7 @@ mod tests {
     fn surface_mut_creates_default_state_for_new_window() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
-        assert!(app.surfaces.get(&wid).is_none());
+        assert!(!app.surfaces.contains_key(&wid));
         let s = app.surface_mut(wid);
         assert_eq!(s.expand, ExpandState::Collapsed);
     }
@@ -3702,12 +3674,11 @@ mod tests {
     #[test]
     fn focus_gained_only_affects_focused_surface() {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config::default();
-        config.modules = vec![ModuleConfig {
+        let mut config = Config{ modules: vec![ModuleConfig {
             name: "clock".into(),
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
-        }];
+        }], ..Default::default() };
         config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid_a = test_wid();
@@ -4168,7 +4139,7 @@ mod tests {
             menu_path: None,
         };
         // Must not panic.
-        app.update(Message::TrayUpdated(vec![item]));
+        let _ = app.update(Message::TrayUpdated(vec![item]));
     }
 
     // --- Menu item hover tests ---
@@ -4208,7 +4179,7 @@ mod tests {
         let wid = make_popup_wid(&mut app);
         let _ = app.update(Message::MenuItemHoverEnter { window: wid, item_id: "1".into() });
         let _ = app.update(Message::MenuItemHoverExit(wid));
-        assert!(app.menu_popup_hovered.get(&wid).is_none());
+        assert!(!app.menu_popup_hovered.contains_key(&wid));
     }
 
     #[test]
@@ -4218,7 +4189,7 @@ mod tests {
         let wid_b = make_popup_wid(&mut app);
         let _ = app.update(Message::MenuItemHoverEnter { window: wid_a, item_id: "1".into() });
         // wid_b should have no hovered item
-        assert!(app.menu_popup_hovered.get(&wid_b).is_none());
+        assert!(!app.menu_popup_hovered.contains_key(&wid_b));
     }
 
     #[test]

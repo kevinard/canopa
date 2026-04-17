@@ -286,21 +286,21 @@ type Props = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
 pub fn extract_label_from_props(props: &Props) -> String {
     props
         .get("label")
-        .and_then(|ov| (&**ov).downcast_ref::<String>().ok())
+        .and_then(|ov| ov.downcast_ref::<String>().ok())
         .unwrap_or_default()
 }
 
 fn prop_bool(props: &Props, key: &str, default: bool) -> bool {
     props
         .get(key)
-        .and_then(|ov| (&**ov).downcast_ref::<bool>().ok())
+        .and_then(|ov| ov.downcast_ref::<bool>().ok())
         .unwrap_or(default)
 }
 
 fn prop_str(props: &Props, key: &str) -> String {
     props
         .get(key)
-        .and_then(|ov| (&**ov).downcast_ref::<String>().ok())
+        .and_then(|ov| ov.downcast_ref::<String>().ok())
         .unwrap_or_default()
 }
 
@@ -639,11 +639,10 @@ async fn run_sni_task(
     let mut items: HashMap<String, TrayItem> = HashMap::new();
     for service_str in initial_services {
         let (svc, path_str) = parse_service_string(&service_str);
-        if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str) {
-            if let Some(item) = fetch_item(&conn, svc, &path).await {
+        if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str)
+            && let Some(item) = fetch_item(&conn, svc, &path).await {
                 items.insert(service_str, item);
             }
-        }
     }
     let snapshot: Vec<TrayItem> = items.values().cloned().collect();
     if tx.send(snapshot).is_err() {
@@ -657,13 +656,12 @@ async fn run_sni_task(
                 if let Ok(args) = signal.args() {
                     let service_str = args.service.to_string();
                     let (svc, path_str) = parse_service_string(&service_str);
-                    if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str) {
-                        if let Some(item) = fetch_item(&conn, svc, &path).await {
+                    if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str)
+                        && let Some(item) = fetch_item(&conn, svc, &path).await {
                             items.insert(service_str, item);
                             let snapshot: Vec<TrayItem> = items.values().cloned().collect();
                             if tx.send(snapshot).is_err() { break; }
                         }
-                    }
                 }
             }
             Some(signal) = item_unregistered.next() => {
