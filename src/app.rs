@@ -1273,9 +1273,14 @@ impl App {
                     .map(|id| {
                         self.menu_popups.remove(&id);
                         self.menu_popup_hovered.remove(&id);
+                        self.menu_focused_item.remove(&id);
                         Task::done(Message::RemoveWindow(id))
                     })
                     .collect();
+                for s in self.surfaces.values_mut() {
+                    s.focused_module = None;
+                    s.module_activated = false;
+                }
                 Task::batch(tasks)
             }
             Message::MenuClosed => {
@@ -1299,9 +1304,14 @@ impl App {
                     .map(|id| {
                         self.menu_popups.remove(&id);
                         self.menu_popup_hovered.remove(&id);
+                        self.menu_focused_item.remove(&id);
                         Task::done(Message::RemoveWindow(id))
                     })
                     .collect();
+                for s in self.surfaces.values_mut() {
+                    s.focused_module = None;
+                    s.module_activated = false;
+                }
                 Task::batch(tasks)
             }
             Message::MenuItemHoverEnter { window, item_id } => {
@@ -4378,5 +4388,32 @@ mod tests {
             app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
             Some("4")
         );
+    }
+
+    #[test]
+    fn menu_closed_clears_bar_focus_on_all_surfaces() {
+        let (mut app, wid) = make_interact_app();
+        // Give the bar surface keyboard focus on a module.
+        let _ = app.update(Message::BarFocusGained(wid));
+        assert!(app.surfaces[&wid].focused_module.is_some());
+        // Open a popup.
+        let menu_path =
+            zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap();
+        let tree = crate::surface::menu_popup::MenuTree {
+            items: vec![],
+            anchor: (0, 0),
+            screen_size: (0, 0),
+        };
+        let popup_wid = iced::window::Id::unique();
+        app.menu_popups
+            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        app.menu_focused_item.insert(popup_wid, "1".into());
+        // Close the menu.
+        let _ = app.update(Message::MenuClosed);
+        // Bar focus should be cleared.
+        assert!(app.surfaces[&wid].focused_module.is_none());
+        assert!(!app.surfaces[&wid].module_activated);
+        // Menu focus state should be cleaned up.
+        assert!(app.menu_focused_item.is_empty());
     }
 }
