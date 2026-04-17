@@ -62,6 +62,7 @@ pub enum ModuleEvent {
 #[derive(Debug, Clone)]
 pub enum InteractionEvent {
     Clicked,
+    Activated,
     ScrollUp,
     ScrollDown,
 }
@@ -220,6 +221,11 @@ mod tests {
     fn module_id_equality() {
         assert_eq!(ModuleId::new("clock"), ModuleId::new("clock"));
         assert_ne!(ModuleId::new("clock"), ModuleId::new("battery"));
+    }
+
+    #[test]
+    fn interaction_event_activated_variant_exists() {
+        let _ = InteractionEvent::Activated;
     }
 
     #[test]
