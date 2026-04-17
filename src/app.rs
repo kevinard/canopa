@@ -80,6 +80,8 @@ pub struct App {
     >,
     /// Currently hovered menu item per popup window: window_id -> item_id string.
     pub menu_popup_hovered: HashMap<iced::window::Id, String>,
+    /// Keyboard-focused menu item per popup window: window_id -> item_id string.
+    pub menu_focused_item: HashMap<iced::window::Id, String>,
     /// Last known cursor position and the window it occurred in.
     /// `None` until the first CursorMoved event. Used to anchor the tray menu popup.
     pub last_cursor: Option<(iced::window::Id, iced::Point)>,
@@ -294,6 +296,7 @@ impl App {
             manual_outputs,
             menu_popups: HashMap::new(),
             menu_popup_hovered: HashMap::new(),
+            menu_focused_item: HashMap::new(),
             last_cursor: None,
         };
         (app, Task::batch(window_tasks))
@@ -862,6 +865,9 @@ impl App {
                 })
             }
             Message::EscapePressed(window) => {
+                if self.menu_popups.contains_key(&window) {
+                    return Task::done(Message::MenuClosed);
+                }
                 let s = self.surface_mut(window);
                 // If a module is activated, Escape deactivates it (returns to navigation mode).
                 if s.module_activated {
@@ -880,6 +886,27 @@ impl App {
                 })
             }
             Message::FocusMoveNext(window) => {
+                if let Some((_, _, tree, _)) = self.menu_popups.get(&window) {
+                    let navigable: Vec<String> = tree
+                        .items
+                        .iter()
+                        .filter(|i| i.visible && i.enabled && !i.is_separator)
+                        .map(|i| i.id.clone())
+                        .collect();
+                    if navigable.is_empty() {
+                        return Task::none();
+                    }
+                    let current = self.menu_focused_item.get(&window).cloned();
+                    let next = match current {
+                        None => navigable[0].clone(),
+                        Some(c) => {
+                            let idx = navigable.iter().position(|id| id == &c).unwrap_or(0);
+                            navigable[(idx + 1) % navigable.len()].clone()
+                        }
+                    };
+                    self.menu_focused_item.insert(window, next);
+                    return Task::none();
+                }
                 let s = self.surface_mut(window);
                 if s.focused_module.is_none() {
                     // Delegate to BarFocusGained to acquire focus first.
@@ -908,6 +935,27 @@ impl App {
                 Task::none()
             }
             Message::FocusMovePrev(window) => {
+                if let Some((_, _, tree, _)) = self.menu_popups.get(&window) {
+                    let navigable: Vec<String> = tree
+                        .items
+                        .iter()
+                        .filter(|i| i.visible && i.enabled && !i.is_separator)
+                        .map(|i| i.id.clone())
+                        .collect();
+                    if navigable.is_empty() {
+                        return Task::none();
+                    }
+                    let current = self.menu_focused_item.get(&window).cloned();
+                    let prev = match current {
+                        None => navigable[navigable.len() - 1].clone(),
+                        Some(c) => {
+                            let idx = navigable.iter().position(|id| id == &c).unwrap_or(0);
+                            navigable[(idx + navigable.len() - 1) % navigable.len()].clone()
+                        }
+                    };
+                    self.menu_focused_item.insert(window, prev);
+                    return Task::none();
+                }
                 let s = self.surface_mut(window);
                 if s.focused_module.is_none() {
                     return Task::done(Message::BarFocusGained(window));
@@ -961,6 +1009,21 @@ impl App {
                 Task::none()
             }
             Message::KeyboardActivate(window) => {
+                if self.menu_popups.contains_key(&window) {
+                    let focused = self.menu_focused_item.get(&window).cloned();
+                    if let Some(item_id) = focused {
+                        let menu_item_id: i32 = item_id.parse().unwrap_or(0);
+                        if let Some((service, menu_path, _, _)) = self.menu_popups.get(&window) {
+                            let msg = Message::MenuItemSelected {
+                                service: service.clone(),
+                                menu_item_id,
+                                menu_path: menu_path.clone(),
+                            };
+                            return Task::done(msg);
+                        }
+                    }
+                    return Task::none();
+                }
                 let s = self.surface_mut(window);
                 if s.focused_module.is_none() {
                     return Task::none();
@@ -4167,5 +4230,182 @@ mod tests {
         let _ = app.update(Message::MenuItemHoverEnter { window: wid, item_id: "1".into() });
         let _ = app.update(Message::MenuItemHoverEnter { window: wid, item_id: "2".into() });
         assert_eq!(app.menu_popup_hovered.get(&wid).map(|s| s.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn escape_in_popup_fires_menu_closed() {
+        let (mut app, _wid) = make_interact_app();
+        let menu_path =
+            zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap();
+        let tree = crate::surface::menu_popup::MenuTree {
+            items: vec![crate::surface::menu_popup::MenuItem {
+                id: "1".into(),
+                label: "Open".into(),
+                enabled: true,
+                visible: true,
+                icon_name: None,
+                children: vec![],
+                is_separator: false,
+            }],
+            anchor: (0, 0),
+            screen_size: (0, 0),
+        };
+        let popup_wid = iced::window::Id::unique();
+        app.menu_popups
+            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        let _ = app.update(Message::EscapePressed(popup_wid));
+        // EscapePressed dispatches MenuClosed; run it to complete the close cycle.
+        let _ = app.update(Message::MenuClosed);
+        assert!(app.menu_popups.is_empty());
+    }
+
+    #[test]
+    fn arrow_down_in_popup_focuses_first_item() {
+        let (mut app, _wid) = make_interact_app();
+        let menu_path =
+            zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap();
+        let tree = crate::surface::menu_popup::MenuTree {
+            items: vec![
+                crate::surface::menu_popup::MenuItem {
+                    id: "1".into(),
+                    label: "Open".into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
+                },
+                crate::surface::menu_popup::MenuItem {
+                    id: "2".into(),
+                    label: "Close".into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
+                },
+            ],
+            anchor: (0, 0),
+            screen_size: (0, 0),
+        };
+        let popup_wid = iced::window::Id::unique();
+        app.menu_popups
+            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        let _ = app.update(Message::FocusMoveNext(popup_wid));
+        assert_eq!(
+            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
+            Some("1")
+        );
+        let _ = app.update(Message::FocusMoveNext(popup_wid));
+        assert_eq!(
+            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
+            Some("2")
+        );
+        let _ = app.update(Message::FocusMoveNext(popup_wid));
+        assert_eq!(
+            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
+            Some("1")
+        );
+    }
+
+    #[test]
+    fn arrow_up_in_popup_wraps_to_last() {
+        let (mut app, _wid) = make_interact_app();
+        let menu_path =
+            zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap();
+        let tree = crate::surface::menu_popup::MenuTree {
+            items: vec![
+                crate::surface::menu_popup::MenuItem {
+                    id: "1".into(),
+                    label: "Open".into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
+                },
+                crate::surface::menu_popup::MenuItem {
+                    id: "2".into(),
+                    label: "Close".into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
+                },
+            ],
+            anchor: (0, 0),
+            screen_size: (0, 0),
+        };
+        let popup_wid = iced::window::Id::unique();
+        app.menu_popups
+            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        let _ = app.update(Message::FocusMovePrev(popup_wid));
+        assert_eq!(
+            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
+            Some("2")
+        );
+    }
+
+    #[test]
+    fn popup_skips_separators_and_disabled_items() {
+        let (mut app, _wid) = make_interact_app();
+        let menu_path =
+            zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap();
+        let tree = crate::surface::menu_popup::MenuTree {
+            items: vec![
+                crate::surface::menu_popup::MenuItem {
+                    id: "1".into(),
+                    label: "Open".into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
+                },
+                crate::surface::menu_popup::MenuItem {
+                    id: "0".into(),
+                    label: String::new(),
+                    enabled: false,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: true,
+                },
+                crate::surface::menu_popup::MenuItem {
+                    id: "3".into(),
+                    label: "Disabled".into(),
+                    enabled: false,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
+                },
+                crate::surface::menu_popup::MenuItem {
+                    id: "4".into(),
+                    label: "Close".into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
+                },
+            ],
+            anchor: (0, 0),
+            screen_size: (0, 0),
+        };
+        let popup_wid = iced::window::Id::unique();
+        app.menu_popups
+            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        let _ = app.update(Message::FocusMoveNext(popup_wid));
+        assert_eq!(
+            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
+            Some("1")
+        );
+        let _ = app.update(Message::FocusMoveNext(popup_wid));
+        assert_eq!(
+            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
+            Some("4")
+        );
     }
 }
