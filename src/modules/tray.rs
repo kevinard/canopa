@@ -289,6 +289,10 @@ impl crate::modules::Module for TrayIconModule {
             InteractionEvent::Clicked => Some(crate::app::Message::TrayActivate {
                 service: self.item.service.clone(),
             }),
+            InteractionEvent::Activated => Some(crate::app::Message::TrayMenuRequest {
+                service: self.item.service.clone(),
+                menu_path: self.item.menu_path.clone(),
+            }),
             _ => None,
         }
     }
@@ -343,5 +347,25 @@ mod tests {
         let m = TrayIconModule::new(item, "tray".into());
         let msg = m.on_interaction(InteractionEvent::Clicked).unwrap();
         assert!(matches!(msg, crate::app::Message::TrayActivate { service } if service == "org.test.App"));
+    }
+
+    #[test]
+    fn tray_icon_module_space_opens_menu() {
+        let item = TrayItem {
+            service: "org.test.App".into(),
+            object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
+            icon: TrayIcon::Named("app".into()),
+            tooltip: None,
+            status: ItemStatus::Active,
+            menu_path: Some(
+                zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap(),
+            ),
+        };
+        let m = TrayIconModule::new(item, "tray".into());
+        let msg = m.on_interaction(InteractionEvent::Activated).unwrap();
+        assert!(matches!(
+            msg,
+            crate::app::Message::TrayMenuRequest { service, .. } if service == "org.test.App"
+        ));
     }
 }
