@@ -1,12 +1,6 @@
 use crate::dbus::sni_host::{ItemStatus, TrayIcon, TrayItem};
 use crate::modules::{InteractionEvent, ModuleId, ModuleState};
 
-/// Runtime state for the tray module -- the current list of live SNI items.
-#[derive(Debug, Clone, Default)]
-pub struct TrayState {
-    pub items: Vec<TrayItem>,
-}
-
 // ---------------------------------------------------------------------------
 // Shared icon rendering helpers (used by both TrayModule and TrayIconModule)
 // ---------------------------------------------------------------------------
@@ -86,15 +80,25 @@ pub fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Messag
                         .height(ICON_SIZE as u32)
                         .into()
                 }
+            } else if let Some(fallback_path) = resolve_icon_path("application-x-executable") {
+                let ext = fallback_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if ext == "svg" {
+                    iced::widget::svg(iced::widget::svg::Handle::from_path(&fallback_path))
+                        .width(ICON_SIZE as u32)
+                        .height(ICON_SIZE as u32)
+                        .into()
+                } else {
+                    iced::widget::image(iced::widget::image::Handle::from_path(&fallback_path))
+                        .width(ICON_SIZE as u32)
+                        .height(ICON_SIZE as u32)
+                        .into()
+                }
             } else {
-                let ch = name
-                    .chars()
-                    .next()
-                    .unwrap_or('?')
-                    .to_uppercase()
-                    .next()
-                    .unwrap_or('?');
-                iced::widget::text(ch.to_string()).size(14).into()
+                // Both named icon and application-x-executable unavailable -- blank placeholder.
+                iced::widget::Space::new()
+                    .width(ICON_SIZE as u32)
+                    .height(ICON_SIZE as u32)
+                    .into()
             }
         }
         TrayIcon::Pixmap(pixmaps) => {
@@ -308,26 +312,6 @@ mod tests {
         let m = make_module();
         assert_eq!(m.id().0, "tray");
         assert_eq!(m.module_type(), "tray");
-    }
-
-    #[test]
-    fn tray_state_default_is_empty() {
-        let state = TrayState::default();
-        assert!(state.items.is_empty());
-    }
-
-    #[test]
-    fn tray_state_stores_items() {
-        let item = TrayItem {
-            service: "test".into(),
-            object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
-            icon: TrayIcon::Named("test".into()),
-            tooltip: None,
-            status: ItemStatus::Active,
-            menu_path: None,
-        };
-        let state = TrayState { items: vec![item] };
-        assert_eq!(state.items.len(), 1);
     }
 
     #[test]

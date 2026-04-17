@@ -19,7 +19,6 @@ use crate::modules::focused_window;
 use crate::modules::network::{NetworkEvent, NetworkState};
 use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::volume::{VolumeEvent, VolumeState};
-use crate::modules::tray::TrayState;
 use crate::modules::workspaces;
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
@@ -68,23 +67,6 @@ pub struct App {
     /// `true` when using Background/manual mode. In this mode, niribar must open new windows
     /// when a new output is connected at runtime (StartMode::AllScreens is not active).
     pub manual_outputs: bool,
-    /// Channel sender for passing fetched MenuTree data to the popup lifecycle.
-    /// `None` when no tray module is configured.
-    pub menu_tx: Option<
-        tokio::sync::mpsc::UnboundedSender<(
-            String,
-            zbus::zvariant::OwnedObjectPath,
-            crate::surface::menu_popup::MenuTree,
-        )>,
-    >,
-    /// Corresponding receiver -- consumed once to start the menu subscription.
-    pub menu_rx: Option<
-        tokio::sync::mpsc::UnboundedReceiver<(
-            String,
-            zbus::zvariant::OwnedObjectPath,
-            crate::surface::menu_popup::MenuTree,
-        )>,
-    >,
     /// Active popup windows: window_id -> (service, menu_path, tree, bar_name).
     /// bar_name lets view() look up the bar edge for positioning the menu widget.
     pub menu_popups: HashMap<
@@ -160,29 +142,23 @@ pub enum Message {
     /// Global: IPC has no window context, so all surfaces toggle simultaneously.
     ToggleExpand,
     /// System tray items updated from SNI host (Task 4).
-    #[allow(dead_code)]
     TrayUpdated(Vec<crate::dbus::sni_host::TrayItem>),
     /// Left-click on a tray icon -- sends Activate to the SNI item.
-    #[allow(dead_code)]
     TrayActivate { service: String },
     /// Right-click on a tray icon -- opens the DBusMenu context menu.
-    #[allow(dead_code)]
     TrayMenuRequest {
         service: String,
         menu_path: Option<zbus::zvariant::OwnedObjectPath>,
     },
     /// Middle-click on a tray icon -- sends SecondaryActivate.
-    #[allow(dead_code)]
     TraySecondaryActivate { service: String },
     /// Scroll on a tray icon -- sends Scroll to the SNI item.
-    #[allow(dead_code)]
     TrayScroll {
         service: String,
         delta: i32,
         orientation: String,
     },
     /// A menu item was selected in the popup. `menu_item_id` is the DBusMenu integer item ID.
-    #[allow(dead_code)]
     MenuItemSelected {
         /// The SNI service that owns this menu.
         service: String,
@@ -192,19 +168,20 @@ pub enum Message {
         menu_path: zbus::zvariant::OwnedObjectPath,
     },
     /// The menu popup was dismissed without a selection.
-    #[allow(dead_code)]
     MenuClosed,
     /// Pointer entered a menu item row in the popup.
-    #[allow(dead_code)]
     MenuItemHoverEnter {
         window: iced::window::Id,
         item_id: String,
     },
     /// Pointer left a menu item row in the popup.
-    #[allow(dead_code)]
     MenuItemHoverExit(iced::window::Id),
+    /// The DBusMenu layout changed while the popup is open -- re-fetch and replace.
+    MenuLayoutChanged {
+        service: String,
+        menu_path: zbus::zvariant::OwnedObjectPath,
+    },
     /// Menu data fetched successfully -- spawn the popup surface.
-    #[allow(dead_code)]
     OpenMenu {
         service: String,
         menu_path: zbus::zvariant::OwnedObjectPath,
@@ -306,13 +283,6 @@ impl App {
         };
 
         let manual_outputs = !allowed_outputs.is_empty();
-        let has_tray = modules.iter().any(|(_, m)| m.module_type() == "tray");
-        let (menu_tx, menu_rx) = if has_tray {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            (Some(tx), Some(rx))
-        } else {
-            (None, None)
-        };
         let app = App {
             config,
             shared: SharedState::new(),
@@ -320,8 +290,6 @@ impl App {
             surfaces,
             pending_surface_keys,
             manual_outputs,
-            menu_tx,
-            menu_rx,
             menu_popups: HashMap::new(),
             menu_popup_hovered: HashMap::new(),
             last_cursor: None,
@@ -1263,7 +1231,23 @@ impl App {
                 Task::batch(tasks)
             }
             Message::MenuClosed => {
+                // Send Event(0, "closed") to each open popup's DBusMenu before tearing down.
+                let conn = self.shared.dbus.session.clone();
                 let ids: Vec<iced::window::Id> = self.menu_popups.keys().copied().collect();
+                for id in &ids {
+                    if let Some((service, menu_path, _, _)) = self.menu_popups.get(id) {
+                        if let Some(conn) = conn.clone() {
+                            let service = service.clone();
+                            let menu_path = menu_path.clone();
+                            tokio::task::spawn(async move {
+                                let _ = crate::dbus::sni_host::send_menu_event(
+                                    &conn, &service, &menu_path, 0, "closed",
+                                )
+                                .await;
+                            });
+                        }
+                    }
+                }
                 let tasks: Vec<Task<Message>> = ids
                     .into_iter()
                     .map(|id| {
@@ -1280,6 +1264,41 @@ impl App {
             }
             Message::MenuItemHoverExit(window) => {
                 self.menu_popup_hovered.remove(&window);
+                Task::none()
+            }
+            Message::MenuLayoutChanged { service, menu_path } => {
+                // Re-fetch the menu and update the existing popup in place.
+                let conn = self.shared.dbus.session.clone();
+                // Preserve the existing anchor and screen_size from the current popup.
+                let existing = self.menu_popups.values().find(|(s, mp, _, _)| {
+                    s == &service && mp == &menu_path
+                });
+                let (anchor, screen_size) = match existing {
+                    Some((_, _, tree, _)) => (tree.anchor, tree.screen_size),
+                    None => return Task::none(),
+                };
+                if let Some(conn) = conn {
+                    let svc = service.clone();
+                    let mp = menu_path.clone();
+                    return Task::perform(
+                        async move {
+                            crate::dbus::sni_host::fetch_menu(&conn, &svc, &mp).await
+                        },
+                        move |tree_opt| {
+                            if let Some(mut tree) = tree_opt {
+                                tree.anchor = anchor;
+                                tree.screen_size = screen_size;
+                                Message::OpenMenu {
+                                    service,
+                                    menu_path,
+                                    tree,
+                                }
+                            } else {
+                                Message::MenuClosed
+                            }
+                        },
+                    );
+                }
                 Task::none()
             }
             _ => Task::none(),
@@ -1356,6 +1375,21 @@ impl App {
             iced::Subscription::none()
         };
 
+        // Watch for DBusMenu LayoutUpdated/ItemsPropertiesUpdated while a popup is open.
+        let menu_watch_sub = if let Some(conn) = self.shared.dbus.session.clone() {
+            if let Some((service, menu_path, _, _)) = self.menu_popups.values().next() {
+                crate::dbus::sni_host::menu_layout_subscription(
+                    conn,
+                    service.clone(),
+                    menu_path.clone(),
+                )
+            } else {
+                iced::Subscription::none()
+            }
+        } else {
+            iced::Subscription::none()
+        };
+
         let focus_sub = keyboard_focus_subscription();
         let ipc_sub = ipc_subscription();
 
@@ -1378,6 +1412,7 @@ impl App {
             network_sub,
             volume_sub,
             sni_sub,
+            menu_watch_sub,
             focus_sub,
             ipc_sub,
             tick_sub,

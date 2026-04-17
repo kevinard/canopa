@@ -11,7 +11,6 @@ pub enum ButtonEvent {
 
 pub struct ButtonModule {
     id: crate::modules::ModuleId,
-    #[allow(dead_code)] // used in view_expanded; not yet called from binary
     label: String,
     icon: String,
     on_click: String,

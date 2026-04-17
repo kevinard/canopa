@@ -30,6 +30,7 @@ pub struct SurfaceState {
     /// Scale factor reported by the compositor for this output.
     /// 1.0 for standard displays, 2.0 for 2× HiDPI, 1.5 for fractional HiDPI.
     /// Set when the compositor reports scale via wlr-layer-shell (Story 7.2).
+    /// Stored for DPI-aware rendering; not yet consumed by view code.
     #[allow(dead_code)]
     pub scale_factor: f64,
     pub expand: ExpandState,

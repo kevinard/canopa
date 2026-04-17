@@ -14,12 +14,10 @@ pub struct DbusConnections {
     /// Session bus handle for UPower and WirePlumber.
     /// `None` if the session bus was unavailable at startup.
     /// Used by Stories 5.2 (battery) and 5.4 (volume).
-    #[allow(dead_code)]
     pub session: Option<zbus::Connection>,
     /// System bus handle for NetworkManager.
     /// `None` if the system bus was unavailable at startup.
     /// Used by Story 5.3 (network).
-    #[allow(dead_code)]
     pub system: Option<zbus::Connection>,
 }
 

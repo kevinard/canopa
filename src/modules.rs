@@ -17,7 +17,6 @@ pub struct ModuleId(pub String);
 
 impl ModuleId {
     // Used in tests and by Stories 2.2+ when module instances are constructed from config.
-    #[allow(dead_code)]
     pub fn new(s: impl Into<String>) -> Self {
         ModuleId(s.into())
     }
@@ -25,7 +24,6 @@ impl ModuleId {
 
 /// Zone placement for a module in the bar layout.
 // Used in Story 2.2 when modules are placed into zones from config.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Zone {
     Top,
@@ -40,7 +38,6 @@ pub enum ModuleState {
     #[default]
     Loading,
     /// Module's data source is unavailable. Render as nothing — zero height, no gap left.
-    #[allow(dead_code)]
     Unavailable,
     Battery(battery::BatteryState),
     Network(network::NetworkState),
@@ -50,7 +47,6 @@ pub enum ModuleState {
     Button(button::ButtonState),
     Workspace(workspaces::WorkspaceState),
     FocusedWindow(focused_window::FocusedWindowState),
-    Tray(tray::TrayState),
 }
 
 /// Module data events routed through the Iced message bus.
@@ -63,7 +59,6 @@ pub enum ModuleEvent {
 
 /// Input event from pointer or keyboard interaction.
 // Used in Story 2.2+ when `on_interaction` handlers are implemented.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum InteractionEvent {
     Clicked,
@@ -82,7 +77,6 @@ pub enum InteractionEvent {
 /// - Treat D-Bus service disappearance as `{Name}Event::Unavailable`, not a fatal error.
 /// - Support reconnection: if a D-Bus service restarts, recover and resume emitting.
 // Implemented in Stories 2.3+ when concrete modules are added.
-#[allow(dead_code)]
 pub trait Module: Send + Sync {
     fn id(&self) -> ModuleId;
     /// Returns the module type name (e.g. `"clock"`, `"script"`).

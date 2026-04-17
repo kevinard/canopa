@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use zbus::{interface, object_server::SignalEmitter};
 
-#[allow(dead_code)]
 #[derive(Default)]
 pub struct StatusNotifierWatcher {
     pub items: Arc<Mutex<Vec<String>>>,
@@ -11,7 +10,6 @@ pub struct StatusNotifierWatcher {
 }
 
 impl StatusNotifierWatcher {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         StatusNotifierWatcher::default()
     }
@@ -94,7 +92,6 @@ impl StatusNotifierWatcher {
 /// the caller falls back to host-only mode.
 ///
 /// On success, returns `Some(items_handle)` — the shared item list.
-#[allow(dead_code)]
 pub async fn start_watcher(
     conn: &zbus::Connection,
 ) -> zbus::Result<Option<Arc<Mutex<Vec<String>>>>> {

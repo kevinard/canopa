@@ -2,7 +2,6 @@ use zbus::zvariant::OwnedObjectPath;
 
 /// A live SNI tray item, fully resolved from D-Bus properties.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct TrayItem {
     /// D-Bus service name, e.g. `"org.kde.konsole"` or `":1.42"`.
     pub service: String,
@@ -11,6 +10,8 @@ pub struct TrayItem {
     /// Resolved icon — Named preferred, Pixmap as fallback.
     pub icon: TrayIcon,
     /// Human-readable tooltip text (the `ToolTip.title` field), if any.
+    /// Populated from D-Bus but not yet rendered; will be shown on hover in a future story.
+    #[allow(dead_code)]
     pub tooltip: Option<String>,
     pub status: ItemStatus,
     /// D-Bus path for the context menu (`org.kde.DBusMenu`), if the item exposes one.
@@ -19,7 +20,6 @@ pub struct TrayItem {
 
 /// Resolved icon data for a tray item.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum TrayIcon {
     /// XDG icon theme name. Render via icon theme lookup at display time.
     Named(String),
@@ -30,7 +30,6 @@ pub enum TrayIcon {
 
 /// SNI item visibility status.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum ItemStatus {
     /// Normal visible state.
     Active,
@@ -41,7 +40,6 @@ pub enum ItemStatus {
 }
 
 impl ItemStatus {
-    #[allow(dead_code)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "Passive" => ItemStatus::Passive,
@@ -265,6 +263,16 @@ trait DbusMenu {
         data: &zbus::zvariant::Value<'_>,
         timestamp: u32,
     ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn layout_updated(&self, revision: u32, parent: i32) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn items_properties_updated(
+        &self,
+        updated_props: Vec<(i32, std::collections::HashMap<String, zbus::zvariant::OwnedValue>)>,
+        removed_props: Vec<(i32, Vec<String>)>,
+    ) -> zbus::Result<()>;
 }
 
 // -- DBusMenu helpers ---------------------------------------------------------
@@ -412,6 +420,97 @@ pub async fn send_menu_event(
         .await
 }
 
+// -- Menu layout watcher subscription -----------------------------------------
+
+/// Key for the menu layout watcher subscription, ensuring it is unique per
+/// (service, menu_path) pair. When the popup closes, the subscription is dropped
+/// because `subscription()` stops returning it.
+struct MenuWatchKey {
+    conn: zbus::Connection,
+    service: String,
+    menu_path: OwnedObjectPath,
+}
+
+impl std::hash::Hash for MenuWatchKey {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        "menu-layout-watcher".hash(h);
+        self.service.hash(h);
+        self.menu_path.as_str().hash(h);
+    }
+}
+
+enum MenuWatchState {
+    Init,
+    Watching,
+}
+
+/// Returns an iced Subscription that listens for `LayoutUpdated` and
+/// `ItemsPropertiesUpdated` signals on the given DBusMenu path.
+/// Emits `Message::MenuLayoutChanged` when the layout changes.
+/// The subscription self-terminates when dropped (popup closed).
+pub fn menu_layout_subscription(
+    conn: zbus::Connection,
+    service: String,
+    menu_path: OwnedObjectPath,
+) -> iced::Subscription<crate::app::Message> {
+    iced::Subscription::run_with(
+        MenuWatchKey { conn, service, menu_path },
+        move |data: &MenuWatchKey| {
+            let conn = data.conn.clone();
+            let service = data.service.clone();
+            let menu_path = data.menu_path.clone();
+            iced::futures::stream::unfold(MenuWatchState::Init, move |state| {
+                let conn = conn.clone();
+                let service = service.clone();
+                let menu_path = menu_path.clone();
+                async move {
+                    match state {
+                        MenuWatchState::Init => {
+                            let proxy = match DbusMenuProxy::builder(&conn)
+                                .destination(service.as_str())
+                                .and_then(|b| b.path(menu_path.as_ref()))
+                            {
+                                Ok(b) => match b.build().await {
+                                    Ok(p) => p,
+                                    Err(_) => return None,
+                                },
+                                Err(_) => return None,
+                            };
+                            let mut layout_stream = match proxy.receive_layout_updated().await {
+                                Ok(s) => s,
+                                Err(_) => return None,
+                            };
+                            let mut props_stream = match proxy.receive_items_properties_updated().await {
+                                Ok(s) => s,
+                                Err(_) => return None,
+                            };
+                            // Wait for the first signal.
+                            use iced::futures::StreamExt;
+                            tokio::select! {
+                                _ = layout_stream.next() => {}
+                                _ = props_stream.next() => {}
+                            }
+                            Some((
+                                crate::app::Message::MenuLayoutChanged {
+                                    service: service.clone(),
+                                    menu_path: menu_path.clone(),
+                                },
+                                MenuWatchState::Watching,
+                            ))
+                        }
+                        MenuWatchState::Watching => {
+                            // After the first signal, subsequent signals are handled
+                            // by a new subscription cycle (the OpenMenu re-creates the popup
+                            // which re-creates the subscription with fresh state).
+                            None
+                        }
+                    }
+                }
+            })
+        },
+    )
+}
+
 // -- Iced subscription --------------------------------------------------------
 
 struct SniConnData(zbus::Connection);
@@ -432,7 +531,6 @@ enum SniSubState {
 
 /// Returns an Iced subscription that starts the SNI watcher+host on `conn`
 /// and emits `Message::TrayUpdated(Vec<TrayItem>)` on every change.
-#[allow(dead_code)]
 pub fn sni_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(SniConnData(conn), |data: &SniConnData| {
         let conn = data.0.clone();
@@ -491,7 +589,6 @@ fn parse_service_string(s: &str) -> (&str, &str) {
 /// 3. Fetches the initial item list.
 /// 4. Listens for item registrations/unregistrations and name disappearances.
 /// 5. Sends updated `Vec<TrayItem>` on `tx` on every change.
-#[allow(dead_code)]
 async fn run_sni_task(
     conn: zbus::Connection,
     tx: tokio::sync::mpsc::UnboundedSender<Vec<TrayItem>>,

@@ -25,6 +25,7 @@ impl ExpandState {
     }
 
     /// Returns `true` if the bar is fully expanded (not collapsed, not animating).
+    /// Symmetric with `is_collapsed`; will be needed when expand-dependent rendering is added.
     #[allow(dead_code)]
     pub fn is_expanded(&self) -> bool {
         matches!(self, ExpandState::Expanded)

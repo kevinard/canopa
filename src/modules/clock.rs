@@ -3,7 +3,6 @@
 pub struct ClockState {
     pub time: String,
     // Used in view_expanded (collapsed view shows time only)
-    #[allow(dead_code)]
     pub date: String,
 }
 
