@@ -138,6 +138,8 @@ pub enum Message {
     FocusPrevZone(iced::window::Id),
     /// Enter or Space pressed while bar is focused (Story 6.3). Per-surface.
     KeyboardActivate(iced::window::Id),
+    /// Space pressed while bar is focused -- secondary activation. Per-surface.
+    KeyboardSecondaryActivate(iced::window::Id),
     /// Keyboard-triggered expand/collapse toggle via Unix socket IPC (Story 6.4).
     /// Global: IPC has no window context, so all surfaces toggle simultaneously.
     ToggleExpand,
@@ -976,6 +978,23 @@ impl App {
                             }
                             // Clickable module: fire the click action.
                             if let Some(msg) = module.on_interaction(InteractionEvent::Clicked) {
+                                return Task::done(msg);
+                            }
+                            break;
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::KeyboardSecondaryActivate(window) => {
+                let s = self.surface_mut(window);
+                if s.focused_module.is_none() {
+                    return Task::none();
+                }
+                if let Some(ref id) = s.focused_module.clone() {
+                    for (_, module) in &self.modules {
+                        if module.id() == *id {
+                            if let Some(msg) = module.on_interaction(InteractionEvent::Activated) {
                                 return Task::done(msg);
                             }
                             break;

@@ -113,8 +113,11 @@ fn keyboard_handler(
                         Some(Message::FocusNextZone(window))
                     }
                 }
-                keyboard::Key::Named(Named::Enter | Named::Space) => {
+                keyboard::Key::Named(Named::Enter) => {
                     Some(Message::KeyboardActivate(window))
+                }
+                keyboard::Key::Named(Named::Space) => {
+                    Some(Message::KeyboardSecondaryActivate(window))
                 }
                 _ => None,
             }
