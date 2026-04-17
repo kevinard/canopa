@@ -39,6 +39,7 @@ pub fn view_menu_popup<'a>(
     menu_path: &'a zbus::zvariant::OwnedObjectPath,
     window: iced::window::Id,
     hovered_item: Option<&'a str>,
+    focused_item: Option<&'a str>,
 ) -> iced::Element<'a, crate::app::Message> {
     use iced::widget::{column, container, rule, text};
     use iced::Length;
@@ -60,13 +61,16 @@ pub fn view_menu_popup<'a>(
                     crate::theme::OVERLAY0
                 };
                 let label = text(&item.label).size(13).color(color);
-                let is_hovered = item.enabled
-                    && hovered_item.map(|h| h == item.id.as_str()).unwrap_or(false);
+                let is_highlighted = item.enabled
+                    && hovered_item
+                        .or(focused_item)
+                        .map(|h| h == item.id.as_str())
+                        .unwrap_or(false);
                 let row = container(label)
                     .padding([4, 12])
                     .width(Length::Fill)
                     .style(move |_| iced::widget::container::Style {
-                        background: if is_hovered {
+                        background: if is_highlighted {
                             Some(iced::Background::Color(crate::theme::SURFACE0))
                         } else {
                             None

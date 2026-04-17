@@ -1480,7 +1480,8 @@ impl App {
         if let Some((service, menu_path, tree, bar_name)) = self.menu_popups.get(&window) {
             use crate::surface::menu_popup::view_menu_popup;
             let hovered_item = self.menu_popup_hovered.get(&window).map(|s| s.as_str());
-            let menu = view_menu_popup(tree, service.as_str(), menu_path, window, hovered_item);
+            let focused_item = self.menu_focused_item.get(&window).map(|s| s.as_str());
+            let menu = view_menu_popup(tree, service.as_str(), menu_path, window, hovered_item, focused_item);
 
             let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
             let bar_size = bar.collapsed_width as f32;
