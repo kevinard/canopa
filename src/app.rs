@@ -1268,7 +1268,7 @@ impl App {
                 });
                 // Close all popups.
                 let ids: Vec<iced::window::Id> = self.menu_popups.keys().copied().collect();
-                let tasks: Vec<Task<Message>> = ids
+                let mut tasks: Vec<Task<Message>> = ids
                     .into_iter()
                     .map(|id| {
                         self.menu_popups.remove(&id);
@@ -1277,6 +1277,16 @@ impl App {
                         Task::done(Message::RemoveWindow(id))
                     })
                     .collect();
+                // Safety net: guarantee every bar surface is keyboard-focusable after a popup
+                // closes. If an earlier Escape set a bar to None and BarFocusLost never fired
+                // (e.g. focus already belonged to the popup), this unsticks it.
+                use iced_layershell::reexport::KeyboardInteractivity;
+                for id in self.surfaces.keys().copied().collect::<Vec<_>>() {
+                    tasks.push(Task::done(Message::KeyboardInteractivityChange {
+                        id,
+                        keyboard_interactivity: KeyboardInteractivity::OnDemand,
+                    }));
+                }
                 for s in self.surfaces.values_mut() {
                     s.focused_module = None;
                     s.module_activated = false;
@@ -1299,7 +1309,7 @@ impl App {
                         });
                     }
                 }
-                let tasks: Vec<Task<Message>> = ids
+                let mut tasks: Vec<Task<Message>> = ids
                     .into_iter()
                     .map(|id| {
                         self.menu_popups.remove(&id);
@@ -1308,6 +1318,13 @@ impl App {
                         Task::done(Message::RemoveWindow(id))
                     })
                     .collect();
+                use iced_layershell::reexport::KeyboardInteractivity;
+                for id in self.surfaces.keys().copied().collect::<Vec<_>>() {
+                    tasks.push(Task::done(Message::KeyboardInteractivityChange {
+                        id,
+                        keyboard_interactivity: KeyboardInteractivity::OnDemand,
+                    }));
+                }
                 for s in self.surfaces.values_mut() {
                     s.focused_module = None;
                     s.module_activated = false;
