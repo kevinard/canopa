@@ -1,4 +1,7 @@
+mod animation;
+mod focus;
 mod layout;
+mod module_events;
 mod module_state;
 mod navigation;
 mod niri;
@@ -14,22 +17,18 @@ use iced_layershell::to_layer_message;
 
 use self::widget_ops::FindBounds;
 use crate::config::{
-    BatteryConfig, ClockConfig, Config, ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig,
-    VolumeConfig, WorkspacesConfig,
+    BatteryConfig, ClockConfig, Config, ModuleConfig, ModuleParams, NetworkConfig, VolumeConfig,
+    WorkspacesConfig,
 };
 use crate::dbus::DbusConnections;
 use crate::modules::battery::BatteryEvent;
-use crate::modules::button::{ButtonEvent, ButtonState};
-use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::network::NetworkEvent;
-use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::volume::VolumeEvent;
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
 };
 use crate::niri::NiriState;
 use crate::surface::SurfaceState;
-use crate::surface::expand::ExpandState;
 use crate::surface::input::init_expand_keybind;
 
 /// Shared state: module data visible to all surfaces.
@@ -355,525 +354,42 @@ impl App {
                 }
                 Task::none()
             }
-            Message::Module(id, ModuleEvent::Clock(ClockEvent::Tick { time, date })) => {
-                self.shared
-                    .modules
-                    .insert(id, ModuleState::Clock(ClockState { time, date }));
-                Task::none()
-            }
-            Message::Module(id, ModuleEvent::Script(ScriptEvent::Output(text))) => {
-                self.shared
-                    .modules
-                    .insert(id, ModuleState::Script(ScriptState { output: text }));
-                Task::none()
-            }
-            Message::Module(_, ModuleEvent::Script(ScriptEvent::Failed)) => {
-                // Retain previous state — do nothing (AC #3)
-                Task::none()
-            }
-            Message::Module(id, ModuleEvent::Button(ButtonEvent::Ready)) => {
-                self.shared
-                    .modules
-                    .insert(id, ModuleState::Button(ButtonState));
-                Task::none()
-            }
+            Message::Module(id, event) => self.handle_module_event(id, event),
             Message::ModuleClick(id, _window) => {
-                // Module interactions are shared — module data lives in self.modules.
-                for (_, module) in &self.modules {
-                    if module.id() == id {
-                        if let Some(msg) = module.on_interaction(InteractionEvent::Clicked) {
-                            return Task::done(msg);
-                        }
-                        break;
-                    }
-                }
-                Task::none()
+                self.dispatch_module_interaction(&id, InteractionEvent::Clicked)
             }
-            Message::BarClick(window) => {
-                // Dismiss any open popup menus before processing the bar click.
-                if !self.menu_popups.is_empty() {
-                    return Task::done(Message::MenuClosed);
-                }
-                let bar_name = self
-                    .surface(window)
-                    .map(|s| s.bar_name.clone())
-                    .unwrap_or_default();
-                let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
-                if !bar.expand {
-                    return Task::none();
-                }
-                // Click has no effect when hover is the expand trigger (Story 3.3 AC #6).
-                if bar.expand_trigger == ExpandTrigger::Hover {
-                    return Task::none();
-                }
-                let s = self.surface_mut(window);
-                s.expand = s.expand.toggle();
-                self.overlay_size_change_for(window)
-            }
-            Message::BarHoverEnter(window) => {
-                let bar_name = self
-                    .surface(window)
-                    .map(|s| s.bar_name.clone())
-                    .unwrap_or_default();
-                let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
-                let expand_enabled = bar.expand;
-                let expand_trigger = bar.expand_trigger;
-                let hover_delay = bar.hover_delay;
-                let s = self.surface_mut(window);
-                s.bar_hovered = true;
-                if !expand_enabled {
-                    return Task::none();
-                }
-                if expand_trigger != ExpandTrigger::Hover {
-                    return Task::none();
-                }
-                let expand = s.expand;
-                match expand {
-                    ExpandState::Collapsed => {
-                        if hover_delay == 0 {
-                            let s = self.surface_mut(window);
-                            s.expand = s.expand.toggle(); // → Expanding(0.0)
-                            self.overlay_size_change_for(window)
-                        } else {
-                            self.surface_mut(window).hover_pending_ms = Some(0.0);
-                            Task::none()
-                        }
-                    }
-                    ExpandState::Collapsing(_) => {
-                        // Pointer re-entered while collapsing — reverse back to expanding.
-                        let s = self.surface_mut(window);
-                        s.expand = s.expand.toggle();
-                        Task::none()
-                    }
-                    _ => Task::none(), // Already expanded or expanding — no action
-                }
-            }
-            Message::BarHoverExit(window) => {
-                let bar_name = self
-                    .surface(window)
-                    .map(|s| s.bar_name.clone())
-                    .unwrap_or_default();
-                let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
-                let expand_enabled = bar.expand;
-                let expand_trigger = bar.expand_trigger;
-                let s = self.surface_mut(window);
-                s.bar_hovered = false;
-                if !expand_enabled {
-                    return Task::none();
-                }
-                if expand_trigger != ExpandTrigger::Hover {
-                    return Task::none();
-                }
-                // Cancel any pending hover delay.
-                s.hover_pending_ms = None;
-                let expand = s.expand;
-                match expand {
-                    ExpandState::Expanded | ExpandState::Expanding(_) => {
-                        let s = self.surface_mut(window);
-                        s.expand = s.expand.toggle(); // → Collapsing(0.0) or Collapsing(1-p)
-                        self.overlay_size_change_for(window)
-                    }
-                    _ => Task::none(), // Already collapsed or collapsing — no action
-                }
-            }
+            Message::BarClick(window) => self.handle_bar_click(window),
+            Message::BarHoverEnter(window) => self.handle_bar_hover_enter(window),
+            Message::BarHoverExit(window) => self.handle_bar_hover_exit(window),
             Message::Niri(event) => self.handle_niri_event(event),
-            Message::Tick => {
-                // Global tick: advance animation and hover delay for ALL surfaces.
-                const TICK_MS: f32 = 16.0;
-
-                let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
-                let mut tasks = vec![];
-
-                for wid in window_ids {
-                    // Resolve bar config before taking a mutable borrow of the surface.
-                    let bar_name = self
-                        .surfaces
-                        .get(&wid)
-                        .map(|s| s.bar_name.clone())
-                        .unwrap_or_default();
-                    let effective_bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
-                    let effective_hover_delay = effective_bar.hover_delay;
-                    let effective_expand_ms = effective_bar.animation.expand_ms;
-                    let effective_collapse_ms = effective_bar.animation.collapse_ms;
-                    let s = self.surfaces.get_mut(&wid).unwrap();
-
-                    // Hover delay countdown — runs while waiting to start expand (Story 3.3).
-                    if let Some(elapsed) = s.hover_pending_ms {
-                        let new_elapsed = elapsed + TICK_MS;
-                        if new_elapsed >= effective_hover_delay as f32 {
-                            s.hover_pending_ms = None;
-                            s.expand = ExpandState::Expanding(0.0);
-                            tasks.push(self.overlay_size_change_for(wid));
-                        } else {
-                            s.hover_pending_ms = Some(new_elapsed);
-                            // Still counting down — no resize needed this tick for this surface.
-                        }
-                        continue;
-                    }
-
-                    match s.expand {
-                        ExpandState::Expanding(progress) => {
-                            let new_progress = (progress + TICK_MS / effective_expand_ms).min(1.0);
-                            s.expand = if new_progress >= 1.0 {
-                                ExpandState::Expanded
-                            } else {
-                                ExpandState::Expanding(new_progress)
-                            };
-                            tasks.push(self.overlay_size_change_for(wid));
-                        }
-                        ExpandState::Collapsing(progress) => {
-                            let new_progress =
-                                (progress + TICK_MS / effective_collapse_ms).min(1.0);
-                            s.expand = if new_progress >= 1.0 {
-                                ExpandState::Collapsed
-                            } else {
-                                ExpandState::Collapsing(new_progress)
-                            };
-                            tasks.push(self.overlay_size_change_for(wid));
-                        }
-                        _ => {} // Collapsed or Expanded — no action
-                    }
-                }
-
-                Task::batch(tasks)
-            }
-            Message::Network(NetworkEvent::StateChanged {
-                connectivity,
-                label,
-            }) => {
-                self.push_network_state(connectivity, label);
-                Task::none()
-            }
-            Message::Network(NetworkEvent::Unavailable) => {
-                for (_, module) in &self.modules {
-                    if module.module_type() == "network" {
-                        self.shared
-                            .modules
-                            .insert(module.id(), ModuleState::Unavailable);
-                    }
-                }
-                Task::none()
-            }
-            Message::Volume(VolumeEvent::StateChanged { volume, muted }) => {
-                self.push_volume_state(volume, muted);
-                Task::none()
-            }
-            Message::Volume(VolumeEvent::Unavailable) => {
-                for (_, module) in &self.modules {
-                    if module.module_type() == "volume" {
-                        self.shared
-                            .modules
-                            .insert(module.id(), ModuleState::Unavailable);
-                    }
-                }
-                Task::none()
-            }
-            Message::VolumeAdjust { step, up } => {
-                let arg = if up {
-                    format!("{step}%+")
-                } else {
-                    format!("{step}%-")
-                };
-                // Fire-and-forget: wpctl adjusts PA volume; PA subscription emits StateChanged.
-                // "-l 1" caps at 100%.
-                tokio::task::spawn(async move {
-                    let _ = tokio::process::Command::new("wpctl")
-                        .args(["set-volume", "-l", "1", "@DEFAULT_AUDIO_SINK@", &arg])
-                        .status()
-                        .await;
-                });
-                Task::none()
-            }
+            Message::Tick => self.handle_tick(),
+            Message::Network(event) => self.handle_network_event(event),
+            Message::Volume(event) => self.handle_volume_event(event),
+            Message::VolumeAdjust { step, up } => self.handle_volume_adjust(step, up),
             Message::ModuleScrollUp(id, _window) => {
-                for (_, module) in &self.modules {
-                    if module.id() == id {
-                        if let Some(msg) = module.on_interaction(InteractionEvent::ScrollUp) {
-                            return Task::done(msg);
-                        }
-                        break;
-                    }
-                }
-                Task::none()
+                self.dispatch_module_interaction(&id, InteractionEvent::ScrollUp)
             }
             Message::ModuleScrollDown(id, _window) => {
-                for (_, module) in &self.modules {
-                    if module.id() == id {
-                        if let Some(msg) = module.on_interaction(InteractionEvent::ScrollDown) {
-                            return Task::done(msg);
-                        }
-                        break;
-                    }
-                }
-                Task::none()
+                self.dispatch_module_interaction(&id, InteractionEvent::ScrollDown)
             }
-            Message::Battery(BatteryEvent::StateChanged {
-                percentage,
-                is_charging,
-            }) => {
-                self.push_battery_state(percentage, is_charging);
-                Task::none()
-            }
-            Message::Battery(BatteryEvent::Unavailable) => {
-                // Mark all battery instances unavailable — renders nothing (UX-DR16).
-                for (_, module) in &self.modules {
-                    if module.module_type() == "battery" {
-                        self.shared
-                            .modules
-                            .insert(module.id(), ModuleState::Unavailable);
-                    }
-                }
-                Task::none()
-            }
+            Message::Battery(event) => self.handle_battery_event(event),
             Message::DbusReady(connections) => {
                 // Store shared handles; modules borrow clones of these (AR5, Story 5.1).
                 self.shared.dbus = connections;
                 Task::none()
             }
-            Message::BarFocusGained(window) => {
-                // Highlight first module in top zone (AC #1); fall back to center/bottom.
-                // Use the effective nav list so per-output module overrides are respected.
-                let nav = self.effective_nav_list(window);
-                let first = nav
-                    .iter()
-                    .find(|(z, _)| *z == Zone::Top)
-                    .or_else(|| nav.iter().find(|(z, _)| *z == Zone::Center))
-                    .or_else(|| nav.iter().find(|(z, _)| *z == Zone::Bottom))
-                    .map(|(_, id)| id.clone());
-                let s = self.surface_mut(window);
-                s.focused_module = first;
-                s.module_activated = false;
-                Task::none()
-            }
-            Message::BarFocusLost(window) => {
-                let s = self.surface_mut(window);
-                s.focused_module = None;
-                s.module_activated = false;
-                // Restore OnDemand so the bar can be focused again (AC #3).
-                use iced_layershell::reexport::KeyboardInteractivity;
-                Task::done(Message::KeyboardInteractivityChange {
-                    id: window,
-                    keyboard_interactivity: KeyboardInteractivity::OnDemand,
-                })
-            }
-            Message::EscapePressed(window) => {
-                if self.menu_popups.contains_key(&window) {
-                    return Task::done(Message::MenuClosed);
-                }
-                let s = self.surface_mut(window);
-                // If a module is activated, Escape deactivates it (returns to navigation mode).
-                if s.module_activated {
-                    s.module_activated = false;
-                    return Task::none();
-                }
-                if s.focused_module.is_none() {
-                    return Task::none();
-                }
-                // Tell compositor to remove keyboard focus from this surface (AC #2).
-                // BarFocusLost fires in response and restores OnDemand.
-                use iced_layershell::reexport::KeyboardInteractivity;
-                Task::done(Message::KeyboardInteractivityChange {
-                    id: window,
-                    keyboard_interactivity: KeyboardInteractivity::None,
-                })
-            }
-            Message::FocusMoveNext(window) => {
-                if self.menu_popups.contains_key(&window) {
-                    self.popup_nav_step(window, true);
-                    return Task::none();
-                }
-                let s = self.surface_mut(window);
-                if s.focused_module.is_none() {
-                    // Delegate to BarFocusGained to acquire focus first.
-                    return Task::done(Message::BarFocusGained(window));
-                }
-                // Interaction mode (Story 6.3): module is activated — arrow key scrolls it.
-                if s.module_activated {
-                    if let Some(ref id) = s.focused_module.clone() {
-                        for (_, m) in &self.modules {
-                            if m.id() == *id {
-                                if let Some(msg) = m.on_interaction(InteractionEvent::ScrollDown) {
-                                    return Task::done(msg);
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    return Task::none();
-                }
-                // Navigation mode: move to next module.
-                if let Some(ref current) = s.focused_module.clone()
-                    && let Some(next) = self.nav_next(current, window)
-                {
-                    self.surface_mut(window).focused_module = Some(next);
-                }
-                Task::none()
-            }
-            Message::FocusMovePrev(window) => {
-                if self.menu_popups.contains_key(&window) {
-                    self.popup_nav_step(window, false);
-                    return Task::none();
-                }
-                let s = self.surface_mut(window);
-                if s.focused_module.is_none() {
-                    return Task::done(Message::BarFocusGained(window));
-                }
-                // Interaction mode (Story 6.3): module is activated — arrow key scrolls it.
-                if s.module_activated {
-                    if let Some(ref id) = s.focused_module.clone() {
-                        for (_, m) in &self.modules {
-                            if m.id() == *id {
-                                if let Some(msg) = m.on_interaction(InteractionEvent::ScrollUp) {
-                                    return Task::done(msg);
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    return Task::none();
-                }
-                // Navigation mode: move to previous module.
-                if let Some(ref current) = s.focused_module.clone()
-                    && let Some(prev) = self.nav_prev(current, window)
-                {
-                    self.surface_mut(window).focused_module = Some(prev);
-                }
-                Task::none()
-            }
-            Message::FocusNextZone(window) => {
-                let s = self.surface_mut(window);
-                if s.focused_module.is_none() {
-                    return Task::done(Message::BarFocusGained(window));
-                }
-                s.module_activated = false; // deactivate on zone jump
-                if let Some(ref current) = s.focused_module.clone()
-                    && let Some(next) = self.nav_next_zone(current, window)
-                {
-                    self.surface_mut(window).focused_module = Some(next);
-                }
-                Task::none()
-            }
-            Message::FocusPrevZone(window) => {
-                let s = self.surface_mut(window);
-                if s.focused_module.is_none() {
-                    return Task::done(Message::BarFocusGained(window));
-                }
-                s.module_activated = false; // deactivate on zone jump
-                if let Some(ref current) = s.focused_module.clone()
-                    && let Some(prev) = self.nav_prev_zone(current, window)
-                {
-                    self.surface_mut(window).focused_module = Some(prev);
-                }
-                Task::none()
-            }
-            Message::KeyboardActivate(window) => {
-                if self.menu_popups.contains_key(&window) {
-                    let focused = self.menu_focused_item.get(&window).cloned();
-                    if let Some(item_id) = focused {
-                        let menu_item_id: i32 = item_id.parse().unwrap_or(0);
-                        if let Some((service, menu_path, _, _)) = self.menu_popups.get(&window) {
-                            let msg = Message::MenuItemSelected {
-                                service: service.clone(),
-                                menu_item_id,
-                                menu_path: menu_path.clone(),
-                            };
-                            return Task::done(msg);
-                        }
-                    }
-                    return Task::none();
-                }
-                let s = self.surface_mut(window);
-                if s.focused_module.is_none() {
-                    return Task::none();
-                }
-                if let Some(ref id) = s.focused_module.clone() {
-                    for (_, module) in &self.modules {
-                        if module.id() == *id {
-                            // Scrollable module: Enter/Space enters interaction mode.
-                            if module
-                                .on_interaction(InteractionEvent::ScrollDown)
-                                .is_some()
-                            {
-                                self.surface_mut(window).module_activated = true;
-                                return Task::none();
-                            }
-                            // Clickable module: fire the click action.
-                            if let Some(msg) = module.on_interaction(InteractionEvent::Clicked) {
-                                return Task::done(msg);
-                            }
-                            break;
-                        }
-                    }
-                }
-                Task::none()
-            }
+            Message::BarFocusGained(window) => self.handle_bar_focus_gained(window),
+            Message::BarFocusLost(window) => self.handle_bar_focus_lost(window),
+            Message::EscapePressed(window) => self.handle_escape_pressed(window),
+            Message::FocusMoveNext(window) => self.handle_focus_move(window, true),
+            Message::FocusMovePrev(window) => self.handle_focus_move(window, false),
+            Message::FocusNextZone(window) => self.handle_focus_zone(window, true),
+            Message::FocusPrevZone(window) => self.handle_focus_zone(window, false),
+            Message::KeyboardActivate(window) => self.handle_keyboard_activate(window),
             Message::KeyboardSecondaryActivate(window) => {
-                let s = self.surface_mut(window);
-                if s.focused_module.is_none() {
-                    return Task::none();
-                }
-                let screen_size = s.screen_size;
-                if let Some(ref id) = s.focused_module.clone() {
-                    for (_, module) in &self.modules {
-                        if module.id() == *id {
-                            if let Some(msg) =
-                                module.on_interaction(InteractionEvent::Activated(window))
-                            {
-                                // Tray keyboard activation: resolve the icon's widget bounds so
-                                // the popup anchors at the icon, not at the mouse cursor.
-                                if let Message::TrayMenuRequestKeyboard {
-                                    service,
-                                    menu_path,
-                                    source_window,
-                                } = msg
-                                {
-                                    let target =
-                                        crate::modules::tray::tray_icon_widget_id(window, &service);
-                                    let op = FindBounds {
-                                        target,
-                                        result: None,
-                                    };
-                                    let svc = service.clone();
-                                    let mp = menu_path.clone();
-                                    return iced::advanced::widget::operate(op).then(
-                                        move |bounds| {
-                                            Task::done(Message::TrayMenuRequestWithBounds {
-                                                service: svc.clone(),
-                                                menu_path: mp.clone(),
-                                                bounds,
-                                                screen_size,
-                                                source_window,
-                                            })
-                                        },
-                                    );
-                                }
-                                return Task::done(msg);
-                            }
-                            break;
-                        }
-                    }
-                }
-                Task::none()
+                self.handle_keyboard_secondary_activate(window)
             }
-            Message::ToggleExpand => {
-                // IPC-sourced: no window context — toggle each surface if its bar has expand enabled.
-                let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
-                let mut tasks = vec![];
-                for wid in window_ids {
-                    let bar_name = self
-                        .surfaces
-                        .get(&wid)
-                        .map(|s| s.bar_name.clone())
-                        .unwrap_or_default();
-                    let expand_enabled =
-                        Self::bar_for_surface_name(&self.config.bars, &bar_name).expand;
-                    if expand_enabled {
-                        let s = self.surfaces.get_mut(&wid).unwrap();
-                        s.expand = s.expand.toggle();
-                        tasks.push(self.overlay_size_change_for(wid));
-                    }
-                }
-                Task::batch(tasks)
-            }
+            Message::ToggleExpand => self.handle_toggle_expand(),
             Message::TrayUpdated(items) => {
                 use crate::modules::tray::TrayIconModule;
 
@@ -1324,8 +840,9 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Edge;
+    use crate::config::{Edge, ExpandTrigger};
     use crate::niri::NiriEvent;
+    use crate::surface::expand::ExpandState;
 
     fn make_config() -> Config {
         Config::default()

@@ -1,0 +1,159 @@
+use iced::Task;
+
+use super::{App, Message};
+use crate::config::ExpandTrigger;
+use crate::surface::expand::ExpandState;
+
+impl App {
+    pub(super) fn handle_bar_click(&mut self, window: iced::window::Id) -> Task<Message> {
+        if !self.menu_popups.is_empty() {
+            return Task::done(Message::MenuClosed);
+        }
+        let bar_name = self
+            .surface(window)
+            .map(|s| s.bar_name.clone())
+            .unwrap_or_default();
+        let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
+        if !bar.expand || bar.expand_trigger == ExpandTrigger::Hover {
+            return Task::none();
+        }
+        let s = self.surface_mut(window);
+        s.expand = s.expand.toggle();
+        self.overlay_size_change_for(window)
+    }
+
+    pub(super) fn handle_bar_hover_enter(&mut self, window: iced::window::Id) -> Task<Message> {
+        let bar_name = self
+            .surface(window)
+            .map(|s| s.bar_name.clone())
+            .unwrap_or_default();
+        let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
+        let expand_enabled = bar.expand;
+        let expand_trigger = bar.expand_trigger;
+        let hover_delay = bar.hover_delay;
+        let s = self.surface_mut(window);
+        s.bar_hovered = true;
+        if !expand_enabled || expand_trigger != ExpandTrigger::Hover {
+            return Task::none();
+        }
+
+        match s.expand {
+            ExpandState::Collapsed => {
+                if hover_delay == 0 {
+                    let s = self.surface_mut(window);
+                    s.expand = s.expand.toggle();
+                    self.overlay_size_change_for(window)
+                } else {
+                    self.surface_mut(window).hover_pending_ms = Some(0.0);
+                    Task::none()
+                }
+            }
+            ExpandState::Collapsing(_) => {
+                let s = self.surface_mut(window);
+                s.expand = s.expand.toggle();
+                Task::none()
+            }
+            _ => Task::none(),
+        }
+    }
+
+    pub(super) fn handle_bar_hover_exit(&mut self, window: iced::window::Id) -> Task<Message> {
+        let bar_name = self
+            .surface(window)
+            .map(|s| s.bar_name.clone())
+            .unwrap_or_default();
+        let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
+        let expand_enabled = bar.expand;
+        let expand_trigger = bar.expand_trigger;
+        let s = self.surface_mut(window);
+        s.bar_hovered = false;
+        if !expand_enabled || expand_trigger != ExpandTrigger::Hover {
+            return Task::none();
+        }
+
+        s.hover_pending_ms = None;
+        match s.expand {
+            ExpandState::Expanded | ExpandState::Expanding(_) => {
+                let s = self.surface_mut(window);
+                s.expand = s.expand.toggle();
+                self.overlay_size_change_for(window)
+            }
+            _ => Task::none(),
+        }
+    }
+
+    pub(super) fn handle_tick(&mut self) -> Task<Message> {
+        const TICK_MS: f32 = 16.0;
+
+        let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
+        let mut tasks = vec![];
+
+        for wid in window_ids {
+            let bar_name = self
+                .surfaces
+                .get(&wid)
+                .map(|s| s.bar_name.clone())
+                .unwrap_or_default();
+            let effective_bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
+            let effective_hover_delay = effective_bar.hover_delay;
+            let effective_expand_ms = effective_bar.animation.expand_ms;
+            let effective_collapse_ms = effective_bar.animation.collapse_ms;
+            let s = self.surfaces.get_mut(&wid).unwrap();
+
+            if let Some(elapsed) = s.hover_pending_ms {
+                let new_elapsed = elapsed + TICK_MS;
+                if new_elapsed >= effective_hover_delay as f32 {
+                    s.hover_pending_ms = None;
+                    s.expand = ExpandState::Expanding(0.0);
+                    tasks.push(self.overlay_size_change_for(wid));
+                } else {
+                    s.hover_pending_ms = Some(new_elapsed);
+                }
+                continue;
+            }
+
+            match s.expand {
+                ExpandState::Expanding(progress) => {
+                    let new_progress = (progress + TICK_MS / effective_expand_ms).min(1.0);
+                    s.expand = if new_progress >= 1.0 {
+                        ExpandState::Expanded
+                    } else {
+                        ExpandState::Expanding(new_progress)
+                    };
+                    tasks.push(self.overlay_size_change_for(wid));
+                }
+                ExpandState::Collapsing(progress) => {
+                    let new_progress = (progress + TICK_MS / effective_collapse_ms).min(1.0);
+                    s.expand = if new_progress >= 1.0 {
+                        ExpandState::Collapsed
+                    } else {
+                        ExpandState::Collapsing(new_progress)
+                    };
+                    tasks.push(self.overlay_size_change_for(wid));
+                }
+                _ => {}
+            }
+        }
+
+        Task::batch(tasks)
+    }
+
+    pub(super) fn handle_toggle_expand(&mut self) -> Task<Message> {
+        let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
+        let mut tasks = vec![];
+        for wid in window_ids {
+            let bar_name = self
+                .surfaces
+                .get(&wid)
+                .map(|s| s.bar_name.clone())
+                .unwrap_or_default();
+            let expand_enabled = Self::bar_for_surface_name(&self.config.bars, &bar_name).expand;
+            if expand_enabled {
+                let s = self.surfaces.get_mut(&wid).unwrap();
+                s.expand = s.expand.toggle();
+                tasks.push(self.overlay_size_change_for(wid));
+            }
+        }
+        Task::batch(tasks)
+    }
+}
