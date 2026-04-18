@@ -5,6 +5,23 @@ use crate::modules::ModuleState;
 use crate::modules::workspaces::WorkspaceItemModule;
 use crate::niri::NiriEvent;
 
+pub(super) fn workspace_render_state_equal(
+    a: &[niri_ipc::Workspace],
+    b: &[niri_ipc::Workspace],
+) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(left, right)| {
+            left.id == right.id
+                && left.idx == right.idx
+                && left.name == right.name
+                && left.output == right.output
+                && left.is_active == right.is_active
+                && left.is_focused == right.is_focused
+                && left.is_urgent == right.is_urgent
+                && left.active_window_id == right.active_window_id
+        })
+}
+
 impl App {
     pub(super) fn handle_niri_event(&mut self, event: NiriEvent) -> Task<Message> {
         match event {
@@ -27,13 +44,19 @@ impl App {
                 use niri_ipc::Event;
                 match event {
                     Event::WorkspacesChanged { workspaces } => {
-                        self.rebuild_workspace_item_modules(&workspaces);
-                        let open_tasks = if self.manual_outputs {
+                        let changed = !workspace_render_state_equal(
+                            &self.shared.niri.workspaces,
+                            &workspaces,
+                        );
+                        let open_tasks = if changed && self.manual_outputs {
                             self.open_new_output_windows(&workspaces)
                         } else {
                             vec![]
                         };
-                        self.shared.niri.workspaces = workspaces;
+                        if changed {
+                            self.rebuild_workspace_item_modules(&workspaces);
+                            self.shared.niri.workspaces = workspaces;
+                        }
                         if !open_tasks.is_empty() {
                             return Task::batch(open_tasks);
                         }
@@ -98,28 +121,34 @@ impl App {
         use crate::config::ModuleParams;
 
         // Collect placeholder slots: (index, zone, config_name, WorkspacesConfig clone).
-        let slots: Vec<(usize, crate::modules::Zone, String, crate::config::WorkspacesConfig)> =
-            self.modules
-                .iter()
-                .enumerate()
-                .filter(|(_, (_, m))| m.module_type() == "workspaces")
-                .map(|(i, (z, m))| {
-                    let name = m.id().0.clone();
-                    let cfg = self
-                        .config
-                        .modules
-                        .iter()
-                        .find(|mc| mc.name == name)
-                        .and_then(|mc| match &mc.params {
-                            ModuleParams::Workspaces(c) => Some(c.clone()),
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    (i, z.clone(), name, cfg)
-                })
-                .collect();
+        let slots: Vec<(
+            usize,
+            crate::modules::Zone,
+            String,
+            crate::config::WorkspacesConfig,
+        )> = self
+            .modules
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, m))| m.module_type() == "workspaces")
+            .map(|(i, (z, m))| {
+                let name = m.id().0.clone();
+                let cfg = self
+                    .config
+                    .modules
+                    .iter()
+                    .find(|mc| mc.name == name)
+                    .and_then(|mc| match &mc.params {
+                        ModuleParams::Workspaces(c) => Some(c.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                (i, z.clone(), name, cfg)
+            })
+            .collect();
 
-        self.modules.retain(|(_, m)| m.module_type() != "workspace_item");
+        self.modules
+            .retain(|(_, m)| m.module_type() != "workspace_item");
 
         // Clear focused/hovered module on every surface if they pointed at a workspace item
         // that may no longer exist after this rebuild.
@@ -149,7 +178,8 @@ impl App {
             let insert_at = slot_idx + 1;
             for ws in sorted.iter().rev() {
                 let item = WorkspaceItemModule::new(ws.clone(), cfg.clone(), config_name.clone());
-                self.modules.insert(insert_at, (zone.clone(), Box::new(item)));
+                self.modules
+                    .insert(insert_at, (zone.clone(), Box::new(item)));
             }
         }
     }

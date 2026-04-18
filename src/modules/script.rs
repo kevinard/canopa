@@ -1,11 +1,11 @@
 /// Runtime state for the script module.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ScriptState {
     pub output: String,
 }
 
 /// Events emitted by the script subscription.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ScriptEvent {
     /// Command exited 0; stdout (trimmed) is the new output.
     Output(String),

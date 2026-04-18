@@ -1,5 +1,5 @@
 /// Runtime state for the clock module.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClockState {
     pub time: String,
     // Used in view_expanded (collapsed view shows time only)
@@ -7,7 +7,7 @@ pub struct ClockState {
 }
 
 /// Events emitted by the clock subscription.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClockEvent {
     Tick { time: String, date: String },
 }

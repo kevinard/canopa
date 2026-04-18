@@ -32,7 +32,7 @@ pub enum Zone {
 }
 
 /// Per-module runtime state. Variants added per concrete module (Stories 2.3+).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum ModuleState {
     /// Module is starting up; no data yet. Render as empty space — no spinner, no text.
     #[default]

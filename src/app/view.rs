@@ -150,7 +150,9 @@ impl App {
                         }
                     }
                 };
-                Some(ModuleState::FocusedWindow(focused_window::FocusedWindowState { title }))
+                Some(ModuleState::FocusedWindow(
+                    focused_window::FocusedWindowState { title },
+                ))
             } else {
                 None
             };

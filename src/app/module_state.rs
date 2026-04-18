@@ -6,18 +6,28 @@ use crate::modules::network::{NetworkConnectivity, NetworkState};
 use crate::modules::volume::VolumeState;
 
 impl App {
+    fn push_state_if_changed(&mut self, id: crate::modules::ModuleId, state: ModuleState) {
+        if self.shared.modules.get(&id) != Some(&state) {
+            self.shared.modules.insert(id, state);
+        }
+    }
+
     /// Push new battery state to all battery module instances in shared.modules.
     pub(super) fn push_battery_state(&mut self, percentage: f64, is_charging: bool) {
-        for (_, module) in &self.modules {
-            if module.module_type() == "battery" {
-                self.shared.modules.insert(
-                    module.id(),
-                    ModuleState::Battery(BatteryState {
-                        percentage,
-                        is_charging,
-                    }),
-                );
-            }
+        let ids: Vec<_> = self
+            .modules
+            .iter()
+            .filter(|(_, module)| module.module_type() == "battery")
+            .map(|(_, module)| module.id())
+            .collect();
+        for id in ids {
+            self.push_state_if_changed(
+                id,
+                ModuleState::Battery(BatteryState {
+                    percentage,
+                    is_charging,
+                }),
+            );
         }
     }
 
@@ -26,27 +36,32 @@ impl App {
         connectivity: NetworkConnectivity,
         label: Option<String>,
     ) {
-        for (_, module) in &self.modules {
-            if module.module_type() == "network" {
-                self.shared.modules.insert(
-                    module.id(),
-                    ModuleState::Network(NetworkState {
-                        connectivity: connectivity.clone(),
-                        label: label.clone(),
-                    }),
-                );
-            }
+        let ids: Vec<_> = self
+            .modules
+            .iter()
+            .filter(|(_, module)| module.module_type() == "network")
+            .map(|(_, module)| module.id())
+            .collect();
+        for id in ids {
+            self.push_state_if_changed(
+                id,
+                ModuleState::Network(NetworkState {
+                    connectivity: connectivity.clone(),
+                    label: label.clone(),
+                }),
+            );
         }
     }
 
     pub(super) fn push_volume_state(&mut self, volume: f64, muted: bool) {
-        for (_, module) in &self.modules {
-            if module.module_type() == "volume" {
-                self.shared.modules.insert(
-                    module.id(),
-                    ModuleState::Volume(VolumeState { volume, muted }),
-                );
-            }
+        let ids: Vec<_> = self
+            .modules
+            .iter()
+            .filter(|(_, module)| module.module_type() == "volume")
+            .map(|(_, module)| module.id())
+            .collect();
+        for id in ids {
+            self.push_state_if_changed(id, ModuleState::Volume(VolumeState { volume, muted }));
         }
     }
 
@@ -59,15 +74,19 @@ impl App {
             .focused_window_id
             .and_then(|id| self.shared.niri.windows.get(&id))
             .and_then(|w| w.title.clone());
-        for (_, module) in &self.modules {
-            if module.module_type() == "focused-window" {
-                self.shared.modules.insert(
-                    module.id(),
-                    ModuleState::FocusedWindow(focused_window::FocusedWindowState {
-                        title: title.clone(),
-                    }),
-                );
-            }
+        let ids: Vec<_> = self
+            .modules
+            .iter()
+            .filter(|(_, module)| module.module_type() == "focused-window")
+            .map(|(_, module)| module.id())
+            .collect();
+        for id in ids {
+            self.push_state_if_changed(
+                id,
+                ModuleState::FocusedWindow(focused_window::FocusedWindowState {
+                    title: title.clone(),
+                }),
+            );
         }
     }
 }

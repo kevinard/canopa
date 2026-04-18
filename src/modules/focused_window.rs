@@ -6,7 +6,7 @@ use crate::theme;
 /// `title = None` means no window is focused → module renders nothing (UX-DR16).
 /// Populated by WindowFocusChanged / WindowsChanged / WindowOpenedOrChanged / WindowClosed
 /// events via app.rs update(). Story 4.5 may set Unavailable instead.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct FocusedWindowState {
     pub title: Option<String>,
 }
