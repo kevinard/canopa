@@ -530,16 +530,27 @@ impl std::hash::Hash for SniConnData {
     }
 }
 
+/// Incremental tray change event emitted by the SNI subscription.
+#[derive(Debug, Clone)]
+pub enum TrayEvent {
+    /// Full snapshot: replaces all current tray icons (sent once on startup/reset).
+    Snapshot(Vec<TrayItem>),
+    /// A new item became visible (Active or NeedsAttention).
+    ItemAdded(TrayItem),
+    /// An item was removed or became Passive; keyed by the D-Bus service string.
+    ItemRemoved(String),
+}
+
 enum SniSubState {
     Init,
     Running {
-        rx: tokio::sync::mpsc::UnboundedReceiver<Vec<TrayItem>>,
+        rx: tokio::sync::mpsc::UnboundedReceiver<TrayEvent>,
     },
     Done,
 }
 
 /// Returns an Iced subscription that starts the SNI watcher+host on `conn`
-/// and emits `Message::TrayUpdated(Vec<TrayItem>)` on every change.
+/// and emits `Message::TrayEvent` on every change.
 pub fn sni_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(SniConnData(conn), |data: &SniConnData| {
         let conn = data.0.clone();
@@ -552,18 +563,21 @@ pub fn sni_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app
                         tokio::spawn(async move {
                             let _ = run_sni_task(conn, tx).await;
                         });
-                        // Emit empty list immediately so the tray module starts in Loading state.
+                        // Emit empty snapshot immediately so the tray module starts clean.
                         Some((
-                            crate::app::Message::TrayUpdated(vec![]),
+                            crate::app::Message::TrayEvent(TrayEvent::Snapshot(vec![])),
                             SniSubState::Running { rx },
                         ))
                     }
                     SniSubState::Running { mut rx } => match rx.recv().await {
-                        Some(items) => Some((
-                            crate::app::Message::TrayUpdated(items),
+                        Some(event) => Some((
+                            crate::app::Message::TrayEvent(event),
                             SniSubState::Running { rx },
                         )),
-                        None => Some((crate::app::Message::TrayUpdated(vec![]), SniSubState::Done)),
+                        None => Some((
+                            crate::app::Message::TrayEvent(TrayEvent::Snapshot(vec![])),
+                            SniSubState::Done,
+                        )),
                     },
                     SniSubState::Done => None,
                 }
@@ -597,7 +611,7 @@ fn parse_service_string(s: &str) -> (&str, &str) {
 /// 5. Sends updated `Vec<TrayItem>` on `tx` on every change.
 async fn run_sni_task(
     conn: zbus::Connection,
-    tx: tokio::sync::mpsc::UnboundedSender<Vec<TrayItem>>,
+    tx: tokio::sync::mpsc::UnboundedSender<TrayEvent>,
 ) -> zbus::Error {
     use iced::futures::StreamExt;
     use std::collections::HashMap;
@@ -661,7 +675,7 @@ async fn run_sni_task(
         }
     }
     let snapshot: Vec<TrayItem> = items.values().cloned().collect();
-    if tx.send(snapshot).is_err() {
+    if tx.send(TrayEvent::Snapshot(snapshot)).is_err() {
         return zbus::Error::Failure("channel closed".into());
     }
 
@@ -674,17 +688,21 @@ async fn run_sni_task(
                     let (svc, path_str) = parse_service_string(&service_str);
                     if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str)
                         && let Some(item) = fetch_item(&conn, svc, &path).await {
-                            items.insert(service_str, item);
-                            let snapshot: Vec<TrayItem> = items.values().cloned().collect();
-                            if tx.send(snapshot).is_err() { break; }
+                            // If this service was already known, remove the old entry first.
+                            if items.remove(&service_str).is_some() {
+                                if tx.send(TrayEvent::ItemRemoved(service_str.clone())).is_err() { break; }
+                            }
+                            items.insert(service_str, item.clone());
+                            if tx.send(TrayEvent::ItemAdded(item)).is_err() { break; }
                         }
                 }
             }
             Some(signal) = item_unregistered.next() => {
                 if let Ok(args) = signal.args() {
-                    items.remove(args.service.as_str());
-                    let snapshot: Vec<TrayItem> = items.values().cloned().collect();
-                    if tx.send(snapshot).is_err() { break; }
+                    let service_str = args.service.to_string();
+                    if items.remove(&service_str).is_some() {
+                        if tx.send(TrayEvent::ItemRemoved(service_str)).is_err() { break; }
+                    }
                 }
             }
             Some(signal) = name_changes.next() => {
@@ -697,8 +715,7 @@ async fn run_sni_task(
                     if new_owner_empty {
                         let gone = args.name().to_string();
                         if items.remove(&gone).is_some() {
-                            let snapshot: Vec<TrayItem> = items.values().cloned().collect();
-                            if tx.send(snapshot).is_err() { break; }
+                            if tx.send(TrayEvent::ItemRemoved(gone)).is_err() { break; }
                         }
                     }
                 }

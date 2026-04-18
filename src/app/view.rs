@@ -114,6 +114,7 @@ impl App {
         let mut bottom: Vec<Element<'_, Message>> = vec![];
 
         let effective_zone = self.effective_module_zones_for_bar(bar);
+        let default_state = ModuleState::default();
 
         for (_boot_zone, module) in &self.modules {
             let id = module.id();
@@ -121,49 +122,53 @@ impl App {
                 continue;
             };
 
-            let state = {
-                if module.module_type() == "workspace_item" {
-                    ModuleState::WorkspaceOutput(surface.output_name.clone())
+            // Compute a derived state only when module logic requires a runtime-calculated value
+            // (workspace_item, FocusedWindow title derivation). All other modules borrow directly
+            // from the shared map so no clone is needed.
+            let derived: Option<ModuleState> = if module.module_type() == "workspace_item" {
+                Some(ModuleState::WorkspaceOutput(surface.output_name.clone()))
+            } else if let Some(ModuleState::FocusedWindow(fw)) =
+                self.shared.modules.get(&module.id())
+            {
+                let title = if surface.output_name.is_empty() {
+                    fw.title.clone()
                 } else {
-                let raw = self
+                    match self.shared.niri.focused_window_id {
+                        None => self
+                            .shared
+                            .niri
+                            .active_window_title_for_output(&surface.output_name),
+                        Some(_) => {
+                            let fo = self.shared.niri.focused_output();
+                            if fo.is_none() || fo == Some(surface.output_name.as_str()) {
+                                fw.title.clone()
+                            } else {
+                                self.shared
+                                    .niri
+                                    .active_window_title_for_output(&surface.output_name)
+                            }
+                        }
+                    }
+                };
+                Some(ModuleState::FocusedWindow(focused_window::FocusedWindowState { title }))
+            } else {
+                None
+            };
+
+            let state: &ModuleState = match &derived {
+                Some(s) => s,
+                None => self
                     .shared
                     .modules
                     .get(&module.id())
-                    .cloned()
-                    .unwrap_or_default();
-                match raw {
-                    ModuleState::FocusedWindow(ref fw) => {
-                        let title = if surface.output_name.is_empty() {
-                            fw.title.clone()
-                        } else {
-                            match self.shared.niri.focused_window_id {
-                                None => self
-                                    .shared
-                                    .niri
-                                    .active_window_title_for_output(&surface.output_name),
-                                Some(_) => {
-                                    let fo = self.shared.niri.focused_output();
-                                    if fo.is_none() || fo == Some(surface.output_name.as_str()) {
-                                        fw.title.clone()
-                                    } else {
-                                        self.shared
-                                            .niri
-                                            .active_window_title_for_output(&surface.output_name)
-                                    }
-                                }
-                            }
-                        };
-                        ModuleState::FocusedWindow(focused_window::FocusedWindowState { title })
-                    }
-                    other => other,
-                }
-                } // end else workspace_item
+                    .unwrap_or(&default_state),
             };
+
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);
 
             let module_view: Element<'_, Message> =
-                module.view_for_bar(&state, window, is_horizontal, shows_expanded);
+                module.view_for_bar(state, window, is_horizontal, shows_expanded);
 
             let scroll_id = id.clone();
             let view: Element<'_, Message> =

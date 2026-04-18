@@ -140,4 +140,41 @@ impl App {
             })
         }
     }
+
+    /// Remove the `tray_icon` module with the given module id from `self.modules`,
+    /// and clear any surface hover/focus that pointed at it.
+    pub(super) fn remove_tray_icon(&mut self, module_id: &str) {
+        let had_it = self
+            .modules
+            .iter()
+            .any(|(_, m)| m.module_type() == "tray_icon" && m.id().0 == module_id);
+        if !had_it {
+            return;
+        }
+        self.modules
+            .retain(|(_, m)| !(m.module_type() == "tray_icon" && m.id().0 == module_id));
+        for s in self.surfaces.values_mut() {
+            if s.focused_module.as_ref().map(|id| id.0.as_str()) == Some(module_id) {
+                s.focused_module = None;
+            }
+            if s.hovered_module.as_ref().map(|id| id.0.as_str()) == Some(module_id) {
+                s.hovered_module = None;
+            }
+        }
+    }
+
+    /// Return the index at which to insert a new tray icon after `slot_idx`.
+    /// Scans forward past any existing `tray_icon` modules for the same slot.
+    pub(super) fn tray_insert_position(&self, slot_idx: usize, config_name: &str) -> usize {
+        let mut pos = slot_idx + 1;
+        while pos < self.modules.len() {
+            let (_, m) = &self.modules[pos];
+            if m.module_type() == "tray_icon" && m.config_name() == Some(config_name) {
+                pos += 1;
+            } else {
+                break;
+            }
+        }
+        pos
+    }
 }

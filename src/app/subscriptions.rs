@@ -7,26 +7,36 @@ use crate::surface::input::keyboard_focus_subscription;
 
 impl App {
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        let module_subs =
-            iced::Subscription::batch(self.modules.iter().map(|(_, m)| m.subscription()));
+        // Single pass: collect module subscriptions and track which module types are present.
+        let mut has_battery = false;
+        let mut has_network = false;
+        let mut has_volume = false;
+        let mut has_tray = false;
+        let mut per_module: Vec<iced::Subscription<Message>> = Vec::new();
+
+        for (_, m) in &self.modules {
+            match m.module_type() {
+                "battery" => has_battery = true,
+                "network" => has_network = true,
+                "volume" => has_volume = true,
+                "tray" => has_tray = true,
+                _ => {}
+            }
+            per_module.push(m.subscription());
+        }
+
+        let module_subs = iced::Subscription::batch(per_module);
         let niri_sub = niri_subscription();
 
-        let needs_dbus = self
-            .modules
-            .iter()
-            .any(|(_, m)| matches!(m.module_type(), "battery" | "network" | "volume" | "tray"));
+        let needs_dbus = has_battery || has_network || has_volume || has_tray;
         let dbus_sub = if needs_dbus {
             crate::dbus::dbus_init_subscription()
         } else {
             iced::Subscription::none()
         };
 
-        let battery_sub = if let Some(conn) = self.shared.dbus.system.clone() {
-            if self
-                .modules
-                .iter()
-                .any(|(_, m)| m.module_type() == "battery")
-            {
+        let battery_sub = if has_battery {
+            if let Some(conn) = self.shared.dbus.system.clone() {
                 crate::dbus::upower::battery_subscription(conn)
             } else {
                 iced::Subscription::none()
@@ -35,12 +45,8 @@ impl App {
             iced::Subscription::none()
         };
 
-        let network_sub = if let Some(conn) = self.shared.dbus.system.clone() {
-            if self
-                .modules
-                .iter()
-                .any(|(_, m)| m.module_type() == "network")
-            {
+        let network_sub = if has_network {
+            if let Some(conn) = self.shared.dbus.system.clone() {
                 crate::dbus::networkmanager::network_subscription(conn)
             } else {
                 iced::Subscription::none()
@@ -49,18 +55,14 @@ impl App {
             iced::Subscription::none()
         };
 
-        let volume_sub = if self
-            .modules
-            .iter()
-            .any(|(_, m)| m.module_type() == "volume")
-        {
+        let volume_sub = if has_volume {
             crate::dbus::wireplumber::volume_subscription()
         } else {
             iced::Subscription::none()
         };
 
-        let sni_sub = if let Some(conn) = self.shared.dbus.session.clone() {
-            if self.modules.iter().any(|(_, m)| m.module_type() == "tray") {
+        let sni_sub = if has_tray {
+            if let Some(conn) = self.shared.dbus.session.clone() {
                 crate::dbus::sni_host::sni_subscription(conn)
             } else {
                 iced::Subscription::none()

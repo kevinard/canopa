@@ -145,8 +145,8 @@ pub enum Message {
     /// Keyboard-triggered expand/collapse toggle via Unix socket IPC (Story 6.4).
     /// Global: IPC has no window context, so all surfaces toggle simultaneously.
     ToggleExpand,
-    /// System tray items updated from SNI host (Task 4).
-    TrayUpdated(Vec<crate::dbus::sni_host::TrayItem>),
+    /// Incremental tray change from SNI host.
+    TrayEvent(crate::dbus::sni_host::TrayEvent),
     /// Left-click on a tray icon -- sends Activate to the SNI item.
     TrayActivate {
         service: String,
@@ -392,55 +392,88 @@ impl App {
                 self.handle_keyboard_secondary_activate(window)
             }
             Message::ToggleExpand => self.handle_toggle_expand(),
-            Message::TrayUpdated(items) => {
+            Message::TrayEvent(event) => {
+                use crate::dbus::sni_host::{ItemStatus, TrayEvent};
                 use crate::modules::tray::TrayIconModule;
 
-                // Find the zone and config name of each TrayModule placeholder so we can
-                // insert icon modules at the same position.
-                let tray_slots: Vec<(usize, Zone, String)> = self
-                    .modules
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, (_, m))| m.module_type() == "tray")
-                    .map(|(i, (z, m))| (i, z.clone(), m.id().0.clone()))
-                    .collect();
+                match event {
+                    TrayEvent::Snapshot(items) => {
+                        // Full rebuild: remove all existing tray icon modules, then re-insert
+                        // from the snapshot. Only happens on startup and connection reset.
+                        let tray_slots: Vec<(usize, Zone, String)> = self
+                            .modules
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, (_, m))| m.module_type() == "tray")
+                            .map(|(i, (z, m))| (i, z.clone(), m.id().0.clone()))
+                            .collect();
 
-                // Remove all existing tray icon modules (keep the TrayModule placeholders).
-                self.modules.retain(|(_, m)| m.module_type() != "tray_icon");
+                        self.modules.retain(|(_, m)| m.module_type() != "tray_icon");
 
-                // Clear focused/hovered module on every surface if they pointed at a tray icon
-                // that may no longer exist after this rebuild.
-                for s in self.surfaces.values_mut() {
-                    if s.focused_module
-                        .as_ref()
-                        .map(|id| id.0.starts_with("tray:"))
-                        .unwrap_or(false)
-                    {
-                        s.focused_module = None;
+                        for s in self.surfaces.values_mut() {
+                            if s.focused_module
+                                .as_ref()
+                                .map(|id| id.0.starts_with("tray:"))
+                                .unwrap_or(false)
+                            {
+                                s.focused_module = None;
+                            }
+                            if s.hovered_module
+                                .as_ref()
+                                .map(|id| id.0.starts_with("tray:"))
+                                .unwrap_or(false)
+                            {
+                                s.hovered_module = None;
+                            }
+                        }
+
+                        let active_items: Vec<&crate::dbus::sni_host::TrayItem> = items
+                            .iter()
+                            .filter(|i| i.status != ItemStatus::Passive)
+                            .collect();
+
+                        for (slot_idx, zone, config_name) in tray_slots.iter().rev() {
+                            let insert_at = slot_idx + 1;
+                            for item in active_items.iter().rev() {
+                                let icon_module =
+                                    TrayIconModule::new((*item).clone(), config_name.clone());
+                                self.modules
+                                    .insert(insert_at, (zone.clone(), Box::new(icon_module)));
+                            }
+                        }
                     }
-                    if s.hovered_module
-                        .as_ref()
-                        .map(|id| id.0.starts_with("tray:"))
-                        .unwrap_or(false)
-                    {
-                        s.hovered_module = None;
+
+                    TrayEvent::ItemAdded(item) => {
+                        // Incremental add: insert one module per tray placeholder slot.
+                        // If this service already exists (re-registration), remove it first.
+                        let service_id = format!("tray:{}", item.service);
+                        self.remove_tray_icon(&service_id);
+
+                        if item.status != ItemStatus::Passive {
+                            let tray_slots: Vec<(usize, Zone, String)> = self
+                                .modules
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, (_, m))| m.module_type() == "tray")
+                                .map(|(i, (z, m))| (i, z.clone(), m.id().0.clone()))
+                                .collect();
+
+                            // Insert in reverse slot order so earlier slot indices stay valid.
+                            for (slot_idx, zone, config_name) in tray_slots.iter().rev() {
+                                // Find position after the last existing tray_icon for this slot.
+                                let insert_at = self.tray_insert_position(*slot_idx, &config_name);
+                                let icon_module =
+                                    TrayIconModule::new(item.clone(), config_name.clone());
+                                self.modules
+                                    .insert(insert_at, (zone.clone(), Box::new(icon_module)));
+                            }
+                        }
                     }
-                }
 
-                // For each TrayModule slot, insert one TrayIconModule per active item
-                // immediately after the placeholder's current index.
-                // Insert in reverse slot order so earlier slots' indices remain valid.
-                let active_items: Vec<&crate::dbus::sni_host::TrayItem> = items
-                    .iter()
-                    .filter(|i| i.status != crate::dbus::sni_host::ItemStatus::Passive)
-                    .collect();
-
-                for (slot_idx, zone, config_name) in tray_slots.iter().rev() {
-                    let insert_at = slot_idx + 1;
-                    for item in active_items.iter().rev() {
-                        let icon_module = TrayIconModule::new((*item).clone(), config_name.clone());
-                        self.modules
-                            .insert(insert_at, (zone.clone(), Box::new(icon_module)));
+                    TrayEvent::ItemRemoved(service) => {
+                        // Incremental remove: drop just the one module for this service.
+                        let service_id = format!("tray:{service}");
+                        self.remove_tray_icon(&service_id);
                     }
                 }
 
@@ -3156,7 +3189,9 @@ mod tests {
             menu_path: None,
         };
         // Must not panic.
-        let _ = app.update(Message::TrayUpdated(vec![item]));
+        let _ = app.update(Message::TrayEvent(
+            crate::dbus::sni_host::TrayEvent::Snapshot(vec![item]),
+        ));
     }
 
     // --- Menu item hover tests ---
