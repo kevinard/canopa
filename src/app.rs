@@ -250,12 +250,25 @@ impl Message {
             Message::Niri(crate::niri::NiriEvent::Unavailable) => "Niri::Unavailable",
             Message::Niri(crate::niri::NiriEvent::Event(event)) => match event {
                 niri_ipc::Event::WorkspacesChanged { .. } => "Niri::WorkspacesChanged",
+                niri_ipc::Event::WorkspaceUrgencyChanged { .. } => "Niri::WorkspaceUrgencyChanged",
                 niri_ipc::Event::WorkspaceActivated { .. } => "Niri::WorkspaceActivated",
+                niri_ipc::Event::WorkspaceActiveWindowChanged { .. } => {
+                    "Niri::WorkspaceActiveWindowChanged"
+                }
                 niri_ipc::Event::WindowFocusChanged { .. } => "Niri::WindowFocusChanged",
                 niri_ipc::Event::WindowsChanged { .. } => "Niri::WindowsChanged",
                 niri_ipc::Event::WindowOpenedOrChanged { .. } => "Niri::WindowOpenedOrChanged",
                 niri_ipc::Event::WindowClosed { .. } => "Niri::WindowClosed",
-                _ => "Niri::Other",
+                niri_ipc::Event::WindowFocusTimestampChanged { .. } => {
+                    "Niri::WindowFocusTimestampChanged"
+                }
+                niri_ipc::Event::WindowUrgencyChanged { .. } => "Niri::WindowUrgencyChanged",
+                niri_ipc::Event::WindowLayoutsChanged { .. } => "Niri::WindowLayoutsChanged",
+                niri_ipc::Event::KeyboardLayoutsChanged { .. } => "Niri::KeyboardLayoutsChanged",
+                niri_ipc::Event::KeyboardLayoutSwitched { .. } => "Niri::KeyboardLayoutSwitched",
+                niri_ipc::Event::OverviewOpenedOrClosed { .. } => "Niri::OverviewOpenedOrClosed",
+                niri_ipc::Event::ConfigLoaded { .. } => "Niri::ConfigLoaded",
+                niri_ipc::Event::ScreenshotCaptured { .. } => "Niri::ScreenshotCaptured",
             },
             Message::Battery(_) => "Battery",
             Message::Network(_) => "Network",
@@ -1221,6 +1234,20 @@ mod tests {
 
         let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
         assert_eq!(snapshot.updates.get("Niri::WorkspaceActivated"), Some(&1));
+    }
+
+    #[test]
+    fn perf_tracker_labels_ignored_niri_event_variants() {
+        use niri_ipc::Event;
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        app.perf = Some(super::perf::PerfTracker::default());
+
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::ConfigLoaded {
+            failed: false,
+        })));
+
+        let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
+        assert_eq!(snapshot.updates.get("Niri::ConfigLoaded"), Some(&1));
     }
 
     #[test]
