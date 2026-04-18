@@ -9,6 +9,10 @@ use crate::niri::NiriEvent;
 #[derive(Hash)]
 struct NiriSubscriptionKey;
 
+fn should_emit_event(event: &Event) -> bool {
+    !matches!(event, Event::WindowFocusTimestampChanged { .. })
+}
+
 /// Internal subscription state machine.
 enum NiriSubState {
     /// Not yet connected; will attempt connection on next poll.
@@ -69,18 +73,46 @@ pub fn niri_subscription() -> iced::Subscription<Message> {
                         }
                     }
                 }
-                NiriSubState::Running(mut rx) => match rx.recv().await {
-                    Some(Ok(event)) => Some((
-                        Message::Niri(NiriEvent::Event(event)),
-                        NiriSubState::Running(rx),
-                    )),
-                    _ => {
-                        // Channel closed or error — treat as disconnection.
-                        Some((Message::Niri(NiriEvent::Unavailable), NiriSubState::Done))
+                NiriSubState::Running(mut rx) => loop {
+                    match rx.recv().await {
+                        Some(Ok(event)) if should_emit_event(&event) => {
+                            break Some((
+                                Message::Niri(NiriEvent::Event(event)),
+                                NiriSubState::Running(rx),
+                            ));
+                        }
+                        Some(Ok(_)) => {}
+                        _ => {
+                            // Channel closed or error — treat as disconnection.
+                            break Some((
+                                Message::Niri(NiriEvent::Unavailable),
+                                NiriSubState::Done,
+                            ));
+                        }
                     }
                 },
                 NiriSubState::Done => None, // Stream exhausted; Iced will not restart it.
             }
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn niri_subscription_filters_focus_timestamp_events() {
+        assert!(!should_emit_event(&Event::WindowFocusTimestampChanged {
+            id: 1,
+            focus_timestamp: None,
+        }));
+    }
+
+    #[test]
+    fn niri_subscription_keeps_focus_identity_events() {
+        assert!(should_emit_event(&Event::WindowFocusChanged {
+            id: Some(1)
+        }));
+    }
 }
