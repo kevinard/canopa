@@ -98,6 +98,12 @@ impl App {
             iced::Subscription::none()
         };
 
+        let perf_sub = if self.perf.is_some() {
+            iced::time::every(Duration::from_secs(5)).map(|_| Message::PerfReport)
+        } else {
+            iced::Subscription::none()
+        };
+
         iced::Subscription::batch([
             module_subs,
             niri_sub,
@@ -110,6 +116,7 @@ impl App {
             focus_sub,
             ipc_sub,
             tick_sub,
+            perf_sub,
         ])
     }
 }
