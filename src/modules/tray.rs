@@ -177,6 +177,13 @@ impl crate::modules::Module for TrayModule {
     }
 }
 
+/// Stable widget id used to locate a tray icon's bounding box via widget operation.
+/// Includes the bar window ID so FindBounds only matches within the correct bar when
+/// the same tray icon is rendered in multiple bars simultaneously.
+pub fn tray_icon_widget_id(window: iced::window::Id, service: &str) -> iced::widget::Id {
+    iced::widget::Id::from(format!("tray-icon:{window:?}:{service}"))
+}
+
 // ---------------------------------------------------------------------------
 // TrayIconModule -- one per active SNI item, acts as a full independent module
 // ---------------------------------------------------------------------------
@@ -201,7 +208,7 @@ impl TrayIconModule {
         TrayIconModule { id, item, config_name }
     }
 
-    fn build_view(&self, horizontal: bool) -> iced::Element<'static, crate::app::Message> {
+    fn build_view(&self, horizontal: bool, window: iced::window::Id) -> iced::Element<'static, crate::app::Message> {
         use iced::widget::mouse_area;
 
         let icon = icon_widget(&self.item);
@@ -243,14 +250,17 @@ impl TrayIconModule {
             })
             .into();
 
+        let widget_id = tray_icon_widget_id(window, &self.item.service);
         if horizontal {
             iced::widget::container(interactive)
+                .id(widget_id)
                 .align_x(iced::Alignment::Center)
                 .align_y(iced::Alignment::Center)
                 .height(iced::Length::Fill)
                 .into()
         } else {
             iced::widget::container(interactive)
+                .id(widget_id)
                 .align_x(iced::Alignment::Center)
                 .align_y(iced::Alignment::Center)
                 .width(iced::Length::Fill)
@@ -273,15 +283,21 @@ impl crate::modules::Module for TrayIconModule {
     }
 
     fn view_collapsed(&self, _state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
-        self.build_view(false)
+        iced::widget::Space::new().into()
     }
 
     fn view_expanded(&self, _state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
-        self.build_view(false)
+        iced::widget::Space::new().into()
     }
 
-    fn view_horizontal(&self, _state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
-        self.build_view(true)
+    fn view_for_bar(
+        &self,
+        _state: &ModuleState,
+        window: iced::window::Id,
+        horizontal: bool,
+        _expanded: bool,
+    ) -> iced::Element<'_, crate::app::Message> {
+        self.build_view(horizontal, window)
     }
 
     fn on_interaction(&self, event: InteractionEvent) -> Option<crate::app::Message> {
@@ -289,10 +305,13 @@ impl crate::modules::Module for TrayIconModule {
             InteractionEvent::Clicked => Some(crate::app::Message::TrayActivate {
                 service: self.item.service.clone(),
             }),
-            InteractionEvent::Activated => Some(crate::app::Message::TrayMenuRequest {
-                service: self.item.service.clone(),
-                menu_path: self.item.menu_path.clone(),
-            }),
+            InteractionEvent::Activated(window) => {
+                Some(crate::app::Message::TrayMenuRequestKeyboard {
+                    service: self.item.service.clone(),
+                    menu_path: self.item.menu_path.clone(),
+                    source_window: Some(window),
+                })
+            }
             _ => None,
         }
     }
@@ -362,10 +381,10 @@ mod tests {
             ),
         };
         let m = TrayIconModule::new(item, "tray".into());
-        let msg = m.on_interaction(InteractionEvent::Activated).unwrap();
+        let msg = m.on_interaction(InteractionEvent::Activated(iced::window::Id::unique())).unwrap();
         assert!(matches!(
             msg,
-            crate::app::Message::TrayMenuRequest { service, .. } if service == "org.test.App"
+            crate::app::Message::TrayMenuRequestKeyboard { service, .. } if service == "org.test.App"
         ));
     }
 }

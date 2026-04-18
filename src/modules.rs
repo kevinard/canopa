@@ -62,7 +62,7 @@ pub enum ModuleEvent {
 #[derive(Debug, Clone)]
 pub enum InteractionEvent {
     Clicked,
-    Activated,
+    Activated(iced::window::Id),
     ScrollUp,
     ScrollDown,
 }
@@ -90,6 +90,27 @@ pub trait Module: Send + Sync {
     /// suited for a side-by-side row layout. Defaults to `view_expanded`.
     fn view_horizontal(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
         self.view_expanded(state)
+    }
+    /// View used when rendering this module inside a bar surface.
+    ///
+    /// `window` is the bar's window ID; modules that assign widget IDs (e.g. tray icons)
+    /// must embed it so `FindBounds` only matches widgets in the correct bar.
+    /// The default dispatches to the appropriate view method.
+    fn view_for_bar(
+        &self,
+        state: &ModuleState,
+        window: iced::window::Id,
+        horizontal: bool,
+        expanded: bool,
+    ) -> iced::Element<'_, crate::app::Message> {
+        let _ = window;
+        if expanded {
+            self.view_expanded(state)
+        } else if horizontal {
+            self.view_horizontal(state)
+        } else {
+            self.view_collapsed(state)
+        }
     }
     fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {
         None

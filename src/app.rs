@@ -31,6 +31,30 @@ use crate::surface::frame::module_frame;
 use crate::surface::input::{init_expand_keybind, keyboard_focus_subscription};
 use crate::surface::layout::zone_layout;
 
+/// Widget operation that records the bounds of the container whose id matches `target`.
+/// Always yields `Some(self.result)` on finish so callers can observe a "not found" outcome.
+struct FindBounds {
+    target: iced::widget::Id,
+    result: Option<iced::Rectangle>,
+}
+
+impl iced::advanced::widget::Operation<Option<iced::Rectangle>> for FindBounds {
+    fn traverse(
+        &mut self,
+        operate: &mut dyn FnMut(&mut dyn iced::advanced::widget::Operation<Option<iced::Rectangle>>),
+    ) {
+        operate(self);
+    }
+    fn container(&mut self, id: Option<&iced::widget::Id>, bounds: iced::Rectangle) {
+        if id == Some(&self.target) {
+            self.result = Some(bounds);
+        }
+    }
+    fn finish(&self) -> iced::advanced::widget::operation::Outcome<Option<iced::Rectangle>> {
+        iced::advanced::widget::operation::Outcome::Some(self.result)
+    }
+}
+
 /// Shared state: module data visible to all surfaces.
 ///
 /// Module data (battery %, workspace list, etc.) lives here.
@@ -150,9 +174,28 @@ pub enum Message {
     /// Left-click on a tray icon -- sends Activate to the SNI item.
     TrayActivate { service: String },
     /// Right-click on a tray icon -- opens the DBusMenu context menu.
+    /// Anchored at the mouse cursor position.
     TrayMenuRequest {
         service: String,
         menu_path: Option<zbus::zvariant::OwnedObjectPath>,
+    },
+    /// Keyboard-triggered menu open (Space on focused tray icon). Anchored at
+    /// the icon's widget bounds, resolved via a widget operation.
+    TrayMenuRequestKeyboard {
+        service: String,
+        menu_path: Option<zbus::zvariant::OwnedObjectPath>,
+        source_window: Option<iced::window::Id>,
+    },
+    /// Internal: widget-operation result carrying the icon's screen bounds.
+    /// Dispatched after the bounds lookup completes; opens the menu anchored there.
+    TrayMenuRequestWithBounds {
+        service: String,
+        menu_path: Option<zbus::zvariant::OwnedObjectPath>,
+        bounds: Option<iced::Rectangle>,
+        screen_size: (u32, u32),
+        /// The bar window that triggered the request (keyboard path only).
+        /// Used to resolve bar_name / bar.edge for menu positioning.
+        source_window: Option<iced::window::Id>,
     },
     /// Middle-click on a tray icon -- sends SecondaryActivate.
     TraySecondaryActivate { service: String },
@@ -190,6 +233,8 @@ pub enum Message {
         service: String,
         menu_path: zbus::zvariant::OwnedObjectPath,
         tree: crate::surface::menu_popup::MenuTree,
+        /// Bar name used to look up bar.edge for popup positioning.
+        bar_name: String,
     },
     /// Cursor moved within a bar surface window. Used to track anchor position for menu popups.
     CursorMoved(iced::window::Id, iced::Point),
@@ -1020,10 +1065,30 @@ impl App {
                 if s.focused_module.is_none() {
                     return Task::none();
                 }
+                let screen_size = s.screen_size;
                 if let Some(ref id) = s.focused_module.clone() {
                     for (_, module) in &self.modules {
                         if module.id() == *id {
-                            if let Some(msg) = module.on_interaction(InteractionEvent::Activated) {
+                            if let Some(msg) = module.on_interaction(InteractionEvent::Activated(window)) {
+                                // Tray keyboard activation: resolve the icon's widget bounds so
+                                // the popup anchors at the icon, not at the mouse cursor.
+                                if let Message::TrayMenuRequestKeyboard { service, menu_path, source_window } = msg {
+                                    let target = crate::modules::tray::tray_icon_widget_id(window, &service);
+                                    let op = FindBounds { target, result: None };
+                                    let svc = service.clone();
+                                    let mp = menu_path.clone();
+                                    return iced::advanced::widget::operate(op).then(
+                                        move |bounds| {
+                                            Task::done(Message::TrayMenuRequestWithBounds {
+                                                service: svc.clone(),
+                                                menu_path: mp.clone(),
+                                                bounds,
+                                                screen_size,
+                                                source_window,
+                                            })
+                                        },
+                                    );
+                                }
                                 return Task::done(msg);
                             }
                             break;
@@ -1178,6 +1243,10 @@ impl App {
                         .and_then(|(w, _)| self.surfaces.get(&w))
                         .map(|s| s.screen_size)
                         .unwrap_or((0, 0));
+                    let bar_name = self.last_cursor
+                        .and_then(|(w, _)| self.surfaces.get(&w))
+                        .map(|s| s.bar_name.clone())
+                        .unwrap_or_default();
                     return Task::perform(
                         async move {
                             crate::dbus::sni_host::fetch_menu(
@@ -1195,9 +1264,96 @@ impl App {
                                     service: service.clone(),
                                     menu_path: menu_path.clone(),
                                     tree,
+                                    bar_name: bar_name.clone(),
                                 }
                             } else {
                                 // Menu fetch failed -- fall back to Activate.
+                                Message::TrayActivate {
+                                    service: service.clone(),
+                                }
+                            }
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::TrayMenuRequestKeyboard { service, menu_path, source_window } => {
+                // Fallback if the KeyboardSecondaryActivate fast-path didn't intercept
+                // (e.g. message sent externally). Treat as a bounds-less request.
+                let screen_size = self.surfaces.values().next().map(|s| s.screen_size).unwrap_or((0, 0));
+                let target = crate::modules::tray::tray_icon_widget_id(Option::expect(source_window, "source_window is None"), &service);
+                let op = FindBounds { target, result: None };
+                let svc = service.clone();
+                let mp = menu_path.clone();
+                iced::advanced::widget::operate(op).then(move |bounds| {
+                    Task::done(Message::TrayMenuRequestWithBounds {
+                        service: svc.clone(),
+                        menu_path: mp.clone(),
+                        bounds,
+                        screen_size,
+                        source_window: None,
+                    })
+                })
+            }
+            Message::TrayMenuRequestWithBounds {
+                service,
+                menu_path,
+                bounds,
+                screen_size,
+                source_window,
+            } => {
+                let conn = self.shared.dbus.session.clone();
+                if let (Some(conn), Some(menu_path)) = (conn, menu_path) {
+                    let service_clone = service.clone();
+                    let menu_path_clone = menu_path.clone();
+                    // Anchor at the icon's bottom-left (for horizontal bars, this places the
+                    // menu directly under the icon; the popup clamps to screen edges anyway).
+                    // Fall back to the mouse cursor if the bounds lookup failed.
+                    let (anchor_x, anchor_y) = match bounds {
+                        Some(r) => {
+                            // For horizontal bars, iced_layershell's layout has the axes
+                            // transposed: r.x is the bar-depth (vertical) position and r.y
+                            // is the along-bar (horizontal) position. Detect horizontal bars
+                            // by comparing the screen_size dimensions.
+                            if screen_size.0 > screen_size.1 {
+                                (r.x as i32, (r.y + r.height) as i32)
+                            } else {
+                                ((r.x + r.width) as i32, r.y as i32)
+                            }
+                        }
+                        None => {
+                            let p = self.last_cursor.map(|(_, p)| p).unwrap_or(iced::Point::ORIGIN);
+                            (p.x as i32, p.y as i32)
+                        }
+                    };
+                    // Resolve bar_name from the keyboard event's window (keyboard path) or
+                    // fall back to last_cursor (mouse path). This ensures the popup uses the
+                    // correct bar.edge for positioning even when the cursor is not on the bar.
+                    let bar_name = source_window
+                        .and_then(|w| self.surfaces.get(&w))
+                        .or_else(|| self.last_cursor.and_then(|(w, _)| self.surfaces.get(&w)))
+                        .map(|s| s.bar_name.clone())
+                        .unwrap_or_default();
+                    return Task::perform(
+                        async move {
+                            crate::dbus::sni_host::fetch_menu(
+                                &conn,
+                                &service_clone,
+                                &menu_path_clone,
+                            )
+                            .await
+                        },
+                        move |tree_opt| {
+                            if let Some(mut tree) = tree_opt {
+                                tree.anchor = (anchor_x, anchor_y);
+                                tree.screen_size = screen_size;
+                                Message::OpenMenu {
+                                    service: service.clone(),
+                                    menu_path: menu_path.clone(),
+                                    tree,
+                                    bar_name: bar_name.clone(),
+                                }
+                            } else {
                                 Message::TrayActivate {
                                     service: service.clone(),
                                 }
@@ -1211,6 +1367,7 @@ impl App {
                 service,
                 menu_path,
                 tree,
+                bar_name,
             } => {
                 // Close any existing popup first.
                 let existing_ids: Vec<iced::window::Id> =
@@ -1223,14 +1380,8 @@ impl App {
                     })
                     .collect();
 
-                // Full-screen overlay: covers the entire output so clicks on the transparent
-                // area outside the menu widget trigger MenuClosed. The bar background is now
-                // drawn by a container widget (style() returns transparent).
-                let bar_name = self
-                    .last_cursor
-                    .and_then(|(w, _)| self.surfaces.get(&w))
-                    .map(|s| s.bar_name.clone())
-                    .unwrap_or_default();
+                // bar_name was resolved upstream (either from the keyboard source window or
+                // from last_cursor for mouse activations). No re-lookup needed here.
                 let settings = iced_layershell::reexport::NewLayerShellSettings {
                     anchor: iced_layershell::reexport::Anchor::Left
                         | iced_layershell::reexport::Anchor::Right
@@ -1342,12 +1493,12 @@ impl App {
             Message::MenuLayoutChanged { service, menu_path } => {
                 // Re-fetch the menu and update the existing popup in place.
                 let conn = self.shared.dbus.session.clone();
-                // Preserve the existing anchor and screen_size from the current popup.
+                // Preserve the existing anchor, screen_size, and bar_name from the current popup.
                 let existing = self.menu_popups.values().find(|(s, mp, _, _)| {
                     s == &service && mp == &menu_path
                 });
-                let (anchor, screen_size) = match existing {
-                    Some((_, _, tree, _)) => (tree.anchor, tree.screen_size),
+                let (anchor, screen_size, existing_bar_name) = match existing {
+                    Some((_, _, tree, bn)) => (tree.anchor, tree.screen_size, bn.clone()),
                     None => return Task::none(),
                 };
                 if let Some(conn) = conn {
@@ -1365,6 +1516,7 @@ impl App {
                                     service,
                                     menu_path,
                                     tree,
+                                    bar_name: existing_bar_name,
                                 }
                             } else {
                                 Message::MenuClosed
@@ -1656,16 +1808,7 @@ impl App {
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);
 
-            // During Expanding: show expanded content (opacity fade deferred — no iced wrapper).
-            // During Collapsing: show collapsed content immediately (no reverse fade).
-            // Horizontal bars use view_horizontal when collapsed, view_expanded when the overlay is open.
-            let module_view: Element<'_, Message> = if shows_expanded {
-                module.view_expanded(&state)
-            } else if is_horizontal {
-                module.view_horizontal(&state)
-            } else {
-                module.view_collapsed(&state)
-            };
+            let module_view: Element<'_, Message> = module.view_for_bar(&state, window, is_horizontal, shows_expanded);
 
             let scroll_id = id.clone();
             // module_frame treats hover and keyboard focus identically (UX-DR3).
