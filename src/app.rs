@@ -246,7 +246,17 @@ impl Message {
             Message::ModuleClick(_, _) => "ModuleClick",
             Message::ModuleScrollUp(_, _) => "ModuleScrollUp",
             Message::ModuleScrollDown(_, _) => "ModuleScrollDown",
-            Message::Niri(_) => "Niri",
+            Message::Niri(crate::niri::NiriEvent::Connected) => "Niri::Connected",
+            Message::Niri(crate::niri::NiriEvent::Unavailable) => "Niri::Unavailable",
+            Message::Niri(crate::niri::NiriEvent::Event(event)) => match event {
+                niri_ipc::Event::WorkspacesChanged { .. } => "Niri::WorkspacesChanged",
+                niri_ipc::Event::WorkspaceActivated { .. } => "Niri::WorkspaceActivated",
+                niri_ipc::Event::WindowFocusChanged { .. } => "Niri::WindowFocusChanged",
+                niri_ipc::Event::WindowsChanged { .. } => "Niri::WindowsChanged",
+                niri_ipc::Event::WindowOpenedOrChanged { .. } => "Niri::WindowOpenedOrChanged",
+                niri_ipc::Event::WindowClosed { .. } => "Niri::WindowClosed",
+                _ => "Niri::Other",
+            },
             Message::Battery(_) => "Battery",
             Message::Network(_) => "Network",
             Message::Volume(_) => "Volume",
@@ -1199,6 +1209,21 @@ mod tests {
     }
 
     #[test]
+    fn perf_tracker_labels_niri_event_variants() {
+        use niri_ipc::Event;
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        app.perf = Some(super::perf::PerfTracker::default());
+
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
+            id: 1,
+            focused: true,
+        })));
+
+        let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
+        assert_eq!(snapshot.updates.get("Niri::WorkspaceActivated"), Some(&1));
+    }
+
+    #[test]
     fn perf_tracker_records_view_calls_when_enabled() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         app.perf = Some(super::perf::PerfTracker::default());
@@ -1819,6 +1844,29 @@ mod tests {
             .collect();
         assert_eq!(focused.len(), 1);
         assert_eq!(focused[0].idx, 1);
+    }
+
+    #[test]
+    fn workspace_activated_does_not_rebuild_workspace_items() {
+        use niri_ipc::Event;
+        let mut app = make_workspaces_app();
+        app.perf = Some(super::perf::PerfTracker::default());
+        let ws0 = make_workspace(0, true);
+        let ws1 = make_workspace(1, false);
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: vec![ws0, ws1],
+        })));
+        let _ = app.perf.as_ref().unwrap().snapshot_and_reset();
+        let count = app.modules.len();
+
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
+            id: 2,
+            focused: true,
+        })));
+
+        let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
+        assert_eq!(snapshot.workspace_rebuilds, 0);
+        assert_eq!(app.modules.len(), count);
     }
 
     #[test]

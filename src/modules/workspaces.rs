@@ -221,6 +221,12 @@ impl crate::modules::Module for WorkspaceItemModule {
         }
     }
 
+    fn update_workspace(&mut self, workspace: &niri_ipc::Workspace) {
+        if self.workspace.id == workspace.id {
+            self.workspace = workspace.clone();
+        }
+    }
+
     fn config_name(&self) -> Option<&str> {
         Some(&self.config_name)
     }
@@ -369,5 +375,21 @@ mod tests {
             ))
             .unwrap();
         assert!(matches!(msg, crate::app::Message::NiriFocusWorkspace { id } if id == 1));
+    }
+
+    #[test]
+    fn workspace_item_update_workspace_refreshes_active_state() {
+        let ws = make_workspace(0, false);
+        let mut m = WorkspaceItemModule::new(
+            ws,
+            crate::config::WorkspacesConfig::default(),
+            "workspaces".into(),
+        );
+        let updated = make_workspace(0, true);
+
+        m.update_workspace(&updated);
+
+        assert!(m.workspace.is_active);
+        assert!(m.workspace.is_focused);
     }
 }

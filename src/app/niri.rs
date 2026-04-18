@@ -86,7 +86,11 @@ impl App {
                         }
 
                         let updated = self.shared.niri.workspaces.clone();
-                        self.rebuild_workspace_item_modules(&updated);
+                        for workspace in &updated {
+                            for (_, module) in &mut self.modules {
+                                module.update_workspace(workspace);
+                            }
+                        }
                     }
                     Event::WindowsChanged { windows } => {
                         self.shared.niri.focused_window_id =
