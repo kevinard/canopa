@@ -1,9 +1,13 @@
+mod layout;
+mod module_state;
+mod navigation;
+mod surfaces;
+
 use std::collections::HashMap;
 use std::time::Duration;
 
 use iced::widget::{Space, column, container, mouse_area, row};
 use iced::{Element, Length, Task};
-use iced_layershell::reexport::{NewLayerShellSettings, OutputOption};
 use iced_layershell::to_layer_message;
 
 use crate::config::{
@@ -12,13 +16,13 @@ use crate::config::{
 };
 use crate::dbus::DbusConnections;
 use crate::ipc::ipc_subscription;
-use crate::modules::battery::{BatteryEvent, BatteryState};
+use crate::modules::battery::BatteryEvent;
 use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::focused_window;
-use crate::modules::network::{NetworkEvent, NetworkState};
+use crate::modules::network::NetworkEvent;
 use crate::modules::script::{ScriptEvent, ScriptState};
-use crate::modules::volume::{VolumeEvent, VolumeState};
+use crate::modules::volume::VolumeEvent;
 use crate::modules::workspaces;
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
@@ -353,131 +357,8 @@ impl App {
         (app, Task::batch(window_tasks))
     }
 
-    /// Returns a mutable reference to the `SurfaceState` for `id`, inserting a default if absent.
-    /// Uses the pending (output_name, bar_name) pair (Story 9.1) when initialising a new entry.
-    pub fn surface_mut(&mut self, id: iced::window::Id) -> &mut SurfaceState {
-        if !self.surfaces.contains_key(&id) {
-            // Pop the pending surface key assigned during window creation.
-            // Falls back to ("", "") when using StartMode::AllScreens.
-            let (output_name, bar_name) = self.pending_surface_keys.remove(&id).unwrap_or_default();
-            self.surfaces
-                .insert(id, SurfaceState::new(output_name, bar_name));
-        }
-        self.surfaces.get_mut(&id).unwrap()
-    }
-
-    /// Returns a reference to the `SurfaceState` for `id`, or `None` if the surface is unknown.
-    pub fn surface(&self, id: iced::window::Id) -> Option<&SurfaceState> {
-        self.surfaces.get(&id)
-    }
-
-    /// Opens a layer-shell window for one (bar, output) pair, records it in `pending` and
-    /// `surfaces`, and returns the open task. Shared by `boot` and `open_new_output_windows`.
-    fn spawn_bar_on_output(
-        bar: &crate::config::BarConfig,
-        output_name: &str,
-        pending: &mut HashMap<iced::window::Id, (String, String)>,
-        surfaces: &mut HashMap<iced::window::Id, SurfaceState>,
-    ) -> Task<Message> {
-        let anchor = bar.edge.anchor();
-        let collapsed = bar.collapsed_width;
-        let exclusive_zone = i32::try_from(collapsed).unwrap_or(48);
-        let size = if bar.edge.is_horizontal() {
-            Some((0, collapsed))
-        } else {
-            Some((collapsed, 0))
-        };
-        let settings = NewLayerShellSettings {
-            anchor,
-            exclusive_zone: Some(exclusive_zone),
-            size,
-            output_option: OutputOption::OutputName(output_name.to_string()),
-            namespace: Some(Self::namespace()),
-            ..Default::default()
-        };
-        let (id, task) = Message::layershell_open(settings);
-        pending.insert(id, (output_name.to_string(), bar.name.clone()));
-        surfaces.insert(
-            id,
-            SurfaceState::new(output_name.to_string(), bar.name.clone()),
-        );
-        task
-    }
-
-    /// In manual-output mode, opens new layer-shell windows for any (output, bar) pairs present
-    /// in `workspaces` that do not already have a surface.  Called from the `WorkspacesChanged`
-    /// handler so that outputs hotplugged while the bar is running get bars immediately.
-    fn open_new_output_windows(
-        &mut self,
-        workspaces: &[niri_ipc::Workspace],
-    ) -> Vec<Task<Message>> {
-        // Build the set of (output_name, bar_name) pairs already running.
-        let known_pairs: std::collections::HashSet<(String, String)> = self
-            .surfaces
-            .values()
-            .filter(|s| !s.output_name.is_empty())
-            .map(|s| (s.output_name.clone(), s.bar_name.clone()))
-            .collect();
-
-        // For each newly-seen output, collect the (bar_idx, output_name) pairs to spawn.
-        // Using bar index avoids lifetime issues with borrowing config.bars at spawn time.
-        let mut to_spawn: Vec<(usize, String)> = workspaces
-            .iter()
-            .filter_map(|ws| ws.output.as_deref())
-            .filter(|n| !n.is_empty())
-            .flat_map(|output_name| {
-                self.config
-                    .bars
-                    .iter()
-                    .enumerate()
-                    .filter(move |(_, b)| b.output == "all" || b.output == output_name)
-                    .filter(|(_, b)| {
-                        !known_pairs.contains(&(output_name.to_string(), b.name.clone()))
-                    })
-                    .map(move |(i, _)| (i, output_name.to_string()))
-            })
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        // Horizontal bars must be registered before side bars so their exclusive zones are
-        // established first.  The compositor then automatically constrains side bars to the
-        // remaining work area, preventing overlap during expand.
-        to_spawn.sort_by_key(|(idx, out)| {
-            let is_side = !self.config.bars[*idx].edge.is_horizontal();
-            (out.clone(), is_side)
-        });
-
-        let mut tasks = Vec::with_capacity(to_spawn.len());
-        for (bar_idx, output_name) in to_spawn {
-            let task = Self::spawn_bar_on_output(
-                &self.config.bars[bar_idx],
-                &output_name,
-                &mut self.pending_surface_keys,
-                &mut self.surfaces,
-            );
-            tasks.push(task);
-        }
-        tasks
-    }
-
     pub fn namespace() -> String {
         String::from("niribar")
-    }
-
-    /// Look up the `BarConfig` for a surface by its `bar_name`.
-    /// Falls back to the first bar when the name is empty (AllScreens mode) or not found.
-    fn bar_for_surface_name<'a>(
-        bars: &'a [crate::config::BarConfig],
-        bar_name: &str,
-    ) -> &'a crate::config::BarConfig {
-        if bar_name.is_empty() {
-            bars.first().expect("at least one bar configured")
-        } else {
-            bars.iter()
-                .find(|b| b.name == bar_name)
-                .unwrap_or_else(|| bars.first().expect("at least one bar configured"))
-        }
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -1807,29 +1688,12 @@ impl App {
         let mut center: Vec<Element<'_, Message>> = vec![];
         let mut bottom: Vec<Element<'_, Message>> = vec![];
 
-        // Build a name→zone map from the effective (possibly per-output) module list.
-        // This filters which modules appear on this surface and their zone assignment.
-        let mut effective_zone: HashMap<String, Zone> = HashMap::new();
-        for (name, zone) in bar
-            .modules
-            .top
-            .iter()
-            .map(|n| (n, Zone::Top))
-            .chain(bar.modules.center.iter().map(|n| (n, Zone::Center)))
-            .chain(bar.modules.bottom.iter().map(|n| (n, Zone::Bottom)))
-        {
-            effective_zone.insert(name.clone(), zone.clone());
-            // Expand tray config entries: add all icon modules that carry this config name.
-            for (_, m) in &self.modules {
-                if m.config_name() == Some(name.as_str()) {
-                    effective_zone.insert(m.id().0.clone(), zone.clone());
-                }
-            }
-        }
+        // Build the effective module layout for this bar, including dynamic module instances.
+        let effective_zone = self.effective_module_zones_for_bar(bar);
 
         for (_boot_zone, module) in &self.modules {
-            let module_name = &module.id().0;
-            let Some(zone) = effective_zone.get(module_name) else {
+            let id = module.id();
+            let Some(zone) = effective_zone.get(&id) else {
                 continue; // not in this output's effective module list
             };
 
@@ -1880,7 +1744,6 @@ impl App {
                     other => other,
                 }
             };
-            let id = module.id();
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);
 
@@ -1989,217 +1852,6 @@ impl App {
             // own background via a container widget in view_bar().
             background_color: iced::Color::TRANSPARENT,
             text_color: crate::theme::TEXT,
-        }
-    }
-
-    /// Build an ordered list of (zone, module_id) for the given surface's effective module layout.
-    /// This filters self.modules to only those visible on this bar's module list, in zone order.
-    fn effective_nav_list(&self, window: iced::window::Id) -> Vec<(Zone, ModuleId)> {
-        let bar_name = self
-            .surfaces
-            .get(&window)
-            .map(|s| s.bar_name.as_str())
-            .unwrap_or("");
-        let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
-        // Rebuild the ordered (zone, name) list from the effective bar modules.
-        let mut result = Vec::new();
-        for (zone, names) in [
-            (Zone::Top, &bar.modules.top),
-            (Zone::Center, &bar.modules.center),
-            (Zone::Bottom, &bar.modules.bottom),
-        ] {
-            for name in names {
-                // For tray config entries, expand to all active icon modules that carry
-                // this config name; for all other modules, look up by id as before.
-                let icon_ids: Vec<ModuleId> = self
-                    .modules
-                    .iter()
-                    .filter(|(_, m)| m.config_name() == Some(name.as_str()))
-                    .map(|(_, m)| m.id())
-                    .collect();
-                if !icon_ids.is_empty() {
-                    for id in icon_ids {
-                        result.push((zone.clone(), id));
-                    }
-                } else if let Some((_, m)) = self.modules.iter().find(|(_, m)| m.id().0 == *name) {
-                    result.push((zone.clone(), m.id()));
-                }
-            }
-        }
-        result
-    }
-
-    /// Returns the ID of the next module in the surface's effective layout (wraps last→first).
-    fn nav_next(&self, current: &ModuleId, window: iced::window::Id) -> Option<ModuleId> {
-        let list = self.effective_nav_list(window);
-        let idx = list.iter().position(|(_, id)| id == current)?;
-        let next_idx = (idx + 1) % list.len();
-        Some(list[next_idx].1.clone())
-    }
-
-    /// Returns the ID of the previous module in the surface's effective layout (wraps first→last).
-    fn nav_prev(&self, current: &ModuleId, window: iced::window::Id) -> Option<ModuleId> {
-        let list = self.effective_nav_list(window);
-        let idx = list.iter().position(|(_, id)| id == current)?;
-        let prev_idx = (idx + list.len() - 1) % list.len();
-        Some(list[prev_idx].1.clone())
-    }
-
-    /// Returns the ID of the first module in the next non-empty zone for this surface
-    /// (Tab cycle: Top→Center→Bottom→Top).
-    fn nav_next_zone(&self, current: &ModuleId, window: iced::window::Id) -> Option<ModuleId> {
-        let list = self.effective_nav_list(window);
-        let idx = list.iter().position(|(_, id)| id == current)?;
-        let current_zone = &list[idx].0;
-        let cycle = [Zone::Top, Zone::Center, Zone::Bottom];
-        let start = cycle.iter().position(|z| z == current_zone).unwrap_or(0);
-        for step in 1..=3 {
-            let next_zone = &cycle[(start + step) % 3];
-            if let Some((_, id)) = list.iter().find(|(z, _)| z == next_zone) {
-                return Some(id.clone());
-            }
-        }
-        None
-    }
-
-    /// Returns the ID of the first module in the previous non-empty zone for this surface
-    /// (Shift+Tab cycle: Top→Bottom→Center→Top).
-    fn nav_prev_zone(&self, current: &ModuleId, window: iced::window::Id) -> Option<ModuleId> {
-        let list = self.effective_nav_list(window);
-        let idx = list.iter().position(|(_, id)| id == current)?;
-        let current_zone = &list[idx].0;
-        // Reverse cycle: Top(0)→Bottom(2)→Center(1)→Top(0)
-        let cycle = [Zone::Top, Zone::Bottom, Zone::Center];
-        let start = cycle.iter().position(|z| z == current_zone).unwrap_or(0);
-        for step in 1..=3 {
-            let prev_zone = &cycle[(start + step) % 3];
-            if let Some((_, id)) = list.iter().find(|(z, _)| z == prev_zone) {
-                return Some(id.clone());
-            }
-        }
-        None
-    }
-
-    fn popup_nav_step(&mut self, window: iced::window::Id, forward: bool) {
-        let Some((_, _, tree, _)) = self.menu_popups.get(&window) else {
-            return;
-        };
-        let navigable: Vec<String> = tree
-            .items
-            .iter()
-            .filter(|i| i.visible && i.enabled && !i.is_separator)
-            .map(|i| i.id.clone())
-            .collect();
-        if navigable.is_empty() {
-            return;
-        }
-        let current = self.menu_focused_item.get(&window).cloned();
-        let len = navigable.len();
-        let next = match current {
-            None => {
-                if forward {
-                    navigable[0].clone()
-                } else {
-                    navigable[len - 1].clone()
-                }
-            }
-            Some(c) => {
-                let idx = navigable.iter().position(|id| id == &c).unwrap_or(0);
-                if forward {
-                    navigable[(idx + 1) % len].clone()
-                } else {
-                    navigable[(idx + len - 1) % len].clone()
-                }
-            }
-        };
-        self.menu_focused_item.insert(window, next);
-    }
-
-    /// Returns a `SizeChange` task for the named surface's current expand state in overlay mode.
-    ///
-    /// Overlay mode: the surface grows over the desktop — exclusive zone is never changed.
-    /// For horizontal bars the animated dimension is height `(0, size)`; for vertical it's width `(size, 0)`.
-    fn overlay_size_change_for(&self, window: iced::window::Id) -> Task<Message> {
-        let surface = self.surfaces.get(&window);
-        let expand = surface.map(|s| s.expand).unwrap_or_default();
-        let bar_name = surface.map(|s| s.bar_name.as_str()).unwrap_or("");
-        let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
-        let size = expand.current_width(bar.collapsed_width, bar.expanded_width);
-        if bar.edge.is_horizontal() {
-            Task::done(Message::SizeChange {
-                id: window,
-                size: (0, size),
-            })
-        } else {
-            Task::done(Message::SizeChange {
-                id: window,
-                size: (size, 0),
-            })
-        }
-    }
-
-    /// Push new battery state to all battery module instances in shared.modules.
-    fn push_battery_state(&mut self, percentage: f64, is_charging: bool) {
-        for (_, module) in &self.modules {
-            if module.module_type() == "battery" {
-                self.shared.modules.insert(
-                    module.id(),
-                    ModuleState::Battery(BatteryState {
-                        percentage,
-                        is_charging,
-                    }),
-                );
-            }
-        }
-    }
-
-    fn push_network_state(
-        &mut self,
-        connectivity: crate::modules::network::NetworkConnectivity,
-        label: Option<String>,
-    ) {
-        for (_, module) in &self.modules {
-            if module.module_type() == "network" {
-                self.shared.modules.insert(
-                    module.id(),
-                    ModuleState::Network(NetworkState {
-                        connectivity: connectivity.clone(),
-                        label: label.clone(),
-                    }),
-                );
-            }
-        }
-    }
-
-    fn push_volume_state(&mut self, volume: f64, muted: bool) {
-        for (_, module) in &self.modules {
-            if module.module_type() == "volume" {
-                self.shared.modules.insert(
-                    module.id(),
-                    ModuleState::Volume(VolumeState { volume, muted }),
-                );
-            }
-        }
-    }
-
-    /// Derive the current focused window title from NiriState and push it to all
-    /// focused-window module instances in shared.modules.
-    fn push_focused_window_state(&mut self) {
-        let title = self
-            .shared
-            .niri
-            .focused_window_id
-            .and_then(|id| self.shared.niri.windows.get(&id))
-            .and_then(|w| w.title.clone());
-        for (_, module) in &self.modules {
-            if module.module_type() == "focused-window" {
-                self.shared.modules.insert(
-                    module.id(),
-                    ModuleState::FocusedWindow(focused_window::FocusedWindowState {
-                        title: title.clone(),
-                    }),
-                );
-            }
         }
     }
 }

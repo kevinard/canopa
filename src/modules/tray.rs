@@ -1,5 +1,8 @@
 use crate::dbus::sni_host::{ItemStatus, TrayIcon, TrayItem};
 use crate::modules::{InteractionEvent, ModuleId, ModuleState};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
 // ---------------------------------------------------------------------------
 // Shared icon rendering helpers (used by both TrayModule and TrayIconModule)
@@ -9,7 +12,36 @@ use crate::modules::{InteractionEvent, ModuleId, ModuleState};
 ///
 /// Checks hicolor at multiple sizes (preferring sizes closest to 22px), then pixmaps.
 /// Searches both system and user icon directories. Returns `None` if not found.
-pub fn resolve_icon_path(name: &str) -> Option<std::path::PathBuf> {
+pub fn resolve_icon_path(name: &str) -> Option<PathBuf> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<PathBuf>>>> = OnceLock::new();
+
+    if !is_valid_icon_name(name) {
+        return None;
+    }
+
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(path) = cache
+        .lock()
+        .expect("icon cache poisoned")
+        .get(name)
+        .cloned()
+    {
+        return path;
+    }
+
+    let resolved = resolve_icon_path_uncached(name);
+    cache
+        .lock()
+        .expect("icon cache poisoned")
+        .insert(name.to_string(), resolved.clone());
+    resolved
+}
+
+fn is_valid_icon_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
+}
+
+fn resolve_icon_path_uncached(name: &str) -> Option<PathBuf> {
     let home = std::env::var("HOME").unwrap_or_default();
     let xdg_data_home =
         std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{home}/.local/share"));
@@ -28,8 +60,7 @@ pub fn resolve_icon_path(name: &str) -> Option<std::path::PathBuf> {
 
     for base in &data_dirs {
         for cat in &categories {
-            let svg =
-                std::path::PathBuf::from(format!("{base}/icons/hicolor/scalable/{cat}/{name}.svg"));
+            let svg = PathBuf::from(format!("{base}/icons/hicolor/scalable/{cat}/{name}.svg"));
             if svg.exists() {
                 return Some(svg);
             }
@@ -37,9 +68,8 @@ pub fn resolve_icon_path(name: &str) -> Option<std::path::PathBuf> {
         for size in &sizes {
             for cat in &categories {
                 for ext in &exts {
-                    let p = std::path::PathBuf::from(format!(
-                        "{base}/icons/hicolor/{size}/{cat}/{name}.{ext}"
-                    ));
+                    let p =
+                        PathBuf::from(format!("{base}/icons/hicolor/{size}/{cat}/{name}.{ext}"));
                     if p.exists() {
                         return Some(p);
                     }
@@ -49,7 +79,7 @@ pub fn resolve_icon_path(name: &str) -> Option<std::path::PathBuf> {
     }
 
     for ext in &["png", "svg", "xpm"] {
-        let p = std::path::PathBuf::from(format!("/usr/share/pixmaps/{name}.{ext}"));
+        let p = PathBuf::from(format!("/usr/share/pixmaps/{name}.{ext}"));
         if p.exists() {
             return Some(p);
         }
@@ -343,6 +373,15 @@ mod tests {
         let m = make_module();
         assert_eq!(m.id().0, "tray");
         assert_eq!(m.module_type(), "tray");
+    }
+
+    #[test]
+    fn resolve_icon_path_rejects_path_like_names() {
+        assert!(resolve_icon_path("").is_none());
+        assert!(resolve_icon_path(".").is_none());
+        assert!(resolve_icon_path("..").is_none());
+        assert!(resolve_icon_path("../app").is_none());
+        assert!(resolve_icon_path("theme\\app").is_none());
     }
 
     #[test]
