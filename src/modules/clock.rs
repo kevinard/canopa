@@ -12,6 +12,96 @@ pub enum ClockEvent {
     Tick { time: String, date: String },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ClockUpdateCadence {
+    Minute,
+    Second,
+}
+
+fn format_needs_second_updates(format: &str) -> bool {
+    let mut chars = format.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            continue;
+        }
+
+        let Some(mut spec) = chars.next() else {
+            break;
+        };
+        if spec == '%' {
+            continue;
+        }
+
+        while matches!(spec, '-' | '_' | '0' | '^' | '#') {
+            let Some(next) = chars.next() else {
+                return false;
+            };
+            spec = next;
+        }
+
+        while spec.is_ascii_digit() {
+            let Some(next) = chars.next() else {
+                return false;
+            };
+            spec = next;
+        }
+
+        if spec == '.' {
+            let Some(next) = chars.next() else {
+                return true;
+            };
+            spec = next;
+            while spec.is_ascii_digit() {
+                let Some(next) = chars.next() else {
+                    return true;
+                };
+                spec = next;
+            }
+        }
+
+        if matches!(spec, 'S' | 'T' | 'X' | 'r' | 'c' | '+' | 's' | 'f') {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn clock_update_cadence(time_format: &str, date_format: &str) -> ClockUpdateCadence {
+    if format_needs_second_updates(time_format) || format_needs_second_updates(date_format) {
+        ClockUpdateCadence::Second
+    } else {
+        ClockUpdateCadence::Minute
+    }
+}
+
+fn duration_until_next_minute(now: chrono::DateTime<chrono::Local>) -> std::time::Duration {
+    use chrono::Timelike;
+
+    let elapsed_ns = (now.second() as u64 * 1_000_000_000) + now.nanosecond() as u64;
+    let minute_ns = 60 * 1_000_000_000;
+    let remaining_ns = if elapsed_ns == 0 {
+        minute_ns
+    } else {
+        minute_ns - elapsed_ns
+    };
+    std::time::Duration::from_nanos(remaining_ns)
+}
+
+fn build_clock_message(
+    id: crate::modules::ModuleId,
+    time_fmt: &str,
+    date_fmt: &str,
+) -> crate::app::Message {
+    let now = chrono::Local::now();
+    let time = now.format(time_fmt).to_string();
+    let date = now.format(date_fmt).to_string();
+    crate::app::Message::Module(
+        id,
+        crate::modules::ModuleEvent::Clock(ClockEvent::Tick { time, date }),
+    )
+}
+
 /// Clock module: shows current time and date, updated every second via subscription.
 pub struct ClockModule {
     id: crate::modules::ModuleId,
@@ -39,23 +129,44 @@ impl crate::modules::Module for ClockModule {
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
-        // Tick every second; first tick fires at t=1s (within the 1-second contract).
+        // Tick only as often as the configured formats can visibly change.
         // The id is included in the key tuple so multiple clock instances subscribe independently.
-        iced::time::every(std::time::Duration::from_secs(1))
-            .with((
+        let cadence = clock_update_cadence(&self.time_format, &self.date_format);
+        iced::Subscription::run_with(
+            (
                 self.id.clone(),
                 self.time_format.clone(),
                 self.date_format.clone(),
-            ))
-            .map(|((id, time_fmt, date_fmt), _)| {
-                let now = chrono::Local::now();
-                let time = now.format(&time_fmt).to_string();
-                let date = now.format(&date_fmt).to_string();
-                crate::app::Message::Module(
-                    id,
-                    crate::modules::ModuleEvent::Clock(ClockEvent::Tick { time, date }),
+                cadence,
+            ),
+            |(id, time_fmt, date_fmt, cadence)| {
+                use iced::futures::stream;
+
+                stream::unfold(
+                    (
+                        id.clone(),
+                        time_fmt.clone(),
+                        date_fmt.clone(),
+                        *cadence,
+                        true,
+                    ),
+                    |(id, time_fmt, date_fmt, cadence, first)| async move {
+                        if !first {
+                            let sleep_for = match cadence {
+                                ClockUpdateCadence::Second => std::time::Duration::from_secs(1),
+                                ClockUpdateCadence::Minute => {
+                                    duration_until_next_minute(chrono::Local::now())
+                                }
+                            };
+                            tokio::time::sleep(sleep_for).await;
+                        }
+
+                        let msg = build_clock_message(id.clone(), &time_fmt, &date_fmt);
+                        Some((msg, (id, time_fmt, date_fmt, cadence, false)))
+                    },
                 )
-            })
+            },
+        )
     }
 
     fn view_collapsed(
@@ -149,5 +260,49 @@ mod tests {
         };
         assert_eq!(state.time, "12:34");
         assert_eq!(state.date, "Mon 01 Jan");
+    }
+
+    #[test]
+    fn clock_update_cadence_defaults_to_minute() {
+        assert_eq!(
+            clock_update_cadence("%H:%M", "%a %d %b"),
+            ClockUpdateCadence::Minute
+        );
+    }
+
+    #[test]
+    fn clock_update_cadence_uses_seconds_when_format_shows_seconds() {
+        assert_eq!(
+            clock_update_cadence("%H:%M:%S", "%a %d %b"),
+            ClockUpdateCadence::Second
+        );
+        assert_eq!(
+            clock_update_cadence("%H:%M", "%c"),
+            ClockUpdateCadence::Second
+        );
+    }
+
+    #[test]
+    fn clock_update_cadence_ignores_escaped_percent() {
+        assert_eq!(
+            clock_update_cadence("%%S %H:%M", "%Y-%m-%d"),
+            ClockUpdateCadence::Minute
+        );
+    }
+
+    #[test]
+    fn minute_cadence_sleeps_until_next_minute_boundary() {
+        use chrono::{Local, TimeZone, Timelike};
+
+        let now = Local
+            .with_ymd_and_hms(2026, 4, 18, 12, 34, 56)
+            .unwrap()
+            .with_nanosecond(500_000_000)
+            .unwrap();
+
+        assert_eq!(
+            duration_until_next_minute(now),
+            std::time::Duration::from_millis(3_500)
+        );
     }
 }
