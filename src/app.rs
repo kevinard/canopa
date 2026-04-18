@@ -158,6 +158,7 @@ pub enum Message {
     TrayMenuRequest {
         service: String,
         menu_path: Option<zbus::zvariant::OwnedObjectPath>,
+        source_window: Option<iced::window::Id>,
     },
     /// Keyboard-triggered menu open (Space on focused tray icon). Anchored at
     /// the icon's widget bounds, resolved via a widget operation.
@@ -619,59 +620,35 @@ impl App {
                 });
                 Task::none()
             }
-            Message::TrayMenuRequest { service, menu_path } => {
-                let conn = self.shared.dbus.session.clone();
-                if let (Some(conn), Some(menu_path)) = (conn, menu_path) {
-                    let service_clone = service.clone();
-                    let menu_path_clone = menu_path.clone();
-                    // Capture the cursor position at the moment of right-click.
-                    // For vertical bars: window-local y == screen y; x is within bar width.
-                    // For horizontal bars: window-local x == screen x; y is within bar height.
-                    let cursor_pos = self
-                        .last_cursor
-                        .map(|(_, p)| p)
-                        .unwrap_or(iced::Point::ORIGIN);
-                    let anchor_x = cursor_pos.x as i32;
-                    let anchor_y = cursor_pos.y as i32;
-                    let screen_size = self
-                        .last_cursor
-                        .and_then(|(w, _)| self.surfaces.get(&w))
-                        .map(|s| s.screen_size)
-                        .unwrap_or((0, 0));
-                    let bar_name = self
-                        .last_cursor
-                        .and_then(|(w, _)| self.surfaces.get(&w))
-                        .map(|s| s.bar_name.clone())
-                        .unwrap_or_default();
-                    return Task::perform(
-                        async move {
-                            crate::dbus::sni_host::fetch_menu(
-                                &conn,
-                                &service_clone,
-                                &menu_path_clone,
-                            )
-                            .await
-                        },
-                        move |tree_opt| {
-                            if let Some(mut tree) = tree_opt {
-                                tree.anchor = (anchor_x, anchor_y);
-                                tree.screen_size = screen_size;
-                                Message::OpenMenu {
-                                    service: service.clone(),
-                                    menu_path: menu_path.clone(),
-                                    tree,
-                                    bar_name: bar_name.clone(),
-                                }
-                            } else {
-                                // Menu fetch failed -- fall back to Activate.
-                                Message::TrayActivate {
-                                    service: service.clone(),
-                                }
-                            }
-                        },
-                    );
-                }
-                Task::none()
+            Message::TrayMenuRequest {
+                service,
+                menu_path,
+                source_window,
+            } => {
+                let Some(source_window) = source_window else {
+                    return Task::none();
+                };
+                let screen_size = self
+                    .surfaces
+                    .get(&source_window)
+                    .map(|s| s.screen_size)
+                    .unwrap_or((0, 0));
+                let target = crate::modules::tray::tray_icon_widget_id(source_window, &service);
+                let op = FindBounds {
+                    target,
+                    result: None,
+                };
+                let svc = service.clone();
+                let mp = menu_path.clone();
+                iced::advanced::widget::operate(op).then(move |bounds| {
+                    Task::done(Message::TrayMenuRequestWithBounds {
+                        service: svc.clone(),
+                        menu_path: mp.clone(),
+                        bounds,
+                        screen_size,
+                        source_window: Some(source_window),
+                    })
+                })
             }
             Message::TrayMenuRequestKeyboard {
                 service,

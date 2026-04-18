@@ -259,6 +259,7 @@ impl TrayIconModule {
             .on_right_press(crate::app::Message::TrayMenuRequest {
                 service: service.clone(),
                 menu_path,
+                source_window: Some(window),
             })
             .on_middle_press(crate::app::Message::TraySecondaryActivate {
                 service: service.clone(),
