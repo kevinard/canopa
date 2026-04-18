@@ -10,6 +10,10 @@ use crate::surface::layout::zone_layout;
 
 impl App {
     pub fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
+        if let Some(perf) = &self.perf {
+            perf.record_view(window);
+        }
+
         // Popup window -- full-screen transparent overlay; menu widget positioned inside.
         if let Some((service, menu_path, tree, bar_name)) = self.menu_popups.get(&window) {
             use crate::surface::menu_popup::view_menu_popup;

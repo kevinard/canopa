@@ -120,6 +120,10 @@ impl App {
     pub(super) fn rebuild_workspace_item_modules(&mut self, workspaces: &[niri_ipc::Workspace]) {
         use crate::config::ModuleParams;
 
+        if let Some(perf) = &self.perf {
+            perf.record_workspace_rebuild();
+        }
+
         // Collect placeholder slots: (index, zone, config_name, WorkspacesConfig clone).
         let slots: Vec<(
             usize,

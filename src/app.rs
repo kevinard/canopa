@@ -5,6 +5,7 @@ mod module_events;
 mod module_state;
 mod navigation;
 mod niri;
+mod perf;
 mod subscriptions;
 mod surfaces;
 mod view;
@@ -55,6 +56,7 @@ impl SharedState {
 pub struct App {
     pub config: Config,
     pub shared: SharedState,
+    pub perf: Option<perf::PerfTracker>,
     /// Instantiated module instances paired with their zone placement.
     pub modules: Vec<(Zone, Box<dyn Module>)>,
     /// Per-surface render state, keyed by iced::window::Id (Story 7.1).
@@ -224,6 +226,61 @@ pub enum Message {
     NiriFocusWorkspace {
         id: u64,
     },
+    /// Periodic runtime performance report when NIRIBAR_PERF=1 is set.
+    PerfReport,
+}
+
+impl Message {
+    fn perf_label(&self) -> &'static str {
+        match self {
+            Message::Module(_, ModuleEvent::Clock(_)) => "Module::Clock",
+            Message::Module(_, ModuleEvent::Script(_)) => "Module::Script",
+            Message::Module(_, ModuleEvent::Button(_)) => "Module::Button",
+            Message::BarClick(_) => "BarClick",
+            Message::Tick => "Tick",
+            Message::BarHoverEnter(_) => "BarHoverEnter",
+            Message::BarHoverExit(_) => "BarHoverExit",
+            Message::ModuleHoverEnter(_, _) => "ModuleHoverEnter",
+            Message::ModuleHoverExit(_, _) => "ModuleHoverExit",
+            Message::ModuleClick(_, _) => "ModuleClick",
+            Message::ModuleScrollUp(_, _) => "ModuleScrollUp",
+            Message::ModuleScrollDown(_, _) => "ModuleScrollDown",
+            Message::Niri(_) => "Niri",
+            Message::Battery(_) => "Battery",
+            Message::Network(_) => "Network",
+            Message::Volume(_) => "Volume",
+            Message::VolumeAdjust { .. } => "VolumeAdjust",
+            Message::DbusReady(_) => "DbusReady",
+            Message::BarFocusGained(_) => "BarFocusGained",
+            Message::BarFocusLost(_) => "BarFocusLost",
+            Message::EscapePressed(_) => "EscapePressed",
+            Message::FocusMoveNext(_) => "FocusMoveNext",
+            Message::FocusMovePrev(_) => "FocusMovePrev",
+            Message::FocusNextZone(_) => "FocusNextZone",
+            Message::FocusPrevZone(_) => "FocusPrevZone",
+            Message::KeyboardActivate(_) => "KeyboardActivate",
+            Message::KeyboardSecondaryActivate(_) => "KeyboardSecondaryActivate",
+            Message::ToggleExpand => "ToggleExpand",
+            Message::TrayEvent(_) => "TrayEvent",
+            Message::TrayActivate { .. } => "TrayActivate",
+            Message::TrayMenuRequest { .. } => "TrayMenuRequest",
+            Message::TrayMenuRequestKeyboard { .. } => "TrayMenuRequestKeyboard",
+            Message::TrayMenuRequestWithBounds { .. } => "TrayMenuRequestWithBounds",
+            Message::TraySecondaryActivate { .. } => "TraySecondaryActivate",
+            Message::TrayScroll { .. } => "TrayScroll",
+            Message::MenuItemSelected { .. } => "MenuItemSelected",
+            Message::MenuClosed => "MenuClosed",
+            Message::MenuItemHoverEnter { .. } => "MenuItemHoverEnter",
+            Message::MenuItemHoverExit(_) => "MenuItemHoverExit",
+            Message::MenuLayoutChanged { .. } => "MenuLayoutChanged",
+            Message::OpenMenu { .. } => "OpenMenu",
+            Message::CursorMoved(_, _) => "CursorMoved",
+            Message::WindowSized(_, _, _) => "WindowSized",
+            Message::NiriFocusWorkspace { .. } => "NiriFocusWorkspace",
+            Message::PerfReport => "PerfReport",
+            _ => "LayerShell",
+        }
+    }
 }
 
 /// Return default params for a module type name, or `None` if the type requires mandatory
@@ -319,6 +376,7 @@ impl App {
         let app = App {
             config,
             shared: SharedState::new(),
+            perf: perf::PerfTracker::from_env(),
             modules,
             surfaces,
             pending_surface_keys,
@@ -336,6 +394,10 @@ impl App {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        if let Some(perf) = &self.perf {
+            perf.record_update(message.perf_label());
+        }
+
         match message {
             Message::CursorMoved(window, pos) => {
                 let has_tray = self
@@ -403,6 +465,10 @@ impl App {
             Message::TrayEvent(event) => {
                 use crate::dbus::sni_host::{ItemStatus, TrayEvent};
                 use crate::modules::tray::TrayIconModule;
+
+                if let Some(perf) = &self.perf {
+                    perf.record_tray_event();
+                }
 
                 match event {
                     TrayEvent::Snapshot(items) => {
@@ -887,6 +953,15 @@ impl App {
                 });
                 Task::none()
             }
+            Message::PerfReport => {
+                if let Some(perf) = &self.perf {
+                    eprintln!(
+                        "{}",
+                        crate::app::perf::format_snapshot(&perf.snapshot_and_reset())
+                    );
+                }
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -1133,6 +1208,52 @@ mod tests {
         let _ = app.update(Message::CursorMoved(wid, point));
 
         assert_eq!(app.last_cursor, Some((wid, point)));
+    }
+
+    #[test]
+    fn perf_tracker_records_update_messages_when_enabled() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        app.perf = Some(super::perf::PerfTracker::default());
+
+        let _ = app.update(Message::Tick);
+
+        let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
+        assert_eq!(snapshot.updates.get("Tick"), Some(&1));
+    }
+
+    #[test]
+    fn perf_tracker_records_view_calls_when_enabled() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        app.perf = Some(super::perf::PerfTracker::default());
+        let wid = test_wid();
+
+        let _ = app.view(wid);
+
+        let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
+        assert_eq!(snapshot.views.values().sum::<u64>(), 1);
+    }
+
+    #[test]
+    fn perf_tracker_records_workspace_rebuilds_when_enabled() {
+        let mut app = make_workspaces_app();
+        app.perf = Some(super::perf::PerfTracker::default());
+
+        app.rebuild_workspace_item_modules(&[make_workspace(0, true)]);
+
+        let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
+        assert_eq!(snapshot.workspace_rebuilds, 1);
+    }
+
+    #[test]
+    fn perf_report_resets_counters() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        app.perf = Some(super::perf::PerfTracker::default());
+
+        let _ = app.update(Message::Tick);
+        let _ = app.update(Message::PerfReport);
+
+        let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
+        assert!(snapshot.updates.is_empty());
     }
 
     #[test]
