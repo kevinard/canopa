@@ -1,32 +1,5 @@
 use crate::theme;
 
-/// Runtime state for the workspaces module — current workspace list from niri.
-///
-/// Populated by the WorkspacesChanged niri IPC event via app.rs update().
-/// Stories 4.2–4.3 read this directly; Story 4.5 may set Unavailable.
-#[derive(Debug, Clone, Default)]
-pub struct WorkspaceState {
-    pub workspaces: Vec<niri_ipc::Workspace>,
-}
-
-impl WorkspaceState {
-    /// Returns a new state containing only workspaces assigned to `output`.
-    /// If `output` is empty (AllScreens mode), returns all workspaces unfiltered.
-    pub fn filtered_for_output(&self, output: &str) -> WorkspaceState {
-        if output.is_empty() {
-            return self.clone();
-        }
-        WorkspaceState {
-            workspaces: self
-                .workspaces
-                .iter()
-                .filter(|ws| ws.output.as_deref() == Some(output))
-                .cloned()
-                .collect(),
-        }
-    }
-}
-
 /// Returns `(background, foreground)` colours for a workspace pill.
 ///
 /// Focused workspace: accent background with base-coloured text.
@@ -42,15 +15,19 @@ fn pill_colors(is_focused: bool, is_active: bool) -> (iced::Color, iced::Color) 
     }
 }
 
-/// Workspace module: shows all niri workspaces as pills, fed by niri IPC via SharedState.
+// ---------------------------------------------------------------------------
+// WorkspacesModule -- placeholder registered from config; replaced by WorkspaceItemModules
+// ---------------------------------------------------------------------------
+
+/// Config-level placeholder for the workspaces list. Replaced at runtime by one
+/// `WorkspaceItemModule` per workspace whenever workspace state changes.
 pub struct WorkspacesModule {
     id: crate::modules::ModuleId,
-    config: crate::config::WorkspacesConfig,
 }
 
 impl WorkspacesModule {
-    pub fn new(id: crate::modules::ModuleId, config: crate::config::WorkspacesConfig) -> Self {
-        WorkspacesModule { id, config }
+    pub fn new(id: crate::modules::ModuleId, _config: crate::config::WorkspacesConfig) -> Self {
+        WorkspacesModule { id }
     }
 }
 
@@ -63,165 +40,176 @@ impl crate::modules::Module for WorkspacesModule {
         "workspaces"
     }
 
-    /// Workspace module has no independent data source — fed via Message::Niri in app.rs.
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         iced::Subscription::none()
     }
 
-    fn view_collapsed(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-        use iced::widget::{column, container, text};
-        use iced::{Alignment, Background, Length};
-
-        let workspaces = match state {
-            ModuleState::Workspace(s) => &s.workspaces,
-            _ => return iced::widget::Space::new().into(), // Loading/Unavailable → empty (UX-DR16)
-        };
-
-        // Sort by idx to match Niri's scrollable-tiling order.
-        let mut sorted: Vec<_> = workspaces.iter().collect();
-        sorted.sort_by_key(|ws| ws.idx);
-
-        let pills: Vec<iced::Element<'_, crate::app::Message>> = sorted
-            .iter()
-            .map(|ws| {
-                let (bg, fg) = pill_colors(ws.is_focused, ws.is_active);
-                let ws_num = ws.idx as u32;
-                let label_cfg = self.config.workspaces.get(&ws_num);
-                // Collapsed: show icon if configured, else number (AC #2, #4).
-                let content = label_cfg
-                    .and_then(|c| c.icon.as_deref())
-                    .map(|icon| icon.to_string())
-                    .unwrap_or_else(|| format!("{ws_num}"));
-                container(text(content).size(10).color(fg))
-                    .width(32)
-                    .height(20)
-                    .align_x(Alignment::Center)
-                    .align_y(Alignment::Center)
-                    .style(move |_theme| container::Style {
-                        background: Some(Background::Color(bg)),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    })
-                    .into()
-            })
-            .collect();
-
-        column(pills).spacing(2).width(Length::Fill).into()
+    fn view_collapsed(&self, _state: &crate::modules::ModuleState) -> iced::Element<'_, crate::app::Message> {
+        iced::widget::Space::new().into()
     }
 
-    fn view_expanded(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-        use iced::widget::{column, container, row, text};
-        use iced::{Alignment, Background, Length};
-
-        let workspaces = match state {
-            ModuleState::Workspace(s) => &s.workspaces,
-            _ => return iced::widget::Space::new().into(),
-        };
-
-        let mut sorted: Vec<_> = workspaces.iter().collect();
-        sorted.sort_by_key(|ws| ws.idx);
-
-        let pills: Vec<iced::Element<'_, crate::app::Message>> = sorted
-            .iter()
-            .map(|ws| {
-                let (bg, fg) = pill_colors(ws.is_focused, ws.is_active);
-                let ws_num = ws.idx as u32;
-                let label_cfg = self.config.workspaces.get(&ws_num);
-                let icon_str = label_cfg.and_then(|c| c.icon.as_deref());
-                let label_str = label_cfg.and_then(|c| c.label.as_deref());
-
-                // Expanded: icon (if any) + number + label (if any), space-separated (AC #1, #3).
-                let mut parts: Vec<iced::Element<'_, crate::app::Message>> = Vec::new();
-                if let Some(icon) = icon_str {
-                    parts.push(text(icon).size(12).color(fg).into());
-                } else {
-                    parts.push(text(format!("{ws_num}")).size(12).color(fg).into());
-                }
-                if let Some(lbl) = label_str {
-                    parts.push(text(lbl).size(12).color(fg).into());
-                }
-
-                container(row(parts).spacing(4).align_y(Alignment::Center))
-                    .width(Length::Fill)
-                    .height(20)
-                    .align_x(Alignment::Start)
-                    .align_y(Alignment::Center)
-                    .padding([0, 6])
-                    .style(move |_theme| container::Style {
-                        background: Some(Background::Color(bg)),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    })
-                    .into()
-            })
-            .collect();
-
-        column(pills).spacing(2).width(Length::Fill).into()
+    fn view_expanded(&self, _state: &crate::modules::ModuleState) -> iced::Element<'_, crate::app::Message> {
+        iced::widget::Space::new().into()
     }
 
-    fn view_horizontal(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-        use iced::widget::{container, row, text};
+    fn on_interaction(&self, _event: crate::modules::InteractionEvent) -> Option<crate::app::Message> {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WorkspaceItemModule -- one per workspace, acts as a full independent module
+// ---------------------------------------------------------------------------
+
+/// One workspace pill, rendered as an independent bar module.
+///
+/// Instances are created dynamically by workspace state change handlers and inserted
+/// into `App::modules` at the same zone position as the `WorkspacesModule` placeholder.
+/// Each carries its workspace data directly so no shared-state lookup is needed in view.
+pub struct WorkspaceItemModule {
+    id: crate::modules::ModuleId,
+    pub workspace: niri_ipc::Workspace,
+    config: crate::config::WorkspacesConfig,
+    config_name: String,
+}
+
+impl WorkspaceItemModule {
+    pub fn new(
+        workspace: niri_ipc::Workspace,
+        config: crate::config::WorkspacesConfig,
+        config_name: String,
+    ) -> Self {
+        let id = crate::modules::ModuleId(format!("workspace:{}", workspace.id));
+        WorkspaceItemModule {
+            id,
+            workspace,
+            config,
+            config_name,
+        }
+    }
+
+    fn build_view(&self, horizontal: bool) -> iced::Element<'static, crate::app::Message> {
+        use iced::widget::{container, text};
         use iced::{Alignment, Background, Length};
 
-        let workspaces = match state {
-            ModuleState::Workspace(s) => &s.workspaces,
-            _ => return iced::widget::Space::new().into(),
-        };
+        let (bg, fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);
+        let ws_num = self.workspace.idx as u32;
+        let label_cfg = self.config.workspaces.get(&ws_num);
 
-        let mut sorted: Vec<_> = workspaces.iter().collect();
-        sorted.sort_by_key(|ws| ws.idx);
-
-        let pills: Vec<iced::Element<'_, crate::app::Message>> = sorted
-            .iter()
-            .map(|ws| {
-                let (bg, fg) = pill_colors(ws.is_focused, ws.is_active);
-                let ws_num = ws.idx as u32;
-                let label_cfg = self.config.workspaces.get(&ws_num);
-                // Horizontal: show icon if configured, else number — same as collapsed.
-                let content = label_cfg
-                    .and_then(|c| c.icon.as_deref())
-                    .map(|icon| icon.to_string())
-                    .unwrap_or_else(|| format!("{ws_num}"));
-                container(text(content).size(10).color(fg))
-                    .width(32)
-                    .height(20)
-                    .align_x(Alignment::Center)
-                    .align_y(Alignment::Center)
-                    .style(move |_theme| container::Style {
-                        background: Some(Background::Color(bg)),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            ..Default::default()
-                        },
+        if horizontal {
+            let content = label_cfg
+                .and_then(|c| c.icon.as_deref())
+                .map(|icon| icon.to_string())
+                .unwrap_or_else(|| format!("{ws_num}"));
+            container(text(content).size(10).color(fg))
+                .width(32)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .style(move |_theme| container::Style {
+                    background: Some(Background::Color(bg)),
+                    border: iced::Border {
+                        radius: 4.0.into(),
                         ..Default::default()
-                    })
-                    .into()
-            })
-            .collect();
+                    },
+                    ..Default::default()
+                })
+                .into()
+        } else {
+            let icon_str = label_cfg.and_then(|c| c.icon.as_deref());
+            let label_str = label_cfg.and_then(|c| c.label.as_deref());
 
-        container(row(pills).spacing(2))
-            .height(Length::Fill)
+            let mut parts: Vec<iced::Element<'static, crate::app::Message>> = Vec::new();
+            if let Some(icon) = icon_str {
+                parts.push(text(icon.to_string()).size(12).color(fg).into());
+            } else {
+                parts.push(text(format!("{ws_num}")).size(12).color(fg).into());
+            }
+            if let Some(lbl) = label_str {
+                parts.push(text(lbl.to_string()).size(12).color(fg).into());
+            }
+
+            container(
+                iced::widget::row(parts)
+                    .spacing(4)
+                    .align_y(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .height(20)
+            .align_x(Alignment::Center)
             .align_y(Alignment::Center)
-            .padding([0, 4])
+            .padding([0, 6])
+            .style(move |_theme| container::Style {
+                background: Some(Background::Color(bg)),
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
             .into()
+        }
+    }
+}
+
+impl crate::modules::Module for WorkspaceItemModule {
+    fn id(&self) -> crate::modules::ModuleId {
+        self.id.clone()
+    }
+
+    fn module_type(&self) -> &str {
+        "workspace_item"
+    }
+
+    fn subscription(&self) -> iced::Subscription<crate::app::Message> {
+        iced::Subscription::none()
+    }
+
+    fn view_collapsed(&self, _state: &crate::modules::ModuleState) -> iced::Element<'_, crate::app::Message> {
+        iced::widget::Space::new().into()
+    }
+
+    fn view_expanded(&self, _state: &crate::modules::ModuleState) -> iced::Element<'_, crate::app::Message> {
+        iced::widget::Space::new().into()
+    }
+
+    fn view_for_bar(
+        &self,
+        state: &crate::modules::ModuleState,
+        _window: iced::window::Id,
+        horizontal: bool,
+        _expanded: bool,
+    ) -> iced::Element<'_, crate::app::Message> {
+        // state carries the surface output name; filter this workspace by output.
+        let surface_output = match state {
+            crate::modules::ModuleState::WorkspaceOutput(o) => o.as_str(),
+            _ => "",
+        };
+        if !surface_output.is_empty()
+            && self.workspace.output.as_deref() != Some(surface_output)
+        {
+            return iced::widget::Space::new().into();
+        }
+        self.build_view(horizontal)
+    }
+
+    fn on_interaction(
+        &self,
+        event: crate::modules::InteractionEvent,
+    ) -> Option<crate::app::Message> {
+        match event {
+            crate::modules::InteractionEvent::Clicked
+            | crate::modules::InteractionEvent::Activated(_) => {
+                Some(crate::app::Message::NiriFocusWorkspace {
+                    id: self.workspace.id,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn config_name(&self) -> Option<&str> {
+        Some(&self.config_name)
     }
 }
 
@@ -255,22 +243,6 @@ mod tests {
         );
         assert_eq!(m.id().0, "workspaces");
         assert_eq!(m.module_type(), "workspaces");
-    }
-
-    #[test]
-    fn workspace_state_default_is_empty() {
-        let state = WorkspaceState::default();
-        assert!(state.workspaces.is_empty());
-    }
-
-    #[test]
-    fn workspace_state_stores_workspaces() {
-        let ws = make_workspace(0, true);
-        let state = WorkspaceState {
-            workspaces: vec![ws],
-        };
-        assert_eq!(state.workspaces.len(), 1);
-        assert!(state.workspaces[0].is_focused);
     }
 
     #[test]
@@ -335,64 +307,36 @@ mod tests {
                 icon: None,
             },
         );
-        let m = WorkspacesModule::new(crate::modules::ModuleId::new("workspaces"), cfg);
+        let m = WorkspacesModule::new(crate::modules::ModuleId::new("workspaces"), cfg.clone());
         assert_eq!(m.id().0, "workspaces");
-        assert!(m.config.workspaces.contains_key(&2));
-        assert!(!m.config.workspaces.contains_key(&1));
+        assert!(cfg.workspaces.contains_key(&2));
+        assert!(!cfg.workspaces.contains_key(&1));
     }
 
-    // --- filtered_for_output tests ---
+    // --- WorkspaceItemModule tests ---
 
     #[test]
-    fn filtered_for_output_keeps_matching_output() {
-        let state = WorkspaceState {
-            workspaces: vec![
-                make_workspace_on(0, false, "eDP-1"),
-                make_workspace_on(1, true, "DP-1"),
-                make_workspace_on(2, false, "eDP-1"),
-            ],
-        };
-        let filtered = state.filtered_for_output("eDP-1");
-        assert_eq!(filtered.workspaces.len(), 2);
-        assert!(
-            filtered
-                .workspaces
-                .iter()
-                .all(|ws| ws.output.as_deref() == Some("eDP-1"))
-        );
+    fn workspace_item_module_id_includes_workspace_id() {
+        let ws = make_workspace(0, true);
+        let m = WorkspaceItemModule::new(ws, crate::config::WorkspacesConfig::default(), "workspaces".into());
+        assert_eq!(m.id().0, "workspace:1");
+        assert_eq!(m.module_type(), "workspace_item");
+        assert_eq!(m.config_name(), Some("workspaces"));
     }
 
     #[test]
-    fn filtered_for_output_excludes_other_outputs() {
-        let state = WorkspaceState {
-            workspaces: vec![
-                make_workspace_on(0, false, "eDP-1"),
-                make_workspace_on(1, true, "DP-1"),
-            ],
-        };
-        let filtered = state.filtered_for_output("DP-1");
-        assert_eq!(filtered.workspaces.len(), 1);
-        assert_eq!(filtered.workspaces[0].idx, 1);
+    fn workspace_item_click_focuses_workspace() {
+        let ws = make_workspace(0, false);
+        let m = WorkspaceItemModule::new(ws, crate::config::WorkspacesConfig::default(), "workspaces".into());
+        let msg = m.on_interaction(crate::modules::InteractionEvent::Clicked).unwrap();
+        assert!(matches!(msg, crate::app::Message::NiriFocusWorkspace { id } if id == 1));
     }
 
     #[test]
-    fn filtered_for_output_empty_string_returns_all() {
-        let state = WorkspaceState {
-            workspaces: vec![
-                make_workspace_on(0, false, "eDP-1"),
-                make_workspace_on(1, true, "DP-1"),
-            ],
-        };
-        let filtered = state.filtered_for_output("");
-        assert_eq!(filtered.workspaces.len(), 2);
-    }
-
-    #[test]
-    fn filtered_for_output_no_match_returns_empty() {
-        let state = WorkspaceState {
-            workspaces: vec![make_workspace_on(0, false, "eDP-1")],
-        };
-        let filtered = state.filtered_for_output("HDMI-1");
-        assert!(filtered.workspaces.is_empty());
+    fn workspace_item_activated_focuses_workspace() {
+        let ws = make_workspace(0, false);
+        let m = WorkspaceItemModule::new(ws, crate::config::WorkspacesConfig::default(), "workspaces".into());
+        let msg = m.on_interaction(crate::modules::InteractionEvent::Activated(iced::window::Id::unique())).unwrap();
+        assert!(matches!(msg, crate::app::Message::NiriFocusWorkspace { id } if id == 1));
     }
 }

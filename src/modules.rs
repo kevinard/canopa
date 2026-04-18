@@ -45,8 +45,9 @@ pub enum ModuleState {
     Clock(clock::ClockState),
     Script(script::ScriptState),
     Button(button::ButtonState),
-    Workspace(workspaces::WorkspaceState),
     FocusedWindow(focused_window::FocusedWindowState),
+    /// Surface output name passed to workspace_item modules so they can filter rendering.
+    WorkspaceOutput(String),
 }
 
 /// Module data events routed through the Iced message bus.

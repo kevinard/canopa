@@ -122,6 +122,9 @@ impl App {
             };
 
             let state = {
+                if module.module_type() == "workspace_item" {
+                    ModuleState::WorkspaceOutput(surface.output_name.clone())
+                } else {
                 let raw = self
                     .shared
                     .modules
@@ -129,9 +132,6 @@ impl App {
                     .cloned()
                     .unwrap_or_default();
                 match raw {
-                    ModuleState::Workspace(ref ws) => {
-                        ModuleState::Workspace(ws.filtered_for_output(&surface.output_name))
-                    }
                     ModuleState::FocusedWindow(ref fw) => {
                         let title = if surface.output_name.is_empty() {
                             fw.title.clone()
@@ -157,6 +157,7 @@ impl App {
                     }
                     other => other,
                 }
+                } // end else workspace_item
             };
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);

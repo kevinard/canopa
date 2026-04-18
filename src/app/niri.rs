@@ -2,7 +2,7 @@ use iced::Task;
 
 use super::{App, Message};
 use crate::modules::ModuleState;
-use crate::modules::workspaces;
+use crate::modules::workspaces::WorkspaceItemModule;
 use crate::niri::NiriEvent;
 
 impl App {
@@ -27,17 +27,7 @@ impl App {
                 use niri_ipc::Event;
                 match event {
                     Event::WorkspacesChanged { workspaces } => {
-                        for (_, module) in &self.modules {
-                            if module.module_type() == "workspaces" {
-                                self.shared.modules.insert(
-                                    module.id(),
-                                    ModuleState::Workspace(workspaces::WorkspaceState {
-                                        workspaces: workspaces.clone(),
-                                    }),
-                                );
-                            }
-                        }
-
+                        self.rebuild_workspace_item_modules(&workspaces);
                         let open_tasks = if self.manual_outputs {
                             self.open_new_output_windows(&workspaces)
                         } else {
@@ -73,16 +63,7 @@ impl App {
                         }
 
                         let updated = self.shared.niri.workspaces.clone();
-                        for (_, module) in &self.modules {
-                            if module.module_type() == "workspaces" {
-                                self.shared.modules.insert(
-                                    module.id(),
-                                    ModuleState::Workspace(workspaces::WorkspaceState {
-                                        workspaces: updated.clone(),
-                                    }),
-                                );
-                            }
-                        }
+                        self.rebuild_workspace_item_modules(&updated);
                     }
                     Event::WindowsChanged { windows } => {
                         self.shared.niri.focused_window_id =
@@ -107,6 +88,68 @@ impl App {
                     _ => {}
                 }
                 Task::none()
+            }
+        }
+    }
+
+    /// Rebuild one `WorkspaceItemModule` per workspace for each `WorkspacesModule` placeholder.
+    /// Mirrors the `TrayUpdated` handler: find placeholder slots, remove stale items, insert fresh ones.
+    pub(super) fn rebuild_workspace_item_modules(&mut self, workspaces: &[niri_ipc::Workspace]) {
+        use crate::config::ModuleParams;
+
+        // Collect placeholder slots: (index, zone, config_name, WorkspacesConfig clone).
+        let slots: Vec<(usize, crate::modules::Zone, String, crate::config::WorkspacesConfig)> =
+            self.modules
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, m))| m.module_type() == "workspaces")
+                .map(|(i, (z, m))| {
+                    let name = m.id().0.clone();
+                    let cfg = self
+                        .config
+                        .modules
+                        .iter()
+                        .find(|mc| mc.name == name)
+                        .and_then(|mc| match &mc.params {
+                            ModuleParams::Workspaces(c) => Some(c.clone()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    (i, z.clone(), name, cfg)
+                })
+                .collect();
+
+        self.modules.retain(|(_, m)| m.module_type() != "workspace_item");
+
+        // Clear focused/hovered module on every surface if they pointed at a workspace item
+        // that may no longer exist after this rebuild.
+        for s in self.surfaces.values_mut() {
+            if s.focused_module
+                .as_ref()
+                .map(|id| id.0.starts_with("workspace:"))
+                .unwrap_or(false)
+            {
+                s.focused_module = None;
+            }
+            if s.hovered_module
+                .as_ref()
+                .map(|id| id.0.starts_with("workspace:"))
+                .unwrap_or(false)
+            {
+                s.hovered_module = None;
+            }
+        }
+
+        // Sort workspaces by idx to match Niri's scrollable-tiling order.
+        let mut sorted: Vec<niri_ipc::Workspace> = workspaces.to_vec();
+        sorted.sort_by_key(|ws| ws.idx);
+
+        // Insert in reverse slot order so earlier slots' indices remain valid.
+        for (slot_idx, zone, config_name, cfg) in slots.iter().rev() {
+            let insert_at = slot_idx + 1;
+            for ws in sorted.iter().rev() {
+                let item = WorkspaceItemModule::new(ws.clone(), cfg.clone(), config_name.clone());
+                self.modules.insert(insert_at, (zone.clone(), Box::new(item)));
             }
         }
     }
