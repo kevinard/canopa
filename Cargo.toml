@@ -5,7 +5,17 @@ edition = "2024"
 
 [dependencies]
 iced_layershell = "0.17.1"
-iced = { version = "0.14", features = ["image", "svg", "tokio", "advanced"] }
+iced = { version = "0.14", default-features = false, features = [
+  "image",
+  "svg",
+  "tokio",
+  "advanced",
+  "tiny-skia",
+  "crisp",
+  "web-colors",
+  "thread-pool",
+  "wayland",
+] }
 zbus = "5.12.0"
 kdl = "6.5.0"
 tokio = { version = "1", features = ["full"] }
@@ -13,3 +23,9 @@ anyhow = "1"
 chrono = { version = "0.4", features = ["clock"] }
 niri-ipc = "25.11.0"
 libpulse-binding = "2.30.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
