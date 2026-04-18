@@ -2,14 +2,14 @@ use crate::modules::view::{expanded_icon_label, horizontal_icon_label};
 use crate::theme;
 
 /// Runtime state for the battery module, fed by UPower D-Bus signals via app.rs.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BatteryState {
     pub percentage: f64, // 0.0–100.0
     pub is_charging: bool,
 }
 
 /// Events emitted by the UPower D-Bus subscription.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BatteryEvent {
     StateChanged { percentage: f64, is_charging: bool },
     Unavailable,

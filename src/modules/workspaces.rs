@@ -44,15 +44,24 @@ impl crate::modules::Module for WorkspacesModule {
         iced::Subscription::none()
     }
 
-    fn view_collapsed(&self, _state: &crate::modules::ModuleState) -> iced::Element<'_, crate::app::Message> {
+    fn view_collapsed(
+        &self,
+        _state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded(&self, _state: &crate::modules::ModuleState) -> iced::Element<'_, crate::app::Message> {
+    fn view_expanded(
+        &self,
+        _state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 
-    fn on_interaction(&self, _event: crate::modules::InteractionEvent) -> Option<crate::app::Message> {
+    fn on_interaction(
+        &self,
+        _event: crate::modules::InteractionEvent,
+    ) -> Option<crate::app::Message> {
         None
     }
 }
@@ -165,11 +174,17 @@ impl crate::modules::Module for WorkspaceItemModule {
         iced::Subscription::none()
     }
 
-    fn view_collapsed(&self, _state: &crate::modules::ModuleState) -> iced::Element<'_, crate::app::Message> {
+    fn view_collapsed(
+        &self,
+        _state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded(&self, _state: &crate::modules::ModuleState) -> iced::Element<'_, crate::app::Message> {
+    fn view_expanded(
+        &self,
+        _state: &crate::modules::ModuleState,
+    ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 
@@ -185,9 +200,7 @@ impl crate::modules::Module for WorkspaceItemModule {
             crate::modules::ModuleState::WorkspaceOutput(o) => o.as_str(),
             _ => "",
         };
-        if !surface_output.is_empty()
-            && self.workspace.output.as_deref() != Some(surface_output)
-        {
+        if !surface_output.is_empty() && self.workspace.output.as_deref() != Some(surface_output) {
             return iced::widget::Space::new().into();
         }
         self.build_view(horizontal)
@@ -318,7 +331,11 @@ mod tests {
     #[test]
     fn workspace_item_module_id_includes_workspace_id() {
         let ws = make_workspace(0, true);
-        let m = WorkspaceItemModule::new(ws, crate::config::WorkspacesConfig::default(), "workspaces".into());
+        let m = WorkspaceItemModule::new(
+            ws,
+            crate::config::WorkspacesConfig::default(),
+            "workspaces".into(),
+        );
         assert_eq!(m.id().0, "workspace:1");
         assert_eq!(m.module_type(), "workspace_item");
         assert_eq!(m.config_name(), Some("workspaces"));
@@ -327,16 +344,30 @@ mod tests {
     #[test]
     fn workspace_item_click_focuses_workspace() {
         let ws = make_workspace(0, false);
-        let m = WorkspaceItemModule::new(ws, crate::config::WorkspacesConfig::default(), "workspaces".into());
-        let msg = m.on_interaction(crate::modules::InteractionEvent::Clicked).unwrap();
+        let m = WorkspaceItemModule::new(
+            ws,
+            crate::config::WorkspacesConfig::default(),
+            "workspaces".into(),
+        );
+        let msg = m
+            .on_interaction(crate::modules::InteractionEvent::Clicked)
+            .unwrap();
         assert!(matches!(msg, crate::app::Message::NiriFocusWorkspace { id } if id == 1));
     }
 
     #[test]
     fn workspace_item_activated_focuses_workspace() {
         let ws = make_workspace(0, false);
-        let m = WorkspaceItemModule::new(ws, crate::config::WorkspacesConfig::default(), "workspaces".into());
-        let msg = m.on_interaction(crate::modules::InteractionEvent::Activated(iced::window::Id::unique())).unwrap();
+        let m = WorkspaceItemModule::new(
+            ws,
+            crate::config::WorkspacesConfig::default(),
+            "workspaces".into(),
+        );
+        let msg = m
+            .on_interaction(crate::modules::InteractionEvent::Activated(
+                iced::window::Id::unique(),
+            ))
+            .unwrap();
         assert!(matches!(msg, crate::app::Message::NiriFocusWorkspace { id } if id == 1));
     }
 }

@@ -1,9 +1,9 @@
 /// Runtime state for the button module. Button appearance is config-driven, not data-driven.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ButtonState;
 
 /// Events emitted by the button module.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ButtonEvent {
     /// Emitted once at startup to transition Loading → Button(ButtonState).
     Ready,

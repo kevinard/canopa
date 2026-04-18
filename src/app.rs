@@ -221,7 +221,9 @@ pub enum Message {
     /// Bar surface window was opened or resized; carries its logical size in pixels.
     WindowSized(iced::window::Id, u32, u32),
     /// User clicked a workspace pill -- switch to that workspace via niri IPC.
-    NiriFocusWorkspace { id: u64 },
+    NiriFocusWorkspace {
+        id: u64,
+    },
 }
 
 /// Return default params for a module type name, or `None` if the type requires mandatory
@@ -336,7 +338,13 @@ impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::CursorMoved(window, pos) => {
-                self.last_cursor = Some((window, pos));
+                let has_tray = self
+                    .modules
+                    .iter()
+                    .any(|(_, module)| matches!(module.module_type(), "tray" | "tray_icon"));
+                if has_tray && self.last_cursor != Some((window, pos)) {
+                    self.last_cursor = Some((window, pos));
+                }
                 Task::none()
             }
             Message::WindowSized(window, w, h) => {
@@ -1051,6 +1059,83 @@ mod tests {
     }
 
     #[test]
+    fn repeated_clock_tick_keeps_existing_state() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let id = ModuleId::new("clock");
+        let first = ModuleState::Clock(crate::modules::clock::ClockState {
+            time: "10:00".into(),
+            date: "Sat".into(),
+        });
+        app.shared.modules.insert(id.clone(), first.clone());
+
+        let _ = app.update(Message::Module(
+            id.clone(),
+            ModuleEvent::Clock(crate::modules::clock::ClockEvent::Tick {
+                time: "10:00".into(),
+                date: "Sat".into(),
+            }),
+        ));
+
+        assert_eq!(app.shared.modules.get(&id), Some(&first));
+    }
+
+    #[test]
+    fn repeated_volume_state_keeps_existing_state() {
+        use crate::config::{ModuleConfig, ModuleParams, VolumeConfig};
+
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "volume".into(),
+                module_type: "volume".into(),
+                params: ModuleParams::Volume(VolumeConfig::default()),
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.bottom = vec!["volume".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let id = ModuleId::new("volume");
+        let first = ModuleState::Volume(crate::modules::volume::VolumeState {
+            volume: 55.0,
+            muted: false,
+        });
+        app.shared.modules.insert(id.clone(), first.clone());
+
+        let _ = app.update(Message::Volume(
+            crate::modules::volume::VolumeEvent::StateChanged {
+                volume: 55.0,
+                muted: false,
+            },
+        ));
+
+        assert_eq!(app.shared.modules.get(&id), Some(&first));
+    }
+
+    #[test]
+    fn cursor_moved_is_ignored_without_tray_module() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid = test_wid();
+
+        let _ = app.update(Message::CursorMoved(wid, iced::Point::new(10.0, 20.0)));
+
+        assert_eq!(app.last_cursor, None);
+    }
+
+    #[test]
+    fn cursor_moved_is_recorded_when_tray_module_exists() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid = test_wid();
+        app.modules.push((
+            Zone::Top,
+            Box::new(crate::modules::tray::TrayModule::new(ModuleId::new("tray"))),
+        ));
+        let point = iced::Point::new(10.0, 20.0);
+
+        let _ = app.update(Message::CursorMoved(wid, point));
+
+        assert_eq!(app.last_cursor, Some((wid, point)));
+    }
+
+    #[test]
     fn button_module_instantiated_from_registry() {
         use crate::config::{ButtonConfig, ModuleConfig, ModuleParams};
         let mut config = Config {
@@ -1526,6 +1611,33 @@ mod tests {
             .filter(|(_, m)| m.module_type() == "workspace_item")
             .collect();
         assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn workspace_render_state_detects_equivalent_snapshots() {
+        let workspaces = vec![make_workspace(0, true), make_workspace(1, false)];
+
+        assert!(super::niri::workspace_render_state_equal(
+            &workspaces,
+            &workspaces.clone()
+        ));
+    }
+
+    #[test]
+    fn equivalent_workspace_event_keeps_module_count() {
+        use niri_ipc::Event;
+        let mut app = make_workspaces_app();
+        let workspaces = vec![make_workspace(0, true)];
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: workspaces.clone(),
+        })));
+        let count = app.modules.len();
+
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces,
+        })));
+
+        assert_eq!(app.modules.len(), count);
     }
 
     #[test]

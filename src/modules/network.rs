@@ -11,7 +11,7 @@ pub enum NetworkConnectivity {
 }
 
 /// Runtime state for the network module.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct NetworkState {
     pub connectivity: NetworkConnectivity,
     /// Connection label: NM profile name or networkd interface name.
@@ -19,7 +19,7 @@ pub struct NetworkState {
 }
 
 /// Events emitted by the network D-Bus subscription.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NetworkEvent {
     StateChanged {
         connectivity: NetworkConnectivity,

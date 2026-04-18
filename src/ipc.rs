@@ -7,6 +7,9 @@ use tokio::sync::mpsc;
 
 use crate::app::Message;
 
+#[derive(Hash)]
+struct IpcSubscriptionKey;
+
 /// Path of the control socket: `$XDG_RUNTIME_DIR/niribar.sock`.
 pub fn socket_path() -> std::io::Result<PathBuf> {
     let dir = std::env::var("XDG_RUNTIME_DIR").map_err(|_| {
@@ -48,7 +51,7 @@ fn set_owner_only_permissions(path: &std::path::Path) -> std::io::Result<()> {
 /// Pattern mirrors `niri_subscription`: a `tokio::spawn` task handles blocking/async I/O
 /// and sends events via an `mpsc` channel; the stream yields from the channel.
 pub fn ipc_subscription() -> iced::Subscription<Message> {
-    iced::Subscription::run_with((), |()| {
+    iced::Subscription::run_with(IpcSubscriptionKey, |_: &IpcSubscriptionKey| {
         stream::unfold(None::<mpsc::UnboundedReceiver<Message>>, |rx| async move {
             let mut rx = match rx {
                 Some(r) => r,

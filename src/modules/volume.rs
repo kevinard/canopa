@@ -2,7 +2,7 @@ use crate::modules::view::{collapsed_icon, expanded_icon_label, horizontal_icon_
 use crate::theme;
 
 /// Runtime state for the volume module.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct VolumeState {
     /// Current volume percentage 0.0–150.0 (PA can exceed 100%).
     pub volume: f64,
@@ -11,7 +11,7 @@ pub struct VolumeState {
 }
 
 /// Events emitted by the PA subscription.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum VolumeEvent {
     StateChanged { volume: f64, muted: bool },
     Unavailable,

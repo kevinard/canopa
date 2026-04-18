@@ -9,6 +9,16 @@ use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::volume::VolumeEvent;
 use crate::modules::{InteractionEvent, ModuleEvent, ModuleId, ModuleState};
 
+fn insert_module_state_if_changed(
+    modules: &mut std::collections::HashMap<ModuleId, ModuleState>,
+    id: ModuleId,
+    state: ModuleState,
+) {
+    if modules.get(&id) != Some(&state) {
+        modules.insert(id, state);
+    }
+}
+
 impl App {
     pub(super) fn handle_module_event(
         &mut self,
@@ -17,20 +27,26 @@ impl App {
     ) -> Task<Message> {
         match event {
             ModuleEvent::Clock(ClockEvent::Tick { time, date }) => {
-                self.shared
-                    .modules
-                    .insert(id, ModuleState::Clock(ClockState { time, date }));
+                insert_module_state_if_changed(
+                    &mut self.shared.modules,
+                    id,
+                    ModuleState::Clock(ClockState { time, date }),
+                );
             }
             ModuleEvent::Script(ScriptEvent::Output(text)) => {
-                self.shared
-                    .modules
-                    .insert(id, ModuleState::Script(ScriptState { output: text }));
+                insert_module_state_if_changed(
+                    &mut self.shared.modules,
+                    id,
+                    ModuleState::Script(ScriptState { output: text }),
+                );
             }
             ModuleEvent::Script(ScriptEvent::Failed) => {}
             ModuleEvent::Button(ButtonEvent::Ready) => {
-                self.shared
-                    .modules
-                    .insert(id, ModuleState::Button(ButtonState));
+                insert_module_state_if_changed(
+                    &mut self.shared.modules,
+                    id,
+                    ModuleState::Button(ButtonState),
+                );
             }
         }
         Task::none()

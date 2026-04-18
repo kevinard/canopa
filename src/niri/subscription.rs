@@ -6,6 +6,9 @@ use tokio::sync::mpsc;
 use crate::app::Message;
 use crate::niri::NiriEvent;
 
+#[derive(Hash)]
+struct NiriSubscriptionKey;
+
 /// Internal subscription state machine.
 enum NiriSubState {
     /// Not yet connected; will attempt connection on next poll.
@@ -22,7 +25,7 @@ enum NiriSubState {
 /// Emits `NiriEvent::Unavailable` (once) and terminates if the socket is unreachable.
 /// Uses a single OS thread for blocking I/O, bridged to async via mpsc channel (AR4).
 pub fn niri_subscription() -> iced::Subscription<Message> {
-    iced::Subscription::run_with((), |()| {
+    iced::Subscription::run_with(NiriSubscriptionKey, |_: &NiriSubscriptionKey| {
         stream::unfold(NiriSubState::Disconnected, |state| async move {
             match state {
                 NiriSubState::Disconnected => {
