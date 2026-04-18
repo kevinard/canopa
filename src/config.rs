@@ -387,6 +387,7 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 
@@ -679,8 +680,16 @@ mod tests {
     fn bars_for_output_specific_name_matches_only_that_output() {
         let mut config = Config::default();
         config.bars = vec![
-            BarConfig { name: "main".into(), output: "all".into(), ..BarConfig::default() },
-            BarConfig { name: "side".into(), output: "DP-1".into(), ..BarConfig::default() },
+            BarConfig {
+                name: "main".into(),
+                output: "all".into(),
+                ..BarConfig::default()
+            },
+            BarConfig {
+                name: "side".into(),
+                output: "DP-1".into(),
+                ..BarConfig::default()
+            },
         ];
         let bars = config.bars_for_output("DP-1");
         assert_eq!(bars.len(), 2); // both "main" (all) and "side" (DP-1)
@@ -691,9 +700,11 @@ mod tests {
     #[test]
     fn bars_for_output_no_all_bars_specific_output_not_connected() {
         let mut config = Config::default();
-        config.bars = vec![
-            BarConfig { name: "side".into(), output: "DP-1".into(), ..BarConfig::default() },
-        ];
+        config.bars = vec![BarConfig {
+            name: "side".into(),
+            output: "DP-1".into(),
+            ..BarConfig::default()
+        }];
         let bars = config.bars_for_output("eDP-1");
         assert!(bars.is_empty());
     }
@@ -711,8 +722,16 @@ mod tests {
     fn validate_duplicate_bar_name_errors() {
         let config = Config {
             bars: vec![
-                BarConfig { name: "main".into(), output: "all".into(), ..BarConfig::default() },
-                BarConfig { name: "main".into(), output: "DP-1".into(), ..BarConfig::default() },
+                BarConfig {
+                    name: "main".into(),
+                    output: "all".into(),
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "main".into(),
+                    output: "DP-1".into(),
+                    ..BarConfig::default()
+                },
             ],
             modules: vec![],
         };
@@ -723,7 +742,12 @@ mod tests {
     #[test]
     fn validate_bar_collapsed_width_too_small_errors() {
         let config = Config {
-            bars: vec![BarConfig { name: "x".into(), output: "all".into(), collapsed_width: 1, ..BarConfig::default() }],
+            bars: vec![BarConfig {
+                name: "x".into(),
+                output: "all".into(),
+                collapsed_width: 1,
+                ..BarConfig::default()
+            }],
             modules: vec![],
         };
         let err = validate(&config).unwrap_err();
@@ -770,8 +794,16 @@ mod tests {
     fn bars_for_output_multiple_all_bars_returns_all() {
         let config = Config {
             bars: vec![
-                BarConfig { name: "a".into(), output: "all".into(), ..BarConfig::default() },
-                BarConfig { name: "b".into(), output: "all".into(), ..BarConfig::default() },
+                BarConfig {
+                    name: "a".into(),
+                    output: "all".into(),
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "b".into(),
+                    output: "all".into(),
+                    ..BarConfig::default()
+                },
             ],
             modules: vec![],
         };
@@ -783,9 +815,21 @@ mod tests {
     fn bars_for_output_mixed_returns_both_matching() {
         let config = Config {
             bars: vec![
-                BarConfig { name: "main".into(), output: "all".into(), ..BarConfig::default() },
-                BarConfig { name: "extra".into(), output: "eDP-1".into(), ..BarConfig::default() },
-                BarConfig { name: "other".into(), output: "DP-1".into(), ..BarConfig::default() },
+                BarConfig {
+                    name: "main".into(),
+                    output: "all".into(),
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "extra".into(),
+                    output: "eDP-1".into(),
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "other".into(),
+                    output: "DP-1".into(),
+                    ..BarConfig::default()
+                },
             ],
             modules: vec![],
         };
@@ -801,9 +845,21 @@ mod tests {
     fn bars_for_output_preserves_order() {
         let config = Config {
             bars: vec![
-                BarConfig { name: "first".into(), output: "all".into(), ..BarConfig::default() },
-                BarConfig { name: "second".into(), output: "all".into(), ..BarConfig::default() },
-                BarConfig { name: "third".into(), output: "all".into(), ..BarConfig::default() },
+                BarConfig {
+                    name: "first".into(),
+                    output: "all".into(),
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "second".into(),
+                    output: "all".into(),
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "third".into(),
+                    output: "all".into(),
+                    ..BarConfig::default()
+                },
             ],
             modules: vec![],
         };
@@ -817,8 +873,16 @@ mod tests {
     fn validate_multiple_bars_no_duplicate_names_passes() {
         let config = Config {
             bars: vec![
-                BarConfig { name: "main".into(), output: "all".into(), ..BarConfig::default() },
-                BarConfig { name: "side".into(), output: "DP-1".into(), ..BarConfig::default() },
+                BarConfig {
+                    name: "main".into(),
+                    output: "all".into(),
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "side".into(),
+                    output: "DP-1".into(),
+                    ..BarConfig::default()
+                },
             ],
             modules: vec![],
         };
@@ -829,8 +893,16 @@ mod tests {
     fn validate_duplicate_name_error_includes_bar_name() {
         let config = Config {
             bars: vec![
-                BarConfig { name: "side".into(), output: "all".into(), ..BarConfig::default() },
-                BarConfig { name: "side".into(), output: "DP-1".into(), ..BarConfig::default() },
+                BarConfig {
+                    name: "side".into(),
+                    output: "all".into(),
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "side".into(),
+                    output: "DP-1".into(),
+                    ..BarConfig::default()
+                },
             ],
             modules: vec![],
         };
@@ -842,7 +914,10 @@ mod tests {
     fn validate_second_bar_expanded_less_than_collapsed_errors() {
         let config = Config {
             bars: vec![
-                BarConfig { name: "main".into(), ..BarConfig::default() },
+                BarConfig {
+                    name: "main".into(),
+                    ..BarConfig::default()
+                },
                 BarConfig {
                     name: "side".into(),
                     output: "DP-1".into(),
@@ -854,16 +929,21 @@ mod tests {
             modules: vec![],
         };
         let err = validate(&config).unwrap_err();
-        assert!(err.to_string().contains("side"), "error should name the offending bar: {err}");
+        assert!(
+            err.to_string().contains("side"),
+            "error should name the offending bar: {err}"
+        );
         assert!(err.to_string().contains("expanded-width"), "got: {err}");
     }
 
     #[test]
     fn bars_for_output_case_sensitive() {
         let config = Config {
-            bars: vec![
-                BarConfig { name: "main".into(), output: "dp-1".into(), ..BarConfig::default() },
-            ],
+            bars: vec![BarConfig {
+                name: "main".into(),
+                output: "dp-1".into(),
+                ..BarConfig::default()
+            }],
             modules: vec![],
         };
         // "DP-1" (uppercase) does not match "dp-1" (lowercase)

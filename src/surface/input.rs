@@ -82,12 +82,16 @@ fn keyboard_handler(
     match event {
         Event::Window(window::Event::Focused) => Some(Message::BarFocusGained(window)),
         Event::Window(window::Event::Unfocused) => Some(Message::BarFocusLost(window)),
-        Event::Window(window::Event::Opened { size, .. }) => {
-            Some(Message::WindowSized(window, size.width as u32, size.height as u32))
-        }
-        Event::Window(window::Event::Resized(size)) => {
-            Some(Message::WindowSized(window, size.width as u32, size.height as u32))
-        }
+        Event::Window(window::Event::Opened { size, .. }) => Some(Message::WindowSized(
+            window,
+            size.width as u32,
+            size.height as u32,
+        )),
+        Event::Window(window::Event::Resized(size)) => Some(Message::WindowSized(
+            window,
+            size.width as u32,
+            size.height as u32,
+        )),
         Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
             Some(Message::CursorMoved(window, position))
         }
@@ -113,9 +117,7 @@ fn keyboard_handler(
                         Some(Message::FocusNextZone(window))
                     }
                 }
-                keyboard::Key::Named(Named::Enter) => {
-                    Some(Message::KeyboardActivate(window))
-                }
+                keyboard::Key::Named(Named::Enter) => Some(Message::KeyboardActivate(window)),
                 keyboard::Key::Named(Named::Space) => {
                     Some(Message::KeyboardSecondaryActivate(window))
                 }

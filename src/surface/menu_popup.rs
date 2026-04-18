@@ -41,8 +41,8 @@ pub fn view_menu_popup<'a>(
     hovered_item: Option<&'a str>,
     focused_item: Option<&'a str>,
 ) -> iced::Element<'a, crate::app::Message> {
-    use iced::widget::{column, container, rule, text};
     use iced::Length;
+    use iced::widget::{column, container, rule, text};
 
     let items: Vec<iced::Element<'_, crate::app::Message>> = tree
         .items
@@ -152,7 +152,13 @@ pub fn popup_size(tree: &MenuTree) -> (u32, u32) {
 
     let height: u32 = visible
         .clone()
-        .map(|i| if i.is_separator { SEP_HEIGHT } else { ITEM_HEIGHT })
+        .map(|i| {
+            if i.is_separator {
+                SEP_HEIGHT
+            } else {
+                ITEM_HEIGHT
+            }
+        })
         .sum::<u32>()
         + OUTER_V_PADDING;
 
@@ -198,16 +204,31 @@ mod tests {
         let tree = MenuTree {
             items: vec![
                 MenuItem {
-                    id: "1".into(), label: "Item".into(), enabled: true, visible: true,
-                    icon_name: None, children: vec![], is_separator: false,
+                    id: "1".into(),
+                    label: "Item".into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
                 },
                 MenuItem {
-                    id: "0".into(), label: String::new(), enabled: false, visible: true,
-                    icon_name: None, children: vec![], is_separator: true,
+                    id: "0".into(),
+                    label: String::new(),
+                    enabled: false,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: true,
                 },
                 MenuItem {
-                    id: "2".into(), label: "Item".into(), enabled: true, visible: true,
-                    icon_name: None, children: vec![], is_separator: false,
+                    id: "2".into(),
+                    label: "Item".into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
                 },
             ],
             anchor: (0, 0),
@@ -223,12 +244,22 @@ mod tests {
         let tree = MenuTree {
             items: vec![
                 MenuItem {
-                    id: "1".into(), label: "Visible".into(), enabled: true, visible: true,
-                    icon_name: None, children: vec![], is_separator: false,
+                    id: "1".into(),
+                    label: "Visible".into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
                 },
                 MenuItem {
-                    id: "2".into(), label: "Hidden".into(), enabled: true, visible: false,
-                    icon_name: None, children: vec![], is_separator: false,
+                    id: "2".into(),
+                    label: "Hidden".into(),
+                    enabled: true,
+                    visible: false,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
                 },
             ],
             anchor: (0, 0),
@@ -244,12 +275,22 @@ mod tests {
         let tree = MenuTree {
             items: vec![
                 MenuItem {
-                    id: "1".into(), label: "Hi".into(), enabled: true, visible: true, // 2 chars
-                    icon_name: None, children: vec![], is_separator: false,
+                    id: "1".into(),
+                    label: "Hi".into(),
+                    enabled: true,
+                    visible: true, // 2 chars
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
                 },
                 MenuItem {
-                    id: "2".into(), label: "A very long label here!".into(), // 23 chars
-                    enabled: true, visible: true, icon_name: None, children: vec![], is_separator: false,
+                    id: "2".into(),
+                    label: "A very long label here!".into(), // 23 chars
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: vec![],
+                    is_separator: false,
                 },
             ],
             anchor: (0, 0),

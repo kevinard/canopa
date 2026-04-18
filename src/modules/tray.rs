@@ -28,9 +28,8 @@ pub fn resolve_icon_path(name: &str) -> Option<std::path::PathBuf> {
 
     for base in &data_dirs {
         for cat in &categories {
-            let svg = std::path::PathBuf::from(format!(
-                "{base}/icons/hicolor/scalable/{cat}/{name}.svg"
-            ));
+            let svg =
+                std::path::PathBuf::from(format!("{base}/icons/hicolor/scalable/{cat}/{name}.svg"));
             if svg.exists() {
                 return Some(svg);
             }
@@ -81,7 +80,10 @@ pub fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Messag
                         .into()
                 }
             } else if let Some(fallback_path) = resolve_icon_path("application-x-executable") {
-                let ext = fallback_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                let ext = fallback_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("");
                 if ext == "svg" {
                     iced::widget::svg(iced::widget::svg::Handle::from_path(&fallback_path))
                         .width(ICON_SIZE as u32)
@@ -106,8 +108,7 @@ pub fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Messag
                 crate::dbus::sni_host::pick_best_pixmap(pixmaps, ICON_SIZE as i32)
             {
                 let rgba = crate::dbus::sni_host::argb_to_rgba(argb);
-                let handle =
-                    iced::widget::image::Handle::from_rgba(*w as u32, *h as u32, rgba);
+                let handle = iced::widget::image::Handle::from_rgba(*w as u32, *h as u32, rgba);
                 iced::widget::image(handle)
                     .width(ICON_SIZE as u32)
                     .height(ICON_SIZE as u32)
@@ -119,16 +120,15 @@ pub fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Messag
     };
 
     if item.status == ItemStatus::NeedsAttention {
-        let dot =
-            iced::widget::container(iced::widget::Space::new().width(6u32).height(6u32))
-                .style(|_| iced::widget::container::Style {
-                    background: Some(iced::Background::Color(crate::theme::ACCENT)),
-                    border: iced::Border {
-                        radius: iced::border::Radius::from(3.0),
-                        ..Default::default()
-                    },
+        let dot = iced::widget::container(iced::widget::Space::new().width(6u32).height(6u32))
+            .style(|_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(crate::theme::ACCENT)),
+                border: iced::Border {
+                    radius: iced::border::Radius::from(3.0),
                     ..Default::default()
-                });
+                },
+                ..Default::default()
+            });
         iced::widget::stack![icon_element, dot].into()
     } else {
         icon_element
@@ -205,10 +205,18 @@ pub struct TrayIconModule {
 impl TrayIconModule {
     pub fn new(item: TrayItem, config_name: String) -> Self {
         let id = ModuleId(format!("tray:{}", item.service));
-        TrayIconModule { id, item, config_name }
+        TrayIconModule {
+            id,
+            item,
+            config_name,
+        }
     }
 
-    fn build_view(&self, horizontal: bool, window: iced::window::Id) -> iced::Element<'static, crate::app::Message> {
+    fn build_view(
+        &self,
+        horizontal: bool,
+        window: iced::window::Id,
+    ) -> iced::Element<'static, crate::app::Message> {
         use iced::widget::mouse_area;
 
         let icon = icon_widget(&self.item);
@@ -365,7 +373,9 @@ mod tests {
         };
         let m = TrayIconModule::new(item, "tray".into());
         let msg = m.on_interaction(InteractionEvent::Clicked).unwrap();
-        assert!(matches!(msg, crate::app::Message::TrayActivate { service } if service == "org.test.App"));
+        assert!(
+            matches!(msg, crate::app::Message::TrayActivate { service } if service == "org.test.App")
+        );
     }
 
     #[test]
@@ -381,7 +391,9 @@ mod tests {
             ),
         };
         let m = TrayIconModule::new(item, "tray".into());
-        let msg = m.on_interaction(InteractionEvent::Activated(iced::window::Id::unique())).unwrap();
+        let msg = m
+            .on_interaction(InteractionEvent::Activated(iced::window::Id::unique()))
+            .unwrap();
         assert!(matches!(
             msg,
             crate::app::Message::TrayMenuRequestKeyboard { service, .. } if service == "org.test.App"

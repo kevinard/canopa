@@ -2,8 +2,8 @@ use kdl::KdlDocument;
 
 use super::{
     AnimationConfig, BarConfig, BarModules, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge,
-    ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, TrayConfig, VolumeConfig,
-    WorkspaceLabelConfig, WorkspacesConfig,
+    ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, TrayConfig,
+    VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -53,7 +53,7 @@ fn parse_single_bar_node(node: &kdl::KdlNode, name: &str) -> anyhow::Result<BarC
             return Ok(BarConfig {
                 name: name.to_string(),
                 ..BarConfig::default()
-            })
+            });
         }
     };
 
@@ -135,9 +135,7 @@ fn parse_single_bar_node(node: &kdl::KdlNode, name: &str) -> anyhow::Result<BarC
     let expand = match children.get_arg("expand") {
         None => defaults.expand,
         Some(v) => v.as_bool().ok_or_else(|| {
-            anyhow::anyhow!(
-                "{prefix}.expand: expected a boolean value. Expected: #true or #false."
-            )
+            anyhow::anyhow!("{prefix}.expand: expected a boolean value. Expected: #true or #false.")
         })?,
     };
 
@@ -527,7 +525,6 @@ fn parse_animation_node(anim_node: &kdl::KdlNode, prefix: &str) -> anyhow::Resul
         collapse_ms,
     })
 }
-
 
 fn parse_bar_modules(children: &kdl::KdlDocument) -> anyhow::Result<BarModules> {
     let Some(modules_node) = children.get("modules") else {
@@ -1504,7 +1501,10 @@ bar "main" {
         let err = parse(kdl).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("bar:"), "expected 'bar:' in error: {msg}");
-        assert!(msg.contains("Expected:"), "expected 'Expected:' in error: {msg}");
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in error: {msg}"
+        );
     }
 
     #[test]
@@ -1552,9 +1552,10 @@ bar "top" { output "all" edge "top" }
         for output in &["all", "eDP-1", "DP-2", "HDMI-A-1"] {
             let kdl = format!(r#"bar "main" {{ output "{output}" }}"#);
             let config = parse(&kdl).unwrap();
-            assert_eq!(&config.bars[0].output, output, "output round-trip failed for {output}");
+            assert_eq!(
+                &config.bars[0].output, output,
+                "output round-trip failed for {output}"
+            );
         }
     }
-
 }
-

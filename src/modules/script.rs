@@ -13,6 +13,32 @@ pub enum ScriptEvent {
     Failed,
 }
 
+pub const MAX_SCRIPT_OUTPUT_BYTES: usize = 4096;
+pub const SCRIPT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+fn sanitize_script_stdout(stdout: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stdout);
+    let trimmed = text.trim();
+    if trimmed.len() <= MAX_SCRIPT_OUTPUT_BYTES {
+        trimmed.to_string()
+    } else {
+        String::from_utf8_lossy(&trimmed.as_bytes()[..MAX_SCRIPT_OUTPUT_BYTES]).to_string()
+    }
+}
+
+async fn run_script_command(cmd: &str, timeout: std::time::Duration) -> ScriptEvent {
+    let mut command = tokio::process::Command::new("sh");
+    command.arg("-c").arg(cmd).kill_on_drop(true);
+    let output = tokio::time::timeout(timeout, command.output()).await;
+
+    match output {
+        Ok(Ok(out)) if out.status.success() => {
+            ScriptEvent::Output(sanitize_script_stdout(&out.stdout))
+        }
+        _ => ScriptEvent::Failed,
+    }
+}
+
 pub struct ScriptModule {
     id: crate::modules::ModuleId,
     command: String,
@@ -56,18 +82,7 @@ impl crate::modules::Module for ScriptModule {
                             tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
                         }
 
-                        let event = match tokio::process::Command::new("sh")
-                            .arg("-c")
-                            .arg(&cmd)
-                            .output()
-                            .await
-                        {
-                            Ok(out) if out.status.success() => {
-                                let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                                ScriptEvent::Output(text)
-                            }
-                            _ => ScriptEvent::Failed,
-                        };
+                        let event = run_script_command(&cmd, SCRIPT_COMMAND_TIMEOUT).await;
 
                         let msg = crate::app::Message::Module(
                             id.clone(),
@@ -166,5 +181,22 @@ mod tests {
     fn script_event_failed_variant() {
         // Ensure the Failed variant constructs without issue.
         let _ev = ScriptEvent::Failed;
+    }
+
+    #[test]
+    fn sanitize_script_stdout_trims_and_caps_output() {
+        let output = format!("{} trailing\n", "x".repeat(MAX_SCRIPT_OUTPUT_BYTES + 32));
+
+        let sanitized = sanitize_script_stdout(output.as_bytes());
+
+        assert_eq!(sanitized.len(), MAX_SCRIPT_OUTPUT_BYTES);
+        assert!(sanitized.chars().all(|c| c == 'x'));
+    }
+
+    #[tokio::test]
+    async fn run_script_command_times_out() {
+        let event = run_script_command("sleep 2", std::time::Duration::from_millis(25)).await;
+
+        assert!(matches!(event, ScriptEvent::Failed));
     }
 }

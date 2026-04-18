@@ -28,7 +28,13 @@ fn main() {
 fn send_ipc_command(cmd: &str) {
     use std::io::Write;
     use std::os::unix::net::UnixStream;
-    let path = ipc::socket_path();
+    let path = match ipc::socket_path() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("niribar: IPC unavailable: {e}");
+            std::process::exit(1);
+        }
+    };
     match UnixStream::connect(&path) {
         Ok(mut stream) => {
             let _ = writeln!(stream, "{cmd}");
@@ -119,7 +125,8 @@ mod tests {
     #[test]
     fn binary_entry_point_compiles() {
         // Smoke test: if this test runs, the binary entry point compiled
-        assert!(true);
+        let entry: fn() = super::main;
+        let _ = entry;
     }
 
     #[test]

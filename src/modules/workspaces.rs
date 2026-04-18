@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn workspaces_config_lookup_returns_none_for_unconfigured() {
         let cfg = crate::config::WorkspacesConfig::default();
-        assert!(cfg.workspaces.get(&1).is_none());
+        assert!(!cfg.workspaces.contains_key(&1));
     }
 
     #[test]
@@ -337,8 +337,8 @@ mod tests {
         );
         let m = WorkspacesModule::new(crate::modules::ModuleId::new("workspaces"), cfg);
         assert_eq!(m.id().0, "workspaces");
-        assert!(m.config.workspaces.get(&2).is_some());
-        assert!(m.config.workspaces.get(&1).is_none());
+        assert!(m.config.workspaces.contains_key(&2));
+        assert!(!m.config.workspaces.contains_key(&1));
     }
 
     // --- filtered_for_output tests ---

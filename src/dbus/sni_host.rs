@@ -1,5 +1,11 @@
 use zbus::zvariant::OwnedObjectPath;
 
+pub type SniPixmap = (i32, i32, Vec<u8>);
+type SniToolTip = (String, Vec<SniPixmap>, String, String);
+type Props = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
+type RawMenuItem = (i32, Props, Vec<zbus::zvariant::OwnedValue>);
+type RawMenuLayout = (u32, RawMenuItem);
+
 /// A live SNI tray item, fully resolved from D-Bus properties.
 #[derive(Debug, Clone)]
 pub struct TrayItem {
@@ -25,7 +31,7 @@ pub enum TrayIcon {
     Named(String),
     /// Raw ARGB32 pixmap data: list of (width, height, bytes) at different sizes.
     /// Bytes are ARGB big-endian; convert to RGBA before passing to iced.
-    Pixmap(Vec<(i32, i32, Vec<u8>)>),
+    Pixmap(Vec<SniPixmap>),
 }
 
 /// SNI item visibility status.
@@ -69,7 +75,7 @@ trait SniItem {
 
     /// Returns (icon_name, icon_pixmap, title, description).
     #[zbus(property)]
-    fn tool_tip(&self) -> zbus::Result<(String, Vec<(i32, i32, Vec<u8>)>, String, String)>;
+    fn tool_tip(&self) -> zbus::Result<SniToolTip>;
 
     #[zbus(property)]
     fn status(&self) -> zbus::Result<String>;
@@ -245,14 +251,7 @@ trait DbusMenu {
         parent_id: i32,
         recursion_depth: i32,
         property_names: &[&str],
-    ) -> zbus::Result<(
-        u32,
-        (
-            i32,
-            std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
-            Vec<zbus::zvariant::OwnedValue>,
-        ),
-    )>;
+    ) -> zbus::Result<RawMenuLayout>;
 
     fn about_to_show(&self, id: i32) -> zbus::Result<bool>;
 
@@ -270,14 +269,15 @@ trait DbusMenu {
     #[zbus(signal)]
     fn items_properties_updated(
         &self,
-        updated_props: Vec<(i32, std::collections::HashMap<String, zbus::zvariant::OwnedValue>)>,
+        updated_props: Vec<(
+            i32,
+            std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+        )>,
         removed_props: Vec<(i32, Vec<String>)>,
     ) -> zbus::Result<()>;
 }
 
 // -- DBusMenu helpers ---------------------------------------------------------
-
-type Props = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
 
 /// Extract the `label` string from a DBusMenu item's property map.
 ///
@@ -312,7 +312,9 @@ fn prop_str(props: &Props, key: &str) -> String {
 /// the direct cast is used instead.
 ///
 /// Returns `None` if the value is not the expected DBusMenu item structure.
-fn owned_value_to_menu_item(v: &zbus::zvariant::OwnedValue) -> Option<crate::surface::menu_popup::MenuItem> {
+fn owned_value_to_menu_item(
+    v: &zbus::zvariant::OwnedValue,
+) -> Option<crate::surface::menu_popup::MenuItem> {
     use zbus::zvariant::Value;
     // OwnedValue derefs to Value<'static>. Unwrap variant wrapper if present.
     let s: &zbus::zvariant::Structure<'_> = match &**v {
@@ -388,8 +390,10 @@ pub async fn fetch_menu(
     let (_, _, children) = &root;
 
     // Root node's children are the top-level menu items.
-    let items: Vec<crate::surface::menu_popup::MenuItem> =
-        children.iter().filter_map(owned_value_to_menu_item).collect();
+    let items: Vec<crate::surface::menu_popup::MenuItem> = children
+        .iter()
+        .filter_map(owned_value_to_menu_item)
+        .collect();
 
     Some(crate::surface::menu_popup::MenuTree {
         items,
@@ -454,7 +458,11 @@ pub fn menu_layout_subscription(
     menu_path: OwnedObjectPath,
 ) -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(
-        MenuWatchKey { conn, service, menu_path },
+        MenuWatchKey {
+            conn,
+            service,
+            menu_path,
+        },
         move |data: &MenuWatchKey| {
             let conn = data.conn.clone();
             let service = data.service.clone();
@@ -480,10 +488,11 @@ pub fn menu_layout_subscription(
                                 Ok(s) => s,
                                 Err(_) => return None,
                             };
-                            let mut props_stream = match proxy.receive_items_properties_updated().await {
-                                Ok(s) => s,
-                                Err(_) => return None,
-                            };
+                            let mut props_stream =
+                                match proxy.receive_items_properties_updated().await {
+                                    Ok(s) => s,
+                                    Err(_) => return None,
+                                };
                             // Wait for the first signal.
                             use iced::futures::StreamExt;
                             tokio::select! {
@@ -554,10 +563,7 @@ pub fn sni_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app
                             crate::app::Message::TrayUpdated(items),
                             SniSubState::Running { rx },
                         )),
-                        None => Some((
-                            crate::app::Message::TrayUpdated(vec![]),
-                            SniSubState::Done,
-                        )),
+                        None => Some((crate::app::Message::TrayUpdated(vec![]), SniSubState::Done)),
                     },
                     SniSubState::Done => None,
                 }
@@ -608,15 +614,24 @@ async fn run_sni_task(
         Ok(p) => p,
         Err(e) => return e,
     };
-    let own_name = conn.unique_name().map(|n| n.to_string()).unwrap_or_default();
+    let own_name = conn
+        .unique_name()
+        .map(|n| n.to_string())
+        .unwrap_or_default();
     let _ = watcher_proxy.register_status_notifier_host(&own_name).await;
 
     // 3. Subscribe to item registration signals.
-    let mut item_registered = match watcher_proxy.receive_status_notifier_item_registered().await {
+    let mut item_registered = match watcher_proxy
+        .receive_status_notifier_item_registered()
+        .await
+    {
         Ok(s) => s,
         Err(e) => return e,
     };
-    let mut item_unregistered = match watcher_proxy.receive_status_notifier_item_unregistered().await {
+    let mut item_unregistered = match watcher_proxy
+        .receive_status_notifier_item_unregistered()
+        .await
+    {
         Ok(s) => s,
         Err(e) => return e,
     };
@@ -640,9 +655,10 @@ async fn run_sni_task(
     for service_str in initial_services {
         let (svc, path_str) = parse_service_string(&service_str);
         if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str)
-            && let Some(item) = fetch_item(&conn, svc, &path).await {
-                items.insert(service_str, item);
-            }
+            && let Some(item) = fetch_item(&conn, svc, &path).await
+        {
+            items.insert(service_str, item);
+        }
     }
     let snapshot: Vec<TrayItem> = items.values().cloned().collect();
     if tx.send(snapshot).is_err() {
@@ -768,7 +784,10 @@ mod tests {
 
     #[test]
     fn item_status_from_str_needs_attention() {
-        assert_eq!(ItemStatus::from_str("NeedsAttention"), ItemStatus::NeedsAttention);
+        assert_eq!(
+            ItemStatus::from_str("NeedsAttention"),
+            ItemStatus::NeedsAttention
+        );
     }
 
     #[test]
