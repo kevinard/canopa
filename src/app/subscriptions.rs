@@ -6,6 +6,20 @@ use crate::modules::ModuleKind;
 use crate::niri::subscription::niri_subscription;
 use crate::surface::input::keyboard_focus_subscription;
 
+fn dbus_subscription<F>(
+    enabled: bool,
+    conn: Option<zbus::Connection>,
+    build: F,
+) -> iced::Subscription<Message>
+where
+    F: FnOnce(zbus::Connection) -> iced::Subscription<Message>,
+{
+    match (enabled, conn) {
+        (true, Some(c)) => build(c),
+        _ => iced::Subscription::none(),
+    }
+}
+
 impl App {
     pub fn subscription(&self) -> iced::Subscription<Message> {
         let has_battery = !self.modules.ids_by_kind(ModuleKind::Battery).is_empty();
@@ -26,25 +40,17 @@ impl App {
             iced::Subscription::none()
         };
 
-        let battery_sub = if has_battery {
-            if let Some(conn) = self.shared.dbus.system.clone() {
-                crate::dbus::upower::battery_subscription(conn)
-            } else {
-                iced::Subscription::none()
-            }
-        } else {
-            iced::Subscription::none()
-        };
+        let battery_sub = dbus_subscription(
+            has_battery,
+            self.shared.dbus.system.clone(),
+            crate::dbus::upower::battery_subscription,
+        );
 
-        let network_sub = if has_network {
-            if let Some(conn) = self.shared.dbus.system.clone() {
-                crate::dbus::networkmanager::network_subscription(conn)
-            } else {
-                iced::Subscription::none()
-            }
-        } else {
-            iced::Subscription::none()
-        };
+        let network_sub = dbus_subscription(
+            has_network,
+            self.shared.dbus.system.clone(),
+            crate::dbus::networkmanager::network_subscription,
+        );
 
         let volume_sub = if has_volume {
             crate::dbus::wireplumber::volume_subscription()
@@ -52,15 +58,11 @@ impl App {
             iced::Subscription::none()
         };
 
-        let sni_sub = if has_tray {
-            if let Some(conn) = self.shared.dbus.session.clone() {
-                crate::dbus::sni_host::sni_subscription(conn)
-            } else {
-                iced::Subscription::none()
-            }
-        } else {
-            iced::Subscription::none()
-        };
+        let sni_sub = dbus_subscription(
+            has_tray,
+            self.shared.dbus.session.clone(),
+            crate::dbus::sni_host::sni_subscription,
+        );
 
         let menu_watch_sub = if let Some(conn) = self.shared.dbus.session.clone() {
             if let Some((service, menu_path, _, _)) = self.menu_popups.values().next() {
