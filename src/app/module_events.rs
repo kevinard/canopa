@@ -57,13 +57,10 @@ impl App {
         id: &ModuleId,
         event: InteractionEvent,
     ) -> Task<Message> {
-        for (_, module) in &self.modules {
-            if module.id() == *id {
-                if let Some(msg) = module.on_interaction(event) {
-                    return Task::done(msg);
-                }
-                break;
-            }
+        if let Some(module) = self.modules.get(id)
+            && let Some(msg) = module.on_interaction(event)
+        {
+            return Task::done(msg);
         }
         Task::none()
     }
@@ -114,12 +111,9 @@ impl App {
     }
 
     fn mark_module_type_unavailable(&mut self, module_type: ModuleKind) {
-        for (_, module) in &self.modules {
-            if module.kind() == module_type {
-                self.shared
-                    .modules
-                    .insert(module.id(), ModuleState::Unavailable);
-            }
+        let ids: Vec<_> = self.modules.ids_by_kind(module_type).to_vec();
+        for id in ids {
+            self.shared.modules.insert(id, ModuleState::Unavailable);
         }
     }
 }

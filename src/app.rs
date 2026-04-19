@@ -872,6 +872,40 @@ mod tests {
     }
 
     #[test]
+    fn battery_state_updates_all_battery_instances() {
+        use crate::config::{BatteryConfig, ModuleConfig, ModuleParams};
+        let mut config = Config {
+            modules: vec![
+                ModuleConfig {
+                    name: "battery".into(),
+                    module_type: "battery".into(),
+                    params: ModuleParams::Battery(BatteryConfig::default()),
+                },
+                ModuleConfig {
+                    name: "battery2".into(),
+                    module_type: "battery".into(),
+                    params: ModuleParams::Battery(BatteryConfig::default()),
+                },
+            ],
+            ..Default::default()
+        };
+        config.bars[0].modules.bottom = vec!["battery".into(), "battery2".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+
+        app.push_battery_state(42.0, false);
+
+        for id in ["battery", "battery2"] {
+            let Some(ModuleState::Battery(state)) =
+                app.shared.modules.get(&ModuleId::new(id))
+            else {
+                panic!("expected battery state for {id}");
+            };
+            assert_eq!(state.percentage, 42.0);
+            assert!(!state.is_charging);
+        }
+    }
+
+    #[test]
     fn undeclared_known_type_in_bar_modules_uses_defaults() {
         let mut config = Config::default();
         config.bars[0].modules.bottom = vec!["clock".into()];

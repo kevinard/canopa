@@ -14,12 +14,7 @@ impl App {
 
     /// Push new battery state to all battery module instances in shared.modules.
     pub(super) fn push_battery_state(&mut self, percentage: f64, is_charging: bool) {
-        let ids: Vec<_> = self
-            .modules
-            .iter()
-            .filter(|(_, module)| module.kind() == ModuleKind::Battery)
-            .map(|(_, module)| module.id())
-            .collect();
+        let ids: Vec<_> = self.modules.ids_by_kind(ModuleKind::Battery).to_vec();
         for id in ids {
             self.push_state_if_changed(
                 id,
@@ -36,12 +31,7 @@ impl App {
         connectivity: NetworkConnectivity,
         label: Option<String>,
     ) {
-        let ids: Vec<_> = self
-            .modules
-            .iter()
-            .filter(|(_, module)| module.kind() == ModuleKind::Network)
-            .map(|(_, module)| module.id())
-            .collect();
+        let ids: Vec<_> = self.modules.ids_by_kind(ModuleKind::Network).to_vec();
         for id in ids {
             self.push_state_if_changed(
                 id,
@@ -54,12 +44,7 @@ impl App {
     }
 
     pub(super) fn push_volume_state(&mut self, volume: f64, muted: bool) {
-        let ids: Vec<_> = self
-            .modules
-            .iter()
-            .filter(|(_, module)| module.kind() == ModuleKind::Volume)
-            .map(|(_, module)| module.id())
-            .collect();
+        let ids: Vec<_> = self.modules.ids_by_kind(ModuleKind::Volume).to_vec();
         for id in ids {
             self.push_state_if_changed(id, ModuleState::Volume(VolumeState { volume, muted }));
         }
@@ -76,10 +61,8 @@ impl App {
             .and_then(|w| w.title.clone());
         let ids: Vec<_> = self
             .modules
-            .iter()
-            .filter(|(_, module)| module.kind() == ModuleKind::FocusedWindow)
-            .map(|(_, module)| module.id())
-            .collect();
+            .ids_by_kind(ModuleKind::FocusedWindow)
+            .to_vec();
         for id in ids {
             self.push_state_if_changed(
                 id,

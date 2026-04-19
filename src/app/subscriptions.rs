@@ -8,23 +8,13 @@ use crate::surface::input::keyboard_focus_subscription;
 
 impl App {
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        // Single pass: collect module subscriptions and track which module types are present.
-        let mut has_battery = false;
-        let mut has_network = false;
-        let mut has_volume = false;
-        let mut has_tray = false;
-        let mut per_module: Vec<iced::Subscription<Message>> = Vec::new();
+        let has_battery = !self.modules.ids_by_kind(ModuleKind::Battery).is_empty();
+        let has_network = !self.modules.ids_by_kind(ModuleKind::Network).is_empty();
+        let has_volume = !self.modules.ids_by_kind(ModuleKind::Volume).is_empty();
+        let has_tray = !self.modules.ids_by_kind(ModuleKind::Tray).is_empty();
 
-        for (_, m) in &self.modules {
-            match m.kind() {
-                ModuleKind::Battery => has_battery = true,
-                ModuleKind::Network => has_network = true,
-                ModuleKind::Volume => has_volume = true,
-                ModuleKind::Tray => has_tray = true,
-                _ => {}
-            }
-            per_module.push(m.subscription());
-        }
+        let per_module: Vec<iced::Subscription<Message>> =
+            self.modules.iter().map(|(_, m)| m.subscription()).collect();
 
         let module_subs = iced::Subscription::batch(per_module);
         let niri_sub = niri_subscription();
