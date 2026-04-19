@@ -1,4 +1,3 @@
-use crate::modules::view::{collapsed_icon, expanded_icon_label, horizontal_icon_label};
 use crate::theme;
 
 /// Runtime state for the volume module.
@@ -59,6 +58,32 @@ impl VolumeModule {
     }
 }
 
+impl crate::modules::view::IconLabel for VolumeModule {
+    fn icon(&self, state: &crate::modules::ModuleState) -> String {
+        match state {
+            crate::modules::ModuleState::Volume(s) => {
+                tier_icon(volume_tier(s.volume, s.muted)).to_owned()
+            }
+            _ => String::new(),
+        }
+    }
+
+    fn label(&self, state: &crate::modules::ModuleState) -> String {
+        match state {
+            crate::modules::ModuleState::Volume(s) if s.muted => "muted".to_owned(),
+            crate::modules::ModuleState::Volume(s) => format!("{}%", s.volume.round() as u64),
+            _ => String::new(),
+        }
+    }
+
+    fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
+        match state {
+            crate::modules::ModuleState::Volume(s) => tier_color(volume_tier(s.volume, s.muted)),
+            _ => crate::theme::TEXT,
+        }
+    }
+}
+
 impl crate::modules::Module for VolumeModule {
     fn id(&self) -> crate::modules::ModuleId {
         self.id.clone()
@@ -76,55 +101,42 @@ impl crate::modules::Module for VolumeModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-
-        let vol = match state {
-            ModuleState::Volume(s) => s,
-            _ => return iced::widget::Space::new().into(),
-        };
-        let tier = volume_tier(vol.volume, vol.muted);
-
-        collapsed_icon(tier_icon(tier), tier_color(tier))
+        match state {
+            crate::modules::ModuleState::Volume(_) => crate::modules::view::icon_label_view(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Collapsed,
+            ),
+            _ => iced::widget::Space::new().into(),
+        }
     }
 
     fn view_expanded(
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-
-        let vol = match state {
-            ModuleState::Volume(s) => s,
-            _ => return iced::widget::Space::new().into(),
-        };
-        let tier = volume_tier(vol.volume, vol.muted);
-        let pct_label = if vol.muted {
-            "muted".to_owned()
-        } else {
-            format!("{}%", vol.volume.round() as u64)
-        };
-
-        expanded_icon_label(tier_icon(tier), tier_color(tier), pct_label)
+        match state {
+            crate::modules::ModuleState::Volume(_) => crate::modules::view::icon_label_view(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Expanded,
+            ),
+            _ => iced::widget::Space::new().into(),
+        }
     }
 
     fn view_horizontal(
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-
-        let vol = match state {
-            ModuleState::Volume(s) => s,
-            _ => return iced::widget::Space::new().into(),
-        };
-        let tier = volume_tier(vol.volume, vol.muted);
-        let pct_label = if vol.muted {
-            "muted".to_owned()
-        } else {
-            format!("{}%", vol.volume.round() as u64)
-        };
-
-        horizontal_icon_label(tier_icon(tier), tier_color(tier), pct_label)
+        match state {
+            crate::modules::ModuleState::Volume(_) => crate::modules::view::icon_label_view(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Horizontal,
+            ),
+            _ => iced::widget::Space::new().into(),
+        }
     }
 
     fn on_interaction(
