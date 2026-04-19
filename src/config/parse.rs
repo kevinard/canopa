@@ -6,6 +6,72 @@ use super::{
     VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 
+fn first_child_value<'a>(children: &'a kdl::KdlDocument, name: &str) -> Option<&'a kdl::KdlValue> {
+    children
+        .get(name)
+        .and_then(|node| node.entries().first())
+        .map(|entry| entry.value())
+}
+
+fn required_string_child(
+    children: &kdl::KdlDocument,
+    name: &str,
+    path: &str,
+) -> anyhow::Result<String> {
+    match first_child_value(children, name).and_then(|v| v.as_string()) {
+        Some(s) => Ok(s.to_string()),
+        None => anyhow::bail!("{path}: expected a string value."),
+    }
+}
+
+fn optional_nonempty_string_child(
+    children: &kdl::KdlDocument,
+    name: &str,
+    default: String,
+    path: &str,
+    expected: &str,
+) -> anyhow::Result<String> {
+    match children.get(name) {
+        None => Ok(default),
+        Some(node) => match node.entries().first().map(|entry| entry.value()) {
+            Some(v) => match v.as_string() {
+                Some("") => anyhow::bail!("{path}: value must not be empty. Expected: {expected}."),
+                Some(s) => Ok(s.to_string()),
+                None => anyhow::bail!("{path}: expected a string value."),
+            },
+            None => anyhow::bail!("{path}: expected a string value."),
+        },
+    }
+}
+
+fn optional_u8_range_child(
+    children: &kdl::KdlDocument,
+    name: &str,
+    default: u8,
+    min: u8,
+    max: u8,
+    path: &str,
+) -> anyhow::Result<u8> {
+    match children.get(name) {
+        None => Ok(default),
+        Some(node) => match node.entries().first().map(|entry| entry.value()) {
+            Some(v) => match v.as_integer() {
+                Some(n) => match u8::try_from(n) {
+                    Ok(n) if n >= min && n <= max => Ok(n),
+                    Ok(n) => anyhow::bail!(
+                        "{path}: value {n} out of range. Expected: integer {min}–{max}."
+                    ),
+                    Err(_) => anyhow::bail!(
+                        "{path}: value {n} out of range. Expected: integer {min}–{max}."
+                    ),
+                },
+                None => anyhow::bail!("{path}: expected an integer value."),
+            },
+            None => anyhow::bail!("{path}: expected an integer value."),
+        },
+    }
+}
+
 /// Parse a KDL string into a fully-typed `Config`.
 ///
 /// Missing sections fall back to defaults; constraint validation happens in `validate()`.
@@ -243,22 +309,14 @@ fn parse_battery_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Batte
     let Some(children) = node.children() else {
         return Ok(BatteryConfig::default());
     };
-    let critical_threshold = match children.get("critical-threshold") {
-        None => BatteryConfig::default().critical_threshold,
-        Some(n) => {
-            let v = n.entries().first().map(|e| e.value());
-            match v.and_then(|v| v.as_integer()) {
-                Some(n) if (0..=100).contains(&n) => n as u8,
-                Some(n) => anyhow::bail!(
-                    "modules[{idx}].battery.critical-threshold: value {n} out of range. \
-                     Expected: integer 0–100."
-                ),
-                None => anyhow::bail!(
-                    "modules[{idx}].battery.critical-threshold: expected an integer value."
-                ),
-            }
-        }
-    };
+    let critical_threshold = optional_u8_range_child(
+        children,
+        "critical-threshold",
+        BatteryConfig::default().critical_threshold,
+        0,
+        100,
+        &format!("modules[{idx}].battery.critical-threshold"),
+    )?;
     Ok(BatteryConfig { critical_threshold })
 }
 
@@ -266,20 +324,14 @@ fn parse_volume_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Volume
     let Some(children) = node.children() else {
         return Ok(VolumeConfig::default());
     };
-    let step = match children.get("step") {
-        None => VolumeConfig::default().step,
-        Some(n) => {
-            let v = n.entries().first().map(|e| e.value());
-            match v.and_then(|v| v.as_integer()) {
-                Some(n) if (1..=100).contains(&n) => n as u8,
-                Some(n) => anyhow::bail!(
-                    "modules[{idx}].volume.step: value {n} out of range. \
-                     Expected: integer 1–100."
-                ),
-                None => anyhow::bail!("modules[{idx}].volume.step: expected an integer value."),
-            }
-        }
-    };
+    let step = optional_u8_range_child(
+        children,
+        "step",
+        VolumeConfig::default().step,
+        1,
+        100,
+        &format!("modules[{idx}].volume.step"),
+    )?;
     Ok(VolumeConfig { step })
 }
 
@@ -290,35 +342,21 @@ fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockCo
 
     let defaults = ClockConfig::default();
 
-    let time_format = match children.get("time-format") {
-        None => defaults.time_format,
-        Some(n) => {
-            let v = n.entries().first().map(|e| e.value());
-            match v.and_then(|v| v.as_string()) {
-                Some("") => anyhow::bail!(
-                    "modules[{idx}].clock.time-format: value must not be empty. \
-                     Expected: a chrono format string such as \"%H:%M\"."
-                ),
-                Some(s) => s.to_string(),
-                None => anyhow::bail!("modules[{idx}].clock.time-format: expected a string value."),
-            }
-        }
-    };
+    let time_format = optional_nonempty_string_child(
+        children,
+        "time-format",
+        defaults.time_format,
+        &format!("modules[{idx}].clock.time-format"),
+        "a chrono format string such as \"%H:%M\"",
+    )?;
 
-    let date_format = match children.get("date-format") {
-        None => defaults.date_format,
-        Some(n) => {
-            let v = n.entries().first().map(|e| e.value());
-            match v.and_then(|v| v.as_string()) {
-                Some("") => anyhow::bail!(
-                    "modules[{idx}].clock.date-format: value must not be empty. \
-                     Expected: a chrono format string such as \"%a %d %b\"."
-                ),
-                Some(s) => s.to_string(),
-                None => anyhow::bail!("modules[{idx}].clock.date-format: expected a string value."),
-            }
-        }
-    };
+    let date_format = optional_nonempty_string_child(
+        children,
+        "date-format",
+        defaults.date_format,
+        &format!("modules[{idx}].clock.date-format"),
+        "a chrono format string such as \"%a %d %b\"",
+    )?;
 
     Ok(ClockConfig {
         time_format,
@@ -333,22 +371,18 @@ fn parse_script_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Script
         )
     })?;
 
-    let command = match children.get("command") {
-        None => anyhow::bail!(
+    if children.get("command").is_none() {
+        anyhow::bail!(
             "modules[{idx}].script.command: missing required parameter. Expected: a string value."
-        ),
-        Some(n) => {
-            let v = n.entries().first().map(|e| e.value());
-            match v.and_then(|v| v.as_string()) {
-                Some("") => anyhow::bail!(
-                    "modules[{idx}].script.command: value must not be empty. \
-                     Expected: a shell command string."
-                ),
-                Some(s) => s.to_string(),
-                None => anyhow::bail!("modules[{idx}].script.command: expected a string value."),
-            }
-        }
-    };
+        );
+    }
+    let command = optional_nonempty_string_child(
+        children,
+        "command",
+        String::new(),
+        &format!("modules[{idx}].script.command"),
+        "a shell command string",
+    )?;
 
     let interval = match children.get("interval") {
         None => 5u64,
@@ -376,44 +410,27 @@ fn parse_button_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Button
         )
     })?;
 
-    let label = match children.get("label") {
-        None => anyhow::bail!(
+    if children.get("label").is_none() {
+        anyhow::bail!(
             "modules[{idx}].button.label: missing required parameter. Expected: a string value."
-        ),
-        Some(n) => {
-            let v = n.entries().first().map(|e| e.value());
-            match v.and_then(|v| v.as_string()) {
-                Some(s) => s.to_string(),
-                None => anyhow::bail!("modules[{idx}].button.label: expected a string value."),
-            }
-        }
-    };
+        );
+    }
+    let label = required_string_child(children, "label", &format!("modules[{idx}].button.label"))?;
 
-    let icon = match children.get("icon") {
-        None => anyhow::bail!(
+    if children.get("icon").is_none() {
+        anyhow::bail!(
             "modules[{idx}].button.icon: missing required parameter. Expected: a string value."
-        ),
-        Some(n) => {
-            let v = n.entries().first().map(|e| e.value());
-            match v.and_then(|v| v.as_string()) {
-                Some(s) => s.to_string(),
-                None => anyhow::bail!("modules[{idx}].button.icon: expected a string value."),
-            }
-        }
-    };
+        );
+    }
+    let icon = required_string_child(children, "icon", &format!("modules[{idx}].button.icon"))?;
 
-    let on_click = match children.get("on-click") {
-        None => anyhow::bail!(
+    if children.get("on-click").is_none() {
+        anyhow::bail!(
             "modules[{idx}].button.on-click: missing required parameter. Expected: a string value."
-        ),
-        Some(n) => {
-            let v = n.entries().first().map(|e| e.value());
-            match v.and_then(|v| v.as_string()) {
-                Some(s) => s.to_string(),
-                None => anyhow::bail!("modules[{idx}].button.on-click: expected a string value."),
-            }
-        }
-    };
+        );
+    }
+    let on_click =
+        required_string_child(children, "on-click", &format!("modules[{idx}].button.on-click"))?;
 
     Ok(ButtonConfig {
         label,
@@ -767,6 +784,27 @@ modules {
     }
 
     #[test]
+    fn parse_clock_time_format_without_value_errors() {
+        let kdl = r#"
+modules {
+    module "clock" {
+        time-format
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("clock.time-format"),
+            "expected 'clock.time-format' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("expected a string value"),
+            "expected 'expected a string value' in error, got: {msg}"
+        );
+    }
+
+    #[test]
     fn parse_script_with_command_and_interval() {
         let kdl = r#"
 modules {
@@ -835,6 +873,27 @@ modules {
         assert!(
             msg.contains("must not be empty"),
             "expected 'must not be empty' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_script_command_without_value_errors() {
+        let kdl = r#"
+modules {
+    module "script" {
+        command
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("script.command"),
+            "expected 'script.command' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("expected a string value"),
+            "expected 'expected a string value' in error, got: {msg}"
         );
     }
 
@@ -911,6 +970,51 @@ modules {
         assert!(
             msg.contains("button.label"),
             "expected 'button.label' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_required_string_child_reports_missing_name() {
+        let kdl = r#"modules { module "button" { icon ">" on-click "kitty" } }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("button.label"), "expected 'button.label' in error, got: {msg}");
+        assert!(
+            msg.contains("missing required parameter"),
+            "expected 'missing required parameter' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected: a string value"),
+            "expected 'Expected: a string value' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_optional_u8_range_reports_out_of_range() {
+        let kdl = r#"modules { module "volume" { step 101 } }"#;
+        let err = parse(kdl).unwrap_err();
+        assert!(err.to_string().contains("volume.step"));
+        assert!(err.to_string().contains("1–100"));
+    }
+
+    #[test]
+    fn parse_volume_step_without_value_errors() {
+        let kdl = r#"
+modules {
+    module "volume" {
+        step
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("volume.step"),
+            "expected 'volume.step' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("expected an integer value"),
+            "expected 'expected an integer value' in error, got: {msg}"
         );
     }
 
