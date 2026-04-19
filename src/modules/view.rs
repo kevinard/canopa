@@ -8,6 +8,28 @@ use iced::{Alignment, Element, Length};
 
 use crate::app::Message;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum IconLabelLayout {
+    Collapsed,
+    Expanded,
+    Horizontal,
+}
+
+/// State-derived data for modules that render as an icon plus a short label.
+///
+/// Modules that need extra rows, overlay badges, focus handling, or custom
+/// click targets keep their bespoke `Module` view methods instead of using this.
+#[allow(dead_code)]
+pub trait IconLabel {
+    fn icon(&self, state: &super::ModuleState) -> String;
+    fn label(&self, state: &super::ModuleState) -> String;
+
+    fn color(&self, _state: &super::ModuleState) -> iced::Color {
+        crate::theme::TEXT
+    }
+}
+
 /// Centred icon in a 20 px-tall fill-width container — the standard collapsed view.
 ///
 /// ```text
@@ -83,4 +105,24 @@ pub fn expanded_icon_label<'a>(
     .align_y(Alignment::Center)
     .padding([0, 6])
     .into()
+}
+
+#[allow(dead_code)]
+pub fn icon_label_view<'a, M>(
+    module: &'a M,
+    state: &'a super::ModuleState,
+    layout: IconLabelLayout,
+) -> Element<'a, Message>
+where
+    M: IconLabel,
+{
+    match layout {
+        IconLabelLayout::Collapsed => collapsed_icon(module.icon(state), module.color(state)),
+        IconLabelLayout::Expanded => {
+            expanded_icon_label(module.icon(state), module.color(state), module.label(state))
+        }
+        IconLabelLayout::Horizontal => {
+            horizontal_icon_label(module.icon(state), module.color(state), module.label(state))
+        }
+    }
 }
