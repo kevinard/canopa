@@ -5,15 +5,19 @@ use crate::config::ExpandTrigger;
 use crate::surface::expand::ExpandState;
 
 impl App {
-    pub(super) fn handle_bar_click(&mut self, window: iced::window::Id) -> Task<Message> {
-        if !self.menu_popups.is_empty() {
-            return Task::done(Message::MenuClosed);
-        }
+    fn bar_for_window(&self, window: iced::window::Id) -> &crate::config::BarConfig {
         let bar_name = self
             .surface(window)
             .map(|s| s.bar_name.clone())
             .unwrap_or_default();
-        let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
+        Self::bar_for_surface_name(&self.config.bars, &bar_name)
+    }
+
+    pub(super) fn handle_bar_click(&mut self, window: iced::window::Id) -> Task<Message> {
+        if !self.menu_popups.is_empty() {
+            return Task::done(Message::MenuClosed);
+        }
+        let bar = self.bar_for_window(window);
         if !bar.expand || bar.expand_trigger == ExpandTrigger::Hover {
             return Task::none();
         }
@@ -23,11 +27,7 @@ impl App {
     }
 
     pub(super) fn handle_bar_hover_enter(&mut self, window: iced::window::Id) -> Task<Message> {
-        let bar_name = self
-            .surface(window)
-            .map(|s| s.bar_name.clone())
-            .unwrap_or_default();
-        let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
+        let bar = self.bar_for_window(window);
         let expand_enabled = bar.expand;
         let expand_trigger = bar.expand_trigger;
         let hover_delay = bar.hover_delay;
@@ -58,11 +58,7 @@ impl App {
     }
 
     pub(super) fn handle_bar_hover_exit(&mut self, window: iced::window::Id) -> Task<Message> {
-        let bar_name = self
-            .surface(window)
-            .map(|s| s.bar_name.clone())
-            .unwrap_or_default();
-        let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
+        let bar = self.bar_for_window(window);
         let expand_enabled = bar.expand;
         let expand_trigger = bar.expand_trigger;
         let s = self.surface_mut(window);
@@ -89,12 +85,7 @@ impl App {
         let mut tasks = vec![];
 
         for wid in window_ids {
-            let bar_name = self
-                .surfaces
-                .get(&wid)
-                .map(|s| s.bar_name.clone())
-                .unwrap_or_default();
-            let effective_bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
+            let effective_bar = self.bar_for_window(wid);
             let effective_hover_delay = effective_bar.hover_delay;
             let effective_expand_ms = effective_bar.animation.expand_ms;
             let effective_collapse_ms = effective_bar.animation.collapse_ms;
@@ -142,12 +133,7 @@ impl App {
         let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
         let mut tasks = vec![];
         for wid in window_ids {
-            let bar_name = self
-                .surfaces
-                .get(&wid)
-                .map(|s| s.bar_name.clone())
-                .unwrap_or_default();
-            let expand_enabled = Self::bar_for_surface_name(&self.config.bars, &bar_name).expand;
+            let expand_enabled = self.bar_for_window(wid).expand;
             if expand_enabled {
                 let s = self.surfaces.get_mut(&wid).unwrap();
                 s.expand = s.expand.toggle();
