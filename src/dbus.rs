@@ -1,3 +1,4 @@
+pub mod subscription;
 pub mod networkmanager;
 pub mod sni_host;
 pub mod sni_watcher;
