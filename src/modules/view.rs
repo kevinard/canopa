@@ -9,6 +9,7 @@ use iced::{Alignment, Element, Length};
 use crate::app::Message;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum IconLabelLayout {
     Collapsed,
     Expanded,
@@ -19,6 +20,7 @@ pub enum IconLabelLayout {
 ///
 /// Modules that need extra rows, overlay badges, focus handling, or custom
 /// click targets keep their bespoke `Module` view methods instead of using this.
+#[allow(dead_code)]
 pub trait IconLabel {
     fn icon(&self, state: &super::ModuleState) -> String;
     fn label(&self, state: &super::ModuleState) -> String;
@@ -105,6 +107,7 @@ pub fn expanded_icon_label<'a>(
     .into()
 }
 
+#[allow(dead_code)]
 pub fn icon_label_view<'a, M>(
     module: &'a M,
     state: &'a super::ModuleState,
