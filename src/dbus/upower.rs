@@ -1,4 +1,3 @@
-use iced::futures::stream;
 use tokio::sync::mpsc;
 
 use crate::modules::battery::BatteryEvent;
@@ -40,57 +39,24 @@ impl std::hash::Hash for BatteryConnData {
     }
 }
 
-enum SubState {
-    Init,
-    Running(mpsc::UnboundedReceiver<Result<(f64, bool), ()>>),
-    Done,
-}
-
 fn build_battery_stream(
     data: &BatteryConnData,
 ) -> std::pin::Pin<Box<dyn iced::futures::Stream<Item = crate::app::Message> + Send + 'static>> {
     let conn = data.0.clone();
-    Box::pin(stream::unfold(SubState::Init, move |state| {
-        let conn = conn.clone();
-        async move {
-            match state {
-                SubState::Init => {
-                    let (tx, rx) = mpsc::unbounded_channel();
-                    tokio::spawn(async move {
-                        let _ = run_upower_task(conn, tx).await;
-                    });
-                    let mut rx = rx;
-                    match rx.recv().await {
-                        Some(Ok((pct, charging))) => Some((
-                            crate::app::Message::Battery(BatteryEvent::StateChanged {
-                                percentage: pct,
-                                is_charging: charging,
-                            }),
-                            SubState::Running(rx),
-                        )),
-                        _ => Some((
-                            crate::app::Message::Battery(BatteryEvent::Unavailable),
-                            SubState::Done,
-                        )),
-                    }
-                }
-                SubState::Running(mut rx) => match rx.recv().await {
-                    Some(Ok((pct, charging))) => Some((
-                        crate::app::Message::Battery(BatteryEvent::StateChanged {
-                            percentage: pct,
-                            is_charging: charging,
-                        }),
-                        SubState::Running(rx),
-                    )),
-                    _ => Some((
-                        crate::app::Message::Battery(BatteryEvent::Unavailable),
-                        SubState::Done,
-                    )),
-                },
-                SubState::Done => None,
-            }
-        }
-    }))
+    crate::dbus::subscription::build::<(f64, bool), crate::app::Message, _, _, _>(
+        move |tx| {
+            tokio::spawn(async move {
+                let _ = run_upower_task(conn, tx).await;
+            });
+        },
+        |(pct, charging)| {
+            crate::app::Message::Battery(BatteryEvent::StateChanged {
+                percentage: pct,
+                is_charging: charging,
+            })
+        },
+        || crate::app::Message::Battery(BatteryEvent::Unavailable),
+    )
 }
 
 /// Returns an Iced subscription that connects to the UPower DisplayDevice on `conn`
