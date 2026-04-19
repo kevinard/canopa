@@ -315,7 +315,7 @@ fn parse_battery_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Batte
         BatteryConfig::default().critical_threshold,
         0,
         100,
-        &format!("modules[{idx}].battery.critical-threshold"),
+        &crate::config::parse_error::field_path(idx, "battery", "critical-threshold"),
     )?;
     Ok(BatteryConfig { critical_threshold })
 }
@@ -330,7 +330,7 @@ fn parse_volume_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Volume
         VolumeConfig::default().step,
         1,
         100,
-        &format!("modules[{idx}].volume.step"),
+        &crate::config::parse_error::field_path(idx, "volume", "step"),
     )?;
     Ok(VolumeConfig { step })
 }
@@ -346,7 +346,7 @@ fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockCo
         children,
         "time-format",
         defaults.time_format,
-        &format!("modules[{idx}].clock.time-format"),
+        &crate::config::parse_error::field_path(idx, "clock", "time-format"),
         "a chrono format string such as \"%H:%M\"",
     )?;
 
@@ -354,7 +354,7 @@ fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockCo
         children,
         "date-format",
         defaults.date_format,
-        &format!("modules[{idx}].clock.date-format"),
+        &crate::config::parse_error::field_path(idx, "clock", "date-format"),
         "a chrono format string such as \"%a %d %b\"",
     )?;
 
@@ -365,22 +365,19 @@ fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockCo
 }
 
 fn parse_script_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
+    let command_path = crate::config::parse_error::field_path(idx, "script", "command");
     let children = node.children().ok_or_else(|| {
-        anyhow::anyhow!(
-            "modules[{idx}].script.command: missing required parameter. Expected: a string value."
-        )
+        anyhow::anyhow!("{command_path}: missing required parameter. Expected: a string value.")
     })?;
 
     if children.get("command").is_none() {
-        anyhow::bail!(
-            "modules[{idx}].script.command: missing required parameter. Expected: a string value."
-        );
+        anyhow::bail!("{command_path}: missing required parameter. Expected: a string value.");
     }
     let command = optional_nonempty_string_child(
         children,
         "command",
         String::new(),
-        &format!("modules[{idx}].script.command"),
+        &command_path,
         "a shell command string",
     )?;
 
@@ -391,10 +388,14 @@ fn parse_script_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Script
             match v.and_then(|v| v.as_integer()) {
                 Some(i) if i >= 1 => i as u64,
                 Some(_) => anyhow::bail!(
-                    "modules[{idx}].script.interval: value must be at least 1. Expected: a positive integer."
+                    "{}: value must be at least 1. Expected: a positive integer.",
+                    crate::config::parse_error::field_path(idx, "script", "interval")
                 ),
                 None => {
-                    anyhow::bail!("modules[{idx}].script.interval: expected a positive integer.")
+                    anyhow::bail!(
+                        "{}: expected a positive integer.",
+                        crate::config::parse_error::field_path(idx, "script", "interval")
+                    )
                 }
             }
         }
@@ -404,33 +405,31 @@ fn parse_script_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Script
 }
 
 fn parse_button_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> {
+    let button_path = crate::config::parse_error::module_path(idx, "button");
+    let label_path = crate::config::parse_error::field_path(idx, "button", "label");
+    let icon_path = crate::config::parse_error::field_path(idx, "button", "icon");
+    let on_click_path = crate::config::parse_error::field_path(idx, "button", "on-click");
+
     let children = node.children().ok_or_else(|| {
         anyhow::anyhow!(
-            "modules[{idx}].button: missing required parameters block. Expected child nodes: label, icon, on-click."
+            "{button_path}: missing required parameters block. Expected child nodes: label, icon, on-click."
         )
     })?;
 
     if children.get("label").is_none() {
-        anyhow::bail!(
-            "modules[{idx}].button.label: missing required parameter. Expected: a string value."
-        );
+        anyhow::bail!("{label_path}: missing required parameter. Expected: a string value.");
     }
-    let label = required_string_child(children, "label", &format!("modules[{idx}].button.label"))?;
+    let label = required_string_child(children, "label", &label_path)?;
 
     if children.get("icon").is_none() {
-        anyhow::bail!(
-            "modules[{idx}].button.icon: missing required parameter. Expected: a string value."
-        );
+        anyhow::bail!("{icon_path}: missing required parameter. Expected: a string value.");
     }
-    let icon = required_string_child(children, "icon", &format!("modules[{idx}].button.icon"))?;
+    let icon = required_string_child(children, "icon", &icon_path)?;
 
     if children.get("on-click").is_none() {
-        anyhow::bail!(
-            "modules[{idx}].button.on-click: missing required parameter. Expected: a string value."
-        );
+        anyhow::bail!("{on_click_path}: missing required parameter. Expected: a string value.");
     }
-    let on_click =
-        required_string_child(children, "on-click", &format!("modules[{idx}].button.on-click"))?;
+    let on_click = required_string_child(children, "on-click", &on_click_path)?;
 
     Ok(ButtonConfig {
         label,
@@ -449,7 +448,8 @@ fn parse_workspaces_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Wo
     for ws_node in children.nodes() {
         if ws_node.name().value() != "workspace" {
             anyhow::bail!(
-                "modules[{idx}].workspaces: unknown child node {:?}. Expected: \"workspace\".",
+                "{}: unknown child node {:?}. Expected: \"workspace\".",
+                crate::config::parse_error::module_path(idx, "workspaces"),
                 ws_node.name().value()
             );
         }
@@ -462,8 +462,9 @@ fn parse_workspaces_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Wo
             .and_then(|n| if n >= 1 { Some(n as u32) } else { None })
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "modules[{idx}].workspaces.workspace: missing or invalid workspace number. \
-                     Expected: a positive integer (1-based workspace number, e.g. 1)."
+                    "{}: missing or invalid workspace number. \
+                     Expected: a positive integer (1-based workspace number, e.g. 1).",
+                    crate::config::parse_error::field_path(idx, "workspaces", "workspace")
                 )
             })?;
 

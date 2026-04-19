@@ -1,5 +1,6 @@
 mod defaults;
 mod parse;
+pub(crate) mod parse_error;
 
 use anyhow::Context;
 use iced_layershell::reexport::Anchor;
