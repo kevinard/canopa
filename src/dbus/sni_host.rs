@@ -115,6 +115,34 @@ trait SniWatcher {
 
 // -- Helpers ------------------------------------------------------------------
 
+const MAX_PIXMAP_DIMENSION: i32 = 512;
+const MAX_MENU_ITEMS: usize = 256;
+const MAX_MENU_LABEL_BYTES: usize = 512;
+
+fn valid_pixmap(width: i32, height: i32, bytes: &[u8]) -> bool {
+    if width <= 0 || height <= 0 {
+        return false;
+    }
+    if width > MAX_PIXMAP_DIMENSION || height > MAX_PIXMAP_DIMENSION {
+        return false;
+    }
+    let Some(pixel_count) = (width as usize).checked_mul(height as usize) else {
+        return false;
+    };
+    let Some(expected_bytes) = pixel_count.checked_mul(4) else {
+        return false;
+    };
+    bytes.len() == expected_bytes
+}
+
+fn truncate_label(label: String) -> String {
+    if label.len() <= MAX_MENU_LABEL_BYTES {
+        label
+    } else {
+        String::from_utf8_lossy(&label.as_bytes()[..MAX_MENU_LABEL_BYTES]).to_string()
+    }
+}
+
 /// Convert ARGB big-endian bytes (SNI wire format) to RGBA bytes (iced format).
 pub fn argb_to_rgba(argb: &[u8]) -> Vec<u8> {
     let mut rgba = Vec::with_capacity(argb.len());
@@ -160,7 +188,13 @@ pub async fn fetch_item(
         if !name.is_empty() {
             TrayIcon::Named(name)
         } else {
-            let pixmaps = proxy.icon_pixmap().await.unwrap_or_default();
+            let pixmaps = proxy
+                .icon_pixmap()
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(w, h, bytes)| valid_pixmap(*w, *h, bytes))
+                .collect();
             TrayIcon::Pixmap(pixmaps)
         }
     };
@@ -348,7 +382,7 @@ fn owned_value_to_menu_item(
 
     let item_type = prop_str(&props, "type");
     let is_separator = item_type == "separator";
-    let label = extract_label_from_props(&props);
+    let label = truncate_label(extract_label_from_props(&props));
     let enabled = prop_bool(&props, "enabled", true);
     let visible = prop_bool(&props, "visible", true);
     let icon_name = {
@@ -393,6 +427,7 @@ pub async fn fetch_menu(
     let items: Vec<crate::surface::menu_popup::MenuItem> = children
         .iter()
         .filter_map(owned_value_to_menu_item)
+        .take(MAX_MENU_ITEMS)
         .collect();
 
     Some(crate::surface::menu_popup::MenuTree {
@@ -856,5 +891,55 @@ mod tests {
         use std::collections::HashMap;
         let props: HashMap<String, zbus::zvariant::OwnedValue> = HashMap::new();
         assert_eq!(extract_label_from_props(&props), "");
+    }
+
+    #[test]
+    fn valid_pixmap_accepts_matching_byte_len() {
+        assert!(valid_pixmap(16, 16, &[0u8; 16 * 16 * 4]));
+    }
+
+    #[test]
+    fn valid_pixmap_rejects_negative_dimensions() {
+        assert!(!valid_pixmap(-1, 16, &[0u8; 16 * 16 * 4]));
+    }
+
+    #[test]
+    fn valid_pixmap_rejects_mismatched_byte_len() {
+        assert!(!valid_pixmap(16, 16, &[0u8; 3]));
+    }
+
+    #[test]
+    fn valid_pixmap_rejects_zero_dimensions() {
+        assert!(!valid_pixmap(0, 16, &[]));
+        assert!(!valid_pixmap(16, 0, &[]));
+    }
+
+    #[test]
+    fn valid_pixmap_rejects_height_out_of_range() {
+        let bytes = vec![0u8; (MAX_PIXMAP_DIMENSION as usize + 1) * 16 * 4];
+        assert!(!valid_pixmap(16, MAX_PIXMAP_DIMENSION + 1, &bytes));
+    }
+
+    #[test]
+    fn valid_pixmap_accepts_max_dimension() {
+        let dim = MAX_PIXMAP_DIMENSION as usize;
+        let bytes = vec![0u8; dim * dim * 4];
+        assert!(valid_pixmap(
+            MAX_PIXMAP_DIMENSION,
+            MAX_PIXMAP_DIMENSION,
+            &bytes,
+        ));
+    }
+
+    #[test]
+    fn truncate_label_keeps_short_labels_unchanged() {
+        assert_eq!(truncate_label("hello".into()), "hello");
+    }
+
+    #[test]
+    fn truncate_label_caps_oversize_labels() {
+        let input = "x".repeat(MAX_MENU_LABEL_BYTES + 10);
+        let out = truncate_label(input);
+        assert_eq!(out.len(), MAX_MENU_LABEL_BYTES);
     }
 }
