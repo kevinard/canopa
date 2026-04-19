@@ -1,4 +1,5 @@
 mod animation;
+mod menu;
 mod focus;
 mod layout;
 mod module_events;
@@ -817,87 +818,8 @@ impl App {
                 service,
                 menu_item_id,
                 menu_path,
-            } => {
-                let conn = self.shared.dbus.session.clone();
-                tokio::task::spawn(async move {
-                    if let Some(conn) = conn {
-                        let _ = crate::dbus::sni_host::send_menu_event(
-                            &conn,
-                            &service,
-                            &menu_path,
-                            menu_item_id,
-                            "clicked",
-                        )
-                        .await;
-                    }
-                });
-                // Close all popups.
-                let ids: Vec<iced::window::Id> = self.menu_popups.keys().copied().collect();
-                let mut tasks: Vec<Task<Message>> = ids
-                    .into_iter()
-                    .map(|id| {
-                        self.menu_popups.remove(&id);
-                        self.menu_popup_hovered.remove(&id);
-                        self.menu_focused_item.remove(&id);
-                        Task::done(Message::RemoveWindow(id))
-                    })
-                    .collect();
-                // Safety net: guarantee every bar surface is keyboard-focusable after a popup
-                // closes. If an earlier Escape set a bar to None and BarFocusLost never fired
-                // (e.g. focus already belonged to the popup), this unsticks it.
-                use iced_layershell::reexport::KeyboardInteractivity;
-                for id in self.surfaces.keys().copied().collect::<Vec<_>>() {
-                    tasks.push(Task::done(Message::KeyboardInteractivityChange {
-                        id,
-                        keyboard_interactivity: KeyboardInteractivity::OnDemand,
-                    }));
-                }
-                for s in self.surfaces.values_mut() {
-                    s.focused_module = None;
-                    s.module_activated = false;
-                }
-                Task::batch(tasks)
-            }
-            Message::MenuClosed => {
-                // Send Event(0, "closed") to each open popup's DBusMenu before tearing down.
-                let conn = self.shared.dbus.session.clone();
-                let ids: Vec<iced::window::Id> = self.menu_popups.keys().copied().collect();
-                for id in &ids {
-                    if let Some((service, menu_path, _, _)) = self.menu_popups.get(id)
-                        && let Some(conn) = conn.clone()
-                    {
-                        let service = service.clone();
-                        let menu_path = menu_path.clone();
-                        tokio::task::spawn(async move {
-                            let _ = crate::dbus::sni_host::send_menu_event(
-                                &conn, &service, &menu_path, 0, "closed",
-                            )
-                            .await;
-                        });
-                    }
-                }
-                let mut tasks: Vec<Task<Message>> = ids
-                    .into_iter()
-                    .map(|id| {
-                        self.menu_popups.remove(&id);
-                        self.menu_popup_hovered.remove(&id);
-                        self.menu_focused_item.remove(&id);
-                        Task::done(Message::RemoveWindow(id))
-                    })
-                    .collect();
-                use iced_layershell::reexport::KeyboardInteractivity;
-                for id in self.surfaces.keys().copied().collect::<Vec<_>>() {
-                    tasks.push(Task::done(Message::KeyboardInteractivityChange {
-                        id,
-                        keyboard_interactivity: KeyboardInteractivity::OnDemand,
-                    }));
-                }
-                for s in self.surfaces.values_mut() {
-                    s.focused_module = None;
-                    s.module_activated = false;
-                }
-                Task::batch(tasks)
-            }
+            } => self.handle_menu_item_selected(service, menu_item_id, menu_path),
+            Message::MenuClosed => self.handle_menu_closed(),
             Message::MenuItemHoverEnter { window, item_id } => {
                 self.menu_popup_hovered.insert(window, item_id);
                 Task::none()
@@ -3764,6 +3686,21 @@ mod tests {
         assert!(!app.surfaces[&wid].module_activated);
         // Menu focus state should be cleaned up.
         assert!(app.menu_focused_item.is_empty());
+    }
+
+    #[test]
+    fn close_all_menu_popups_removes_popup_and_focus_maps() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid = make_popup_wid(&mut app);
+        app.menu_popup_hovered.insert(wid, "1".into());
+        app.menu_focused_item.insert(wid, "1".into());
+
+        let tasks = app.close_all_menu_popups();
+
+        assert!(app.menu_popups.is_empty());
+        assert!(app.menu_popup_hovered.is_empty());
+        assert!(app.menu_focused_item.is_empty());
+        assert_eq!(tasks.len(), 1);
     }
 
     #[test]
