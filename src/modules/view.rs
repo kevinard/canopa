@@ -110,7 +110,7 @@ pub fn expanded_icon_label<'a>(
 #[allow(dead_code)]
 pub fn icon_label_view<'a, M>(
     module: &'a M,
-    state: &'a super::ModuleState,
+    state: &super::ModuleState,
     layout: IconLabelLayout,
 ) -> Element<'a, Message>
 where

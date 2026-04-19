@@ -1,4 +1,3 @@
-use crate::modules::view::{collapsed_icon, expanded_icon_label, horizontal_icon_label};
 use crate::theme;
 
 /// Connectivity level reported by the active backend.
@@ -54,6 +53,36 @@ impl NetworkModule {
     }
 }
 
+impl crate::modules::view::IconLabel for NetworkModule {
+    fn icon(&self, state: &crate::modules::ModuleState) -> String {
+        match state {
+            crate::modules::ModuleState::Network(s) => icon_str(&s.connectivity).to_owned(),
+            _ => String::new(),
+        }
+    }
+
+    fn label(&self, state: &crate::modules::ModuleState) -> String {
+        match state {
+            crate::modules::ModuleState::Network(s) => s.label.clone().unwrap_or_else(|| {
+                match &s.connectivity {
+                    NetworkConnectivity::Full => "online",
+                    NetworkConnectivity::Limited => "limited",
+                    NetworkConnectivity::None => "offline",
+                }
+                .to_owned()
+            }),
+            _ => String::new(),
+        }
+    }
+
+    fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
+        match state {
+            crate::modules::ModuleState::Network(s) => icon_color(&s.connectivity),
+            _ => crate::theme::TEXT,
+        }
+    }
+}
+
 impl crate::modules::Module for NetworkModule {
     fn id(&self) -> crate::modules::ModuleId {
         self.id.clone()
@@ -71,68 +100,42 @@ impl crate::modules::Module for NetworkModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-
-        let net = match state {
-            ModuleState::Network(s) => s,
-            _ => return iced::widget::Space::new().into(),
-        };
-
-        collapsed_icon(icon_str(&net.connectivity), icon_color(&net.connectivity))
+        match state {
+            crate::modules::ModuleState::Network(_) => crate::modules::view::icon_label_view(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Collapsed,
+            ),
+            _ => iced::widget::Space::new().into(),
+        }
     }
 
     fn view_expanded(
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-
-        let net = match state {
-            ModuleState::Network(s) => s,
-            _ => return iced::widget::Space::new().into(),
-        };
-
-        let label_text = net.label.clone().unwrap_or_else(|| {
-            match &net.connectivity {
-                NetworkConnectivity::Full => "online",
-                NetworkConnectivity::Limited => "limited",
-                NetworkConnectivity::None => "offline",
-            }
-            .to_owned()
-        });
-
-        expanded_icon_label(
-            icon_str(&net.connectivity),
-            icon_color(&net.connectivity),
-            label_text,
-        )
+        match state {
+            crate::modules::ModuleState::Network(_) => crate::modules::view::icon_label_view(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Expanded,
+            ),
+            _ => iced::widget::Space::new().into(),
+        }
     }
 
     fn view_horizontal(
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-
-        let net = match state {
-            ModuleState::Network(s) => s,
-            _ => return iced::widget::Space::new().into(),
-        };
-
-        let label_text = net.label.clone().unwrap_or_else(|| {
-            match &net.connectivity {
-                NetworkConnectivity::Full => "online",
-                NetworkConnectivity::Limited => "limited",
-                NetworkConnectivity::None => "offline",
-            }
-            .to_owned()
-        });
-
-        horizontal_icon_label(
-            icon_str(&net.connectivity),
-            icon_color(&net.connectivity),
-            label_text,
-        )
+        match state {
+            crate::modules::ModuleState::Network(_) => crate::modules::view::icon_label_view(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Horizontal,
+            ),
+            _ => iced::widget::Space::new().into(),
+        }
     }
 }
 
