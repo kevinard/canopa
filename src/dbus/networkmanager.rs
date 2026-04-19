@@ -1,5 +1,4 @@
 use crate::modules::network::{NetworkConnectivity, NetworkEvent};
-use iced::futures::stream;
 use tokio::sync::mpsc;
 
 // ── NetworkManager proxy ─────────────────────────────────────────────────
@@ -75,57 +74,21 @@ impl std::hash::Hash for NetworkConnData {
     }
 }
 
-enum SubState {
-    Init,
-    Running(mpsc::UnboundedReceiver<Result<(NetworkConnectivity, Option<String>), ()>>),
-    Done,
-}
-
 fn build_network_stream(
     data: &NetworkConnData,
 ) -> std::pin::Pin<Box<dyn iced::futures::Stream<Item = crate::app::Message> + Send + 'static>> {
     let conn = data.0.clone();
-    Box::pin(stream::unfold(SubState::Init, move |state| {
-        let conn = conn.clone();
-        async move {
-            match state {
-                SubState::Init => {
-                    let (tx, rx) = mpsc::unbounded_channel();
-                    tokio::spawn(async move {
-                        let _ = run_network_task(conn, tx).await;
-                    });
-                    let mut rx = rx;
-                    match rx.recv().await {
-                        Some(Ok((c, l))) => Some((
-                            crate::app::Message::Network(NetworkEvent::StateChanged {
-                                connectivity: c,
-                                label: l,
-                            }),
-                            SubState::Running(rx),
-                        )),
-                        _ => Some((
-                            crate::app::Message::Network(NetworkEvent::Unavailable),
-                            SubState::Done,
-                        )),
-                    }
-                }
-                SubState::Running(mut rx) => match rx.recv().await {
-                    Some(Ok((c, l))) => Some((
-                        crate::app::Message::Network(NetworkEvent::StateChanged {
-                            connectivity: c,
-                            label: l,
-                        }),
-                        SubState::Running(rx),
-                    )),
-                    _ => Some((
-                        crate::app::Message::Network(NetworkEvent::Unavailable),
-                        SubState::Done,
-                    )),
-                },
-                SubState::Done => None,
-            }
-        }
-    }))
+    crate::dbus::subscription::build::<(NetworkConnectivity, Option<String>), crate::app::Message, _, _, _>(
+        move |tx| {
+            tokio::spawn(async move {
+                let _ = run_network_task(conn, tx).await;
+            });
+        },
+        |(connectivity, label)| {
+            crate::app::Message::Network(NetworkEvent::StateChanged { connectivity, label })
+        },
+        || crate::app::Message::Network(NetworkEvent::Unavailable),
+    )
 }
 
 /// Returns an Iced subscription for network state.
