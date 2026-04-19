@@ -4,6 +4,7 @@ mod layout;
 mod menu;
 mod module_events;
 mod module_state;
+mod module_store;
 mod navigation;
 mod niri;
 mod perf;
@@ -60,7 +61,7 @@ pub struct App {
     pub shared: SharedState,
     pub perf: Option<perf::PerfTracker>,
     /// Instantiated module instances paired with their zone placement.
-    pub modules: Vec<(Zone, Box<dyn Module>)>,
+    pub modules: module_store::ModuleStore,
     /// Per-surface render state, keyed by iced::window::Id (Story 7.1).
     /// One entry per (output, bar) surface pair; lazily initialised on first event or view call.
     pub surfaces: HashMap<iced::window::Id, SurfaceState>,
@@ -405,7 +406,7 @@ impl App {
             config,
             shared: SharedState::new(),
             perf: perf::PerfTracker::from_env(),
-            modules,
+            modules: module_store::ModuleStore::from_modules(modules),
             surfaces,
             pending_surface_keys,
             manual_outputs,
@@ -1033,10 +1034,10 @@ mod tests {
     fn cursor_moved_is_recorded_when_tray_module_exists() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
-        app.modules.push((
+        app.modules.push(
             Zone::Top,
             Box::new(crate::modules::tray::TrayModule::new(ModuleId::new("tray"))),
-        ));
+        );
         let point = iced::Point::new(10.0, 20.0);
 
         let _ = app.update(Message::CursorMoved(wid, point));
@@ -3340,10 +3341,10 @@ mod tests {
             status: ItemStatus::Active,
             menu_path: None,
         };
-        app.modules.push((
+        app.modules.push(
             Zone::Bottom,
             Box::new(TrayIconModule::new(old_item, "tray".into())),
-        ));
+        );
 
         let new_item = TrayItem {
             service: "org.new".into(),
