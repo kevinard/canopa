@@ -1715,6 +1715,57 @@ mod tests {
     }
 
     #[test]
+    fn workspace_rebuild_handles_multiple_placeholders_after_existing_items() {
+        use crate::config::{ModuleConfig, ModuleParams, WorkspacesConfig};
+        use niri_ipc::Event;
+
+        let mut config = Config {
+            modules: vec![
+                ModuleConfig {
+                    name: "workspaces-left".into(),
+                    module_type: "workspaces".into(),
+                    params: ModuleParams::Workspaces(WorkspacesConfig::default()),
+                },
+                ModuleConfig {
+                    name: "workspaces-right".into(),
+                    module_type: "workspaces".into(),
+                    params: ModuleParams::Workspaces(WorkspacesConfig::default()),
+                },
+            ],
+            ..Config::default()
+        };
+        config.bars[0].modules.top = vec!["workspaces-left".into(), "workspaces-right".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+
+        let first = vec![make_workspace(0, true), make_workspace(1, false)];
+        let second = vec![make_workspace(0, false), make_workspace(1, true)];
+
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: first,
+        })));
+        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+            workspaces: second,
+        })));
+
+        let layout: Vec<(ModuleKind, Option<String>)> = app
+            .modules
+            .iter()
+            .map(|(_, m)| (m.kind(), m.config_name().map(str::to_string)))
+            .collect();
+        assert_eq!(
+            layout,
+            vec![
+                (ModuleKind::Workspaces, None),
+                (ModuleKind::WorkspaceItem, Some("workspaces-left".into())),
+                (ModuleKind::WorkspaceItem, Some("workspaces-left".into())),
+                (ModuleKind::Workspaces, None),
+                (ModuleKind::WorkspaceItem, Some("workspaces-right".into())),
+                (ModuleKind::WorkspaceItem, Some("workspaces-right".into())),
+            ]
+        );
+    }
+
+    #[test]
     fn workspace_activated_updates_focused_pill() {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
@@ -3406,6 +3457,90 @@ mod tests {
 
         assert!(app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.new"));
         assert!(!app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.old"));
+    }
+
+    #[test]
+    fn tray_snapshot_handles_multiple_placeholders_after_existing_icons() {
+        use crate::config::{ModuleConfig, ModuleParams, TrayConfig};
+        use crate::dbus::sni_host::{ItemStatus, TrayEvent, TrayIcon, TrayItem};
+        use zbus::zvariant::OwnedObjectPath;
+
+        let mut config = Config {
+            modules: vec![
+                ModuleConfig {
+                    name: "tray-left".into(),
+                    module_type: "tray".into(),
+                    params: ModuleParams::Tray(TrayConfig),
+                },
+                ModuleConfig {
+                    name: "tray-right".into(),
+                    module_type: "tray".into(),
+                    params: ModuleParams::Tray(TrayConfig),
+                },
+            ],
+            ..Config::default()
+        };
+        config.bars[0].modules.top = vec!["tray-left".into(), "tray-right".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+
+        let item_a = TrayItem {
+            service: "org.a".into(),
+            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
+            icon: TrayIcon::Named("test-a".into()),
+            tooltip: None,
+            status: ItemStatus::Active,
+            menu_path: None,
+        };
+        let item_b = TrayItem {
+            service: "org.b".into(),
+            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
+            icon: TrayIcon::Named("test-b".into()),
+            tooltip: None,
+            status: ItemStatus::Active,
+            menu_path: None,
+        };
+
+        let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item_a.clone(), item_b.clone()]));
+        let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item_a, item_b]));
+
+        let layout: Vec<(ModuleKind, Option<String>, String)> = app
+            .modules
+            .iter()
+            .map(|(_, m)| {
+                (
+                    m.kind(),
+                    m.config_name().map(str::to_string),
+                    m.id().0.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            layout,
+            vec![
+                (ModuleKind::Tray, None, "tray-left".into()),
+                (
+                    ModuleKind::TrayIcon,
+                    Some("tray-left".into()),
+                    "tray:org.a".into(),
+                ),
+                (
+                    ModuleKind::TrayIcon,
+                    Some("tray-left".into()),
+                    "tray:org.b".into(),
+                ),
+                (ModuleKind::Tray, None, "tray-right".into()),
+                (
+                    ModuleKind::TrayIcon,
+                    Some("tray-right".into()),
+                    "tray:org.a".into(),
+                ),
+                (
+                    ModuleKind::TrayIcon,
+                    Some("tray-right".into()),
+                    "tray:org.b".into(),
+                ),
+            ]
+        );
     }
 
     // --- Menu item hover tests ---

@@ -131,7 +131,11 @@ impl App {
             perf.record_workspace_rebuild();
         }
 
-        // Collect placeholder slots: (index, zone, config_name, WorkspacesConfig clone).
+        self.modules
+            .retain(|(_, m)| m.kind() != ModuleKind::WorkspaceItem);
+
+        // Collect current placeholder slots after stale generated modules are removed:
+        // (index, zone, config_name, WorkspacesConfig clone).
         let slots: Vec<(
             usize,
             crate::modules::Zone,
@@ -157,9 +161,6 @@ impl App {
                 (i, z.clone(), name, cfg)
             })
             .collect();
-
-        self.modules
-            .retain(|(_, m)| m.kind() != ModuleKind::WorkspaceItem);
 
         // Clear focused/hovered module on every surface if they pointed at a workspace item
         // that may no longer exist after this rebuild.

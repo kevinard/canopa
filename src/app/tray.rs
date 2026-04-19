@@ -17,6 +17,10 @@ impl App {
 
         match event {
             TrayEvent::Snapshot(items) => {
+                self.modules
+                    .retain(|(_, m)| m.kind() != ModuleKind::TrayIcon);
+                self.clear_surface_module_refs_with_prefix("tray:");
+
                 let tray_slots: Vec<(usize, crate::modules::Zone, String)> = self
                     .modules
                     .iter()
@@ -24,10 +28,6 @@ impl App {
                     .filter(|(_, (_, m))| m.kind() == ModuleKind::Tray)
                     .map(|(i, (z, m))| (i, z.clone(), m.id().0.clone()))
                     .collect();
-
-                self.modules
-                    .retain(|(_, m)| m.kind() != ModuleKind::TrayIcon);
-                self.clear_surface_module_refs_with_prefix("tray:");
 
                 let active_items: Vec<&crate::dbus::sni_host::TrayItem> = items
                     .iter()

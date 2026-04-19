@@ -3,6 +3,8 @@
 
 pub const MAX_COMMAND_OUTPUT_BYTES: usize = 4096;
 
+use tokio::io::AsyncReadExt;
+
 pub fn sanitize_stdout(stdout: &[u8], max_bytes: usize) -> String {
     let text = String::from_utf8_lossy(stdout);
     let trimmed = text.trim();
@@ -13,6 +15,11 @@ pub fn sanitize_stdout(stdout: &[u8], max_bytes: usize) -> String {
     }
 }
 
+async fn kill_and_wait(child: &mut tokio::process::Child) {
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+}
+
 /// Run `sh -c <command>` with a timeout and capture stdout.
 ///
 /// Returns:
@@ -20,23 +27,63 @@ pub fn sanitize_stdout(stdout: &[u8], max_bytes: usize) -> String {
 /// - `Ok(None)` on non-zero exit **or** timeout (callers cannot distinguish).
 /// - `Err(e)` only on spawn-level I/O errors.
 ///
-/// The child is killed on drop, so timeout cancellation reaps the process.
+/// Timeout cancellation kills and waits on the child so the process is reaped.
 pub async fn run_shell_capture_stdout(
     command: &str,
     timeout: std::time::Duration,
     max_output_bytes: usize,
 ) -> std::io::Result<Option<String>> {
     let mut child = tokio::process::Command::new("sh");
-    child.arg("-c").arg(command).kill_on_drop(true);
-    let output = tokio::time::timeout(timeout, child.output()).await;
+    child
+        .arg("-c")
+        .arg(command)
+        .stdout(std::process::Stdio::piped());
+    child.kill_on_drop(true);
+    let mut child = child.spawn()?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| std::io::Error::other("child stdout pipe unavailable"))?;
+    let deadline = tokio::time::sleep(timeout);
+    tokio::pin!(deadline);
 
-    match output {
-        Ok(Ok(out)) if out.status.success() => {
-            Ok(Some(sanitize_stdout(&out.stdout, max_output_bytes)))
+    let mut captured = Vec::with_capacity(max_output_bytes.min(1024));
+    let mut buffer = [0u8; 1024];
+
+    loop {
+        tokio::select! {
+            biased;
+            _ = &mut deadline => {
+                kill_and_wait(&mut child).await;
+                return Ok(None);
+            }
+            read = stdout.read(&mut buffer) => {
+                let read = read?;
+                if read == 0 {
+                    break;
+                }
+
+                let remaining = max_output_bytes.saturating_sub(captured.len());
+                let retain = remaining.min(read);
+                captured.extend_from_slice(&buffer[..retain]);
+            }
         }
-        Ok(Ok(_)) => Ok(None),
-        Ok(Err(e)) => Err(e),
-        Err(_) => Ok(None),
+    }
+
+    tokio::select! {
+        biased;
+        _ = &mut deadline => {
+            kill_and_wait(&mut child).await;
+            Ok(None)
+        }
+        status = child.wait() => {
+            match status? {
+                status if status.success() => {
+                    Ok(Some(sanitize_stdout(&captured, max_output_bytes)))
+                }
+                _ => Ok(None),
+            }
+        }
     }
 }
 
@@ -88,13 +135,10 @@ mod tests {
 
     #[tokio::test]
     async fn run_shell_capture_stdout_returns_none_on_nonzero_exit() {
-        let out = run_shell_capture_stdout(
-            "false",
-            Duration::from_secs(1),
-            MAX_COMMAND_OUTPUT_BYTES,
-        )
-        .await
-        .unwrap();
+        let out =
+            run_shell_capture_stdout("false", Duration::from_secs(1), MAX_COMMAND_OUTPUT_BYTES)
+                .await
+                .unwrap();
         assert!(out.is_none());
     }
 
@@ -108,5 +152,33 @@ mod tests {
         .await
         .unwrap();
         assert!(out.is_none());
+    }
+
+    #[tokio::test]
+    async fn run_shell_capture_stdout_caps_large_output_without_timeout() {
+        let out = run_shell_capture_stdout(
+            "yes x | tr -d '\n' | head -c 8192",
+            Duration::from_secs(1),
+            MAX_COMMAND_OUTPUT_BYTES,
+        )
+        .await
+        .unwrap();
+        let out = out.expect("command should exit successfully");
+        assert_eq!(out.len(), MAX_COMMAND_OUTPUT_BYTES);
+        assert!(out.chars().all(|c| c == 'x'));
+    }
+
+    #[tokio::test]
+    async fn run_shell_capture_stdout_drains_after_cap() {
+        let out = run_shell_capture_stdout(
+            "head -c 131072 /dev/zero | tr '\\0' x",
+            Duration::from_secs(2),
+            MAX_COMMAND_OUTPUT_BYTES,
+        )
+        .await
+        .unwrap();
+        let out = out.expect("large successful command should not be treated as a timeout");
+        assert_eq!(out.len(), MAX_COMMAND_OUTPUT_BYTES);
+        assert!(out.chars().all(|c| c == 'x'));
     }
 }

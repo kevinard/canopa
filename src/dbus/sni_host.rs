@@ -116,6 +116,8 @@ trait SniWatcher {
 // -- Helpers ------------------------------------------------------------------
 
 const MAX_PIXMAP_DIMENSION: i32 = 512;
+const MAX_RETAINED_PIXMAP_COUNT: usize = 8;
+const MAX_RETAINED_PIXMAP_BYTES: usize = 256 * 1024;
 const MAX_MENU_ITEMS: usize = 256;
 const MAX_MENU_LABEL_BYTES: usize = 512;
 
@@ -133,6 +135,34 @@ fn valid_pixmap(width: i32, height: i32, bytes: &[u8]) -> bool {
         return false;
     };
     bytes.len() == expected_bytes
+}
+
+fn retain_pixmaps_with_budget(
+    pixmaps: Vec<SniPixmap>,
+    max_count: usize,
+    max_bytes: usize,
+) -> Vec<SniPixmap> {
+    let mut retained = Vec::new();
+    let mut retained_bytes = 0usize;
+
+    for (width, height, bytes) in pixmaps {
+        if retained.len() >= max_count {
+            break;
+        }
+        if !valid_pixmap(width, height, &bytes) {
+            continue;
+        }
+
+        let pixmap_bytes = bytes.len();
+        if pixmap_bytes > max_bytes || retained_bytes.saturating_add(pixmap_bytes) > max_bytes {
+            continue;
+        }
+
+        retained_bytes += pixmap_bytes;
+        retained.push((width, height, bytes));
+    }
+
+    retained
 }
 
 fn truncate_label(label: String) -> String {
@@ -188,13 +218,11 @@ pub async fn fetch_item(
         if !name.is_empty() {
             TrayIcon::Named(name)
         } else {
-            let pixmaps = proxy
-                .icon_pixmap()
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|(w, h, bytes)| valid_pixmap(*w, *h, bytes))
-                .collect();
+            let pixmaps = retain_pixmaps_with_budget(
+                proxy.icon_pixmap().await.unwrap_or_default(),
+                MAX_RETAINED_PIXMAP_COUNT,
+                MAX_RETAINED_PIXMAP_BYTES,
+            );
             TrayIcon::Pixmap(pixmaps)
         }
     };
@@ -420,7 +448,7 @@ pub async fn fetch_menu(
 
     let _ = proxy.about_to_show(0).await; // best-effort; ignore result
 
-    let (_, root) = proxy.get_layout(0, -1, &[]).await.ok()?;
+    let (_, root) = proxy.get_layout(0, 1, &[]).await.ok()?;
     let (_, _, children) = &root;
 
     // Root node's children are the top-level menu items.
@@ -929,6 +957,39 @@ mod tests {
             MAX_PIXMAP_DIMENSION,
             &bytes,
         ));
+    }
+
+    #[test]
+    fn retain_pixmaps_with_budget_skips_invalid_and_limits_count() {
+        let pixmaps = vec![
+            (0, 16, vec![0u8; 64]),
+            (16, 16, vec![0u8; 16 * 16 * 4]),
+            (22, 22, vec![0u8; 22 * 22 * 4]),
+            (32, 32, vec![0u8; 32 * 32 * 4]),
+        ];
+
+        let retained = retain_pixmaps_with_budget(pixmaps, 2, usize::MAX);
+
+        assert_eq!(retained.len(), 2);
+        assert_eq!(retained[0].0, 16);
+        assert_eq!(retained[1].0, 22);
+    }
+
+    #[test]
+    fn retain_pixmaps_with_budget_limits_total_bytes() {
+        let pixmaps = vec![
+            (16, 16, vec![0u8; 16 * 16 * 4]),
+            (22, 22, vec![0u8; 22 * 22 * 4]),
+            (32, 32, vec![0u8; 32 * 32 * 4]),
+        ];
+
+        let retained = retain_pixmaps_with_budget(pixmaps, 8, 16 * 16 * 4 + 22 * 22 * 4);
+
+        assert_eq!(retained.len(), 2);
+        assert_eq!(
+            retained.iter().map(|p| p.2.len()).sum::<usize>(),
+            16 * 16 * 4 + 22 * 22 * 4
+        );
     }
 
     #[test]
