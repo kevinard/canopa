@@ -1,4 +1,5 @@
 mod animation;
+mod dynamic_modules;
 mod focus;
 mod layout;
 mod menu;
@@ -2439,6 +2440,18 @@ mod tests {
         let wid = test_wid();
         app.surface_mut(wid); // pre-initialize
         (app, wid)
+    }
+
+    #[test]
+    fn clear_surface_module_refs_with_prefix_clears_focus_and_hover() {
+        let (mut app, wid) = make_interact_app();
+        app.surface_mut(wid).focused_module = Some(ModuleId::new("workspace:1"));
+        app.surface_mut(wid).hovered_module = Some(ModuleId::new("workspace:2"));
+
+        app.clear_surface_module_refs_with_prefix("workspace:");
+
+        assert!(app.surfaces[&wid].focused_module.is_none());
+        assert!(app.surfaces[&wid].hovered_module.is_none());
     }
 
     #[test]

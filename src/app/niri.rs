@@ -163,22 +163,7 @@ impl App {
 
         // Clear focused/hovered module on every surface if they pointed at a workspace item
         // that may no longer exist after this rebuild.
-        for s in self.surfaces.values_mut() {
-            if s.focused_module
-                .as_ref()
-                .map(|id| id.0.starts_with("workspace:"))
-                .unwrap_or(false)
-            {
-                s.focused_module = None;
-            }
-            if s.hovered_module
-                .as_ref()
-                .map(|id| id.0.starts_with("workspace:"))
-                .unwrap_or(false)
-            {
-                s.hovered_module = None;
-            }
-        }
+        self.clear_surface_module_refs_with_prefix("workspace:");
 
         // Sort workspaces by idx to match Niri's scrollable-tiling order.
         let mut sorted: Vec<niri_ipc::Workspace> = workspaces.to_vec();
