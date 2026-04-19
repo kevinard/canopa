@@ -63,6 +63,21 @@ pub fn volume_subscription() -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(VolumeConnData, build_volume_stream)
 }
 
+fn mainloop_signal_callback(
+    mainloop: &mut libpulse_binding::mainloop::threaded::Mainloop,
+) -> Box<dyn FnMut() + 'static> {
+    let ml_ptr = mainloop as *mut libpulse_binding::mainloop::threaded::Mainloop as usize;
+    Box::new(move || {
+        // SAFETY: `ml_ptr` points to the `Mainloop` stack value owned by `run_pa_thread`.
+        // The callback is cleared before that function can return, and libpulse invokes it
+        // while the threaded mainloop is alive.
+        let ml = unsafe {
+            &mut *(ml_ptr as *mut libpulse_binding::mainloop::threaded::Mainloop)
+        };
+        ml.signal(false);
+    })
+}
+
 /// Runs in a dedicated std::thread. Sets up the PA threaded mainloop,
 /// sends initial state, subscribes to sink changes, and blocks until PA terminates.
 fn run_pa_thread(tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>) {
@@ -98,16 +113,10 @@ fn run_pa_thread(tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>) {
     // mainloop stays on the stack for the entire function lifetime; the state callback uses
     // a raw pointer to avoid RefCell borrow conflicts (wait() holds exclusive access while
     // sleeping, which would prevent signal() from acquiring a borrow_mut()).
-    let ml_ptr = &mut mainloop as *mut Mainloop as usize;
-    context.set_state_callback(Some(Box::new(move || {
-        // SAFETY: mainloop lives on this thread's stack for the entire run_pa_thread call.
-        // PA guarantees that signal() is only called from within the PA thread while we hold
-        // the mainloop lock, and wait() atomically releases the lock before sleeping.
-        let ml = unsafe { &mut *(ml_ptr as *mut Mainloop) };
-        ml.signal(false);
-    })));
+    context.set_state_callback(Some(mainloop_signal_callback(&mut mainloop)));
 
     if mainloop.start().is_err() {
+        context.set_state_callback(None);
         let _ = tx.send(Err(()));
         return;
     }
@@ -117,6 +126,7 @@ fn run_pa_thread(tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>) {
         .connect(None, pulse::context::FlagSet::NOAUTOSPAWN, None)
         .is_err()
     {
+        context.set_state_callback(None);
         mainloop.unlock();
         let _ = tx.send(Err(()));
         return;
@@ -128,6 +138,7 @@ fn run_pa_thread(tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>) {
         match context.get_state() {
             pulse::context::State::Ready => break,
             pulse::context::State::Failed | pulse::context::State::Terminated => {
+                context.set_state_callback(None);
                 mainloop.unlock();
                 let _ = tx.send(Err(()));
                 return;
