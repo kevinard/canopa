@@ -559,7 +559,7 @@ impl App {
                             // Insert in reverse slot order so earlier slot indices stay valid.
                             for (slot_idx, zone, config_name) in tray_slots.iter().rev() {
                                 // Find position after the last existing tray_icon for this slot.
-                                let insert_at = self.tray_insert_position(*slot_idx, &config_name);
+                                let insert_at = self.tray_insert_position(*slot_idx, config_name);
                                 let icon_module =
                                     TrayIconModule::new(item.clone(), config_name.clone());
                                 self.modules

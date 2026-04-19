@@ -689,8 +689,12 @@ async fn run_sni_task(
                     if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str)
                         && let Some(item) = fetch_item(&conn, svc, &path).await {
                             // If this service was already known, remove the old entry first.
-                            if items.remove(&service_str).is_some() {
-                                if tx.send(TrayEvent::ItemRemoved(service_str.clone())).is_err() { break; }
+                            if items.remove(&service_str).is_some()
+                                && tx
+                                    .send(TrayEvent::ItemRemoved(service_str.clone()))
+                                    .is_err()
+                            {
+                                break;
                             }
                             items.insert(service_str, item.clone());
                             if tx.send(TrayEvent::ItemAdded(item)).is_err() { break; }
@@ -700,8 +704,10 @@ async fn run_sni_task(
             Some(signal) = item_unregistered.next() => {
                 if let Ok(args) = signal.args() {
                     let service_str = args.service.to_string();
-                    if items.remove(&service_str).is_some() {
-                        if tx.send(TrayEvent::ItemRemoved(service_str)).is_err() { break; }
+                    if items.remove(&service_str).is_some()
+                        && tx.send(TrayEvent::ItemRemoved(service_str)).is_err()
+                    {
+                        break;
                     }
                 }
             }
@@ -714,8 +720,10 @@ async fn run_sni_task(
                         .unwrap_or(true);
                     if new_owner_empty {
                         let gone = args.name().to_string();
-                        if items.remove(&gone).is_some() {
-                            if tx.send(TrayEvent::ItemRemoved(gone)).is_err() { break; }
+                        if items.remove(&gone).is_some()
+                            && tx.send(TrayEvent::ItemRemoved(gone)).is_err()
+                        {
+                            break;
                         }
                     }
                 }
