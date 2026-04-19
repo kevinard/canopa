@@ -102,10 +102,7 @@ impl App {
             format!("{step}%-")
         };
         tokio::task::spawn(async move {
-            let _ = tokio::process::Command::new("wpctl")
-                .args(["set-volume", "-l", "1", "@DEFAULT_AUDIO_SINK@", &arg])
-                .status()
-                .await;
+            let _ = crate::command::set_default_sink_volume(&arg).await;
         });
         Task::none()
     }

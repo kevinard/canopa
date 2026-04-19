@@ -13,28 +13,12 @@ pub enum ScriptEvent {
     Failed,
 }
 
-pub const MAX_SCRIPT_OUTPUT_BYTES: usize = 4096;
+pub const MAX_SCRIPT_OUTPUT_BYTES: usize = crate::command::MAX_COMMAND_OUTPUT_BYTES;
 pub const SCRIPT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
-fn sanitize_script_stdout(stdout: &[u8]) -> String {
-    let text = String::from_utf8_lossy(stdout);
-    let trimmed = text.trim();
-    if trimmed.len() <= MAX_SCRIPT_OUTPUT_BYTES {
-        trimmed.to_string()
-    } else {
-        String::from_utf8_lossy(&trimmed.as_bytes()[..MAX_SCRIPT_OUTPUT_BYTES]).to_string()
-    }
-}
-
 async fn run_script_command(cmd: &str, timeout: std::time::Duration) -> ScriptEvent {
-    let mut command = tokio::process::Command::new("sh");
-    command.arg("-c").arg(cmd).kill_on_drop(true);
-    let output = tokio::time::timeout(timeout, command.output()).await;
-
-    match output {
-        Ok(Ok(out)) if out.status.success() => {
-            ScriptEvent::Output(sanitize_script_stdout(&out.stdout))
-        }
+    match crate::command::run_shell_capture_stdout(cmd, timeout, MAX_SCRIPT_OUTPUT_BYTES).await {
+        Ok(Some(out)) => ScriptEvent::Output(out),
         _ => ScriptEvent::Failed,
     }
 }
@@ -187,7 +171,7 @@ mod tests {
     fn sanitize_script_stdout_trims_and_caps_output() {
         let output = format!("{} trailing\n", "x".repeat(MAX_SCRIPT_OUTPUT_BYTES + 32));
 
-        let sanitized = sanitize_script_stdout(output.as_bytes());
+        let sanitized = crate::command::sanitize_stdout(output.as_bytes(), MAX_SCRIPT_OUTPUT_BYTES);
 
         assert_eq!(sanitized.len(), MAX_SCRIPT_OUTPUT_BYTES);
         assert!(sanitized.chars().all(|c| c == 'x'));

@@ -32,17 +32,6 @@ impl ButtonModule {
     }
 }
 
-fn spawn_button_command(command: &str) -> std::io::Result<()> {
-    let mut child = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .spawn()?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
-}
-
 impl crate::modules::Module for ButtonModule {
     fn id(&self) -> crate::modules::ModuleId {
         self.id.clone()
@@ -82,7 +71,7 @@ impl crate::modules::Module for ButtonModule {
         match event {
             InteractionEvent::Clicked => {
                 // Fire-and-forget from the UI, but reap the child in a background thread.
-                let _ = spawn_button_command(&self.on_click);
+                let _ = crate::command::spawn_shell_fire_and_forget(&self.on_click);
                 None
             }
             _ => None,
@@ -177,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn spawn_button_command_returns_ok_for_short_command() {
-        assert!(spawn_button_command("true").is_ok());
+    fn spawn_shell_fire_and_forget_returns_ok_for_short_command() {
+        assert!(crate::command::spawn_shell_fire_and_forget("true").is_ok());
     }
 }
