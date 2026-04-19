@@ -1,5 +1,4 @@
 use crate::modules::volume::VolumeEvent;
-use iced::futures::stream;
 use tokio::sync::mpsc;
 
 struct VolumeConnData;
@@ -10,51 +9,16 @@ impl std::hash::Hash for VolumeConnData {
     }
 }
 
-enum SubState {
-    Init,
-    Running(mpsc::UnboundedReceiver<Result<(f64, bool), ()>>),
-    Done,
-}
-
 fn build_volume_stream(
     _data: &VolumeConnData,
 ) -> std::pin::Pin<Box<dyn iced::futures::Stream<Item = crate::app::Message> + Send + 'static>> {
-    Box::pin(stream::unfold(SubState::Init, |state| async move {
-        match state {
-            SubState::Init => {
-                let (tx, rx) = mpsc::unbounded_channel();
-                std::thread::spawn(move || run_pa_thread(tx));
-                let mut rx = rx;
-                match rx.recv().await {
-                    Some(Ok((v, m))) => Some((
-                        crate::app::Message::Volume(VolumeEvent::StateChanged {
-                            volume: v,
-                            muted: m,
-                        }),
-                        SubState::Running(rx),
-                    )),
-                    _ => Some((
-                        crate::app::Message::Volume(VolumeEvent::Unavailable),
-                        SubState::Done,
-                    )),
-                }
-            }
-            SubState::Running(mut rx) => match rx.recv().await {
-                Some(Ok((v, m))) => Some((
-                    crate::app::Message::Volume(VolumeEvent::StateChanged {
-                        volume: v,
-                        muted: m,
-                    }),
-                    SubState::Running(rx),
-                )),
-                _ => Some((
-                    crate::app::Message::Volume(VolumeEvent::Unavailable),
-                    SubState::Done,
-                )),
-            },
-            SubState::Done => None,
-        }
-    }))
+    crate::dbus::subscription::build::<(f64, bool), crate::app::Message, _, _, _>(
+        |tx| {
+            std::thread::spawn(move || run_pa_thread(tx));
+        },
+        |(volume, muted)| crate::app::Message::Volume(VolumeEvent::StateChanged { volume, muted }),
+        || crate::app::Message::Volume(VolumeEvent::Unavailable),
+    )
 }
 
 /// Returns an Iced subscription for volume state via PulseAudio compat layer.
