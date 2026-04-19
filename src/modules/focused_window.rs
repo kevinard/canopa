@@ -27,8 +27,8 @@ impl crate::modules::Module for FocusedWindowModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "focused-window"
+    fn kind(&self) -> crate::modules::ModuleKind {
+        crate::modules::ModuleKind::FocusedWindow
     }
 
     /// No independent data source — fed via Message::Niri in app.rs (same pattern as workspaces).

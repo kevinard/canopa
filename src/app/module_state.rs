@@ -1,9 +1,9 @@
 use super::App;
-use crate::modules::ModuleState;
 use crate::modules::battery::BatteryState;
 use crate::modules::focused_window;
 use crate::modules::network::{NetworkConnectivity, NetworkState};
 use crate::modules::volume::VolumeState;
+use crate::modules::{ModuleKind, ModuleState};
 
 impl App {
     fn push_state_if_changed(&mut self, id: crate::modules::ModuleId, state: ModuleState) {
@@ -17,7 +17,7 @@ impl App {
         let ids: Vec<_> = self
             .modules
             .iter()
-            .filter(|(_, module)| module.module_type() == "battery")
+            .filter(|(_, module)| module.kind() == ModuleKind::Battery)
             .map(|(_, module)| module.id())
             .collect();
         for id in ids {
@@ -39,7 +39,7 @@ impl App {
         let ids: Vec<_> = self
             .modules
             .iter()
-            .filter(|(_, module)| module.module_type() == "network")
+            .filter(|(_, module)| module.kind() == ModuleKind::Network)
             .map(|(_, module)| module.id())
             .collect();
         for id in ids {
@@ -57,7 +57,7 @@ impl App {
         let ids: Vec<_> = self
             .modules
             .iter()
-            .filter(|(_, module)| module.module_type() == "volume")
+            .filter(|(_, module)| module.kind() == ModuleKind::Volume)
             .map(|(_, module)| module.id())
             .collect();
         for id in ids {
@@ -77,7 +77,7 @@ impl App {
         let ids: Vec<_> = self
             .modules
             .iter()
-            .filter(|(_, module)| module.module_type() == "focused-window")
+            .filter(|(_, module)| module.kind() == ModuleKind::FocusedWindow)
             .map(|(_, module)| module.id())
             .collect();
         for id in ids {

@@ -124,8 +124,8 @@ impl crate::modules::Module for ClockModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "clock"
+    fn kind(&self) -> crate::modules::ModuleKind {
+        crate::modules::ModuleKind::Clock
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {

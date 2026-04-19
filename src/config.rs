@@ -4,6 +4,8 @@ mod parse;
 use anyhow::Context;
 use iced_layershell::reexport::Anchor;
 
+use crate::modules::ModuleKind;
+
 /// Known module names for FR37 validation.
 /// Hardcoded so validation works before any module is implemented.
 const KNOWN_MODULE_TYPES: &[&str] = &[
@@ -17,6 +19,11 @@ const KNOWN_MODULE_TYPES: &[&str] = &[
     "button",
     "tray",
 ];
+
+fn is_known_config_module_type(module_type: &str) -> bool {
+    ModuleKind::from_config_name(module_type)
+        .is_some_and(|kind| ModuleKind::CONFIG_KINDS.contains(&kind))
+}
 
 /// Format strings for the clock module (AC: #4, #5).
 #[derive(Debug, Clone)]
@@ -375,7 +382,7 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
     }
 
     for (i, mc) in config.modules.iter().enumerate() {
-        if !KNOWN_MODULE_TYPES.contains(&mc.module_type.as_str()) {
+        if !is_known_config_module_type(&mc.module_type) {
             anyhow::bail!(
                 "modules[{i}].type: unknown module type {:?}. \
                  Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray.",
@@ -390,6 +397,17 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn known_module_types_include_all_config_module_kinds() {
+        for kind in ModuleKind::CONFIG_KINDS {
+            assert!(
+                KNOWN_MODULE_TYPES.contains(&kind.as_str()),
+                "missing known module type {:?}",
+                kind
+            );
+        }
+    }
 
     #[test]
     fn parse_default_config_succeeds() {

@@ -22,6 +22,68 @@ impl ModuleId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModuleKind {
+    Battery,
+    Button,
+    Network,
+    Volume,
+    Clock,
+    Script,
+    Workspaces,
+    WorkspaceItem,
+    FocusedWindow,
+    Tray,
+    TrayIcon,
+}
+
+impl ModuleKind {
+    pub const CONFIG_KINDS: &'static [ModuleKind] = &[
+        ModuleKind::Battery,
+        ModuleKind::Clock,
+        ModuleKind::Network,
+        ModuleKind::Volume,
+        ModuleKind::Workspaces,
+        ModuleKind::FocusedWindow,
+        ModuleKind::Script,
+        ModuleKind::Button,
+        ModuleKind::Tray,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ModuleKind::Battery => "battery",
+            ModuleKind::Button => "button",
+            ModuleKind::Network => "network",
+            ModuleKind::Volume => "volume",
+            ModuleKind::Clock => "clock",
+            ModuleKind::Script => "script",
+            ModuleKind::Workspaces => "workspaces",
+            ModuleKind::WorkspaceItem => "workspace_item",
+            ModuleKind::FocusedWindow => "focused-window",
+            ModuleKind::Tray => "tray",
+            ModuleKind::TrayIcon => "tray_icon",
+        }
+    }
+
+    pub fn from_config_name(s: &str) -> Option<Self> {
+        match s {
+            "battery" => Some(ModuleKind::Battery),
+            "button" => Some(ModuleKind::Button),
+            "network" => Some(ModuleKind::Network),
+            "volume" => Some(ModuleKind::Volume),
+            "clock" => Some(ModuleKind::Clock),
+            "script" => Some(ModuleKind::Script),
+            "workspaces" => Some(ModuleKind::Workspaces),
+            "workspace_item" => Some(ModuleKind::WorkspaceItem),
+            "focused-window" => Some(ModuleKind::FocusedWindow),
+            "tray" => Some(ModuleKind::Tray),
+            "tray_icon" => Some(ModuleKind::TrayIcon),
+            _ => None,
+        }
+    }
+}
+
 /// Zone placement for a module in the bar layout.
 // Used in Story 2.2 when modules are placed into zones from config.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,9 +143,12 @@ pub enum InteractionEvent {
 // Implemented in Stories 2.3+ when concrete modules are added.
 pub trait Module: Send + Sync {
     fn id(&self) -> ModuleId;
+    fn kind(&self) -> ModuleKind;
     /// Returns the module type name (e.g. `"clock"`, `"script"`).
     /// Used for type-based state routing; distinct from the instance name returned by `id()`.
-    fn module_type(&self) -> &str;
+    fn module_type(&self) -> &str {
+        self.kind().as_str()
+    }
     fn subscription(&self) -> iced::Subscription<crate::app::Message>;
     fn view_collapsed(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message>;
     fn view_expanded(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message>;
@@ -256,6 +321,26 @@ mod tests {
     #[test]
     fn module_state_default_is_loading() {
         assert!(matches!(ModuleState::default(), ModuleState::Loading));
+    }
+
+    #[test]
+    fn module_kind_round_trips_known_config_names() {
+        for (kind, name) in [
+            (ModuleKind::Battery, "battery"),
+            (ModuleKind::Clock, "clock"),
+            (ModuleKind::Network, "network"),
+            (ModuleKind::Volume, "volume"),
+            (ModuleKind::Workspaces, "workspaces"),
+            (ModuleKind::FocusedWindow, "focused-window"),
+            (ModuleKind::Script, "script"),
+            (ModuleKind::Button, "button"),
+            (ModuleKind::Tray, "tray"),
+            (ModuleKind::WorkspaceItem, "workspace_item"),
+            (ModuleKind::TrayIcon, "tray_icon"),
+        ] {
+            assert_eq!(kind.as_str(), name);
+            assert_eq!(ModuleKind::from_config_name(name), Some(kind));
+        }
     }
 
     #[test]

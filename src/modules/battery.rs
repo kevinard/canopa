@@ -78,8 +78,8 @@ impl crate::modules::Module for BatteryModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "battery"
+    fn kind(&self) -> crate::modules::ModuleKind {
+        crate::modules::ModuleKind::Battery
     }
 
     /// No independent subscription — fed via Message::Battery in app.rs (AR5, Story 5.1).

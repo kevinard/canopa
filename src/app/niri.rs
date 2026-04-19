@@ -1,8 +1,8 @@
 use iced::Task;
 
 use super::{App, Message};
-use crate::modules::ModuleState;
 use crate::modules::workspaces::WorkspaceItemModule;
+use crate::modules::{ModuleKind, ModuleState};
 use crate::niri::NiriEvent;
 
 pub(super) fn workspace_render_state_equal(
@@ -32,7 +32,10 @@ impl App {
             NiriEvent::Unavailable => {
                 self.shared.niri.connected = false;
                 for (_, module) in &self.modules {
-                    if matches!(module.module_type(), "workspaces" | "focused-window") {
+                    if matches!(
+                        module.kind(),
+                        ModuleKind::Workspaces | ModuleKind::FocusedWindow
+                    ) {
                         self.shared
                             .modules
                             .insert(module.id(), ModuleState::Unavailable);
@@ -138,7 +141,7 @@ impl App {
             .modules
             .iter()
             .enumerate()
-            .filter(|(_, (_, m))| m.module_type() == "workspaces")
+            .filter(|(_, (_, m))| m.kind() == ModuleKind::Workspaces)
             .map(|(i, (z, m))| {
                 let name = m.id().0.clone();
                 let cfg = self
@@ -156,7 +159,7 @@ impl App {
             .collect();
 
         self.modules
-            .retain(|(_, m)| m.module_type() != "workspace_item");
+            .retain(|(_, m)| m.kind() != ModuleKind::WorkspaceItem);
 
         // Clear focused/hovered module on every surface if they pointed at a workspace item
         // that may no longer exist after this rebuild.

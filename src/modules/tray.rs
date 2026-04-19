@@ -1,5 +1,5 @@
 use crate::dbus::sni_host::{ItemStatus, TrayIcon, TrayItem};
-use crate::modules::{InteractionEvent, ModuleId, ModuleState};
+use crate::modules::{InteractionEvent, ModuleId, ModuleKind, ModuleState};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
@@ -186,8 +186,8 @@ impl crate::modules::Module for TrayModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "tray"
+    fn kind(&self) -> ModuleKind {
+        ModuleKind::Tray
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
@@ -313,8 +313,8 @@ impl crate::modules::Module for TrayIconModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "tray_icon"
+    fn kind(&self) -> ModuleKind {
+        ModuleKind::TrayIcon
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {

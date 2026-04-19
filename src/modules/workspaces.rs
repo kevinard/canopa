@@ -36,8 +36,8 @@ impl crate::modules::Module for WorkspacesModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "workspaces"
+    fn kind(&self) -> crate::modules::ModuleKind {
+        crate::modules::ModuleKind::Workspaces
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
@@ -166,8 +166,8 @@ impl crate::modules::Module for WorkspaceItemModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "workspace_item"
+    fn kind(&self) -> crate::modules::ModuleKind {
+        crate::modules::ModuleKind::WorkspaceItem
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {

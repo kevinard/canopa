@@ -59,8 +59,8 @@ impl crate::modules::Module for NetworkModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "network"
+    fn kind(&self) -> crate::modules::ModuleKind {
+        crate::modules::ModuleKind::Network
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {

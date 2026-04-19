@@ -64,8 +64,8 @@ impl crate::modules::Module for VolumeModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "volume"
+    fn kind(&self) -> crate::modules::ModuleKind {
+        crate::modules::ModuleKind::Volume
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {

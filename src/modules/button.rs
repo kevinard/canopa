@@ -48,8 +48,8 @@ impl crate::modules::Module for ButtonModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "button"
+    fn kind(&self) -> crate::modules::ModuleKind {
+        crate::modules::ModuleKind::Button
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {

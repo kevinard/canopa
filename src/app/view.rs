@@ -4,7 +4,7 @@ use iced::{Element, Length};
 use super::{App, Message};
 use crate::config::Edge;
 use crate::modules::focused_window;
-use crate::modules::{ModuleState, Zone};
+use crate::modules::{ModuleKind, ModuleState, Zone};
 use crate::surface::frame::module_frame;
 use crate::surface::layout::zone_layout;
 
@@ -129,7 +129,7 @@ impl App {
             // Compute a derived state only when module logic requires a runtime-calculated value
             // (workspace_item, FocusedWindow title derivation). All other modules borrow directly
             // from the shared map so no clone is needed.
-            let derived: Option<ModuleState> = if module.module_type() == "workspace_item" {
+            let derived: Option<ModuleState> = if module.kind() == ModuleKind::WorkspaceItem {
                 Some(ModuleState::WorkspaceOutput(surface.output_name.clone()))
             } else if let Some(ModuleState::FocusedWindow(fw)) =
                 self.shared.modules.get(&module.id())

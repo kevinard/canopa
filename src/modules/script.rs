@@ -60,8 +60,8 @@ impl crate::modules::Module for ScriptModule {
         self.id.clone()
     }
 
-    fn module_type(&self) -> &str {
-        "script"
+    fn kind(&self) -> crate::modules::ModuleKind {
+        crate::modules::ModuleKind::Script
     }
 
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {

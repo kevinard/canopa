@@ -1,6 +1,7 @@
 use iced::Task;
 
 use super::{App, Message};
+use crate::modules::ModuleKind;
 
 impl App {
     pub(super) fn handle_tray_event(
@@ -20,11 +21,12 @@ impl App {
                     .modules
                     .iter()
                     .enumerate()
-                    .filter(|(_, (_, m))| m.module_type() == "tray")
+                    .filter(|(_, (_, m))| m.kind() == ModuleKind::Tray)
                     .map(|(i, (z, m))| (i, z.clone(), m.id().0.clone()))
                     .collect();
 
-                self.modules.retain(|(_, m)| m.module_type() != "tray_icon");
+                self.modules
+                    .retain(|(_, m)| m.kind() != ModuleKind::TrayIcon);
                 self.clear_surface_module_refs_with_prefix("tray:");
 
                 let active_items: Vec<&crate::dbus::sni_host::TrayItem> = items
@@ -50,7 +52,7 @@ impl App {
                         .modules
                         .iter()
                         .enumerate()
-                        .filter(|(_, (_, m))| m.module_type() == "tray")
+                        .filter(|(_, (_, m))| m.kind() == ModuleKind::Tray)
                         .map(|(i, (z, m))| (i, z.clone(), m.id().0.clone()))
                         .collect();
 

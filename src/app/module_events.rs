@@ -7,7 +7,7 @@ use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::network::NetworkEvent;
 use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::volume::VolumeEvent;
-use crate::modules::{InteractionEvent, ModuleEvent, ModuleId, ModuleState};
+use crate::modules::{InteractionEvent, ModuleEvent, ModuleId, ModuleKind, ModuleState};
 
 fn insert_module_state_if_changed(
     modules: &mut std::collections::HashMap<ModuleId, ModuleState>,
@@ -74,7 +74,7 @@ impl App {
                 percentage,
                 is_charging,
             } => self.push_battery_state(percentage, is_charging),
-            BatteryEvent::Unavailable => self.mark_module_type_unavailable("battery"),
+            BatteryEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Battery),
         }
         Task::none()
     }
@@ -85,7 +85,7 @@ impl App {
                 connectivity,
                 label,
             } => self.push_network_state(connectivity, label),
-            NetworkEvent::Unavailable => self.mark_module_type_unavailable("network"),
+            NetworkEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Network),
         }
         Task::none()
     }
@@ -93,7 +93,7 @@ impl App {
     pub(super) fn handle_volume_event(&mut self, event: VolumeEvent) -> Task<Message> {
         match event {
             VolumeEvent::StateChanged { volume, muted } => self.push_volume_state(volume, muted),
-            VolumeEvent::Unavailable => self.mark_module_type_unavailable("volume"),
+            VolumeEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Volume),
         }
         Task::none()
     }
@@ -113,9 +113,9 @@ impl App {
         Task::none()
     }
 
-    fn mark_module_type_unavailable(&mut self, module_type: &str) {
+    fn mark_module_type_unavailable(&mut self, module_type: ModuleKind) {
         for (_, module) in &self.modules {
-            if module.module_type() == module_type {
+            if module.kind() == module_type {
                 self.shared
                     .modules
                     .insert(module.id(), ModuleState::Unavailable);

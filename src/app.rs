@@ -1,15 +1,15 @@
 mod animation;
-mod menu;
 mod focus;
 mod layout;
+mod menu;
 mod module_events;
 mod module_state;
 mod navigation;
 mod niri;
 mod perf;
-mod tray;
 mod subscriptions;
 mod surfaces;
+mod tray;
 mod view;
 mod widget_ops;
 
@@ -28,7 +28,7 @@ use crate::modules::battery::BatteryEvent;
 use crate::modules::network::NetworkEvent;
 use crate::modules::volume::VolumeEvent;
 use crate::modules::{
-    InteractionEvent, Module, ModuleEvent, ModuleId, ModuleState, Zone, build_registry,
+    InteractionEvent, Module, ModuleEvent, ModuleId, ModuleKind, ModuleState, Zone, build_registry,
 };
 use crate::niri::NiriState;
 use crate::surface::SurfaceState;
@@ -371,7 +371,9 @@ impl App {
                 continue;
             };
             if let Some(ctor) = registry.get(mc.module_type.as_str()) {
-                modules.push((zone.clone(), ctor(mc)));
+                let module = ctor(mc);
+                debug_assert_eq!(module.module_type(), module.kind().as_str());
+                modules.push((zone.clone(), module));
             }
         }
         // Create one surface per (output_name, bar_name) pair when in manual mode.
@@ -426,10 +428,9 @@ impl App {
 
         match message {
             Message::CursorMoved(window, pos) => {
-                let has_tray = self
-                    .modules
-                    .iter()
-                    .any(|(_, module)| matches!(module.module_type(), "tray" | "tray_icon"));
+                let has_tray = self.modules.iter().any(|(_, module)| {
+                    matches!(module.kind(), ModuleKind::Tray | ModuleKind::TrayIcon)
+                });
                 if has_tray && self.last_cursor != Some((window, pos)) {
                     self.last_cursor = Some((window, pos));
                 }
@@ -1591,7 +1592,7 @@ mod tests {
         let items: Vec<_> = app
             .modules
             .iter()
-            .filter(|(_, m)| m.module_type() == "workspace_item")
+            .filter(|(_, m)| m.kind() == ModuleKind::WorkspaceItem)
             .collect();
         assert_eq!(items.len(), 1);
     }
@@ -1635,7 +1636,7 @@ mod tests {
         let items: Vec<_> = app
             .modules
             .iter()
-            .filter(|(_, m)| m.module_type() == "workspace_item")
+            .filter(|(_, m)| m.kind() == ModuleKind::WorkspaceItem)
             .collect();
         assert_eq!(items.len(), 2);
         // Focused item is the one with id "workspace:2" (idx=1, niri id = idx+1 in make_workspace)
@@ -1668,7 +1669,7 @@ mod tests {
         let items: Vec<_> = app
             .modules
             .iter()
-            .filter(|(_, m)| m.module_type() == "workspace_item")
+            .filter(|(_, m)| m.kind() == ModuleKind::WorkspaceItem)
             .collect();
         assert_eq!(items.len(), 3);
         // Sorted by idx: 0, 1, 2 → niri ids 1, 2, 3
@@ -3284,7 +3285,11 @@ mod tests {
     fn tray_not_in_needs_dbus_when_no_tray_module() {
         let (app, _) = App::boot(Config::default(), vec![]);
         // Default config has no tray module -- verify no tray module is registered.
-        assert!(!app.modules.iter().any(|(_, m)| m.module_type() == "tray"));
+        assert!(
+            !app.modules
+                .iter()
+                .any(|(_, m)| m.kind() == ModuleKind::Tray)
+        );
     }
 
     #[test]

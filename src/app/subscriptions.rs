@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use super::{App, Message};
 use crate::ipc::ipc_subscription;
+use crate::modules::ModuleKind;
 use crate::niri::subscription::niri_subscription;
 use crate::surface::input::keyboard_focus_subscription;
 
@@ -15,11 +16,11 @@ impl App {
         let mut per_module: Vec<iced::Subscription<Message>> = Vec::new();
 
         for (_, m) in &self.modules {
-            match m.module_type() {
-                "battery" => has_battery = true,
-                "network" => has_network = true,
-                "volume" => has_volume = true,
-                "tray" => has_tray = true,
+            match m.kind() {
+                ModuleKind::Battery => has_battery = true,
+                ModuleKind::Network => has_network = true,
+                ModuleKind::Volume => has_volume = true,
+                ModuleKind::Tray => has_tray = true,
                 _ => {}
             }
             per_module.push(m.subscription());

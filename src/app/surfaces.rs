@@ -4,6 +4,7 @@ use iced::Task;
 use iced_layershell::reexport::{NewLayerShellSettings, OutputOption};
 
 use super::{App, Message};
+use crate::modules::ModuleKind;
 use crate::surface::SurfaceState;
 
 impl App {
@@ -147,12 +148,12 @@ impl App {
         let had_it = self
             .modules
             .iter()
-            .any(|(_, m)| m.module_type() == "tray_icon" && m.id().0 == module_id);
+            .any(|(_, m)| m.kind() == ModuleKind::TrayIcon && m.id().0 == module_id);
         if !had_it {
             return;
         }
         self.modules
-            .retain(|(_, m)| !(m.module_type() == "tray_icon" && m.id().0 == module_id));
+            .retain(|(_, m)| !(m.kind() == ModuleKind::TrayIcon && m.id().0 == module_id));
         for s in self.surfaces.values_mut() {
             if s.focused_module.as_ref().map(|id| id.0.as_str()) == Some(module_id) {
                 s.focused_module = None;
@@ -169,7 +170,7 @@ impl App {
         let mut pos = slot_idx + 1;
         while pos < self.modules.len() {
             let (_, m) = &self.modules[pos];
-            if m.module_type() == "tray_icon" && m.config_name() == Some(config_name) {
+            if m.kind() == ModuleKind::TrayIcon && m.config_name() == Some(config_name) {
                 pos += 1;
             } else {
                 break;
