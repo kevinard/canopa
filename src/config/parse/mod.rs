@@ -3,9 +3,10 @@ mod error;
 use ::kdl::{KdlDocument, KdlNode};
 
 mod kdl;
+mod modules;
 
 use super::{
-    AnimationConfig, BarConfig, BarModules, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge,
+    AnimationConfig, BarConfig, BarModules, ButtonConfig, ClockConfig, Config, Edge,
     ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, TrayConfig,
     VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
@@ -215,7 +216,7 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         };
 
         let params = if module_type == "battery" {
-            ModuleParams::Battery(parse_battery_params(node, i)?)
+            ModuleParams::Battery(modules::parse_battery(node, i)?)
         } else if module_type == "network" {
             ModuleParams::Network(NetworkConfig)
         } else if module_type == "volume" {
@@ -240,22 +241,6 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         });
     }
     Ok(result)
-}
-
-fn parse_battery_params(node: &KdlNode, idx: usize) -> anyhow::Result<BatteryConfig> {
-    // Optional `critical-threshold <int>` child node.
-    let Some(children) = node.children() else {
-        return Ok(BatteryConfig::default());
-    };
-    let critical_threshold = kdl::optional_u8_range_child(
-        children,
-        "critical-threshold",
-        BatteryConfig::default().critical_threshold,
-        0,
-        100,
-        &error::field_path(idx, "battery", "critical-threshold"),
-    )?;
-    Ok(BatteryConfig { critical_threshold })
 }
 
 fn parse_volume_params(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> {
