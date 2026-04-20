@@ -1,13 +1,12 @@
+mod animation;
+mod bars;
 mod error;
-
-use ::kdl::{KdlDocument, KdlNode};
-
 mod kdl;
 mod modules;
 
-use super::{
-    AnimationConfig, BarConfig, BarModules, Config, Edge, ExpandTrigger, ModuleConfig,
-};
+use ::kdl::KdlDocument;
+
+use super::{BarConfig, Config, ModuleConfig};
 use crate::modules::ModuleKind;
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -15,7 +14,7 @@ use crate::modules::ModuleKind;
 /// Missing sections fall back to defaults; constraint validation happens in `validate()`.
 pub fn parse(input: &str) -> anyhow::Result<Config> {
     let doc: KdlDocument = input.parse().map_err(|e| anyhow::anyhow!("config: {e}"))?;
-    let bars = parse_bar_sections(&doc)?;
+    let bars = bars::parse(&doc)?;
     let bars = if bars.is_empty() {
         vec![BarConfig::default()]
     } else {
@@ -23,151 +22,6 @@ pub fn parse(input: &str) -> anyhow::Result<Config> {
     };
     let modules = parse_modules_section(&doc)?;
     Ok(Config { bars, modules })
-}
-
-fn parse_bar_sections(doc: &KdlDocument) -> anyhow::Result<Vec<BarConfig>> {
-    let mut result = Vec::new();
-    for node in doc.nodes() {
-        if node.name().value() != "bar" {
-            continue;
-        }
-        let name = node
-            .entries()
-            .iter()
-            .find(|e| e.name().is_none())
-            .and_then(|e| e.value().as_string())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "bar: missing name argument. \
-                     Expected: bar \"<name>\" {{ ... }}, e.g. bar \"main\" {{ ... }}"
-                )
-            })?
-            .to_string();
-        let bar = parse_single_bar_node(node, &name)?;
-        result.push(bar);
-    }
-    Ok(result)
-}
-
-fn parse_single_bar_node(node: &KdlNode, name: &str) -> anyhow::Result<BarConfig> {
-    let prefix = format!("bar {name:?}");
-    let children = match node.children() {
-        Some(c) => c,
-        None => {
-            return Ok(BarConfig {
-                name: name.to_string(),
-                ..BarConfig::default()
-            });
-        }
-    };
-
-    let defaults = BarConfig::default();
-
-    let output = children
-        .get_arg("output")
-        .and_then(|v| v.as_string())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| defaults.output.clone());
-
-    let edge = match children.get_arg("edge") {
-        None => defaults.edge,
-        Some(v) => {
-            let s = v.as_string().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{prefix}.edge: expected a string value. Expected: one of: left, right, top, bottom."
-                )
-            })?;
-            Edge::from_str(s)?
-        }
-    };
-
-    let collapsed_width = match children.get_arg("collapsed-width") {
-        None => defaults.collapsed_width,
-        Some(v) => {
-            let n = v.as_integer().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{prefix}.collapsed-width: expected a positive integer. \
-                     Expected: a width in logical pixels, e.g. 48."
-                )
-            })?;
-            u32::try_from(n).map_err(|_| {
-                anyhow::anyhow!(
-                    "{prefix}.collapsed-width: expected a positive integer. \
-                     Expected: a width in logical pixels, e.g. 48."
-                )
-            })?
-        }
-    };
-
-    let expanded_width = match children.get_arg("expanded-width") {
-        None => defaults.expanded_width,
-        Some(v) => {
-            let n = v.as_integer().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{prefix}.expanded-width: expected a positive integer. \
-                     Expected: a width in logical pixels, e.g. 200."
-                )
-            })?;
-            u32::try_from(n).map_err(|_| {
-                anyhow::anyhow!(
-                    "{prefix}.expanded-width: expected a positive integer. \
-                     Expected: a width in logical pixels, e.g. 200."
-                )
-            })?
-        }
-    };
-
-    let expand_trigger = match children.get_arg("expand-trigger") {
-        None => defaults.expand_trigger,
-        Some(v) => {
-            let s = v.as_string().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{prefix}.expand-trigger: expected a string value. \
-                     Expected: one of: click, hover."
-                )
-            })?;
-            ExpandTrigger::from_str(s)?
-        }
-    };
-
-    let hover_delay = children
-        .get_arg("hover-delay")
-        .and_then(|v| v.as_integer())
-        .and_then(|v| u64::try_from(v).ok())
-        .unwrap_or(defaults.hover_delay);
-
-    let expand = match children.get_arg("expand") {
-        None => defaults.expand,
-        Some(v) => v.as_bool().ok_or_else(|| {
-            anyhow::anyhow!("{prefix}.expand: expected a boolean value. Expected: #true or #false.")
-        })?,
-    };
-
-    let expand_keybind = children
-        .get_arg("expand-keybind")
-        .and_then(|v| v.as_string())
-        .map(|s| s.to_string());
-
-    let animation = match children.get("animation") {
-        None => AnimationConfig::default(),
-        Some(anim_node) => parse_animation_node(anim_node, &prefix)?,
-    };
-
-    let modules = parse_bar_modules(children)?;
-
-    Ok(BarConfig {
-        name: name.to_string(),
-        output,
-        edge,
-        collapsed_width,
-        expanded_width,
-        expand,
-        expand_trigger,
-        hover_delay,
-        expand_keybind,
-        animation,
-        modules,
-    })
 }
 
 fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>> {
@@ -230,98 +84,10 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
     Ok(result)
 }
 
-/// Parse an `animation { expand-ms N collapse-ms N }` KDL node into an `AnimationConfig`.
-///
-/// `prefix` is prepended in error messages (e.g. `"bar"` → `"bar.animation.expand-ms: ..."`).
-/// Returns `AnimationConfig::default()` when the node has no children block.
-fn parse_animation_node(anim_node: &KdlNode, prefix: &str) -> anyhow::Result<AnimationConfig> {
-    let Some(anim_children) = anim_node.children() else {
-        return Ok(AnimationConfig::default());
-    };
-    let defaults = AnimationConfig::default();
-
-    let expand_ms = match anim_children.get_arg("expand-ms") {
-        None => defaults.expand_ms,
-        Some(v) => {
-            let n = v.as_integer().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{prefix}.animation.expand-ms: expected a positive integer. \
-                     Expected: a duration in milliseconds, e.g. 280."
-                )
-            })?;
-            u32::try_from(n).map_err(|_| {
-                anyhow::anyhow!(
-                    "{prefix}.animation.expand-ms: expected a positive integer. \
-                     Expected: a duration in milliseconds, e.g. 280."
-                )
-            })? as f32
-        }
-    };
-
-    let collapse_ms = match anim_children.get_arg("collapse-ms") {
-        None => defaults.collapse_ms,
-        Some(v) => {
-            let n = v.as_integer().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{prefix}.animation.collapse-ms: expected a positive integer. \
-                     Expected: a duration in milliseconds, e.g. 200."
-                )
-            })?;
-            u32::try_from(n).map_err(|_| {
-                anyhow::anyhow!(
-                    "{prefix}.animation.collapse-ms: expected a positive integer. \
-                     Expected: a duration in milliseconds, e.g. 200."
-                )
-            })? as f32
-        }
-    };
-
-    Ok(AnimationConfig {
-        expand_ms,
-        collapse_ms,
-    })
-}
-
-fn parse_bar_modules(children: &KdlDocument) -> anyhow::Result<BarModules> {
-    let Some(modules_node) = children.get("modules") else {
-        return Ok(BarModules::default());
-    };
-    let Some(zone_doc) = modules_node.children() else {
-        return Ok(BarModules::default());
-    };
-    parse_bar_modules_from_doc(zone_doc)
-}
-
-/// Parse `top`, `center`, `bottom` zone nodes from a `KdlDocument`.
-/// Shared by the global `bar.modules` section and per-output `modules` overrides.
-fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Result<BarModules> {
-    let mut result = BarModules::default();
-    for zone_node in zone_doc.nodes() {
-        let zone_name = zone_node.name().value();
-        let names: Vec<String> = zone_node
-            .entries()
-            .iter()
-            .filter(|e| e.name().is_none())
-            .filter_map(|e| e.value().as_string())
-            .map(|s| s.to_string())
-            .collect();
-        match zone_name {
-            "top" => result.top = names,
-            "center" => result.center = names,
-            "bottom" => result.bottom = names,
-            other => anyhow::bail!(
-                "modules: unknown zone {other:?}. \
-                 Expected: one of: top, center, bottom."
-            ),
-        }
-    }
-    Ok(result)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ModuleParams;
+    use crate::config::{Edge, ExpandTrigger, ModuleParams};
 
     #[test]
     fn parse_full_bar_section() {
