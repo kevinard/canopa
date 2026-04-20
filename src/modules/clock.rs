@@ -169,6 +169,8 @@ impl crate::modules::Module for ClockModule {
         )
     }
 
+    // Clock keeps custom views: collapsed renders icon + time in a column and
+    // expanded renders time plus a second date row.
     fn view_collapsed(
         &self,
         state: &crate::modules::ModuleState,
