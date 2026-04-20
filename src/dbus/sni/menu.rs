@@ -1,5 +1,4 @@
 use super::proxy::{DbusMenuProxy, Props};
-use zbus::zvariant::OwnedObjectPath;
 
 const MAX_MENU_ITEMS: usize = 256;
 const MAX_MENU_LABEL_BYTES: usize = 512;
@@ -90,11 +89,7 @@ fn owned_value_to_menu_item(
     let visible = prop_bool(&props, "visible", true);
     let icon_name = {
         let s = prop_str(&props, "icon-name");
-        if s.is_empty() {
-            None
-        } else {
-            Some(s)
-        }
+        if s.is_empty() { None } else { Some(s) }
     };
 
     Some(crate::surface::menu_popup::MenuItem {
@@ -165,92 +160,6 @@ pub async fn send_menu_event(
         .await
 }
 
-/// Key for the menu layout watcher subscription, ensuring it is unique per
-/// (service, menu_path) pair.
-struct MenuWatchKey {
-    conn: zbus::Connection,
-    service: String,
-    menu_path: OwnedObjectPath,
-}
-
-impl std::hash::Hash for MenuWatchKey {
-    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
-        "menu-layout-watcher".hash(h);
-        self.service.hash(h);
-        self.menu_path.as_str().hash(h);
-    }
-}
-
-enum MenuWatchState {
-    Init,
-    Watching,
-}
-
-/// Returns an iced Subscription that listens for `LayoutUpdated` and
-/// `ItemsPropertiesUpdated` signals on the given DBusMenu path.
-/// Emits `Message::MenuLayoutChanged` when the layout changes.
-pub fn menu_layout_subscription(
-    conn: zbus::Connection,
-    service: String,
-    menu_path: OwnedObjectPath,
-) -> iced::Subscription<crate::app::Message> {
-    iced::Subscription::run_with(
-        MenuWatchKey {
-            conn,
-            service,
-            menu_path,
-        },
-        move |data: &MenuWatchKey| {
-            let conn = data.conn.clone();
-            let service = data.service.clone();
-            let menu_path = data.menu_path.clone();
-            iced::futures::stream::unfold(MenuWatchState::Init, move |state| {
-                let conn = conn.clone();
-                let service = service.clone();
-                let menu_path = menu_path.clone();
-                async move {
-                    match state {
-                        MenuWatchState::Init => {
-                            let proxy = match DbusMenuProxy::builder(&conn)
-                                .destination(service.as_str())
-                                .and_then(|b| b.path(menu_path.as_ref()))
-                            {
-                                Ok(b) => match b.build().await {
-                                    Ok(p) => p,
-                                    Err(_) => return None,
-                                },
-                                Err(_) => return None,
-                            };
-                            let mut layout_stream = match proxy.receive_layout_updated().await {
-                                Ok(s) => s,
-                                Err(_) => return None,
-                            };
-                            let mut props_stream =
-                                match proxy.receive_items_properties_updated().await {
-                                    Ok(s) => s,
-                                    Err(_) => return None,
-                                };
-                            use iced::futures::StreamExt;
-                            tokio::select! {
-                                _ = layout_stream.next() => {}
-                                _ = props_stream.next() => {}
-                            }
-                            Some((
-                                crate::app::Message::MenuLayoutChanged {
-                                    service: service.clone(),
-                                    menu_path: menu_path.clone(),
-                                },
-                                MenuWatchState::Watching,
-                            ))
-                        }
-                        MenuWatchState::Watching => None,
-                    }
-                }
-            })
-        },
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +215,9 @@ mod tests {
         let items = limit_menu_items(children);
         assert_eq!(items.len(), MAX_MENU_ITEMS);
         assert_eq!(items[0].id, "0");
-        assert_eq!(items[MAX_MENU_ITEMS - 1].id, (MAX_MENU_ITEMS - 1).to_string());
+        assert_eq!(
+            items[MAX_MENU_ITEMS - 1].id,
+            (MAX_MENU_ITEMS - 1).to_string()
+        );
     }
 }

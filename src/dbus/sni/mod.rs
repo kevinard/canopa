@@ -11,8 +11,10 @@ pub mod host;
 pub(super) mod menu;
 pub(super) mod pixmap;
 pub(crate) mod proxy;
-// pub mod subscription;
+pub mod subscription;
+
+pub use subscription::{menu_layout_subscription, sni_subscription};
 
 // Re-exports for future use when sub-modules stabilise.
 // Uncomment when callers are updated to prefer the sni:: prefix:
-// pub use host::{TrayEvent, TrayItem, ItemStatus, sni_subscription, menu_layout_subscription};
+// pub use host::{ItemStatus, TrayEvent, TrayItem};

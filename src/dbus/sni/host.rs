@@ -1,9 +1,11 @@
 use zbus::zvariant::OwnedObjectPath;
 
+pub use super::menu::{fetch_menu, send_menu_event};
+use super::pixmap::{
+    MAX_RETAINED_PIXMAP_BYTES, MAX_RETAINED_PIXMAP_COUNT, retain_pixmaps_with_budget,
+};
 pub(crate) use super::pixmap::{argb_to_rgba, pick_best_pixmap};
-use super::pixmap::{MAX_RETAINED_PIXMAP_BYTES, MAX_RETAINED_PIXMAP_COUNT, retain_pixmaps_with_budget};
 use super::proxy::*;
-pub use super::menu::{fetch_menu, menu_layout_subscription, send_menu_event};
 
 /// A live SNI tray item, fully resolved from D-Bus properties.
 #[derive(Debug, Clone)]
@@ -156,16 +158,6 @@ pub async fn call_scroll(
     proxy.scroll(delta, orientation).await
 }
 
-// -- Iced subscription --------------------------------------------------------
-
-struct SniConnData(zbus::Connection);
-
-impl std::hash::Hash for SniConnData {
-    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
-        "sni-subscription".hash(h);
-    }
-}
-
 /// Incremental tray change event emitted by the SNI subscription.
 #[derive(Debug, Clone)]
 pub enum TrayEvent {
@@ -175,51 +167,6 @@ pub enum TrayEvent {
     ItemAdded(TrayItem),
     /// An item was removed or became Passive; keyed by the D-Bus service string.
     ItemRemoved(String),
-}
-
-enum SniSubState {
-    Init,
-    Running {
-        rx: tokio::sync::mpsc::UnboundedReceiver<TrayEvent>,
-    },
-    Done,
-}
-
-/// Returns an Iced subscription that starts the SNI watcher+host on `conn`
-/// and emits `Message::TrayEvent` on every change.
-pub fn sni_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app::Message> {
-    iced::Subscription::run_with(SniConnData(conn), |data: &SniConnData| {
-        let conn = data.0.clone();
-        iced::futures::stream::unfold(SniSubState::Init, move |state| {
-            let conn = conn.clone();
-            async move {
-                match state {
-                    SniSubState::Init => {
-                        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                        tokio::spawn(async move {
-                            let _ = run_sni_task(conn, tx).await;
-                        });
-                        // Emit empty snapshot immediately so the tray module starts clean.
-                        Some((
-                            crate::app::Message::TrayEvent(TrayEvent::Snapshot(vec![])),
-                            SniSubState::Running { rx },
-                        ))
-                    }
-                    SniSubState::Running { mut rx } => match rx.recv().await {
-                        Some(event) => Some((
-                            crate::app::Message::TrayEvent(event),
-                            SniSubState::Running { rx },
-                        )),
-                        None => Some((
-                            crate::app::Message::TrayEvent(TrayEvent::Snapshot(vec![])),
-                            SniSubState::Done,
-                        )),
-                    },
-                    SniSubState::Done => None,
-                }
-            }
-        })
-    })
 }
 
 /// Parse a registered service string into (service, object_path).
@@ -245,7 +192,7 @@ fn parse_service_string(s: &str) -> (&str, &str) {
 /// 3. Fetches the initial item list.
 /// 4. Listens for item registrations/unregistrations and name disappearances.
 /// 5. Sends updated `Vec<TrayItem>` on `tx` on every change.
-async fn run_sni_task(
+pub(super) async fn run_sni_task(
     conn: zbus::Connection,
     tx: tokio::sync::mpsc::UnboundedSender<TrayEvent>,
 ) -> zbus::Error {
