@@ -3,7 +3,6 @@
 // host.rs imports them via `use super::proxy::*;`.
 
 pub(crate) type SniPixmap = (i32, i32, Vec<u8>);
-pub(super) type SniToolTip = (String, Vec<SniPixmap>, String, String);
 pub(super) type Props = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
 pub(super) type RawMenuItem = (i32, Props, Vec<zbus::zvariant::OwnedValue>);
 pub(super) type RawMenuLayout = (u32, RawMenuItem);
@@ -25,10 +24,6 @@ pub(super) trait SniItem {
 
     #[zbus(property)]
     fn icon_pixmap(&self) -> zbus::Result<Vec<(i32, i32, Vec<u8>)>>;
-
-    /// Returns (icon_name, icon_pixmap, title, description).
-    #[zbus(property)]
-    fn tool_tip(&self) -> zbus::Result<SniToolTip>;
 
     #[zbus(property)]
     fn status(&self) -> zbus::Result<String>;

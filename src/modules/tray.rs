@@ -391,7 +391,6 @@ mod tests {
             service: "org.test.App".into(),
             object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("app".into()),
-            tooltip: None,
             status: ItemStatus::Active,
             menu_path: None,
         };
@@ -407,7 +406,6 @@ mod tests {
             service: "org.test.App".into(),
             object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("app".into()),
-            tooltip: None,
             status: ItemStatus::Active,
             menu_path: None,
         };
@@ -424,7 +422,6 @@ mod tests {
             service: "org.test.App".into(),
             object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("app".into()),
-            tooltip: None,
             status: ItemStatus::Active,
             menu_path: Some(
                 zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap(),

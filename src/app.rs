@@ -3405,7 +3405,6 @@ mod tests {
             service: "org.test".into(),
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("test".into()),
-            tooltip: None,
             status: ItemStatus::Active,
             menu_path: None,
         };
@@ -3434,7 +3433,6 @@ mod tests {
             service: "org.old".into(),
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("old".into()),
-            tooltip: None,
             status: ItemStatus::Active,
             menu_path: None,
         };
@@ -3447,7 +3445,6 @@ mod tests {
             service: "org.new".into(),
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("new".into()),
-            tooltip: None,
             status: ItemStatus::Active,
             menu_path: None,
         };
@@ -3486,7 +3483,6 @@ mod tests {
             service: "org.a".into(),
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("test-a".into()),
-            tooltip: None,
             status: ItemStatus::Active,
             menu_path: None,
         };
@@ -3494,7 +3490,6 @@ mod tests {
             service: "org.b".into(),
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("test-b".into()),
-            tooltip: None,
             status: ItemStatus::Active,
             menu_path: None,
         };

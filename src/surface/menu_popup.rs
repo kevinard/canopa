@@ -19,10 +19,8 @@ pub struct MenuItem {
     pub enabled: bool,
     pub visible: bool,
     /// MVP does not render icons; retained for future submenu support.
-    #[allow(dead_code)]
     pub icon_name: Option<String>,
     /// Submenus -- not rendered in MVP; retained for future nesting support.
-    #[allow(dead_code)]
     pub children: Vec<MenuItem>,
     pub is_separator: bool,
 }

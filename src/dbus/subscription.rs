@@ -14,7 +14,6 @@ use tokio::sync::mpsc;
 type SpawnFn<T> = Box<dyn FnOnce(mpsc::UnboundedSender<Result<T, ()>>) + Send>;
 
 /// Internal state for the generated stream.
-#[allow(dead_code)]
 enum SubState<T, M> {
     Init {
         spawn: Option<SpawnFn<T>>,
@@ -36,7 +35,6 @@ enum SubState<T, M> {
 ///
 /// The returned stream emits one `Message` per update, followed by a single
 /// `on_err` message if the backend task exits or the channel closes.
-#[allow(dead_code)]
 pub(super) fn build<T, M, Spawn, OnOk, OnErr>(
     spawn: Spawn,
     on_ok: OnOk,

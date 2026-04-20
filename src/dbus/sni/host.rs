@@ -16,10 +16,6 @@ pub struct TrayItem {
     pub(crate) object_path: OwnedObjectPath,
     /// Resolved icon — Named preferred, Pixmap as fallback.
     pub(crate) icon: TrayIcon,
-    /// Human-readable tooltip text (the `ToolTip.title` field), if any.
-    /// Populated from D-Bus but not yet rendered; will be shown on hover in a future story.
-    #[allow(dead_code)]
-    pub(crate) tooltip: Option<String>,
     pub(crate) status: ItemStatus,
     /// D-Bus path for the context menu (`org.kde.DBusMenu`), if the item exposes one.
     pub(crate) menu_path: Option<OwnedObjectPath>,
@@ -87,13 +83,6 @@ pub(crate) async fn fetch_item(
         }
     };
 
-    let tooltip = proxy
-        .tool_tip()
-        .await
-        .ok()
-        .map(|(_, _, title, _)| title)
-        .filter(|t| !t.is_empty());
-
     let status = proxy
         .status()
         .await
@@ -106,7 +95,6 @@ pub(crate) async fn fetch_item(
         service: service.to_string(),
         object_path: zbus::zvariant::OwnedObjectPath::try_from(object_path.as_str()).ok()?,
         icon,
-        tooltip,
         status,
         menu_path,
     })
@@ -326,7 +314,6 @@ mod tests {
             service: "org.kde.konsole".into(),
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("utilities-terminal".into()),
-            tooltip: None,
             status: ItemStatus::Active,
             menu_path: None,
         };

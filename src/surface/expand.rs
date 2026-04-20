@@ -24,13 +24,6 @@ impl ExpandState {
         }
     }
 
-    /// Returns `true` if the bar is fully expanded (not collapsed, not animating).
-    /// Symmetric with `is_collapsed`; will be needed when expand-dependent rendering is added.
-    #[allow(dead_code)]
-    pub fn is_expanded(&self) -> bool {
-        matches!(self, ExpandState::Expanded)
-    }
-
     /// Returns `true` while an animation tick is running.
     pub fn is_animating(&self) -> bool {
         matches!(self, ExpandState::Expanding(_) | ExpandState::Collapsing(_))
@@ -60,22 +53,6 @@ impl ExpandState {
         }
     }
 
-    /// Opacity for expanded content while animating.
-    ///
-    /// UX-DR6: 60ms delay after expand begins, then fade over remaining 220ms.
-    /// Returns 0.0 for `Collapsed` and `Collapsing` (instant switch to collapsed content).
-    /// Deferred: `iced::widget::opacity` wrapper unavailable in iced 0.14.0; see deferred-work.md.
-    #[allow(dead_code)]
-    pub fn label_opacity(&self) -> f32 {
-        match self {
-            ExpandState::Expanded => 1.0,
-            ExpandState::Expanding(p) => {
-                let elapsed_ms = p * 280.0;
-                ((elapsed_ms - 60.0) / 220.0).clamp(0.0, 1.0)
-            }
-            _ => 0.0,
-        }
-    }
 }
 
 /// Evaluate a CSS cubic-bezier at time fraction `t` ∈ [0, 1].
@@ -114,16 +91,6 @@ mod tests {
     #[test]
     fn expand_state_default_is_collapsed() {
         assert_eq!(ExpandState::default(), ExpandState::Collapsed);
-    }
-
-    #[test]
-    fn expand_state_is_expanded_true() {
-        assert!(ExpandState::Expanded.is_expanded());
-    }
-
-    #[test]
-    fn expand_state_is_expanded_false() {
-        assert!(!ExpandState::Collapsed.is_expanded());
     }
 
     // --- toggle() ---
@@ -229,34 +196,6 @@ mod tests {
             w > 48 && w < 200,
             "expected width between 48 and 200, got {w}"
         );
-    }
-
-    // --- label_opacity() ---
-
-    #[test]
-    fn label_opacity_expanded_is_one() {
-        assert_eq!(ExpandState::Expanded.label_opacity(), 1.0);
-    }
-
-    #[test]
-    fn label_opacity_collapsed_is_zero() {
-        assert_eq!(ExpandState::Collapsed.label_opacity(), 0.0);
-    }
-
-    #[test]
-    fn label_opacity_collapsing_is_zero() {
-        assert_eq!(ExpandState::Collapsing(0.5).label_opacity(), 0.0);
-    }
-
-    #[test]
-    fn label_opacity_expanding_at_zero_progress_is_zero() {
-        // No time has elapsed — still within the 60ms delay.
-        assert_eq!(ExpandState::Expanding(0.0).label_opacity(), 0.0);
-    }
-
-    #[test]
-    fn label_opacity_expanding_at_full_progress_is_one() {
-        assert_eq!(ExpandState::Expanding(1.0).label_opacity(), 1.0);
     }
 
     // --- cubic_bezier() ---
