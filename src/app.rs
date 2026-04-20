@@ -41,14 +41,14 @@ use crate::surface::input::init_expand_keybind;
 /// Module data (battery %, workspace list, etc.) lives here.
 /// Per-surface render state (expand/collapse, focus) lives in `SurfaceState` — never here.
 #[derive(Default)]
-pub struct SharedState {
-    pub modules: HashMap<ModuleId, ModuleState>,
-    pub niri: NiriState,       // populated by Message::Niri handlers (Story 4.1)
-    pub dbus: DbusConnections, // shared D-Bus handles; populated by Message::DbusReady (Story 5.1)
+struct SharedState {
+    modules: HashMap<ModuleId, ModuleState>,
+    niri: NiriState,       // populated by Message::Niri handlers (Story 4.1)
+    dbus: DbusConnections, // shared D-Bus handles; populated by Message::DbusReady (Story 5.1)
 }
 
 impl SharedState {
-    pub fn new() -> Self {
+    fn new() -> Self {
         SharedState {
             modules: HashMap::new(),
             niri: NiriState::default(),
@@ -57,25 +57,25 @@ impl SharedState {
     }
 }
 
-pub struct App {
-    pub config: Config,
-    pub shared: SharedState,
-    pub perf: Option<perf::PerfTracker>,
+pub(crate) struct App {
+    config: Config,
+    shared: SharedState,
+    perf: Option<perf::PerfTracker>,
     /// Instantiated module instances paired with their zone placement.
-    pub modules: module_store::ModuleStore,
+    modules: module_store::ModuleStore,
     /// Per-surface render state, keyed by iced::window::Id (Story 7.1).
     /// One entry per (output, bar) surface pair; lazily initialised on first event or view call.
-    pub surfaces: HashMap<iced::window::Id, SurfaceState>,
+    surfaces: HashMap<iced::window::Id, SurfaceState>,
     /// Window IDs pre-assigned to (output_name, bar_name) pairs during manual window creation
     /// (Stories 7.3, 9.1). Entry is consumed on first `surface_mut()` call for that id.
     /// Empty when using StartMode::AllScreens.
-    pub pending_surface_keys: HashMap<iced::window::Id, (String, String)>,
+    pending_surface_keys: HashMap<iced::window::Id, (String, String)>,
     /// `true` when using Background/manual mode. In this mode, niribar must open new windows
     /// when a new output is connected at runtime (StartMode::AllScreens is not active).
-    pub manual_outputs: bool,
+    manual_outputs: bool,
     /// Active popup windows: window_id -> (service, menu_path, tree, bar_name).
     /// bar_name lets view() look up the bar edge for positioning the menu widget.
-    pub menu_popups: HashMap<
+    menu_popups: HashMap<
         iced::window::Id,
         (
             String,
@@ -85,12 +85,12 @@ pub struct App {
         ),
     >,
     /// Currently hovered menu item per popup window: window_id -> item_id string.
-    pub menu_popup_hovered: HashMap<iced::window::Id, String>,
+    menu_popup_hovered: HashMap<iced::window::Id, String>,
     /// Keyboard-focused menu item per popup window: window_id -> item_id string.
-    pub menu_focused_item: HashMap<iced::window::Id, String>,
+    menu_focused_item: HashMap<iced::window::Id, String>,
     /// Last known cursor position and the window it occurred in.
     /// `None` until the first CursorMoved event. Used to anchor the tray menu popup.
-    pub last_cursor: Option<(iced::window::Id, iced::Point)>,
+    last_cursor: Option<(iced::window::Id, iced::Point)>,
 }
 
 #[to_layer_message(multi)]
@@ -329,7 +329,7 @@ fn default_params_for_type(module_type: &str) -> Option<ModuleParams> {
 impl App {
     /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
     /// Empty means `StartMode::AllScreens` handles window creation (single "all" bar case).
-    pub fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
+    pub(crate) fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
         // Initialize the in-bar keybind for expand/collapse once at startup.
         // Subsequent calls are silently ignored (OnceLock semantics).
         init_expand_keybind(config.bars[0].expand_keybind.as_deref());
@@ -419,11 +419,11 @@ impl App {
         (app, Task::batch(window_tasks))
     }
 
-    pub fn namespace() -> String {
+    pub(crate) fn namespace() -> String {
         String::from("niribar")
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         if let Some(perf) = &self.perf {
             perf.record_update(message.perf_label());
         }

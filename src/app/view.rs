@@ -9,7 +9,7 @@ use crate::surface::frame::module_frame;
 use crate::surface::layout::zone_layout;
 
 impl App {
-    pub fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
+    pub(crate) fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
         if let Some(perf) = &self.perf {
             perf.record_view(window);
         }
@@ -265,7 +265,7 @@ impl App {
             .into()
     }
 
-    pub fn style(&self, _theme: &iced::Theme) -> iced::theme::Style {
+    pub(crate) fn style(&self, _theme: &iced::Theme) -> iced::theme::Style {
         iced::theme::Style {
             background_color: iced::Color::TRANSPARENT,
             text_color: crate::theme::TEXT,

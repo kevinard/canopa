@@ -21,7 +21,7 @@ where
 }
 
 impl App {
-    pub fn subscription(&self) -> iced::Subscription<Message> {
+    pub(crate) fn subscription(&self) -> iced::Subscription<Message> {
         let has_battery = !self.modules.ids_by_kind(ModuleKind::Battery).is_empty();
         let has_network = !self.modules.ids_by_kind(ModuleKind::Network).is_empty();
         let has_volume = !self.modules.ids_by_kind(ModuleKind::Volume).is_empty();

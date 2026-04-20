@@ -2,20 +2,20 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct PerfSnapshot {
-    pub updates: BTreeMap<&'static str, u64>,
-    pub views: BTreeMap<String, u64>,
-    pub workspace_rebuilds: u64,
-    pub tray_events: u64,
+pub(super) struct PerfSnapshot {
+    pub(super) updates: BTreeMap<&'static str, u64>,
+    pub(super) views: BTreeMap<String, u64>,
+    pub(super) workspace_rebuilds: u64,
+    pub(super) tray_events: u64,
 }
 
 #[derive(Default)]
-pub struct PerfTracker {
+pub(super) struct PerfTracker {
     stats: Mutex<PerfSnapshot>,
 }
 
 impl PerfTracker {
-    pub fn from_env() -> Option<Self> {
+    pub(super) fn from_env() -> Option<Self> {
         match std::env::var("NIRIBAR_PERF") {
             Ok(value) if matches!(value.as_str(), "1" | "true" | "yes" | "on") => {
                 Some(Self::default())
@@ -24,33 +24,33 @@ impl PerfTracker {
         }
     }
 
-    pub fn record_update(&self, label: &'static str) {
+    pub(super) fn record_update(&self, label: &'static str) {
         let mut stats = self.stats.lock().expect("perf stats mutex poisoned");
         *stats.updates.entry(label).or_default() += 1;
     }
 
-    pub fn record_view(&self, window: iced::window::Id) {
+    pub(super) fn record_view(&self, window: iced::window::Id) {
         let mut stats = self.stats.lock().expect("perf stats mutex poisoned");
         *stats.views.entry(format!("{window:?}")).or_default() += 1;
     }
 
-    pub fn record_workspace_rebuild(&self) {
+    pub(super) fn record_workspace_rebuild(&self) {
         let mut stats = self.stats.lock().expect("perf stats mutex poisoned");
         stats.workspace_rebuilds += 1;
     }
 
-    pub fn record_tray_event(&self) {
+    pub(super) fn record_tray_event(&self) {
         let mut stats = self.stats.lock().expect("perf stats mutex poisoned");
         stats.tray_events += 1;
     }
 
-    pub fn snapshot_and_reset(&self) -> PerfSnapshot {
+    pub(super) fn snapshot_and_reset(&self) -> PerfSnapshot {
         let mut stats = self.stats.lock().expect("perf stats mutex poisoned");
         std::mem::take(&mut *stats)
     }
 }
 
-pub fn format_snapshot(snapshot: &PerfSnapshot) -> String {
+pub(super) fn format_snapshot(snapshot: &PerfSnapshot) -> String {
     let updates = snapshot
         .updates
         .iter()
