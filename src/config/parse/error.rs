@@ -6,13 +6,13 @@
 
 /// Build an error-path prefix for a module field.
 #[inline]
-pub(crate) fn field_path(idx: usize, module: &str, field: &str) -> String {
+pub(super) fn field_path(idx: usize, module: &str, field: &str) -> String {
     format!("modules[{idx}].{module}.{field}")
 }
 
 /// Build an error-path prefix for a module itself (no field).
 #[inline]
-pub(crate) fn module_path(idx: usize, module: &str) -> String {
+pub(super) fn module_path(idx: usize, module: &str) -> String {
     format!("modules[{idx}].{module}")
 }
 

@@ -27,7 +27,7 @@ pub(super) fn parse(doc: &KdlDocument) -> anyhow::Result<Vec<BarConfig>> {
     Ok(result)
 }
 
-pub(super) fn parse_single_bar_node(node: &KdlNode, name: &str) -> anyhow::Result<BarConfig> {
+fn parse_single_bar_node(node: &KdlNode, name: &str) -> anyhow::Result<BarConfig> {
     let prefix = format!("bar {name:?}");
     let children = match node.children() {
         Some(c) => c,
@@ -160,7 +160,7 @@ fn parse_bar_modules(children: &KdlDocument) -> anyhow::Result<BarModules> {
 
 /// Parse `top`, `center`, `bottom` zone nodes from a `KdlDocument`.
 /// Shared by the global `bar.modules` section and per-output `modules` overrides.
-pub(super) fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Result<BarModules> {
+fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Result<BarModules> {
     let mut result = BarModules::default();
     for zone_node in zone_doc.nodes() {
         let zone_name = zone_node.name().value();

@@ -12,7 +12,7 @@ use crate::modules::ModuleKind;
 /// Parse a KDL string into a fully-typed `Config`.
 ///
 /// Missing sections fall back to defaults; constraint validation happens in `validate()`.
-pub fn parse(input: &str) -> anyhow::Result<Config> {
+pub(super) fn parse(input: &str) -> anyhow::Result<Config> {
     let doc: KdlDocument = input.parse().map_err(|e| anyhow::anyhow!("config: {e}"))?;
     let bars = bars::parse(&doc)?;
     let bars = if bars.is_empty() {
