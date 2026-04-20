@@ -6,9 +6,9 @@ mod kdl;
 mod modules;
 
 use super::{
-    AnimationConfig, BarConfig, BarModules, ButtonConfig, ClockConfig, Config, Edge,
-    ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, TrayConfig,
-    WorkspaceLabelConfig, WorkspacesConfig,
+    AnimationConfig, BarConfig, BarModules, ButtonConfig, Config, Edge, ExpandTrigger,
+    ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, TrayConfig, WorkspaceLabelConfig,
+    WorkspacesConfig,
 };
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -222,7 +222,7 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         } else if module_type == "volume" {
             ModuleParams::Volume(modules::parse_volume(node, i)?)
         } else if module_type == "clock" {
-            ModuleParams::Clock(parse_clock_params(node, i)?)
+            ModuleParams::Clock(modules::parse_clock(node, i)?)
         } else if module_type == "script" {
             ModuleParams::Script(parse_script_params(node, i)?)
         } else if module_type == "button" {
@@ -241,35 +241,6 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         });
     }
     Ok(result)
-}
-
-fn parse_clock_params(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
-    let Some(children) = node.children() else {
-        return Ok(ClockConfig::default());
-    };
-
-    let defaults = ClockConfig::default();
-
-    let time_format = kdl::optional_nonempty_string_child(
-        children,
-        "time-format",
-        defaults.time_format,
-        &error::field_path(idx, "clock", "time-format"),
-        "a chrono format string such as \"%H:%M\"",
-    )?;
-
-    let date_format = kdl::optional_nonempty_string_child(
-        children,
-        "date-format",
-        defaults.date_format,
-        &error::field_path(idx, "clock", "date-format"),
-        "a chrono format string such as \"%a %d %b\"",
-    )?;
-
-    Ok(ClockConfig {
-        time_format,
-        date_format,
-    })
 }
 
 fn parse_script_params(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
