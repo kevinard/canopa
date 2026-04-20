@@ -1,4 +1,3 @@
-use crate::modules::view::{expanded_icon_label, horizontal_icon_label};
 use crate::theme;
 
 /// Runtime state for the battery module, fed by UPower D-Bus signals via app.rs.
@@ -73,6 +72,34 @@ impl BatteryModule {
     }
 }
 
+impl crate::modules::view::IconLabel for BatteryModule {
+    fn icon(&self, state: &crate::modules::ModuleState) -> String {
+        match state {
+            crate::modules::ModuleState::Battery(s) if s.is_charging => "⚡".to_owned(),
+            crate::modules::ModuleState::Battery(s) => {
+                tier_icon(charge_tier(s.percentage, self.critical_threshold)).to_owned()
+            }
+            _ => String::new(),
+        }
+    }
+
+    fn label(&self, state: &crate::modules::ModuleState) -> String {
+        match state {
+            crate::modules::ModuleState::Battery(s) => format!("{}%", s.percentage.round() as u8),
+            _ => String::new(),
+        }
+    }
+
+    fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
+        match state {
+            crate::modules::ModuleState::Battery(s) => {
+                icon_color(s.percentage, s.is_charging, self.critical_threshold)
+            }
+            _ => crate::theme::TEXT,
+        }
+    }
+}
+
 impl crate::modules::Module for BatteryModule {
     fn id(&self) -> crate::modules::ModuleId {
         self.id.clone()
@@ -142,52 +169,28 @@ impl crate::modules::Module for BatteryModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-
-        let battery = match state {
-            ModuleState::Battery(s) => s,
-            _ => return iced::widget::Space::new().into(),
-        };
-
-        let icon_str = if battery.is_charging {
-            "⚡"
-        } else {
-            tier_icon(charge_tier(battery.percentage, self.critical_threshold))
-        };
-        let color = icon_color(
-            battery.percentage,
-            battery.is_charging,
-            self.critical_threshold,
-        );
-        let pct_label = format!("{}%", battery.percentage.round() as u8);
-
-        expanded_icon_label(icon_str, color, pct_label)
+        match state {
+            crate::modules::ModuleState::Battery(_) => crate::modules::view::icon_label_view(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Expanded,
+            ),
+            _ => iced::widget::Space::new().into(),
+        }
     }
 
     fn view_horizontal(
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-
-        let battery = match state {
-            ModuleState::Battery(s) => s,
-            _ => return iced::widget::Space::new().into(),
-        };
-
-        let icon_str = if battery.is_charging {
-            "⚡"
-        } else {
-            tier_icon(charge_tier(battery.percentage, self.critical_threshold))
-        };
-        let color = icon_color(
-            battery.percentage,
-            battery.is_charging,
-            self.critical_threshold,
-        );
-        let pct_label = format!("{}%", battery.percentage.round() as u8);
-
-        horizontal_icon_label(icon_str, color, pct_label)
+        match state {
+            crate::modules::ModuleState::Battery(_) => crate::modules::view::icon_label_view(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Horizontal,
+            ),
+            _ => iced::widget::Space::new().into(),
+        }
     }
 }
 
