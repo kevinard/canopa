@@ -130,12 +130,14 @@ mod tests {
     #[test]
     fn retain_pixmaps_with_budget_skips_invalid_and_limits_count() {
         let pixmaps = vec![
-            (1, 1, vec![0u8; 3]),
+            (0, 16, vec![0u8; 64]),
             (16, 16, vec![0u8; 16 * 16 * 4]),
             (22, 22, vec![0u8; 22 * 22 * 4]),
             (32, 32, vec![0u8; 32 * 32 * 4]),
         ];
+
         let retained = retain_pixmaps_with_budget(pixmaps, 2, usize::MAX);
+
         assert_eq!(retained.len(), 2);
         assert_eq!(retained[0].0, 16);
         assert_eq!(retained[1].0, 22);
@@ -148,10 +150,14 @@ mod tests {
             (22, 22, vec![0u8; 22 * 22 * 4]),
             (32, 32, vec![0u8; 32 * 32 * 4]),
         ];
+
         let retained = retain_pixmaps_with_budget(pixmaps, 8, 16 * 16 * 4 + 22 * 22 * 4);
+
         assert_eq!(retained.len(), 2);
-        assert_eq!(retained[0].0, 16);
-        assert_eq!(retained[1].0, 22);
+        assert_eq!(
+            retained.iter().map(|p| p.2.len()).sum::<usize>(),
+            16 * 16 * 4 + 22 * 22 * 4
+        );
     }
 
     #[test]
