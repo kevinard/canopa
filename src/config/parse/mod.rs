@@ -7,7 +7,7 @@ mod modules;
 
 use super::{
     AnimationConfig, BarConfig, BarModules, Config, Edge, ExpandTrigger, ModuleConfig,
-    ModuleParams, TrayConfig,
+    ModuleParams,
 };
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -229,7 +229,7 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         } else if module_type == "workspaces" {
             ModuleParams::Workspaces(modules::parse_workspaces(node, i)?)
         } else if module_type == "tray" {
-            ModuleParams::Tray(TrayConfig)
+            ModuleParams::Tray(modules::parse_tray(node, i)?)
         } else {
             ModuleParams::None
         };

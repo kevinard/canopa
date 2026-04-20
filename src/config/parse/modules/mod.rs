@@ -3,8 +3,8 @@
 use ::kdl::KdlNode;
 
 use crate::config::{
-    BatteryConfig, ButtonConfig, ClockConfig, NetworkConfig, ScriptConfig, VolumeConfig,
-    WorkspacesConfig,
+    BatteryConfig, ButtonConfig, ClockConfig, NetworkConfig, ScriptConfig, TrayConfig,
+    VolumeConfig, WorkspacesConfig,
 };
 
 mod battery;
@@ -12,6 +12,7 @@ mod button;
 mod clock;
 mod network;
 mod script;
+mod tray;
 mod volume;
 mod workspaces;
 
@@ -33,6 +34,10 @@ pub(super) fn parse_network(node: &KdlNode, idx: usize) -> anyhow::Result<Networ
 
 pub(super) fn parse_script(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
     script::parse(node, idx)
+}
+
+pub(super) fn parse_tray(node: &KdlNode, idx: usize) -> anyhow::Result<TrayConfig> {
+    tray::parse(node, idx)
 }
 
 pub(super) fn parse_volume(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> {
