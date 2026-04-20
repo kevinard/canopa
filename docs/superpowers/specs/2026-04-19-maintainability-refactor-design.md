@@ -176,6 +176,10 @@ Required after the surface, menu, tray, and module extractions in Phase 5. Cover
 - Unit tests enforce the bounds: oversize pixmap rejected, wrong `w*h*4` length rejected, excess menu items truncated, label length capped.
 - Command-execution boundary (`src/command.rs`) remains the single shell-out path.
 
+### Phase 4 audit
+
+Audit ran the requested boundary checks with `rtk grep -Rn -E "(width|height)\s*\*\s*(height|width)\s*\*\s*4" src/ | rtk grep -v dbus/sni/pixmap.rs` and `rtk grep -Rn "max_menu_items\|max_label_len\|MAX_PIXMAP" src/ | rtk grep -v "dbus/sni/\(pixmap\|menu\).rs"`. The first command only surfaced references in the spec/planning docs, not outside the SNI boundary code; the second command returned no matches outside `dbus/sni/pixmap.rs` and `dbus/sni/menu.rs`.
+
 ## Non-goals
 
 - No new runtime dependencies.
