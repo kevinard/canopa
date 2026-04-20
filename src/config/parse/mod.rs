@@ -8,7 +8,7 @@ mod modules;
 use super::{
     AnimationConfig, BarConfig, BarModules, ButtonConfig, ClockConfig, Config, Edge,
     ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, TrayConfig,
-    VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    WorkspaceLabelConfig, WorkspacesConfig,
 };
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -220,7 +220,7 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         } else if module_type == "network" {
             ModuleParams::Network(NetworkConfig)
         } else if module_type == "volume" {
-            ModuleParams::Volume(parse_volume_params(node, i)?)
+            ModuleParams::Volume(modules::parse_volume(node, i)?)
         } else if module_type == "clock" {
             ModuleParams::Clock(parse_clock_params(node, i)?)
         } else if module_type == "script" {
@@ -241,21 +241,6 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         });
     }
     Ok(result)
-}
-
-fn parse_volume_params(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> {
-    let Some(children) = node.children() else {
-        return Ok(VolumeConfig::default());
-    };
-    let step = kdl::optional_u8_range_child(
-        children,
-        "step",
-        VolumeConfig::default().step,
-        1,
-        100,
-        &error::field_path(idx, "volume", "step"),
-    )?;
-    Ok(VolumeConfig { step })
 }
 
 fn parse_clock_params(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
