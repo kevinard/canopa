@@ -2,10 +2,11 @@
 
 use ::kdl::KdlNode;
 
-use crate::config::{BatteryConfig, ClockConfig, VolumeConfig};
+use crate::config::{BatteryConfig, ClockConfig, ScriptConfig, VolumeConfig};
 
 mod battery;
 mod clock;
+mod script;
 mod volume;
 
 pub(super) fn parse_battery(node: &KdlNode, idx: usize) -> anyhow::Result<BatteryConfig> {
@@ -14,6 +15,10 @@ pub(super) fn parse_battery(node: &KdlNode, idx: usize) -> anyhow::Result<Batter
 
 pub(super) fn parse_clock(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
     clock::parse(node, idx)
+}
+
+pub(super) fn parse_script(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
+    script::parse(node, idx)
 }
 
 pub(super) fn parse_volume(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> {
