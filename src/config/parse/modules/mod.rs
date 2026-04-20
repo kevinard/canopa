@@ -3,12 +3,14 @@
 use ::kdl::KdlNode;
 
 use crate::config::{
-    BatteryConfig, ButtonConfig, ClockConfig, ScriptConfig, VolumeConfig, WorkspacesConfig,
+    BatteryConfig, ButtonConfig, ClockConfig, NetworkConfig, ScriptConfig, VolumeConfig,
+    WorkspacesConfig,
 };
 
 mod battery;
 mod button;
 mod clock;
+mod network;
 mod script;
 mod volume;
 mod workspaces;
@@ -23,6 +25,10 @@ pub(super) fn parse_button(node: &KdlNode, idx: usize) -> anyhow::Result<ButtonC
 
 pub(super) fn parse_clock(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
     clock::parse(node, idx)
+}
+
+pub(super) fn parse_network(node: &KdlNode, idx: usize) -> anyhow::Result<NetworkConfig> {
+    network::parse(node, idx)
 }
 
 pub(super) fn parse_script(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {

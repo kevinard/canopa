@@ -7,7 +7,7 @@ mod modules;
 
 use super::{
     AnimationConfig, BarConfig, BarModules, Config, Edge, ExpandTrigger, ModuleConfig,
-    ModuleParams, NetworkConfig, TrayConfig,
+    ModuleParams, TrayConfig,
 };
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -217,7 +217,7 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
         let params = if module_type == "battery" {
             ModuleParams::Battery(modules::parse_battery(node, i)?)
         } else if module_type == "network" {
-            ModuleParams::Network(NetworkConfig)
+            ModuleParams::Network(modules::parse_network(node, i)?)
         } else if module_type == "volume" {
             ModuleParams::Volume(modules::parse_volume(node, i)?)
         } else if module_type == "clock" {
