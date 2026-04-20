@@ -1,6 +1,6 @@
 use zbus::zvariant::OwnedObjectPath;
 
-pub use super::menu::{fetch_menu, send_menu_event};
+pub(crate) use super::menu::{fetch_menu, send_menu_event};
 use super::pixmap::{
     MAX_RETAINED_PIXMAP_BYTES, MAX_RETAINED_PIXMAP_COUNT, retain_pixmaps_with_budget,
 };
@@ -11,23 +11,23 @@ use super::proxy::*;
 #[derive(Debug, Clone)]
 pub struct TrayItem {
     /// D-Bus service name, e.g. `"org.kde.konsole"` or `":1.42"`.
-    pub service: String,
+    pub(crate) service: String,
     /// Object path the item is registered at, e.g. `"/StatusNotifierItem"`.
-    pub object_path: OwnedObjectPath,
+    pub(crate) object_path: OwnedObjectPath,
     /// Resolved icon — Named preferred, Pixmap as fallback.
-    pub icon: TrayIcon,
+    pub(crate) icon: TrayIcon,
     /// Human-readable tooltip text (the `ToolTip.title` field), if any.
     /// Populated from D-Bus but not yet rendered; will be shown on hover in a future story.
     #[allow(dead_code)]
-    pub tooltip: Option<String>,
-    pub status: ItemStatus,
+    pub(crate) tooltip: Option<String>,
+    pub(crate) status: ItemStatus,
     /// D-Bus path for the context menu (`org.kde.DBusMenu`), if the item exposes one.
-    pub menu_path: Option<OwnedObjectPath>,
+    pub(crate) menu_path: Option<OwnedObjectPath>,
 }
 
 /// Resolved icon data for a tray item.
 #[derive(Debug, Clone)]
-pub enum TrayIcon {
+pub(crate) enum TrayIcon {
     /// XDG icon theme name. Render via icon theme lookup at display time.
     Named(String),
     /// Raw ARGB32 pixmap data: list of (width, height, bytes) at different sizes.
@@ -37,7 +37,7 @@ pub enum TrayIcon {
 
 /// SNI item visibility status.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ItemStatus {
+pub(crate) enum ItemStatus {
     /// Normal visible state.
     Active,
     /// Item requests to be hidden. Render nothing.
@@ -47,7 +47,7 @@ pub enum ItemStatus {
 }
 
 impl ItemStatus {
-    pub fn from_str(s: &str) -> Self {
+    fn from_str(s: &str) -> Self {
         match s {
             "Passive" => ItemStatus::Passive,
             "NeedsAttention" => ItemStatus::NeedsAttention,
@@ -59,7 +59,7 @@ impl ItemStatus {
 /// Fetch the current state of one SNI item, building a `TrayItem`.
 ///
 /// Returns `None` on any proxy error (item may have disappeared).
-pub async fn fetch_item(
+pub(crate) async fn fetch_item(
     conn: &zbus::Connection,
     service: &str,
     object_path: &zbus::zvariant::ObjectPath<'_>,
@@ -115,7 +115,7 @@ pub async fn fetch_item(
 // -- D-Bus call helpers -------------------------------------------------------
 
 /// Call `Activate(0, 0)` on an SNI item. Errors are silently ignored.
-pub async fn call_activate(
+pub(crate) async fn call_activate(
     conn: &zbus::Connection,
     service: &str,
     object_path: &zbus::zvariant::OwnedObjectPath,
@@ -129,7 +129,7 @@ pub async fn call_activate(
 }
 
 /// Call `SecondaryActivate(0, 0)` on an SNI item.
-pub async fn call_secondary_activate(
+pub(crate) async fn call_secondary_activate(
     conn: &zbus::Connection,
     service: &str,
     object_path: &zbus::zvariant::OwnedObjectPath,
@@ -143,7 +143,7 @@ pub async fn call_secondary_activate(
 }
 
 /// Call `Scroll(delta, orientation)` on an SNI item.
-pub async fn call_scroll(
+pub(crate) async fn call_scroll(
     conn: &zbus::Connection,
     service: &str,
     object_path: &zbus::zvariant::OwnedObjectPath,

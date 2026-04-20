@@ -23,7 +23,7 @@ fn build_volume_stream(
 
 /// Returns an Iced subscription for volume state via PulseAudio compat layer.
 /// Emits Unavailable if PA socket is not reachable. No zbus connection needed.
-pub fn volume_subscription() -> iced::Subscription<crate::app::Message> {
+pub(crate) fn volume_subscription() -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(VolumeConnData, build_volume_stream)
 }
 

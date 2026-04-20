@@ -63,7 +63,9 @@ fn build_battery_stream(
 /// and emits `Message::Battery(BatteryEvent)` on each state change.
 ///
 /// Emits `BatteryEvent::Unavailable` (once) if UPower is unreachable, then terminates.
-pub fn battery_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app::Message> {
+pub(crate) fn battery_subscription(
+    conn: zbus::Connection,
+) -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(BatteryConnData(conn), build_battery_stream)
 }
 

@@ -15,17 +15,17 @@ pub struct DbusConnections {
     /// Session bus handle for UPower and WirePlumber.
     /// `None` if the session bus was unavailable at startup.
     /// Used by Stories 5.2 (battery) and 5.4 (volume).
-    pub session: Option<zbus::Connection>,
+    pub(crate) session: Option<zbus::Connection>,
     /// System bus handle for NetworkManager.
     /// `None` if the system bus was unavailable at startup.
     /// Used by Story 5.3 (network).
-    pub system: Option<zbus::Connection>,
+    pub(crate) system: Option<zbus::Connection>,
 }
 
 impl DbusConnections {
     /// Attempt to connect to both buses.
     /// Never panics — unavailable buses yield `None` (UX-DR16 silent omission).
-    pub async fn connect() -> Self {
+    async fn connect() -> Self {
         let session = zbus::Connection::session().await.ok();
         let system = zbus::Connection::system().await.ok();
         Self { session, system }
@@ -38,7 +38,7 @@ impl DbusConnections {
 /// The unique ID `DbusInitId` prevents collision with `niri_subscription()` which
 /// also uses `Subscription::run_with` with `()`. (Architecture rule: every subscription
 /// uses a distinct ID via a named type.)
-pub fn dbus_init_subscription() -> iced::Subscription<crate::app::Message> {
+pub(crate) fn dbus_init_subscription() -> iced::Subscription<crate::app::Message> {
     use iced::futures::stream;
 
     #[derive(Hash)]

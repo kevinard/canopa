@@ -2,11 +2,11 @@
 // The proxy macro generates <TraitName>Proxy types in this module.
 // host.rs imports them via `use super::proxy::*;`.
 
-pub type SniPixmap = (i32, i32, Vec<u8>);
-pub(crate) type SniToolTip = (String, Vec<SniPixmap>, String, String);
-pub(crate) type Props = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
-pub(crate) type RawMenuItem = (i32, Props, Vec<zbus::zvariant::OwnedValue>);
-pub(crate) type RawMenuLayout = (u32, RawMenuItem);
+pub(crate) type SniPixmap = (i32, i32, Vec<u8>);
+pub(super) type SniToolTip = (String, Vec<SniPixmap>, String, String);
+pub(super) type Props = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
+pub(super) type RawMenuItem = (i32, Props, Vec<zbus::zvariant::OwnedValue>);
+pub(super) type RawMenuLayout = (u32, RawMenuItem);
 
 // -- SNI item D-Bus proxy -----------------------------------------------------
 
@@ -15,7 +15,7 @@ pub(crate) type RawMenuLayout = (u32, RawMenuItem);
     default_service = "org.kde.StatusNotifierItem",
     default_path = "/StatusNotifierItem"
 )]
-pub(crate) trait SniItem {
+pub(super) trait SniItem {
     fn activate(&self, x: i32, y: i32) -> zbus::Result<()>;
     fn secondary_activate(&self, x: i32, y: i32) -> zbus::Result<()>;
     fn scroll(&self, delta: i32, orientation: &str) -> zbus::Result<()>;
@@ -53,7 +53,7 @@ pub(crate) trait SniItem {
     default_service = "org.kde.StatusNotifierWatcher",
     default_path = "/StatusNotifierWatcher"
 )]
-pub(crate) trait SniWatcher {
+pub(super) trait SniWatcher {
     fn register_status_notifier_host(&self, service: &str) -> zbus::Result<()>;
 
     #[zbus(property)]
@@ -73,7 +73,7 @@ pub(crate) trait SniWatcher {
     default_service = "com.canonical.dbusmenu",
     default_path = "/MenuBar"
 )]
-pub(crate) trait DbusMenu {
+pub(super) trait DbusMenu {
     /// Fetch the full menu layout.
     /// Returns (revision, root_item) where root_item is (id: i32, properties: a{sv}, children: av).
     fn get_layout(

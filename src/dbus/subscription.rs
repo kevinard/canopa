@@ -37,7 +37,7 @@ enum SubState<T, M> {
 /// The returned stream emits one `Message` per update, followed by a single
 /// `on_err` message if the backend task exits or the channel closes.
 #[allow(dead_code)]
-pub fn build<T, M, Spawn, OnOk, OnErr>(
+pub(super) fn build<T, M, Spawn, OnOk, OnErr>(
     spawn: Spawn,
     on_ok: OnOk,
     on_err: OnErr,

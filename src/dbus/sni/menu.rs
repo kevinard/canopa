@@ -106,7 +106,7 @@ fn owned_value_to_menu_item(
 /// Fetch a DBusMenu layout from `menu_path` on `service` and convert it to a `MenuTree`.
 ///
 /// Returns `None` if the menu D-Bus call fails.
-pub async fn fetch_menu(
+pub(crate) async fn fetch_menu(
     conn: &zbus::Connection,
     service: &str,
     menu_path: &zbus::zvariant::OwnedObjectPath,
@@ -139,7 +139,7 @@ pub async fn fetch_menu(
 }
 
 /// Send `Event("clicked")` to the DBusMenu for the selected item.
-pub async fn send_menu_event(
+pub(crate) async fn send_menu_event(
     conn: &zbus::Connection,
     service: &str,
     menu_path: &zbus::zvariant::OwnedObjectPath,

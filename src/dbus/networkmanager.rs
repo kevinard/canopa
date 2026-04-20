@@ -93,7 +93,9 @@ fn build_network_stream(
 
 /// Returns an Iced subscription for network state.
 /// Tries NetworkManager first; falls back to systemd-networkd; emits Unavailable if both absent.
-pub fn network_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app::Message> {
+pub(crate) fn network_subscription(
+    conn: zbus::Connection,
+) -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(NetworkConnData(conn), build_network_stream)
 }
 

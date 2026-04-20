@@ -13,7 +13,7 @@ pub(super) mod pixmap;
 pub(crate) mod proxy;
 pub mod subscription;
 
-pub use subscription::{menu_layout_subscription, sni_subscription};
+pub(crate) use subscription::{menu_layout_subscription, sni_subscription};
 
 // Re-exports for future use when sub-modules stabilise.
 // Uncomment when callers are updated to prefer the sni:: prefix:

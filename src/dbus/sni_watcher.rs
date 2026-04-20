@@ -4,13 +4,13 @@ use tokio::sync::Mutex;
 use zbus::{interface, object_server::SignalEmitter};
 
 #[derive(Default)]
-pub struct StatusNotifierWatcher {
-    pub items: Arc<Mutex<Vec<String>>>,
-    pub hosts: Arc<Mutex<Vec<String>>>,
+struct StatusNotifierWatcher {
+    items: Arc<Mutex<Vec<String>>>,
+    hosts: Arc<Mutex<Vec<String>>>,
 }
 
 impl StatusNotifierWatcher {
-    pub fn new() -> Self {
+    fn new() -> Self {
         StatusNotifierWatcher::default()
     }
 }
@@ -92,7 +92,7 @@ impl StatusNotifierWatcher {
 /// the caller falls back to host-only mode.
 ///
 /// On success, returns `Some(items_handle)` — the shared item list.
-pub async fn start_watcher(
+pub(super) async fn start_watcher(
     conn: &zbus::Connection,
 ) -> zbus::Result<Option<Arc<Mutex<Vec<String>>>>> {
     let watcher = StatusNotifierWatcher::new();

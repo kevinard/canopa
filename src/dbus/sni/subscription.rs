@@ -42,7 +42,9 @@ fn build_sni_stream(
 
 /// Returns an Iced subscription that starts the SNI watcher+host on `conn`
 /// and emits `Message::TrayEvent` on every change.
-pub fn sni_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app::Message> {
+pub(crate) fn sni_subscription(
+    conn: zbus::Connection,
+) -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(SniConnData(conn), build_sni_stream)
 }
 
@@ -125,7 +127,7 @@ fn build_menu_layout_stream(
 /// Returns an iced Subscription that listens for `LayoutUpdated` and
 /// `ItemsPropertiesUpdated` signals on the given DBusMenu path.
 /// Emits `Message::MenuLayoutChanged` when the layout changes.
-pub fn menu_layout_subscription(
+pub(crate) fn menu_layout_subscription(
     conn: zbus::Connection,
     service: String,
     menu_path: OwnedObjectPath,
