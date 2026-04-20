@@ -183,3 +183,394 @@ pub(super) fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Resu
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{Edge, ExpandTrigger};
+    use crate::config::parse::parse;
+
+    #[test]
+    fn parse_full_bar_section() {
+        let kdl = r#"
+bar "main" {
+    edge "right"
+    collapsed-width 56
+    expanded-width 240
+}
+"#;
+        let config = parse(kdl).unwrap();
+        assert!(matches!(config.bars[0].edge, Edge::Right));
+        assert_eq!(config.bars[0].collapsed_width, 56);
+        assert_eq!(config.bars[0].expanded_width, 240);
+    }
+
+    #[test]
+    fn parse_edge_left() {
+        let kdl = r#"bar "main" { edge "left" }"#;
+        let config = parse(kdl).unwrap();
+        assert!(matches!(config.bars[0].edge, Edge::Left));
+    }
+
+    #[test]
+    fn parse_unknown_edge_errors() {
+        let kdl = r#"bar "main" { edge "diagonal" }"#;
+        assert!(parse(kdl).is_err());
+    }
+
+    #[test]
+    fn parse_empty_string_uses_defaults() {
+        let config = parse("").unwrap();
+        assert!(matches!(config.bars[0].edge, Edge::Left));
+        assert_eq!(config.bars[0].collapsed_width, 48);
+        assert_eq!(config.bars[0].expanded_width, 200);
+    }
+
+    #[test]
+    fn parse_bar_without_children_uses_defaults() {
+        // A named bar node with no children block -- falls back to defaults for that bar.
+        let config = parse(r#"bar "main""#).unwrap();
+        assert_eq!(config.bars[0].collapsed_width, 48);
+    }
+
+    #[test]
+    fn unknown_edge_error_message() {
+        let kdl = r#"bar "main" { edge "diagonal" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(".edge:"),
+            "expected '.edge:' in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn wrong_type_edge_error_message() {
+        let kdl = r#"bar "main" { edge 42 }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(".edge:"),
+            "expected '.edge:' in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_expand_trigger_hover() {
+        let kdl = r#"bar "main" { expand-trigger "hover" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].expand_trigger, ExpandTrigger::Hover);
+    }
+
+    #[test]
+    fn parse_expand_trigger_click() {
+        let kdl = r#"bar "main" { expand-trigger "click" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].expand_trigger, ExpandTrigger::Click);
+    }
+
+    #[test]
+    fn parse_expand_trigger_defaults_to_click() {
+        let config = parse("").unwrap();
+        assert_eq!(config.bars[0].expand_trigger, ExpandTrigger::Click);
+    }
+
+    #[test]
+    fn parse_hover_delay() {
+        let kdl = r#"bar "main" { hover-delay 200 }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].hover_delay, 200);
+    }
+
+    #[test]
+    fn parse_hover_delay_defaults_to_zero() {
+        let config = parse("").unwrap();
+        assert_eq!(config.bars[0].hover_delay, 0);
+    }
+
+    #[test]
+    fn parse_expand_keybind() {
+        let kdl = r#"bar "main" { expand-keybind "Super+e" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].expand_keybind, Some("Super+e".to_string()));
+    }
+
+    #[test]
+    fn parse_expand_keybind_defaults_to_none() {
+        let config = parse("").unwrap();
+        assert_eq!(config.bars[0].expand_keybind, None);
+    }
+
+    #[test]
+    fn parse_bar_without_expand_keybind_uses_none() {
+        let kdl = r#"bar "main" { edge "left" }"#;
+        let config = parse(kdl).unwrap();
+        assert!(config.bars[0].expand_keybind.is_none());
+    }
+
+    #[test]
+    fn parse_expand_false_disables_expand() {
+        let kdl = r#"bar "main" { expand #false }"#;
+        let config = parse(kdl).unwrap();
+        assert!(!config.bars[0].expand);
+    }
+
+    #[test]
+    fn parse_expand_true_enables_expand() {
+        let kdl = r#"bar "main" { expand #true }"#;
+        let config = parse(kdl).unwrap();
+        assert!(config.bars[0].expand);
+    }
+
+    #[test]
+    fn parse_expand_defaults_to_true() {
+        let config = parse("").unwrap();
+        assert!(config.bars[0].expand);
+    }
+
+    #[test]
+    fn parse_expand_wrong_type_errors() {
+        let kdl = r#"bar "main" { expand "yes" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(".expand:"),
+            "expected '.expand:' in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_unknown_expand_trigger_errors() {
+        let kdl = r#"bar "main" { expand-trigger "double-click" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(".expand-trigger:"),
+            "expected '.expand-trigger:' in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_named_bar_section() {
+        let kdl = r#"bar "main" { edge "right" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars.len(), 1);
+        assert_eq!(config.bars[0].name, "main");
+        assert_eq!(config.bars[0].output, "all"); // default
+        assert!(matches!(config.bars[0].edge, Edge::Right));
+    }
+
+    #[test]
+    fn parse_bar_output_field() {
+        let kdl = r#"bar "side" { output "DP-1" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].name, "side");
+        assert_eq!(config.bars[0].output, "DP-1");
+    }
+
+    #[test]
+    fn parse_multiple_named_bar_sections() {
+        let kdl = r#"
+bar "main" { output "all" }
+bar "top-strip" {
+    output "DP-1"
+    edge "top"
+}
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars.len(), 2);
+        assert_eq!(config.bars[0].name, "main");
+        assert_eq!(config.bars[0].output, "all");
+        assert_eq!(config.bars[1].name, "top-strip");
+        assert_eq!(config.bars[1].output, "DP-1");
+        assert!(matches!(config.bars[1].edge, Edge::Top));
+    }
+
+    #[test]
+    fn parse_bar_missing_name_errors() {
+        // Unnamed bar node (no positional string argument) must error.
+        let kdl = r#"bar { edge "left" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("missing name"),
+            "expected 'missing name' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_bar_defaults_output_to_all() {
+        let kdl = r#"bar "main" { }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].output, "all");
+    }
+
+    #[test]
+    fn parse_negative_collapsed_width_errors() {
+        let result = parse(r#"bar "main" { collapsed-width -5 }"#);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains(".collapsed-width"),
+            "error should contain '.collapsed-width': {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "error should contain 'Expected:': {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_negative_expanded_width_errors() {
+        let result = parse(r#"bar "main" { expanded-width -10 }"#);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains(".expanded-width"),
+            "error should contain '.expanded-width': {msg}"
+        );
+        assert!(
+            msg.contains("Expected:"),
+            "error should contain 'Expected:': {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_bar_with_full_settings() {
+        let kdl = r#"
+bar "full" {
+    output "DP-2"
+    edge "right"
+    collapsed-width 56
+    expanded-width 240
+    expand #true
+    expand-trigger "click"
+    hover-delay 0
+}
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].name, "full");
+        assert_eq!(config.bars[0].output, "DP-2");
+        assert!(matches!(config.bars[0].edge, Edge::Right));
+        assert_eq!(config.bars[0].collapsed_width, 56);
+        assert_eq!(config.bars[0].expanded_width, 240);
+        assert!(config.bars[0].expand);
+    }
+
+    #[test]
+    fn parse_bar_name_preserved() {
+        let kdl = r#"bar "my-custom-bar" { }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].name, "my-custom-bar");
+    }
+
+    #[test]
+    fn parse_bar_output_all_explicit() {
+        let kdl = r#"bar "main" { output "all" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].output, "all");
+    }
+
+    #[test]
+    fn parse_empty_doc_produces_single_default_bar() {
+        let config = parse("").unwrap();
+        assert_eq!(config.bars.len(), 1);
+        assert_eq!(config.bars[0].name, "main");
+        assert_eq!(config.bars[0].output, "all");
+    }
+
+    #[test]
+    fn parse_two_bars_different_outputs() {
+        let kdl = r#"
+bar "left" { output "eDP-1" edge "left" }
+bar "right" { output "DP-1" edge "right" }
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars.len(), 2);
+        assert_eq!(config.bars[0].output, "eDP-1");
+        assert_eq!(config.bars[1].output, "DP-1");
+    }
+
+    #[test]
+    fn parse_bar_with_modules_and_output() {
+        let kdl = r#"
+bar "main" {
+    output "eDP-1"
+    modules {
+        top "workspaces"
+        bottom "clock"
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].output, "eDP-1");
+        assert_eq!(config.bars[0].modules.top, vec!["workspaces"]);
+        assert_eq!(config.bars[0].modules.bottom, vec!["clock"]);
+    }
+
+    #[test]
+    fn parse_bar_missing_name_error_format() {
+        let kdl = r#"bar { }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("bar:"), "expected 'bar:' in error: {msg}");
+        assert!(
+            msg.contains("Expected:"),
+            "expected 'Expected:' in error: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_multiple_bars_preserves_declaration_order() {
+        let kdl = r#"
+bar "alpha" { }
+bar "beta" { }
+bar "gamma" { }
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars.len(), 3);
+        assert_eq!(config.bars[0].name, "alpha");
+        assert_eq!(config.bars[1].name, "beta");
+        assert_eq!(config.bars[2].name, "gamma");
+    }
+
+    #[test]
+    fn parse_two_bars_both_target_all() {
+        let kdl = r#"
+bar "side" { output "all" }
+bar "top" { output "all" edge "top" }
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars.len(), 2);
+        assert_eq!(config.bars[0].output, "all");
+        assert_eq!(config.bars[1].output, "all");
+        assert!(matches!(config.bars[1].edge, Edge::Left));
+    }
+
+    #[test]
+    fn parse_bar_output_field_round_trip() {
+        for output in &["all", "eDP-1", "DP-2", "HDMI-A-1"] {
+            let kdl = format!(r#"bar "main" {{ output "{output}" }}"#);
+            let config = parse(&kdl).unwrap();
+            assert_eq!(
+                &config.bars[0].output, output,
+                "output round-trip failed for {output}"
+            );
+        }
+    }
+}

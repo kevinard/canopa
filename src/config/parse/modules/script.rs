@@ -42,3 +42,124 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> 
 
     Ok(ScriptConfig { command, interval })
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::ModuleParams;
+    use crate::config::parse::parse;
+
+    #[test]
+    fn parse_script_with_command_and_interval() {
+        let kdl = r#"
+modules {
+    module "script" {
+        command "date"
+        interval 10
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.modules.len(), 1);
+        match &config.modules[0].params {
+            ModuleParams::Script(cfg) => {
+                assert_eq!(cfg.command, "date");
+                assert_eq!(cfg.interval, 10);
+            }
+            _ => panic!("expected ModuleParams::Script"),
+        }
+    }
+
+    #[test]
+    fn parse_script_defaults_interval_to_5() {
+        let kdl = r#"
+modules {
+    module "script" {
+        command "date"
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        match &config.modules[0].params {
+            ModuleParams::Script(cfg) => {
+                assert_eq!(cfg.command, "date");
+                assert_eq!(cfg.interval, 5);
+            }
+            _ => panic!("expected ModuleParams::Script"),
+        }
+    }
+
+    #[test]
+    fn parse_script_missing_command_errors() {
+        let kdl = r#"modules { module "script" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("script.command"),
+            "expected 'script.command' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_script_empty_command_errors() {
+        let kdl = r#"
+modules {
+    module "script" {
+        command ""
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("script.command"),
+            "expected 'script.command' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("must not be empty"),
+            "expected 'must not be empty' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_script_command_without_value_errors() {
+        let kdl = r#"
+modules {
+    module "script" {
+        command
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("script.command"),
+            "expected 'script.command' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("expected a string value"),
+            "expected 'expected a string value' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_script_zero_interval_errors() {
+        let kdl = r#"
+modules {
+    module "script" {
+        command "date"
+        interval 0
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("script.interval"),
+            "expected 'script.interval' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("at least 1"),
+            "expected 'at least 1' in error, got: {msg}"
+        );
+    }
+}

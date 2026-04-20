@@ -36,3 +36,135 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> 
         on_click,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::ModuleParams;
+    use crate::config::parse::parse;
+
+    #[test]
+    fn parse_button_with_all_params() {
+        let kdl = r#"
+modules {
+    module "button" {
+        label "Launch Terminal"
+        icon ">"
+        on-click "kitty"
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.modules.len(), 1);
+        match &config.modules[0].params {
+            ModuleParams::Button(cfg) => {
+                assert_eq!(cfg.label, "Launch Terminal");
+                assert_eq!(cfg.icon, ">");
+                assert_eq!(cfg.on_click, "kitty");
+            }
+            _ => panic!("expected ModuleParams::Button"),
+        }
+    }
+
+    #[test]
+    fn parse_button_missing_block_errors() {
+        // No child block at all -- distinct from a missing individual field.
+        let kdl = r#"modules { module "button" }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("button:") && msg.contains("missing required parameters block"),
+            "expected 'button: missing required parameters block' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_button_missing_label_errors() {
+        // Child block present but label node absent.
+        let kdl = r#"
+modules {
+    module "button" {
+        icon ">"
+        on-click "kitty"
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("button.label"),
+            "expected 'button.label' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_required_string_child_reports_missing_name() {
+        let kdl = r#"modules { module "button" { icon ">" on-click "kitty" } }"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("button.label"), "expected 'button.label' in error, got: {msg}");
+        assert!(
+            msg.contains("missing required parameter"),
+            "expected 'missing required parameter' in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("Expected: a string value"),
+            "expected 'Expected: a string value' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_button_missing_icon_errors() {
+        // Child block present but icon node absent.
+        let kdl = r#"
+modules {
+    module "button" {
+        label "Launch"
+        on-click "kitty"
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("button.icon"),
+            "expected 'button.icon' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_button_missing_on_click_errors() {
+        let kdl = r#"
+modules {
+    module "button" {
+        label "Launch"
+        icon ">"
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("button.on-click"),
+            "expected 'button.on-click' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_button_wrong_type_errors() {
+        let kdl = r#"
+modules {
+    module "button" {
+        label 42
+        icon ">"
+        on-click "kitty"
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("button.label"),
+            "expected 'button.label' in error, got: {msg}"
+        );
+    }
+}
