@@ -61,12 +61,12 @@ impl App {
         let sni_sub = dbus_subscription(
             has_tray,
             self.shared.dbus.session.clone(),
-            crate::dbus::sni_host::sni_subscription,
+            crate::dbus::sni::host::sni_subscription,
         );
 
         let menu_watch_sub = if let Some(conn) = self.shared.dbus.session.clone() {
             if let Some((service, menu_path, _, _)) = self.menu_popups.values().next() {
-                crate::dbus::sni_host::menu_layout_subscription(
+                crate::dbus::sni::host::menu_layout_subscription(
                     conn,
                     service.clone(),
                     menu_path.clone(),

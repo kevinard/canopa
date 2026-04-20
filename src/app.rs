@@ -152,7 +152,7 @@ pub enum Message {
     /// Global: IPC has no window context, so all surfaces toggle simultaneously.
     ToggleExpand,
     /// Incremental tray change from SNI host.
-    TrayEvent(crate::dbus::sni_host::TrayEvent),
+    TrayEvent(crate::dbus::sni::host::TrayEvent),
     /// Left-click on a tray icon -- sends Activate to the SNI item.
     TrayActivate {
         service: String,
@@ -499,9 +499,9 @@ impl App {
                         let path =
                             zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
                         if let Some(item) =
-                            crate::dbus::sni_host::fetch_item(&conn, &service, &path).await
+                            crate::dbus::sni::host::fetch_item(&conn, &service, &path).await
                         {
-                            let _ = crate::dbus::sni_host::call_activate(
+                            let _ = crate::dbus::sni::host::call_activate(
                                 &conn,
                                 &item.service,
                                 &item.object_path,
@@ -519,9 +519,9 @@ impl App {
                         let path =
                             zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
                         if let Some(item) =
-                            crate::dbus::sni_host::fetch_item(&conn, &service, &path).await
+                            crate::dbus::sni::host::fetch_item(&conn, &service, &path).await
                         {
-                            let _ = crate::dbus::sni_host::call_secondary_activate(
+                            let _ = crate::dbus::sni::host::call_secondary_activate(
                                 &conn,
                                 &item.service,
                                 &item.object_path,
@@ -543,9 +543,9 @@ impl App {
                         let path =
                             zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
                         if let Some(item) =
-                            crate::dbus::sni_host::fetch_item(&conn, &service, &path).await
+                            crate::dbus::sni::host::fetch_item(&conn, &service, &path).await
                         {
-                            let _ = crate::dbus::sni_host::call_scroll(
+                            let _ = crate::dbus::sni::host::call_scroll(
                                 &conn,
                                 &item.service,
                                 &item.object_path,
@@ -664,7 +664,7 @@ impl App {
                         .unwrap_or_default();
                     return Task::perform(
                         async move {
-                            crate::dbus::sni_host::fetch_menu(
+                            crate::dbus::sni::host::fetch_menu(
                                 &conn,
                                 &service_clone,
                                 &menu_path_clone,
@@ -758,7 +758,7 @@ impl App {
                     let svc = service.clone();
                     let mp = menu_path.clone();
                     return Task::perform(
-                        async move { crate::dbus::sni_host::fetch_menu(&conn, &svc, &mp).await },
+                        async move { crate::dbus::sni::host::fetch_menu(&conn, &svc, &mp).await },
                         move |tree_opt| {
                             if let Some(mut tree) = tree_opt {
                                 tree.anchor = anchor;
@@ -3393,7 +3393,7 @@ mod tests {
 
     #[test]
     fn tray_updated_message_stores_items_in_shared_state() {
-        use crate::dbus::sni_host::{ItemStatus, TrayIcon, TrayItem};
+        use crate::dbus::sni::host::{ItemStatus, TrayIcon, TrayItem};
         use crate::modules::ModuleId;
         use zbus::zvariant::OwnedObjectPath;
 
@@ -3412,13 +3412,13 @@ mod tests {
         };
         // Must not panic.
         let _ = app.update(Message::TrayEvent(
-            crate::dbus::sni_host::TrayEvent::Snapshot(vec![item]),
+            crate::dbus::sni::host::TrayEvent::Snapshot(vec![item]),
         ));
     }
 
     #[test]
     fn tray_snapshot_removes_existing_tray_icons_before_insert() {
-        use crate::dbus::sni_host::{ItemStatus, TrayIcon, TrayItem};
+        use crate::dbus::sni::host::{ItemStatus, TrayIcon, TrayItem};
         use crate::modules::tray::TrayIconModule;
         use zbus::zvariant::OwnedObjectPath;
 
@@ -3453,7 +3453,7 @@ mod tests {
             menu_path: None,
         };
 
-        let _ = app.handle_tray_event(crate::dbus::sni_host::TrayEvent::Snapshot(vec![new_item]));
+        let _ = app.handle_tray_event(crate::dbus::sni::host::TrayEvent::Snapshot(vec![new_item]));
 
         assert!(app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.new"));
         assert!(!app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.old"));
@@ -3462,7 +3462,7 @@ mod tests {
     #[test]
     fn tray_snapshot_handles_multiple_placeholders_after_existing_icons() {
         use crate::config::{ModuleConfig, ModuleParams, TrayConfig};
-        use crate::dbus::sni_host::{ItemStatus, TrayEvent, TrayIcon, TrayItem};
+        use crate::dbus::sni::host::{ItemStatus, TrayEvent, TrayIcon, TrayItem};
         use zbus::zvariant::OwnedObjectPath;
 
         let mut config = Config {

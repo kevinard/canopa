@@ -41,7 +41,7 @@ impl App {
         let conn = self.shared.dbus.session.clone();
         tokio::task::spawn(async move {
             if let Some(conn) = conn {
-                let _ = crate::dbus::sni_host::send_menu_event(
+                let _ = crate::dbus::sni::host::send_menu_event(
                     &conn,
                     &service,
                     &menu_path,
@@ -64,7 +64,7 @@ impl App {
                 let service = service.clone();
                 let menu_path = menu_path.clone();
                 tokio::task::spawn(async move {
-                    let _ = crate::dbus::sni_host::send_menu_event(
+                    let _ = crate::dbus::sni::host::send_menu_event(
                         &conn,
                         &service,
                         &menu_path,

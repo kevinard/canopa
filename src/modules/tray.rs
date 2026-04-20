@@ -1,4 +1,4 @@
-use crate::dbus::sni_host::{ItemStatus, TrayIcon, TrayItem};
+use crate::dbus::sni::host::{ItemStatus, TrayIcon, TrayItem};
 use crate::modules::{InteractionEvent, ModuleId, ModuleKind, ModuleState};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -135,9 +135,9 @@ pub fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Messag
         }
         TrayIcon::Pixmap(pixmaps) => {
             if let Some((w, h, argb)) =
-                crate::dbus::sni_host::pick_best_pixmap(pixmaps, ICON_SIZE as i32)
+                crate::dbus::sni::host::pick_best_pixmap(pixmaps, ICON_SIZE as i32)
             {
-                let rgba = crate::dbus::sni_host::argb_to_rgba(argb);
+                let rgba = crate::dbus::sni::host::argb_to_rgba(argb);
                 let handle = iced::widget::image::Handle::from_rgba(*w as u32, *h as u32, rgba);
                 iced::widget::image(handle)
                     .width(ICON_SIZE as u32)

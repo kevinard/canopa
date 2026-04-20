@@ -15,9 +15,9 @@ impl App {
 
     pub(super) fn handle_tray_event(
         &mut self,
-        event: crate::dbus::sni_host::TrayEvent,
+        event: crate::dbus::sni::host::TrayEvent,
     ) -> Task<Message> {
-        use crate::dbus::sni_host::{ItemStatus, TrayEvent};
+        use crate::dbus::sni::host::{ItemStatus, TrayEvent};
         use crate::modules::tray::TrayIconModule;
 
         if let Some(perf) = &self.perf {
@@ -32,7 +32,7 @@ impl App {
 
                 let tray_slots = self.find_tray_slots();
 
-                let active_items: Vec<&crate::dbus::sni_host::TrayItem> = items
+                let active_items: Vec<&crate::dbus::sni::host::TrayItem> = items
                     .iter()
                     .filter(|i| i.status != ItemStatus::Passive)
                     .collect();
