@@ -7,8 +7,8 @@ mod modules;
 
 use super::{
     AnimationConfig, BarConfig, BarModules, Config, Edge, ExpandTrigger, ModuleConfig,
-    ModuleParams,
 };
+use crate::modules::ModuleKind;
 
 /// Parse a KDL string into a fully-typed `Config`.
 ///
@@ -214,27 +214,13 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
                 .to_string()
         };
 
-        let params = if module_type == "battery" {
-            ModuleParams::Battery(modules::parse_battery(node, i)?)
-        } else if module_type == "network" {
-            ModuleParams::Network(modules::parse_network(node, i)?)
-        } else if module_type == "volume" {
-            ModuleParams::Volume(modules::parse_volume(node, i)?)
-        } else if module_type == "clock" {
-            ModuleParams::Clock(modules::parse_clock(node, i)?)
-        } else if module_type == "script" {
-            ModuleParams::Script(modules::parse_script(node, i)?)
-        } else if module_type == "button" {
-            ModuleParams::Button(modules::parse_button(node, i)?)
-        } else if module_type == "workspaces" {
-            ModuleParams::Workspaces(modules::parse_workspaces(node, i)?)
-        } else if module_type == "tray" {
-            ModuleParams::Tray(modules::parse_tray(node, i)?)
-        } else if module_type == "focused-window" {
-            ModuleParams::FocusedWindow(modules::parse_focused_window(node, i)?)
-        } else {
-            ModuleParams::None
-        };
+        let kind = ModuleKind::from_config_name(&module_type).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{}: unknown module type {module_type:?}",
+                error::module_path(i, &module_type)
+            )
+        })?;
+        let params = modules::dispatch(kind, node, i)?;
         result.push(ModuleConfig {
             name,
             module_type,
@@ -335,6 +321,7 @@ fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Result<BarModul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ModuleParams;
 
     #[test]
     fn parse_full_bar_section() {

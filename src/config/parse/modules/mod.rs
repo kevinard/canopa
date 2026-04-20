@@ -1,11 +1,10 @@
-//! Per-module parameter parsers.
+//! Per-module parameter parsers and dispatch.
 
 use ::kdl::KdlNode;
 
-use crate::config::{
-    BatteryConfig, ButtonConfig, ClockConfig, FocusedWindowConfig, NetworkConfig, ScriptConfig,
-    TrayConfig, VolumeConfig, WorkspacesConfig,
-};
+use super::error;
+use crate::config::ModuleParams;
+use crate::modules::ModuleKind;
 
 mod battery;
 mod button;
@@ -17,41 +16,29 @@ mod tray;
 mod volume;
 mod workspaces;
 
-pub(super) fn parse_battery(node: &KdlNode, idx: usize) -> anyhow::Result<BatteryConfig> {
-    battery::parse(node, idx)
-}
-
-pub(super) fn parse_button(node: &KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> {
-    button::parse(node, idx)
-}
-
-pub(super) fn parse_clock(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
-    clock::parse(node, idx)
-}
-
-pub(super) fn parse_focused_window(
+pub(super) fn dispatch(
+    kind: ModuleKind,
     node: &KdlNode,
     idx: usize,
-) -> anyhow::Result<FocusedWindowConfig> {
-    focused_window::parse(node, idx)
-}
-
-pub(super) fn parse_network(node: &KdlNode, idx: usize) -> anyhow::Result<NetworkConfig> {
-    network::parse(node, idx)
-}
-
-pub(super) fn parse_script(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
-    script::parse(node, idx)
-}
-
-pub(super) fn parse_tray(node: &KdlNode, idx: usize) -> anyhow::Result<TrayConfig> {
-    tray::parse(node, idx)
-}
-
-pub(super) fn parse_volume(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> {
-    volume::parse(node, idx)
-}
-
-pub(super) fn parse_workspaces(node: &KdlNode, idx: usize) -> anyhow::Result<WorkspacesConfig> {
-    workspaces::parse(node, idx)
+) -> anyhow::Result<ModuleParams> {
+    match kind {
+        ModuleKind::Battery => battery::parse(node, idx).map(ModuleParams::Battery),
+        ModuleKind::Clock => clock::parse(node, idx).map(ModuleParams::Clock),
+        ModuleKind::Network => network::parse(node, idx).map(ModuleParams::Network),
+        ModuleKind::Volume => volume::parse(node, idx).map(ModuleParams::Volume),
+        ModuleKind::Script => script::parse(node, idx).map(ModuleParams::Script),
+        ModuleKind::Button => button::parse(node, idx).map(ModuleParams::Button),
+        ModuleKind::Workspaces => workspaces::parse(node, idx).map(ModuleParams::Workspaces),
+        ModuleKind::FocusedWindow => {
+            focused_window::parse(node, idx).map(ModuleParams::FocusedWindow)
+        }
+        ModuleKind::Tray => tray::parse(node, idx).map(ModuleParams::Tray),
+        ModuleKind::WorkspaceItem | ModuleKind::TrayIcon => {
+            anyhow::bail!(
+                "{}: internal error: {:?} is runtime-only and cannot appear in config",
+                error::module_path(idx, kind.as_str()),
+                kind
+            )
+        }
+    }
 }
