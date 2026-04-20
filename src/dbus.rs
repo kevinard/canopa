@@ -1,7 +1,7 @@
-pub mod subscription;
 pub mod networkmanager;
 pub mod sni;
 pub mod sni_watcher;
+pub mod subscription;
 pub mod upower;
 pub mod wireplumber;
 

@@ -42,9 +42,7 @@ fn build_sni_stream(
 
 /// Returns an Iced subscription that starts the SNI watcher+host on `conn`
 /// and emits `Message::TrayEvent` on every change.
-pub(crate) fn sni_subscription(
-    conn: zbus::Connection,
-) -> iced::Subscription<crate::app::Message> {
+pub(crate) fn sni_subscription(conn: zbus::Connection) -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(SniConnData(conn), build_sni_stream)
 }
 

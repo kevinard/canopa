@@ -78,14 +78,23 @@ fn build_network_stream(
     data: &NetworkConnData,
 ) -> std::pin::Pin<Box<dyn iced::futures::Stream<Item = crate::app::Message> + Send + 'static>> {
     let conn = data.0.clone();
-    crate::dbus::subscription::build::<(NetworkConnectivity, Option<String>), crate::app::Message, _, _, _>(
+    crate::dbus::subscription::build::<
+        (NetworkConnectivity, Option<String>),
+        crate::app::Message,
+        _,
+        _,
+        _,
+    >(
         move |tx| {
             tokio::spawn(async move {
                 let _ = run_network_task(conn, tx).await;
             });
         },
         |(connectivity, label)| {
-            crate::app::Message::Network(NetworkEvent::StateChanged { connectivity, label })
+            crate::app::Message::Network(NetworkEvent::StateChanged {
+                connectivity,
+                label,
+            })
         },
         || crate::app::Message::Network(NetworkEvent::Unavailable),
     )

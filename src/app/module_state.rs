@@ -59,10 +59,7 @@ impl App {
             .focused_window_id
             .and_then(|id| self.shared.niri.windows.get(&id))
             .and_then(|w| w.title.clone());
-        let ids: Vec<_> = self
-            .modules
-            .ids_by_kind(ModuleKind::FocusedWindow)
-            .to_vec();
+        let ids: Vec<_> = self.modules.ids_by_kind(ModuleKind::FocusedWindow).to_vec();
         for id in ids {
             self.push_state_if_changed(
                 id,

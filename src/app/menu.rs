@@ -65,11 +65,7 @@ impl App {
                 let menu_path = menu_path.clone();
                 tokio::task::spawn(async move {
                     let _ = crate::dbus::sni::host::send_menu_event(
-                        &conn,
-                        &service,
-                        &menu_path,
-                        0,
-                        "closed",
+                        &conn, &service, &menu_path, 0, "closed",
                     )
                     .await;
                 });

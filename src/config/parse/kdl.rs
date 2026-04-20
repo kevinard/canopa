@@ -1,9 +1,6 @@
 use ::kdl::{KdlDocument, KdlValue};
 
-pub(super) fn first_child_value<'a>(
-    children: &'a KdlDocument,
-    name: &str,
-) -> Option<&'a KdlValue> {
+pub(super) fn first_child_value<'a>(children: &'a KdlDocument, name: &str) -> Option<&'a KdlValue> {
     children
         .get(name)
         .and_then(|node| node.entries().first())

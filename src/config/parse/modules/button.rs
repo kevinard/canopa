@@ -101,7 +101,10 @@ modules {
         let kdl = r#"modules { module "button" { icon ">" on-click "kitty" } }"#;
         let err = parse(kdl).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("button.label"), "expected 'button.label' in error, got: {msg}");
+        assert!(
+            msg.contains("button.label"),
+            "expected 'button.label' in error, got: {msg}"
+        );
         assert!(
             msg.contains("missing required parameter"),
             "expected 'missing required parameter' in error, got: {msg}"

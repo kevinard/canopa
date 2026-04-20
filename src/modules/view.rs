@@ -37,10 +37,7 @@ pub(super) trait IconLabel {
 /// │       ⚡       │  icon centred, size 16
 /// └────────────────┘
 /// ```
-pub(super) fn collapsed_icon<'a>(
-    icon: impl ToString,
-    color: iced::Color,
-) -> Element<'a, Message> {
+pub(super) fn collapsed_icon<'a>(icon: impl ToString, color: iced::Color) -> Element<'a, Message> {
     container(text(icon.to_string()).size(16).color(color))
         .width(Length::Fill)
         .height(20)

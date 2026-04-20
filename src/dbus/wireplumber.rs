@@ -35,9 +35,7 @@ fn mainloop_signal_callback(
         // SAFETY: `ml_ptr` points to the `Mainloop` stack value owned by `run_pa_thread`.
         // The callback is cleared before that function can return, and libpulse invokes it
         // while the threaded mainloop is alive.
-        let ml = unsafe {
-            &mut *(ml_ptr as *mut libpulse_binding::mainloop::threaded::Mainloop)
-        };
+        let ml = unsafe { &mut *(ml_ptr as *mut libpulse_binding::mainloop::threaded::Mainloop) };
         ml.signal(false);
     })
 }

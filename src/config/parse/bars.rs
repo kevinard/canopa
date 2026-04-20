@@ -1,7 +1,7 @@
 use ::kdl::{KdlDocument, KdlNode};
 
-use super::animation;
 use super::super::{AnimationConfig, BarConfig, BarModules, Edge, ExpandTrigger};
+use super::animation;
 
 pub(super) fn parse(doc: &KdlDocument) -> anyhow::Result<Vec<BarConfig>> {
     let mut result = Vec::new();
@@ -186,8 +186,8 @@ fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Result<BarModul
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{Edge, ExpandTrigger};
     use crate::config::parse::parse;
+    use crate::config::{Edge, ExpandTrigger};
 
     #[test]
     fn parse_full_bar_section() {

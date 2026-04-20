@@ -7,7 +7,7 @@
 //! This module encapsulates that shape so each D-Bus backend only supplies
 //! (a) the task body and (b) the message-mapping closures.
 
-use iced::futures::{stream, Stream};
+use iced::futures::{Stream, stream};
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::mpsc;
 

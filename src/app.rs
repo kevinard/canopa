@@ -896,8 +896,7 @@ mod tests {
         app.push_battery_state(42.0, false);
 
         for id in ["battery", "battery2"] {
-            let Some(ModuleState::Battery(state)) =
-                app.shared.modules.get(&ModuleId::new(id))
+            let Some(ModuleState::Battery(state)) = app.shared.modules.get(&ModuleId::new(id))
             else {
                 panic!("expected battery state for {id}");
             };
