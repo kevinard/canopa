@@ -130,8 +130,11 @@ pub async fn fetch_menu(
     let (_, root) = proxy.get_layout(0, 1, &[]).await.ok()?;
     let (_, _, children) = &root;
 
-    let items: Vec<crate::surface::menu_popup::MenuItem> =
-        children.iter().filter_map(owned_value_to_menu_item).collect();
+    let items: Vec<crate::surface::menu_popup::MenuItem> = children
+        .iter()
+        .filter_map(owned_value_to_menu_item)
+        .take(MAX_MENU_ITEMS)
+        .collect();
 
     Some(crate::surface::menu_popup::MenuTree {
         items: limit_menu_items(items),
