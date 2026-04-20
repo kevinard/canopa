@@ -1,78 +1,14 @@
 mod error;
 
-use kdl::KdlDocument;
+use ::kdl::{KdlDocument, KdlNode};
+
+mod kdl;
 
 use super::{
     AnimationConfig, BarConfig, BarModules, BatteryConfig, ButtonConfig, ClockConfig, Config, Edge,
     ExpandTrigger, ModuleConfig, ModuleParams, NetworkConfig, ScriptConfig, TrayConfig,
     VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
-
-fn first_child_value<'a>(children: &'a kdl::KdlDocument, name: &str) -> Option<&'a kdl::KdlValue> {
-    children
-        .get(name)
-        .and_then(|node| node.entries().first())
-        .map(|entry| entry.value())
-}
-
-fn required_string_child(
-    children: &kdl::KdlDocument,
-    name: &str,
-    path: &str,
-) -> anyhow::Result<String> {
-    match first_child_value(children, name).and_then(|v| v.as_string()) {
-        Some(s) => Ok(s.to_string()),
-        None => anyhow::bail!("{path}: expected a string value."),
-    }
-}
-
-fn optional_nonempty_string_child(
-    children: &kdl::KdlDocument,
-    name: &str,
-    default: String,
-    path: &str,
-    expected: &str,
-) -> anyhow::Result<String> {
-    match children.get(name) {
-        None => Ok(default),
-        Some(node) => match node.entries().first().map(|entry| entry.value()) {
-            Some(v) => match v.as_string() {
-                Some("") => anyhow::bail!("{path}: value must not be empty. Expected: {expected}."),
-                Some(s) => Ok(s.to_string()),
-                None => anyhow::bail!("{path}: expected a string value."),
-            },
-            None => anyhow::bail!("{path}: expected a string value."),
-        },
-    }
-}
-
-fn optional_u8_range_child(
-    children: &kdl::KdlDocument,
-    name: &str,
-    default: u8,
-    min: u8,
-    max: u8,
-    path: &str,
-) -> anyhow::Result<u8> {
-    match children.get(name) {
-        None => Ok(default),
-        Some(node) => match node.entries().first().map(|entry| entry.value()) {
-            Some(v) => match v.as_integer() {
-                Some(n) => match u8::try_from(n) {
-                    Ok(n) if n >= min && n <= max => Ok(n),
-                    Ok(n) => anyhow::bail!(
-                        "{path}: value {n} out of range. Expected: integer {min}–{max}."
-                    ),
-                    Err(_) => anyhow::bail!(
-                        "{path}: value {n} out of range. Expected: integer {min}–{max}."
-                    ),
-                },
-                None => anyhow::bail!("{path}: expected an integer value."),
-            },
-            None => anyhow::bail!("{path}: expected an integer value."),
-        },
-    }
-}
 
 /// Parse a KDL string into a fully-typed `Config`.
 ///
@@ -113,7 +49,7 @@ fn parse_bar_sections(doc: &KdlDocument) -> anyhow::Result<Vec<BarConfig>> {
     Ok(result)
 }
 
-fn parse_single_bar_node(node: &kdl::KdlNode, name: &str) -> anyhow::Result<BarConfig> {
+fn parse_single_bar_node(node: &KdlNode, name: &str) -> anyhow::Result<BarConfig> {
     let prefix = format!("bar {name:?}");
     let children = match node.children() {
         Some(c) => c,
@@ -306,12 +242,12 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
     Ok(result)
 }
 
-fn parse_battery_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<BatteryConfig> {
+fn parse_battery_params(node: &KdlNode, idx: usize) -> anyhow::Result<BatteryConfig> {
     // Optional `critical-threshold <int>` child node.
     let Some(children) = node.children() else {
         return Ok(BatteryConfig::default());
     };
-    let critical_threshold = optional_u8_range_child(
+    let critical_threshold = kdl::optional_u8_range_child(
         children,
         "critical-threshold",
         BatteryConfig::default().critical_threshold,
@@ -322,11 +258,11 @@ fn parse_battery_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Batte
     Ok(BatteryConfig { critical_threshold })
 }
 
-fn parse_volume_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> {
+fn parse_volume_params(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> {
     let Some(children) = node.children() else {
         return Ok(VolumeConfig::default());
     };
-    let step = optional_u8_range_child(
+    let step = kdl::optional_u8_range_child(
         children,
         "step",
         VolumeConfig::default().step,
@@ -337,14 +273,14 @@ fn parse_volume_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Volume
     Ok(VolumeConfig { step })
 }
 
-fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
+fn parse_clock_params(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
     let Some(children) = node.children() else {
         return Ok(ClockConfig::default());
     };
 
     let defaults = ClockConfig::default();
 
-    let time_format = optional_nonempty_string_child(
+    let time_format = kdl::optional_nonempty_string_child(
         children,
         "time-format",
         defaults.time_format,
@@ -352,7 +288,7 @@ fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockCo
         "a chrono format string such as \"%H:%M\"",
     )?;
 
-    let date_format = optional_nonempty_string_child(
+    let date_format = kdl::optional_nonempty_string_child(
         children,
         "date-format",
         defaults.date_format,
@@ -366,7 +302,7 @@ fn parse_clock_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ClockCo
     })
 }
 
-fn parse_script_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
+fn parse_script_params(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
     let command_path = error::field_path(idx, "script", "command");
     let children = node.children().ok_or_else(|| {
         anyhow::anyhow!("{command_path}: missing required parameter. Expected: a string value.")
@@ -375,7 +311,7 @@ fn parse_script_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Script
     if children.get("command").is_none() {
         anyhow::bail!("{command_path}: missing required parameter. Expected: a string value.");
     }
-    let command = optional_nonempty_string_child(
+    let command = kdl::optional_nonempty_string_child(
         children,
         "command",
         String::new(),
@@ -406,7 +342,7 @@ fn parse_script_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Script
     Ok(ScriptConfig { command, interval })
 }
 
-fn parse_button_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> {
+fn parse_button_params(node: &KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> {
     let button_path = error::module_path(idx, "button");
     let label_path = error::field_path(idx, "button", "label");
     let icon_path = error::field_path(idx, "button", "icon");
@@ -421,17 +357,17 @@ fn parse_button_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Button
     if children.get("label").is_none() {
         anyhow::bail!("{label_path}: missing required parameter. Expected: a string value.");
     }
-    let label = required_string_child(children, "label", &label_path)?;
+    let label = kdl::required_string_child(children, "label", &label_path)?;
 
     if children.get("icon").is_none() {
         anyhow::bail!("{icon_path}: missing required parameter. Expected: a string value.");
     }
-    let icon = required_string_child(children, "icon", &icon_path)?;
+    let icon = kdl::required_string_child(children, "icon", &icon_path)?;
 
     if children.get("on-click").is_none() {
         anyhow::bail!("{on_click_path}: missing required parameter. Expected: a string value.");
     }
-    let on_click = required_string_child(children, "on-click", &on_click_path)?;
+    let on_click = kdl::required_string_child(children, "on-click", &on_click_path)?;
 
     Ok(ButtonConfig {
         label,
@@ -440,7 +376,7 @@ fn parse_button_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Button
     })
 }
 
-fn parse_workspaces_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<WorkspacesConfig> {
+fn parse_workspaces_params(node: &KdlNode, idx: usize) -> anyhow::Result<WorkspacesConfig> {
     let mut config = WorkspacesConfig::default();
 
     let Some(children) = node.children() else {
@@ -498,7 +434,7 @@ fn parse_workspaces_params(node: &kdl::KdlNode, idx: usize) -> anyhow::Result<Wo
 ///
 /// `prefix` is prepended in error messages (e.g. `"bar"` → `"bar.animation.expand-ms: ..."`).
 /// Returns `AnimationConfig::default()` when the node has no children block.
-fn parse_animation_node(anim_node: &kdl::KdlNode, prefix: &str) -> anyhow::Result<AnimationConfig> {
+fn parse_animation_node(anim_node: &KdlNode, prefix: &str) -> anyhow::Result<AnimationConfig> {
     let Some(anim_children) = anim_node.children() else {
         return Ok(AnimationConfig::default());
     };
@@ -546,7 +482,7 @@ fn parse_animation_node(anim_node: &kdl::KdlNode, prefix: &str) -> anyhow::Resul
     })
 }
 
-fn parse_bar_modules(children: &kdl::KdlDocument) -> anyhow::Result<BarModules> {
+fn parse_bar_modules(children: &KdlDocument) -> anyhow::Result<BarModules> {
     let Some(modules_node) = children.get("modules") else {
         return Ok(BarModules::default());
     };
@@ -558,7 +494,7 @@ fn parse_bar_modules(children: &kdl::KdlDocument) -> anyhow::Result<BarModules> 
 
 /// Parse `top`, `center`, `bottom` zone nodes from a `KdlDocument`.
 /// Shared by the global `bar.modules` section and per-output `modules` overrides.
-fn parse_bar_modules_from_doc(zone_doc: &kdl::KdlDocument) -> anyhow::Result<BarModules> {
+fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Result<BarModules> {
     let mut result = BarModules::default();
     for zone_node in zone_doc.nodes() {
         let zone_name = zone_node.name().value();
