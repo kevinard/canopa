@@ -95,6 +95,10 @@ pub struct NetworkConfig;
 #[derive(Debug, Clone, Default)]
 pub struct TrayConfig;
 
+/// Configuration for the focused-window module (no user-configurable params).
+#[derive(Debug, Clone, Default)]
+pub struct FocusedWindowConfig;
+
 /// Configuration for the volume module — scroll step in percent.
 #[derive(Debug, Clone)]
 pub struct VolumeConfig {
@@ -120,6 +124,7 @@ pub enum ModuleParams {
     Button(ButtonConfig),
     Workspaces(WorkspacesConfig),
     Tray(TrayConfig),
+    FocusedWindow(FocusedWindowConfig),
 }
 
 /// A single module entry from the config, specifying name, type, and module params.

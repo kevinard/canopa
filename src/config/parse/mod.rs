@@ -230,6 +230,8 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
             ModuleParams::Workspaces(modules::parse_workspaces(node, i)?)
         } else if module_type == "tray" {
             ModuleParams::Tray(modules::parse_tray(node, i)?)
+        } else if module_type == "focused-window" {
+            ModuleParams::FocusedWindow(modules::parse_focused_window(node, i)?)
         } else {
             ModuleParams::None
         };
