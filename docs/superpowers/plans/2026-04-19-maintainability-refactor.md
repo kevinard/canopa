@@ -1690,7 +1690,7 @@ rtk cargo build
 
 **Files:** every file touched by Phases 1–4
 
-- [ ] **Step 1: Enable warnings temporarily**
+- [x] **Step 1: Enable warnings temporarily**
 
 Run:
 
@@ -1700,7 +1700,7 @@ rtk cargo clippy --all-targets -- -W dead_code -W unused_imports -W unused_varia
 
 For each dead-code warning, verify with `rtk grep` that the item really is unreferenced (some types appear in trait impls that clippy can miss), then delete.
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 ```bash
 rtk cargo test
@@ -1708,7 +1708,7 @@ rtk cargo clippy --all-targets -- -D warnings
 rtk cargo build
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 rtk git commit -am "chore: remove dead code exposed by refactor"
