@@ -8,10 +8,10 @@
 //! - `proxy`: zbus proxy trait definitions
 
 pub mod host;
+pub(super) mod pixmap;
 pub(crate) mod proxy;
 // Created in later tasks:
 // pub mod menu;
-// pub mod pixmap;
 // pub mod subscription;
 
 // Re-exports for future use when sub-modules stabilise.
