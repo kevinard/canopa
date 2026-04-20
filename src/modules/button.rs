@@ -9,7 +9,7 @@ pub enum ButtonEvent {
     Ready,
 }
 
-pub struct ButtonModule {
+pub(super) struct ButtonModule {
     id: crate::modules::ModuleId,
     label: String,
     icon: String,
@@ -17,7 +17,7 @@ pub struct ButtonModule {
 }
 
 impl ButtonModule {
-    pub fn new(
+    pub(super) fn new(
         id: crate::modules::ModuleId,
         label: String,
         icon: String,

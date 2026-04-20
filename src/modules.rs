@@ -17,7 +17,7 @@ pub struct ModuleId(pub String);
 
 impl ModuleId {
     // Used in tests and by Stories 2.2+ when module instances are constructed from config.
-    pub fn new(s: impl Into<String>) -> Self {
+    pub(crate) fn new(s: impl Into<String>) -> Self {
         ModuleId(s.into())
     }
 }
@@ -38,7 +38,7 @@ pub enum ModuleKind {
 }
 
 impl ModuleKind {
-    pub const CONFIG_KINDS: &'static [ModuleKind] = &[
+    pub(crate) const CONFIG_KINDS: &'static [ModuleKind] = &[
         ModuleKind::Battery,
         ModuleKind::Clock,
         ModuleKind::Network,
@@ -50,7 +50,7 @@ impl ModuleKind {
         ModuleKind::Tray,
     ];
 
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             ModuleKind::Battery => "battery",
             ModuleKind::Button => "button",
@@ -66,7 +66,7 @@ impl ModuleKind {
         }
     }
 
-    pub fn from_config_name(s: &str) -> Option<Self> {
+    pub(crate) fn from_config_name(s: &str) -> Option<Self> {
         match s {
             "battery" => Some(ModuleKind::Battery),
             "button" => Some(ModuleKind::Button),
@@ -193,10 +193,10 @@ pub trait Module: Send + Sync {
 }
 
 /// Type alias for a module constructor function.
-pub type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>;
+pub(crate) type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>;
 
 /// Build the static module registry mapping config name → constructor.
-pub fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
+pub(crate) fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
     let mut map = HashMap::new();
     map.insert("battery", battery_ctor as ModuleConstructor);
     map.insert("button", button_ctor as ModuleConstructor);

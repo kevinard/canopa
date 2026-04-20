@@ -103,14 +103,18 @@ fn build_clock_message(
 }
 
 /// Clock module: shows current time and date, updated every second via subscription.
-pub struct ClockModule {
+pub(super) struct ClockModule {
     id: crate::modules::ModuleId,
     time_format: String,
     date_format: String,
 }
 
 impl ClockModule {
-    pub fn new(id: crate::modules::ModuleId, time_format: String, date_format: String) -> Self {
+    pub(super) fn new(
+        id: crate::modules::ModuleId,
+        time_format: String,
+        date_format: String,
+    ) -> Self {
         ClockModule {
             id,
             time_format,

@@ -12,7 +12,7 @@ use std::sync::{Mutex, OnceLock};
 ///
 /// Checks hicolor at multiple sizes (preferring sizes closest to 22px), then pixmaps.
 /// Searches both system and user icon directories. Returns `None` if not found.
-pub fn resolve_icon_path(name: &str) -> Option<PathBuf> {
+fn resolve_icon_path(name: &str) -> Option<PathBuf> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<PathBuf>>>> = OnceLock::new();
 
     if !is_valid_icon_name(name) {
@@ -91,7 +91,7 @@ fn resolve_icon_path_uncached(name: &str) -> Option<PathBuf> {
 /// Build an iced widget for one tray item icon.
 ///
 /// All widget data is owned so the element lifetime is `'static`.
-pub fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Message> {
+fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Message> {
     const ICON_SIZE: u16 = 20;
 
     let icon_element: iced::Element<'static, crate::app::Message> = match &item.icon {
@@ -171,12 +171,12 @@ pub fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Messag
 
 /// Config-level placeholder for the tray. Replaced at runtime by one `TrayIconModule`
 /// per active SNI item whenever `Message::TrayUpdated` fires.
-pub struct TrayModule {
+pub(crate) struct TrayModule {
     id: ModuleId,
 }
 
 impl TrayModule {
-    pub fn new(id: ModuleId) -> Self {
+    pub(crate) fn new(id: ModuleId) -> Self {
         TrayModule { id }
     }
 }
@@ -210,7 +210,7 @@ impl crate::modules::Module for TrayModule {
 /// Stable widget id used to locate a tray icon's bounding box via widget operation.
 /// Includes the bar window ID so FindBounds only matches within the correct bar when
 /// the same tray icon is rendered in multiple bars simultaneously.
-pub fn tray_icon_widget_id(window: iced::window::Id, service: &str) -> iced::widget::Id {
+pub(crate) fn tray_icon_widget_id(window: iced::window::Id, service: &str) -> iced::widget::Id {
     iced::widget::Id::from(format!("tray-icon:{window:?}:{service}"))
 }
 
@@ -223,7 +223,7 @@ pub fn tray_icon_widget_id(window: iced::window::Id, service: &str) -> iced::wid
 /// Instances are created dynamically by the `TrayUpdated` handler and inserted into
 /// `App::modules` at the same zone position as the `TrayModule` placeholder they replace.
 /// Each carries its item's data directly so no shared-state lookup is needed in view.
-pub struct TrayIconModule {
+pub(crate) struct TrayIconModule {
     id: ModuleId,
     /// The SNI item this module represents (snapshot at last TrayUpdated).
     item: TrayItem,
@@ -233,7 +233,7 @@ pub struct TrayIconModule {
 }
 
 impl TrayIconModule {
-    pub fn new(item: TrayItem, config_name: String) -> Self {
+    pub(crate) fn new(item: TrayItem, config_name: String) -> Self {
         let id = ModuleId(format!("tray:{}", item.service));
         TrayIconModule {
             id,

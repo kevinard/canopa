@@ -12,12 +12,12 @@ pub struct FocusedWindowState {
 }
 
 /// Focused-window module: shows the focused window title, fed by niri IPC via SharedState.
-pub struct FocusedWindowModule {
+pub(super) struct FocusedWindowModule {
     id: crate::modules::ModuleId,
 }
 
 impl FocusedWindowModule {
-    pub fn new(id: crate::modules::ModuleId) -> Self {
+    pub(super) fn new(id: crate::modules::ModuleId) -> Self {
         FocusedWindowModule { id }
     }
 }

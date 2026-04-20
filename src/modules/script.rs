@@ -13,8 +13,8 @@ pub enum ScriptEvent {
     Failed,
 }
 
-pub const MAX_SCRIPT_OUTPUT_BYTES: usize = crate::command::MAX_COMMAND_OUTPUT_BYTES;
-pub const SCRIPT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+const MAX_SCRIPT_OUTPUT_BYTES: usize = crate::command::MAX_COMMAND_OUTPUT_BYTES;
+const SCRIPT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 async fn run_script_command(cmd: &str, timeout: std::time::Duration) -> ScriptEvent {
     match crate::command::run_shell_capture_stdout(cmd, timeout, MAX_SCRIPT_OUTPUT_BYTES).await {
@@ -23,14 +23,14 @@ async fn run_script_command(cmd: &str, timeout: std::time::Duration) -> ScriptEv
     }
 }
 
-pub struct ScriptModule {
+pub(super) struct ScriptModule {
     id: crate::modules::ModuleId,
     command: String,
     interval: u64,
 }
 
 impl ScriptModule {
-    pub fn new(id: crate::modules::ModuleId, command: String, interval: u64) -> Self {
+    pub(super) fn new(id: crate::modules::ModuleId, command: String, interval: u64) -> Self {
         ScriptModule {
             id,
             command,

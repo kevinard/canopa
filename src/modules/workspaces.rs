@@ -21,12 +21,15 @@ fn pill_colors(is_focused: bool, is_active: bool) -> (iced::Color, iced::Color) 
 
 /// Config-level placeholder for the workspaces list. Replaced at runtime by one
 /// `WorkspaceItemModule` per workspace whenever workspace state changes.
-pub struct WorkspacesModule {
+pub(super) struct WorkspacesModule {
     id: crate::modules::ModuleId,
 }
 
 impl WorkspacesModule {
-    pub fn new(id: crate::modules::ModuleId, _config: crate::config::WorkspacesConfig) -> Self {
+    pub(super) fn new(
+        id: crate::modules::ModuleId,
+        _config: crate::config::WorkspacesConfig,
+    ) -> Self {
         WorkspacesModule { id }
     }
 }
@@ -75,15 +78,15 @@ impl crate::modules::Module for WorkspacesModule {
 /// Instances are created dynamically by workspace state change handlers and inserted
 /// into `App::modules` at the same zone position as the `WorkspacesModule` placeholder.
 /// Each carries its workspace data directly so no shared-state lookup is needed in view.
-pub struct WorkspaceItemModule {
+pub(crate) struct WorkspaceItemModule {
     id: crate::modules::ModuleId,
-    pub workspace: niri_ipc::Workspace,
+    workspace: niri_ipc::Workspace,
     config: crate::config::WorkspacesConfig,
     config_name: String,
 }
 
 impl WorkspaceItemModule {
-    pub fn new(
+    pub(crate) fn new(
         workspace: niri_ipc::Workspace,
         config: crate::config::WorkspacesConfig,
         config_name: String,

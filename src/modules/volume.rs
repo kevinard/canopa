@@ -47,13 +47,13 @@ fn tier_color(tier: u8) -> iced::Color {
     }
 }
 
-pub struct VolumeModule {
+pub(super) struct VolumeModule {
     id: crate::modules::ModuleId,
     step: u8,
 }
 
 impl VolumeModule {
-    pub fn new(id: crate::modules::ModuleId, step: u8) -> Self {
+    pub(super) fn new(id: crate::modules::ModuleId, step: u8) -> Self {
         VolumeModule { id, step }
     }
 }

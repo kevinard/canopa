@@ -57,14 +57,14 @@ fn icon_color(percentage: f64, is_charging: bool, critical_threshold: u8) -> ice
     }
 }
 
-pub struct BatteryModule {
+pub(super) struct BatteryModule {
     id: crate::modules::ModuleId,
     /// Percentage threshold for CriticalBadge and red icon. Set from config at construction.
     critical_threshold: u8,
 }
 
 impl BatteryModule {
-    pub fn new(id: crate::modules::ModuleId, critical_threshold: u8) -> Self {
+    pub(super) fn new(id: crate::modules::ModuleId, critical_threshold: u8) -> Self {
         BatteryModule {
             id,
             critical_threshold,

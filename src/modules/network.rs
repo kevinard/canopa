@@ -43,12 +43,12 @@ fn icon_color(connectivity: &NetworkConnectivity) -> iced::Color {
     }
 }
 
-pub struct NetworkModule {
+pub(super) struct NetworkModule {
     id: crate::modules::ModuleId,
 }
 
 impl NetworkModule {
-    pub fn new(id: crate::modules::ModuleId) -> Self {
+    pub(super) fn new(id: crate::modules::ModuleId) -> Self {
         NetworkModule { id }
     }
 }

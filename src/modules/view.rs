@@ -10,7 +10,7 @@ use crate::app::Message;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
-pub enum IconLabelLayout {
+pub(super) enum IconLabelLayout {
     Collapsed,
     Expanded,
     Horizontal,
@@ -21,7 +21,7 @@ pub enum IconLabelLayout {
 /// Modules that need extra rows, overlay badges, focus handling, or custom
 /// click targets keep their bespoke `Module` view methods instead of using this.
 #[allow(dead_code)]
-pub trait IconLabel {
+pub(super) trait IconLabel {
     fn icon(&self, state: &super::ModuleState) -> String;
     fn label(&self, state: &super::ModuleState) -> String;
 
@@ -37,7 +37,10 @@ pub trait IconLabel {
 /// │       ⚡       │  icon centred, size 16
 /// └────────────────┘
 /// ```
-pub fn collapsed_icon<'a>(icon: impl ToString, color: iced::Color) -> Element<'a, Message> {
+pub(super) fn collapsed_icon<'a>(
+    icon: impl ToString,
+    color: iced::Color,
+) -> Element<'a, Message> {
     container(text(icon.to_string()).size(16).color(color))
         .width(Length::Fill)
         .height(20)
@@ -56,7 +59,7 @@ pub fn collapsed_icon<'a>(icon: impl ToString, color: iced::Color) -> Element<'a
 /// │ ⚡  75%      │  icon size 16 + label size 12 (subtext colour)
 /// └──────────────┘
 /// ```
-pub fn horizontal_icon_label<'a>(
+pub(super) fn horizontal_icon_label<'a>(
     icon: impl ToString,
     icon_color: iced::Color,
     label: impl ToString,
@@ -84,7 +87,7 @@ pub fn horizontal_icon_label<'a>(
 /// │ ⚡  75%                       │  icon size 16 + label size 12 (subtext colour)
 /// └───────────────────────────────┘
 /// ```
-pub fn expanded_icon_label<'a>(
+pub(super) fn expanded_icon_label<'a>(
     icon: impl ToString,
     icon_color: iced::Color,
     label: impl ToString,
@@ -108,7 +111,7 @@ pub fn expanded_icon_label<'a>(
 }
 
 #[allow(dead_code)]
-pub fn icon_label_view<'a, M>(
+pub(super) fn icon_label_view<'a, M>(
     module: &'a M,
     state: &super::ModuleState,
     layout: IconLabelLayout,
