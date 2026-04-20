@@ -178,7 +178,7 @@ Required after the surface, menu, tray, and module extractions in Phase 5. Cover
 
 ### Phase 4 audit
 
-Audit ran the requested boundary checks with `rtk grep -Rn -E "(width|height)\s*\*\s*(height|width)\s*\*\s*4" src/ | rtk grep -v dbus/sni/pixmap.rs` and `rtk grep -Rn "max_menu_items\|max_label_len\|MAX_PIXMAP" src/ | rtk grep -v "dbus/sni/\(pixmap\|menu\).rs"`. The first command only surfaced references in the spec/planning docs, not outside the SNI boundary code; the second command returned no matches outside `dbus/sni/pixmap.rs` and `dbus/sni/menu.rs`.
+Audit ran the requested boundary checks with `rtk grep -Rn -E "(width|height)\s*\*\s*(height|width)\s*\*\s*4" src/ | rtk grep -v dbus/sni/pixmap.rs` and `rtk grep -Rn "max_menu_items\|max_label_len\|MAX_PIXMAP" src/ | rtk grep -v "dbus/sni/\(pixmap\|menu\).rs"`. Both source-tree boundary checks returned no matches outside the allowed SNI boundary files. Any `rtk grep -v` output that mentioned spec/planning docs was a wrapper artifact, not part of the audit result.
 
 ## Non-goals
 
