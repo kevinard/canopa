@@ -60,7 +60,7 @@ impl App {
 
         let s = self.surface_mut(window);
         if s.focused_module.is_none() {
-            return Task::done(Message::BarFocusGained(window));
+            return Task::done(Message::Surface(super::messages::SurfaceEvent::BarFocusGained(window)));
         }
 
         if s.module_activated {
@@ -95,7 +95,7 @@ impl App {
     ) -> Task<Message> {
         let s = self.surface_mut(window);
         if s.focused_module.is_none() {
-            return Task::done(Message::BarFocusGained(window));
+            return Task::done(Message::Surface(super::messages::SurfaceEvent::BarFocusGained(window)));
         }
 
         s.module_activated = false;
