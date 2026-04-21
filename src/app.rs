@@ -32,7 +32,7 @@ use crate::modules::battery::BatteryEvent;
 use crate::modules::network::NetworkEvent;
 use crate::modules::volume::VolumeEvent;
 use crate::modules::{
-    InteractionEvent, Module, ModuleEvent, ModuleId, ModuleKind, ModuleState, Zone, build_registry,
+    InteractionEvent, Module, ModuleEvent, ModuleId, Zone, build_registry,
 };
 use crate::surface::SurfaceState;
 use crate::surface::input::init_expand_keybind;
@@ -44,10 +44,7 @@ pub(crate) struct App {
     /// Instantiated module instances paired with their zone placement.
     modules: module_store::ModuleStore,
     surfaces: surfaces::SurfaceManager,
-    /// Currently hovered menu item per popup window: window_id -> item_id string.
-    menu_popup_hovered: HashMap<iced::window::Id, String>,
-    /// Keyboard-focused menu item per popup window: window_id -> item_id string.
-    menu_focused_item: HashMap<iced::window::Id, String>,
+    menu: menu::MenuSystem,
 }
 
 #[to_layer_message(multi)]
@@ -121,37 +118,6 @@ pub enum Message {
         delta: i32,
         orientation: String,
     },
-    /// A menu item was selected in the popup. `menu_item_id` is the DBusMenu integer item ID.
-    MenuItemSelected {
-        /// The SNI service that owns this menu.
-        service: String,
-        /// DBusMenu integer item ID.
-        menu_item_id: i32,
-        /// D-Bus path of the DBusMenu object.
-        menu_path: zbus::zvariant::OwnedObjectPath,
-    },
-    /// The menu popup was dismissed without a selection.
-    MenuClosed,
-    /// Pointer entered a menu item row in the popup.
-    MenuItemHoverEnter {
-        window: iced::window::Id,
-        item_id: String,
-    },
-    /// Pointer left a menu item row in the popup.
-    MenuItemHoverExit(iced::window::Id),
-    /// The DBusMenu layout changed while the popup is open -- re-fetch and replace.
-    MenuLayoutChanged {
-        service: String,
-        menu_path: zbus::zvariant::OwnedObjectPath,
-    },
-    /// Menu data fetched successfully -- spawn the popup surface.
-    OpenMenu {
-        service: String,
-        menu_path: zbus::zvariant::OwnedObjectPath,
-        tree: crate::surface::menu_popup::MenuTree,
-        /// Bar name used to look up bar.edge for popup positioning.
-        bar_name: String,
-    },
     /// User clicked a workspace pill -- switch to that workspace via niri IPC.
     NiriFocusWorkspace {
         id: u64,
@@ -217,12 +183,6 @@ impl Message {
             Message::TrayMenuRequestWithBounds { .. } => "TrayMenuRequestWithBounds",
             Message::TraySecondaryActivate { .. } => "TraySecondaryActivate",
             Message::TrayScroll { .. } => "TrayScroll",
-            Message::MenuItemSelected { .. } => "MenuItemSelected",
-            Message::MenuClosed => "MenuClosed",
-            Message::MenuItemHoverEnter { .. } => "MenuItemHoverEnter",
-            Message::MenuItemHoverExit(_) => "MenuItemHoverExit",
-            Message::MenuLayoutChanged { .. } => "MenuLayoutChanged",
-            Message::OpenMenu { .. } => "OpenMenu",
             Message::NiriFocusWorkspace { .. } => "NiriFocusWorkspace",
             Message::PerfReport => "PerfReport",
             _ => "LayerShell",
@@ -328,8 +288,7 @@ impl App {
             perf: perf::PerfTracker::from_env(),
             modules: module_store::ModuleStore::from_modules(modules),
             surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
-            menu_popup_hovered: HashMap::new(),
-            menu_focused_item: HashMap::new(),
+            menu: menu::MenuSystem::default(),
         };
         (app, Task::batch(window_tasks))
     }
@@ -345,6 +304,7 @@ impl App {
 
         match message {
             Message::Surface(event) => self.handle_surface_event(event),
+            Message::Menu(event) => self.handle_menu_event(event),
             Message::Module(id, event) => self.handle_module_event(id, event),
             Message::ModuleClick(id, _window) => {
                 self.dispatch_module_interaction(&id, InteractionEvent::Clicked)
@@ -554,108 +514,16 @@ impl App {
                             if let Some(mut tree) = tree_opt {
                                 tree.anchor = (anchor_x, anchor_y);
                                 tree.screen_size = screen_size;
-                                Message::OpenMenu {
+                                Message::Menu(messages::MenuEvent::Open {
                                     service: service.clone(),
                                     menu_path: menu_path.clone(),
                                     tree,
                                     bar_name: bar_name.clone(),
-                                }
+                                })
                             } else {
                                 Message::TrayActivate {
                                     service: service.clone(),
                                 }
-                            }
-                        },
-                    );
-                }
-                Task::none()
-            }
-            Message::OpenMenu {
-                service,
-                menu_path,
-                tree,
-                bar_name,
-            } => {
-                // Close any existing popup first.
-                let existing_ids: Vec<iced::window::Id> = self.surfaces.popup_ids().collect();
-                let mut tasks: Vec<Task<Message>> = existing_ids
-                    .into_iter()
-                    .map(|id| {
-                        self.surfaces.remove_popup(id);
-                        Task::done(Message::RemoveWindow(id))
-                    })
-                    .collect();
-
-                // bar_name was resolved upstream (either from the keyboard source window or
-                // from last_cursor for mouse activations). No re-lookup needed here.
-                let settings = iced_layershell::reexport::NewLayerShellSettings {
-                    anchor: iced_layershell::reexport::Anchor::Left
-                        | iced_layershell::reexport::Anchor::Right
-                        | iced_layershell::reexport::Anchor::Top
-                        | iced_layershell::reexport::Anchor::Bottom,
-                    exclusive_zone: Some(-1),
-                    size: Some((0, 0)),
-                    layer: iced_layershell::reexport::Layer::Overlay,
-                    keyboard_interactivity:
-                        iced_layershell::reexport::KeyboardInteractivity::OnDemand,
-                    ..Default::default()
-                };
-                let (popup_id, open_task) = Message::layershell_open(settings);
-                self.surfaces.insert_popup(
-                    popup_id,
-                    surfaces::PopupMeta {
-                        service,
-                        menu_path,
-                        tree,
-                        bar_name,
-                    },
-                );
-                tasks.push(open_task);
-                Task::batch(tasks)
-            }
-            Message::MenuItemSelected {
-                service,
-                menu_item_id,
-                menu_path,
-            } => self.handle_menu_item_selected(service, menu_item_id, menu_path),
-            Message::MenuClosed => self.handle_menu_closed(),
-            Message::MenuItemHoverEnter { window, item_id } => {
-                self.menu_popup_hovered.insert(window, item_id);
-                Task::none()
-            }
-            Message::MenuItemHoverExit(window) => {
-                self.menu_popup_hovered.remove(&window);
-                Task::none()
-            }
-            Message::MenuLayoutChanged { service, menu_path } => {
-                // Re-fetch the menu and update the existing popup in place.
-                let conn = self.shared.dbus.session.clone();
-                // Preserve the existing anchor, screen_size, and bar_name from the current popup.
-                let existing = self
-                    .surfaces
-                    .popup_values()
-                    .find(|meta| meta.service == service && meta.menu_path == menu_path);
-                let (anchor, screen_size, existing_bar_name) = match existing {
-                    Some(meta) => (meta.tree.anchor, meta.tree.screen_size, meta.bar_name.clone()),
-                    None => return Task::none(),
-                };
-                if let Some(conn) = conn {
-                    let svc = service.clone();
-                    let mp = menu_path.clone();
-                    return Task::perform(
-                        async move { crate::dbus::sni::host::fetch_menu(&conn, &svc, &mp).await },
-                        move |tree_opt| {
-                            if let Some(mut tree) = tree_opt {
-                                tree.anchor = anchor;
-                                tree.screen_size = screen_size;
-                                Message::OpenMenu {
-                                    service,
-                                    menu_path,
-                                    tree,
-                                    bar_name: existing_bar_name,
-                                }
-                            } else {
-                                Message::MenuClosed
                             }
                         },
                     );
@@ -692,6 +560,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::config::{Edge, ExpandTrigger};
+    use crate::modules::{ModuleKind, ModuleState};
     use crate::niri::NiriEvent;
     use crate::surface::expand::ExpandState;
 

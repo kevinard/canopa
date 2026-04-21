@@ -32,7 +32,7 @@ impl App {
 
     pub(super) fn handle_escape_pressed(&mut self, window: iced::window::Id) -> Task<Message> {
         if self.surfaces.has_popup(window) {
-            return Task::done(Message::MenuClosed);
+            return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
         }
         let s = self.surface_mut(window);
         if s.module_activated {
@@ -114,15 +114,18 @@ impl App {
 
     pub(super) fn handle_keyboard_activate(&mut self, window: iced::window::Id) -> Task<Message> {
         if self.surfaces.has_popup(window) {
-            let focused = self.menu_focused_item.get(&window).cloned();
+            let focused = self.menu.focused_item(window).map(str::to_owned);
             if let Some(item_id) = focused {
                 let menu_item_id: i32 = item_id.parse().unwrap_or(0);
-                if let Some(meta) = self.surfaces.popup(window) {
-                    return Task::done(Message::MenuItemSelected {
-                        service: meta.service.clone(),
-                        menu_item_id,
-                        menu_path: meta.menu_path.clone(),
-                    });
+                if let Some(model) = self.menu_model(window) {
+                    let activation = model.activation_for(menu_item_id);
+                    return Task::done(Message::Menu(
+                        super::messages::MenuEvent::ItemSelected {
+                            service: activation.service,
+                            menu_item_id: activation.item_id,
+                            menu_path: activation.menu_path,
+                        },
+                    ));
                 }
             }
             return Task::none();

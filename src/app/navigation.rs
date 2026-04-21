@@ -92,7 +92,7 @@ impl App {
         if navigable.is_empty() {
             return;
         }
-        let current = self.menu_focused_item.get(&window).cloned();
+        let current = self.menu.focused_item(window).map(str::to_owned);
         let len = navigable.len();
         let next = match current {
             None => {
@@ -111,6 +111,6 @@ impl App {
                 }
             }
         };
-        self.menu_focused_item.insert(window, next);
+        self.menu.focus(window, next);
     }
 }

@@ -1,16 +1,85 @@
+use std::collections::HashMap;
+
 use iced::Task;
 use iced_layershell::reexport::KeyboardInteractivity;
 
 use super::{App, Message};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct MenuActivation {
+    pub(super) service: String,
+    pub(super) menu_path: zbus::zvariant::OwnedObjectPath,
+    pub(super) item_id: i32,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct MenuModel {
+    pub(super) service: String,
+    pub(super) menu_path: zbus::zvariant::OwnedObjectPath,
+    pub(super) tree: crate::surface::menu_popup::MenuTree,
+    pub(super) bar_name: String,
+}
+
+impl MenuModel {
+    pub(super) fn activation_for(&self, item_id: i32) -> MenuActivation {
+        MenuActivation {
+            service: self.service.clone(),
+            menu_path: self.menu_path.clone(),
+            item_id,
+        }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct MenuSystem {
+    hovered: HashMap<iced::window::Id, String>,
+    focused: HashMap<iced::window::Id, String>,
+}
+
+impl MenuSystem {
+    pub(super) fn hovered_item(&self, window: iced::window::Id) -> Option<&str> {
+        self.hovered.get(&window).map(String::as_str)
+    }
+
+    pub(super) fn focused_item(&self, window: iced::window::Id) -> Option<&str> {
+        self.focused.get(&window).map(String::as_str)
+    }
+
+    pub(super) fn hover_enter(&mut self, window: iced::window::Id, item_id: String) {
+        self.hovered.insert(window, item_id);
+    }
+
+    pub(super) fn hover_exit(&mut self, window: iced::window::Id) {
+        self.hovered.remove(&window);
+    }
+
+    pub(super) fn focus(&mut self, window: iced::window::Id, item_id: String) {
+        self.focused.insert(window, item_id);
+    }
+
+    pub(super) fn clear_window(&mut self, window: iced::window::Id) {
+        self.hovered.remove(&window);
+        self.focused.remove(&window);
+    }
+}
+
 impl App {
+    pub(super) fn menu_model(&self, window: iced::window::Id) -> Option<MenuModel> {
+        let popup = self.surfaces.popup(window)?;
+        Some(MenuModel {
+            service: popup.service.clone(),
+            menu_path: popup.menu_path.clone(),
+            tree: popup.tree.clone(),
+            bar_name: popup.bar_name.clone(),
+        })
+    }
+
     pub(super) fn close_all_menu_popups(&mut self) -> Vec<Task<Message>> {
         let ids: Vec<iced::window::Id> = self.surfaces.popup_ids().collect();
         ids.into_iter()
             .map(|id| {
                 self.surfaces.remove_popup(id);
-                self.menu_popup_hovered.remove(&id);
-                self.menu_focused_item.remove(&id);
+                self.menu.clear_window(id);
                 Task::done(Message::RemoveWindow(id))
             })
             .collect()
@@ -30,6 +99,39 @@ impl App {
                 })
             })
             .collect()
+    }
+
+    pub(super) fn handle_menu_event(
+        &mut self,
+        event: super::messages::MenuEvent,
+    ) -> Task<Message> {
+        use super::messages::MenuEvent;
+
+        match event {
+            MenuEvent::ItemSelected {
+                service,
+                menu_item_id,
+                menu_path,
+            } => self.handle_menu_item_selected(service, menu_item_id, menu_path),
+            MenuEvent::Closed => self.handle_menu_closed(),
+            MenuEvent::ItemHoverEnter { window, item_id } => {
+                self.menu.hover_enter(window, item_id);
+                Task::none()
+            }
+            MenuEvent::ItemHoverExit(window) => {
+                self.menu.hover_exit(window);
+                Task::none()
+            }
+            MenuEvent::LayoutChanged { service, menu_path } => {
+                self.handle_menu_layout_changed(service, menu_path)
+            }
+            MenuEvent::Open {
+                service,
+                menu_path,
+                tree,
+                bar_name,
+            } => self.open_menu_popup(service, menu_path, tree, bar_name),
+        }
     }
 
     pub(super) fn handle_menu_item_selected(
@@ -57,6 +159,92 @@ impl App {
         Task::batch(tasks)
     }
 
+    pub(super) fn open_menu_popup(
+        &mut self,
+        service: String,
+        menu_path: zbus::zvariant::OwnedObjectPath,
+        tree: crate::surface::menu_popup::MenuTree,
+        bar_name: String,
+    ) -> Task<Message> {
+        let existing_ids: Vec<iced::window::Id> = self.surfaces.popup_ids().collect();
+        let mut tasks: Vec<Task<Message>> = existing_ids
+            .into_iter()
+            .map(|id| {
+                self.surfaces.remove_popup(id);
+                self.menu.clear_window(id);
+                Task::done(Message::RemoveWindow(id))
+            })
+            .collect();
+
+        let settings = iced_layershell::reexport::NewLayerShellSettings {
+            anchor: iced_layershell::reexport::Anchor::Left
+                | iced_layershell::reexport::Anchor::Right
+                | iced_layershell::reexport::Anchor::Top
+                | iced_layershell::reexport::Anchor::Bottom,
+            exclusive_zone: Some(-1),
+            size: Some((0, 0)),
+            layer: iced_layershell::reexport::Layer::Overlay,
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            ..Default::default()
+        };
+        let (popup_id, open_task) = Message::layershell_open(settings);
+        let model = MenuModel {
+            service,
+            menu_path,
+            tree,
+            bar_name,
+        };
+        self.surfaces.insert_popup(
+            popup_id,
+            super::surfaces::PopupMeta {
+                service: model.service,
+                menu_path: model.menu_path,
+                tree: model.tree,
+                bar_name: model.bar_name,
+            },
+        );
+        tasks.push(open_task);
+        Task::batch(tasks)
+    }
+
+    pub(super) fn handle_menu_layout_changed(
+        &mut self,
+        service: String,
+        menu_path: zbus::zvariant::OwnedObjectPath,
+    ) -> Task<Message> {
+        let conn = self.shared.dbus.session.clone();
+        let existing = self
+            .surfaces
+            .popup_values()
+            .find(|popup| popup.service == service && popup.menu_path == menu_path);
+        let (anchor, screen_size, existing_bar_name) = match existing {
+            Some(popup) => (popup.tree.anchor, popup.tree.screen_size, popup.bar_name.clone()),
+            None => return Task::none(),
+        };
+        if let Some(conn) = conn {
+            let svc = service.clone();
+            let mp = menu_path.clone();
+            return Task::perform(
+                async move { crate::dbus::sni::host::fetch_menu(&conn, &svc, &mp).await },
+                move |tree_opt| {
+                    if let Some(mut tree) = tree_opt {
+                        tree.anchor = anchor;
+                        tree.screen_size = screen_size;
+                        Message::Menu(super::messages::MenuEvent::Open {
+                            service,
+                            menu_path,
+                            tree,
+                            bar_name: existing_bar_name,
+                        })
+                    } else {
+                        Message::Menu(super::messages::MenuEvent::Closed)
+                    }
+                },
+            );
+        }
+        Task::none()
+    }
+
     pub(super) fn handle_menu_closed(&mut self) -> Task<Message> {
         let conn = self.shared.dbus.session.clone();
         for meta in self.surfaces.popup_values() {
@@ -80,10 +268,8 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::app::{App, Message, messages, surfaces};
     use crate::config::Config;
-    use crate::modules::ModuleId;
 
     fn make_config() -> Config {
         Config::default()
@@ -160,26 +346,23 @@ mod tests {
     fn menu_item_hover_enter_sets_hovered_item() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = make_popup_wid(&mut app);
-        let _ = app.update(Message::MenuItemHoverEnter {
+        let _ = app.update(Message::Menu(messages::MenuEvent::ItemHoverEnter {
             window: wid,
             item_id: "1".into(),
-        });
-        assert_eq!(
-            app.menu_popup_hovered.get(&wid).map(|s| s.as_str()),
-            Some("1")
-        );
+        }));
+        assert_eq!(app.menu.hovered_item(wid), Some("1"));
     }
 
     #[test]
     fn menu_item_hover_exit_clears_hovered_item() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = make_popup_wid(&mut app);
-        let _ = app.update(Message::MenuItemHoverEnter {
+        let _ = app.update(Message::Menu(messages::MenuEvent::ItemHoverEnter {
             window: wid,
             item_id: "1".into(),
-        });
-        let _ = app.update(Message::MenuItemHoverExit(wid));
-        assert!(!app.menu_popup_hovered.contains_key(&wid));
+        }));
+        let _ = app.update(Message::Menu(messages::MenuEvent::ItemHoverExit(wid)));
+        assert_eq!(app.menu.hovered_item(wid), None);
     }
 
     #[test]
@@ -187,29 +370,26 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid_a = make_popup_wid(&mut app);
         let wid_b = make_popup_wid(&mut app);
-        let _ = app.update(Message::MenuItemHoverEnter {
+        let _ = app.update(Message::Menu(messages::MenuEvent::ItemHoverEnter {
             window: wid_a,
             item_id: "1".into(),
-        });
-        assert!(!app.menu_popup_hovered.contains_key(&wid_b));
+        }));
+        assert_eq!(app.menu.hovered_item(wid_b), None);
     }
 
     #[test]
     fn menu_item_hover_enter_on_second_item_replaces_first_without_exit() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = make_popup_wid(&mut app);
-        let _ = app.update(Message::MenuItemHoverEnter {
+        let _ = app.update(Message::Menu(messages::MenuEvent::ItemHoverEnter {
             window: wid,
             item_id: "1".into(),
-        });
-        let _ = app.update(Message::MenuItemHoverEnter {
+        }));
+        let _ = app.update(Message::Menu(messages::MenuEvent::ItemHoverEnter {
             window: wid,
             item_id: "2".into(),
-        });
-        assert_eq!(
-            app.menu_popup_hovered.get(&wid).map(|s| s.as_str()),
-            Some("2")
-        );
+        }));
+        assert_eq!(app.menu.hovered_item(wid), Some("2"));
     }
 
     #[test]
@@ -241,7 +421,7 @@ mod tests {
             },
         );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(popup_wid)));
-        let _ = app.update(Message::MenuClosed);
+        let _ = app.update(Message::Menu(messages::MenuEvent::Closed));
         assert!(app.surfaces.popup(popup_wid).is_none());
     }
 
@@ -285,20 +465,11 @@ mod tests {
             },
         );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
-        assert_eq!(
-            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
-            Some("1")
-        );
+        assert_eq!(app.menu.focused_item(popup_wid), Some("1"));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
-        assert_eq!(
-            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
-            Some("2")
-        );
+        assert_eq!(app.menu.focused_item(popup_wid), Some("2"));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
-        assert_eq!(
-            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
-            Some("1")
-        );
+        assert_eq!(app.menu.focused_item(popup_wid), Some("1"));
     }
 
     #[test]
@@ -341,10 +512,7 @@ mod tests {
             },
         );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMovePrev(popup_wid)));
-        assert_eq!(
-            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
-            Some("2")
-        );
+        assert_eq!(app.menu.focused_item(popup_wid), Some("2"));
     }
 
     #[test]
@@ -405,15 +573,9 @@ mod tests {
             },
         );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
-        assert_eq!(
-            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
-            Some("1")
-        );
+        assert_eq!(app.menu.focused_item(popup_wid), Some("1"));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
-        assert_eq!(
-            app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
-            Some("4")
-        );
+        assert_eq!(app.menu.focused_item(popup_wid), Some("4"));
     }
 
     #[test]
@@ -438,25 +600,25 @@ mod tests {
                 bar_name: String::new(),
             },
         );
-        app.menu_focused_item.insert(popup_wid, "1".into());
-        let _ = app.update(Message::MenuClosed);
+        app.menu.focus(popup_wid, "1".into());
+        let _ = app.update(Message::Menu(messages::MenuEvent::Closed));
         assert!(app.surfaces[&wid].focused_module.is_none());
         assert!(!app.surfaces[&wid].module_activated);
-        assert!(app.menu_focused_item.is_empty());
+        assert!(app.menu.focused.is_empty());
     }
 
     #[test]
     fn close_all_menu_popups_removes_popup_and_focus_maps() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = make_popup_wid(&mut app);
-        app.menu_popup_hovered.insert(wid, "1".into());
-        app.menu_focused_item.insert(wid, "1".into());
+        app.menu.hover_enter(wid, "1".into());
+        app.menu.focus(wid, "1".into());
 
         let tasks = app.close_all_menu_popups();
 
         assert!(app.surfaces.popup(wid).is_none());
-        assert!(app.menu_popup_hovered.is_empty());
-        assert!(app.menu_focused_item.is_empty());
+        assert!(app.menu.hovered.is_empty());
+        assert!(app.menu.focused.is_empty());
         assert_eq!(tasks.len(), 1);
     }
 }

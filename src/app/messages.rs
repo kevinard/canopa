@@ -4,8 +4,9 @@ use crate::surface::menu_popup::MenuTree;
 use iced::{Point, Rectangle};
 use zbus::zvariant::OwnedObjectPath;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(crate) enum SurfaceEvent {
+pub enum SurfaceEvent {
     BarClick(iced::window::Id),
     Tick,
     BarHoverEnter(iced::window::Id),
@@ -26,8 +27,9 @@ pub(crate) enum SurfaceEvent {
     WindowSized(iced::window::Id, u32, u32),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(crate) enum MenuEvent {
+pub enum MenuEvent {
     ItemSelected {
         service: String,
         menu_item_id: i32,
@@ -51,8 +53,9 @@ pub(crate) enum MenuEvent {
     },
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(crate) enum ModuleRuntimeEvent {
+pub enum ModuleRuntimeEvent {
     Module(ModuleId, ModuleEvent),
     ModuleClick(ModuleId, iced::window::Id),
     ModuleScrollUp(ModuleId, iced::window::Id),
@@ -62,13 +65,15 @@ pub(crate) enum ModuleRuntimeEvent {
     Volume(crate::modules::volume::VolumeEvent),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(crate) enum AppNiriEvent {
+pub enum AppNiriEvent {
     Ipc(crate::niri::NiriEvent),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(crate) enum TrayRuntimeEvent {
+pub enum TrayRuntimeEvent {
     Host(TrayEvent),
     Activate {
         service: String,

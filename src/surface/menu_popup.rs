@@ -10,6 +10,7 @@ pub struct MenuTree {
     pub screen_size: (u32, u32),
 }
 
+#[allow(dead_code)]
 /// One item in a `MenuTree`. Children are ignored for MVP (no nested submenus).
 #[derive(Debug, Clone)]
 pub struct MenuItem {
@@ -89,15 +90,19 @@ pub fn view_menu_popup<'a>(
                     // Per-item on_exit fires when moving to an adjacent item, momentarily clearing
                     // the hover state before the next on_enter fires, causing inconsistent highlights.
                     iced::widget::mouse_area(row)
-                        .on_press(crate::app::Message::MenuItemSelected {
+                        .on_press(crate::app::Message::Menu(
+                            crate::app::messages::MenuEvent::ItemSelected {
                             service,
                             menu_item_id,
                             menu_path,
-                        })
-                        .on_enter(crate::app::Message::MenuItemHoverEnter {
+                        },
+                        ))
+                        .on_enter(crate::app::Message::Menu(
+                            crate::app::messages::MenuEvent::ItemHoverEnter {
                             window,
                             item_id: item_id_enter,
-                        })
+                        },
+                        ))
                         .into()
                 } else {
                     row.into()
@@ -121,7 +126,9 @@ pub fn view_menu_popup<'a>(
             })
             .padding(4),
     )
-    .on_exit(crate::app::Message::MenuItemHoverExit(window));
+    .on_exit(crate::app::Message::Menu(
+        crate::app::messages::MenuEvent::ItemHoverExit(window),
+    ));
 
     menu_content.into()
 }

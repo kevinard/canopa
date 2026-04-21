@@ -17,8 +17,8 @@ impl App {
         // Popup window -- full-screen transparent overlay; menu widget positioned inside.
         if let Some(meta) = self.surfaces.popup(window) {
             use crate::surface::menu_popup::view_menu_popup;
-            let hovered_item = self.menu_popup_hovered.get(&window).map(|s| s.as_str());
-            let focused_item = self.menu_focused_item.get(&window).map(|s| s.as_str());
+            let hovered_item = self.menu.hovered_item(window);
+            let focused_item = self.menu.focused_item(window);
             let menu = view_menu_popup(
                 &meta.tree,
                 meta.service.as_str(),
@@ -99,7 +99,7 @@ impl App {
                     .align_y(v_align)
                     .padding(padding),
             )
-            .on_press(Message::MenuClosed)
+            .on_press(Message::Menu(super::messages::MenuEvent::Closed))
             .into();
         }
 

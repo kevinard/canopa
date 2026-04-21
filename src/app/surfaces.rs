@@ -23,6 +23,7 @@ pub(super) struct SurfaceManager {
     pub(super) last_cursor: Option<(iced::window::Id, iced::Point)>,
 }
 
+#[allow(dead_code)]
 impl SurfaceManager {
     pub(super) fn new(
         surfaces: HashMap<iced::window::Id, SurfaceState>,

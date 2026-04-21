@@ -108,10 +108,10 @@ fn build_menu_layout_stream(
                             _ = props_stream.next() => {}
                         }
                         Some((
-                            crate::app::Message::MenuLayoutChanged {
+                            crate::app::Message::Menu(crate::app::messages::MenuEvent::LayoutChanged {
                                 service: service.clone(),
                                 menu_path: menu_path.clone(),
-                            },
+                            }),
                             MenuWatchState::Watching,
                         ))
                     }
@@ -124,7 +124,7 @@ fn build_menu_layout_stream(
 
 /// Returns an iced Subscription that listens for `LayoutUpdated` and
 /// `ItemsPropertiesUpdated` signals on the given DBusMenu path.
-/// Emits `Message::MenuLayoutChanged` when the layout changes.
+/// Emits `Message::Menu(MenuEvent::LayoutChanged)` when the layout changes.
 pub(crate) fn menu_layout_subscription(
     conn: zbus::Connection,
     service: String,
