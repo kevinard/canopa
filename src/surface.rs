@@ -8,7 +8,7 @@ use crate::modules::ModuleId;
 use crate::surface::expand::ExpandState;
 
 /// Per-surface render state. Tracks surface-specific data (expand/collapse, focus, hover).
-/// Shared module data lives in SharedState (established in Story 2.1), never here.
+/// Shared module data lives in shared app state (established in Story 2.1), never here.
 /// Keyed by iced::window::Id in App::surfaces (Story 7.1).
 ///
 /// Each surface corresponds to one (output_name, bar_name) pair (Story 9.1). Multiple surfaces

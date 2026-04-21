@@ -1,6 +1,6 @@
 /// Expand/collapse state for a single bar surface.
 ///
-/// Stored in `SurfaceState`, never in `SharedState` (architecture rule AR6).
+/// Stored in `SurfaceState`, never in shared app state (architecture rule AR6).
 /// Progress values are in [0.0, 1.0]; easing is applied at render/resize time.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ExpandState {

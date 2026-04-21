@@ -3,12 +3,14 @@ mod dynamic_modules;
 mod focus;
 mod layout;
 mod menu;
+mod messages;
 mod module_events;
 mod module_state;
 mod module_store;
 mod navigation;
 mod niri;
 mod perf;
+mod shared;
 mod subscriptions;
 mod surfaces;
 mod tray;
@@ -32,34 +34,12 @@ use crate::modules::volume::VolumeEvent;
 use crate::modules::{
     InteractionEvent, Module, ModuleEvent, ModuleId, ModuleKind, ModuleState, Zone, build_registry,
 };
-use crate::niri::NiriState;
 use crate::surface::SurfaceState;
 use crate::surface::input::init_expand_keybind;
 
-/// Shared state: module data visible to all surfaces.
-///
-/// Module data (battery %, workspace list, etc.) lives here.
-/// Per-surface render state (expand/collapse, focus) lives in `SurfaceState` — never here.
-#[derive(Default)]
-struct SharedState {
-    modules: HashMap<ModuleId, ModuleState>,
-    niri: NiriState,       // populated by Message::Niri handlers (Story 4.1)
-    dbus: DbusConnections, // shared D-Bus handles; populated by Message::DbusReady (Story 5.1)
-}
-
-impl SharedState {
-    fn new() -> Self {
-        SharedState {
-            modules: HashMap::new(),
-            niri: NiriState::default(),
-            dbus: DbusConnections::default(),
-        }
-    }
-}
-
 pub(crate) struct App {
     config: Config,
-    shared: SharedState,
+    shared: shared::SharedContext,
     perf: Option<perf::PerfTracker>,
     /// Instantiated module instances paired with their zone placement.
     modules: module_store::ModuleStore,
@@ -96,6 +76,11 @@ pub(crate) struct App {
 #[to_layer_message(multi)]
 #[derive(Debug, Clone)]
 pub enum Message {
+    Surface(messages::SurfaceEvent),
+    Menu(messages::MenuEvent),
+    Modules(messages::ModuleRuntimeEvent),
+    Niri(messages::AppNiriEvent),
+    Tray(messages::TrayRuntimeEvent),
     // Module data events — shared state, no window ID needed.
     Module(ModuleId, ModuleEvent),
     /// Fires when the user clicks anywhere on the bar surface (Story 3.1).
@@ -115,8 +100,8 @@ pub enum Message {
     ModuleScrollUp(ModuleId, iced::window::Id),
     /// Scroll-down event on a module (Story 5.4). Per-surface.
     ModuleScrollDown(ModuleId, iced::window::Id),
-    /// Event from the Niri IPC event stream; dispatched to SharedState (Story 4.1).
-    Niri(crate::niri::NiriEvent),
+    /// Event from the Niri IPC event stream; dispatched to shared context state (Story 4.1).
+    NiriEvent(crate::niri::NiriEvent),
     /// Battery charge state from UPower D-Bus subscription (Story 5.2).
     Battery(BatteryEvent),
     /// Network connectivity state from D-Bus subscription (Story 5.3).
@@ -238,6 +223,18 @@ pub enum Message {
 impl Message {
     fn perf_label(&self) -> &'static str {
         match self {
+            Message::Surface(messages::SurfaceEvent::Tick) => "Surface::Tick",
+            Message::Surface(_) => "Surface",
+            Message::Menu(_) => "Menu",
+            Message::Modules(_) => "Modules",
+            Message::Niri(messages::AppNiriEvent::Ipc(crate::niri::NiriEvent::Connected)) => {
+                "Niri::Connected"
+            }
+            Message::Niri(messages::AppNiriEvent::Ipc(
+                crate::niri::NiriEvent::Unavailable,
+            )) => "Niri::Unavailable",
+            Message::Niri(_) => "Niri",
+            Message::Tray(_) => "Tray",
             Message::Module(_, ModuleEvent::Clock(_)) => "Module::Clock",
             Message::Module(_, ModuleEvent::Script(_)) => "Module::Script",
             Message::Module(_, ModuleEvent::Button(_)) => "Module::Button",
@@ -250,9 +247,9 @@ impl Message {
             Message::ModuleClick(_, _) => "ModuleClick",
             Message::ModuleScrollUp(_, _) => "ModuleScrollUp",
             Message::ModuleScrollDown(_, _) => "ModuleScrollDown",
-            Message::Niri(crate::niri::NiriEvent::Connected) => "Niri::Connected",
-            Message::Niri(crate::niri::NiriEvent::Unavailable) => "Niri::Unavailable",
-            Message::Niri(crate::niri::NiriEvent::Event(event)) => match event {
+            Message::NiriEvent(crate::niri::NiriEvent::Connected) => "Niri::Connected",
+            Message::NiriEvent(crate::niri::NiriEvent::Unavailable) => "Niri::Unavailable",
+            Message::NiriEvent(crate::niri::NiriEvent::Event(event)) => match event {
                 niri_ipc::Event::WorkspacesChanged { .. } => "Niri::WorkspacesChanged",
                 niri_ipc::Event::WorkspaceUrgencyChanged { .. } => "Niri::WorkspaceUrgencyChanged",
                 niri_ipc::Event::WorkspaceActivated { .. } => "Niri::WorkspaceActivated",
@@ -405,7 +402,7 @@ impl App {
         let manual_outputs = !allowed_outputs.is_empty();
         let app = App {
             config,
-            shared: SharedState::new(),
+            shared: shared::SharedContext::new(),
             perf: perf::PerfTracker::from_env(),
             modules: module_store::ModuleStore::from_modules(modules),
             surfaces,
@@ -462,7 +459,7 @@ impl App {
             Message::BarClick(window) => self.handle_bar_click(window),
             Message::BarHoverEnter(window) => self.handle_bar_hover_enter(window),
             Message::BarHoverExit(window) => self.handle_bar_hover_exit(window),
-            Message::Niri(event) => self.handle_niri_event(event),
+            Message::NiriEvent(event) => self.handle_niri_event(event),
             Message::Tick => self.handle_tick(),
             Message::Network(event) => self.handle_network_event(event),
             Message::Volume(event) => self.handle_volume_event(event),
@@ -860,9 +857,22 @@ mod tests {
     }
 
     #[test]
-    fn shared_state_starts_empty() {
-        let state = SharedState::new();
+    fn shared_context_starts_with_default_dbus() {
+        let shared = shared::SharedContext::new();
+        assert!(shared.dbus.session.is_none());
+        assert!(shared.dbus.system.is_none());
+    }
+
+    #[test]
+    fn shared_context_starts_empty() {
+        let state = shared::SharedContext::new();
         assert!(state.modules.is_empty());
+    }
+
+    #[test]
+    fn perf_tracker_labels_surface_wrapped_event() {
+        let event = Message::Surface(messages::SurfaceEvent::Tick);
+        assert_eq!(event.perf_label(), "Surface::Tick");
     }
 
     #[test]
@@ -1096,7 +1106,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         app.perf = Some(super::perf::PerfTracker::default());
 
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspaceActivated {
             id: 1,
             focused: true,
         })));
@@ -1111,7 +1121,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         app.perf = Some(super::perf::PerfTracker::default());
 
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::ConfigLoaded {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::ConfigLoaded {
             failed: false,
         })));
 
@@ -1475,21 +1485,21 @@ mod tests {
     #[test]
     fn niri_connected_event_sets_connected() {
         let (mut app, _) = App::boot(make_config(), vec![]);
-        let _ = app.update(Message::Niri(NiriEvent::Connected));
+        let _ = app.update(Message::NiriEvent(NiriEvent::Connected));
         assert!(app.shared.niri.connected);
     }
 
     #[test]
     fn niri_unavailable_event_does_not_crash() {
         let (mut app, _) = App::boot(make_config(), vec![]);
-        let _ = app.update(Message::Niri(NiriEvent::Unavailable));
+        let _ = app.update(Message::NiriEvent(NiriEvent::Unavailable));
         assert!(!app.shared.niri.connected);
     }
 
     #[test]
     fn niri_unavailable_sets_workspaces_module_unavailable() {
         let mut app = make_workspaces_app();
-        let _ = app.update(Message::Niri(NiriEvent::Unavailable));
+        let _ = app.update(Message::NiriEvent(NiriEvent::Unavailable));
         let id = ModuleId::new("workspaces");
         assert!(matches!(
             app.shared.modules.get(&id),
@@ -1500,7 +1510,7 @@ mod tests {
     #[test]
     fn niri_unavailable_sets_focused_window_module_unavailable() {
         let mut app = make_focused_window_app();
-        let _ = app.update(Message::Niri(NiriEvent::Unavailable));
+        let _ = app.update(Message::NiriEvent(NiriEvent::Unavailable));
         let id = ModuleId::new("focused-window");
         assert!(matches!(
             app.shared.modules.get(&id),
@@ -1521,7 +1531,7 @@ mod tests {
         };
         config.bars[0].modules.center = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
-        let _ = app.update(Message::Niri(NiriEvent::Unavailable));
+        let _ = app.update(Message::NiriEvent(NiriEvent::Unavailable));
         let id = ModuleId::new("clock");
         // Clock state is Loading (default) — niri Unavailable must not touch non-niri modules.
         assert!(!matches!(
@@ -1544,7 +1554,7 @@ mod tests {
             is_focused: true,
             active_window_id: None,
         };
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws],
         })));
         assert_eq!(app.shared.niri.workspaces.len(), 1);
@@ -1554,7 +1564,7 @@ mod tests {
     fn niri_window_focus_changed_stores_id() {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
             id: Some(42),
         })));
         assert_eq!(app.shared.niri.focused_window_id, Some(42));
@@ -1565,7 +1575,7 @@ mod tests {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
         app.shared.niri.focused_window_id = Some(99);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
             id: None,
         })));
         assert_eq!(app.shared.niri.focused_window_id, None);
@@ -1575,7 +1585,7 @@ mod tests {
     fn niri_unknown_event_is_ignored() {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
-        let _ = app.update(Message::Niri(NiriEvent::Event(
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(
             Event::KeyboardLayoutsChanged {
                 keyboard_layouts: niri_ipc::KeyboardLayouts {
                     names: vec![],
@@ -1621,7 +1631,7 @@ mod tests {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
         let ws = make_workspace(0, true);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws],
         })));
         let items: Vec<_> = app
@@ -1647,12 +1657,12 @@ mod tests {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
         let workspaces = vec![make_workspace(0, true)];
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: workspaces.clone(),
         })));
         let count = app.modules.len();
 
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces,
         })));
 
@@ -1665,7 +1675,7 @@ mod tests {
         let mut app = make_workspaces_app();
         let ws0 = make_workspace(0, false);
         let ws1 = make_workspace(1, true);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws0, ws1],
         })));
         let items: Vec<_> = app
@@ -1683,7 +1693,7 @@ mod tests {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
         let ws = make_workspace(0, true);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws],
         })));
         let id = ModuleId::new("workspaces");
@@ -1697,7 +1707,7 @@ mod tests {
         let ws2 = make_workspace(2, false);
         let ws0 = make_workspace(0, true);
         let ws1 = make_workspace(1, false);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws2, ws0, ws1],
         })));
         // Items are sorted by idx when inserted; verify all three exist.
@@ -1739,10 +1749,10 @@ mod tests {
         let first = vec![make_workspace(0, true), make_workspace(1, false)];
         let second = vec![make_workspace(0, false), make_workspace(1, true)];
 
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: first,
         })));
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: second,
         })));
 
@@ -1770,11 +1780,11 @@ mod tests {
         let mut app = make_workspaces_app();
         let ws0 = make_workspace(0, true);
         let ws1 = make_workspace(1, false);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws0, ws1],
         })));
 
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspaceActivated {
             id: 2,
             focused: true,
         })));
@@ -1800,13 +1810,13 @@ mod tests {
         app.perf = Some(super::perf::PerfTracker::default());
         let ws0 = make_workspace(0, true);
         let ws1 = make_workspace(1, false);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![ws0, ws1],
         })));
         let _ = app.perf.as_ref().unwrap().snapshot_and_reset();
         let count = app.modules.len();
 
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspaceActivated {
             id: 2,
             focused: true,
         })));
@@ -1820,7 +1830,7 @@ mod tests {
     fn workspace_activated_no_panic_when_workspaces_empty() {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspaceActivated {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspaceActivated {
             id: 1,
             focused: true,
         })));
@@ -1870,7 +1880,7 @@ mod tests {
         let mut app = make_focused_window_app();
         let win = make_window(1, Some("Firefox"), false);
         app.shared.niri.windows.insert(1, win);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
             id: Some(1),
         })));
         let id = ModuleId::new("focused-window");
@@ -1888,10 +1898,10 @@ mod tests {
         let mut app = make_focused_window_app();
         let win = make_window(1, Some("Firefox"), false);
         app.shared.niri.windows.insert(1, win);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
             id: Some(1),
         })));
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowFocusChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
             id: None,
         })));
         let id = ModuleId::new("focused-window");
@@ -1909,7 +1919,7 @@ mod tests {
         let mut app = make_focused_window_app();
         assert!(app.shared.niri.focused_window_id.is_none());
         let win = make_window(2, Some("Helix"), true);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowsChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowsChanged {
             windows: vec![win],
         })));
         let id = ModuleId::new("focused-window");
@@ -1926,7 +1936,7 @@ mod tests {
         use niri_ipc::Event;
         let mut app = make_focused_window_app();
         let win = make_window(3, Some("Terminal"), true);
-        let _ = app.update(Message::Niri(NiriEvent::Event(
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(
             Event::WindowOpenedOrChanged { window: win },
         )));
         let id = ModuleId::new("focused-window");
@@ -1951,7 +1961,7 @@ mod tests {
                 title: Some("Nautilus".into()),
             }),
         );
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowClosed {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowClosed {
             id: 4,
         })));
         let id = ModuleId::new("focused-window");
@@ -1968,7 +1978,7 @@ mod tests {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
         let win = make_window(1, Some("Firefox"), true);
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WindowsChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowsChanged {
             windows: vec![win],
         })));
         let id = ModuleId::new("focused-window");
@@ -1978,14 +1988,14 @@ mod tests {
     // Story 5.1 tests
 
     #[test]
-    fn shared_state_dbus_starts_as_default() {
-        let state = SharedState::new();
+    fn shared_context_dbus_starts_as_default() {
+        let state = shared::SharedContext::new();
         assert!(state.dbus.session.is_none());
         assert!(state.dbus.system.is_none());
     }
 
     #[test]
-    fn dbus_ready_stores_connections_in_shared_state() {
+    fn dbus_ready_stores_connections_in_shared_context() {
         let (mut app, _) = App::boot(Config::default(), vec![]);
         let conns = crate::dbus::DbusConnections::default();
         let _ = app.update(Message::DbusReady(conns));
@@ -2974,7 +2984,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         assert!(!app.manual_outputs);
         let before = app.surfaces.len();
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 1,
                 idx: 0,
@@ -3001,7 +3011,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
         assert!(app.manual_outputs);
         // "DP-1" was not in the initial allowed_outputs — it is newly connected.
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 10,
                 idx: 0,
@@ -3031,7 +3041,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
         let before = app.surfaces.len();
         // Fire WorkspacesChanged for eDP-1 which is already in surfaces.
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 1,
                 idx: 0,
@@ -3066,7 +3076,7 @@ mod tests {
         // Boot without "HDMI-A-1" in allowed (bar does not target it).
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len();
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 99,
                 idx: 0,
@@ -3216,7 +3226,7 @@ mod tests {
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         app.manual_outputs = true; // simulate manual mode
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 5,
                 idx: 0,
@@ -3263,7 +3273,7 @@ mod tests {
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len(); // 2 surfaces for eDP-1 (2 bars × 1 output)
         app.manual_outputs = true;
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 5,
                 idx: 0,
@@ -3348,7 +3358,7 @@ mod tests {
         };
         let (mut app, _) = App::boot(config, vec![]);
         app.manual_outputs = true;
-        let _ = app.update(Message::Niri(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 1,
                 idx: 0,
@@ -3391,7 +3401,7 @@ mod tests {
     }
 
     #[test]
-    fn tray_updated_message_stores_items_in_shared_state() {
+    fn tray_updated_message_stores_items_in_shared_context() {
         use crate::dbus::sni::host::{ItemStatus, TrayIcon, TrayItem};
         use crate::modules::ModuleId;
         use zbus::zvariant::OwnedObjectPath;

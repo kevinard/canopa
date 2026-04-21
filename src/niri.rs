@@ -2,7 +2,7 @@ pub mod subscription;
 
 use niri_ipc::{Event, Window, Workspace};
 
-/// Live Niri compositor state stored in SharedState.
+/// Live Niri compositor state stored in shared app state.
 ///
 /// Populated by the niri subscription; consumed by the workspace and focused-window modules
 /// (Stories 4.2 and 4.4). Until a WorkspacesChanged event arrives, workspaces is empty.

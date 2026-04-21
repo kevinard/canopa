@@ -24,7 +24,7 @@ enum NiriSubState {
 }
 
 /// Returns an Iced Subscription that connects to the Niri IPC socket and emits
-/// `Message::Niri(NiriEvent)` for each event from the compositor.
+/// `Message::NiriEvent(NiriEvent)` for each event from the compositor.
 ///
 /// Emits `NiriEvent::Unavailable` (once) and terminates if the socket is unreachable.
 /// Uses a single OS thread for blocking I/O, bridged to async via mpsc channel (AR4).
@@ -62,14 +62,14 @@ pub fn niri_subscription() -> iced::Subscription<Message> {
                                 }
                             });
                             Some((
-                                Message::Niri(NiriEvent::Connected),
+                                Message::NiriEvent(NiriEvent::Connected),
                                 NiriSubState::Running(rx),
                             ))
                         }
                         _ => {
                             // No Niri socket — graceful degradation (FR21, AC #2).
                             // Do NOT log to stderr. Emit once and terminate.
-                            Some((Message::Niri(NiriEvent::Unavailable), NiriSubState::Done))
+                            Some((Message::NiriEvent(NiriEvent::Unavailable), NiriSubState::Done))
                         }
                     }
                 }
@@ -77,7 +77,7 @@ pub fn niri_subscription() -> iced::Subscription<Message> {
                     match rx.recv().await {
                         Some(Ok(event)) if should_emit_event(&event) => {
                             break Some((
-                                Message::Niri(NiriEvent::Event(event)),
+                                Message::NiriEvent(NiriEvent::Event(event)),
                                 NiriSubState::Running(rx),
                             ));
                         }
@@ -85,7 +85,7 @@ pub fn niri_subscription() -> iced::Subscription<Message> {
                         _ => {
                             // Channel closed or error — treat as disconnection.
                             break Some((
-                                Message::Niri(NiriEvent::Unavailable),
+                                Message::NiriEvent(NiriEvent::Unavailable),
                                 NiriSubState::Done,
                             ));
                         }

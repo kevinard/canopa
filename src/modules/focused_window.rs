@@ -11,7 +11,7 @@ pub struct FocusedWindowState {
     pub title: Option<String>,
 }
 
-/// Focused-window module: shows the focused window title, fed by niri IPC via SharedState.
+/// Focused-window module: shows the focused window title, fed by niri IPC via shared app state.
 pub(super) struct FocusedWindowModule {
     id: crate::modules::ModuleId,
 }
@@ -31,7 +31,7 @@ impl crate::modules::Module for FocusedWindowModule {
         crate::modules::ModuleKind::FocusedWindow
     }
 
-    /// No independent data source — fed via Message::Niri in app.rs (same pattern as workspaces).
+    /// No independent data source — fed via Message::NiriEvent in app.rs (same pattern as workspaces).
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         iced::Subscription::none()
     }

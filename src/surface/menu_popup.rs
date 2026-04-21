@@ -1,4 +1,4 @@
-/// A generic menu tree, passed from SharedState to a popup SurfaceState.
+/// A generic menu tree, passed from shared app state to a popup SurfaceState.
 /// No knowledge of SNI, DBusMenu, or any module internals.
 #[derive(Debug, Clone)]
 pub struct MenuTree {
