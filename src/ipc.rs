@@ -45,7 +45,7 @@ fn set_owner_only_permissions(path: &std::path::Path) -> std::io::Result<()> {
 
 /// Iced subscription that listens on the Unix socket for IPC commands.
 ///
-/// Emits `Message::ToggleExpand` when it receives `"toggle-expand"` on any connection.
+/// Emits wrapped `SurfaceEvent::ToggleExpand` when it receives `"toggle-expand"` on any connection.
 /// Removes a stale socket file on first startup. Runs indefinitely.
 ///
 /// Pattern mirrors `niri_subscription`: a `tokio::spawn` task handles blocking/async I/O
@@ -87,7 +87,11 @@ pub fn ipc_subscription() -> iced::Subscription<Message> {
                             let mut line = String::new();
                             if reader.read_line(&mut line).await.is_ok()
                                 && line.trim() == "toggle-expand"
-                                && tx.send(Message::ToggleExpand).is_err()
+                                && tx
+                                    .send(Message::Surface(
+                                        crate::app::messages::SurfaceEvent::ToggleExpand,
+                                    ))
+                                    .is_err()
                             {
                                 break; // Receiver dropped — app shutting down
                             }

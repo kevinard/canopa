@@ -5,10 +5,10 @@ use super::{App, Message};
 
 impl App {
     pub(super) fn close_all_menu_popups(&mut self) -> Vec<Task<Message>> {
-        let ids: Vec<iced::window::Id> = self.menu_popups.keys().copied().collect();
+        let ids: Vec<iced::window::Id> = self.surfaces.popup_ids().collect();
         ids.into_iter()
             .map(|id| {
-                self.menu_popups.remove(&id);
+                self.surfaces.remove_popup(id);
                 self.menu_popup_hovered.remove(&id);
                 self.menu_focused_item.remove(&id);
                 Task::done(Message::RemoveWindow(id))
@@ -59,10 +59,10 @@ impl App {
 
     pub(super) fn handle_menu_closed(&mut self) -> Task<Message> {
         let conn = self.shared.dbus.session.clone();
-        for (service, menu_path, _, _) in self.menu_popups.values() {
+        for meta in self.surfaces.popup_values() {
             if let Some(conn) = conn.clone() {
-                let service = service.clone();
-                let menu_path = menu_path.clone();
+                let service = meta.service.clone();
+                let menu_path = meta.menu_path.clone();
                 tokio::task::spawn(async move {
                     let _ = crate::dbus::sni::host::send_menu_event(
                         &conn, &service, &menu_path, 0, "closed",

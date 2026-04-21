@@ -79,10 +79,11 @@ impl App {
     }
 
     pub(super) fn popup_nav_step(&mut self, window: iced::window::Id, forward: bool) {
-        let Some((_, _, tree, _)) = self.menu_popups.get(&window) else {
+        let Some(meta) = self.surfaces.popup(window) else {
             return;
         };
-        let navigable: Vec<String> = tree
+        let navigable: Vec<String> = meta
+            .tree
             .items
             .iter()
             .filter(|i| i.visible && i.enabled && !i.is_separator)

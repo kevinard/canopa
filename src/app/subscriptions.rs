@@ -65,8 +65,12 @@ impl App {
         );
 
         let menu_watch_sub = if let Some(conn) = self.shared.dbus.session.clone() {
-            if let Some((service, menu_path, _, _)) = self.menu_popups.values().next() {
-                crate::dbus::sni::menu_layout_subscription(conn, service.clone(), menu_path.clone())
+            if let Some(meta) = self.surfaces.popup_values().next() {
+                crate::dbus::sni::menu_layout_subscription(
+                    conn,
+                    meta.service.clone(),
+                    meta.menu_path.clone(),
+                )
             } else {
                 iced::Subscription::none()
             }
@@ -82,7 +86,8 @@ impl App {
             .values()
             .any(|s| s.expand.is_animating() || s.hover_pending_ms.is_some());
         let tick_sub = if needs_tick {
-            iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick)
+            iced::time::every(Duration::from_millis(16))
+                .map(|_| Message::Surface(super::messages::SurfaceEvent::Tick))
         } else {
             iced::Subscription::none()
         };

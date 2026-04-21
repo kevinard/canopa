@@ -14,7 +14,7 @@ impl App {
     }
 
     pub(super) fn handle_bar_click(&mut self, window: iced::window::Id) -> Task<Message> {
-        if !self.menu_popups.is_empty() {
+        if self.surfaces.has_any_popup() {
             return Task::done(Message::MenuClosed);
         }
         let bar = self.bar_for_window(window);

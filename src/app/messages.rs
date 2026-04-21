@@ -5,7 +5,7 @@ use iced::{Point, Rectangle};
 use zbus::zvariant::OwnedObjectPath;
 
 #[derive(Debug, Clone)]
-pub(super) enum SurfaceEvent {
+pub(crate) enum SurfaceEvent {
     BarClick(iced::window::Id),
     Tick,
     BarHoverEnter(iced::window::Id),
@@ -27,7 +27,7 @@ pub(super) enum SurfaceEvent {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum MenuEvent {
+pub(crate) enum MenuEvent {
     ItemSelected {
         service: String,
         menu_item_id: i32,
@@ -52,7 +52,7 @@ pub(super) enum MenuEvent {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum ModuleRuntimeEvent {
+pub(crate) enum ModuleRuntimeEvent {
     Module(ModuleId, ModuleEvent),
     ModuleClick(ModuleId, iced::window::Id),
     ModuleScrollUp(ModuleId, iced::window::Id),
@@ -63,12 +63,12 @@ pub(super) enum ModuleRuntimeEvent {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum AppNiriEvent {
+pub(crate) enum AppNiriEvent {
     Ipc(crate::niri::NiriEvent),
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum TrayRuntimeEvent {
+pub(crate) enum TrayRuntimeEvent {
     Host(TrayEvent),
     Activate {
         service: String,

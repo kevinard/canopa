@@ -15,28 +15,28 @@ impl App {
         }
 
         // Popup window -- full-screen transparent overlay; menu widget positioned inside.
-        if let Some((service, menu_path, tree, bar_name)) = self.menu_popups.get(&window) {
+        if let Some(meta) = self.surfaces.popup(window) {
             use crate::surface::menu_popup::view_menu_popup;
             let hovered_item = self.menu_popup_hovered.get(&window).map(|s| s.as_str());
             let focused_item = self.menu_focused_item.get(&window).map(|s| s.as_str());
             let menu = view_menu_popup(
-                tree,
-                service.as_str(),
-                menu_path,
+                &meta.tree,
+                meta.service.as_str(),
+                &meta.menu_path,
                 window,
                 hovered_item,
                 focused_item,
             );
 
-            let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
+            let bar = Self::bar_for_surface_name(&self.config.bars, &meta.bar_name);
             let bar_size = bar.collapsed_width as f32;
 
             // Clamp the anchor so the popup stays within screen bounds.
-            let (popup_w, popup_h) = crate::surface::menu_popup::popup_size(tree);
-            let screen_w = tree.screen_size.0 as f32;
-            let screen_h = tree.screen_size.1 as f32;
-            let raw_cursor_x = tree.anchor.0 as f32;
-            let raw_cursor_y = tree.anchor.1 as f32;
+            let (popup_w, popup_h) = crate::surface::menu_popup::popup_size(&meta.tree);
+            let screen_w = meta.tree.screen_size.0 as f32;
+            let screen_h = meta.tree.screen_size.1 as f32;
+            let raw_cursor_x = meta.tree.anchor.0 as f32;
+            let raw_cursor_y = meta.tree.anchor.1 as f32;
             let cursor_x = if screen_w > 0.0 {
                 raw_cursor_x.min(screen_w - popup_w as f32).max(0.0)
             } else {
@@ -179,8 +179,14 @@ impl App {
             let scroll_id = id.clone();
             let view: Element<'_, Message> =
                 mouse_area(module_frame(module_view, hovered || focused))
-                    .on_enter(Message::ModuleHoverEnter(id.clone(), window))
-                    .on_exit(Message::ModuleHoverExit(id.clone(), window))
+                    .on_enter(Message::Surface(super::messages::SurfaceEvent::ModuleHoverEnter(
+                        id.clone(),
+                        window,
+                    )))
+                    .on_exit(Message::Surface(super::messages::SurfaceEvent::ModuleHoverExit(
+                        id.clone(),
+                        window,
+                    )))
                     .on_press(Message::ModuleClick(id, window))
                     .on_scroll(move |delta| {
                         let up = match delta {
@@ -259,9 +265,9 @@ impl App {
             });
 
         mouse_area(bar_with_bg)
-            .on_press(Message::BarClick(window))
-            .on_enter(Message::BarHoverEnter(window))
-            .on_exit(Message::BarHoverExit(window))
+            .on_press(Message::Surface(super::messages::SurfaceEvent::BarClick(window)))
+            .on_enter(Message::Surface(super::messages::SurfaceEvent::BarHoverEnter(window)))
+            .on_exit(Message::Surface(super::messages::SurfaceEvent::BarHoverExit(window)))
             .into()
     }
 

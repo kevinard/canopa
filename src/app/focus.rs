@@ -31,7 +31,7 @@ impl App {
     }
 
     pub(super) fn handle_escape_pressed(&mut self, window: iced::window::Id) -> Task<Message> {
-        if self.menu_popups.contains_key(&window) {
+        if self.surfaces.has_popup(window) {
             return Task::done(Message::MenuClosed);
         }
         let s = self.surface_mut(window);
@@ -53,7 +53,7 @@ impl App {
         window: iced::window::Id,
         forward: bool,
     ) -> Task<Message> {
-        if self.menu_popups.contains_key(&window) {
+        if self.surfaces.has_popup(window) {
             self.popup_nav_step(window, forward);
             return Task::none();
         }
@@ -113,15 +113,15 @@ impl App {
     }
 
     pub(super) fn handle_keyboard_activate(&mut self, window: iced::window::Id) -> Task<Message> {
-        if self.menu_popups.contains_key(&window) {
+        if self.surfaces.has_popup(window) {
             let focused = self.menu_focused_item.get(&window).cloned();
             if let Some(item_id) = focused {
                 let menu_item_id: i32 = item_id.parse().unwrap_or(0);
-                if let Some((service, menu_path, _, _)) = self.menu_popups.get(&window) {
+                if let Some(meta) = self.surfaces.popup(window) {
                     return Task::done(Message::MenuItemSelected {
-                        service: service.clone(),
+                        service: meta.service.clone(),
                         menu_item_id,
-                        menu_path: menu_path.clone(),
+                        menu_path: meta.menu_path.clone(),
                     });
                 }
             }

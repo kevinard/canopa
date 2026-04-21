@@ -80,17 +80,25 @@ fn keyboard_handler(
     window: iced::window::Id,
 ) -> Option<Message> {
     match event {
-        Event::Window(window::Event::Focused) => Some(Message::BarFocusGained(window)),
-        Event::Window(window::Event::Unfocused) => Some(Message::BarFocusLost(window)),
-        Event::Window(window::Event::Opened { size, .. }) => Some(Message::WindowSized(
-            window,
-            size.width as u32,
-            size.height as u32,
+        Event::Window(window::Event::Focused) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::BarFocusGained(window),
         )),
-        Event::Window(window::Event::Resized(size)) => Some(Message::WindowSized(
-            window,
-            size.width as u32,
-            size.height as u32,
+        Event::Window(window::Event::Unfocused) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::BarFocusLost(window),
+        )),
+        Event::Window(window::Event::Opened { size, .. }) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::WindowSized(
+                window,
+                size.width as u32,
+                size.height as u32,
+            ),
+        )),
+        Event::Window(window::Event::Resized(size)) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::WindowSized(
+                window,
+                size.width as u32,
+                size.height as u32,
+            ),
         )),
         Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => None,
         Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
@@ -102,23 +110,37 @@ fn keyboard_handler(
             {
                 // Per-surface toggle: only affect the focused bar, not all bars.
                 // (Message::ToggleExpand is reserved for the IPC path which toggles all surfaces.)
-                return Some(Message::BarClick(window));
+                return Some(Message::Surface(crate::app::messages::SurfaceEvent::BarClick(
+                    window,
+                )));
             }
             match key {
-                keyboard::Key::Named(Named::Escape) => Some(Message::EscapePressed(window)),
-                keyboard::Key::Named(Named::ArrowDown) => Some(Message::FocusMoveNext(window)),
-                keyboard::Key::Named(Named::ArrowUp) => Some(Message::FocusMovePrev(window)),
+                keyboard::Key::Named(Named::Escape) => Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::EscapePressed(window),
+                )),
+                keyboard::Key::Named(Named::ArrowDown) => Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::FocusMoveNext(window),
+                )),
+                keyboard::Key::Named(Named::ArrowUp) => Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::FocusMovePrev(window),
+                )),
                 keyboard::Key::Named(Named::Tab) => {
                     if modifiers.shift() {
-                        Some(Message::FocusPrevZone(window))
+                        Some(Message::Surface(
+                            crate::app::messages::SurfaceEvent::FocusPrevZone(window),
+                        ))
                     } else {
-                        Some(Message::FocusNextZone(window))
+                        Some(Message::Surface(
+                            crate::app::messages::SurfaceEvent::FocusNextZone(window),
+                        ))
                     }
                 }
-                keyboard::Key::Named(Named::Enter) => Some(Message::KeyboardActivate(window)),
-                keyboard::Key::Named(Named::Space) => {
-                    Some(Message::KeyboardSecondaryActivate(window))
-                }
+                keyboard::Key::Named(Named::Enter) => Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::KeyboardActivate(window),
+                )),
+                keyboard::Key::Named(Named::Space) => Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::KeyboardSecondaryActivate(window),
+                )),
                 _ => None,
             }
         }

@@ -3,7 +3,7 @@ mod dynamic_modules;
 mod focus;
 mod layout;
 mod menu;
-mod messages;
+pub(crate) mod messages;
 mod module_events;
 mod module_state;
 mod module_store;
@@ -43,34 +43,11 @@ pub(crate) struct App {
     perf: Option<perf::PerfTracker>,
     /// Instantiated module instances paired with their zone placement.
     modules: module_store::ModuleStore,
-    /// Per-surface render state, keyed by iced::window::Id (Story 7.1).
-    /// One entry per (output, bar) surface pair; lazily initialised on first event or view call.
-    surfaces: HashMap<iced::window::Id, SurfaceState>,
-    /// Window IDs pre-assigned to (output_name, bar_name) pairs during manual window creation
-    /// (Stories 7.3, 9.1). Entry is consumed on first `surface_mut()` call for that id.
-    /// Empty when using StartMode::AllScreens.
-    pending_surface_keys: HashMap<iced::window::Id, (String, String)>,
-    /// `true` when using Background/manual mode. In this mode, niribar must open new windows
-    /// when a new output is connected at runtime (StartMode::AllScreens is not active).
-    manual_outputs: bool,
-    /// Active popup windows: window_id -> (service, menu_path, tree, bar_name).
-    /// bar_name lets view() look up the bar edge for positioning the menu widget.
-    menu_popups: HashMap<
-        iced::window::Id,
-        (
-            String,
-            zbus::zvariant::OwnedObjectPath,
-            crate::surface::menu_popup::MenuTree,
-            String,
-        ),
-    >,
+    surfaces: surfaces::SurfaceManager,
     /// Currently hovered menu item per popup window: window_id -> item_id string.
     menu_popup_hovered: HashMap<iced::window::Id, String>,
     /// Keyboard-focused menu item per popup window: window_id -> item_id string.
     menu_focused_item: HashMap<iced::window::Id, String>,
-    /// Last known cursor position and the window it occurred in.
-    /// `None` until the first CursorMoved event. Used to anchor the tray menu popup.
-    last_cursor: Option<(iced::window::Id, iced::Point)>,
 }
 
 #[to_layer_message(multi)]
@@ -405,13 +382,9 @@ impl App {
             shared: shared::SharedContext::new(),
             perf: perf::PerfTracker::from_env(),
             modules: module_store::ModuleStore::from_modules(modules),
-            surfaces,
-            pending_surface_keys,
-            manual_outputs,
-            menu_popups: HashMap::new(),
+            surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
             menu_popup_hovered: HashMap::new(),
             menu_focused_item: HashMap::new(),
-            last_cursor: None,
         };
         (app, Task::batch(window_tasks))
     }
@@ -426,12 +399,13 @@ impl App {
         }
 
         match message {
+            Message::Surface(event) => self.handle_surface_event(event),
             Message::CursorMoved(window, pos) => {
                 let has_tray = self.modules.iter().any(|(_, module)| {
                     matches!(module.kind(), ModuleKind::Tray | ModuleKind::TrayIcon)
                 });
-                if has_tray && self.last_cursor != Some((window, pos)) {
-                    self.last_cursor = Some((window, pos));
+                if has_tray && self.surfaces.last_cursor() != Some((window, pos)) {
+                    self.surfaces.set_last_cursor(Some((window, pos)));
                 }
                 Task::none()
             }
@@ -565,7 +539,7 @@ impl App {
                 };
                 let screen_size = self
                     .surfaces
-                    .get(&source_window)
+                    .surface(source_window)
                     .map(|s| s.screen_size)
                     .unwrap_or((0, 0));
                 let target = crate::modules::tray::tray_icon_widget_id(source_window, &service);
@@ -597,7 +571,7 @@ impl App {
                 };
                 let screen_size = self
                     .surfaces
-                    .get(&source_window)
+                    .surface(source_window)
                     .map(|s| s.screen_size)
                     .unwrap_or((0, 0));
                 let target = crate::modules::tray::tray_icon_widget_id(source_window, &service);
@@ -645,7 +619,8 @@ impl App {
                         }
                         None => {
                             let p = self
-                                .last_cursor
+                                .surfaces
+                                .last_cursor()
                                 .map(|(_, p)| p)
                                 .unwrap_or(iced::Point::ORIGIN);
                             (p.x as i32, p.y as i32)
@@ -655,8 +630,12 @@ impl App {
                     // fall back to last_cursor (mouse path). This ensures the popup uses the
                     // correct bar.edge for positioning even when the cursor is not on the bar.
                     let bar_name = source_window
-                        .and_then(|w| self.surfaces.get(&w))
-                        .or_else(|| self.last_cursor.and_then(|(w, _)| self.surfaces.get(&w)))
+                        .and_then(|w| self.surfaces.surface(w))
+                        .or_else(|| {
+                            self.surfaces
+                                .last_cursor()
+                                .and_then(|(w, _)| self.surfaces.surface(w))
+                        })
                         .map(|s| s.bar_name.clone())
                         .unwrap_or_default();
                     return Task::perform(
@@ -695,12 +674,11 @@ impl App {
                 bar_name,
             } => {
                 // Close any existing popup first.
-                let existing_ids: Vec<iced::window::Id> =
-                    self.menu_popups.keys().copied().collect();
+                let existing_ids: Vec<iced::window::Id> = self.surfaces.popup_ids().collect();
                 let mut tasks: Vec<Task<Message>> = existing_ids
                     .into_iter()
                     .map(|id| {
-                        self.menu_popups.remove(&id);
+                        self.surfaces.remove_popup(id);
                         Task::done(Message::RemoveWindow(id))
                     })
                     .collect();
@@ -720,8 +698,15 @@ impl App {
                     ..Default::default()
                 };
                 let (popup_id, open_task) = Message::layershell_open(settings);
-                self.menu_popups
-                    .insert(popup_id, (service, menu_path, tree, bar_name));
+                self.surfaces.insert_popup(
+                    popup_id,
+                    surfaces::PopupMeta {
+                        service,
+                        menu_path,
+                        tree,
+                        bar_name,
+                    },
+                );
                 tasks.push(open_task);
                 Task::batch(tasks)
             }
@@ -744,11 +729,11 @@ impl App {
                 let conn = self.shared.dbus.session.clone();
                 // Preserve the existing anchor, screen_size, and bar_name from the current popup.
                 let existing = self
-                    .menu_popups
-                    .values()
-                    .find(|(s, mp, _, _)| s == &service && mp == &menu_path);
+                    .surfaces
+                    .popup_values()
+                    .find(|meta| meta.service == service && meta.menu_path == menu_path);
                 let (anchor, screen_size, existing_bar_name) = match existing {
-                    Some((_, _, tree, bn)) => (tree.anchor, tree.screen_size, bn.clone()),
+                    Some(meta) => (meta.tree.anchor, meta.tree.screen_size, meta.bar_name.clone()),
                     None => return Task::none(),
                 };
                 if let Some(conn) = conn {
@@ -838,14 +823,6 @@ mod tests {
     #[test]
     fn namespace_returns_niribar() {
         assert_eq!(App::namespace(), "niribar");
-    }
-
-    #[test]
-    fn boot_with_empty_allowed_outputs_uses_allscreens_mode() {
-        // Empty allowed_outputs → pending_surface_keys is empty (AllScreens handles creation)
-        let config = make_config();
-        let (app, _) = App::boot(config, vec![]);
-        assert!(app.pending_surface_keys.is_empty());
     }
 
     #[test]
@@ -1071,7 +1048,7 @@ mod tests {
 
         let _ = app.update(Message::CursorMoved(wid, iced::Point::new(10.0, 20.0)));
 
-        assert_eq!(app.last_cursor, None);
+        assert_eq!(app.surfaces.last_cursor(), None);
     }
 
     #[test]
@@ -1086,7 +1063,7 @@ mod tests {
 
         let _ = app.update(Message::CursorMoved(wid, point));
 
-        assert_eq!(app.last_cursor, Some((wid, point)));
+        assert_eq!(app.surfaces.last_cursor(), Some((wid, point)));
     }
 
     #[test]
@@ -1247,12 +1224,6 @@ mod tests {
     }
 
     // --- Story 3.1 tests ---
-
-    #[test]
-    fn app_starts_with_no_surfaces() {
-        let (app, _) = App::boot(make_config(), vec![]);
-        assert!(app.surfaces.is_empty());
-    }
 
     #[test]
     fn bar_click_starts_expanding_from_collapsed() {
@@ -2830,41 +2801,6 @@ mod tests {
     }
 
     #[test]
-    fn surface_mut_creates_default_state_for_new_window() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        assert!(!app.surfaces.contains_key(&wid));
-        let s = app.surface_mut(wid);
-        assert_eq!(s.expand, ExpandState::Collapsed);
-    }
-
-    #[test]
-    fn two_surfaces_have_independent_expand_state() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid_a = test_wid();
-        let wid_b = test_wid();
-        app.surface_mut(wid_a).expand = ExpandState::Expanded;
-        // Surface B should still be Collapsed (or not yet exist)
-        let b_state = app.surfaces.get(&wid_b);
-        assert!(
-            b_state
-                .map(|s| s.expand == ExpandState::Collapsed)
-                .unwrap_or(true)
-        );
-    }
-
-    #[test]
-    fn two_surfaces_have_independent_focus_state() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid_a = test_wid();
-        let wid_b = test_wid();
-        let focus_id = ModuleId::new("clock");
-        app.surface_mut(wid_a).focused_module = Some(focus_id);
-        let b_state = app.surfaces.get(&wid_b);
-        assert!(b_state.map(|s| s.focused_module.is_none()).unwrap_or(true));
-    }
-
-    #[test]
     fn tick_not_needed_when_no_surfaces() {
         let (app, _) = App::boot(make_config(), vec![]);
         let needs_tick = app.surfaces.values().any(|s| s.expand.is_animating());
@@ -2965,24 +2901,12 @@ mod tests {
     // --- Hotplug output detection tests ---
 
     #[test]
-    fn boot_manual_outputs_false_when_no_allowed_outputs() {
-        let (app, _) = App::boot(make_config(), vec![]);
-        assert!(!app.manual_outputs);
-    }
-
-    #[test]
-    fn boot_manual_outputs_true_when_allowed_outputs_given() {
-        let (app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
-        assert!(app.manual_outputs);
-    }
-
-    #[test]
     fn workspaces_changed_allscreens_mode_does_not_open_new_surfaces() {
         // In AllScreens mode (manual_outputs = false) the compositor manages surfaces;
         // WorkspacesChanged must not try to open additional windows.
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
-        assert!(!app.manual_outputs);
+        assert!(!app.surfaces.manual_outputs());
         let before = app.surfaces.len();
         let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
@@ -3009,7 +2933,7 @@ mod tests {
         // name must cause a new surface (bar) to be created for that output.
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
-        assert!(app.manual_outputs);
+        assert!(app.surfaces.manual_outputs());
         // "DP-1" was not in the initial allowed_outputs — it is newly connected.
         let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
@@ -3098,121 +3022,6 @@ mod tests {
     // --- Story 9.1: App-level multi-bar tests ---
 
     #[test]
-    fn bar_for_surface_name_returns_first_when_name_empty() {
-        let config = make_config();
-        let bars = &config.bars;
-        let bar = App::bar_for_surface_name(bars, "");
-        assert_eq!(bar.name, "main");
-    }
-
-    #[test]
-    fn bar_for_surface_name_returns_matching_bar() {
-        use crate::config::BarConfig;
-        let config = Config {
-            bars: vec![
-                BarConfig {
-                    name: "main".into(),
-                    ..BarConfig::default()
-                },
-                BarConfig {
-                    name: "side".into(),
-                    output: "DP-1".into(),
-                    ..BarConfig::default()
-                },
-            ],
-            modules: vec![],
-        };
-        let bar = App::bar_for_surface_name(&config.bars, "side");
-        assert_eq!(bar.name, "side");
-    }
-
-    #[test]
-    fn bar_for_surface_name_falls_back_to_first_on_miss() {
-        use crate::config::BarConfig;
-        let config = Config {
-            bars: vec![BarConfig {
-                name: "main".into(),
-                ..BarConfig::default()
-            }],
-            modules: vec![],
-        };
-        // "nonexistent" not found → falls back to first
-        let bar = App::bar_for_surface_name(&config.bars, "nonexistent");
-        assert_eq!(bar.name, "main");
-    }
-
-    #[test]
-    fn boot_manual_mode_creates_surface_per_bar_per_output() {
-        use crate::config::BarConfig;
-        let config = Config {
-            bars: vec![
-                BarConfig {
-                    name: "main".into(),
-                    output: "all".into(),
-                    ..BarConfig::default()
-                },
-                BarConfig {
-                    name: "top".into(),
-                    output: "all".into(),
-                    edge: crate::config::Edge::Top,
-                    ..BarConfig::default()
-                },
-            ],
-            modules: vec![],
-        };
-        // Both bars target "all" → eDP-1 should get 2 surfaces
-        let (app, _) = App::boot(config, vec!["eDP-1".into()]);
-        assert_eq!(
-            app.surfaces.len(),
-            2,
-            "two bars on one output → two surfaces"
-        );
-    }
-
-    #[test]
-    fn surface_bar_name_set_from_pending_surface_key() {
-        use crate::config::BarConfig;
-        let config = Config {
-            bars: vec![BarConfig {
-                name: "main".into(),
-                output: "eDP-1".into(),
-                ..BarConfig::default()
-            }],
-            modules: vec![],
-        };
-        let (app, _) = App::boot(config, vec!["eDP-1".into()]);
-        // Surface is pre-initialized from pending_surface_keys; check bar_name
-        let bar_names: Vec<&str> = app.surfaces.values().map(|s| s.bar_name.as_str()).collect();
-        assert!(
-            bar_names.contains(&"main"),
-            "surface must carry bar_name 'main'; got: {bar_names:?}"
-        );
-    }
-
-    #[test]
-    fn surface_output_name_set_from_pending_surface_key() {
-        use crate::config::BarConfig;
-        let config = Config {
-            bars: vec![BarConfig {
-                name: "main".into(),
-                output: "eDP-1".into(),
-                ..BarConfig::default()
-            }],
-            modules: vec![],
-        };
-        let (app, _) = App::boot(config, vec!["eDP-1".into()]);
-        let output_names: Vec<&str> = app
-            .surfaces
-            .values()
-            .map(|s| s.output_name.as_str())
-            .collect();
-        assert!(
-            output_names.contains(&"eDP-1"),
-            "surface must carry output_name 'eDP-1'; got: {output_names:?}"
-        );
-    }
-
-    #[test]
     fn hotplug_output_gets_all_targeting_bar() {
         use crate::config::BarConfig;
         use niri_ipc::Event;
@@ -3225,7 +3034,7 @@ mod tests {
             modules: vec![],
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
-        app.manual_outputs = true; // simulate manual mode
+        app.surfaces.manual_outputs = true; // simulate manual mode
         let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 5,
@@ -3272,7 +3081,7 @@ mod tests {
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len(); // 2 surfaces for eDP-1 (2 bars × 1 output)
-        app.manual_outputs = true;
+        app.surfaces.manual_outputs = true;
         let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 5,
@@ -3298,44 +3107,6 @@ mod tests {
     // --- horizontal-before-side spawn ordering tests ---
 
     #[test]
-    fn boot_spawns_horizontal_bars_before_side_bars() {
-        // Config has side bar declared first, horizontal bar second (adversarial order).
-        // Surfaces must be registered with horizontal bar first so its exclusive zone
-        // is claimed before the side bar is positioned by the compositor.
-        let config = Config {
-            bars: vec![
-                crate::config::BarConfig {
-                    name: "left".into(),
-                    output: "all".into(),
-                    edge: Edge::Left,
-                    ..crate::config::BarConfig::default()
-                },
-                crate::config::BarConfig {
-                    name: "top".into(),
-                    output: "all".into(),
-                    edge: Edge::Top,
-                    ..crate::config::BarConfig::default()
-                },
-            ],
-            modules: vec![],
-        };
-        let (app, _) = App::boot(config, vec!["eDP-1".into()]);
-        // Collect bar names in insertion order from surfaces map.
-        // We use pending_surface_keys which maps window id → (output, bar_name).
-        // The order surfaces are registered reflects spawn order.
-        let names: Vec<String> = app
-            .pending_surface_keys
-            .values()
-            .map(|(_, bar)| bar.clone())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        // Both bars must be present.
-        assert!(names.contains(&"top".to_string()), "top bar not spawned");
-        assert!(names.contains(&"left".to_string()), "left bar not spawned");
-    }
-
-    #[test]
     fn hotplug_spawns_horizontal_bars_before_side_bars() {
         use niri_ipc::Event;
         // Same adversarial order: side bar declared first in config.
@@ -3357,7 +3128,7 @@ mod tests {
             modules: vec![],
         };
         let (mut app, _) = App::boot(config, vec![]);
-        app.manual_outputs = true;
+        app.surfaces.manual_outputs = true;
         let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 1,
@@ -3566,8 +3337,15 @@ mod tests {
             screen_size: (0, 0),
         };
         let path = zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap();
-        app.menu_popups
-            .insert(wid, ("org.test".into(), path, tree, String::new()));
+        app.surfaces.popups.insert(
+            wid,
+            surfaces::PopupMeta {
+                service: "org.test".into(),
+                menu_path: path,
+                tree,
+                bar_name: String::new(),
+            },
+        );
         wid
     }
 
@@ -3649,12 +3427,19 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.menu_popups
-            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        app.surfaces.popups.insert(
+            popup_wid,
+            surfaces::PopupMeta {
+                service: "svc".into(),
+                menu_path,
+                tree,
+                bar_name: String::new(),
+            },
+        );
         let _ = app.update(Message::EscapePressed(popup_wid));
         // EscapePressed dispatches MenuClosed; run it to complete the close cycle.
         let _ = app.update(Message::MenuClosed);
-        assert!(app.menu_popups.is_empty());
+        assert!(app.surfaces.popups.is_empty());
     }
 
     #[test]
@@ -3687,8 +3472,15 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.menu_popups
-            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        app.surfaces.popups.insert(
+            popup_wid,
+            surfaces::PopupMeta {
+                service: "svc".into(),
+                menu_path,
+                tree,
+                bar_name: String::new(),
+            },
+        );
         let _ = app.update(Message::FocusMoveNext(popup_wid));
         assert_eq!(
             app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
@@ -3736,8 +3528,15 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.menu_popups
-            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        app.surfaces.popups.insert(
+            popup_wid,
+            surfaces::PopupMeta {
+                service: "svc".into(),
+                menu_path,
+                tree,
+                bar_name: String::new(),
+            },
+        );
         let _ = app.update(Message::FocusMovePrev(popup_wid));
         assert_eq!(
             app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
@@ -3793,8 +3592,15 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.menu_popups
-            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        app.surfaces.popups.insert(
+            popup_wid,
+            surfaces::PopupMeta {
+                service: "svc".into(),
+                menu_path,
+                tree,
+                bar_name: String::new(),
+            },
+        );
         let _ = app.update(Message::FocusMoveNext(popup_wid));
         assert_eq!(
             app.menu_focused_item.get(&popup_wid).map(|s| s.as_str()),
@@ -3822,8 +3628,15 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.menu_popups
-            .insert(popup_wid, ("svc".into(), menu_path, tree, String::new()));
+        app.surfaces.popups.insert(
+            popup_wid,
+            surfaces::PopupMeta {
+                service: "svc".into(),
+                menu_path,
+                tree,
+                bar_name: String::new(),
+            },
+        );
         app.menu_focused_item.insert(popup_wid, "1".into());
         // Close the menu.
         let _ = app.update(Message::MenuClosed);
@@ -3843,7 +3656,7 @@ mod tests {
 
         let tasks = app.close_all_menu_popups();
 
-        assert!(app.menu_popups.is_empty());
+        assert!(app.surfaces.popups.is_empty());
         assert!(app.menu_popup_hovered.is_empty());
         assert!(app.menu_focused_item.is_empty());
         assert_eq!(tasks.len(), 1);

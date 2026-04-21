@@ -51,7 +51,7 @@ impl App {
                             &self.shared.niri.workspaces,
                             &workspaces,
                         );
-                        let open_tasks = if changed && self.manual_outputs {
+                        let open_tasks = if changed && self.surfaces.manual_outputs() {
                             self.open_new_output_windows(&workspaces)
                         } else {
                             vec![]
