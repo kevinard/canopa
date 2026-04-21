@@ -3,6 +3,7 @@ use niri_ipc::socket::Socket;
 use niri_ipc::{Event, Request};
 use tokio::sync::mpsc;
 
+use crate::app::messages::AppNiriEvent;
 use crate::app::Message;
 use crate::niri::NiriEvent;
 
@@ -62,14 +63,14 @@ pub fn niri_subscription() -> iced::Subscription<Message> {
                                 }
                             });
                             Some((
-                                Message::NiriEvent(NiriEvent::Connected),
+                                Message::Niri(AppNiriEvent::Ipc(NiriEvent::Connected)),
                                 NiriSubState::Running(rx),
                             ))
                         }
                         _ => {
                             // No Niri socket — graceful degradation (FR21, AC #2).
                             // Do NOT log to stderr. Emit once and terminate.
-                            Some((Message::NiriEvent(NiriEvent::Unavailable), NiriSubState::Done))
+                            Some((Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)), NiriSubState::Done))
                         }
                     }
                 }
@@ -77,7 +78,7 @@ pub fn niri_subscription() -> iced::Subscription<Message> {
                     match rx.recv().await {
                         Some(Ok(event)) if should_emit_event(&event) => {
                             break Some((
-                                Message::NiriEvent(NiriEvent::Event(event)),
+                                Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(event))),
                                 NiriSubState::Running(rx),
                             ));
                         }
@@ -85,7 +86,7 @@ pub fn niri_subscription() -> iced::Subscription<Message> {
                         _ => {
                             // Channel closed or error — treat as disconnection.
                             break Some((
-                                Message::NiriEvent(NiriEvent::Unavailable),
+                                Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)),
                                 NiriSubState::Done,
                             ));
                         }

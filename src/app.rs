@@ -45,6 +45,7 @@ pub(crate) struct App {
     modules: module_store::ModuleStore,
     surfaces: surfaces::SurfaceManager,
     menu: menu::MenuSystem,
+    niri: niri::AppNiriState,
 }
 
 #[to_layer_message(multi)]
@@ -62,8 +63,6 @@ pub enum Message {
     ModuleScrollUp(ModuleId, iced::window::Id),
     /// Scroll-down event on a module (Story 5.4). Per-surface.
     ModuleScrollDown(ModuleId, iced::window::Id),
-    /// Event from the Niri IPC event stream; dispatched to shared context state (Story 4.1).
-    NiriEvent(crate::niri::NiriEvent),
     /// Battery charge state from UPower D-Bus subscription (Story 5.2).
     Battery(BatteryEvent),
     /// Network connectivity state from D-Bus subscription (Story 5.3).
@@ -139,7 +138,38 @@ impl Message {
             Message::Niri(messages::AppNiriEvent::Ipc(
                 crate::niri::NiriEvent::Unavailable,
             )) => "Niri::Unavailable",
-            Message::Niri(_) => "Niri",
+            Message::Niri(messages::AppNiriEvent::Ipc(crate::niri::NiriEvent::Event(event))) => {
+                match event {
+                    niri_ipc::Event::WorkspacesChanged { .. } => "Niri::WorkspacesChanged",
+                    niri_ipc::Event::WorkspaceUrgencyChanged { .. } => {
+                        "Niri::WorkspaceUrgencyChanged"
+                    }
+                    niri_ipc::Event::WorkspaceActivated { .. } => "Niri::WorkspaceActivated",
+                    niri_ipc::Event::WorkspaceActiveWindowChanged { .. } => {
+                        "Niri::WorkspaceActiveWindowChanged"
+                    }
+                    niri_ipc::Event::WindowFocusChanged { .. } => "Niri::WindowFocusChanged",
+                    niri_ipc::Event::WindowsChanged { .. } => "Niri::WindowsChanged",
+                    niri_ipc::Event::WindowOpenedOrChanged { .. } => "Niri::WindowOpenedOrChanged",
+                    niri_ipc::Event::WindowClosed { .. } => "Niri::WindowClosed",
+                    niri_ipc::Event::WindowFocusTimestampChanged { .. } => {
+                        "Niri::WindowFocusTimestampChanged"
+                    }
+                    niri_ipc::Event::WindowUrgencyChanged { .. } => "Niri::WindowUrgencyChanged",
+                    niri_ipc::Event::WindowLayoutsChanged { .. } => "Niri::WindowLayoutsChanged",
+                    niri_ipc::Event::KeyboardLayoutsChanged { .. } => {
+                        "Niri::KeyboardLayoutsChanged"
+                    }
+                    niri_ipc::Event::KeyboardLayoutSwitched { .. } => {
+                        "Niri::KeyboardLayoutSwitched"
+                    }
+                    niri_ipc::Event::OverviewOpenedOrClosed { .. } => {
+                        "Niri::OverviewOpenedOrClosed"
+                    }
+                    niri_ipc::Event::ConfigLoaded { .. } => "Niri::ConfigLoaded",
+                    niri_ipc::Event::ScreenshotCaptured { .. } => "Niri::ScreenshotCaptured",
+                }
+            }
             Message::Tray(_) => "Tray",
             Message::Module(_, ModuleEvent::Clock(_)) => "Module::Clock",
             Message::Module(_, ModuleEvent::Script(_)) => "Module::Script",
@@ -147,30 +177,6 @@ impl Message {
             Message::ModuleClick(_, _) => "ModuleClick",
             Message::ModuleScrollUp(_, _) => "ModuleScrollUp",
             Message::ModuleScrollDown(_, _) => "ModuleScrollDown",
-            Message::NiriEvent(crate::niri::NiriEvent::Connected) => "Niri::Connected",
-            Message::NiriEvent(crate::niri::NiriEvent::Unavailable) => "Niri::Unavailable",
-            Message::NiriEvent(crate::niri::NiriEvent::Event(event)) => match event {
-                niri_ipc::Event::WorkspacesChanged { .. } => "Niri::WorkspacesChanged",
-                niri_ipc::Event::WorkspaceUrgencyChanged { .. } => "Niri::WorkspaceUrgencyChanged",
-                niri_ipc::Event::WorkspaceActivated { .. } => "Niri::WorkspaceActivated",
-                niri_ipc::Event::WorkspaceActiveWindowChanged { .. } => {
-                    "Niri::WorkspaceActiveWindowChanged"
-                }
-                niri_ipc::Event::WindowFocusChanged { .. } => "Niri::WindowFocusChanged",
-                niri_ipc::Event::WindowsChanged { .. } => "Niri::WindowsChanged",
-                niri_ipc::Event::WindowOpenedOrChanged { .. } => "Niri::WindowOpenedOrChanged",
-                niri_ipc::Event::WindowClosed { .. } => "Niri::WindowClosed",
-                niri_ipc::Event::WindowFocusTimestampChanged { .. } => {
-                    "Niri::WindowFocusTimestampChanged"
-                }
-                niri_ipc::Event::WindowUrgencyChanged { .. } => "Niri::WindowUrgencyChanged",
-                niri_ipc::Event::WindowLayoutsChanged { .. } => "Niri::WindowLayoutsChanged",
-                niri_ipc::Event::KeyboardLayoutsChanged { .. } => "Niri::KeyboardLayoutsChanged",
-                niri_ipc::Event::KeyboardLayoutSwitched { .. } => "Niri::KeyboardLayoutSwitched",
-                niri_ipc::Event::OverviewOpenedOrClosed { .. } => "Niri::OverviewOpenedOrClosed",
-                niri_ipc::Event::ConfigLoaded { .. } => "Niri::ConfigLoaded",
-                niri_ipc::Event::ScreenshotCaptured { .. } => "Niri::ScreenshotCaptured",
-            },
             Message::Battery(_) => "Battery",
             Message::Network(_) => "Network",
             Message::Volume(_) => "Volume",
@@ -289,6 +295,7 @@ impl App {
             modules: module_store::ModuleStore::from_modules(modules),
             surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
             menu: menu::MenuSystem::default(),
+            niri: niri::AppNiriState::new(),
         };
         (app, Task::batch(window_tasks))
     }
@@ -309,7 +316,7 @@ impl App {
             Message::ModuleClick(id, _window) => {
                 self.dispatch_module_interaction(&id, InteractionEvent::Clicked)
             }
-            Message::NiriEvent(event) => self.handle_niri_event(event),
+            Message::Niri(event) => self.handle_app_niri_event(event),
             Message::Network(event) => self.handle_network_event(event),
             Message::Volume(event) => self.handle_volume_event(event),
             Message::VolumeAdjust { step, up } => self.handle_volume_adjust(step, up),
@@ -592,6 +599,33 @@ mod tests {
         iced::window::Id::unique()
     }
 
+    fn make_workspaces_app() -> App {
+        use crate::config::{ModuleConfig, ModuleParams};
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "workspaces".into(),
+                module_type: "workspaces".into(),
+                params: ModuleParams::None,
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.top = vec!["workspaces".into()];
+        App::boot(config, vec![]).0
+    }
+
+    fn make_workspace(idx: u8, is_focused: bool) -> niri_ipc::Workspace {
+        niri_ipc::Workspace {
+            id: idx as u64 + 1,
+            idx,
+            name: None,
+            output: Some("eDP-1".to_string()),
+            is_urgent: false,
+            is_active: is_focused,
+            is_focused,
+            active_window_id: None,
+        }
+    }
+
     #[test]
     fn namespace_returns_niribar() {
         assert_eq!(App::namespace(), "niribar");
@@ -855,10 +889,10 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         app.perf = Some(super::perf::PerfTracker::default());
 
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspaceActivated {
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspaceActivated {
             id: 1,
             focused: true,
-        })));
+        }))));
 
         let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
         assert_eq!(snapshot.updates.get("Niri::WorkspaceActivated"), Some(&1));
@@ -870,9 +904,9 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         app.perf = Some(super::perf::PerfTracker::default());
 
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::ConfigLoaded {
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::ConfigLoaded {
             failed: false,
-        })));
+        }))));
 
         let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
         assert_eq!(snapshot.updates.get("Niri::ConfigLoaded"), Some(&1));
@@ -1221,511 +1255,6 @@ mod tests {
         app.surface_mut(wid); // initialize so surface exists before early-return
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarClick(wid)));
         assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-    }
-
-    // --- Story 4.1 tests ---
-
-    #[test]
-    fn niri_connected_event_sets_connected() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Connected));
-        assert!(app.shared.niri.connected);
-    }
-
-    #[test]
-    fn niri_unavailable_event_does_not_crash() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Unavailable));
-        assert!(!app.shared.niri.connected);
-    }
-
-    #[test]
-    fn niri_unavailable_sets_workspaces_module_unavailable() {
-        let mut app = make_workspaces_app();
-        let _ = app.update(Message::NiriEvent(NiriEvent::Unavailable));
-        let id = ModuleId::new("workspaces");
-        assert!(matches!(
-            app.shared.modules.get(&id),
-            Some(ModuleState::Unavailable)
-        ));
-    }
-
-    #[test]
-    fn niri_unavailable_sets_focused_window_module_unavailable() {
-        let mut app = make_focused_window_app();
-        let _ = app.update(Message::NiriEvent(NiriEvent::Unavailable));
-        let id = ModuleId::new("focused-window");
-        assert!(matches!(
-            app.shared.modules.get(&id),
-            Some(ModuleState::Unavailable)
-        ));
-    }
-
-    #[test]
-    fn niri_unavailable_does_not_affect_non_niri_modules() {
-        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "clock".into(),
-                module_type: "clock".into(),
-                params: ModuleParams::Clock(ClockConfig::default()),
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.center = vec!["clock".into()];
-        let (mut app, _) = App::boot(config, vec![]);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Unavailable));
-        let id = ModuleId::new("clock");
-        // Clock state is Loading (default) — niri Unavailable must not touch non-niri modules.
-        assert!(!matches!(
-            app.shared.modules.get(&id),
-            Some(ModuleState::Unavailable)
-        ));
-    }
-
-    #[test]
-    fn niri_workspaces_changed_stores_workspaces() {
-        use niri_ipc::{Event, Workspace};
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let ws = Workspace {
-            id: 1,
-            idx: 0,
-            name: None,
-            output: Some("eDP-1".to_string()),
-            is_urgent: false,
-            is_active: true,
-            is_focused: true,
-            active_window_id: None,
-        };
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws],
-        })));
-        assert_eq!(app.shared.niri.workspaces.len(), 1);
-    }
-
-    #[test]
-    fn niri_window_focus_changed_stores_id() {
-        use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
-            id: Some(42),
-        })));
-        assert_eq!(app.shared.niri.focused_window_id, Some(42));
-    }
-
-    #[test]
-    fn niri_window_focus_cleared() {
-        use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        app.shared.niri.focused_window_id = Some(99);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
-            id: None,
-        })));
-        assert_eq!(app.shared.niri.focused_window_id, None);
-    }
-
-    #[test]
-    fn niri_unknown_event_is_ignored() {
-        use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(
-            Event::KeyboardLayoutsChanged {
-                keyboard_layouts: niri_ipc::KeyboardLayouts {
-                    names: vec![],
-                    current_idx: 0,
-                },
-            },
-        )));
-        assert!(!app.shared.niri.connected);
-        assert!(app.shared.niri.workspaces.is_empty());
-    }
-
-    // --- Story 4.2 tests ---
-
-    fn make_workspaces_app() -> App {
-        use crate::config::{ModuleConfig, ModuleParams};
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "workspaces".into(),
-                module_type: "workspaces".into(),
-                params: ModuleParams::None,
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.top = vec!["workspaces".into()];
-        App::boot(config, vec![]).0
-    }
-
-    fn make_workspace(idx: u8, is_focused: bool) -> niri_ipc::Workspace {
-        niri_ipc::Workspace {
-            id: idx as u64 + 1,
-            idx,
-            name: None,
-            output: Some("eDP-1".to_string()),
-            is_urgent: false,
-            is_active: is_focused,
-            is_focused,
-            active_window_id: None,
-        }
-    }
-
-    #[test]
-    fn workspaces_module_state_updated_on_workspace_change() {
-        use niri_ipc::Event;
-        let mut app = make_workspaces_app();
-        let ws = make_workspace(0, true);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws],
-        })));
-        let items: Vec<_> = app
-            .modules
-            .iter()
-            .filter(|(_, m)| m.kind() == ModuleKind::WorkspaceItem)
-            .collect();
-        assert_eq!(items.len(), 1);
-    }
-
-    #[test]
-    fn workspace_render_state_detects_equivalent_snapshots() {
-        let workspaces = vec![make_workspace(0, true), make_workspace(1, false)];
-
-        assert!(super::niri::workspace_render_state_equal(
-            &workspaces,
-            &workspaces.clone()
-        ));
-    }
-
-    #[test]
-    fn equivalent_workspace_event_keeps_module_count() {
-        use niri_ipc::Event;
-        let mut app = make_workspaces_app();
-        let workspaces = vec![make_workspace(0, true)];
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: workspaces.clone(),
-        })));
-        let count = app.modules.len();
-
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces,
-        })));
-
-        assert_eq!(app.modules.len(), count);
-    }
-
-    #[test]
-    fn workspace_module_focused_workspace_reflected_in_state() {
-        use niri_ipc::Event;
-        let mut app = make_workspaces_app();
-        let ws0 = make_workspace(0, false);
-        let ws1 = make_workspace(1, true);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws0, ws1],
-        })));
-        let items: Vec<_> = app
-            .modules
-            .iter()
-            .filter(|(_, m)| m.kind() == ModuleKind::WorkspaceItem)
-            .collect();
-        assert_eq!(items.len(), 2);
-        // Focused item is the one with id "workspace:2" (idx=1, niri id = idx+1 in make_workspace)
-        assert!(items.iter().any(|(_, m)| m.id().0 == "workspace:2"));
-    }
-
-    #[test]
-    fn workspaces_module_state_not_updated_without_workspaces_module_in_config() {
-        use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let ws = make_workspace(0, true);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws],
-        })));
-        let id = ModuleId::new("workspaces");
-        assert!(!app.shared.modules.contains_key(&id));
-    }
-
-    #[test]
-    fn workspaces_changed_order_preserved_in_state() {
-        use niri_ipc::Event;
-        let mut app = make_workspaces_app();
-        let ws2 = make_workspace(2, false);
-        let ws0 = make_workspace(0, true);
-        let ws1 = make_workspace(1, false);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws2, ws0, ws1],
-        })));
-        // Items are sorted by idx when inserted; verify all three exist.
-        let items: Vec<_> = app
-            .modules
-            .iter()
-            .filter(|(_, m)| m.kind() == ModuleKind::WorkspaceItem)
-            .collect();
-        assert_eq!(items.len(), 3);
-        // Sorted by idx: 0, 1, 2 → niri ids 1, 2, 3
-        assert_eq!(items[0].1.id().0, "workspace:1");
-        assert_eq!(items[1].1.id().0, "workspace:2");
-        assert_eq!(items[2].1.id().0, "workspace:3");
-    }
-
-    #[test]
-    fn workspace_rebuild_handles_multiple_placeholders_after_existing_items() {
-        use crate::config::{ModuleConfig, ModuleParams, WorkspacesConfig};
-        use niri_ipc::Event;
-
-        let mut config = Config {
-            modules: vec![
-                ModuleConfig {
-                    name: "workspaces-left".into(),
-                    module_type: "workspaces".into(),
-                    params: ModuleParams::Workspaces(WorkspacesConfig::default()),
-                },
-                ModuleConfig {
-                    name: "workspaces-right".into(),
-                    module_type: "workspaces".into(),
-                    params: ModuleParams::Workspaces(WorkspacesConfig::default()),
-                },
-            ],
-            ..Config::default()
-        };
-        config.bars[0].modules.top = vec!["workspaces-left".into(), "workspaces-right".into()];
-        let (mut app, _) = App::boot(config, vec![]);
-
-        let first = vec![make_workspace(0, true), make_workspace(1, false)];
-        let second = vec![make_workspace(0, false), make_workspace(1, true)];
-
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: first,
-        })));
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: second,
-        })));
-
-        let layout: Vec<(ModuleKind, Option<String>)> = app
-            .modules
-            .iter()
-            .map(|(_, m)| (m.kind(), m.config_name().map(str::to_string)))
-            .collect();
-        assert_eq!(
-            layout,
-            vec![
-                (ModuleKind::Workspaces, None),
-                (ModuleKind::WorkspaceItem, Some("workspaces-left".into())),
-                (ModuleKind::WorkspaceItem, Some("workspaces-left".into())),
-                (ModuleKind::Workspaces, None),
-                (ModuleKind::WorkspaceItem, Some("workspaces-right".into())),
-                (ModuleKind::WorkspaceItem, Some("workspaces-right".into())),
-            ]
-        );
-    }
-
-    #[test]
-    fn workspace_activated_updates_focused_pill() {
-        use niri_ipc::Event;
-        let mut app = make_workspaces_app();
-        let ws0 = make_workspace(0, true);
-        let ws1 = make_workspace(1, false);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws0, ws1],
-        })));
-
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspaceActivated {
-            id: 2,
-            focused: true,
-        })));
-
-        // After activation, workspace 2 (idx=1) should be focused.
-        // WorkspaceItemModules are rebuilt — verify the item for ws2 now carries is_focused=true
-        // by checking app.shared.niri.workspaces (source of truth).
-        let focused: Vec<_> = app
-            .shared
-            .niri
-            .workspaces
-            .iter()
-            .filter(|w| w.is_focused)
-            .collect();
-        assert_eq!(focused.len(), 1);
-        assert_eq!(focused[0].idx, 1);
-    }
-
-    #[test]
-    fn workspace_activated_does_not_rebuild_workspace_items() {
-        use niri_ipc::Event;
-        let mut app = make_workspaces_app();
-        app.perf = Some(super::perf::PerfTracker::default());
-        let ws0 = make_workspace(0, true);
-        let ws1 = make_workspace(1, false);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws0, ws1],
-        })));
-        let _ = app.perf.as_ref().unwrap().snapshot_and_reset();
-        let count = app.modules.len();
-
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspaceActivated {
-            id: 2,
-            focused: true,
-        })));
-
-        let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
-        assert_eq!(snapshot.workspace_rebuilds, 0);
-        assert_eq!(app.modules.len(), count);
-    }
-
-    #[test]
-    fn workspace_activated_no_panic_when_workspaces_empty() {
-        use niri_ipc::Event;
-        let mut app = make_workspaces_app();
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspaceActivated {
-            id: 1,
-            focused: true,
-        })));
-        assert!(app.shared.niri.workspaces.is_empty());
-    }
-
-    // --- Story 4.4 helpers and tests ---
-
-    fn make_focused_window_app() -> App {
-        use crate::config::{ModuleConfig, ModuleParams};
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "focused-window".into(),
-                module_type: "focused-window".into(),
-                params: ModuleParams::None,
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.center = vec!["focused-window".into()];
-        App::boot(config, vec![]).0
-    }
-
-    fn make_window(id: u64, title: Option<&str>, is_focused: bool) -> niri_ipc::Window {
-        niri_ipc::Window {
-            id,
-            title: title.map(|t| t.to_string()),
-            app_id: None,
-            pid: None,
-            workspace_id: None,
-            is_focused,
-            is_floating: false,
-            is_urgent: false,
-            layout: niri_ipc::WindowLayout {
-                pos_in_scrolling_layout: None,
-                tile_size: (0.0, 0.0),
-                window_size: (0, 0),
-                tile_pos_in_workspace_view: None,
-                window_offset_in_tile: (0.0, 0.0),
-            },
-            focus_timestamp: None,
-        }
-    }
-
-    #[test]
-    fn focused_window_state_updated_on_window_focus_changed() {
-        use niri_ipc::Event;
-        let mut app = make_focused_window_app();
-        let win = make_window(1, Some("Firefox"), false);
-        app.shared.niri.windows.insert(1, win);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
-            id: Some(1),
-        })));
-        let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::FocusedWindow(s)) => {
-                assert_eq!(s.title.as_deref(), Some("Firefox"));
-            }
-            other => panic!("expected FocusedWindow state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn focused_window_title_retained_when_focus_moves_to_none() {
-        use niri_ipc::Event;
-        let mut app = make_focused_window_app();
-        let win = make_window(1, Some("Firefox"), false);
-        app.shared.niri.windows.insert(1, win);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
-            id: Some(1),
-        })));
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowFocusChanged {
-            id: None,
-        })));
-        let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::FocusedWindow(s)) => {
-                assert_eq!(s.title.as_deref(), Some("Firefox"));
-            }
-            other => panic!("expected FocusedWindow state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn focused_window_state_updated_on_windows_changed() {
-        use niri_ipc::Event;
-        let mut app = make_focused_window_app();
-        assert!(app.shared.niri.focused_window_id.is_none());
-        let win = make_window(2, Some("Helix"), true);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowsChanged {
-            windows: vec![win],
-        })));
-        let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::FocusedWindow(s)) => {
-                assert_eq!(s.title.as_deref(), Some("Helix"));
-            }
-            other => panic!("expected FocusedWindow state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn focused_window_state_updated_on_window_opened_or_changed() {
-        use niri_ipc::Event;
-        let mut app = make_focused_window_app();
-        let win = make_window(3, Some("Terminal"), true);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(
-            Event::WindowOpenedOrChanged { window: win },
-        )));
-        let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::FocusedWindow(s)) => {
-                assert_eq!(s.title.as_deref(), Some("Terminal"));
-            }
-            other => panic!("expected FocusedWindow state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn focused_window_state_cleared_on_window_closed() {
-        use niri_ipc::Event;
-        let mut app = make_focused_window_app();
-        let win = make_window(4, Some("Nautilus"), true);
-        app.shared.niri.windows.insert(4, win);
-        app.shared.niri.focused_window_id = Some(4);
-        app.shared.modules.insert(
-            ModuleId::new("focused-window"),
-            ModuleState::FocusedWindow(crate::modules::focused_window::FocusedWindowState {
-                title: Some("Nautilus".into()),
-            }),
-        );
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowClosed {
-            id: 4,
-        })));
-        let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::FocusedWindow(s)) => {
-                assert!(s.title.is_none());
-            }
-            other => panic!("expected FocusedWindow state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn focused_window_state_not_updated_without_focused_window_module() {
-        use niri_ipc::Event;
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let win = make_window(1, Some("Firefox"), true);
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WindowsChanged {
-            windows: vec![win],
-        })));
-        let id = ModuleId::new("focused-window");
-        assert!(!app.shared.modules.contains_key(&id));
     }
 
     // Story 5.1 tests
@@ -2680,7 +2209,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         assert!(!app.surfaces.manual_outputs());
         let before = app.surfaces.len();
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 1,
                 idx: 0,
@@ -2691,7 +2220,7 @@ mod tests {
                 is_focused: true,
                 active_window_id: None,
             }],
-        })));
+        }))));
         assert_eq!(
             app.surfaces.len(),
             before,
@@ -2707,7 +2236,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
         assert!(app.surfaces.manual_outputs());
         // "DP-1" was not in the initial allowed_outputs — it is newly connected.
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 10,
                 idx: 0,
@@ -2718,7 +2247,7 @@ mod tests {
                 is_focused: false,
                 active_window_id: None,
             }],
-        })));
+        }))));
         let known_names: Vec<&str> = app
             .surfaces
             .values()
@@ -2737,7 +2266,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
         let before = app.surfaces.len();
         // Fire WorkspacesChanged for eDP-1 which is already in surfaces.
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 1,
                 idx: 0,
@@ -2748,7 +2277,7 @@ mod tests {
                 is_focused: true,
                 active_window_id: None,
             }],
-        })));
+        }))));
         assert_eq!(
             app.surfaces.len(),
             before,
@@ -2772,7 +2301,7 @@ mod tests {
         // Boot without "HDMI-A-1" in allowed (bar does not target it).
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len();
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 99,
                 idx: 0,
@@ -2783,7 +2312,7 @@ mod tests {
                 is_focused: false,
                 active_window_id: None,
             }],
-        })));
+        }))));
         assert_eq!(
             app.surfaces.len(),
             before,
@@ -2807,7 +2336,7 @@ mod tests {
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         app.surfaces.manual_outputs = true; // simulate manual mode
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 5,
                 idx: 0,
@@ -2818,7 +2347,7 @@ mod tests {
                 is_focused: false,
                 active_window_id: None,
             }],
-        })));
+        }))));
         let output_names: Vec<&str> = app
             .surfaces
             .values()
@@ -2854,7 +2383,7 @@ mod tests {
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len(); // 2 surfaces for eDP-1 (2 bars × 1 output)
         app.surfaces.manual_outputs = true;
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 5,
                 idx: 0,
@@ -2865,7 +2394,7 @@ mod tests {
                 is_focused: false,
                 active_window_id: None,
             }],
-        })));
+        }))));
         // After hotplug: should have 2 more surfaces for DP-1 (both bars target "all")
         assert_eq!(
             app.surfaces.len(),
@@ -2901,7 +2430,7 @@ mod tests {
         };
         let (mut app, _) = App::boot(config, vec![]);
         app.surfaces.manual_outputs = true;
-        let _ = app.update(Message::NiriEvent(NiriEvent::Event(Event::WorkspacesChanged {
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
             workspaces: vec![niri_ipc::Workspace {
                 id: 1,
                 idx: 0,
@@ -2912,7 +2441,7 @@ mod tests {
                 is_focused: false,
                 active_window_id: None,
             }],
-        })));
+        }))));
         // Both bars must be registered for DP-1.
         let names: Vec<String> = app
             .surfaces

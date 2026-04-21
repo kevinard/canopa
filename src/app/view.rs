@@ -137,18 +137,18 @@ impl App {
                 let title = if surface.output_name.is_empty() {
                     fw.title.clone()
                 } else {
-                    match self.shared.niri.focused_window_id {
+                    match self.niri.state().focused_window_id {
                         None => self
-                            .shared
                             .niri
+                            .state()
                             .active_window_title_for_output(&surface.output_name),
                         Some(_) => {
-                            let fo = self.shared.niri.focused_output();
+                            let fo = self.niri.state().focused_output();
                             if fo.is_none() || fo == Some(surface.output_name.as_str()) {
                                 fw.title.clone()
                             } else {
-                                self.shared
-                                    .niri
+                                self.niri
+                                    .state()
                                     .active_window_title_for_output(&surface.output_name)
                             }
                         }

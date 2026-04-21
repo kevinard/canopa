@@ -54,10 +54,10 @@ impl App {
     /// focused-window module instances in shared.modules.
     pub(super) fn push_focused_window_state(&mut self) {
         let title = self
-            .shared
             .niri
+            .state()
             .focused_window_id
-            .and_then(|id| self.shared.niri.windows.get(&id))
+            .and_then(|id| self.niri.state().windows.get(&id))
             .and_then(|w| w.title.clone());
         let ids: Vec<_> = self.modules.ids_by_kind(ModuleKind::FocusedWindow).to_vec();
         for id in ids {
