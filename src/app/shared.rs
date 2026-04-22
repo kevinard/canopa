@@ -1,6 +1,6 @@
 use crate::dbus::DbusConnections;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 pub(super) struct SharedContext {
     pub(super) dbus: DbusConnections,
 }

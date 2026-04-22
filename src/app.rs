@@ -37,13 +37,12 @@ use crate::surface::input::init_expand_keybind;
 pub(crate) struct App {
     config: Config,
     shared: shared::SharedContext,
-    perf: Option<perf::PerfTracker>,
-    /// Instantiated module instances paired with their zone placement.
-    modules: module_runtime::ModuleRuntime,
-    tray: tray::TrayState,
     surfaces: surfaces::SurfaceManager,
     menu: menu::MenuSystem,
+    modules: module_runtime::ModuleRuntime,
     niri: niri::AppNiriState,
+    tray: tray::TrayState,
+    perf: Option<perf::PerfTracker>,
 }
 
 #[to_layer_message(multi)]
@@ -231,12 +230,12 @@ impl App {
         let app = App {
             config,
             shared: shared::SharedContext::new(),
-            perf: perf::PerfTracker::from_env(),
-            modules: module_runtime::ModuleRuntime::from_modules(modules),
-            tray: tray::TrayState::default(),
             surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
             menu: menu::MenuSystem::default(),
+            modules: module_runtime::ModuleRuntime::from_modules(modules),
             niri: niri::AppNiriState::new(),
+            tray: tray::TrayState::default(),
+            perf: perf::PerfTracker::from_env(),
         };
         (app, Task::batch(window_tasks))
     }
@@ -374,6 +373,20 @@ mod tests {
     fn perf_tracker_labels_surface_wrapped_event() {
         let event = Message::Surface(messages::SurfaceEvent::Tick);
         assert_eq!(event.perf_label(), "Surface::Tick");
+    }
+
+    #[test]
+    fn app_update_routes_wrapped_tick_to_surface_owner() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid = test_wid();
+        app.surface_mut(wid).expand = ExpandState::Expanding(0.0);
+
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
+
+        assert!(matches!(
+            app.surface(wid).unwrap().expand,
+            ExpandState::Expanding(progress) if progress > 0.0
+        ));
     }
 
     #[test]

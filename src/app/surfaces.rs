@@ -216,11 +216,13 @@ impl App {
 
     /// Returns a mutable reference to the `SurfaceState` for `id`, inserting a default if absent.
     /// Uses the pending (output_name, bar_name) pair (Story 9.1) when initialising a new entry.
+    // Thin compatibility accessors while App remains the iced root.
     pub(super) fn surface_mut(&mut self, id: iced::window::Id) -> &mut SurfaceState {
         self.surfaces.surface_mut(id)
     }
 
     /// Returns a reference to the `SurfaceState` for `id`, or `None` if the surface is unknown.
+    // Thin compatibility accessors while App remains the iced root.
     pub(super) fn surface(&self, id: iced::window::Id) -> Option<&SurfaceState> {
         self.surfaces.surface(id)
     }
