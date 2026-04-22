@@ -29,11 +29,11 @@ impl ModuleStore {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &(Zone, Box<dyn Module>)> {
+    pub fn iter(&self) -> std::slice::Iter<'_, (Zone, Box<dyn Module>)> {
         self.ordered.iter()
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut (Zone, Box<dyn Module>)> {
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, (Zone, Box<dyn Module>)> {
         self.ordered.iter_mut()
     }
 

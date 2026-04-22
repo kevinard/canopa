@@ -51,15 +51,19 @@ impl App {
             }
             NiriEvent::Unavailable => {
                 self.niri.state_mut().connected = false;
-                for (_, module) in &self.modules {
-                    if matches!(
-                        module.kind(),
-                        ModuleKind::Workspaces | ModuleKind::FocusedWindow
-                    ) {
-                        self.shared
-                            .modules
-                            .insert(module.id(), ModuleState::Unavailable);
-                    }
+                let ids: Vec<_> = self
+                    .modules
+                    .iter()
+                    .filter(|(_, module)| {
+                        matches!(
+                            module.kind(),
+                            ModuleKind::Workspaces | ModuleKind::FocusedWindow
+                        )
+                    })
+                    .map(|(_, module)| module.id())
+                    .collect();
+                for id in ids {
+                    self.modules.set_state(id, ModuleState::Unavailable);
                 }
                 Task::none()
             }
@@ -246,7 +250,7 @@ mod tests {
         let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)));
         let id = ModuleId::new("workspaces");
         assert!(matches!(
-            app.shared.modules.get(&id),
+            app.modules.state(&id),
             Some(ModuleState::Unavailable)
         ));
     }
@@ -257,7 +261,7 @@ mod tests {
         let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)));
         let id = ModuleId::new("focused-window");
         assert!(matches!(
-            app.shared.modules.get(&id),
+            app.modules.state(&id),
             Some(ModuleState::Unavailable)
         ));
     }
@@ -278,7 +282,7 @@ mod tests {
         let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)));
         let id = ModuleId::new("clock");
         assert!(!matches!(
-            app.shared.modules.get(&id),
+            app.modules.state(&id),
             Some(ModuleState::Unavailable)
         ));
     }
@@ -297,9 +301,11 @@ mod tests {
             is_focused: true,
             active_window_id: None,
         };
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws],
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: vec![ws],
+            },
+        ))));
         assert_eq!(app.niri.state().workspaces.len(), 1);
     }
 
@@ -307,9 +313,9 @@ mod tests {
     fn niri_window_focus_changed_stores_id() {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WindowFocusChanged {
-            id: Some(42),
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowFocusChanged { id: Some(42) },
+        ))));
         assert_eq!(app.niri.state().focused_window_id, Some(42));
     }
 
@@ -318,9 +324,9 @@ mod tests {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
         app.niri.state_mut().focused_window_id = Some(99);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WindowFocusChanged {
-            id: None,
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowFocusChanged { id: None },
+        ))));
         assert_eq!(app.niri.state().focused_window_id, None);
     }
 
@@ -374,9 +380,11 @@ mod tests {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
         let ws = make_workspace(0, true);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws],
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: vec![ws],
+            },
+        ))));
         let items: Vec<_> = app
             .modules
             .iter()
@@ -400,14 +408,16 @@ mod tests {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
         let workspaces = vec![make_workspace(0, true)];
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: workspaces.clone(),
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: workspaces.clone(),
+            },
+        ))));
         let count = app.modules.len();
 
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces,
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged { workspaces },
+        ))));
 
         assert_eq!(app.modules.len(), count);
     }
@@ -418,9 +428,11 @@ mod tests {
         let mut app = make_workspaces_app();
         let ws0 = make_workspace(0, false);
         let ws1 = make_workspace(1, true);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws0, ws1],
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: vec![ws0, ws1],
+            },
+        ))));
         let items: Vec<_> = app
             .modules
             .iter()
@@ -435,11 +447,13 @@ mod tests {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
         let ws = make_workspace(0, true);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws],
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: vec![ws],
+            },
+        ))));
         let id = ModuleId::new("workspaces");
-        assert!(!app.shared.modules.contains_key(&id));
+        assert!(app.modules.state(&id).is_none());
     }
 
     #[test]
@@ -449,9 +463,11 @@ mod tests {
         let ws2 = make_workspace(2, false);
         let ws0 = make_workspace(0, true);
         let ws1 = make_workspace(1, false);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws2, ws0, ws1],
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: vec![ws2, ws0, ws1],
+            },
+        ))));
         let items: Vec<_> = app
             .modules
             .iter()
@@ -464,70 +480,23 @@ mod tests {
     }
 
     #[test]
-    fn workspace_rebuild_handles_multiple_placeholders_after_existing_items() {
-        use crate::config::{ModuleConfig, ModuleParams, WorkspacesConfig};
-        use niri_ipc::Event;
-
-        let mut config = Config {
-            modules: vec![
-                ModuleConfig {
-                    name: "workspaces-left".into(),
-                    module_type: "workspaces".into(),
-                    params: ModuleParams::Workspaces(WorkspacesConfig::default()),
-                },
-                ModuleConfig {
-                    name: "workspaces-right".into(),
-                    module_type: "workspaces".into(),
-                    params: ModuleParams::Workspaces(WorkspacesConfig::default()),
-                },
-            ],
-            ..Config::default()
-        };
-        config.bars[0].modules.top = vec!["workspaces-left".into(), "workspaces-right".into()];
-        let (mut app, _) = App::boot(config, vec![]);
-
-        let first = vec![make_workspace(0, true), make_workspace(1, false)];
-        let second = vec![make_workspace(0, false), make_workspace(1, true)];
-
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: first,
-        }))));
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: second,
-        }))));
-
-        let layout: Vec<(ModuleKind, Option<String>)> = app
-            .modules
-            .iter()
-            .map(|(_, m)| (m.kind(), m.config_name().map(str::to_string)))
-            .collect();
-        assert_eq!(
-            layout,
-            vec![
-                (ModuleKind::Workspaces, None),
-                (ModuleKind::WorkspaceItem, Some("workspaces-left".into())),
-                (ModuleKind::WorkspaceItem, Some("workspaces-left".into())),
-                (ModuleKind::Workspaces, None),
-                (ModuleKind::WorkspaceItem, Some("workspaces-right".into())),
-                (ModuleKind::WorkspaceItem, Some("workspaces-right".into())),
-            ]
-        );
-    }
-
-    #[test]
     fn workspace_activated_updates_focused_pill() {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
         let ws0 = make_workspace(0, true);
         let ws1 = make_workspace(1, false);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws0, ws1],
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: vec![ws0, ws1],
+            },
+        ))));
 
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspaceActivated {
-            id: 2,
-            focused: true,
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspaceActivated {
+                id: 2,
+                focused: true,
+            },
+        ))));
 
         let focused: Vec<_> = app
             .niri
@@ -547,16 +516,20 @@ mod tests {
         app.perf = Some(super::super::perf::PerfTracker::default());
         let ws0 = make_workspace(0, true);
         let ws1 = make_workspace(1, false);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![ws0, ws1],
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: vec![ws0, ws1],
+            },
+        ))));
         let _ = app.perf.as_ref().unwrap().snapshot_and_reset();
         let count = app.modules.len();
 
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspaceActivated {
-            id: 2,
-            focused: true,
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspaceActivated {
+                id: 2,
+                focused: true,
+            },
+        ))));
 
         let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
         assert_eq!(snapshot.workspace_rebuilds, 0);
@@ -567,10 +540,12 @@ mod tests {
     fn workspace_activated_no_panic_when_workspaces_empty() {
         use niri_ipc::Event;
         let mut app = make_workspaces_app();
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspaceActivated {
-            id: 1,
-            focused: true,
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspaceActivated {
+                id: 1,
+                focused: true,
+            },
+        ))));
         assert!(app.niri.state().workspaces.is_empty());
     }
 
@@ -617,11 +592,11 @@ mod tests {
         let mut app = make_focused_window_app();
         let win = make_window(1, Some("Firefox"), false);
         app.niri.state_mut().windows.insert(1, win);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WindowFocusChanged {
-            id: Some(1),
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowFocusChanged { id: Some(1) },
+        ))));
         let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
+        match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
                 assert_eq!(s.title.as_deref(), Some("Firefox"));
             }
@@ -635,14 +610,14 @@ mod tests {
         let mut app = make_focused_window_app();
         let win = make_window(1, Some("Firefox"), false);
         app.niri.state_mut().windows.insert(1, win);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WindowFocusChanged {
-            id: Some(1),
-        }))));
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WindowFocusChanged {
-            id: None,
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowFocusChanged { id: Some(1) },
+        ))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowFocusChanged { id: None },
+        ))));
         let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
+        match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
                 assert_eq!(s.title.as_deref(), Some("Firefox"));
             }
@@ -656,11 +631,11 @@ mod tests {
         let mut app = make_focused_window_app();
         assert!(app.niri.state().focused_window_id.is_none());
         let win = make_window(2, Some("Helix"), true);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WindowsChanged {
-            windows: vec![win],
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowsChanged { windows: vec![win] },
+        ))));
         let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
+        match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
                 assert_eq!(s.title.as_deref(), Some("Helix"));
             }
@@ -677,7 +652,7 @@ mod tests {
             Event::WindowOpenedOrChanged { window: win },
         ))));
         let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
+        match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
                 assert_eq!(s.title.as_deref(), Some("Terminal"));
             }
@@ -692,17 +667,17 @@ mod tests {
         let win = make_window(4, Some("Nautilus"), true);
         app.niri.state_mut().windows.insert(4, win);
         app.niri.state_mut().focused_window_id = Some(4);
-        app.shared.modules.insert(
+        app.modules.set_state(
             ModuleId::new("focused-window"),
             ModuleState::FocusedWindow(crate::modules::focused_window::FocusedWindowState {
                 title: Some("Nautilus".into()),
             }),
         );
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WindowClosed {
-            id: 4,
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowClosed { id: 4 },
+        ))));
         let id = ModuleId::new("focused-window");
-        match app.shared.modules.get(&id) {
+        match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
                 assert!(s.title.is_none());
             }
@@ -715,10 +690,10 @@ mod tests {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
         let win = make_window(1, Some("Firefox"), true);
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(Event::WindowsChanged {
-            windows: vec![win],
-        }))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowsChanged { windows: vec![win] },
+        ))));
         let id = ModuleId::new("focused-window");
-        assert!(!app.shared.modules.contains_key(&id));
+        assert!(app.modules.state(&id).is_none());
     }
 }

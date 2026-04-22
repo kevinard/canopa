@@ -131,9 +131,7 @@ impl App {
             // from the shared map so no clone is needed.
             let derived: Option<ModuleState> = if module.kind() == ModuleKind::WorkspaceItem {
                 Some(ModuleState::WorkspaceOutput(surface.output_name.clone()))
-            } else if let Some(ModuleState::FocusedWindow(fw)) =
-                self.shared.modules.get(&module.id())
-            {
+            } else if let Some(ModuleState::FocusedWindow(fw)) = self.modules.state(&module.id()) {
                 let title = if surface.output_name.is_empty() {
                     fw.title.clone()
                 } else {
@@ -163,11 +161,7 @@ impl App {
 
             let state: &ModuleState = match &derived {
                 Some(s) => s,
-                None => self
-                    .shared
-                    .modules
-                    .get(&module.id())
-                    .unwrap_or(&default_state),
+                None => self.modules.state(&module.id()).unwrap_or(&default_state),
             };
 
             let hovered = surface.hovered_module.as_ref() == Some(&id);
@@ -179,24 +173,30 @@ impl App {
             let scroll_id = id.clone();
             let view: Element<'_, Message> =
                 mouse_area(module_frame(module_view, hovered || focused))
-                    .on_enter(Message::Surface(super::messages::SurfaceEvent::ModuleHoverEnter(
-                        id.clone(),
-                        window,
-                    )))
-                    .on_exit(Message::Surface(super::messages::SurfaceEvent::ModuleHoverExit(
-                        id.clone(),
-                        window,
-                    )))
-                    .on_press(Message::ModuleClick(id, window))
+                    .on_enter(Message::Surface(
+                        super::messages::SurfaceEvent::ModuleHoverEnter(id.clone(), window),
+                    ))
+                    .on_exit(Message::Surface(
+                        super::messages::SurfaceEvent::ModuleHoverExit(id.clone(), window),
+                    ))
+                    .on_press(Message::Modules(
+                        super::messages::ModuleRuntimeEvent::ModuleClick(id, window),
+                    ))
                     .on_scroll(move |delta| {
                         let up = match delta {
                             iced::mouse::ScrollDelta::Lines { y, .. }
                             | iced::mouse::ScrollDelta::Pixels { y, .. } => y > 0.0,
                         };
                         if up {
-                            Message::ModuleScrollUp(scroll_id.clone(), window)
+                            Message::Modules(super::messages::ModuleRuntimeEvent::ModuleScrollUp(
+                                scroll_id.clone(),
+                                window,
+                            ))
                         } else {
-                            Message::ModuleScrollDown(scroll_id.clone(), window)
+                            Message::Modules(super::messages::ModuleRuntimeEvent::ModuleScrollDown(
+                                scroll_id.clone(),
+                                window,
+                            ))
                         }
                     })
                     .into();
@@ -265,9 +265,15 @@ impl App {
             });
 
         mouse_area(bar_with_bg)
-            .on_press(Message::Surface(super::messages::SurfaceEvent::BarClick(window)))
-            .on_enter(Message::Surface(super::messages::SurfaceEvent::BarHoverEnter(window)))
-            .on_exit(Message::Surface(super::messages::SurfaceEvent::BarHoverExit(window)))
+            .on_press(Message::Surface(super::messages::SurfaceEvent::BarClick(
+                window,
+            )))
+            .on_enter(Message::Surface(
+                super::messages::SurfaceEvent::BarHoverEnter(window),
+            ))
+            .on_exit(Message::Surface(
+                super::messages::SurfaceEvent::BarHoverExit(window),
+            ))
             .into()
     }
 

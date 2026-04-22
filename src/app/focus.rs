@@ -60,7 +60,9 @@ impl App {
 
         let s = self.surface_mut(window);
         if s.focused_module.is_none() {
-            return Task::done(Message::Surface(super::messages::SurfaceEvent::BarFocusGained(window)));
+            return Task::done(Message::Surface(
+                super::messages::SurfaceEvent::BarFocusGained(window),
+            ));
         }
 
         if s.module_activated {
@@ -95,7 +97,9 @@ impl App {
     ) -> Task<Message> {
         let s = self.surface_mut(window);
         if s.focused_module.is_none() {
-            return Task::done(Message::Surface(super::messages::SurfaceEvent::BarFocusGained(window)));
+            return Task::done(Message::Surface(
+                super::messages::SurfaceEvent::BarFocusGained(window),
+            ));
         }
 
         s.module_activated = false;
@@ -119,13 +123,11 @@ impl App {
                 let menu_item_id: i32 = item_id.parse().unwrap_or(0);
                 if let Some(model) = self.menu_model(window) {
                     let activation = model.activation_for(menu_item_id);
-                    return Task::done(Message::Menu(
-                        super::messages::MenuEvent::ItemSelected {
-                            service: activation.service,
-                            menu_item_id: activation.item_id,
-                            menu_path: activation.menu_path,
-                        },
-                    ));
+                    return Task::done(Message::Menu(super::messages::MenuEvent::ItemSelected {
+                        service: activation.service,
+                        menu_item_id: activation.item_id,
+                        menu_path: activation.menu_path,
+                    }));
                 }
             }
             return Task::none();
@@ -170,9 +172,9 @@ impl App {
                     if let Some(msg) = module.on_interaction(InteractionEvent::Activated(window)) {
                         if let Message::Tray(
                             super::messages::TrayRuntimeEvent::MenuRequestKeyboard {
-                            service,
-                            menu_path,
-                            source_window,
+                                service,
+                                menu_path,
+                                source_window,
                             },
                         ) = msg
                         {
@@ -187,11 +189,11 @@ impl App {
                             return iced::advanced::widget::operate(op).then(move |bounds| {
                                 Task::done(Message::Tray(
                                     super::messages::TrayRuntimeEvent::MenuRequestWithBounds {
-                                    service: svc.clone(),
-                                    menu_path: mp.clone(),
-                                    bounds,
-                                    screen_size,
-                                    source_window,
+                                        service: svc.clone(),
+                                        menu_path: mp.clone(),
+                                        bounds,
+                                        screen_size,
+                                        source_window,
                                     },
                                 ))
                             });

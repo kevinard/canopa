@@ -350,15 +350,13 @@ impl crate::modules::Module for TrayIconModule {
                     service: self.item.runtime_id(),
                 },
             )),
-            InteractionEvent::Activated(window) => {
-                Some(crate::app::Message::Tray(
-                    crate::app::messages::TrayRuntimeEvent::MenuRequestKeyboard {
-                        service: self.item.runtime_id(),
-                        menu_path: self.item.menu_path.clone(),
-                        source_window: Some(window),
-                    },
-                ))
-            }
+            InteractionEvent::Activated(window) => Some(crate::app::Message::Tray(
+                crate::app::messages::TrayRuntimeEvent::MenuRequestKeyboard {
+                    service: self.item.runtime_id(),
+                    menu_path: self.item.menu_path.clone(),
+                    source_window: Some(window),
+                },
+            )),
             _ => None,
         }
     }
@@ -419,14 +417,12 @@ mod tests {
         };
         let m = TrayIconModule::new(item, "tray".into());
         let msg = m.on_interaction(InteractionEvent::Clicked).unwrap();
-        assert!(
-            matches!(
-                msg,
-                crate::app::Message::Tray(
-                    crate::app::messages::TrayRuntimeEvent::Activate { service }
-                ) if service == "org.test.App"
-            )
-        );
+        assert!(matches!(
+            msg,
+            crate::app::Message::Tray(
+                crate::app::messages::TrayRuntimeEvent::Activate { service }
+            ) if service == "org.test.App"
+        ));
     }
 
     #[test]

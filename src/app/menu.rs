@@ -101,10 +101,7 @@ impl App {
             .collect()
     }
 
-    pub(super) fn handle_menu_event(
-        &mut self,
-        event: super::messages::MenuEvent,
-    ) -> Task<Message> {
+    pub(super) fn handle_menu_event(&mut self, event: super::messages::MenuEvent) -> Task<Message> {
         use super::messages::MenuEvent;
 
         match event {
@@ -218,7 +215,11 @@ impl App {
             .popup_values()
             .find(|popup| popup.service == service && popup.menu_path == menu_path);
         let (anchor, screen_size, existing_bar_name) = match existing {
-            Some(popup) => (popup.tree.anchor, popup.tree.screen_size, popup.bar_name.clone()),
+            Some(popup) => (
+                popup.tree.anchor,
+                popup.tree.screen_size,
+                popup.bar_name.clone(),
+            ),
             None => return Task::none(),
         };
         if let Some(conn) = conn {
@@ -420,7 +421,9 @@ mod tests {
                 bar_name: String::new(),
             },
         );
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(popup_wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(
+            popup_wid,
+        )));
         let _ = app.update(Message::Menu(messages::MenuEvent::Closed));
         assert!(app.surfaces.popup(popup_wid).is_none());
     }
@@ -464,11 +467,17 @@ mod tests {
                 bar_name: String::new(),
             },
         );
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
+            popup_wid,
+        )));
         assert_eq!(app.menu.focused_item(popup_wid), Some("1"));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
+            popup_wid,
+        )));
         assert_eq!(app.menu.focused_item(popup_wid), Some("2"));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
+            popup_wid,
+        )));
         assert_eq!(app.menu.focused_item(popup_wid), Some("1"));
     }
 
@@ -511,7 +520,9 @@ mod tests {
                 bar_name: String::new(),
             },
         );
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMovePrev(popup_wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMovePrev(
+            popup_wid,
+        )));
         assert_eq!(app.menu.focused_item(popup_wid), Some("2"));
     }
 
@@ -572,16 +583,22 @@ mod tests {
                 bar_name: String::new(),
             },
         );
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
+            popup_wid,
+        )));
         assert_eq!(app.menu.focused_item(popup_wid), Some("1"));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(popup_wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
+            popup_wid,
+        )));
         assert_eq!(app.menu.focused_item(popup_wid), Some("4"));
     }
 
     #[test]
     fn menu_closed_clears_bar_focus_on_all_surfaces() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         assert!(app.surfaces[&wid].focused_module.is_some());
         let menu_path =
             zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap();

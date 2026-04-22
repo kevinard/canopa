@@ -47,9 +47,11 @@ impl crate::modules::Module for ButtonModule {
             iced::futures::stream::unfold(Some(id), |state| async move {
                 match state {
                     Some(id) => {
-                        let msg = crate::app::Message::Module(
-                            id,
-                            crate::modules::ModuleEvent::Button(ButtonEvent::Ready),
+                        let msg = crate::app::Message::Modules(
+                            crate::app::messages::ModuleRuntimeEvent::Module(
+                                id,
+                                crate::modules::ModuleEvent::Button(ButtonEvent::Ready),
+                            ),
                         );
                         Some((msg, None))
                     }

@@ -50,17 +50,23 @@ fn build_battery_stream(
             });
         },
         |(pct, charging)| {
-            crate::app::Message::Battery(BatteryEvent::StateChanged {
-                percentage: pct,
-                is_charging: charging,
-            })
+            crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Battery(
+                BatteryEvent::StateChanged {
+                    percentage: pct,
+                    is_charging: charging,
+                },
+            ))
         },
-        || crate::app::Message::Battery(BatteryEvent::Unavailable),
+        || {
+            crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Battery(
+                BatteryEvent::Unavailable,
+            ))
+        },
     )
 }
 
 /// Returns an Iced subscription that connects to the UPower DisplayDevice on `conn`
-/// and emits `Message::Battery(BatteryEvent)` on each state change.
+/// and emits wrapped module battery events on each state change.
 ///
 /// Emits `BatteryEvent::Unavailable` (once) if UPower is unreachable, then terminates.
 pub(crate) fn battery_subscription(

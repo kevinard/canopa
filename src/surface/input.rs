@@ -110,9 +110,9 @@ fn keyboard_handler(
             {
                 // Per-surface toggle: only affect the focused bar, not all bars.
                 // (Message::ToggleExpand is reserved for the IPC path which toggles all surfaces.)
-                return Some(Message::Surface(crate::app::messages::SurfaceEvent::BarClick(
-                    window,
-                )));
+                return Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::BarClick(window),
+                ));
             }
             match key {
                 keyboard::Key::Named(Named::Escape) => Some(Message::Surface(

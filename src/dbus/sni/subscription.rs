@@ -112,10 +112,12 @@ fn build_menu_layout_stream(
                             _ = props_stream.next() => {}
                         }
                         Some((
-                            crate::app::Message::Menu(crate::app::messages::MenuEvent::LayoutChanged {
-                                service: service.clone(),
-                                menu_path: menu_path.clone(),
-                            }),
+                            crate::app::Message::Menu(
+                                crate::app::messages::MenuEvent::LayoutChanged {
+                                    service: service.clone(),
+                                    menu_path: menu_path.clone(),
+                                },
+                            ),
                             MenuWatchState::Watching,
                         ))
                     }

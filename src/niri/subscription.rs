@@ -3,8 +3,8 @@ use niri_ipc::socket::Socket;
 use niri_ipc::{Event, Request};
 use tokio::sync::mpsc;
 
-use crate::app::messages::AppNiriEvent;
 use crate::app::Message;
+use crate::app::messages::AppNiriEvent;
 use crate::niri::NiriEvent;
 
 #[derive(Hash)]
@@ -70,7 +70,10 @@ pub fn niri_subscription() -> iced::Subscription<Message> {
                         _ => {
                             // No Niri socket — graceful degradation (FR21, AC #2).
                             // Do NOT log to stderr. Emit once and terminate.
-                            Some((Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)), NiriSubState::Done))
+                            Some((
+                                Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)),
+                                NiriSubState::Done,
+                            ))
                         }
                     }
                 }

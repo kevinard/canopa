@@ -91,12 +91,18 @@ fn build_network_stream(
             });
         },
         |(connectivity, label)| {
-            crate::app::Message::Network(NetworkEvent::StateChanged {
-                connectivity,
-                label,
-            })
+            crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Network(
+                NetworkEvent::StateChanged {
+                    connectivity,
+                    label,
+                },
+            ))
         },
-        || crate::app::Message::Network(NetworkEvent::Unavailable),
+        || {
+            crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Network(
+                NetworkEvent::Unavailable,
+            ))
+        },
     )
 }
 

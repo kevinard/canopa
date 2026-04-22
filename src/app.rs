@@ -5,6 +5,7 @@ mod layout;
 mod menu;
 pub(crate) mod messages;
 mod module_events;
+mod module_runtime;
 mod module_state;
 mod module_store;
 mod navigation;
@@ -27,12 +28,9 @@ use crate::config::{
     WorkspacesConfig,
 };
 use crate::dbus::DbusConnections;
-use crate::modules::battery::BatteryEvent;
-use crate::modules::network::NetworkEvent;
-use crate::modules::volume::VolumeEvent;
-use crate::modules::{
-    InteractionEvent, Module, ModuleEvent, ModuleId, Zone, build_registry,
-};
+#[cfg(test)]
+use crate::modules::ModuleId;
+use crate::modules::{Module, Zone, build_registry};
 use crate::surface::SurfaceState;
 use crate::surface::input::init_expand_keybind;
 
@@ -41,7 +39,7 @@ pub(crate) struct App {
     shared: shared::SharedContext,
     perf: Option<perf::PerfTracker>,
     /// Instantiated module instances paired with their zone placement.
-    modules: module_store::ModuleStore,
+    modules: module_runtime::ModuleRuntime,
     tray: tray::TrayState,
     surfaces: surfaces::SurfaceManager,
     menu: menu::MenuSystem,
@@ -56,19 +54,6 @@ pub enum Message {
     Modules(messages::ModuleRuntimeEvent),
     Niri(messages::AppNiriEvent),
     Tray(messages::TrayRuntimeEvent),
-    // Module data events — shared state, no window ID needed.
-    Module(ModuleId, ModuleEvent),
-    ModuleClick(ModuleId, iced::window::Id),
-    /// Scroll-up event on a module (Story 5.4). Per-surface.
-    ModuleScrollUp(ModuleId, iced::window::Id),
-    /// Scroll-down event on a module (Story 5.4). Per-surface.
-    ModuleScrollDown(ModuleId, iced::window::Id),
-    /// Battery charge state from UPower D-Bus subscription (Story 5.2).
-    Battery(BatteryEvent),
-    /// Network connectivity state from D-Bus subscription (Story 5.3).
-    Network(NetworkEvent),
-    /// Volume state from PA compat subscription (Story 5.4).
-    Volume(VolumeEvent),
     /// Scroll-triggered volume adjustment (Story 5.4). Global — adjusts system volume.
     VolumeAdjust {
         step: u8,
@@ -94,9 +79,9 @@ impl Message {
             Message::Niri(messages::AppNiriEvent::Ipc(crate::niri::NiriEvent::Connected)) => {
                 "Niri::Connected"
             }
-            Message::Niri(messages::AppNiriEvent::Ipc(
-                crate::niri::NiriEvent::Unavailable,
-            )) => "Niri::Unavailable",
+            Message::Niri(messages::AppNiriEvent::Ipc(crate::niri::NiriEvent::Unavailable)) => {
+                "Niri::Unavailable"
+            }
             Message::Niri(messages::AppNiriEvent::Ipc(crate::niri::NiriEvent::Event(event))) => {
                 match event {
                     niri_ipc::Event::WorkspacesChanged { .. } => "Niri::WorkspacesChanged",
@@ -129,15 +114,6 @@ impl Message {
                     niri_ipc::Event::ScreenshotCaptured { .. } => "Niri::ScreenshotCaptured",
                 }
             }
-            Message::Module(_, ModuleEvent::Clock(_)) => "Module::Clock",
-            Message::Module(_, ModuleEvent::Script(_)) => "Module::Script",
-            Message::Module(_, ModuleEvent::Button(_)) => "Module::Button",
-            Message::ModuleClick(_, _) => "ModuleClick",
-            Message::ModuleScrollUp(_, _) => "ModuleScrollUp",
-            Message::ModuleScrollDown(_, _) => "ModuleScrollDown",
-            Message::Battery(_) => "Battery",
-            Message::Network(_) => "Network",
-            Message::Volume(_) => "Volume",
             Message::VolumeAdjust { .. } => "VolumeAdjust",
             Message::DbusReady(_) => "DbusReady",
             Message::Tray(messages::TrayRuntimeEvent::Host(_)) => "Tray::Host",
@@ -256,7 +232,7 @@ impl App {
             config,
             shared: shared::SharedContext::new(),
             perf: perf::PerfTracker::from_env(),
-            modules: module_store::ModuleStore::from_modules(modules),
+            modules: module_runtime::ModuleRuntime::from_modules(modules),
             tray: tray::TrayState::default(),
             surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
             menu: menu::MenuSystem::default(),
@@ -277,21 +253,9 @@ impl App {
         match message {
             Message::Surface(event) => self.handle_surface_event(event),
             Message::Menu(event) => self.handle_menu_event(event),
-            Message::Module(id, event) => self.handle_module_event(id, event),
-            Message::ModuleClick(id, _window) => {
-                self.dispatch_module_interaction(&id, InteractionEvent::Clicked)
-            }
+            Message::Modules(event) => self.handle_module_runtime_event(event),
             Message::Niri(event) => self.handle_app_niri_event(event),
-            Message::Network(event) => self.handle_network_event(event),
-            Message::Volume(event) => self.handle_volume_event(event),
             Message::VolumeAdjust { step, up } => self.handle_volume_adjust(step, up),
-            Message::ModuleScrollUp(id, _window) => {
-                self.dispatch_module_interaction(&id, InteractionEvent::ScrollUp)
-            }
-            Message::ModuleScrollDown(id, _window) => {
-                self.dispatch_module_interaction(&id, InteractionEvent::ScrollDown)
-            }
-            Message::Battery(event) => self.handle_battery_event(event),
             Message::DbusReady(connections) => {
                 // Store shared handles; modules borrow clones of these (AR5, Story 5.1).
                 self.shared.dbus = connections;
@@ -328,7 +292,6 @@ impl App {
 mod tests {
     use super::*;
     use crate::config::{Edge, ExpandTrigger};
-    use crate::modules::ModuleState;
     use crate::niri::NiriEvent;
     use crate::surface::expand::ExpandState;
 
@@ -408,87 +371,9 @@ mod tests {
     }
 
     #[test]
-    fn shared_context_starts_empty() {
-        let state = shared::SharedContext::new();
-        assert!(state.modules.is_empty());
-    }
-
-    #[test]
     fn perf_tracker_labels_surface_wrapped_event() {
         let event = Message::Surface(messages::SurfaceEvent::Tick);
         assert_eq!(event.perf_label(), "Surface::Tick");
-    }
-
-    #[test]
-    fn boot_modules_empty_with_no_module_config() {
-        let config = make_config();
-        let (app, _) = App::boot(config, vec![]);
-        assert!(app.modules.is_empty());
-    }
-
-    #[test]
-    fn battery_state_updates_all_battery_instances() {
-        use crate::config::{BatteryConfig, ModuleConfig, ModuleParams};
-        let mut config = Config {
-            modules: vec![
-                ModuleConfig {
-                    name: "battery".into(),
-                    module_type: "battery".into(),
-                    params: ModuleParams::Battery(BatteryConfig::default()),
-                },
-                ModuleConfig {
-                    name: "battery2".into(),
-                    module_type: "battery".into(),
-                    params: ModuleParams::Battery(BatteryConfig::default()),
-                },
-            ],
-            ..Default::default()
-        };
-        config.bars[0].modules.bottom = vec!["battery".into(), "battery2".into()];
-        let (mut app, _) = App::boot(config, vec![]);
-
-        app.push_battery_state(42.0, false);
-
-        for id in ["battery", "battery2"] {
-            let Some(ModuleState::Battery(state)) = app.shared.modules.get(&ModuleId::new(id))
-            else {
-                panic!("expected battery state for {id}");
-            };
-            assert_eq!(state.percentage, 42.0);
-            assert!(!state.is_charging);
-        }
-    }
-
-    #[test]
-    fn undeclared_known_type_in_bar_modules_uses_defaults() {
-        let mut config = Config::default();
-        config.bars[0].modules.bottom = vec!["clock".into()];
-        let (app, _) = App::boot(config, vec![]);
-        assert_eq!(app.modules.len(), 1);
-    }
-
-    #[test]
-    fn undeclared_unknown_name_in_bar_modules_is_skipped() {
-        let mut config = Config::default();
-        config.bars[0].modules.bottom = vec!["my-script".into()];
-        let (app, _) = App::boot(config, vec![]);
-        assert!(app.modules.is_empty());
-    }
-
-    #[test]
-    fn clock_module_instantiated_from_registry() {
-        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "clock".into(),
-                module_type: "clock".into(),
-                params: ModuleParams::Clock(ClockConfig::default()),
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.bottom = vec!["clock".into()];
-        let (app, _) = App::boot(config, vec![]);
-        assert_eq!(app.modules.len(), 1);
     }
 
     #[test]
@@ -496,7 +381,10 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         let id = ModuleId::new("clock");
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverEnter(id.clone(), wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverEnter(
+            id.clone(),
+            wid,
+        )));
         assert_eq!(app.surfaces[&wid].hovered_module, Some(id));
     }
 
@@ -505,8 +393,13 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         let id = ModuleId::new("clock");
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverEnter(id.clone(), wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverExit(id, wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverEnter(
+            id.clone(),
+            wid,
+        )));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverExit(
+            id, wid,
+        )));
         assert!(app.surfaces[&wid].hovered_module.is_none());
     }
 
@@ -516,96 +409,14 @@ mod tests {
         let wid = test_wid();
         let id_a = ModuleId::new("clock");
         let id_b = ModuleId::new("battery");
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverEnter(id_a.clone(), wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverExit(id_b, wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverEnter(
+            id_a.clone(),
+            wid,
+        )));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverExit(
+            id_b, wid,
+        )));
         assert_eq!(app.surfaces[&wid].hovered_module, Some(id_a));
-    }
-
-    #[test]
-    fn script_module_instantiated_from_registry() {
-        use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "script".into(),
-                module_type: "script".into(),
-                params: ModuleParams::Script(ScriptConfig {
-                    command: "echo hi".into(),
-                    interval: 5,
-                }),
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.bottom = vec!["script".into()];
-        let (app, _) = App::boot(config, vec![]);
-        assert_eq!(app.modules.len(), 1);
-    }
-
-    #[test]
-    fn script_output_event_updates_state() {
-        use crate::modules::script::ScriptEvent;
-
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let id = ModuleId::new("script");
-        let _ = app.update(Message::Module(
-            id.clone(),
-            ModuleEvent::Script(ScriptEvent::Output("hello".into())),
-        ));
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::Script(s)) => assert_eq!(s.output, "hello"),
-            other => panic!("expected Script state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn repeated_clock_tick_keeps_existing_state() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let id = ModuleId::new("clock");
-        let first = ModuleState::Clock(crate::modules::clock::ClockState {
-            time: "10:00".into(),
-            date: "Sat".into(),
-        });
-        app.shared.modules.insert(id.clone(), first.clone());
-
-        let _ = app.update(Message::Module(
-            id.clone(),
-            ModuleEvent::Clock(crate::modules::clock::ClockEvent::Tick {
-                time: "10:00".into(),
-                date: "Sat".into(),
-            }),
-        ));
-
-        assert_eq!(app.shared.modules.get(&id), Some(&first));
-    }
-
-    #[test]
-    fn repeated_volume_state_keeps_existing_state() {
-        use crate::config::{ModuleConfig, ModuleParams, VolumeConfig};
-
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "volume".into(),
-                module_type: "volume".into(),
-                params: ModuleParams::Volume(VolumeConfig::default()),
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.bottom = vec!["volume".into()];
-        let (mut app, _) = App::boot(config, vec![]);
-        let id = ModuleId::new("volume");
-        let first = ModuleState::Volume(crate::modules::volume::VolumeState {
-            volume: 55.0,
-            muted: false,
-        });
-        app.shared.modules.insert(id.clone(), first.clone());
-
-        let _ = app.update(Message::Volume(
-            crate::modules::volume::VolumeEvent::StateChanged {
-                volume: 55.0,
-                muted: false,
-            },
-        ));
-
-        assert_eq!(app.shared.modules.get(&id), Some(&first));
     }
 
     #[test]
@@ -613,7 +424,10 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
 
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::CursorMoved(wid, iced::Point::new(10.0, 20.0))));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::CursorMoved(
+            wid,
+            iced::Point::new(10.0, 20.0),
+        )));
 
         assert_eq!(app.surfaces.last_cursor(), None);
     }
@@ -628,7 +442,9 @@ mod tests {
         );
         let point = iced::Point::new(10.0, 20.0);
 
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::CursorMoved(wid, point)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::CursorMoved(
+            wid, point,
+        )));
 
         assert_eq!(app.surfaces.last_cursor(), Some((wid, point)));
     }
@@ -650,10 +466,12 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         app.perf = Some(super::perf::PerfTracker::default());
 
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspaceActivated {
-            id: 1,
-            focused: true,
-        }))));
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
+            NiriEvent::Event(Event::WorkspaceActivated {
+                id: 1,
+                focused: true,
+            }),
+        )));
 
         let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
         assert_eq!(snapshot.updates.get("Niri::WorkspaceActivated"), Some(&1));
@@ -665,9 +483,9 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         app.perf = Some(super::perf::PerfTracker::default());
 
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::ConfigLoaded {
-            failed: false,
-        }))));
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
+            NiriEvent::Event(Event::ConfigLoaded { failed: false }),
+        )));
 
         let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
         assert_eq!(snapshot.updates.get("Niri::ConfigLoaded"), Some(&1));
@@ -706,88 +524,6 @@ mod tests {
 
         let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
         assert!(snapshot.updates.is_empty());
-    }
-
-    #[test]
-    fn button_module_instantiated_from_registry() {
-        use crate::config::{ButtonConfig, ModuleConfig, ModuleParams};
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "button".into(),
-                module_type: "button".into(),
-                params: ModuleParams::Button(ButtonConfig {
-                    label: "Launch".into(),
-                    icon: ">".into(),
-                    on_click: "kitty".into(),
-                }),
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.bottom = vec!["button".into()];
-        let (app, _) = App::boot(config, vec![]);
-        assert_eq!(app.modules.len(), 1);
-    }
-
-    #[test]
-    fn button_ready_event_updates_state() {
-        use crate::modules::button::ButtonEvent;
-
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let id = ModuleId::new("button");
-        let _ = app.update(Message::Module(
-            id.clone(),
-            ModuleEvent::Button(ButtonEvent::Ready),
-        ));
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::Button(_)) => {}
-            other => panic!("expected Button state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn module_click_no_match_does_not_panic() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        let id = ModuleId::new("nonexistent");
-        let _ = app.update(Message::ModuleClick(id, wid));
-    }
-
-    #[test]
-    fn script_failed_event_retains_previous_state() {
-        use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
-        use crate::modules::script::ScriptEvent;
-
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "script".into(),
-                module_type: "script".into(),
-                params: ModuleParams::Script(ScriptConfig {
-                    command: "echo hi".into(),
-                    interval: 5,
-                }),
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.bottom = vec!["script".into()];
-        let (mut app, _) = App::boot(config, vec![]);
-
-        let id = ModuleId::new("script");
-        app.shared.modules.insert(
-            id.clone(),
-            ModuleState::Script(crate::modules::script::ScriptState {
-                output: "prev".into(),
-            }),
-        );
-
-        let _ = app.update(Message::Module(
-            id.clone(),
-            ModuleEvent::Script(ScriptEvent::Failed),
-        ));
-
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::Script(s)) => assert_eq!(s.output, "prev"),
-            other => panic!("expected Script state, got {:?}", other),
-        }
     }
 
     // --- Story 3.1 tests ---
@@ -1038,173 +774,6 @@ mod tests {
 
     // Story 5.2 tests
 
-    fn make_battery_app() -> App {
-        use crate::config::{BatteryConfig, ModuleConfig, ModuleParams};
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "battery".into(),
-                module_type: "battery".into(),
-                params: ModuleParams::Battery(BatteryConfig {
-                    critical_threshold: 15,
-                }),
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.bottom = vec!["battery".into()];
-        App::boot(config, vec![]).0
-    }
-
-    #[test]
-    fn battery_state_changed_updates_module() {
-        let mut app = make_battery_app();
-        let _ = app.update(Message::Battery(BatteryEvent::StateChanged {
-            percentage: 72.0,
-            is_charging: false,
-        }));
-        let id = ModuleId::new("battery");
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::Battery(s)) => {
-                assert!((s.percentage - 72.0).abs() < 0.001);
-                assert!(!s.is_charging);
-            }
-            other => panic!("expected Battery state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn battery_unavailable_marks_module_unavailable() {
-        let mut app = make_battery_app();
-        let _ = app.update(Message::Battery(BatteryEvent::Unavailable));
-        let id = ModuleId::new("battery");
-        assert!(matches!(
-            app.shared.modules.get(&id),
-            Some(ModuleState::Unavailable)
-        ));
-    }
-
-    #[test]
-    fn battery_state_not_updated_without_battery_module() {
-        let (mut app, _) = App::boot(Config::default(), vec![]);
-        let _ = app.update(Message::Battery(BatteryEvent::StateChanged {
-            percentage: 50.0,
-            is_charging: true,
-        }));
-        let id = ModuleId::new("battery");
-        assert!(!app.shared.modules.contains_key(&id));
-    }
-
-    // Story 5.3 tests
-
-    fn make_network_app() -> App {
-        use crate::config::{ModuleConfig, ModuleParams, NetworkConfig};
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "network".into(),
-                module_type: "network".into(),
-                params: ModuleParams::Network(NetworkConfig),
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.bottom = vec!["network".into()];
-        App::boot(config, vec![]).0
-    }
-
-    #[test]
-    fn network_state_changed_updates_module() {
-        use crate::modules::network::NetworkConnectivity;
-        let mut app = make_network_app();
-        let _ = app.update(Message::Network(NetworkEvent::StateChanged {
-            connectivity: NetworkConnectivity::Full,
-            label: Some("Home".into()),
-        }));
-        let id = ModuleId::new("network");
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::Network(s)) => {
-                assert_eq!(s.connectivity, NetworkConnectivity::Full);
-                assert_eq!(s.label.as_deref(), Some("Home"));
-            }
-            other => panic!("expected Network state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn network_unavailable_marks_module_unavailable() {
-        let mut app = make_network_app();
-        let _ = app.update(Message::Network(NetworkEvent::Unavailable));
-        let id = ModuleId::new("network");
-        assert!(matches!(
-            app.shared.modules.get(&id),
-            Some(ModuleState::Unavailable)
-        ));
-    }
-
-    #[test]
-    fn network_state_not_updated_without_network_module() {
-        use crate::modules::network::NetworkConnectivity;
-        let (mut app, _) = App::boot(Config::default(), vec![]);
-        let _ = app.update(Message::Network(NetworkEvent::StateChanged {
-            connectivity: NetworkConnectivity::Full,
-            label: None,
-        }));
-        let id = ModuleId::new("network");
-        assert!(!app.shared.modules.contains_key(&id));
-    }
-
-    // Story 5.4 tests
-
-    fn make_volume_app() -> App {
-        use crate::config::{ModuleConfig, ModuleParams, VolumeConfig};
-        let mut config = Config {
-            modules: vec![ModuleConfig {
-                name: "volume".into(),
-                module_type: "volume".into(),
-                params: ModuleParams::Volume(VolumeConfig { step: 5 }),
-            }],
-            ..Default::default()
-        };
-        config.bars[0].modules.bottom = vec!["volume".into()];
-        App::boot(config, vec![]).0
-    }
-
-    #[test]
-    fn volume_state_changed_updates_module() {
-        let mut app = make_volume_app();
-        let _ = app.update(Message::Volume(VolumeEvent::StateChanged {
-            volume: 60.0,
-            muted: false,
-        }));
-        let id = ModuleId::new("volume");
-        match app.shared.modules.get(&id) {
-            Some(ModuleState::Volume(s)) => {
-                assert!((s.volume - 60.0).abs() < 0.001);
-                assert!(!s.muted);
-            }
-            other => panic!("expected Volume state, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn volume_unavailable_marks_module_unavailable() {
-        let mut app = make_volume_app();
-        let _ = app.update(Message::Volume(VolumeEvent::Unavailable));
-        let id = ModuleId::new("volume");
-        assert!(matches!(
-            app.shared.modules.get(&id),
-            Some(ModuleState::Unavailable)
-        ));
-    }
-
-    #[test]
-    fn volume_state_not_updated_without_volume_module() {
-        let (mut app, _) = App::boot(Config::default(), vec![]);
-        let _ = app.update(Message::Volume(VolumeEvent::StateChanged {
-            volume: 50.0,
-            muted: false,
-        }));
-        let id = ModuleId::new("volume");
-        assert!(!app.shared.modules.contains_key(&id));
-    }
-
     // --- Story 6.1 tests ---
 
     #[test]
@@ -1233,7 +802,9 @@ mod tests {
         config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         assert_eq!(
             app.surfaces[&wid].focused_module,
             Some(ModuleId::new("clock"))
@@ -1254,7 +825,9 @@ mod tests {
         config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         assert!(app.surfaces[&wid].focused_module.is_some());
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusLost(wid)));
         assert!(app.surfaces[&wid].focused_module.is_none());
@@ -1274,7 +847,9 @@ mod tests {
         config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         assert!(app.surfaces[&wid].focused_module.is_some());
         let _ = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(wid)));
         assert!(app.surfaces[&wid].focused_module.is_some());
@@ -1302,7 +877,9 @@ mod tests {
         config.bars[0].modules.center = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         assert_eq!(
             app.surfaces[&wid].focused_module,
             Some(ModuleId::new("clock"))
@@ -1313,7 +890,9 @@ mod tests {
     fn bar_focus_gained_with_no_modules_is_noop() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         assert!(app.surfaces[&wid].focused_module.is_none());
     }
 
@@ -1358,7 +937,9 @@ mod tests {
     #[test]
     fn focus_move_next_advances_to_next_module() {
         let (mut app, wid) = make_nav_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1369,7 +950,9 @@ mod tests {
     #[test]
     fn focus_move_next_crosses_zone_boundary() {
         let (mut app, wid) = make_nav_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
         assert_eq!(
@@ -1392,7 +975,9 @@ mod tests {
     #[test]
     fn focus_move_prev_retreats_to_previous_module() {
         let (mut app, wid) = make_nav_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMovePrev(wid)));
         assert_eq!(
@@ -1404,7 +989,9 @@ mod tests {
     #[test]
     fn focus_move_prev_wraps_from_first_to_last() {
         let (mut app, wid) = make_nav_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMovePrev(wid)));
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1415,7 +1002,9 @@ mod tests {
     #[test]
     fn focus_next_zone_jumps_to_center() {
         let (mut app, wid) = make_nav_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusNextZone(wid)));
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1437,7 +1026,9 @@ mod tests {
     #[test]
     fn focus_prev_zone_from_top_jumps_to_bottom() {
         let (mut app, wid) = make_nav_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusPrevZone(wid)));
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1467,7 +1058,9 @@ mod tests {
         config.bars[0].modules.bottom = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusNextZone(wid)));
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1550,7 +1143,9 @@ mod tests {
     #[test]
     fn keyboard_activate_when_not_focused_is_noop() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+            wid,
+        )));
         assert!(app.surfaces[&wid].focused_module.is_none());
         assert!(!app.surfaces[&wid].module_activated);
     }
@@ -1558,14 +1153,18 @@ mod tests {
     #[test]
     fn keyboard_activate_on_volume_enters_interaction_mode() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
         assert_eq!(
             app.surfaces[&wid].focused_module,
             Some(ModuleId::new("volume"))
         );
         assert!(!app.surfaces[&wid].module_activated);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+            wid,
+        )));
         assert!(app.surfaces[&wid].module_activated);
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1576,9 +1175,13 @@ mod tests {
     #[test]
     fn arrow_keys_scroll_when_module_activated() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+            wid,
+        )));
         assert!(app.surfaces[&wid].module_activated);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
         assert_eq!(
@@ -1596,9 +1199,13 @@ mod tests {
     #[test]
     fn escape_deactivates_without_releasing_focus() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+            wid,
+        )));
         assert!(app.surfaces[&wid].module_activated);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(wid)));
         assert!(!app.surfaces[&wid].module_activated);
@@ -1611,7 +1218,9 @@ mod tests {
     #[test]
     fn arrow_keys_navigate_when_module_not_activated() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1628,9 +1237,13 @@ mod tests {
     #[test]
     fn tab_deactivates_and_navigates_zone() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+            wid,
+        )));
         assert!(app.surfaces[&wid].module_activated);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusNextZone(wid)));
         assert!(!app.surfaces[&wid].module_activated);
@@ -1643,9 +1256,13 @@ mod tests {
     #[test]
     fn shift_tab_deactivates_and_navigates_zone() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+            wid,
+        )));
         assert!(app.surfaces[&wid].module_activated);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusPrevZone(wid)));
         assert!(!app.surfaces[&wid].module_activated);
@@ -1654,13 +1271,17 @@ mod tests {
     #[test]
     fn keyboard_activate_on_button_does_not_panic_and_does_not_set_activated() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusNextZone(wid)));
         assert_eq!(
             app.surfaces[&wid].focused_module,
             Some(ModuleId::new("button"))
         );
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+            wid,
+        )));
         assert!(!app.surfaces[&wid].module_activated);
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1671,12 +1292,16 @@ mod tests {
     #[test]
     fn keyboard_activate_on_non_interactive_module_is_noop() {
         let (mut app, wid) = make_interact_app();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
         assert_eq!(
             app.surfaces[&wid].focused_module,
             Some(ModuleId::new("clock"))
         );
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(wid)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+            wid,
+        )));
         assert!(!app.surfaces[&wid].module_activated);
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1907,7 +1532,9 @@ mod tests {
         let wid_a = test_wid();
         let wid_b = test_wid();
         app.surface_mut(wid_b); // initialize surface B without focus
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(wid_a)));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid_a,
+        )));
         // Surface A has focus
         assert!(app.surfaces[&wid_a].focused_module.is_some());
         // Surface B unfocused
@@ -1970,18 +1597,20 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         assert!(!app.surfaces.manual_outputs());
         let before = app.surfaces.len();
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![niri_ipc::Workspace {
-                id: 1,
-                idx: 0,
-                name: None,
-                output: Some("DP-1".to_string()),
-                is_urgent: false,
-                is_active: true,
-                is_focused: true,
-                active_window_id: None,
-            }],
-        }))));
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
+            NiriEvent::Event(Event::WorkspacesChanged {
+                workspaces: vec![niri_ipc::Workspace {
+                    id: 1,
+                    idx: 0,
+                    name: None,
+                    output: Some("DP-1".to_string()),
+                    is_urgent: false,
+                    is_active: true,
+                    is_focused: true,
+                    active_window_id: None,
+                }],
+            }),
+        )));
         assert_eq!(
             app.surfaces.len(),
             before,
@@ -1997,18 +1626,20 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
         assert!(app.surfaces.manual_outputs());
         // "DP-1" was not in the initial allowed_outputs — it is newly connected.
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![niri_ipc::Workspace {
-                id: 10,
-                idx: 0,
-                name: None,
-                output: Some("DP-1".to_string()),
-                is_urgent: false,
-                is_active: true,
-                is_focused: false,
-                active_window_id: None,
-            }],
-        }))));
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
+            NiriEvent::Event(Event::WorkspacesChanged {
+                workspaces: vec![niri_ipc::Workspace {
+                    id: 10,
+                    idx: 0,
+                    name: None,
+                    output: Some("DP-1".to_string()),
+                    is_urgent: false,
+                    is_active: true,
+                    is_focused: false,
+                    active_window_id: None,
+                }],
+            }),
+        )));
         let known_names: Vec<&str> = app
             .surfaces
             .values()
@@ -2027,18 +1658,20 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
         let before = app.surfaces.len();
         // Fire WorkspacesChanged for eDP-1 which is already in surfaces.
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![niri_ipc::Workspace {
-                id: 1,
-                idx: 0,
-                name: None,
-                output: Some("eDP-1".to_string()),
-                is_urgent: false,
-                is_active: true,
-                is_focused: true,
-                active_window_id: None,
-            }],
-        }))));
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
+            NiriEvent::Event(Event::WorkspacesChanged {
+                workspaces: vec![niri_ipc::Workspace {
+                    id: 1,
+                    idx: 0,
+                    name: None,
+                    output: Some("eDP-1".to_string()),
+                    is_urgent: false,
+                    is_active: true,
+                    is_focused: true,
+                    active_window_id: None,
+                }],
+            }),
+        )));
         assert_eq!(
             app.surfaces.len(),
             before,
@@ -2062,18 +1695,20 @@ mod tests {
         // Boot without "HDMI-A-1" in allowed (bar does not target it).
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len();
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![niri_ipc::Workspace {
-                id: 99,
-                idx: 0,
-                name: None,
-                output: Some("HDMI-A-1".to_string()),
-                is_urgent: false,
-                is_active: true,
-                is_focused: false,
-                active_window_id: None,
-            }],
-        }))));
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
+            NiriEvent::Event(Event::WorkspacesChanged {
+                workspaces: vec![niri_ipc::Workspace {
+                    id: 99,
+                    idx: 0,
+                    name: None,
+                    output: Some("HDMI-A-1".to_string()),
+                    is_urgent: false,
+                    is_active: true,
+                    is_focused: false,
+                    active_window_id: None,
+                }],
+            }),
+        )));
         assert_eq!(
             app.surfaces.len(),
             before,
@@ -2097,18 +1732,20 @@ mod tests {
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         app.surfaces.manual_outputs = true; // simulate manual mode
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![niri_ipc::Workspace {
-                id: 5,
-                idx: 0,
-                name: None,
-                output: Some("DP-1".to_string()),
-                is_urgent: false,
-                is_active: true,
-                is_focused: false,
-                active_window_id: None,
-            }],
-        }))));
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
+            NiriEvent::Event(Event::WorkspacesChanged {
+                workspaces: vec![niri_ipc::Workspace {
+                    id: 5,
+                    idx: 0,
+                    name: None,
+                    output: Some("DP-1".to_string()),
+                    is_urgent: false,
+                    is_active: true,
+                    is_focused: false,
+                    active_window_id: None,
+                }],
+            }),
+        )));
         let output_names: Vec<&str> = app
             .surfaces
             .values()
@@ -2144,18 +1781,20 @@ mod tests {
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len(); // 2 surfaces for eDP-1 (2 bars × 1 output)
         app.surfaces.manual_outputs = true;
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![niri_ipc::Workspace {
-                id: 5,
-                idx: 0,
-                name: None,
-                output: Some("DP-1".to_string()),
-                is_urgent: false,
-                is_active: true,
-                is_focused: false,
-                active_window_id: None,
-            }],
-        }))));
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
+            NiriEvent::Event(Event::WorkspacesChanged {
+                workspaces: vec![niri_ipc::Workspace {
+                    id: 5,
+                    idx: 0,
+                    name: None,
+                    output: Some("DP-1".to_string()),
+                    is_urgent: false,
+                    is_active: true,
+                    is_focused: false,
+                    active_window_id: None,
+                }],
+            }),
+        )));
         // After hotplug: should have 2 more surfaces for DP-1 (both bars target "all")
         assert_eq!(
             app.surfaces.len(),
@@ -2191,18 +1830,20 @@ mod tests {
         };
         let (mut app, _) = App::boot(config, vec![]);
         app.surfaces.manual_outputs = true;
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(NiriEvent::Event(Event::WorkspacesChanged {
-            workspaces: vec![niri_ipc::Workspace {
-                id: 1,
-                idx: 0,
-                name: None,
-                output: Some("DP-1".to_string()),
-                is_urgent: false,
-                is_active: true,
-                is_focused: false,
-                active_window_id: None,
-            }],
-        }))));
+        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
+            NiriEvent::Event(Event::WorkspacesChanged {
+                workspaces: vec![niri_ipc::Workspace {
+                    id: 1,
+                    idx: 0,
+                    name: None,
+                    output: Some("DP-1".to_string()),
+                    is_urgent: false,
+                    is_active: true,
+                    is_focused: false,
+                    active_window_id: None,
+                }],
+            }),
+        )));
         // Both bars must be registered for DP-1.
         let names: Vec<String> = app
             .surfaces
@@ -2221,5 +1862,4 @@ mod tests {
             "right bar not spawned for DP-1"
         );
     }
-
 }

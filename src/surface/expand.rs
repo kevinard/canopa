@@ -52,7 +52,6 @@ impl ExpandState {
             }
         }
     }
-
 }
 
 /// Evaluate a CSS cubic-bezier at time fraction `t` ∈ [0, 1].

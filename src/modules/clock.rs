@@ -96,10 +96,10 @@ fn build_clock_message(
     let now = chrono::Local::now();
     let time = now.format(time_fmt).to_string();
     let date = now.format(date_fmt).to_string();
-    crate::app::Message::Module(
+    crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Module(
         id,
         crate::modules::ModuleEvent::Clock(ClockEvent::Tick { time, date }),
-    )
+    ))
 }
 
 /// Clock module: shows current time and date, updated every second via subscription.

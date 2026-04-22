@@ -88,9 +88,7 @@ impl SurfaceManager {
         self.surfaces.get_mut(&id).unwrap()
     }
 
-    pub(super) fn surfaces(
-        &self,
-    ) -> impl Iterator<Item = (&iced::window::Id, &SurfaceState)> {
+    pub(super) fn surfaces(&self) -> impl Iterator<Item = (&iced::window::Id, &SurfaceState)> {
         self.surfaces.iter()
     }
 
@@ -388,8 +386,8 @@ impl App {
 mod tests {
     use super::*;
     use crate::config::Edge;
-    use crate::surface::expand::ExpandState;
     use crate::modules::ModuleId;
+    use crate::surface::expand::ExpandState;
 
     fn make_config() -> crate::config::Config {
         crate::config::Config::default()
@@ -521,7 +519,11 @@ mod tests {
             modules: vec![],
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
-        assert_eq!(app.surfaces.len(), 2, "two bars on one output -> two surfaces");
+        assert_eq!(
+            app.surfaces.len(),
+            2,
+            "two bars on one output -> two surfaces"
+        );
     }
 
     #[test]
@@ -608,10 +610,9 @@ mod tests {
         let wid = test_wid();
         let id = crate::modules::ModuleId::new("clock");
 
-        let _ = app.update(Message::Surface(super::super::messages::SurfaceEvent::ModuleHoverEnter(
-            id.clone(),
-            wid,
-        )));
+        let _ = app.update(Message::Surface(
+            super::super::messages::SurfaceEvent::ModuleHoverEnter(id.clone(), wid),
+        ));
 
         assert_eq!(app.surface(wid).unwrap().hovered_module, Some(id));
     }

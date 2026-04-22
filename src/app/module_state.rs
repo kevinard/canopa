@@ -7,12 +7,12 @@ use crate::modules::{ModuleKind, ModuleState};
 
 impl App {
     fn push_state_if_changed(&mut self, id: crate::modules::ModuleId, state: ModuleState) {
-        if self.shared.modules.get(&id) != Some(&state) {
-            self.shared.modules.insert(id, state);
+        if self.modules.state(&id) != Some(&state) {
+            self.modules.set_state(id, state);
         }
     }
 
-    /// Push new battery state to all battery module instances in shared.modules.
+    /// Push new battery state to all battery module instances in ModuleRuntime.
     pub(super) fn push_battery_state(&mut self, percentage: f64, is_charging: bool) {
         let ids: Vec<_> = self.modules.ids_by_kind(ModuleKind::Battery).to_vec();
         for id in ids {
@@ -51,7 +51,7 @@ impl App {
     }
 
     /// Derive the current focused window title from NiriState and push it to all
-    /// focused-window module instances in shared.modules.
+    /// focused-window module instances in ModuleRuntime.
     pub(super) fn push_focused_window_state(&mut self) {
         let title = self
             .niri

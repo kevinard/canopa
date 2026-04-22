@@ -68,9 +68,11 @@ impl crate::modules::Module for ScriptModule {
 
                         let event = run_script_command(&cmd, SCRIPT_COMMAND_TIMEOUT).await;
 
-                        let msg = crate::app::Message::Module(
-                            id.clone(),
-                            crate::modules::ModuleEvent::Script(event),
+                        let msg = crate::app::Message::Modules(
+                            crate::app::messages::ModuleRuntimeEvent::Module(
+                                id.clone(),
+                                crate::modules::ModuleEvent::Script(event),
+                            ),
                         );
                         Some((msg, (id, cmd, interval, false)))
                     },

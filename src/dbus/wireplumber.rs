@@ -16,8 +16,16 @@ fn build_volume_stream(
         |tx| {
             std::thread::spawn(move || run_pa_thread(tx));
         },
-        |(volume, muted)| crate::app::Message::Volume(VolumeEvent::StateChanged { volume, muted }),
-        || crate::app::Message::Volume(VolumeEvent::Unavailable),
+        |(volume, muted)| {
+            crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Volume(
+                VolumeEvent::StateChanged { volume, muted },
+            ))
+        },
+        || {
+            crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Volume(
+                VolumeEvent::Unavailable,
+            ))
+        },
     )
 }
 

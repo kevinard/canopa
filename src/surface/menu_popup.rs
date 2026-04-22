@@ -92,16 +92,16 @@ pub fn view_menu_popup<'a>(
                     iced::widget::mouse_area(row)
                         .on_press(crate::app::Message::Menu(
                             crate::app::messages::MenuEvent::ItemSelected {
-                            service,
-                            menu_item_id,
-                            menu_path,
-                        },
+                                service,
+                                menu_item_id,
+                                menu_path,
+                            },
                         ))
                         .on_enter(crate::app::Message::Menu(
                             crate::app::messages::MenuEvent::ItemHoverEnter {
-                            window,
-                            item_id: item_id_enter,
-                        },
+                                window,
+                                item_id: item_id_enter,
+                            },
                         ))
                         .into()
                 } else {

@@ -1,5 +1,6 @@
 use iced::Task;
 
+use super::messages::ModuleRuntimeEvent;
 use super::{App, Message};
 use crate::modules::battery::BatteryEvent;
 use crate::modules::button::{ButtonEvent, ButtonState};
@@ -10,16 +11,37 @@ use crate::modules::volume::VolumeEvent;
 use crate::modules::{InteractionEvent, ModuleEvent, ModuleId, ModuleKind, ModuleState};
 
 fn insert_module_state_if_changed(
-    modules: &mut std::collections::HashMap<ModuleId, ModuleState>,
+    modules: &mut super::module_runtime::ModuleRuntime,
     id: ModuleId,
     state: ModuleState,
 ) {
-    if modules.get(&id) != Some(&state) {
-        modules.insert(id, state);
+    if modules.state(&id) != Some(&state) {
+        modules.set_state(id, state);
     }
 }
 
 impl App {
+    pub(super) fn handle_module_runtime_event(
+        &mut self,
+        event: ModuleRuntimeEvent,
+    ) -> Task<Message> {
+        match event {
+            ModuleRuntimeEvent::Module(id, event) => self.handle_module_event(id, event),
+            ModuleRuntimeEvent::ModuleClick(id, _) => {
+                self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::Clicked)
+            }
+            ModuleRuntimeEvent::ModuleScrollUp(id, _) => {
+                self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::ScrollUp)
+            }
+            ModuleRuntimeEvent::ModuleScrollDown(id, _) => {
+                self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::ScrollDown)
+            }
+            ModuleRuntimeEvent::Battery(event) => self.handle_battery_event(event),
+            ModuleRuntimeEvent::Network(event) => self.handle_network_event(event),
+            ModuleRuntimeEvent::Volume(event) => self.handle_volume_event(event),
+        }
+    }
+
     pub(super) fn handle_module_event(
         &mut self,
         id: ModuleId,
@@ -28,14 +50,14 @@ impl App {
         match event {
             ModuleEvent::Clock(ClockEvent::Tick { time, date }) => {
                 insert_module_state_if_changed(
-                    &mut self.shared.modules,
+                    &mut self.modules,
                     id,
                     ModuleState::Clock(ClockState { time, date }),
                 );
             }
             ModuleEvent::Script(ScriptEvent::Output(text)) => {
                 insert_module_state_if_changed(
-                    &mut self.shared.modules,
+                    &mut self.modules,
                     id,
                     ModuleState::Script(ScriptState { output: text }),
                 );
@@ -43,7 +65,7 @@ impl App {
             ModuleEvent::Script(ScriptEvent::Failed) => {}
             ModuleEvent::Button(ButtonEvent::Ready) => {
                 insert_module_state_if_changed(
-                    &mut self.shared.modules,
+                    &mut self.modules,
                     id,
                     ModuleState::Button(ButtonState),
                 );
@@ -110,7 +132,7 @@ impl App {
     fn mark_module_type_unavailable(&mut self, module_type: ModuleKind) {
         let ids: Vec<_> = self.modules.ids_by_kind(module_type).to_vec();
         for id in ids {
-            self.shared.modules.insert(id, ModuleState::Unavailable);
+            self.modules.set_state(id, ModuleState::Unavailable);
         }
     }
 }

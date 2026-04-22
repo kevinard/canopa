@@ -161,12 +161,9 @@ impl App {
         let conn = self.shared.dbus.session.clone();
         tokio::task::spawn(async move {
             if let (Some(conn), Some(item)) = (conn, item) {
-                let _ = crate::dbus::sni::host::call_activate(
-                    &conn,
-                    &item.service,
-                    &item.object_path,
-                )
-                .await;
+                let _ =
+                    crate::dbus::sni::host::call_activate(&conn, &item.service, &item.object_path)
+                        .await;
             }
         });
         Task::none()
@@ -233,13 +230,15 @@ impl App {
         let svc = service.clone();
         let mp = menu_path.clone();
         iced::advanced::widget::operate(op).then(move |bounds| {
-            Task::done(Message::Tray(messages::TrayRuntimeEvent::MenuRequestWithBounds {
-                service: svc.clone(),
-                menu_path: mp.clone(),
-                bounds,
-                screen_size,
-                source_window: Some(source_window),
-            }))
+            Task::done(Message::Tray(
+                messages::TrayRuntimeEvent::MenuRequestWithBounds {
+                    service: svc.clone(),
+                    menu_path: mp.clone(),
+                    bounds,
+                    screen_size,
+                    source_window: Some(source_window),
+                },
+            ))
         })
     }
 
@@ -284,7 +283,10 @@ impl App {
                 .map(|s| s.bar_name.clone())
                 .unwrap_or_default();
             return Task::perform(
-                async move { crate::dbus::sni::host::fetch_menu(&conn, &service_clone, &menu_path_clone).await },
+                async move {
+                    crate::dbus::sni::host::fetch_menu(&conn, &service_clone, &menu_path_clone)
+                        .await
+                },
                 move |tree_opt| {
                     if let Some(mut tree) = tree_opt {
                         tree.anchor = (anchor_x, anchor_y);
@@ -341,7 +343,11 @@ mod tests {
     #[test]
     fn tray_not_in_needs_dbus_when_no_tray_module() {
         let (app, _) = App::boot(Config::default(), vec![]);
-        assert!(!app.modules.iter().any(|(_, m)| m.kind() == ModuleKind::Tray));
+        assert!(
+            !app.modules
+                .iter()
+                .any(|(_, m)| m.kind() == ModuleKind::Tray)
+        );
     }
 
     #[test]
@@ -356,113 +362,10 @@ mod tests {
     }
 
     #[test]
-    fn tray_snapshot_removes_existing_tray_icons_before_insert() {
-        let mut config = make_tray_config();
-        config.bars[0].modules.bottom = vec!["tray".into()];
-        let (mut app, _) = App::boot(config, vec![]);
-
-        let old_item = tray_item("org.old");
-        app.modules.push(
-            crate::modules::Zone::Bottom,
-            Box::new(crate::modules::tray::TrayIconModule::new(old_item, "tray".into())),
-        );
-
-        let new_item = tray_item("org.new");
-        let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![new_item]));
-
-        assert!(app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.new"));
-        assert!(!app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.old"));
-    }
-
-    #[test]
-    fn tray_snapshot_handles_multiple_placeholders_after_existing_icons() {
-        let mut config = Config {
-            modules: vec![
-                ModuleConfig {
-                    name: "tray-left".into(),
-                    module_type: "tray".into(),
-                    params: ModuleParams::Tray(crate::config::TrayConfig),
-                },
-                ModuleConfig {
-                    name: "tray-right".into(),
-                    module_type: "tray".into(),
-                    params: ModuleParams::Tray(crate::config::TrayConfig),
-                },
-            ],
-            ..Config::default()
-        };
-        config.bars[0].modules.top = vec!["tray-left".into(), "tray-right".into()];
-        let (mut app, _) = App::boot(config, vec![]);
-
-        let item_a = tray_item("org.a");
-        let item_b = tray_item("org.b");
-
-        let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item_a.clone(), item_b.clone()]));
-        let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item_a, item_b]));
-
-        let layout: Vec<(ModuleKind, Option<String>, String)> = app
-            .modules
-            .iter()
-            .map(|(_, m)| {
-                (
-                    m.kind(),
-                    m.config_name().map(str::to_string),
-                    m.id().0.clone(),
-                )
-            })
-            .collect();
-        assert_eq!(
-            layout,
-            vec![
-                (ModuleKind::Tray, None, "tray-left".into()),
-                (
-                    ModuleKind::TrayIcon,
-                    Some("tray-left".into()),
-                    "tray:org.a".into(),
-                ),
-                (
-                    ModuleKind::TrayIcon,
-                    Some("tray-left".into()),
-                    "tray:org.b".into(),
-                ),
-                (ModuleKind::Tray, None, "tray-right".into()),
-                (
-                    ModuleKind::TrayIcon,
-                    Some("tray-right".into()),
-                    "tray:org.a".into(),
-                ),
-                (
-                    ModuleKind::TrayIcon,
-                    Some("tray-right".into()),
-                    "tray:org.b".into(),
-                ),
-            ]
-        );
-    }
-
-    #[test]
     fn tray_keyboard_menu_request_without_source_window_is_noop() {
         let (app, _) = App::boot(make_tray_config(), vec![]);
-        let task = app.handle_tray_menu_request(
-            "org.test.App".into(),
-            None,
-            None,
-        );
+        let task = app.handle_tray_menu_request("org.test.App".into(), None, None);
         let _ = task;
-    }
-
-    #[test]
-    fn wrapped_tray_snapshot_updates_runtime_icons() {
-        let (mut app, _) = App::boot(make_tray_config(), vec![]);
-
-        let _ = app.update(Message::Tray(messages::TrayRuntimeEvent::Host(
-            TrayEvent::Snapshot(vec![tray_item("org.test.App")]),
-        )));
-
-        assert!(app
-            .modules
-            .iter()
-            .any(|(_, m)| m.kind() == ModuleKind::TrayIcon && m.id().0 == "tray:org.test.App"));
     }
 
     #[test]
@@ -485,88 +388,6 @@ mod tests {
 
         assert!(active.is_empty());
         assert!(tray.item(":1.42/CustomStatusNotifierItem").is_none());
-    }
-
-    #[test]
-    fn tray_item_removed_event_removes_path_qualified_runtime_icon() {
-        let (mut app, _) = App::boot(make_tray_config(), vec![]);
-        let item = TrayItem {
-            service: ":1.42".into(),
-            object_path: OwnedObjectPath::try_from("/CustomStatusNotifierItem").unwrap(),
-            icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
-            status: ItemStatus::Active,
-            menu_path: None,
-        };
-
-        let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item]));
-        assert!(app
-            .modules
-            .iter()
-            .any(|(_, m)| m.id().0 == "tray::1.42/CustomStatusNotifierItem"));
-
-        let _ = app.handle_tray_event(TrayEvent::ItemRemoved(
-            ":1.42/CustomStatusNotifierItem".into(),
-        ));
-
-        assert!(!app
-            .modules
-            .iter()
-            .any(|(_, m)| m.id().0 == "tray::1.42/CustomStatusNotifierItem"));
-        assert!(app.tray.item(":1.42/CustomStatusNotifierItem").is_none());
-    }
-
-    #[test]
-    fn tray_item_removed_event_removes_default_path_unique_name_icon() {
-        let (mut app, _) = App::boot(make_tray_config(), vec![]);
-        let item = TrayItem {
-            service: ":1.77".into(),
-            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
-            icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
-            status: ItemStatus::Active,
-            menu_path: None,
-        };
-
-        let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item]));
-        assert!(app
-            .modules
-            .iter()
-            .any(|(_, m)| m.id().0 == "tray::1.77/StatusNotifierItem"));
-
-        let _ = app.handle_tray_event(TrayEvent::ItemRemoved(
-            ":1.77/StatusNotifierItem".into(),
-        ));
-
-        assert!(!app
-            .modules
-            .iter()
-            .any(|(_, m)| m.id().0 == "tray::1.77/StatusNotifierItem"));
-        assert!(app.tray.item(":1.77/StatusNotifierItem").is_none());
-    }
-
-    #[test]
-    fn tray_item_added_replaces_existing_path_qualified_icon() {
-        let (mut app, _) = App::boot(make_tray_config(), vec![]);
-        let item = TrayItem {
-            service: ":1.88".into(),
-            object_path: OwnedObjectPath::try_from("/CustomStatusNotifierItem").unwrap(),
-            icon: crate::dbus::sni::host::TrayIcon::Named("app-old".into()),
-            status: ItemStatus::Active,
-            menu_path: None,
-        };
-        let replacement = TrayItem {
-            icon: crate::dbus::sni::host::TrayIcon::Named("app-new".into()),
-            ..item.clone()
-        };
-
-        let _ = app.handle_tray_event(TrayEvent::ItemAdded(item));
-        let _ = app.handle_tray_event(TrayEvent::ItemAdded(replacement));
-
-        let matches: Vec<_> = app
-            .modules
-            .iter()
-            .filter(|(_, module)| module.id().0 == "tray::1.88/CustomStatusNotifierItem")
-            .collect();
-        assert_eq!(matches.len(), 1);
     }
 
     #[test]
@@ -597,9 +418,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/AltStatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
-            menu_path: Some(
-                OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap(),
-            ),
+            menu_path: Some(OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap()),
         };
 
         let _ = app.handle_tray_event(TrayEvent::ItemAdded(item));
@@ -619,9 +438,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/AltStatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
-            menu_path: Some(
-                OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap(),
-            ),
+            menu_path: Some(OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap()),
         };
 
         let _ = app.handle_tray_event(TrayEvent::ItemAdded(item));

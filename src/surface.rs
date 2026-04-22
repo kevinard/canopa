@@ -171,5 +171,4 @@ mod tests {
         let physical = f64::from(logical_expanded) * scale;
         assert_eq!(physical, 400.0);
     }
-
 }
