@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use iced::Task;
 use iced_layershell::to_layer_message;
 
-use self::widget_ops::FindBounds;
 use crate::config::{
     BatteryConfig, ClockConfig, Config, ModuleConfig, ModuleParams, NetworkConfig, VolumeConfig,
     WorkspacesConfig,
@@ -43,6 +42,7 @@ pub(crate) struct App {
     perf: Option<perf::PerfTracker>,
     /// Instantiated module instances paired with their zone placement.
     modules: module_store::ModuleStore,
+    tray: tray::TrayState,
     surfaces: surfaces::SurfaceManager,
     menu: menu::MenuSystem,
     niri: niri::AppNiriState,
@@ -76,47 +76,6 @@ pub enum Message {
     },
     /// D-Bus connection handles established at startup (Story 5.1).
     DbusReady(DbusConnections),
-    /// Incremental tray change from SNI host.
-    TrayEvent(crate::dbus::sni::host::TrayEvent),
-    /// Left-click on a tray icon -- sends Activate to the SNI item.
-    TrayActivate {
-        service: String,
-    },
-    /// Right-click on a tray icon -- opens the DBusMenu context menu.
-    /// Anchored at the mouse cursor position.
-    TrayMenuRequest {
-        service: String,
-        menu_path: Option<zbus::zvariant::OwnedObjectPath>,
-        source_window: Option<iced::window::Id>,
-    },
-    /// Keyboard-triggered menu open (Space on focused tray icon). Anchored at
-    /// the icon's widget bounds, resolved via a widget operation.
-    TrayMenuRequestKeyboard {
-        service: String,
-        menu_path: Option<zbus::zvariant::OwnedObjectPath>,
-        source_window: Option<iced::window::Id>,
-    },
-    /// Internal: widget-operation result carrying the icon's screen bounds.
-    /// Dispatched after the bounds lookup completes; opens the menu anchored there.
-    TrayMenuRequestWithBounds {
-        service: String,
-        menu_path: Option<zbus::zvariant::OwnedObjectPath>,
-        bounds: Option<iced::Rectangle>,
-        screen_size: (u32, u32),
-        /// The bar window that triggered the request (keyboard path only).
-        /// Used to resolve bar_name / bar.edge for menu positioning.
-        source_window: Option<iced::window::Id>,
-    },
-    /// Middle-click on a tray icon -- sends SecondaryActivate.
-    TraySecondaryActivate {
-        service: String,
-    },
-    /// Scroll on a tray icon -- sends Scroll to the SNI item.
-    TrayScroll {
-        service: String,
-        delta: i32,
-        orientation: String,
-    },
     /// User clicked a workspace pill -- switch to that workspace via niri IPC.
     NiriFocusWorkspace {
         id: u64,
@@ -170,7 +129,6 @@ impl Message {
                     niri_ipc::Event::ScreenshotCaptured { .. } => "Niri::ScreenshotCaptured",
                 }
             }
-            Message::Tray(_) => "Tray",
             Message::Module(_, ModuleEvent::Clock(_)) => "Module::Clock",
             Message::Module(_, ModuleEvent::Script(_)) => "Module::Script",
             Message::Module(_, ModuleEvent::Button(_)) => "Module::Button",
@@ -182,13 +140,19 @@ impl Message {
             Message::Volume(_) => "Volume",
             Message::VolumeAdjust { .. } => "VolumeAdjust",
             Message::DbusReady(_) => "DbusReady",
-            Message::TrayEvent(_) => "TrayEvent",
-            Message::TrayActivate { .. } => "TrayActivate",
-            Message::TrayMenuRequest { .. } => "TrayMenuRequest",
-            Message::TrayMenuRequestKeyboard { .. } => "TrayMenuRequestKeyboard",
-            Message::TrayMenuRequestWithBounds { .. } => "TrayMenuRequestWithBounds",
-            Message::TraySecondaryActivate { .. } => "TraySecondaryActivate",
-            Message::TrayScroll { .. } => "TrayScroll",
+            Message::Tray(messages::TrayRuntimeEvent::Host(_)) => "Tray::Host",
+            Message::Tray(messages::TrayRuntimeEvent::Activate { .. }) => "Tray::Activate",
+            Message::Tray(messages::TrayRuntimeEvent::MenuRequest { .. }) => "Tray::MenuRequest",
+            Message::Tray(messages::TrayRuntimeEvent::MenuRequestKeyboard { .. }) => {
+                "Tray::MenuRequestKeyboard"
+            }
+            Message::Tray(messages::TrayRuntimeEvent::MenuRequestWithBounds { .. }) => {
+                "Tray::MenuRequestWithBounds"
+            }
+            Message::Tray(messages::TrayRuntimeEvent::SecondaryActivate { .. }) => {
+                "Tray::SecondaryActivate"
+            }
+            Message::Tray(messages::TrayRuntimeEvent::Scroll { .. }) => "Tray::Scroll",
             Message::NiriFocusWorkspace { .. } => "NiriFocusWorkspace",
             Message::PerfReport => "PerfReport",
             _ => "LayerShell",
@@ -293,6 +257,7 @@ impl App {
             shared: shared::SharedContext::new(),
             perf: perf::PerfTracker::from_env(),
             modules: module_store::ModuleStore::from_modules(modules),
+            tray: tray::TrayState::default(),
             surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
             menu: menu::MenuSystem::default(),
             niri: niri::AppNiriState::new(),
@@ -332,211 +297,7 @@ impl App {
                 self.shared.dbus = connections;
                 Task::none()
             }
-            Message::TrayEvent(event) => self.handle_tray_event(event),
-            Message::TrayActivate { service } => {
-                let conn = self.shared.dbus.session.clone();
-                tokio::task::spawn(async move {
-                    if let Some(conn) = conn {
-                        let path =
-                            zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
-                        if let Some(item) =
-                            crate::dbus::sni::host::fetch_item(&conn, &service, &path).await
-                        {
-                            let _ = crate::dbus::sni::host::call_activate(
-                                &conn,
-                                &item.service,
-                                &item.object_path,
-                            )
-                            .await;
-                        }
-                    }
-                });
-                Task::none()
-            }
-            Message::TraySecondaryActivate { service } => {
-                let conn = self.shared.dbus.session.clone();
-                tokio::task::spawn(async move {
-                    if let Some(conn) = conn {
-                        let path =
-                            zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
-                        if let Some(item) =
-                            crate::dbus::sni::host::fetch_item(&conn, &service, &path).await
-                        {
-                            let _ = crate::dbus::sni::host::call_secondary_activate(
-                                &conn,
-                                &item.service,
-                                &item.object_path,
-                            )
-                            .await;
-                        }
-                    }
-                });
-                Task::none()
-            }
-            Message::TrayScroll {
-                service,
-                delta,
-                orientation,
-            } => {
-                let conn = self.shared.dbus.session.clone();
-                tokio::task::spawn(async move {
-                    if let Some(conn) = conn {
-                        let path =
-                            zbus::zvariant::ObjectPath::try_from("/StatusNotifierItem").unwrap();
-                        if let Some(item) =
-                            crate::dbus::sni::host::fetch_item(&conn, &service, &path).await
-                        {
-                            let _ = crate::dbus::sni::host::call_scroll(
-                                &conn,
-                                &item.service,
-                                &item.object_path,
-                                delta,
-                                &orientation,
-                            )
-                            .await;
-                        }
-                    }
-                });
-                Task::none()
-            }
-            Message::TrayMenuRequest {
-                service,
-                menu_path,
-                source_window,
-            } => {
-                let Some(source_window) = source_window else {
-                    return Task::none();
-                };
-                let screen_size = self
-                    .surfaces
-                    .surface(source_window)
-                    .map(|s| s.screen_size)
-                    .unwrap_or((0, 0));
-                let target = crate::modules::tray::tray_icon_widget_id(source_window, &service);
-                let op = FindBounds {
-                    target,
-                    result: None,
-                };
-                let svc = service.clone();
-                let mp = menu_path.clone();
-                iced::advanced::widget::operate(op).then(move |bounds| {
-                    Task::done(Message::TrayMenuRequestWithBounds {
-                        service: svc.clone(),
-                        menu_path: mp.clone(),
-                        bounds,
-                        screen_size,
-                        source_window: Some(source_window),
-                    })
-                })
-            }
-            Message::TrayMenuRequestKeyboard {
-                service,
-                menu_path,
-                source_window,
-            } => {
-                // Fallback if the KeyboardSecondaryActivate fast-path didn't intercept
-                // (e.g. message sent externally). Treat as a bounds-less request.
-                let Some(source_window) = source_window else {
-                    return Task::none();
-                };
-                let screen_size = self
-                    .surfaces
-                    .surface(source_window)
-                    .map(|s| s.screen_size)
-                    .unwrap_or((0, 0));
-                let target = crate::modules::tray::tray_icon_widget_id(source_window, &service);
-                let op = FindBounds {
-                    target,
-                    result: None,
-                };
-                let svc = service.clone();
-                let mp = menu_path.clone();
-                iced::advanced::widget::operate(op).then(move |bounds| {
-                    Task::done(Message::TrayMenuRequestWithBounds {
-                        service: svc.clone(),
-                        menu_path: mp.clone(),
-                        bounds,
-                        screen_size,
-                        source_window: Some(source_window),
-                    })
-                })
-            }
-            Message::TrayMenuRequestWithBounds {
-                service,
-                menu_path,
-                bounds,
-                screen_size,
-                source_window,
-            } => {
-                let conn = self.shared.dbus.session.clone();
-                if let (Some(conn), Some(menu_path)) = (conn, menu_path) {
-                    let service_clone = service.clone();
-                    let menu_path_clone = menu_path.clone();
-                    // Anchor at the icon's bottom-left (for horizontal bars, this places the
-                    // menu directly under the icon; the popup clamps to screen edges anyway).
-                    // Fall back to the mouse cursor if the bounds lookup failed.
-                    let (anchor_x, anchor_y) = match bounds {
-                        Some(r) => {
-                            // For horizontal bars, iced_layershell's layout has the axes
-                            // transposed: r.x is the bar-depth (vertical) position and r.y
-                            // is the along-bar (horizontal) position. Detect horizontal bars
-                            // by comparing the screen_size dimensions.
-                            if screen_size.0 > screen_size.1 {
-                                (r.x as i32, (r.y + r.height) as i32)
-                            } else {
-                                ((r.x + r.width) as i32, r.y as i32)
-                            }
-                        }
-                        None => {
-                            let p = self
-                                .surfaces
-                                .last_cursor()
-                                .map(|(_, p)| p)
-                                .unwrap_or(iced::Point::ORIGIN);
-                            (p.x as i32, p.y as i32)
-                        }
-                    };
-                    // Resolve bar_name from the keyboard event's window (keyboard path) or
-                    // fall back to last_cursor (mouse path). This ensures the popup uses the
-                    // correct bar.edge for positioning even when the cursor is not on the bar.
-                    let bar_name = source_window
-                        .and_then(|w| self.surfaces.surface(w))
-                        .or_else(|| {
-                            self.surfaces
-                                .last_cursor()
-                                .and_then(|(w, _)| self.surfaces.surface(w))
-                        })
-                        .map(|s| s.bar_name.clone())
-                        .unwrap_or_default();
-                    return Task::perform(
-                        async move {
-                            crate::dbus::sni::host::fetch_menu(
-                                &conn,
-                                &service_clone,
-                                &menu_path_clone,
-                            )
-                            .await
-                        },
-                        move |tree_opt| {
-                            if let Some(mut tree) = tree_opt {
-                                tree.anchor = (anchor_x, anchor_y);
-                                tree.screen_size = screen_size;
-                                Message::Menu(messages::MenuEvent::Open {
-                                    service: service.clone(),
-                                    menu_path: menu_path.clone(),
-                                    tree,
-                                    bar_name: bar_name.clone(),
-                                })
-                            } else {
-                                Message::TrayActivate {
-                                    service: service.clone(),
-                                }
-                            }
-                        },
-                    );
-                }
-                Task::none()
-            }
+            Message::Tray(event) => self.handle_tray_runtime_event(event),
             Message::NiriFocusWorkspace { id } => {
                 tokio::task::spawn_blocking(move || {
                     if let Ok(mut socket) = niri_ipc::socket::Socket::connect() {
@@ -567,7 +328,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::config::{Edge, ExpandTrigger};
-    use crate::modules::{ModuleKind, ModuleState};
+    use crate::modules::ModuleState;
     use crate::niri::NiriEvent;
     use crate::surface::expand::ExpandState;
 
@@ -2461,172 +2222,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn tray_not_in_needs_dbus_when_no_tray_module() {
-        let (app, _) = App::boot(Config::default(), vec![]);
-        // Default config has no tray module -- verify no tray module is registered.
-        assert!(
-            !app.modules
-                .iter()
-                .any(|(_, m)| m.kind() == ModuleKind::Tray)
-        );
-    }
-
-    #[test]
-    fn tray_updated_message_stores_items_in_shared_context() {
-        use crate::dbus::sni::host::{ItemStatus, TrayIcon, TrayItem};
-        use crate::modules::ModuleId;
-        use zbus::zvariant::OwnedObjectPath;
-
-        let (mut app, _) = App::boot(Config::default(), vec![]);
-        // Inject a tray module id into the modules list manually.
-        let id = ModuleId::new("tray");
-        app.shared.modules.insert(id.clone(), ModuleState::Loading);
-
-        let item = TrayItem {
-            service: "org.test".into(),
-            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
-            icon: TrayIcon::Named("test".into()),
-            status: ItemStatus::Active,
-            menu_path: None,
-        };
-        // Must not panic.
-        let _ = app.update(Message::TrayEvent(
-            crate::dbus::sni::host::TrayEvent::Snapshot(vec![item]),
-        ));
-    }
-
-    #[test]
-    fn tray_snapshot_removes_existing_tray_icons_before_insert() {
-        use crate::dbus::sni::host::{ItemStatus, TrayIcon, TrayItem};
-        use crate::modules::tray::TrayIconModule;
-        use zbus::zvariant::OwnedObjectPath;
-
-        let mut config = make_config();
-        config.bars[0].modules.bottom = vec!["tray".into()];
-        config.modules = vec![ModuleConfig {
-            name: "tray".into(),
-            module_type: "tray".into(),
-            params: ModuleParams::Tray(crate::config::TrayConfig),
-        }];
-        let (mut app, _) = App::boot(config, vec![]);
-
-        let old_item = TrayItem {
-            service: "org.old".into(),
-            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
-            icon: TrayIcon::Named("old".into()),
-            status: ItemStatus::Active,
-            menu_path: None,
-        };
-        app.modules.push(
-            Zone::Bottom,
-            Box::new(TrayIconModule::new(old_item, "tray".into())),
-        );
-
-        let new_item = TrayItem {
-            service: "org.new".into(),
-            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
-            icon: TrayIcon::Named("new".into()),
-            status: ItemStatus::Active,
-            menu_path: None,
-        };
-
-        let _ = app.handle_tray_event(crate::dbus::sni::host::TrayEvent::Snapshot(vec![new_item]));
-
-        assert!(app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.new"));
-        assert!(!app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.old"));
-    }
-
-    #[test]
-    fn tray_snapshot_handles_multiple_placeholders_after_existing_icons() {
-        use crate::config::{ModuleConfig, ModuleParams, TrayConfig};
-        use crate::dbus::sni::host::{ItemStatus, TrayEvent, TrayIcon, TrayItem};
-        use zbus::zvariant::OwnedObjectPath;
-
-        let mut config = Config {
-            modules: vec![
-                ModuleConfig {
-                    name: "tray-left".into(),
-                    module_type: "tray".into(),
-                    params: ModuleParams::Tray(TrayConfig),
-                },
-                ModuleConfig {
-                    name: "tray-right".into(),
-                    module_type: "tray".into(),
-                    params: ModuleParams::Tray(TrayConfig),
-                },
-            ],
-            ..Config::default()
-        };
-        config.bars[0].modules.top = vec!["tray-left".into(), "tray-right".into()];
-        let (mut app, _) = App::boot(config, vec![]);
-
-        let item_a = TrayItem {
-            service: "org.a".into(),
-            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
-            icon: TrayIcon::Named("test-a".into()),
-            status: ItemStatus::Active,
-            menu_path: None,
-        };
-        let item_b = TrayItem {
-            service: "org.b".into(),
-            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
-            icon: TrayIcon::Named("test-b".into()),
-            status: ItemStatus::Active,
-            menu_path: None,
-        };
-
-        let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item_a.clone(), item_b.clone()]));
-        let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item_a, item_b]));
-
-        let layout: Vec<(ModuleKind, Option<String>, String)> = app
-            .modules
-            .iter()
-            .map(|(_, m)| {
-                (
-                    m.kind(),
-                    m.config_name().map(str::to_string),
-                    m.id().0.clone(),
-                )
-            })
-            .collect();
-        assert_eq!(
-            layout,
-            vec![
-                (ModuleKind::Tray, None, "tray-left".into()),
-                (
-                    ModuleKind::TrayIcon,
-                    Some("tray-left".into()),
-                    "tray:org.a".into(),
-                ),
-                (
-                    ModuleKind::TrayIcon,
-                    Some("tray-left".into()),
-                    "tray:org.b".into(),
-                ),
-                (ModuleKind::Tray, None, "tray-right".into()),
-                (
-                    ModuleKind::TrayIcon,
-                    Some("tray-right".into()),
-                    "tray:org.a".into(),
-                ),
-                (
-                    ModuleKind::TrayIcon,
-                    Some("tray-right".into()),
-                    "tray:org.b".into(),
-                ),
-            ]
-        );
-    }
-
-    #[test]
-    fn tray_keyboard_menu_request_without_source_window_is_noop() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let task = app.update(Message::TrayMenuRequestKeyboard {
-            service: "org.test.App".into(),
-            menu_path: None,
-            source_window: None,
-        });
-        let _ = task;
-    }
 }

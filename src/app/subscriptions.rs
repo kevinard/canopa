@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::{App, Message};
+use super::{App, Message, messages};
 use crate::ipc::ipc_subscription;
 use crate::modules::ModuleKind;
 use crate::niri::subscription::niri_subscription;
@@ -87,7 +87,7 @@ impl App {
             .any(|s| s.expand.is_animating() || s.hover_pending_ms.is_some());
         let tick_sub = if needs_tick {
             iced::time::every(Duration::from_millis(16))
-                .map(|_| Message::Surface(super::messages::SurfaceEvent::Tick))
+                .map(|_| Message::Surface(messages::SurfaceEvent::Tick))
         } else {
             iced::Subscription::none()
         };

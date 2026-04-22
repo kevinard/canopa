@@ -168,11 +168,13 @@ impl App {
             for (_, module) in &self.modules {
                 if module.id() == *id {
                     if let Some(msg) = module.on_interaction(InteractionEvent::Activated(window)) {
-                        if let Message::TrayMenuRequestKeyboard {
+                        if let Message::Tray(
+                            super::messages::TrayRuntimeEvent::MenuRequestKeyboard {
                             service,
                             menu_path,
                             source_window,
-                        } = msg
+                            },
+                        ) = msg
                         {
                             let target =
                                 crate::modules::tray::tray_icon_widget_id(window, &service);
@@ -183,13 +185,15 @@ impl App {
                             let svc = service.clone();
                             let mp = menu_path.clone();
                             return iced::advanced::widget::operate(op).then(move |bounds| {
-                                Task::done(Message::TrayMenuRequestWithBounds {
+                                Task::done(Message::Tray(
+                                    super::messages::TrayRuntimeEvent::MenuRequestWithBounds {
                                     service: svc.clone(),
                                     menu_path: mp.clone(),
                                     bounds,
                                     screen_size,
                                     source_window,
-                                })
+                                    },
+                                ))
                             });
                         }
                         return Task::done(msg);

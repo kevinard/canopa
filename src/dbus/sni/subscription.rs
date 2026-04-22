@@ -35,8 +35,12 @@ fn build_sni_stream(
                 }
             });
         },
-        crate::app::Message::TrayEvent,
-        || crate::app::Message::TrayEvent(TrayEvent::Snapshot(vec![])),
+        |event| crate::app::Message::Tray(crate::app::messages::TrayRuntimeEvent::Host(event)),
+        || {
+            crate::app::Message::Tray(crate::app::messages::TrayRuntimeEvent::Host(
+                TrayEvent::Snapshot(vec![]),
+            ))
+        },
     )
 }
 

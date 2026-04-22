@@ -234,7 +234,7 @@ pub(crate) struct TrayIconModule {
 
 impl TrayIconModule {
     pub(crate) fn new(item: TrayItem, config_name: String) -> Self {
-        let id = ModuleId(format!("tray:{}", item.service));
+        let id = ModuleId(format!("tray:{}", item.runtime_id()));
         TrayIconModule {
             id,
             item,
@@ -250,20 +250,24 @@ impl TrayIconModule {
         use iced::widget::mouse_area;
 
         let icon = icon_widget(&self.item);
-        let service = self.item.service.clone();
+        let service = self.item.runtime_id();
         let menu_path = self.item.menu_path.clone();
 
         // Left-click is handled by on_interaction(Clicked) via the outer module machinery.
         // This mouse_area only wires up right-click, middle-click, and scroll.
         let interactive: iced::Element<'static, crate::app::Message> = mouse_area(icon)
-            .on_right_press(crate::app::Message::TrayMenuRequest {
-                service: service.clone(),
-                menu_path,
-                source_window: Some(window),
-            })
-            .on_middle_press(crate::app::Message::TraySecondaryActivate {
-                service: service.clone(),
-            })
+            .on_right_press(crate::app::Message::Tray(
+                crate::app::messages::TrayRuntimeEvent::MenuRequest {
+                    service: service.clone(),
+                    menu_path,
+                    source_window: Some(window),
+                },
+            ))
+            .on_middle_press(crate::app::Message::Tray(
+                crate::app::messages::TrayRuntimeEvent::SecondaryActivate {
+                    service: service.clone(),
+                },
+            ))
             .on_scroll(move |delta| {
                 let (delta_val, orientation) = match delta {
                     iced::mouse::ScrollDelta::Lines { x, y } => {
@@ -281,15 +285,15 @@ impl TrayIconModule {
                         }
                     }
                 };
-                crate::app::Message::TrayScroll {
+                crate::app::Message::Tray(crate::app::messages::TrayRuntimeEvent::Scroll {
                     service: service.clone(),
                     delta: delta_val,
                     orientation: orientation.to_string(),
-                }
+                })
             })
             .into();
 
-        let widget_id = tray_icon_widget_id(window, &self.item.service);
+        let widget_id = tray_icon_widget_id(window, &self.item.runtime_id());
         if horizontal {
             iced::widget::container(interactive)
                 .id(widget_id)
@@ -341,15 +345,19 @@ impl crate::modules::Module for TrayIconModule {
 
     fn on_interaction(&self, event: InteractionEvent) -> Option<crate::app::Message> {
         match event {
-            InteractionEvent::Clicked => Some(crate::app::Message::TrayActivate {
-                service: self.item.service.clone(),
-            }),
+            InteractionEvent::Clicked => Some(crate::app::Message::Tray(
+                crate::app::messages::TrayRuntimeEvent::Activate {
+                    service: self.item.runtime_id(),
+                },
+            )),
             InteractionEvent::Activated(window) => {
-                Some(crate::app::Message::TrayMenuRequestKeyboard {
-                    service: self.item.service.clone(),
-                    menu_path: self.item.menu_path.clone(),
-                    source_window: Some(window),
-                })
+                Some(crate::app::Message::Tray(
+                    crate::app::messages::TrayRuntimeEvent::MenuRequestKeyboard {
+                        service: self.item.runtime_id(),
+                        menu_path: self.item.menu_path.clone(),
+                        source_window: Some(window),
+                    },
+                ))
             }
             _ => None,
         }
@@ -412,7 +420,12 @@ mod tests {
         let m = TrayIconModule::new(item, "tray".into());
         let msg = m.on_interaction(InteractionEvent::Clicked).unwrap();
         assert!(
-            matches!(msg, crate::app::Message::TrayActivate { service } if service == "org.test.App")
+            matches!(
+                msg,
+                crate::app::Message::Tray(
+                    crate::app::messages::TrayRuntimeEvent::Activate { service }
+                ) if service == "org.test.App"
+            )
         );
     }
 
@@ -433,7 +446,9 @@ mod tests {
             .unwrap();
         assert!(matches!(
             msg,
-            crate::app::Message::TrayMenuRequestKeyboard { service, .. } if service == "org.test.App"
+            crate::app::Message::Tray(
+                crate::app::messages::TrayRuntimeEvent::MenuRequestKeyboard { service, .. }
+            ) if service == "org.test.App"
         ));
     }
 }

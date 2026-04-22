@@ -21,6 +21,16 @@ pub struct TrayItem {
     pub(crate) menu_path: Option<OwnedObjectPath>,
 }
 
+impl TrayItem {
+    pub(crate) fn runtime_id(&self) -> String {
+        if !self.service.starts_with(':') && self.object_path.as_str() == "/StatusNotifierItem" {
+            self.service.clone()
+        } else {
+            format!("{}{}", self.service, self.object_path.as_str())
+        }
+    }
+}
+
 /// Resolved icon data for a tray item.
 #[derive(Debug, Clone)]
 pub(crate) enum TrayIcon {
@@ -319,6 +329,32 @@ mod tests {
         };
         assert_eq!(item.service, "org.kde.konsole");
         assert!(matches!(item.status, ItemStatus::Active));
+    }
+
+    #[test]
+    fn tray_item_runtime_id_includes_custom_object_path() {
+        let item = TrayItem {
+            service: ":1.99".into(),
+            object_path: OwnedObjectPath::try_from("/org/kde/tray").unwrap(),
+            icon: TrayIcon::Named("utilities-terminal".into()),
+            status: ItemStatus::Active,
+            menu_path: None,
+        };
+
+        assert_eq!(item.runtime_id(), ":1.99/org/kde/tray");
+    }
+
+    #[test]
+    fn tray_item_runtime_id_keeps_default_path_for_unique_names() {
+        let item = TrayItem {
+            service: ":1.42".into(),
+            object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
+            icon: TrayIcon::Named("utilities-terminal".into()),
+            status: ItemStatus::Active,
+            menu_path: None,
+        };
+
+        assert_eq!(item.runtime_id(), ":1.42/StatusNotifierItem");
     }
 
     #[test]
