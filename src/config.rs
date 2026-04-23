@@ -4,25 +4,10 @@ mod parse;
 use anyhow::Context;
 use iced_layershell::reexport::Anchor;
 
-use crate::modules::ModuleKind;
-
-/// Known module names for FR37 validation.
-/// Hardcoded so validation works before any module is implemented.
-const KNOWN_MODULE_TYPES: &[&str] = &[
-    "battery",
-    "clock",
-    "network",
-    "volume",
-    "workspaces",
-    "focused-window",
-    "script",
-    "button",
-    "tray",
-];
-
 fn is_known_config_module_type(module_type: &str) -> bool {
-    ModuleKind::from_config_name(module_type)
-        .is_some_and(|kind| ModuleKind::CONFIG_KINDS.contains(&kind))
+    crate::modules::MODULE_DESCRIPTORS
+        .iter()
+        .any(|descriptor| descriptor.config_name == module_type)
 }
 
 /// Format strings for the clock module (AC: #4, #5).
@@ -402,14 +387,15 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
+    use crate::modules::MODULE_DESCRIPTORS;
 
     #[test]
-    fn known_module_types_include_all_config_module_kinds() {
-        for kind in ModuleKind::CONFIG_KINDS {
+    fn known_module_types_include_all_config_module_descriptors() {
+        for descriptor in MODULE_DESCRIPTORS {
             assert!(
-                KNOWN_MODULE_TYPES.contains(&kind.as_str()),
+                is_known_config_module_type(descriptor.config_name),
                 "missing known module type {:?}",
-                kind
+                descriptor.config_name
             );
         }
     }
