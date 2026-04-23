@@ -195,19 +195,71 @@ pub trait Module: Send + Sync {
 /// Type alias for a module constructor function.
 pub(crate) type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>;
 
+/// Typed metadata for a built-in config-facing module.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ModuleDescriptor {
+    pub kind: ModuleKind,
+    pub config_name: &'static str,
+    pub constructor: ModuleConstructor,
+}
+
+pub(crate) const MODULE_DESCRIPTORS: &[ModuleDescriptor] = &[
+    ModuleDescriptor {
+        kind: ModuleKind::Battery,
+        config_name: "battery",
+        constructor: battery_ctor,
+    },
+    ModuleDescriptor {
+        kind: ModuleKind::Button,
+        config_name: "button",
+        constructor: button_ctor,
+    },
+    ModuleDescriptor {
+        kind: ModuleKind::Network,
+        config_name: "network",
+        constructor: network_ctor,
+    },
+    ModuleDescriptor {
+        kind: ModuleKind::Volume,
+        config_name: "volume",
+        constructor: volume_ctor,
+    },
+    ModuleDescriptor {
+        kind: ModuleKind::Clock,
+        config_name: "clock",
+        constructor: clock_ctor,
+    },
+    ModuleDescriptor {
+        kind: ModuleKind::Script,
+        config_name: "script",
+        constructor: script_ctor,
+    },
+    ModuleDescriptor {
+        kind: ModuleKind::Workspaces,
+        config_name: "workspaces",
+        constructor: workspaces_ctor,
+    },
+    ModuleDescriptor {
+        kind: ModuleKind::FocusedWindow,
+        config_name: "focused-window",
+        constructor: focused_window_ctor,
+    },
+    ModuleDescriptor {
+        kind: ModuleKind::Tray,
+        config_name: "tray",
+        constructor: tray_ctor,
+    },
+];
+
 /// Build the static module registry mapping config name → constructor.
 pub(crate) fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
-    let mut map = HashMap::new();
-    map.insert("battery", battery_ctor as ModuleConstructor);
-    map.insert("button", button_ctor as ModuleConstructor);
-    map.insert("network", network_ctor as ModuleConstructor);
-    map.insert("volume", volume_ctor as ModuleConstructor);
-    map.insert("clock", clock_ctor as ModuleConstructor);
-    map.insert("script", script_ctor as ModuleConstructor);
-    map.insert("workspaces", workspaces_ctor as ModuleConstructor);
-    map.insert("focused-window", focused_window_ctor as ModuleConstructor);
-    map.insert("tray", tray_ctor as ModuleConstructor);
-    map
+    MODULE_DESCRIPTORS
+        .iter()
+        .map(|descriptor| {
+            debug_assert_eq!(descriptor.kind.as_str(), descriptor.config_name);
+            (descriptor.config_name, descriptor.constructor)
+        })
+        .collect()
 }
 
 fn network_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
@@ -301,6 +353,7 @@ fn tray_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn module_id_new_stores_string() {
@@ -325,58 +378,46 @@ mod tests {
 
     #[test]
     fn module_kind_round_trips_known_config_names() {
-        for (kind, name) in [
-            (ModuleKind::Battery, "battery"),
-            (ModuleKind::Clock, "clock"),
-            (ModuleKind::Network, "network"),
-            (ModuleKind::Volume, "volume"),
-            (ModuleKind::Workspaces, "workspaces"),
-            (ModuleKind::FocusedWindow, "focused-window"),
-            (ModuleKind::Script, "script"),
-            (ModuleKind::Button, "button"),
-            (ModuleKind::Tray, "tray"),
-            (ModuleKind::WorkspaceItem, "workspace_item"),
-            (ModuleKind::TrayIcon, "tray_icon"),
-        ] {
-            assert_eq!(kind.as_str(), name);
-            assert_eq!(ModuleKind::from_config_name(name), Some(kind));
+        for kind in ModuleKind::CONFIG_KINDS {
+            let name = kind.as_str();
+            assert_eq!(ModuleKind::from_config_name(name), Some(*kind));
         }
+    }
+
+    #[test]
+    fn every_config_facing_kind_has_exactly_one_descriptor() {
+        let descriptor_kinds: Vec<_> = MODULE_DESCRIPTORS.iter().map(|d| d.kind).collect();
+        let unique_kinds: HashSet<_> = descriptor_kinds.iter().copied().collect();
+
+        assert_eq!(descriptor_kinds.len(), unique_kinds.len());
+        assert_eq!(unique_kinds.len(), ModuleKind::CONFIG_KINDS.len());
+        for kind in ModuleKind::CONFIG_KINDS {
+            assert!(unique_kinds.contains(kind));
+        }
+    }
+
+    #[test]
+    fn descriptor_config_names_round_trip_through_module_kind() {
+        for descriptor in MODULE_DESCRIPTORS {
+            assert_eq!(descriptor.kind.as_str(), descriptor.config_name);
+            assert_eq!(
+                ModuleKind::from_config_name(descriptor.config_name),
+                Some(descriptor.kind)
+            );
+        }
+    }
+
+    #[test]
+    fn dynamic_only_kinds_are_excluded_from_config_descriptors() {
+        let descriptor_kinds: HashSet<_> = MODULE_DESCRIPTORS.iter().map(|d| d.kind).collect();
+        assert!(!descriptor_kinds.contains(&ModuleKind::WorkspaceItem));
+        assert!(!descriptor_kinds.contains(&ModuleKind::TrayIcon));
     }
 
     #[test]
     fn build_registry_contains_clock() {
         let registry = build_registry();
         assert!(registry.contains_key("clock"));
-    }
-
-    #[test]
-    fn build_registry_contains_script() {
-        let registry = build_registry();
-        assert!(registry.contains_key("script"));
-    }
-
-    #[test]
-    fn build_registry_contains_button() {
-        let registry = build_registry();
-        assert!(registry.contains_key("button"));
-    }
-
-    #[test]
-    fn build_registry_contains_workspaces() {
-        let registry = build_registry();
-        assert!(registry.contains_key("workspaces"));
-    }
-
-    #[test]
-    fn build_registry_contains_focused_window() {
-        let registry = build_registry();
-        assert!(registry.contains_key("focused-window"));
-    }
-
-    #[test]
-    fn build_registry_contains_tray() {
-        let registry = build_registry();
-        assert!(registry.contains_key("tray"));
     }
 
     #[test]
