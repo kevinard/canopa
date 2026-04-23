@@ -30,7 +30,7 @@ use crate::config::{
 use crate::dbus::DbusConnections;
 #[cfg(test)]
 use crate::modules::ModuleId;
-use crate::modules::{Module, Zone, build_registry};
+use crate::modules::{Module, ModuleDescriptor, ModuleKind, Zone, build_registry, MODULE_DESCRIPTORS};
 use crate::surface::SurfaceState;
 use crate::surface::input::init_expand_keybind;
 
@@ -135,18 +135,24 @@ impl Message {
     }
 }
 
-/// Return default params for a module type name, or `None` if the type requires mandatory
-/// fields that have no sensible default (script, button).
-fn default_params_for_type(module_type: &str) -> Option<ModuleParams> {
-    match module_type {
-        "battery" => Some(ModuleParams::Battery(BatteryConfig::default())),
-        "clock" => Some(ModuleParams::Clock(ClockConfig::default())),
-        "network" => Some(ModuleParams::Network(NetworkConfig)),
-        "volume" => Some(ModuleParams::Volume(VolumeConfig::default())),
-        "workspaces" => Some(ModuleParams::Workspaces(WorkspacesConfig::default())),
-        "focused-window" => Some(ModuleParams::None),
-        "tray" => Some(ModuleParams::Tray(crate::config::TrayConfig)),
-        _ => None,
+fn descriptor_for_config_name(module_type: &str) -> Option<&'static ModuleDescriptor> {
+    MODULE_DESCRIPTORS
+        .iter()
+        .find(|descriptor| descriptor.config_name == module_type)
+}
+
+fn synthesized_params_for_kind(kind: ModuleKind) -> Option<ModuleParams> {
+    match kind {
+        ModuleKind::Battery => Some(ModuleParams::Battery(BatteryConfig::default())),
+        ModuleKind::Button => None,
+        ModuleKind::Clock => Some(ModuleParams::Clock(ClockConfig::default())),
+        ModuleKind::FocusedWindow => Some(ModuleParams::None),
+        ModuleKind::Network => Some(ModuleParams::Network(NetworkConfig)),
+        ModuleKind::Script => None,
+        ModuleKind::Tray => Some(ModuleParams::Tray(crate::config::TrayConfig)),
+        ModuleKind::Volume => Some(ModuleParams::Volume(VolumeConfig::default())),
+        ModuleKind::Workspaces => Some(ModuleParams::Workspaces(WorkspacesConfig::default())),
+        ModuleKind::WorkspaceItem | ModuleKind::TrayIcon => None,
     }
 }
 
@@ -159,6 +165,8 @@ impl App {
         init_expand_keybind(config.bars[0].expand_keybind.as_deref());
 
         let registry = build_registry();
+        let descriptors: HashMap<&str, &ModuleDescriptor> =
+            MODULE_DESCRIPTORS.iter().map(|d| (d.config_name, d)).collect();
         let module_map: std::collections::HashMap<&str, &crate::config::ModuleConfig> = config
             .modules
             .iter()
@@ -184,23 +192,32 @@ impl App {
         let mut modules: Vec<(Zone, Box<dyn Module>)> = Vec::new();
         for (zone, name) in &ordered {
             let synthesized;
-            let mc: &ModuleConfig = if let Some(mc) = module_map.get(name.as_str()) {
-                mc
-            } else if let Some(params) = default_params_for_type(name) {
-                synthesized = ModuleConfig {
-                    name: name.clone(),
-                    module_type: name.clone(),
-                    params,
+            let (mc, descriptor, ctor) =
+                if let Some(&mc) = module_map.get(name.as_str()) {
+                    let Some(descriptor) = descriptor_for_config_name(mc.module_type.as_str()) else {
+                        continue;
+                    };
+                    let Some(ctor) = registry.get(mc.module_type.as_str()).copied() else {
+                        continue;
+                    };
+                    (mc, descriptor, ctor)
+                } else if let Some(descriptor) = descriptors.get(name.as_str()) {
+                    let Some(params) = synthesized_params_for_kind(descriptor.kind) else {
+                        continue;
+                    };
+                    synthesized = ModuleConfig {
+                        name: name.clone(),
+                        module_type: descriptor.config_name.to_string(),
+                        params,
+                    };
+                    (&synthesized, *descriptor, descriptor.constructor)
+                } else {
+                    continue;
                 };
-                &synthesized
-            } else {
-                continue;
-            };
-            if let Some(ctor) = registry.get(mc.module_type.as_str()) {
-                let module = ctor(mc);
-                debug_assert_eq!(module.module_type(), module.kind().as_str());
-                modules.push((zone.clone(), module));
-            }
+            let module = ctor(mc);
+            debug_assert_eq!(module.module_type(), module.kind().as_str());
+            debug_assert_eq!(module.kind(), descriptor.kind);
+            modules.push((zone.clone(), module));
         }
         // Create one surface per (output_name, bar_name) pair when in manual mode.
         // When allowed_outputs is empty, StartMode::AllScreens handles window creation.
@@ -291,6 +308,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::config::{Edge, ExpandTrigger};
+    use crate::modules::{ModuleKind, MODULE_DESCRIPTORS};
     use crate::niri::NiriEvent;
     use crate::surface::expand::ExpandState;
 
@@ -1598,6 +1616,52 @@ mod tests {
             instantiated.iter().any(|n| n == "workspaces"),
             "workspaces must be instantiated from main bar section; got: {instantiated:?}"
         );
+    }
+
+    #[test]
+    fn undeclared_known_builtins_still_instantiate() {
+        let mut config = Config::default();
+        config.bars[0].modules.top = vec!["clock".into()];
+
+        let (app, _) = App::boot(config, vec![]);
+        let module = app
+            .modules
+            .iter()
+            .find(|(_, module)| module.id().0 == "clock")
+            .map(|(_, module)| module)
+            .expect("clock should be instantiated from an undeclared built-in");
+
+        assert_eq!(module.kind(), ModuleKind::Clock);
+        assert_eq!(module.module_type(), "clock");
+    }
+
+    #[test]
+    fn undeclared_mandatory_param_modules_still_skip() {
+        let mut config = Config::default();
+        config.bars[0].modules.top = vec!["button".into(), "script".into()];
+
+        let (app, _) = App::boot(config, vec![]);
+        let instantiated: Vec<_> = app.modules.iter().map(|(_, module)| module.id().0.clone()).collect();
+
+        assert!(instantiated.is_empty(), "expected no modules, got: {instantiated:?}");
+    }
+
+    #[test]
+    fn constructor_lookup_matches_expected_module_kind() {
+        use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
+
+        let descriptor = MODULE_DESCRIPTORS
+            .iter()
+            .find(|descriptor| descriptor.config_name == "clock")
+            .expect("clock descriptor should exist");
+        let module = (descriptor.constructor)(&ModuleConfig {
+            name: "clock".into(),
+            module_type: "clock".into(),
+            params: ModuleParams::Clock(ClockConfig::default()),
+        });
+
+        assert_eq!(module.kind(), descriptor.kind);
+        assert_eq!(module.module_type(), descriptor.config_name);
     }
 
     // --- Hotplug output detection tests ---
