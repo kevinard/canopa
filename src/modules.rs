@@ -380,14 +380,22 @@ mod tests {
 
     #[test]
     fn every_config_facing_kind_has_exactly_one_descriptor() {
+        let expected = HashSet::from([
+            ModuleKind::Battery,
+            ModuleKind::Button,
+            ModuleKind::Clock,
+            ModuleKind::FocusedWindow,
+            ModuleKind::Network,
+            ModuleKind::Script,
+            ModuleKind::Tray,
+            ModuleKind::Volume,
+            ModuleKind::Workspaces,
+        ]);
         let descriptor_kinds: Vec<_> = MODULE_DESCRIPTORS.iter().map(|d| d.kind).collect();
-        let unique_kinds: HashSet<_> = descriptor_kinds.iter().copied().collect();
+        let actual = descriptor_kinds.iter().copied().collect::<HashSet<_>>();
 
-        assert_eq!(descriptor_kinds.len(), unique_kinds.len());
-        assert_eq!(unique_kinds.len(), ModuleKind::CONFIG_KINDS.len());
-        for kind in ModuleKind::CONFIG_KINDS {
-            assert!(unique_kinds.contains(kind));
-        }
+        assert_eq!(descriptor_kinds.len(), actual.len());
+        assert_eq!(actual, expected);
     }
 
     #[test]
