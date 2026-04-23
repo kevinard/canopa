@@ -23,14 +23,11 @@ use std::collections::HashMap;
 use iced::Task;
 use iced_layershell::to_layer_message;
 
-use crate::config::{
-    BatteryConfig, ClockConfig, Config, ModuleConfig, ModuleParams, NetworkConfig, VolumeConfig,
-    WorkspacesConfig,
-};
+use crate::config::{Config, ModuleConfig};
 use crate::dbus::DbusConnections;
 #[cfg(test)]
 use crate::modules::ModuleId;
-use crate::modules::{Module, ModuleDescriptor, ModuleKind, Zone, build_registry, MODULE_DESCRIPTORS};
+use crate::modules::{Module, ModuleDescriptor, Zone, build_registry, MODULE_DESCRIPTORS};
 use crate::surface::SurfaceState;
 use crate::surface::input::init_expand_keybind;
 
@@ -141,21 +138,6 @@ fn descriptor_for_config_name(module_type: &str) -> Option<&'static ModuleDescri
         .find(|descriptor| descriptor.config_name == module_type)
 }
 
-fn synthesized_params_for_kind(kind: ModuleKind) -> Option<ModuleParams> {
-    match kind {
-        ModuleKind::Battery => Some(ModuleParams::Battery(BatteryConfig::default())),
-        ModuleKind::Button => None,
-        ModuleKind::Clock => Some(ModuleParams::Clock(ClockConfig::default())),
-        ModuleKind::FocusedWindow => Some(ModuleParams::None),
-        ModuleKind::Network => Some(ModuleParams::Network(NetworkConfig)),
-        ModuleKind::Script => None,
-        ModuleKind::Tray => Some(ModuleParams::Tray(crate::config::TrayConfig)),
-        ModuleKind::Volume => Some(ModuleParams::Volume(VolumeConfig::default())),
-        ModuleKind::Workspaces => Some(ModuleParams::Workspaces(WorkspacesConfig::default())),
-        ModuleKind::WorkspaceItem | ModuleKind::TrayIcon => None,
-    }
-}
-
 impl App {
     /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
     /// Empty means `StartMode::AllScreens` handles window creation (single "all" bar case).
@@ -202,7 +184,7 @@ impl App {
                     };
                     (mc, descriptor, ctor)
                 } else if let Some(descriptor) = descriptors.get(name.as_str()) {
-                    let Some(params) = synthesized_params_for_kind(descriptor.kind) else {
+                    let Some(params) = descriptor.synthesized_params() else {
                         continue;
                     };
                     synthesized = ModuleConfig {

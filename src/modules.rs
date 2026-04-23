@@ -11,6 +11,11 @@ pub mod workspaces;
 
 use std::collections::HashMap;
 
+use crate::config::{
+    BatteryConfig, ClockConfig, ModuleParams, NetworkConfig, TrayConfig, VolumeConfig,
+    WorkspacesConfig,
+};
+
 /// Unique identifier for a module instance.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ModuleId(pub String);
@@ -185,18 +190,21 @@ pub trait Module: Send + Sync {
 /// Type alias for a module constructor function.
 pub(crate) type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>;
 
+/// Type alias for a synthesized-params factory used when a built-in module is undeclared.
+pub(crate) type SynthesizedParamsFactory = fn() -> ModuleParams;
+
 macro_rules! config_module_descriptors {
     ($macro:ident) => {
         $macro! {
-            (ModuleKind::Battery, "battery", battery_ctor),
-            (ModuleKind::Button, "button", button_ctor),
-            (ModuleKind::Clock, "clock", clock_ctor),
-            (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor),
-            (ModuleKind::Network, "network", network_ctor),
-            (ModuleKind::Script, "script", script_ctor),
-            (ModuleKind::Tray, "tray", tray_ctor),
-            (ModuleKind::Volume, "volume", volume_ctor),
-            (ModuleKind::Workspaces, "workspaces", workspaces_ctor),
+            (ModuleKind::Battery, "battery", battery_ctor, Some(battery_synthesized_params as SynthesizedParamsFactory)),
+            (ModuleKind::Button, "button", button_ctor, None),
+            (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory)),
+            (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor, Some(focused_window_synthesized_params as SynthesizedParamsFactory)),
+            (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory)),
+            (ModuleKind::Script, "script", script_ctor, None),
+            (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory)),
+            (ModuleKind::Volume, "volume", volume_ctor, Some(volume_synthesized_params as SynthesizedParamsFactory)),
+            (ModuleKind::Workspaces, "workspaces", workspaces_ctor, Some(workspaces_synthesized_params as SynthesizedParamsFactory)),
         }
     };
 }
@@ -207,21 +215,29 @@ pub(crate) struct ModuleDescriptor {
     pub kind: ModuleKind,
     pub config_name: &'static str,
     pub constructor: ModuleConstructor,
+    pub synthesized_params_factory: Option<SynthesizedParamsFactory>,
+}
+
+impl ModuleDescriptor {
+    pub(crate) fn synthesized_params(&self) -> Option<ModuleParams> {
+        self.synthesized_params_factory.map(|factory| factory())
+    }
 }
 
 macro_rules! build_config_kinds {
-    ($(($kind:expr, $config_name:expr, $ctor:ident)),* $(,)?) => {
+    ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr)),* $(,)?) => {
         &[$($kind),*]
     };
 }
 
 macro_rules! build_module_descriptors {
-    ($(($kind:expr, $config_name:expr, $ctor:ident)),* $(,)?) => {
+    ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr)),* $(,)?) => {
         &[
             $(ModuleDescriptor {
                 kind: $kind,
                 config_name: $config_name,
                 constructor: $ctor,
+                synthesized_params_factory: $factory,
             }),*
         ]
     };
@@ -248,8 +264,27 @@ fn network_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
     Box::new(network::NetworkModule::new(ModuleId::new(&mc.name)))
 }
 
+fn battery_synthesized_params() -> ModuleParams {
+    ModuleParams::Battery(BatteryConfig::default())
+}
+
+fn clock_synthesized_params() -> ModuleParams {
+    ModuleParams::Clock(ClockConfig::default())
+}
+
+fn focused_window_synthesized_params() -> ModuleParams {
+    ModuleParams::None
+}
+
+fn network_synthesized_params() -> ModuleParams {
+    ModuleParams::Network(NetworkConfig)
+}
+
+fn tray_synthesized_params() -> ModuleParams {
+    ModuleParams::Tray(TrayConfig)
+}
+
 fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    use crate::config::{ModuleParams, VolumeConfig};
     let step = match &mc.params {
         ModuleParams::Volume(cfg) => cfg.step,
         _ => VolumeConfig::default().step,
@@ -258,7 +293,6 @@ fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
 }
 
 fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    use crate::config::{BatteryConfig, ModuleParams};
     let threshold = match &mc.params {
         ModuleParams::Battery(cfg) => cfg.critical_threshold,
         _ => BatteryConfig::default().critical_threshold,
@@ -270,7 +304,6 @@ fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
 }
 
 fn button_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    use crate::config::ModuleParams;
     match &mc.params {
         ModuleParams::Button(cfg) => Box::new(button::ButtonModule::new(
             ModuleId::new(&mc.name),
@@ -283,7 +316,6 @@ fn button_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
 }
 
 fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    use crate::config::{ClockConfig, ModuleParams};
     let (time_fmt, date_fmt) = match &mc.params {
         ModuleParams::Clock(cfg) => (cfg.time_format.clone(), cfg.date_format.clone()),
         _ => {
@@ -299,7 +331,6 @@ fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
 }
 
 fn script_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    use crate::config::ModuleParams;
     match &mc.params {
         ModuleParams::Script(cfg) => Box::new(script::ScriptModule::new(
             ModuleId::new(&mc.name),
@@ -311,7 +342,6 @@ fn script_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
 }
 
 fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    use crate::config::ModuleParams;
     let config = match &mc.params {
         ModuleParams::Workspaces(c) => c.clone(),
         _ => crate::config::WorkspacesConfig::default(),
@@ -330,6 +360,14 @@ fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
 
 fn tray_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
     Box::new(tray::TrayModule::new(ModuleId::new(&mc.name)))
+}
+
+fn volume_synthesized_params() -> ModuleParams {
+    ModuleParams::Volume(VolumeConfig::default())
+}
+
+fn workspaces_synthesized_params() -> ModuleParams {
+    ModuleParams::Workspaces(WorkspacesConfig::default())
 }
 
 #[cfg(test)]
@@ -407,6 +445,21 @@ mod tests {
                 Some(descriptor.kind)
             );
         }
+    }
+
+    #[test]
+    fn descriptor_synthesized_params_cover_known_builtins() {
+        let clock = MODULE_DESCRIPTORS
+            .iter()
+            .find(|descriptor| descriptor.config_name == "clock")
+            .expect("clock descriptor should exist");
+        assert!(matches!(clock.synthesized_params(), Some(ModuleParams::Clock(_))));
+
+        let button = MODULE_DESCRIPTORS
+            .iter()
+            .find(|descriptor| descriptor.config_name == "button")
+            .expect("button descriptor should exist");
+        assert!(button.synthesized_params().is_none());
     }
 
     #[test]
