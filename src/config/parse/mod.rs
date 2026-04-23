@@ -68,14 +68,12 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
                 .to_string()
         };
 
-        let kind = ModuleKind::from_config_name(&module_type)
-            .filter(|kind| ModuleKind::CONFIG_KINDS.contains(kind))
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{}: unknown module type {module_type:?}",
-                    error::module_path(i, &module_type)
-                )
-            })?;
+        let kind = ModuleKind::from_config_name(&module_type).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{}: unknown module type {module_type:?}",
+                error::module_path(i, &module_type)
+            )
+        })?;
         let params = modules::dispatch(kind, node, i)?;
         result.push(ModuleConfig {
             name,

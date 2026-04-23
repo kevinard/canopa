@@ -5,6 +5,10 @@ use anyhow::Context;
 use iced_layershell::reexport::Anchor;
 
 fn is_known_config_module_type(module_type: &str) -> bool {
+    debug_assert_eq!(
+        crate::modules::MODULE_DESCRIPTORS.len(),
+        crate::modules::ModuleKind::CONFIG_KINDS.len()
+    );
     crate::modules::MODULE_DESCRIPTORS
         .iter()
         .any(|descriptor| descriptor.config_name == module_type)
@@ -387,15 +391,23 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
-    use crate::modules::MODULE_DESCRIPTORS;
 
     #[test]
-    fn known_module_types_include_all_config_module_descriptors() {
-        for descriptor in MODULE_DESCRIPTORS {
+    fn known_module_types_include_all_config_facing_names() {
+        for name in [
+            "battery",
+            "button",
+            "clock",
+            "focused-window",
+            "network",
+            "script",
+            "tray",
+            "volume",
+            "workspaces",
+        ] {
             assert!(
-                is_known_config_module_type(descriptor.config_name),
-                "missing known module type {:?}",
-                descriptor.config_name
+                is_known_config_module_type(name),
+                "missing known module type {name:?}"
             );
         }
     }
