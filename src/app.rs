@@ -27,7 +27,7 @@ use crate::config::{Config, ModuleConfig};
 use crate::dbus::DbusConnections;
 #[cfg(test)]
 use crate::modules::ModuleId;
-use crate::modules::{Module, ModuleDescriptor, Zone, build_registry, MODULE_DESCRIPTORS};
+use crate::modules::{MODULE_DESCRIPTORS, Module, ModuleDescriptor, Zone, build_registry};
 use crate::surface::SurfaceState;
 use crate::surface::input::init_expand_keybind;
 
@@ -147,8 +147,10 @@ impl App {
         init_expand_keybind(config.bars[0].expand_keybind.as_deref());
 
         let registry = build_registry();
-        let descriptors: HashMap<&str, &ModuleDescriptor> =
-            MODULE_DESCRIPTORS.iter().map(|d| (d.config_name, d)).collect();
+        let descriptors: HashMap<&str, &ModuleDescriptor> = MODULE_DESCRIPTORS
+            .iter()
+            .map(|d| (d.config_name, d))
+            .collect();
         let module_map: std::collections::HashMap<&str, &crate::config::ModuleConfig> = config
             .modules
             .iter()
@@ -174,28 +176,27 @@ impl App {
         let mut modules: Vec<(Zone, Box<dyn Module>)> = Vec::new();
         for (zone, name) in &ordered {
             let synthesized;
-            let (mc, descriptor, ctor) =
-                if let Some(&mc) = module_map.get(name.as_str()) {
-                    let Some(descriptor) = descriptor_for_config_name(mc.module_type.as_str()) else {
-                        continue;
-                    };
-                    let Some(ctor) = registry.get(mc.module_type.as_str()).copied() else {
-                        continue;
-                    };
-                    (mc, descriptor, ctor)
-                } else if let Some(descriptor) = descriptors.get(name.as_str()) {
-                    let Some(params) = descriptor.synthesized_params() else {
-                        continue;
-                    };
-                    synthesized = ModuleConfig {
-                        name: name.clone(),
-                        module_type: descriptor.config_name.to_string(),
-                        params,
-                    };
-                    (&synthesized, *descriptor, descriptor.constructor)
-                } else {
+            let (mc, descriptor, ctor) = if let Some(&mc) = module_map.get(name.as_str()) {
+                let Some(descriptor) = descriptor_for_config_name(mc.module_type.as_str()) else {
                     continue;
                 };
+                let Some(ctor) = registry.get(mc.module_type.as_str()).copied() else {
+                    continue;
+                };
+                (mc, descriptor, ctor)
+            } else if let Some(descriptor) = descriptors.get(name.as_str()) {
+                let Some(params) = descriptor.synthesized_params() else {
+                    continue;
+                };
+                synthesized = ModuleConfig {
+                    name: name.clone(),
+                    module_type: descriptor.config_name.to_string(),
+                    params,
+                };
+                (&synthesized, *descriptor, descriptor.constructor)
+            } else {
+                continue;
+            };
             let module = ctor(mc);
             debug_assert_eq!(module.module_type(), module.kind().as_str());
             debug_assert_eq!(module.kind(), descriptor.kind);
@@ -290,7 +291,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::config::{Edge, ExpandTrigger};
-    use crate::modules::{ModuleKind, MODULE_DESCRIPTORS};
+    use crate::modules::{MODULE_DESCRIPTORS, ModuleKind};
     use crate::niri::NiriEvent;
     use crate::surface::expand::ExpandState;
 
@@ -1623,9 +1624,16 @@ mod tests {
         config.bars[0].modules.top = vec!["button".into(), "script".into()];
 
         let (app, _) = App::boot(config, vec![]);
-        let instantiated: Vec<_> = app.modules.iter().map(|(_, module)| module.id().0.clone()).collect();
+        let instantiated: Vec<_> = app
+            .modules
+            .iter()
+            .map(|(_, module)| module.id().0.clone())
+            .collect();
 
-        assert!(instantiated.is_empty(), "expected no modules, got: {instantiated:?}");
+        assert!(
+            instantiated.is_empty(),
+            "expected no modules, got: {instantiated:?}"
+        );
     }
 
     #[test]

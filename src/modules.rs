@@ -453,7 +453,10 @@ mod tests {
             .iter()
             .find(|descriptor| descriptor.config_name == "clock")
             .expect("clock descriptor should exist");
-        assert!(matches!(clock.synthesized_params(), Some(ModuleParams::Clock(_))));
+        assert!(matches!(
+            clock.synthesized_params(),
+            Some(ModuleParams::Clock(_))
+        ));
 
         let button = MODULE_DESCRIPTORS
             .iter()
