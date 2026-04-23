@@ -38,17 +38,7 @@ pub enum ModuleKind {
 }
 
 impl ModuleKind {
-    pub(crate) const CONFIG_KINDS: &'static [ModuleKind] = &[
-        ModuleKind::Battery,
-        ModuleKind::Clock,
-        ModuleKind::Network,
-        ModuleKind::Volume,
-        ModuleKind::Workspaces,
-        ModuleKind::FocusedWindow,
-        ModuleKind::Script,
-        ModuleKind::Button,
-        ModuleKind::Tray,
-    ];
+    pub(crate) const CONFIG_KINDS: &'static [ModuleKind] = _CONFIG_KINDS_FROM_DESCRIPTORS;
 
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -195,6 +185,22 @@ pub trait Module: Send + Sync {
 /// Type alias for a module constructor function.
 pub(crate) type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>;
 
+macro_rules! config_module_descriptors {
+    ($macro:ident) => {
+        $macro! {
+            (ModuleKind::Battery, "battery", battery_ctor),
+            (ModuleKind::Button, "button", button_ctor),
+            (ModuleKind::Clock, "clock", clock_ctor),
+            (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor),
+            (ModuleKind::Network, "network", network_ctor),
+            (ModuleKind::Script, "script", script_ctor),
+            (ModuleKind::Tray, "tray", tray_ctor),
+            (ModuleKind::Volume, "volume", volume_ctor),
+            (ModuleKind::Workspaces, "workspaces", workspaces_ctor),
+        }
+    };
+}
+
 /// Typed metadata for a built-in config-facing module.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ModuleDescriptor {
@@ -203,53 +209,29 @@ pub(crate) struct ModuleDescriptor {
     pub constructor: ModuleConstructor,
 }
 
-pub(crate) const MODULE_DESCRIPTORS: &[ModuleDescriptor] = &[
-    ModuleDescriptor {
-        kind: ModuleKind::Battery,
-        config_name: "battery",
-        constructor: battery_ctor,
-    },
-    ModuleDescriptor {
-        kind: ModuleKind::Button,
-        config_name: "button",
-        constructor: button_ctor,
-    },
-    ModuleDescriptor {
-        kind: ModuleKind::Network,
-        config_name: "network",
-        constructor: network_ctor,
-    },
-    ModuleDescriptor {
-        kind: ModuleKind::Volume,
-        config_name: "volume",
-        constructor: volume_ctor,
-    },
-    ModuleDescriptor {
-        kind: ModuleKind::Clock,
-        config_name: "clock",
-        constructor: clock_ctor,
-    },
-    ModuleDescriptor {
-        kind: ModuleKind::Script,
-        config_name: "script",
-        constructor: script_ctor,
-    },
-    ModuleDescriptor {
-        kind: ModuleKind::Workspaces,
-        config_name: "workspaces",
-        constructor: workspaces_ctor,
-    },
-    ModuleDescriptor {
-        kind: ModuleKind::FocusedWindow,
-        config_name: "focused-window",
-        constructor: focused_window_ctor,
-    },
-    ModuleDescriptor {
-        kind: ModuleKind::Tray,
-        config_name: "tray",
-        constructor: tray_ctor,
-    },
-];
+macro_rules! build_config_kinds {
+    ($(($kind:expr, $config_name:expr, $ctor:ident)),* $(,)?) => {
+        &[$($kind),*]
+    };
+}
+
+macro_rules! build_module_descriptors {
+    ($(($kind:expr, $config_name:expr, $ctor:ident)),* $(,)?) => {
+        &[
+            $(ModuleDescriptor {
+                kind: $kind,
+                config_name: $config_name,
+                constructor: $ctor,
+            }),*
+        ]
+    };
+}
+
+pub(crate) const MODULE_DESCRIPTORS: &[ModuleDescriptor] =
+    config_module_descriptors!(build_module_descriptors);
+
+const _CONFIG_KINDS_FROM_DESCRIPTORS: &[ModuleKind] =
+    config_module_descriptors!(build_config_kinds);
 
 /// Build the static module registry mapping config name → constructor.
 pub(crate) fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
@@ -378,9 +360,21 @@ mod tests {
 
     #[test]
     fn module_kind_round_trips_known_config_names() {
-        for kind in ModuleKind::CONFIG_KINDS {
-            let name = kind.as_str();
-            assert_eq!(ModuleKind::from_config_name(name), Some(*kind));
+        for (kind, name) in [
+            (ModuleKind::Battery, "battery"),
+            (ModuleKind::Button, "button"),
+            (ModuleKind::Clock, "clock"),
+            (ModuleKind::FocusedWindow, "focused-window"),
+            (ModuleKind::Network, "network"),
+            (ModuleKind::Script, "script"),
+            (ModuleKind::Tray, "tray"),
+            (ModuleKind::Volume, "volume"),
+            (ModuleKind::Workspaces, "workspaces"),
+            (ModuleKind::WorkspaceItem, "workspace_item"),
+            (ModuleKind::TrayIcon, "tray_icon"),
+        ] {
+            assert_eq!(kind.as_str(), name);
+            assert_eq!(ModuleKind::from_config_name(name), Some(kind));
         }
     }
 
