@@ -18,7 +18,7 @@ const SCRIPT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 
 async fn run_script_command(cmd: &str, timeout: std::time::Duration) -> ScriptEvent {
     match crate::command::run_shell_capture_stdout(cmd, timeout, MAX_SCRIPT_OUTPUT_BYTES).await {
-        Ok(Some(out)) => ScriptEvent::Output(out),
+        Ok(crate::command::CaptureResult::Success(out)) => ScriptEvent::Output(out),
         _ => ScriptEvent::Failed,
     }
 }

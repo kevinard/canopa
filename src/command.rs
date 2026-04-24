@@ -5,6 +5,13 @@ pub const MAX_COMMAND_OUTPUT_BYTES: usize = 4096;
 
 use tokio::io::AsyncReadExt;
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum CaptureResult {
+    Success(String),
+    NonZero(std::process::ExitStatus),
+    TimedOut,
+}
+
 pub fn sanitize_stdout(stdout: &[u8], max_bytes: usize) -> String {
     let text = String::from_utf8_lossy(stdout);
     let trimmed = text.trim();
@@ -23,8 +30,9 @@ async fn kill_and_wait(child: &mut tokio::process::Child) {
 /// Run `sh -c <command>` with a timeout and capture stdout.
 ///
 /// Returns:
-/// - `Ok(Some(output))` on zero exit — stdout trimmed and byte-capped at `max_output_bytes`.
-/// - `Ok(None)` on non-zero exit **or** timeout (callers cannot distinguish).
+/// - `Ok(CaptureResult::Success(output))` on zero exit — stdout trimmed and byte-capped at `max_output_bytes`.
+/// - `Ok(CaptureResult::NonZero(status))` on non-zero exit.
+/// - `Ok(CaptureResult::TimedOut)` on timeout.
 /// - `Err(e)` only on spawn-level I/O errors.
 ///
 /// Timeout cancellation kills and waits on the child so the process is reaped.
@@ -32,7 +40,7 @@ pub async fn run_shell_capture_stdout(
     command: &str,
     timeout: std::time::Duration,
     max_output_bytes: usize,
-) -> std::io::Result<Option<String>> {
+) -> std::io::Result<CaptureResult> {
     let mut child = tokio::process::Command::new("sh");
     child
         .arg("-c")
@@ -55,7 +63,7 @@ pub async fn run_shell_capture_stdout(
             biased;
             _ = &mut deadline => {
                 kill_and_wait(&mut child).await;
-                return Ok(None);
+                return Ok(CaptureResult::TimedOut);
             }
             read = stdout.read(&mut buffer) => {
                 let read = read?;
@@ -74,14 +82,14 @@ pub async fn run_shell_capture_stdout(
         biased;
         _ = &mut deadline => {
             kill_and_wait(&mut child).await;
-            Ok(None)
+            Ok(CaptureResult::TimedOut)
         }
         status = child.wait() => {
             match status? {
                 status if status.success() => {
-                    Ok(Some(sanitize_stdout(&captured, max_output_bytes)))
+                    Ok(CaptureResult::Success(sanitize_stdout(&captured, max_output_bytes)))
                 }
-                _ => Ok(None),
+                status => Ok(CaptureResult::NonZero(status)),
             }
         }
     }
@@ -122,7 +130,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_shell_capture_stdout_returns_some_on_zero_exit() {
+    async fn run_shell_capture_stdout_returns_success_on_zero_exit() {
         let out = run_shell_capture_stdout(
             "printf hello",
             Duration::from_secs(1),
@@ -130,20 +138,20 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(out.as_deref(), Some("hello"));
+        assert_eq!(out, CaptureResult::Success("hello".to_string()));
     }
 
     #[tokio::test]
-    async fn run_shell_capture_stdout_returns_none_on_nonzero_exit() {
+    async fn run_shell_capture_stdout_returns_nonzero_on_nonzero_exit() {
         let out =
             run_shell_capture_stdout("false", Duration::from_secs(1), MAX_COMMAND_OUTPUT_BYTES)
                 .await
                 .unwrap();
-        assert!(out.is_none());
+        assert!(matches!(out, CaptureResult::NonZero(status) if !status.success()));
     }
 
     #[tokio::test]
-    async fn run_shell_capture_stdout_returns_none_on_timeout() {
+    async fn run_shell_capture_stdout_returns_timed_out_on_timeout() {
         let out = run_shell_capture_stdout(
             "sleep 1",
             Duration::from_millis(50),
@@ -151,7 +159,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(out.is_none());
+        assert_eq!(out, CaptureResult::TimedOut);
     }
 
     #[tokio::test]
@@ -163,9 +171,13 @@ mod tests {
         )
         .await
         .unwrap();
-        let out = out.expect("command should exit successfully");
-        assert_eq!(out.len(), MAX_COMMAND_OUTPUT_BYTES);
-        assert!(out.chars().all(|c| c == 'x'));
+        match out {
+            CaptureResult::Success(out) => {
+                assert_eq!(out.len(), MAX_COMMAND_OUTPUT_BYTES);
+                assert!(out.chars().all(|c| c == 'x'));
+            }
+            other => panic!("expected success, got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -177,8 +189,12 @@ mod tests {
         )
         .await
         .unwrap();
-        let out = out.expect("large successful command should not be treated as a timeout");
-        assert_eq!(out.len(), MAX_COMMAND_OUTPUT_BYTES);
-        assert!(out.chars().all(|c| c == 'x'));
+        match out {
+            CaptureResult::Success(out) => {
+                assert_eq!(out.len(), MAX_COMMAND_OUTPUT_BYTES);
+                assert!(out.chars().all(|c| c == 'x'));
+            }
+            other => panic!("expected success, got {other:?}"),
+        }
     }
 }
