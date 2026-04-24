@@ -46,34 +46,61 @@ async fn kill_and_wait(child: &mut tokio::process::Child) {
     let _ = child.wait().await;
 }
 
-fn tokio_command(spec: CommandSpec<'_>) -> tokio::process::Command {
+trait ProcessCommand: Sized {
+    fn new(program: &str) -> Self;
+    fn arg(&mut self, arg: &str) -> &mut Self;
+    fn args(&mut self, args: &[&str]) -> &mut Self;
+}
+
+impl ProcessCommand for tokio::process::Command {
+    fn new(program: &str) -> Self {
+        tokio::process::Command::new(program)
+    }
+
+    fn arg(&mut self, arg: &str) -> &mut Self {
+        tokio::process::Command::arg(self, arg)
+    }
+
+    fn args(&mut self, args: &[&str]) -> &mut Self {
+        tokio::process::Command::args(self, args)
+    }
+}
+
+impl ProcessCommand for std::process::Command {
+    fn new(program: &str) -> Self {
+        std::process::Command::new(program)
+    }
+
+    fn arg(&mut self, arg: &str) -> &mut Self {
+        std::process::Command::arg(self, arg)
+    }
+
+    fn args(&mut self, args: &[&str]) -> &mut Self {
+        std::process::Command::args(self, args)
+    }
+}
+
+fn command_from_spec<C: ProcessCommand>(spec: CommandSpec<'_>) -> C {
     match spec {
         CommandSpec::Shell(command) => {
-            let mut child = tokio::process::Command::new("sh");
+            let mut child = C::new("sh");
             child.arg("-c").arg(command);
             child
         }
         CommandSpec::Argv { program, args } => {
-            let mut child = tokio::process::Command::new(program);
+            let mut child = C::new(program);
             child.args(args);
             child
         }
     }
 }
 
+fn tokio_command(spec: CommandSpec<'_>) -> tokio::process::Command {
+    command_from_spec(spec)
+}
+
 fn std_command(spec: CommandSpec<'_>) -> std::process::Command {
-    match spec {
-        CommandSpec::Shell(command) => {
-            let mut child = std::process::Command::new("sh");
-            child.arg("-c").arg(command);
-            child
-        }
-        CommandSpec::Argv { program, args } => {
-            let mut child = std::process::Command::new(program);
-            child.args(args);
-            child
-        }
-    }
+    command_from_spec(spec)
 }
 
 /// Run a command with a timeout and capture stdout.
