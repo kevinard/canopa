@@ -124,7 +124,11 @@ impl App {
             format!("{step}%-")
         };
         tokio::task::spawn(async move {
-            let _ = crate::command::set_default_sink_volume(&arg).await;
+            match crate::command::set_default_sink_volume(&arg).await {
+                Ok(status) if status.success() => {}
+                Ok(status) => eprintln!("niribar: wpctl set-volume exited with {status}"),
+                Err(err) => eprintln!("niribar: failed to run wpctl set-volume: {err}"),
+            }
         });
         Task::none()
     }

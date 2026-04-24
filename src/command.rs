@@ -1,5 +1,10 @@
-//! Centralized shell-command execution helpers. Single audit point for
-//! spawning external processes.
+//! Centralized external process execution helpers.
+//!
+//! This is the app's process-launch audit point. Configured script polling and
+//! button clicks intentionally use `CommandSpec::Shell` to preserve existing
+//! shell-based config syntax. Internal app commands, such as `wpctl` volume
+//! adjustment, must use `CommandSpec::Argv` so fixed program/argument boundaries
+//! stay explicit.
 
 pub const MAX_COMMAND_OUTPUT_BYTES: usize = 4096;
 
