@@ -194,8 +194,8 @@ mod tests {
 
     #[tokio::test]
     async fn run_script_command_preserves_shell_mode() {
-        let event = run_script_command("printf '%s' script-ok", std::time::Duration::from_secs(1))
-            .await;
+        let event =
+            run_script_command("printf '%s' script-ok", std::time::Duration::from_secs(1)).await;
 
         assert_eq!(event, ScriptEvent::Output("script-ok".to_string()));
     }
