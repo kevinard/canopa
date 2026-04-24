@@ -15,89 +15,32 @@ impl App {
         }
 
         // Popup window -- full-screen transparent overlay; menu widget positioned inside.
-        if let Some(meta) = self.surfaces.popup(window) {
+        if let Some(model) = self.popup_render_model(window) {
             use crate::surface::menu_popup::view_menu_popup;
             let hovered_item = self.menu.hovered_item(window);
             let focused_item = self.menu.focused_item(window);
             let menu = view_menu_popup(
-                &meta.tree,
-                meta.service.as_str(),
-                &meta.menu_path,
+                model.tree,
+                model.service,
+                model.menu_path,
                 window,
                 hovered_item,
                 focused_item,
             );
 
-            let bar = Self::bar_for_surface_name(&self.config.bars, &meta.bar_name);
-            let bar_size = bar.collapsed_width as f32;
-
-            // Clamp the anchor so the popup stays within screen bounds.
-            let (popup_w, popup_h) = crate::surface::menu_popup::popup_size(&meta.tree);
-            let screen_w = meta.tree.screen_size.0 as f32;
-            let screen_h = meta.tree.screen_size.1 as f32;
-            let raw_cursor_x = meta.tree.anchor.0 as f32;
-            let raw_cursor_y = meta.tree.anchor.1 as f32;
-            let cursor_x = if screen_w > 0.0 {
-                raw_cursor_x.min(screen_w - popup_w as f32).max(0.0)
-            } else {
-                raw_cursor_x
-            };
-            let cursor_y = if screen_h > 0.0 {
-                raw_cursor_y.min(screen_h - popup_h as f32).max(0.0)
-            } else {
-                raw_cursor_y
-            };
-
-            let (h_align, v_align, padding) = match &bar.edge {
-                Edge::Left => (
-                    iced::alignment::Horizontal::Left,
-                    iced::alignment::Vertical::Top,
-                    iced::Padding {
-                        top: cursor_y,
-                        left: bar_size,
-                        ..Default::default()
-                    },
-                ),
-                Edge::Right => (
-                    iced::alignment::Horizontal::Right,
-                    iced::alignment::Vertical::Top,
-                    iced::Padding {
-                        top: cursor_y,
-                        right: bar_size,
-                        ..Default::default()
-                    },
-                ),
-                Edge::Top => (
-                    iced::alignment::Horizontal::Left,
-                    iced::alignment::Vertical::Top,
-                    iced::Padding {
-                        top: bar_size,
-                        left: cursor_x,
-                        ..Default::default()
-                    },
-                ),
-                Edge::Bottom => (
-                    iced::alignment::Horizontal::Left,
-                    iced::alignment::Vertical::Bottom,
-                    iced::Padding {
-                        bottom: bar_size,
-                        left: cursor_x,
-                        ..Default::default()
-                    },
-                ),
-            };
-
             // Pin the menu to its computed size so Fill items inside don't expand to
             // screen width, and so the outer Fill container doesn't collapse it.
-            let menu_sized = iced::widget::container(menu).width(popup_w).height(popup_h);
+            let menu_sized = iced::widget::container(menu)
+                .width(model.placement.popup_width)
+                .height(model.placement.popup_height);
 
             return iced::widget::mouse_area(
                 iced::widget::container(menu_sized)
                     .width(iced::Length::Fill)
                     .height(iced::Length::Fill)
-                    .align_x(h_align)
-                    .align_y(v_align)
-                    .padding(padding),
+                    .align_x(model.placement.h_align)
+                    .align_y(model.placement.v_align)
+                    .padding(model.placement.padding),
             )
             .on_press(Message::Menu(super::messages::MenuEvent::Closed))
             .into();

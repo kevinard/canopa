@@ -11,6 +11,7 @@ mod module_store;
 mod navigation;
 mod niri;
 mod perf;
+mod render;
 mod shared;
 mod subscriptions;
 mod surfaces;
