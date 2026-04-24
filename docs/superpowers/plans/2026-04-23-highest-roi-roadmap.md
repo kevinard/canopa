@@ -361,14 +361,14 @@ pub(super) fn bar_render_model(&self, window: iced::window::Id) -> BarRenderMode
 - Modify: `src/app/view.rs`
 - Test: `src/app/view.rs` or `src/app/render.rs`
 
-- [ ] Move popup anchor clamping and edge-relative placement calculations out of `App::view()`.
-- [ ] Build a `PopupRenderModel` from surface/menu/config state.
-- [ ] Keep current popup behavior unchanged.
-- [ ] Add tests for:
+- [x] Move popup anchor clamping and edge-relative placement calculations out of `App::view()`.
+- [x] Build a `PopupRenderModel` from surface/menu/config state.
+- [x] Keep current popup behavior unchanged.
+- [x] Add tests for:
   - left/right/top/bottom edge placement data
   - anchor clamping when popup would overflow screen bounds
-- [ ] Verify with the full verification gate.
-- [ ] Commit with:
+- [x] Verify with the full verification gate.
+- [x] Commit with:
 
 ```bash
 rtk git add src/app.rs src/app/view.rs src/app/render.rs
@@ -382,19 +382,19 @@ rtk git commit -m "refactor(app): extract popup render model"
 - Modify: `src/app/view.rs`
 - Test: `src/app/render.rs`
 
-- [ ] Move these responsibilities into `bar_render_model()`:
+- [x] Move these responsibilities into `bar_render_model()`:
   - effective zone lookup
   - focused-window derived title selection per output
   - workspace-item derived state
   - hovered/focused decoration state
   - interaction wrapping per module
-- [ ] Leave final widget assembly in `view.rs` for this step.
-- [ ] Add tests for:
+- [x] Leave final widget assembly in `view.rs` for this step.
+- [x] Add tests for:
   - focused-window title selection on focused vs non-focused outputs
   - workspace-item state derivation per surface output
   - modules omitted when not present in the effective zone map
-- [ ] Verify with the full verification gate.
-- [ ] Commit with:
+- [x] Verify with the full verification gate.
+- [x] Commit with:
 
 ```bash
 rtk git add src/app/render.rs src/app/view.rs
@@ -408,15 +408,15 @@ rtk git commit -m "refactor(app): extract bar render model derivation"
 - Test: `src/app.rs`
 - Test: `src/app/view.rs`
 
-- [ ] Make `App::view()` only:
+- [x] Make `App::view()` only:
   - record perf
   - render popup from `PopupRenderModel`
   - render bar from `BarRenderModel`
-- [ ] Keep border-strip and top/center/bottom layout rendering in `view.rs`.
-- [ ] Do not move unrelated navigation, menu, or surface logic into this workstream.
-- [ ] Add or adjust smoke tests so the app still renders for a default surface and popup surface.
-- [ ] Verify with the full verification gate.
-- [ ] Commit with:
+- [x] Keep border-strip and top/center/bottom layout rendering in `view.rs`.
+- [x] Do not move unrelated navigation, menu, or surface logic into this workstream.
+- [x] Add or adjust smoke tests so the app still renders for a default surface and popup surface.
+- [x] Verify with the full verification gate.
+- [x] Commit with:
 
 ```bash
 rtk git add src/app/view.rs src/app/render.rs
