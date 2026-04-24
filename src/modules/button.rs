@@ -73,7 +73,9 @@ impl crate::modules::Module for ButtonModule {
         match event {
             InteractionEvent::Clicked => {
                 // Fire-and-forget from the UI, but reap the child in a background thread.
-                let _ = crate::command::spawn_shell_fire_and_forget(&self.on_click);
+                let _ = crate::command::spawn_command_fire_and_forget(
+                    crate::command::CommandSpec::Shell(&self.on_click),
+                );
                 None
             }
             _ => None,
@@ -170,7 +172,13 @@ mod tests {
     }
 
     #[test]
-    fn spawn_shell_fire_and_forget_returns_ok_for_short_command() {
-        assert!(crate::command::spawn_shell_fire_and_forget("true").is_ok());
+    fn spawn_command_fire_and_forget_preserves_shell_mode() {
+        assert_eq!(
+            crate::command::spawn_command_fire_and_forget(crate::command::CommandSpec::Shell(
+                "true"
+            ))
+            .unwrap(),
+            crate::command::SpawnResult::Spawned
+        );
     }
 }

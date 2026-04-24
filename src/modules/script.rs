@@ -17,7 +17,13 @@ const MAX_SCRIPT_OUTPUT_BYTES: usize = crate::command::MAX_COMMAND_OUTPUT_BYTES;
 const SCRIPT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 async fn run_script_command(cmd: &str, timeout: std::time::Duration) -> ScriptEvent {
-    match crate::command::run_shell_capture_stdout(cmd, timeout, MAX_SCRIPT_OUTPUT_BYTES).await {
+    match crate::command::run_command_capture_stdout(
+        crate::command::CommandSpec::Shell(cmd),
+        timeout,
+        MAX_SCRIPT_OUTPUT_BYTES,
+    )
+    .await
+    {
         Ok(crate::command::CaptureResult::Success(out)) => ScriptEvent::Output(out),
         _ => ScriptEvent::Failed,
     }
@@ -184,5 +190,20 @@ mod tests {
         let event = run_script_command("sleep 2", std::time::Duration::from_millis(25)).await;
 
         assert!(matches!(event, ScriptEvent::Failed));
+    }
+
+    #[tokio::test]
+    async fn run_script_command_preserves_shell_mode() {
+        let event = run_script_command("printf '%s' script-ok", std::time::Duration::from_secs(1))
+            .await;
+
+        assert_eq!(event, ScriptEvent::Output("script-ok".to_string()));
+    }
+
+    #[tokio::test]
+    async fn run_script_command_maps_nonzero_exit_to_failed() {
+        let event = run_script_command("false", std::time::Duration::from_secs(1)).await;
+
+        assert_eq!(event, ScriptEvent::Failed);
     }
 }
