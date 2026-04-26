@@ -128,8 +128,12 @@ impl App {
                     let insert_at = slot_idx + 1;
                     for item in active_items.iter().rev() {
                         let icon_module = TrayIconModule::new(item.clone(), config_name.clone());
-                        self.modules
-                            .insert(insert_at, (zone.clone(), Box::new(icon_module)));
+                        let actions = self.actions_for_config_module(config_name);
+                        self.modules.insert_with_actions(
+                            insert_at,
+                            (zone.clone(), Box::new(icon_module)),
+                            actions,
+                        );
                     }
                 }
             }
@@ -142,8 +146,12 @@ impl App {
                     for (slot_idx, zone, config_name) in tray_slots.iter().rev() {
                         let insert_at = self.tray_insert_position(*slot_idx, config_name);
                         let icon_module = TrayIconModule::new(item.clone(), config_name.clone());
-                        self.modules
-                            .insert(insert_at, (zone.clone(), Box::new(icon_module)));
+                        let actions = self.actions_for_config_module(config_name);
+                        self.modules.insert_with_actions(
+                            insert_at,
+                            (zone.clone(), Box::new(icon_module)),
+                            actions,
+                        );
                     }
                 }
             }
@@ -322,6 +330,7 @@ mod tests {
                 name: "tray".into(),
                 module_type: "tray".into(),
                 params: ModuleParams::Tray(crate::config::TrayConfig),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Config::default()
         };

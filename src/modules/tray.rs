@@ -260,18 +260,10 @@ impl TrayIconModule {
 
         let icon = icon_widget(&self.item, bar_style);
         let service = self.item.runtime_id();
-        let menu_path = self.item.menu_path.clone();
 
-        // Left-click is handled by on_interaction(Clicked) via the outer module machinery.
-        // This mouse_area only wires up right-click, middle-click, and scroll.
+        // Left/right click are handled by on_interaction via the outer module machinery.
+        // This mouse_area only wires up middle-click and scroll.
         let interactive: iced::Element<'static, crate::app::Message> = mouse_area(icon)
-            .on_right_press(crate::app::Message::Tray(
-                crate::app::messages::TrayRuntimeEvent::MenuRequest {
-                    service: service.clone(),
-                    menu_path,
-                    source_window: Some(window),
-                },
-            ))
             .on_middle_press(crate::app::Message::Tray(
                 crate::app::messages::TrayRuntimeEvent::SecondaryActivate {
                     service: service.clone(),
@@ -358,6 +350,13 @@ impl crate::modules::Module for TrayIconModule {
             InteractionEvent::Clicked => Some(crate::app::Message::Tray(
                 crate::app::messages::TrayRuntimeEvent::Activate {
                     service: self.item.runtime_id(),
+                },
+            )),
+            InteractionEvent::RightClicked(window) => Some(crate::app::Message::Tray(
+                crate::app::messages::TrayRuntimeEvent::MenuRequest {
+                    service: self.item.runtime_id(),
+                    menu_path: self.item.menu_path.clone(),
+                    source_window: Some(window),
                 },
             )),
             InteractionEvent::Activated(window) => Some(crate::app::Message::Tray(

@@ -174,7 +174,8 @@ impl App {
                 }
             }
         }
-        let mut modules: Vec<(Zone, Box<dyn Module>)> = Vec::new();
+        let mut modules: Vec<(Zone, Box<dyn Module>, crate::config::ModuleActionsConfig)> =
+            Vec::new();
         for (zone, name) in &ordered {
             let synthesized;
             let (mc, descriptor, ctor) = if let Some(&mc) = module_map.get(name.as_str()) {
@@ -193,6 +194,7 @@ impl App {
                     name: name.clone(),
                     module_type: descriptor.config_name.to_string(),
                     params,
+                    actions: crate::config::ModuleActionsConfig::default(),
                 };
                 (&synthesized, *descriptor, descriptor.constructor)
             } else {
@@ -201,7 +203,7 @@ impl App {
             let module = ctor(mc);
             debug_assert_eq!(module.module_type(), module.kind().as_str());
             debug_assert_eq!(module.kind(), descriptor.kind);
-            modules.push((zone.clone(), module));
+            modules.push((zone.clone(), module, mc.actions.clone()));
         }
         // Create one surface per (output_name, bar_name) pair when in manual mode.
         // When allowed_outputs is empty, StartMode::AllScreens handles window creation.
@@ -233,7 +235,7 @@ impl App {
             shared: shared::SharedContext::new(),
             surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
             menu: menu::MenuSystem::default(),
-            modules: module_runtime::ModuleRuntime::from_modules(modules),
+            modules: module_runtime::ModuleRuntime::from_modules_with_actions(modules),
             niri: niri::AppNiriState::new(),
             tray: tray::TrayState::default(),
             perf: perf::PerfTracker::from_env(),
@@ -331,6 +333,7 @@ mod tests {
                 name: "workspaces".into(),
                 module_type: "workspaces".into(),
                 params: ModuleParams::None,
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -811,6 +814,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -834,6 +838,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -856,6 +861,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -886,6 +892,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -921,21 +928,25 @@ mod tests {
                     name: "clock".into(),
                     module_type: "clock".into(),
                     params: ModuleParams::Clock(ClockConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "battery".into(),
                     module_type: "battery".into(),
                     params: ModuleParams::None,
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "network".into(),
                     module_type: "network".into(),
                     params: ModuleParams::None,
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "workspaces".into(),
                     module_type: "workspaces".into(),
                     params: ModuleParams::None,
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
             ],
             ..Default::default()
@@ -1060,11 +1071,13 @@ mod tests {
                     name: "clock".into(),
                     module_type: "clock".into(),
                     params: ModuleParams::Clock(ClockConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "workspaces".into(),
                     module_type: "workspaces".into(),
                     params: ModuleParams::None,
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
             ],
             ..Default::default()
@@ -1117,11 +1130,13 @@ mod tests {
                     name: "clock".into(),
                     module_type: "clock".into(),
                     params: ModuleParams::Clock(ClockConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "volume".into(),
                     module_type: "volume".into(),
                     params: ModuleParams::Volume(VolumeConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "button".into(),
@@ -1132,6 +1147,7 @@ mod tests {
                         on_click: "true".into(),
                         format: crate::config::FormatConfig::default(),
                     }),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
             ],
             ..Default::default()
@@ -1540,6 +1556,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -1589,6 +1606,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
         };
         let (app, _) = App::boot(config, vec![]);
@@ -1650,6 +1668,7 @@ mod tests {
             name: "clock".into(),
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
+            actions: crate::config::ModuleActionsConfig::default(),
         });
 
         assert_eq!(module.kind(), descriptor.kind);

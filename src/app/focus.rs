@@ -138,6 +138,13 @@ impl App {
             return Task::none();
         }
         if let Some(ref id) = s.focused_module.clone() {
+            if self
+                .modules
+                .action_for(id, &InteractionEvent::Clicked)
+                .is_some()
+            {
+                return self.dispatch_module_interaction(id, InteractionEvent::Clicked);
+            }
             for (_, module) in &self.modules {
                 if module.id() == *id {
                     if module
@@ -167,6 +174,14 @@ impl App {
         }
         let screen_size = s.screen_size;
         if let Some(ref id) = s.focused_module.clone() {
+            if self
+                .modules
+                .action_for(id, &InteractionEvent::RightClicked(window))
+                .is_some()
+            {
+                return self
+                    .dispatch_module_interaction(id, InteractionEvent::RightClicked(window));
+            }
             for (_, module) in &self.modules {
                 if module.id() == *id {
                     if let Some(msg) = module.on_interaction(InteractionEvent::Activated(window)) {

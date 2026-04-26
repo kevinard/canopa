@@ -101,6 +101,9 @@ impl App {
                     .on_press(Message::Modules(
                         super::messages::ModuleRuntimeEvent::ModuleClick(id.clone(), window),
                     ))
+                    .on_right_press(Message::Modules(
+                        super::messages::ModuleRuntimeEvent::ModuleRightClick(id.clone(), window),
+                    ))
                     .on_scroll(move |delta| {
                         let up = match delta {
                             iced::mouse::ScrollDelta::Lines { y, .. }
@@ -372,6 +375,7 @@ mod tests {
                 name: "focused-window".into(),
                 module_type: "focused-window".into(),
                 params: ModuleParams::FocusedWindow(FocusedWindowConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -418,6 +422,7 @@ mod tests {
                 name: "focused-window".into(),
                 module_type: "focused-window".into(),
                 params: ModuleParams::FocusedWindow(FocusedWindowConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -464,6 +469,7 @@ mod tests {
                 name: "workspaces".into(),
                 module_type: "workspaces".into(),
                 params: ModuleParams::Workspaces(WorkspacesConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -512,6 +518,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
         };
         config.bars[0].modules.top = vec!["clock".into()];
@@ -535,6 +542,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };

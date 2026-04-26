@@ -120,6 +120,7 @@ pub enum ModuleEvent {
 #[derive(Debug, Clone)]
 pub enum InteractionEvent {
     Clicked,
+    RightClicked(iced::window::Id),
     Activated(iced::window::Id),
     ScrollUp,
     ScrollDown,

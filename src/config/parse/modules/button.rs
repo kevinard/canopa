@@ -2,9 +2,13 @@ use ::kdl::KdlNode;
 
 use super::super::{error, kdl};
 use super::formats;
-use crate::config::ButtonConfig;
+use crate::config::{ButtonConfig, ModuleActionsConfig};
 
-pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> {
+pub(super) fn parse(
+    node: &KdlNode,
+    idx: usize,
+    actions: &ModuleActionsConfig,
+) -> anyhow::Result<ButtonConfig> {
     let button_path = error::module_path(idx, "button");
     let label_path = error::field_path(idx, "button", "label");
     let icon_path = error::field_path(idx, "button", "icon");
@@ -26,10 +30,15 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> 
     }
     let icon = kdl::required_string_child(children, "icon", &icon_path)?;
 
-    if children.get("on-click").is_none() {
-        anyhow::bail!("{on_click_path}: missing required parameter. Expected: a string value.");
-    }
-    let on_click = kdl::required_string_child(children, "on-click", &on_click_path)?;
+    let on_click = if children.get("on-click").is_some() {
+        kdl::required_string_child(children, "on-click", &on_click_path)?
+    } else if let Some(command) = actions.click.as_ref() {
+        command.clone()
+    } else {
+        anyhow::bail!(
+            "{on_click_path}: missing required parameter. Expected: a string value or actions.click."
+        );
+    };
     let format = formats::parse_optional(
         children,
         &error::module_path(idx, "button"),

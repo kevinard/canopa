@@ -30,6 +30,10 @@ impl App {
             ModuleRuntimeEvent::ModuleClick(id, _) => {
                 self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::Clicked)
             }
+            ModuleRuntimeEvent::ModuleRightClick(id, window) => self.dispatch_module_interaction(
+                &id,
+                crate::modules::InteractionEvent::RightClicked(window),
+            ),
             ModuleRuntimeEvent::ModuleScrollUp(id, _) => {
                 self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::ScrollUp)
             }
@@ -79,6 +83,13 @@ impl App {
         id: &ModuleId,
         event: InteractionEvent,
     ) -> Task<Message> {
+        if let Some(command) = self.modules.action_for(id, &event) {
+            let _ = crate::command::spawn_command_fire_and_forget(
+                crate::command::CommandSpec::Shell(command),
+            );
+            return Task::none();
+        }
+
         if let Some(module) = self.modules.get(id)
             && let Some(msg) = module.on_interaction(event)
         {

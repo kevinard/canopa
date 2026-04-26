@@ -149,6 +149,95 @@ modules {
 }
 
 #[test]
+fn parse_module_actions_click_and_right_click() {
+    let kdl = r#"
+modules {
+    module "clock" {
+        actions {
+            click "gnome-clocks"
+            right-click "notify-send clock"
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    assert_eq!(
+        config.modules[0].actions.click.as_deref(),
+        Some("gnome-clocks")
+    );
+    assert_eq!(
+        config.modules[0].actions.right_click.as_deref(),
+        Some("notify-send clock")
+    );
+}
+
+#[test]
+fn parse_module_actions_empty_block_allowed() {
+    let kdl = r#"modules { module "clock" { actions { } } }"#;
+    let config = parse(kdl).unwrap();
+    assert!(config.modules[0].actions.click.is_none());
+    assert!(config.modules[0].actions.right_click.is_none());
+}
+
+#[test]
+fn parse_module_actions_rejects_unknown_action() {
+    let kdl = r#"modules { module "clock" { actions { middle-click "x" } } }"#;
+    let err = parse(kdl).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("actions[0]") && msg.contains("middle-click"),
+        "expected unknown action error, got: {msg}"
+    );
+}
+
+#[test]
+fn parse_module_actions_rejects_duplicate_click() {
+    let kdl = r#"
+modules {
+    module "clock" {
+        actions {
+            click "one"
+            click "two"
+        }
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err();
+    assert!(
+        err.to_string().contains("duplicate click"),
+        "expected duplicate click error, got: {err}"
+    );
+}
+
+#[test]
+fn parse_module_actions_rejects_empty_command() {
+    let kdl = r#"modules { module "clock" { actions { click "" } } }"#;
+    let err = parse(kdl).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("actions.click") && msg.contains("must not be empty"),
+        "expected empty action command error, got: {msg}"
+    );
+}
+
+#[test]
+fn parse_button_allows_actions_click_without_legacy_on_click() {
+    let kdl = r#"
+modules {
+    module "button" {
+        label "Terminal"
+        icon ">"
+        actions {
+            click "kitty"
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    assert_eq!(config.modules[0].actions.click.as_deref(), Some("kitty"));
+}
+
+#[test]
 fn parse_battery_icons() {
     let kdl = r#"
 modules {

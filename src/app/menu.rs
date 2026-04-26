@@ -288,11 +288,13 @@ mod tests {
                     name: "clock".into(),
                     module_type: "clock".into(),
                     params: ModuleParams::Clock(ClockConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "volume".into(),
                     module_type: "volume".into(),
                     params: ModuleParams::Volume(VolumeConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "button".into(),
@@ -303,6 +305,7 @@ mod tests {
                         on_click: "true".into(),
                         format: crate::config::FormatConfig::default(),
                     }),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
             ],
             ..Default::default()

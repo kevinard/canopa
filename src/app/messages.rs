@@ -58,6 +58,7 @@ pub enum MenuEvent {
 pub enum ModuleRuntimeEvent {
     Module(ModuleId, ModuleEvent),
     ModuleClick(ModuleId, iced::window::Id),
+    ModuleRightClick(ModuleId, iced::window::Id),
     ModuleScrollUp(ModuleId, iced::window::Id),
     ModuleScrollDown(ModuleId, iced::window::Id),
     Battery(crate::modules::battery::BatteryEvent),

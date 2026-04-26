@@ -209,8 +209,12 @@ impl App {
             let insert_at = slot_idx + 1;
             for ws in sorted.iter().rev() {
                 let item = WorkspaceItemModule::new(ws.clone(), cfg.clone(), config_name.clone());
-                self.modules
-                    .insert(insert_at, (zone.clone(), Box::new(item)));
+                let actions = self.actions_for_config_module(config_name);
+                self.modules.insert_with_actions(
+                    insert_at,
+                    (zone.clone(), Box::new(item)),
+                    actions,
+                );
             }
         }
     }
@@ -274,6 +278,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -355,6 +360,7 @@ mod tests {
                 name: "workspaces".into(),
                 module_type: "workspaces".into(),
                 params: ModuleParams::None,
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -558,6 +564,7 @@ mod tests {
                 name: "focused-window".into(),
                 module_type: "focused-window".into(),
                 params: ModuleParams::None,
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };

@@ -1,3 +1,4 @@
+mod actions;
 mod animation;
 mod bars;
 mod error;
@@ -74,11 +75,13 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
                 error::module_path(i, &module_type)
             )
         })?;
-        let params = modules::dispatch(kind, node, i)?;
+        let actions = actions::parse(node, i, &module_type)?;
+        let params = modules::dispatch(kind, node, i, &actions)?;
         result.push(ModuleConfig {
             name,
             module_type,
             params,
+            actions,
         });
     }
     Ok(result)

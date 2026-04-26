@@ -413,6 +413,13 @@ pub enum ModuleParams {
     FocusedWindow(FocusedWindowConfig),
 }
 
+/// Shared user-triggered actions available on every config-declared module.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModuleActionsConfig {
+    pub click: Option<String>,
+    pub right_click: Option<String>,
+}
+
 /// A single module entry from the config, specifying name, type, and module params.
 /// Zone placement is determined by `bar.modules`, not by this struct.
 #[derive(Debug, Clone)]
@@ -423,6 +430,7 @@ pub struct ModuleConfig {
     /// Inferred from `name` when the name matches a known module type; otherwise explicit.
     pub module_type: String,
     pub params: ModuleParams,
+    pub actions: ModuleActionsConfig,
 }
 
 /// Parsed configuration for niribar.
@@ -1004,6 +1012,7 @@ mod tests {
             name: "volumee".into(),
             module_type: "volumee".into(),
             params: ModuleParams::None,
+            actions: crate::config::ModuleActionsConfig::default(),
         }];
         let err = validate(&config).unwrap_err();
         let msg = err.to_string();
@@ -1024,6 +1033,7 @@ mod tests {
             name: "clock".into(),
             module_type: "clock".into(),
             params: ModuleParams::None,
+            actions: crate::config::ModuleActionsConfig::default(),
         }];
         assert!(validate(&config).is_ok());
     }
@@ -1035,6 +1045,7 @@ mod tests {
             name: "tray".into(),
             module_type: "tray".into(),
             params: ModuleParams::Tray(TrayConfig),
+            actions: crate::config::ModuleActionsConfig::default(),
         }];
         assert!(validate(&config).is_ok());
     }
@@ -1046,6 +1057,7 @@ mod tests {
             name: "unknown".into(),
             module_type: "unknown".into(),
             params: ModuleParams::None,
+            actions: crate::config::ModuleActionsConfig::default(),
         }];
         let err = validate(&config).unwrap_err();
         let msg = err.to_string();
@@ -1067,11 +1079,13 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::None,
+                actions: crate::config::ModuleActionsConfig::default(),
             },
             ModuleConfig {
                 name: "bad-module".into(),
                 module_type: "bad-module".into(),
                 params: ModuleParams::None,
+                actions: crate::config::ModuleActionsConfig::default(),
             },
         ];
         let err = validate(&config).unwrap_err();

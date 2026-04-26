@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::config::ModuleActionsConfig;
 use crate::modules::{Module, ModuleId, ModuleKind, ModuleState, Zone};
 
 pub(super) struct ModuleRuntime {
     store: super::module_store::ModuleStore,
     states: HashMap<ModuleId, ModuleState>,
+    actions: HashMap<ModuleId, ModuleActionsConfig>,
 }
 
 impl ModuleRuntime {
@@ -12,6 +14,29 @@ impl ModuleRuntime {
         Self {
             store: super::module_store::ModuleStore::from_modules(modules),
             states: HashMap::new(),
+            actions: HashMap::new(),
+        }
+    }
+
+    pub(super) fn from_modules_with_actions(
+        modules: Vec<(Zone, Box<dyn Module>, ModuleActionsConfig)>,
+    ) -> Self {
+        let mut actions = HashMap::new();
+        let ordered = modules
+            .into_iter()
+            .map(|(zone, module, module_actions)| {
+                let id = module.id();
+                if module_actions != ModuleActionsConfig::default() {
+                    actions.insert(id, module_actions);
+                }
+                (zone, module)
+            })
+            .collect();
+
+        Self {
+            store: super::module_store::ModuleStore::from_modules(ordered),
+            states: HashMap::new(),
+            actions,
         }
     }
 
@@ -52,10 +77,26 @@ impl ModuleRuntime {
         self.store.insert(index, item);
     }
 
+    pub(super) fn insert_with_actions(
+        &mut self,
+        index: usize,
+        item: (Zone, Box<dyn Module>),
+        actions: ModuleActionsConfig,
+    ) {
+        let id = item.1.id();
+        self.store.insert(index, item);
+        if actions == ModuleActionsConfig::default() {
+            self.actions.remove(&id);
+        } else {
+            self.actions.insert(id, actions);
+        }
+    }
+
     pub(super) fn retain(&mut self, keep: impl FnMut(&(Zone, Box<dyn Module>)) -> bool) {
         self.store.retain(keep);
         let retained_ids: HashSet<_> = self.store.iter().map(|(_, module)| module.id()).collect();
         self.states.retain(|id, _| retained_ids.contains(id));
+        self.actions.retain(|id, _| retained_ids.contains(id));
     }
 
     pub(super) fn ids_by_kind(&self, kind: ModuleKind) -> &[ModuleId] {
@@ -64,6 +105,30 @@ impl ModuleRuntime {
 
     pub(super) fn get(&self, id: &ModuleId) -> Option<&dyn Module> {
         self.store.get(id)
+    }
+
+    pub(super) fn action_for(
+        &self,
+        id: &ModuleId,
+        event: &crate::modules::InteractionEvent,
+    ) -> Option<&str> {
+        let actions = self.actions.get(id)?;
+        match event {
+            crate::modules::InteractionEvent::Clicked => actions.click.as_deref(),
+            crate::modules::InteractionEvent::RightClicked(_) => actions.right_click.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+impl super::App {
+    pub(super) fn actions_for_config_module(&self, config_name: &str) -> ModuleActionsConfig {
+        self.config
+            .modules
+            .iter()
+            .find(|module| module.name == config_name)
+            .map(|module| module.actions.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -107,6 +172,20 @@ mod tests {
     use crate::niri::NiriEvent;
     use zbus::zvariant::OwnedObjectPath;
 
+    fn unique_tmp_path(name: &str) -> String {
+        format!("/tmp/niribar-{name}-{}", std::process::id())
+    }
+
+    fn wait_for_path(path: &str) -> bool {
+        for _ in 0..50 {
+            if std::path::Path::new(path).exists() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        false
+    }
+
     fn make_config() -> Config {
         Config::default()
     }
@@ -121,6 +200,7 @@ mod tests {
                     critical_threshold: 15,
                     ..Default::default()
                 }),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -135,6 +215,7 @@ mod tests {
                 name: "network".into(),
                 module_type: "network".into(),
                 params: ModuleParams::Network(NetworkConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -152,6 +233,7 @@ mod tests {
                     step: 5,
                     ..Default::default()
                 }),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -178,6 +260,7 @@ mod tests {
                 name: "tray".into(),
                 module_type: "tray".into(),
                 params: ModuleParams::Tray(crate::config::TrayConfig),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Config::default()
         };
@@ -227,11 +310,13 @@ mod tests {
                     name: "battery".into(),
                     module_type: "battery".into(),
                     params: ModuleParams::Battery(BatteryConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "battery2".into(),
                     module_type: "battery".into(),
                     params: ModuleParams::Battery(BatteryConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
             ],
             ..Default::default()
@@ -274,6 +359,7 @@ mod tests {
                 name: "clock".into(),
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -294,6 +380,7 @@ mod tests {
                     interval: 5,
                     format: crate::config::FormatConfig::default(),
                 }),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -346,6 +433,7 @@ mod tests {
                 name: "volume".into(),
                 module_type: "volume".into(),
                 params: ModuleParams::Volume(VolumeConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -381,6 +469,7 @@ mod tests {
                     on_click: "kitty".into(),
                     format: crate::config::FormatConfig::default(),
                 }),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -414,6 +503,86 @@ mod tests {
     }
 
     #[test]
+    fn module_actions_click_overrides_button_legacy_on_click() {
+        use crate::config::{ButtonConfig, ModuleActionsConfig, ModuleConfig, ModuleParams};
+
+        let action_path = unique_tmp_path("action-click");
+        let legacy_path = unique_tmp_path("legacy-click");
+        let _ = std::fs::remove_file(&action_path);
+        let _ = std::fs::remove_file(&legacy_path);
+
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "button".into(),
+                module_type: "button".into(),
+                params: ModuleParams::Button(ButtonConfig {
+                    label: "Launch".into(),
+                    icon: ">".into(),
+                    on_click: format!("printf legacy >{legacy_path}"),
+                    format: crate::config::FormatConfig::default(),
+                }),
+                actions: ModuleActionsConfig {
+                    click: Some(format!("printf action >{action_path}")),
+                    right_click: None,
+                },
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.top = vec!["button".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::ModuleClick(
+            ModuleId::new("button"),
+            iced::window::Id::unique(),
+        )));
+
+        assert!(
+            wait_for_path(&action_path),
+            "configured click action should create {action_path}"
+        );
+        assert!(
+            !std::path::Path::new(&legacy_path).exists(),
+            "legacy on-click should not run when actions.click is configured"
+        );
+        let _ = std::fs::remove_file(&action_path);
+        let _ = std::fs::remove_file(&legacy_path);
+    }
+
+    #[test]
+    fn module_actions_right_click_runs_configured_command() {
+        use crate::config::{ClockConfig, ModuleActionsConfig, ModuleConfig, ModuleParams};
+
+        let action_path = unique_tmp_path("action-right-click");
+        let _ = std::fs::remove_file(&action_path);
+
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "clock".into(),
+                module_type: "clock".into(),
+                params: ModuleParams::Clock(ClockConfig::default()),
+                actions: ModuleActionsConfig {
+                    click: None,
+                    right_click: Some(format!("printf right >{action_path}")),
+                },
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.top = vec!["clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::ModuleRightClick(
+            ModuleId::new("clock"),
+            iced::window::Id::unique(),
+        )));
+
+        assert!(
+            wait_for_path(&action_path),
+            "configured right-click action should create {action_path}"
+        );
+        let _ = std::fs::remove_file(&action_path);
+    }
+
+    #[test]
     fn script_failed_event_retains_previous_state() {
         use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
 
@@ -426,6 +595,7 @@ mod tests {
                     interval: 5,
                     format: crate::config::FormatConfig::default(),
                 }),
+                actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Default::default()
         };
@@ -597,11 +767,13 @@ mod tests {
                     name: "workspaces-left".into(),
                     module_type: "workspaces".into(),
                     params: ModuleParams::Workspaces(WorkspacesConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "workspaces-right".into(),
                     module_type: "workspaces".into(),
                     params: ModuleParams::Workspaces(WorkspacesConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
             ],
             ..Config::default()
@@ -675,6 +847,59 @@ mod tests {
     }
 
     #[test]
+    fn tray_icon_inherits_actions_from_tray_placeholder() {
+        let mut config = make_tray_config();
+        config.modules[0].actions.right_click = Some("notify-send tray".into());
+        let (mut app, _) = App::boot(config, vec![]);
+
+        let _ = app.update(Message::Tray(TrayRuntimeEvent::Host(TrayEvent::Snapshot(
+            vec![tray_item("org.test.App")],
+        ))));
+
+        assert_eq!(
+            app.modules.action_for(
+                &ModuleId::new("tray:org.test.App"),
+                &crate::modules::InteractionEvent::RightClicked(iced::window::Id::unique()),
+            ),
+            Some("notify-send tray")
+        );
+    }
+
+    #[test]
+    fn workspace_item_inherits_actions_from_workspaces_placeholder() {
+        use niri_ipc::Event;
+
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "workspaces".into(),
+                module_type: "workspaces".into(),
+                params: ModuleParams::Workspaces(crate::config::WorkspacesConfig::default()),
+                actions: crate::config::ModuleActionsConfig {
+                    click: Some("notify-send workspace".into()),
+                    right_click: None,
+                },
+            }],
+            ..Config::default()
+        };
+        config.bars[0].modules.top = vec!["workspaces".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: vec![make_workspace(0, true)],
+            },
+        ))));
+
+        assert_eq!(
+            app.modules.action_for(
+                &ModuleId::new("workspace:1"),
+                &crate::modules::InteractionEvent::Clicked,
+            ),
+            Some("notify-send workspace")
+        );
+    }
+
+    #[test]
     fn tray_snapshot_handles_multiple_placeholders_after_existing_icons() {
         let mut config = Config {
             modules: vec![
@@ -682,11 +907,13 @@ mod tests {
                     name: "tray-left".into(),
                     module_type: "tray".into(),
                     params: ModuleParams::Tray(crate::config::TrayConfig),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "tray-right".into(),
                     module_type: "tray".into(),
                     params: ModuleParams::Tray(crate::config::TrayConfig),
+                    actions: crate::config::ModuleActionsConfig::default(),
                 },
             ],
             ..Config::default()

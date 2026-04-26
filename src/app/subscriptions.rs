@@ -176,6 +176,7 @@ mod tests {
             name: name.into(),
             module_type: name.into(),
             params,
+            actions: crate::config::ModuleActionsConfig::default(),
         }
     }
 
