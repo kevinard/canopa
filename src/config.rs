@@ -1397,4 +1397,22 @@ mod tests {
         assert!(config.bars_for_output("DP-1").is_empty());
         assert_eq!(config.bars_for_output("dp-1").len(), 1);
     }
+
+    #[test]
+    fn state_selectors_per_module() {
+        use crate::config::states;
+        assert_eq!(states::BATTERY, &["charging", "critical", "low", "normal"]);
+        assert_eq!(states::VOLUME, &["muted", "unmuted"]);
+        assert_eq!(states::NETWORK, &["full", "limited", "none"]);
+        assert_eq!(states::WORKSPACES, &["focused", "active", "inactive"]);
+        assert!(states::EMPTY.is_empty());
+    }
+}
+
+pub mod states {
+    pub const BATTERY: &[&str] = &["charging", "critical", "low", "normal"];
+    pub const VOLUME: &[&str] = &["muted", "unmuted"];
+    pub const NETWORK: &[&str] = &["full", "limited", "none"];
+    pub const WORKSPACES: &[&str] = &["focused", "active", "inactive"];
+    pub const EMPTY: &[&str] = &[];
 }
