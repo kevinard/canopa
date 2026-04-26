@@ -79,6 +79,10 @@ modules {
     // workspaces: Niri workspace indicators. Click or scroll to switch workspace.
     // Optional: assign labels and icons to specific workspace numbers (1-based).
     module "workspaces" {
+        // Optional display templates for workspace items.
+        // Placeholders: {icon}, {value}, {index}, {name}, {label}, {state}.
+        // format "{icon}{label}"
+        // horizontal-format "{icon}"
         // workspace 1 {
         //     label "main"
         //     icon  "󰣇"
@@ -90,13 +94,21 @@ modules {
     }
 
     // focused-window: shows the title of the focused window on this output.
-    // No configurable parameters.
-    module "focused-window"
+    module "focused-window" {
+        // Optional display templates. Placeholders: {icon}, {value}, {title}.
+        // format "{icon}"
+        // expanded-format "{title}"
+        // horizontal-format "{title}"
+    }
 
     // volume: audio output level indicator. Scroll on the module to adjust volume.
     module "volume" {
         // Volume adjustment per scroll event, as a percentage. Range: 1–100. Default: 5.
         step 5
+        // Optional display templates. Placeholders: {icon}, {value}, {percent}, {state}.
+        // format "{icon}"
+        // expanded-format "{icon} {value}%"
+        // horizontal-format "{icon} {value}%"
         // Optional state/value icons. Thresholds mean "at or above".
         // icons {
         //     icon "✕" state="muted"
@@ -108,6 +120,10 @@ modules {
 
     // network: network connectivity status (connected/disconnected/interface type).
     module "network" {
+        // Optional display templates. Placeholders: {icon}, {value}, {label}, {state}.
+        // format "{icon}"
+        // expanded-format "{icon} {label}"
+        // horizontal-format "{icon} {state}"
         // Optional connectivity-state icons.
         // icons {
         //     icon "◆" state="full"
@@ -121,6 +137,10 @@ modules {
         // Percentage at or below which the critical badge and alert color appear.
         // Range: 0–100. Default: 15.
         critical-threshold 15
+        // Optional display templates. Placeholders: {icon}, {value}, {percent}, {state}.
+        // format "{icon}"
+        // expanded-format "{icon} {value}%"
+        // horizontal-format "{icon} {value}%"
         // Optional state/value icons. State icons take precedence over thresholds.
         // icons {
         //     icon "⚡" state="charging"
@@ -140,7 +160,32 @@ modules {
         // Date format string using chrono strftime syntax.
         // Default: "%a %d %b" (e.g. "Mon 12 Apr").
         date-format "%a %d %b"
+        // Optional display templates. Placeholders: {icon}, {value}, {time}, {date}.
+        // format "{icon} {time}"
+        // expanded-format "{icon} {time}\n{date}"
+        // horizontal-format "{icon} {time}"
     }
+
+    // script: run a shell command periodically and show stdout.
+    // module "script" {
+    //     command "date"
+    //     interval 5
+    //     // Optional display templates. Placeholders: {icon}, {value}, {output}.
+    //     format "{icon} {value}"
+    //     expanded-format "{icon} {output}"
+    //     horizontal-format "{icon} {output}"
+    // }
+
+    // button: user-defined clickable action.
+    // module "button" {
+    //     label "Launch"
+    //     icon ">"
+    //     on-click "kitty"
+    //     // Optional display templates. Placeholders: {icon}, {value}, {label}.
+    //     format "{icon}"
+    //     expanded-format "{icon} {label}"
+    //     horizontal-format "{icon} {label}"
+    // }
 }
 
 // ─── Multiple bars ───────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
 use super::super::{error, kdl};
+use super::formats;
 use crate::config::ScriptConfig;
 
 pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
@@ -40,7 +41,17 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> 
         }
     };
 
-    Ok(ScriptConfig { command, interval })
+    let format = formats::parse_optional(
+        children,
+        &error::module_path(idx, "script"),
+        &["icon", "value", "output"],
+    )?;
+
+    Ok(ScriptConfig {
+        command,
+        interval,
+        format,
+    })
 }
 
 #[cfg(test)]

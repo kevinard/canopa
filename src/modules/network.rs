@@ -54,11 +54,49 @@ fn icon_color(connectivity: &NetworkConnectivity) -> iced::Color {
 pub(super) struct NetworkModule {
     id: crate::modules::ModuleId,
     icons: crate::config::IconRulesConfig,
+    format: crate::config::FormatConfig,
 }
 
 impl NetworkModule {
-    pub(super) fn new(id: crate::modules::ModuleId, icons: crate::config::IconRulesConfig) -> Self {
-        NetworkModule { id, icons }
+    pub(super) fn new(
+        id: crate::modules::ModuleId,
+        icons: crate::config::IconRulesConfig,
+        format: crate::config::FormatConfig,
+    ) -> Self {
+        NetworkModule { id, icons, format }
+    }
+
+    fn default_label(state: &NetworkState) -> String {
+        state.label.clone().unwrap_or_else(|| {
+            match &state.connectivity {
+                NetworkConnectivity::Full => "online",
+                NetworkConnectivity::Limited => "limited",
+                NetworkConnectivity::None => "offline",
+            }
+            .to_owned()
+        })
+    }
+
+    fn formatted_text(
+        &self,
+        network: &NetworkState,
+        mode: crate::config::FormatMode,
+    ) -> Option<String> {
+        let icon = self
+            .icons
+            .icon_for_state(connectivity_state(&network.connectivity))
+            .unwrap_or_else(|| icon_str(&network.connectivity))
+            .to_string();
+        let label = Self::default_label(network);
+        let state = connectivity_state(&network.connectivity).to_string();
+        self.format.template_for(mode).map(|template| {
+            template.render_pairs(&[
+                ("icon", icon),
+                ("value", label.clone()),
+                ("label", label),
+                ("state", state),
+            ])
+        })
     }
 }
 
@@ -76,16 +114,29 @@ impl crate::modules::view::IconLabel for NetworkModule {
 
     fn label(&self, state: &crate::modules::ModuleState) -> String {
         match state {
-            crate::modules::ModuleState::Network(s) => s.label.clone().unwrap_or_else(|| {
-                match &s.connectivity {
-                    NetworkConnectivity::Full => "online",
-                    NetworkConnectivity::Limited => "limited",
-                    NetworkConnectivity::None => "offline",
-                }
-                .to_owned()
-            }),
+            crate::modules::ModuleState::Network(s) => Self::default_label(s),
             _ => String::new(),
         }
+    }
+
+    fn formatted_text_for_layout(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+    ) -> Option<String> {
+        let crate::modules::ModuleState::Network(s) = state else {
+            return None;
+        };
+        let mode = match layout {
+            crate::modules::view::IconLabelLayout::Collapsed => {
+                crate::config::FormatMode::Collapsed
+            }
+            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
+            crate::modules::view::IconLabelLayout::Horizontal => {
+                crate::config::FormatMode::Horizontal
+            }
+        };
+        self.formatted_text(s, mode)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -160,11 +211,29 @@ mod tests {
     use crate::modules::view::IconLabel;
     use std::collections::HashMap;
 
+    fn format_config(field: &str, raw: &str) -> crate::config::FormatConfig {
+        let template = crate::config::TextTemplate::parse(
+            raw,
+            &["icon", "value", "label", "state"],
+            "test.format",
+        )
+        .unwrap();
+        let mut config = crate::config::FormatConfig::default();
+        match field {
+            "collapsed" => config.collapsed = Some(template),
+            "expanded" => config.expanded = Some(template),
+            "horizontal" => config.horizontal = Some(template),
+            _ => unreachable!(),
+        }
+        config
+    }
+
     #[test]
     fn network_module_id_is_network() {
         let m = NetworkModule::new(
             crate::modules::ModuleId::new("network"),
             IconRulesConfig::default(),
+            crate::config::FormatConfig::default(),
         );
         assert_eq!(m.id().0, "network");
         assert_eq!(m.module_type(), "network");
@@ -202,6 +271,7 @@ mod tests {
                 states,
                 thresholds: vec![],
             },
+            crate::config::FormatConfig::default(),
         );
         let state = crate::modules::ModuleState::Network(NetworkState {
             connectivity: NetworkConnectivity::Full,
@@ -221,6 +291,7 @@ mod tests {
                 states,
                 thresholds: vec![],
             },
+            crate::config::FormatConfig::default(),
         );
         let state = crate::modules::ModuleState::Network(NetworkState {
             connectivity: NetworkConnectivity::Full,
@@ -228,5 +299,23 @@ mod tests {
         });
 
         assert_eq!(m.icon(&state), "◆");
+    }
+
+    #[test]
+    fn network_expanded_format_includes_label_and_state() {
+        let m = NetworkModule::new(
+            crate::modules::ModuleId::new("network"),
+            IconRulesConfig::default(),
+            format_config("expanded", "{icon} {label} ({state})"),
+        );
+        let state = NetworkState {
+            connectivity: NetworkConnectivity::Full,
+            label: Some("wifi".to_string()),
+        };
+
+        assert_eq!(
+            m.formatted_text(&state, crate::config::FormatMode::Expanded),
+            Some("◆ wifi (full)".to_string())
+        );
     }
 }

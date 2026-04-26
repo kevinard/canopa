@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
 use super::super::error;
+use super::formats;
 use super::icons;
 use crate::config::NetworkConfig;
 
@@ -9,5 +10,10 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<NetworkConfig>
         return Ok(NetworkConfig::default());
     };
     let icons = icons::parse_optional(children, &error::module_path(idx, "network"))?;
-    Ok(NetworkConfig { icons })
+    let format = formats::parse_optional(
+        children,
+        &error::module_path(idx, "network"),
+        &["icon", "value", "label", "state"],
+    )?;
+    Ok(NetworkConfig { icons, format })
 }

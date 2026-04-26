@@ -271,3 +271,89 @@ modules {
         other => panic!("expected Network params, got {other:?}"),
     }
 }
+
+#[test]
+fn parse_battery_formats() {
+    let kdl = r#"
+modules {
+    module "battery" {
+        format "{icon} {value}%"
+        expanded-format "{icon} {state} {percent}%"
+        horizontal-format "{icon}{value}"
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    match &config.modules[0].params {
+        crate::config::ModuleParams::Battery(cfg) => {
+            assert!(cfg.format.collapsed.is_some());
+            assert!(cfg.format.expanded.is_some());
+            assert!(cfg.format.horizontal.is_some());
+        }
+        other => panic!("expected Battery params, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_format_rejects_unknown_placeholder() {
+    let kdl = r#"modules { module "battery" { format "{missing}" } }"#;
+    let err = parse(kdl).unwrap_err();
+    assert!(err.to_string().contains("unknown placeholder"));
+    assert!(err.to_string().contains("battery.format"));
+}
+
+#[test]
+fn parse_tray_rejects_format() {
+    let kdl = r#"modules { module "tray" { format "{icon}" } }"#;
+    let err = parse(kdl).unwrap_err();
+    assert!(err.to_string().contains("tray.format"));
+}
+
+#[test]
+fn parse_formats_for_all_non_tray_modules() {
+    let kdl = r#"
+modules {
+    module "volume" {
+        format "{icon} {value}"
+        expanded-format "{percent} {state}"
+        horizontal-format "{icon}"
+    }
+    module "network" {
+        format "{icon} {label}"
+        expanded-format "{value} {state}"
+        horizontal-format "{icon}"
+    }
+    module "clock" {
+        format "{icon} {time}"
+        expanded-format "{date}"
+        horizontal-format "{value}"
+    }
+    module "focused-window" {
+        format "{icon}"
+        expanded-format "{title}"
+        horizontal-format "{value}"
+    }
+    module "script" {
+        command "date"
+        format "{icon} {output}"
+        expanded-format "{value}"
+        horizontal-format "{icon}"
+    }
+    module "button" {
+        label "Launch"
+        icon ">"
+        on-click "kitty"
+        format "{icon}"
+        expanded-format "{label}"
+        horizontal-format "{value}"
+    }
+    module "workspaces" {
+        format "{icon}{label}"
+        expanded-format "{state}"
+        horizontal-format "{index}"
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    assert_eq!(config.modules.len(), 7);
+}

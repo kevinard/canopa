@@ -107,6 +107,7 @@ pub(super) struct ClockModule {
     id: crate::modules::ModuleId,
     time_format: String,
     date_format: String,
+    format: crate::config::FormatConfig,
 }
 
 impl ClockModule {
@@ -114,12 +115,29 @@ impl ClockModule {
         id: crate::modules::ModuleId,
         time_format: String,
         date_format: String,
+        format: crate::config::FormatConfig,
     ) -> Self {
         ClockModule {
             id,
             time_format,
             date_format,
+            format,
         }
+    }
+
+    fn formatted_text(
+        &self,
+        state: &ClockState,
+        mode: crate::config::FormatMode,
+    ) -> Option<String> {
+        self.format.template_for(mode).map(|template| {
+            template.render_pairs(&[
+                ("icon", "⌚".to_string()),
+                ("value", state.time.clone()),
+                ("time", state.time.clone()),
+                ("date", state.date.clone()),
+            ])
+        })
     }
 }
 
@@ -184,10 +202,20 @@ impl crate::modules::Module for ClockModule {
         use iced::{Alignment, Length};
 
         match state {
-            ModuleState::Clock(s) => column![text("⌚").size(16), text(s.time.clone()).size(11),]
-                .align_x(Alignment::Center)
-                .width(Length::Fill)
-                .into(),
+            ModuleState::Clock(s) => {
+                if let Some(formatted) =
+                    self.formatted_text(s, crate::config::FormatMode::Collapsed)
+                {
+                    return column![text(formatted).size(11)]
+                        .align_x(Alignment::Center)
+                        .width(Length::Fill)
+                        .into();
+                }
+                column![text("⌚").size(16), text(s.time.clone()).size(11),]
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill)
+                    .into()
+            }
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -201,18 +229,24 @@ impl crate::modules::Module for ClockModule {
         use iced::{Alignment, Length};
 
         match state {
-            ModuleState::Clock(s) => column![
-                row![
-                    text("⌚").size(16),
-                    iced::widget::Space::new().width(Length::Fill),
-                    text(s.time.clone()).size(13),
+            ModuleState::Clock(s) => {
+                if let Some(formatted) = self.formatted_text(s, crate::config::FormatMode::Expanded)
+                {
+                    return text(formatted).size(12).into();
+                }
+                column![
+                    row![
+                        text("⌚").size(16),
+                        iced::widget::Space::new().width(Length::Fill),
+                        text(s.time.clone()).size(13),
+                    ]
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill),
+                    text(s.date.clone()).size(11),
                 ]
-                .align_y(Alignment::Center)
-                .width(Length::Fill),
-                text(s.date.clone()).size(11),
-            ]
-            .width(Length::Fill)
-            .into(),
+                .width(Length::Fill)
+                .into()
+            }
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -225,7 +259,15 @@ impl crate::modules::Module for ClockModule {
         use crate::modules::view::horizontal_icon_label;
 
         match state {
-            ModuleState::Clock(s) => horizontal_icon_label("⌚", crate::theme::TEXT, &s.time),
+            ModuleState::Clock(s) => {
+                if let Some(formatted) =
+                    self.formatted_text(s, crate::config::FormatMode::Horizontal)
+                {
+                    horizontal_icon_label("", crate::theme::TEXT, formatted)
+                } else {
+                    horizontal_icon_label("⌚", crate::theme::TEXT, &s.time)
+                }
+            }
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -242,6 +284,7 @@ mod tests {
             crate::modules::ModuleId::new("clock"),
             "%H:%M".into(),
             "%a %d %b".into(),
+            crate::config::FormatConfig::default(),
         );
         assert_eq!(m.id().0, "clock");
         assert_eq!(m.module_type(), "clock");
@@ -253,6 +296,7 @@ mod tests {
             crate::modules::ModuleId::new("my-clock"),
             "%H:%M".into(),
             "%a %d %b".into(),
+            crate::config::FormatConfig::default(),
         );
         assert_eq!(m.id().0, "my-clock");
         assert_eq!(m.module_type(), "clock");

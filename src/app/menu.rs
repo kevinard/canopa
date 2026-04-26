@@ -301,6 +301,7 @@ mod tests {
                         label: "test".into(),
                         icon: ">".into(),
                         on_click: "true".into(),
+                        format: crate::config::FormatConfig::default(),
                     }),
                 },
             ],

@@ -261,11 +261,18 @@ pub(crate) fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
 }
 
 fn network_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    let icons = match &mc.params {
-        ModuleParams::Network(cfg) => cfg.icons.clone(),
-        _ => NetworkConfig::default().icons,
+    let (icons, format) = match &mc.params {
+        ModuleParams::Network(cfg) => (cfg.icons.clone(), cfg.format.clone()),
+        _ => {
+            let default = NetworkConfig::default();
+            (default.icons, default.format)
+        }
     };
-    Box::new(network::NetworkModule::new(ModuleId::new(&mc.name), icons))
+    Box::new(network::NetworkModule::new(
+        ModuleId::new(&mc.name),
+        icons,
+        format,
+    ))
 }
 
 fn battery_synthesized_params() -> ModuleParams {
@@ -289,32 +296,38 @@ fn tray_synthesized_params() -> ModuleParams {
 }
 
 fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    let (step, icons) = match &mc.params {
-        ModuleParams::Volume(cfg) => (cfg.step, cfg.icons.clone()),
+    let (step, icons, format) = match &mc.params {
+        ModuleParams::Volume(cfg) => (cfg.step, cfg.icons.clone(), cfg.format.clone()),
         _ => {
             let default = VolumeConfig::default();
-            (default.step, default.icons)
+            (default.step, default.icons, default.format)
         }
     };
     Box::new(volume::VolumeModule::new(
         ModuleId::new(&mc.name),
         step,
         icons,
+        format,
     ))
 }
 
 fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    let (threshold, icons) = match &mc.params {
-        ModuleParams::Battery(cfg) => (cfg.critical_threshold, cfg.icons.clone()),
+    let (threshold, icons, format) = match &mc.params {
+        ModuleParams::Battery(cfg) => (
+            cfg.critical_threshold,
+            cfg.icons.clone(),
+            cfg.format.clone(),
+        ),
         _ => {
             let default = BatteryConfig::default();
-            (default.critical_threshold, default.icons)
+            (default.critical_threshold, default.icons, default.format)
         }
     };
     Box::new(battery::BatteryModule::new(
         ModuleId::new(&mc.name),
         threshold,
         icons,
+        format,
     ))
 }
 
@@ -325,23 +338,29 @@ fn button_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
             cfg.label.clone(),
             cfg.icon.clone(),
             cfg.on_click.clone(),
+            cfg.format.clone(),
         )),
         _ => panic!("button_ctor called with non-Button params — this is a programming error"),
     }
 }
 
 fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    let (time_fmt, date_fmt) = match &mc.params {
-        ModuleParams::Clock(cfg) => (cfg.time_format.clone(), cfg.date_format.clone()),
+    let (time_fmt, date_fmt, format) = match &mc.params {
+        ModuleParams::Clock(cfg) => (
+            cfg.time_format.clone(),
+            cfg.date_format.clone(),
+            cfg.format.clone(),
+        ),
         _ => {
             let d = ClockConfig::default();
-            (d.time_format, d.date_format)
+            (d.time_format, d.date_format, d.format)
         }
     };
     Box::new(clock::ClockModule::new(
         ModuleId::new(&mc.name),
         time_fmt,
         date_fmt,
+        format,
     ))
 }
 
@@ -351,6 +370,7 @@ fn script_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
             ModuleId::new(&mc.name),
             cfg.command.clone(),
             cfg.interval,
+            cfg.format.clone(),
         )),
         _ => panic!("script_ctor called with non-Script params — this is a programming error"),
     }
@@ -368,9 +388,14 @@ fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
 }
 
 fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    Box::new(focused_window::FocusedWindowModule::new(ModuleId::new(
-        &mc.name,
-    )))
+    let format = match &mc.params {
+        ModuleParams::FocusedWindow(cfg) => cfg.format.clone(),
+        _ => crate::config::FocusedWindowConfig::default().format,
+    };
+    Box::new(focused_window::FocusedWindowModule::new(
+        ModuleId::new(&mc.name),
+        format,
+    ))
 }
 
 fn tray_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {

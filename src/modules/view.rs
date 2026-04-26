@@ -22,6 +22,16 @@ pub(super) enum IconLabelLayout {
 pub(super) trait IconLabel {
     fn icon(&self, state: &super::ModuleState) -> String;
     fn label(&self, state: &super::ModuleState) -> String;
+    fn label_for_layout(&self, state: &super::ModuleState, _layout: IconLabelLayout) -> String {
+        self.label(state)
+    }
+    fn formatted_text_for_layout(
+        &self,
+        _state: &super::ModuleState,
+        _layout: IconLabelLayout,
+    ) -> Option<String> {
+        None
+    }
 
     fn color(&self, _state: &super::ModuleState) -> iced::Color {
         crate::theme::TEXT
@@ -113,13 +123,51 @@ pub(super) fn icon_label_view<'a, M>(
 where
     M: IconLabel,
 {
+    if let Some(text) = module.formatted_text_for_layout(state, layout) {
+        return match layout {
+            IconLabelLayout::Collapsed => collapsed_icon(text, module.color(state)),
+            IconLabelLayout::Expanded => expanded_text(text),
+            IconLabelLayout::Horizontal => horizontal_text(text),
+        };
+    }
+
     match layout {
         IconLabelLayout::Collapsed => collapsed_icon(module.icon(state), module.color(state)),
-        IconLabelLayout::Expanded => {
-            expanded_icon_label(module.icon(state), module.color(state), module.label(state))
-        }
-        IconLabelLayout::Horizontal => {
-            horizontal_icon_label(module.icon(state), module.color(state), module.label(state))
-        }
+        IconLabelLayout::Expanded => expanded_icon_label(
+            module.icon(state),
+            module.color(state),
+            module.label_for_layout(state, layout),
+        ),
+        IconLabelLayout::Horizontal => horizontal_icon_label(
+            module.icon(state),
+            module.color(state),
+            module.label_for_layout(state, layout),
+        ),
     }
+}
+
+fn expanded_text<'a>(label: impl ToString) -> Element<'a, Message> {
+    container(
+        text(label.to_string())
+            .size(12)
+            .color(crate::theme::SUBTEXT)
+            .width(Length::Fill),
+    )
+    .width(Length::Fill)
+    .height(20)
+    .align_y(Alignment::Center)
+    .padding([0, 6])
+    .into()
+}
+
+fn horizontal_text<'a>(label: impl ToString) -> Element<'a, Message> {
+    container(
+        text(label.to_string())
+            .size(12)
+            .color(crate::theme::SUBTEXT),
+    )
+    .height(Length::Fill)
+    .align_y(Alignment::Center)
+    .padding([0, 6])
+    .into()
 }

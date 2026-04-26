@@ -33,15 +33,36 @@ pub(super) struct ScriptModule {
     id: crate::modules::ModuleId,
     command: String,
     interval: u64,
+    format: crate::config::FormatConfig,
 }
 
 impl ScriptModule {
-    pub(super) fn new(id: crate::modules::ModuleId, command: String, interval: u64) -> Self {
+    pub(super) fn new(
+        id: crate::modules::ModuleId,
+        command: String,
+        interval: u64,
+        format: crate::config::FormatConfig,
+    ) -> Self {
         ScriptModule {
             id,
             command,
             interval,
+            format,
         }
+    }
+
+    fn formatted_text(
+        &self,
+        state: &ScriptState,
+        mode: crate::config::FormatMode,
+    ) -> Option<String> {
+        self.format.template_for(mode).map(|template| {
+            template.render_pairs(&[
+                ("icon", ">_".to_string()),
+                ("value", state.output.clone()),
+                ("output", state.output.clone()),
+            ])
+        })
     }
 }
 
@@ -97,7 +118,10 @@ impl crate::modules::Module for ScriptModule {
 
         match state {
             ModuleState::Script(s) => {
-                let truncated: String = s.output.chars().take(5).collect();
+                let output = self
+                    .formatted_text(s, crate::config::FormatMode::Collapsed)
+                    .unwrap_or_else(|| s.output.clone());
+                let truncated: String = output.chars().take(5).collect();
                 column![text(">_").size(16), text(truncated).size(11),]
                     .align_x(Alignment::Center)
                     .width(Length::Fill)
@@ -116,14 +140,19 @@ impl crate::modules::Module for ScriptModule {
         use iced::{Alignment, Length};
 
         match state {
-            ModuleState::Script(s) => row![
-                text(">_").size(16),
-                iced::widget::Space::new().width(Length::Fill),
-                text(s.output.clone()).size(13),
-            ]
-            .align_y(Alignment::Center)
-            .width(Length::Fill)
-            .into(),
+            ModuleState::Script(s) => {
+                let output = self
+                    .formatted_text(s, crate::config::FormatMode::Expanded)
+                    .unwrap_or_else(|| s.output.clone());
+                row![
+                    text(">_").size(16),
+                    iced::widget::Space::new().width(Length::Fill),
+                    text(output).size(13),
+                ]
+                .align_y(Alignment::Center)
+                .width(Length::Fill)
+                .into()
+            }
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -136,7 +165,12 @@ impl crate::modules::Module for ScriptModule {
         use crate::modules::view::horizontal_icon_label;
 
         match state {
-            ModuleState::Script(s) => horizontal_icon_label(">_", crate::theme::TEXT, &s.output),
+            ModuleState::Script(s) => horizontal_icon_label(
+                ">_",
+                crate::theme::TEXT,
+                self.formatted_text(s, crate::config::FormatMode::Horizontal)
+                    .unwrap_or_else(|| s.output.clone()),
+            ),
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -149,14 +183,24 @@ mod tests {
 
     #[test]
     fn script_module_id_is_script() {
-        let m = ScriptModule::new(crate::modules::ModuleId::new("script"), "echo hi".into(), 5);
+        let m = ScriptModule::new(
+            crate::modules::ModuleId::new("script"),
+            "echo hi".into(),
+            5,
+            crate::config::FormatConfig::default(),
+        );
         assert_eq!(m.id().0, "script");
         assert_eq!(m.module_type(), "script");
     }
 
     #[test]
     fn script_module_custom_id() {
-        let m = ScriptModule::new(crate::modules::ModuleId::new("status"), "date".into(), 5);
+        let m = ScriptModule::new(
+            crate::modules::ModuleId::new("status"),
+            "date".into(),
+            5,
+            crate::config::FormatConfig::default(),
+        );
         assert_eq!(m.id().0, "status");
         assert_eq!(m.module_type(), "script");
     }

@@ -62,6 +62,7 @@ pub(super) struct BatteryModule {
     /// Percentage threshold for CriticalBadge and red icon. Set from config at construction.
     critical_threshold: u8,
     icons: crate::config::IconRulesConfig,
+    format: crate::config::FormatConfig,
 }
 
 impl BatteryModule {
@@ -69,12 +70,48 @@ impl BatteryModule {
         id: crate::modules::ModuleId,
         critical_threshold: u8,
         icons: crate::config::IconRulesConfig,
+        format: crate::config::FormatConfig,
     ) -> Self {
         BatteryModule {
             id,
             critical_threshold,
             icons,
+            format,
         }
+    }
+
+    fn formatted_text(
+        &self,
+        battery: &BatteryState,
+        mode: crate::config::FormatMode,
+    ) -> Option<String> {
+        let icon = if battery.is_charging {
+            self.icons
+                .icon_for_state_or_value(Some("charging"), Some(battery.percentage))
+                .unwrap_or("⚡")
+                .to_owned()
+        } else {
+            self.icons
+                .icon_for_value(battery.percentage)
+                .unwrap_or_else(|| {
+                    tier_icon(charge_tier(battery.percentage, self.critical_threshold))
+                })
+                .to_owned()
+        };
+        let value = format!("{}", battery.percentage.round() as u8);
+        let state = if battery.is_charging {
+            "charging".to_string()
+        } else {
+            "discharging".to_string()
+        };
+        self.format.template_for(mode).map(|template| {
+            template.render_pairs(&[
+                ("icon", icon),
+                ("value", value.clone()),
+                ("percent", value),
+                ("state", state),
+            ])
+        })
     }
 }
 
@@ -100,6 +137,26 @@ impl crate::modules::view::IconLabel for BatteryModule {
             crate::modules::ModuleState::Battery(s) => format!("{}%", s.percentage.round() as u8),
             _ => String::new(),
         }
+    }
+
+    fn formatted_text_for_layout(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+    ) -> Option<String> {
+        let crate::modules::ModuleState::Battery(s) = state else {
+            return None;
+        };
+        let mode = match layout {
+            crate::modules::view::IconLabelLayout::Collapsed => {
+                crate::config::FormatMode::Collapsed
+            }
+            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
+            crate::modules::view::IconLabelLayout::Horizontal => {
+                crate::config::FormatMode::Horizontal
+            }
+        };
+        self.formatted_text(s, mode)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -139,7 +196,9 @@ impl crate::modules::Module for BatteryModule {
             _ => return iced::widget::Space::new().into(),
         };
 
-        let icon_str = <Self as crate::modules::view::IconLabel>::icon(self, state);
+        let icon_str = self
+            .formatted_text(battery, crate::config::FormatMode::Collapsed)
+            .unwrap_or_else(|| <Self as crate::modules::view::IconLabel>::icon(self, state));
         let color = icon_color(
             battery.percentage,
             battery.is_charging,
@@ -210,12 +269,30 @@ mod tests {
     use crate::modules::view::IconLabel;
     use std::collections::HashMap;
 
+    fn format_config(field: &str, raw: &str) -> crate::config::FormatConfig {
+        let template = crate::config::TextTemplate::parse(
+            raw,
+            &["icon", "value", "percent", "state"],
+            "test.format",
+        )
+        .unwrap();
+        let mut config = crate::config::FormatConfig::default();
+        match field {
+            "collapsed" => config.collapsed = Some(template),
+            "expanded" => config.expanded = Some(template),
+            "horizontal" => config.horizontal = Some(template),
+            _ => unreachable!(),
+        }
+        config
+    }
+
     #[test]
     fn battery_module_id_is_battery() {
         let m = BatteryModule::new(
             crate::modules::ModuleId::new("battery"),
             15,
             IconRulesConfig::default(),
+            crate::config::FormatConfig::default(),
         );
         assert_eq!(m.id().0, "battery");
         assert_eq!(m.module_type(), "battery");
@@ -277,7 +354,12 @@ mod tests {
                 icon: "low".to_string(),
             }],
         };
-        let m = BatteryModule::new(crate::modules::ModuleId::new("battery"), 15, icons);
+        let m = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            icons,
+            crate::config::FormatConfig::default(),
+        );
         let state = crate::modules::ModuleState::Battery(BatteryState {
             percentage: 20.0,
             is_charging: true,
@@ -295,7 +377,12 @@ mod tests {
                 icon: "half".to_string(),
             }],
         };
-        let m = BatteryModule::new(crate::modules::ModuleId::new("battery"), 15, icons);
+        let m = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            icons,
+            crate::config::FormatConfig::default(),
+        );
         let state = crate::modules::ModuleState::Battery(BatteryState {
             percentage: 75.0,
             is_charging: false,
@@ -313,12 +400,36 @@ mod tests {
                 icon: "full".to_string(),
             }],
         };
-        let m = BatteryModule::new(crate::modules::ModuleId::new("battery"), 15, icons);
+        let m = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            icons,
+            crate::config::FormatConfig::default(),
+        );
         let state = crate::modules::ModuleState::Battery(BatteryState {
             percentage: 75.0,
             is_charging: false,
         });
 
         assert_eq!(m.icon(&state), "▓");
+    }
+
+    #[test]
+    fn battery_format_includes_icon_value_and_state() {
+        let m = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            IconRulesConfig::default(),
+            format_config("expanded", "{icon} {value}% {state}"),
+        );
+        let state = BatteryState {
+            percentage: 42.0,
+            is_charging: false,
+        };
+
+        assert_eq!(
+            m.formatted_text(&state, crate::config::FormatMode::Expanded),
+            Some("▒ 42% discharging".to_string())
+        );
     }
 }

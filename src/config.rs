@@ -20,6 +20,7 @@ fn is_known_config_module_type(module_type: &str) -> bool {
 pub struct ClockConfig {
     pub time_format: String,
     pub date_format: String,
+    pub format: FormatConfig,
 }
 
 impl Default for ClockConfig {
@@ -27,6 +28,7 @@ impl Default for ClockConfig {
         ClockConfig {
             time_format: String::from("%H:%M"),
             date_format: String::from("%a %d %b"),
+            format: FormatConfig::default(),
         }
     }
 }
@@ -36,6 +38,7 @@ impl Default for ClockConfig {
 pub struct ScriptConfig {
     pub command: String,
     pub interval: u64, // seconds between executions
+    pub format: FormatConfig,
 }
 
 /// Configuration for the button module — all fields required.
@@ -44,6 +47,7 @@ pub struct ButtonConfig {
     pub label: String,
     pub icon: String,
     pub on_click: String,
+    pub format: FormatConfig,
 }
 
 /// Per-workspace label and icon for the workspaces module.
@@ -59,6 +63,7 @@ pub struct WorkspacesConfig {
     /// Maps workspace number (1-based: ws.idx + 1) to label/icon config.
     /// Absent key → workspace shows number only.
     pub workspaces: std::collections::HashMap<u32, WorkspaceLabelConfig>,
+    pub format: FormatConfig,
 }
 
 /// Configuration for the battery module.
@@ -68,6 +73,7 @@ pub struct BatteryConfig {
     /// Default: 15. Valid range: 0–100.
     pub critical_threshold: u8,
     pub icons: IconRulesConfig,
+    pub format: FormatConfig,
 }
 
 impl Default for BatteryConfig {
@@ -75,6 +81,7 @@ impl Default for BatteryConfig {
         BatteryConfig {
             critical_threshold: 15,
             icons: IconRulesConfig::default(),
+            format: FormatConfig::default(),
         }
     }
 }
@@ -111,10 +118,149 @@ pub struct IconThreshold {
     pub icon: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FormatConfig {
+    pub collapsed: Option<TextTemplate>,
+    pub expanded: Option<TextTemplate>,
+    pub horizontal: Option<TextTemplate>,
+}
+
+impl FormatConfig {
+    pub fn template_for(&self, mode: FormatMode) -> Option<&TextTemplate> {
+        match mode {
+            FormatMode::Collapsed => self.collapsed.as_ref(),
+            FormatMode::Expanded => self.expanded.as_ref().or_else(|| self.collapsed.as_ref()),
+            FormatMode::Horizontal => self
+                .horizontal
+                .as_ref()
+                .or_else(|| self.expanded.as_ref())
+                .or_else(|| self.collapsed.as_ref()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormatMode {
+    Collapsed,
+    Expanded,
+    Horizontal,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextTemplate {
+    parts: Vec<TemplatePart>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum TemplatePart {
+    Literal(String),
+    Placeholder(String),
+}
+
+impl TextTemplate {
+    pub fn parse(raw: &str, allowed: &[&str], path: &str) -> anyhow::Result<Self> {
+        if raw.is_empty() {
+            anyhow::bail!("{path}: value must not be empty.");
+        }
+
+        let mut parts = Vec::new();
+        let mut literal = String::new();
+        let mut chars = raw.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            match ch {
+                '{' => {
+                    if chars.peek() == Some(&'{') {
+                        chars.next();
+                        literal.push('{');
+                        continue;
+                    }
+                    if !literal.is_empty() {
+                        parts.push(TemplatePart::Literal(std::mem::take(&mut literal)));
+                    }
+
+                    let mut name = String::new();
+                    let mut closed = false;
+                    for inner in chars.by_ref() {
+                        if inner == '}' {
+                            closed = true;
+                            break;
+                        }
+                        name.push(inner);
+                    }
+
+                    if !closed {
+                        anyhow::bail!("{path}: unmatched '{{' in format template.");
+                    }
+                    if name.is_empty() {
+                        anyhow::bail!("{path}: empty placeholder is not allowed.");
+                    }
+                    if !name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                    {
+                        anyhow::bail!("{path}: invalid placeholder {name:?}.");
+                    }
+                    if !allowed.contains(&name.as_str()) {
+                        anyhow::bail!("{path}: unknown placeholder {name:?}.");
+                    }
+                    parts.push(TemplatePart::Placeholder(name));
+                }
+                '}' => {
+                    if chars.peek() == Some(&'}') {
+                        chars.next();
+                        literal.push('}');
+                    } else {
+                        anyhow::bail!("{path}: unmatched '}}' in format template.");
+                    }
+                }
+                _ => literal.push(ch),
+            }
+        }
+
+        if !literal.is_empty() {
+            parts.push(TemplatePart::Literal(literal));
+        }
+
+        Ok(TextTemplate { parts })
+    }
+
+    pub fn render(&self, values: &HashMap<&str, &str>) -> String {
+        let mut rendered = String::new();
+        for part in &self.parts {
+            match part {
+                TemplatePart::Literal(value) => rendered.push_str(value),
+                TemplatePart::Placeholder(name) => {
+                    if let Some(value) = values.get(name.as_str()) {
+                        rendered.push_str(value);
+                    }
+                }
+            }
+        }
+        rendered
+    }
+
+    pub fn render_pairs(&self, values: &[(&str, String)]) -> String {
+        let mut rendered = String::new();
+        for part in &self.parts {
+            match part {
+                TemplatePart::Literal(value) => rendered.push_str(value),
+                TemplatePart::Placeholder(name) => {
+                    if let Some((_, value)) = values.iter().find(|(key, _)| key == &name.as_str()) {
+                        rendered.push_str(value);
+                    }
+                }
+            }
+        }
+        rendered
+    }
+}
+
 /// Configuration for the network module.
 #[derive(Debug, Clone, Default)]
 pub struct NetworkConfig {
     pub icons: IconRulesConfig,
+    pub format: FormatConfig,
 }
 
 /// Configuration for the tray module.
@@ -123,7 +269,9 @@ pub struct TrayConfig;
 
 /// Configuration for the focused-window module (no user-configurable params).
 #[derive(Debug, Clone, Default)]
-pub struct FocusedWindowConfig;
+pub struct FocusedWindowConfig {
+    pub format: FormatConfig,
+}
 
 /// Configuration for the volume module — scroll step in percent.
 #[derive(Debug, Clone)]
@@ -131,6 +279,7 @@ pub struct VolumeConfig {
     /// Volume adjustment step per scroll event (percent, 1–100). Default: 5.
     pub step: u8,
     pub icons: IconRulesConfig,
+    pub format: FormatConfig,
 }
 
 impl Default for VolumeConfig {
@@ -138,6 +287,7 @@ impl Default for VolumeConfig {
         VolumeConfig {
             step: 5,
             icons: IconRulesConfig::default(),
+            format: FormatConfig::default(),
         }
     }
 }
@@ -379,6 +529,57 @@ mod icon_rule_tests {
             rules.icon_for_state_or_value(Some("charging"), Some(15.0)),
             Some("plug")
         );
+    }
+}
+
+#[cfg(test)]
+mod format_template_tests {
+    use super::*;
+
+    fn vars<'a>(pairs: &[(&'a str, &'a str)]) -> HashMap<&'a str, &'a str> {
+        pairs.iter().copied().collect()
+    }
+
+    #[test]
+    fn text_template_substitutes_value() {
+        let template = TextTemplate::parse("{value}% left", &["value"], "test.format").unwrap();
+
+        assert_eq!(template.render(&vars(&[("value", "42")])), "42% left");
+    }
+
+    #[test]
+    fn text_template_substitutes_repeated_placeholders() {
+        let template = TextTemplate::parse("{value}/{value}", &["value"], "test.format").unwrap();
+
+        assert_eq!(template.render(&vars(&[("value", "42")])), "42/42");
+    }
+
+    #[test]
+    fn text_template_escapes_literal_braces() {
+        let template = TextTemplate::parse("{{{value}}}", &["value"], "test.format").unwrap();
+
+        assert_eq!(template.render(&vars(&[("value", "42")])), "{42}");
+    }
+
+    #[test]
+    fn text_template_rejects_unmatched_open_brace() {
+        let err = TextTemplate::parse("{value", &["value"], "test.format").unwrap_err();
+
+        assert!(err.to_string().contains("unmatched"));
+    }
+
+    #[test]
+    fn text_template_rejects_empty_placeholder() {
+        let err = TextTemplate::parse("{}", &["value"], "test.format").unwrap_err();
+
+        assert!(err.to_string().contains("empty placeholder"));
+    }
+
+    #[test]
+    fn text_template_rejects_disallowed_placeholder() {
+        let err = TextTemplate::parse("{missing}", &["value"], "test.format").unwrap_err();
+
+        assert!(err.to_string().contains("unknown placeholder"));
     }
 }
 
@@ -713,6 +914,7 @@ mod tests {
         let params = ModuleParams::Clock(ClockConfig {
             time_format: "%I:%M %p".into(),
             date_format: "%Y-%m-%d".into(),
+            format: FormatConfig::default(),
         });
         match params {
             ModuleParams::Clock(cfg) => {
@@ -728,6 +930,7 @@ mod tests {
         let cfg = ScriptConfig {
             command: "echo hi".into(),
             interval: 10,
+            format: FormatConfig::default(),
         };
         assert_eq!(cfg.command, "echo hi");
         assert_eq!(cfg.interval, 10);
@@ -738,6 +941,7 @@ mod tests {
         let params = ModuleParams::Script(ScriptConfig {
             command: "date".into(),
             interval: 30,
+            format: FormatConfig::default(),
         });
         match params {
             ModuleParams::Script(cfg) => {
@@ -754,6 +958,7 @@ mod tests {
             label: "Launch Terminal".into(),
             icon: ">".into(),
             on_click: "kitty".into(),
+            format: FormatConfig::default(),
         };
         assert_eq!(cfg.label, "Launch Terminal");
         assert_eq!(cfg.icon, ">");
@@ -766,6 +971,7 @@ mod tests {
             label: "launch".into(),
             icon: ">".into(),
             on_click: "kitty".into(),
+            format: FormatConfig::default(),
         });
         match params {
             ModuleParams::Button(cfg) => {

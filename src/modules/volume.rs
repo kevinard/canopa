@@ -51,6 +51,7 @@ pub(super) struct VolumeModule {
     id: crate::modules::ModuleId,
     step: u8,
     icons: crate::config::IconRulesConfig,
+    format: crate::config::FormatConfig,
 }
 
 impl VolumeModule {
@@ -58,8 +59,37 @@ impl VolumeModule {
         id: crate::modules::ModuleId,
         step: u8,
         icons: crate::config::IconRulesConfig,
+        format: crate::config::FormatConfig,
     ) -> Self {
-        VolumeModule { id, step, icons }
+        VolumeModule {
+            id,
+            step,
+            icons,
+            format,
+        }
+    }
+
+    fn formatted_text(
+        &self,
+        volume: &VolumeState,
+        mode: crate::config::FormatMode,
+    ) -> Option<String> {
+        let tier = volume_tier(volume.volume, volume.muted);
+        let icon = self
+            .icons
+            .icon_for_state_or_value((tier == 0).then_some("muted"), Some(volume.volume))
+            .unwrap_or_else(|| tier_icon(tier))
+            .to_string();
+        let value = format!("{}", volume.volume.round() as u64);
+        let state = if tier == 0 { "muted" } else { "unmuted" }.to_string();
+        self.format.template_for(mode).map(|template| {
+            template.render_pairs(&[
+                ("icon", icon),
+                ("value", value.clone()),
+                ("percent", value),
+                ("state", state),
+            ])
+        })
     }
 }
 
@@ -84,6 +114,26 @@ impl crate::modules::view::IconLabel for VolumeModule {
             crate::modules::ModuleState::Volume(s) => format!("{}%", s.volume.round() as u64),
             _ => String::new(),
         }
+    }
+
+    fn formatted_text_for_layout(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+    ) -> Option<String> {
+        let crate::modules::ModuleState::Volume(s) = state else {
+            return None;
+        };
+        let mode = match layout {
+            crate::modules::view::IconLabelLayout::Collapsed => {
+                crate::config::FormatMode::Collapsed
+            }
+            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
+            crate::modules::view::IconLabelLayout::Horizontal => {
+                crate::config::FormatMode::Horizontal
+            }
+        };
+        self.formatted_text(s, mode)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -176,12 +226,30 @@ mod tests {
     use crate::modules::view::IconLabel;
     use std::collections::HashMap;
 
+    fn format_config(field: &str, raw: &str) -> crate::config::FormatConfig {
+        let template = crate::config::TextTemplate::parse(
+            raw,
+            &["icon", "value", "percent", "state"],
+            "test.format",
+        )
+        .unwrap();
+        let mut config = crate::config::FormatConfig::default();
+        match field {
+            "collapsed" => config.collapsed = Some(template),
+            "expanded" => config.expanded = Some(template),
+            "horizontal" => config.horizontal = Some(template),
+            _ => unreachable!(),
+        }
+        config
+    }
+
     #[test]
     fn volume_module_id_is_volume() {
         let m = VolumeModule::new(
             crate::modules::ModuleId::new("volume"),
             5,
             IconRulesConfig::default(),
+            crate::config::FormatConfig::default(),
         );
         assert_eq!(m.id().0, "volume");
         assert_eq!(m.module_type(), "volume");
@@ -233,7 +301,12 @@ mod tests {
                 icon: "low".to_string(),
             }],
         };
-        let m = VolumeModule::new(crate::modules::ModuleId::new("volume"), 5, icons);
+        let m = VolumeModule::new(
+            crate::modules::ModuleId::new("volume"),
+            5,
+            icons,
+            crate::config::FormatConfig::default(),
+        );
         let state = crate::modules::ModuleState::Volume(VolumeState {
             volume: 40.0,
             muted: true,
@@ -251,7 +324,12 @@ mod tests {
                 icon: "loud".to_string(),
             }],
         };
-        let m = VolumeModule::new(crate::modules::ModuleId::new("volume"), 5, icons);
+        let m = VolumeModule::new(
+            crate::modules::ModuleId::new("volume"),
+            5,
+            icons,
+            crate::config::FormatConfig::default(),
+        );
         let state = crate::modules::ModuleState::Volume(VolumeState {
             volume: 80.0,
             muted: false,
@@ -269,12 +347,36 @@ mod tests {
                 icon: "max".to_string(),
             }],
         };
-        let m = VolumeModule::new(crate::modules::ModuleId::new("volume"), 5, icons);
+        let m = VolumeModule::new(
+            crate::modules::ModuleId::new("volume"),
+            5,
+            icons,
+            crate::config::FormatConfig::default(),
+        );
         let state = crate::modules::ModuleState::Volume(VolumeState {
             volume: 80.0,
             muted: false,
         });
 
         assert_eq!(m.icon(&state), "◈");
+    }
+
+    #[test]
+    fn volume_horizontal_format_includes_icon_and_value() {
+        let m = VolumeModule::new(
+            crate::modules::ModuleId::new("volume"),
+            5,
+            IconRulesConfig::default(),
+            format_config("horizontal", "{icon} {value}%"),
+        );
+        let state = VolumeState {
+            volume: 80.0,
+            muted: false,
+        };
+
+        assert_eq!(
+            m.formatted_text(&state, crate::config::FormatMode::Horizontal),
+            Some("◈ 80%".to_string())
+        );
     }
 }

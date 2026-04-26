@@ -292,6 +292,7 @@ mod tests {
                 params: ModuleParams::Script(ScriptConfig {
                     command: "echo hi".into(),
                     interval: 5,
+                    format: crate::config::FormatConfig::default(),
                 }),
             }],
             ..Default::default()
@@ -378,6 +379,7 @@ mod tests {
                     label: "Launch".into(),
                     icon: ">".into(),
                     on_click: "kitty".into(),
+                    format: crate::config::FormatConfig::default(),
                 }),
             }],
             ..Default::default()
@@ -422,6 +424,7 @@ mod tests {
                 params: ModuleParams::Script(ScriptConfig {
                     command: "echo hi".into(),
                     interval: 5,
+                    format: crate::config::FormatConfig::default(),
                 }),
             }],
             ..Default::default()

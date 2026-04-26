@@ -14,6 +14,7 @@ pub(super) struct ButtonModule {
     label: String,
     icon: String,
     on_click: String,
+    format: crate::config::FormatConfig,
 }
 
 impl ButtonModule {
@@ -22,13 +23,25 @@ impl ButtonModule {
         label: String,
         icon: String,
         on_click: String,
+        format: crate::config::FormatConfig,
     ) -> Self {
         ButtonModule {
             id,
             label,
             icon,
             on_click,
+            format,
         }
+    }
+
+    fn formatted_text(&self, mode: crate::config::FormatMode) -> Option<String> {
+        self.format.template_for(mode).map(|template| {
+            template.render_pairs(&[
+                ("icon", self.icon.clone()),
+                ("value", self.label.clone()),
+                ("label", self.label.clone()),
+            ])
+        })
     }
 }
 
@@ -93,12 +106,15 @@ impl crate::modules::Module for ButtonModule {
         use iced::{Alignment, Length};
 
         match state {
-            ModuleState::Button(_) => column![
-                text(self.icon.clone()).size(16), // font.size.icon per UX-DR9
-            ]
-            .align_x(Alignment::Center)
-            .width(Length::Fill)
-            .into(),
+            ModuleState::Button(_) => {
+                let content = self
+                    .formatted_text(crate::config::FormatMode::Collapsed)
+                    .unwrap_or_else(|| self.icon.clone());
+                column![text(content).size(16)]
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill)
+                    .into()
+            }
             _ => iced::widget::Space::new().into(), // Loading/Unavailable → empty (UX-DR16)
         }
     }
@@ -113,9 +129,13 @@ impl crate::modules::Module for ButtonModule {
 
         match state {
             ModuleState::Button(_) => row![
-                text(self.icon.clone()).size(16), // icon left (UX-DR6)
+                text(self.icon.clone()).size(16),
                 iced::widget::Space::new().width(Length::Fill),
-                text(self.label.clone()).size(13), // label right, font.size.base (UX-DR9)
+                text(
+                    self.formatted_text(crate::config::FormatMode::Expanded)
+                        .unwrap_or_else(|| self.label.clone())
+                )
+                .size(13),
             ]
             .align_y(Alignment::Center)
             .width(Length::Fill)
@@ -132,9 +152,12 @@ impl crate::modules::Module for ButtonModule {
         use crate::modules::view::horizontal_icon_label;
 
         match state {
-            ModuleState::Button(_) => {
-                horizontal_icon_label(self.icon.clone(), crate::theme::TEXT, self.label.clone())
-            }
+            ModuleState::Button(_) => horizontal_icon_label(
+                self.icon.clone(),
+                crate::theme::TEXT,
+                self.formatted_text(crate::config::FormatMode::Horizontal)
+                    .unwrap_or_else(|| self.label.clone()),
+            ),
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -152,6 +175,7 @@ mod tests {
             "Launch".into(),
             ">".into(),
             "kitty".into(),
+            crate::config::FormatConfig::default(),
         );
         assert_eq!(m.id().0, "button");
         assert_eq!(m.module_type(), "button");

@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
 use super::super::{error, kdl};
+use super::formats;
 use super::icons;
 use crate::config::BatteryConfig;
 
@@ -18,8 +19,14 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<BatteryConfig>
         &error::field_path(idx, "battery", "critical-threshold"),
     )?;
     let icons = icons::parse_optional(children, &error::module_path(idx, "battery"))?;
+    let format = formats::parse_optional(
+        children,
+        &error::module_path(idx, "battery"),
+        &["icon", "value", "percent", "state"],
+    )?;
     Ok(BatteryConfig {
         critical_threshold,
         icons,
+        format,
     })
 }

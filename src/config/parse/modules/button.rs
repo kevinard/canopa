@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
 use super::super::{error, kdl};
+use super::formats;
 use crate::config::ButtonConfig;
 
 pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> {
@@ -29,11 +30,17 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> 
         anyhow::bail!("{on_click_path}: missing required parameter. Expected: a string value.");
     }
     let on_click = kdl::required_string_child(children, "on-click", &on_click_path)?;
+    let format = formats::parse_optional(
+        children,
+        &error::module_path(idx, "button"),
+        &["icon", "value", "label"],
+    )?;
 
     Ok(ButtonConfig {
         label,
         icon,
         on_click,
+        format,
     })
 }
 

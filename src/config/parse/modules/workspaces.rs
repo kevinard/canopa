@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
 use super::super::error;
+use super::formats;
 use crate::config::{WorkspaceLabelConfig, WorkspacesConfig};
 
 pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<WorkspacesConfig> {
@@ -10,7 +11,19 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<WorkspacesConf
         return Ok(config); // No workspace config — all workspaces show number only.
     };
 
+    config.format = formats::parse_optional(
+        children,
+        &error::module_path(idx, "workspaces"),
+        &["icon", "value", "index", "name", "label", "state"],
+    )?;
+
     for ws_node in children.nodes() {
+        if matches!(
+            ws_node.name().value(),
+            "format" | "expanded-format" | "horizontal-format"
+        ) {
+            continue;
+        }
         if ws_node.name().value() != "workspace" {
             anyhow::bail!(
                 "{}: unknown child node {:?}. Expected: \"workspace\".",

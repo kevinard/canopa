@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
 use super::super::{error, kdl};
+use super::formats;
 use crate::config::ClockConfig;
 
 pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
@@ -25,10 +26,16 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
         &error::field_path(idx, "clock", "date-format"),
         "a chrono format string such as \"%a %d %b\"",
     )?;
+    let format = formats::parse_optional(
+        children,
+        &error::module_path(idx, "clock"),
+        &["icon", "value", "time", "date"],
+    )?;
 
     Ok(ClockConfig {
         time_format,
         date_format,
+        format,
     })
 }
 

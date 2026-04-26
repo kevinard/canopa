@@ -107,12 +107,41 @@ impl WorkspaceItemModule {
         let (bg, fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);
         let ws_num = self.workspace.idx as u32;
         let label_cfg = self.config.workspaces.get(&ws_num);
+        let configured_icon = label_cfg.and_then(|c| c.icon.as_deref());
+        let configured_label = label_cfg.and_then(|c| c.label.as_deref());
+        let state = if self.workspace.is_focused {
+            "focused"
+        } else if self.workspace.is_active {
+            "active"
+        } else {
+            "inactive"
+        };
+        let mode = if horizontal {
+            crate::config::FormatMode::Horizontal
+        } else {
+            crate::config::FormatMode::Collapsed
+        };
+        let formatted = self.config.format.template_for(mode).map(|template| {
+            let index = ws_num.to_string();
+            let label = configured_label.unwrap_or(&index).to_string();
+            let icon = configured_icon.unwrap_or(&index).to_string();
+            let name = self.workspace.name.clone().unwrap_or_default();
+            template.render_pairs(&[
+                ("icon", icon),
+                ("value", label.clone()),
+                ("index", index),
+                ("name", name),
+                ("label", label),
+                ("state", state.to_string()),
+            ])
+        });
 
         if horizontal {
-            let content = label_cfg
-                .and_then(|c| c.icon.as_deref())
-                .map(|icon| icon.to_string())
-                .unwrap_or_else(|| format!("{ws_num}"));
+            let content = formatted.unwrap_or_else(|| {
+                configured_icon
+                    .map(|icon| icon.to_string())
+                    .unwrap_or_else(|| format!("{ws_num}"))
+            });
             container(text(content).size(10).color(fg))
                 .width(32)
                 .height(Length::Fill)
@@ -128,8 +157,25 @@ impl WorkspaceItemModule {
                 })
                 .into()
         } else {
-            let icon_str = label_cfg.and_then(|c| c.icon.as_deref());
-            let label_str = label_cfg.and_then(|c| c.label.as_deref());
+            if let Some(content) = formatted {
+                return container(text(content).size(12).color(fg))
+                    .width(Length::Fill)
+                    .height(20)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .padding([0, 6])
+                    .style(move |_theme| container::Style {
+                        background: Some(Background::Color(bg)),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .into();
+            }
+            let icon_str = configured_icon;
+            let label_str = configured_label;
 
             let mut parts: Vec<iced::Element<'static, crate::app::Message>> = Vec::new();
             if let Some(icon) = icon_str {

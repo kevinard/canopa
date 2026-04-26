@@ -14,11 +14,22 @@ pub struct FocusedWindowState {
 /// Focused-window module: shows the focused window title, fed by niri IPC via shared app state.
 pub(super) struct FocusedWindowModule {
     id: crate::modules::ModuleId,
+    format: crate::config::FormatConfig,
 }
 
 impl FocusedWindowModule {
-    pub(super) fn new(id: crate::modules::ModuleId) -> Self {
-        FocusedWindowModule { id }
+    pub(super) fn new(id: crate::modules::ModuleId, format: crate::config::FormatConfig) -> Self {
+        FocusedWindowModule { id, format }
+    }
+
+    fn formatted_text(&self, title: &str, mode: crate::config::FormatMode) -> Option<String> {
+        self.format.template_for(mode).map(|template| {
+            template.render_pairs(&[
+                ("icon", "□".to_string()),
+                ("value", title.to_string()),
+                ("title", title.to_string()),
+            ])
+        })
     }
 }
 
@@ -52,7 +63,15 @@ impl crate::modules::Module for FocusedWindowModule {
             return iced::widget::Space::new().into();
         }
 
-        // Window is focused → show icon placeholder (AC #2).
+        if let Some(title) = title.as_deref() {
+            if let Some(formatted) =
+                self.formatted_text(title, crate::config::FormatMode::Collapsed)
+            {
+                return collapsed_icon(formatted, theme::TEXT);
+            }
+        }
+
+        // Window is focused -> show icon placeholder (AC #2).
         // "□" (U+25A1) is a window-shape placeholder; replaced when icon system is added.
         collapsed_icon("□", theme::TEXT)
     }
@@ -75,10 +94,14 @@ impl crate::modules::Module for FocusedWindowModule {
             return iced::widget::Space::new().into();
         };
 
+        let display = self
+            .formatted_text(&title_str, crate::config::FormatMode::Expanded)
+            .unwrap_or(title_str);
+
         // Show title, clipped to module width (AC #3).
         // Iced clips text naturally when container width limits it.
         container(
-            text(title_str)
+            text(display)
                 .size(12)
                 .color(theme::TEXT)
                 .wrapping(iced::widget::text::Wrapping::None),
@@ -108,8 +131,12 @@ impl crate::modules::Module for FocusedWindowModule {
             return iced::widget::Space::new().into();
         };
 
+        let display = self
+            .formatted_text(&title_str, crate::config::FormatMode::Horizontal)
+            .unwrap_or(title_str);
+
         container(
-            text(title_str)
+            text(display)
                 .size(12)
                 .color(theme::TEXT)
                 .wrapping(iced::widget::text::Wrapping::None),
@@ -130,7 +157,10 @@ mod tests {
 
     #[test]
     fn focused_window_module_id_is_focused_window() {
-        let m = FocusedWindowModule::new(crate::modules::ModuleId::new("focused-window"));
+        let m = FocusedWindowModule::new(
+            crate::modules::ModuleId::new("focused-window"),
+            crate::config::FormatConfig::default(),
+        );
         assert_eq!(m.id().0, "focused-window");
         assert_eq!(m.module_type(), "focused-window");
     }

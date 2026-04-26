@@ -370,7 +370,7 @@ mod tests {
             modules: vec![ModuleConfig {
                 name: "focused-window".into(),
                 module_type: "focused-window".into(),
-                params: ModuleParams::FocusedWindow(FocusedWindowConfig),
+                params: ModuleParams::FocusedWindow(FocusedWindowConfig::default()),
             }],
             ..Default::default()
         };
@@ -416,7 +416,7 @@ mod tests {
             modules: vec![ModuleConfig {
                 name: "focused-window".into(),
                 module_type: "focused-window".into(),
-                params: ModuleParams::FocusedWindow(FocusedWindowConfig),
+                params: ModuleParams::FocusedWindow(FocusedWindowConfig::default()),
             }],
             ..Default::default()
         };
