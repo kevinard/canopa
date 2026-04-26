@@ -21,17 +21,49 @@ where
 }
 
 impl App {
+    fn has_module_kind(&self, kind: ModuleKind) -> bool {
+        !self.modules.ids_by_kind(kind).is_empty()
+    }
+
+    fn needs_niri_subscription(&self) -> bool {
+        self.has_module_kind(ModuleKind::Workspaces)
+            || self.has_module_kind(ModuleKind::FocusedWindow)
+            || self.surfaces.manual_outputs()
+    }
+
+    fn needs_keyboard_focus_subscription(&self) -> bool {
+        self.config
+            .bars
+            .iter()
+            .any(|bar| bar.expand_keybind.is_some())
+            || self.has_module_kind(ModuleKind::Button)
+            || self.has_module_kind(ModuleKind::Volume)
+            || self.has_module_kind(ModuleKind::Workspaces)
+            || self.has_module_kind(ModuleKind::Tray)
+    }
+
+    fn needs_ipc_subscription(&self) -> bool {
+        self.config
+            .bars
+            .iter()
+            .any(|bar| bar.expand && bar.expanded_width > bar.collapsed_width)
+    }
+
     pub(crate) fn subscription(&self) -> iced::Subscription<Message> {
-        let has_battery = !self.modules.ids_by_kind(ModuleKind::Battery).is_empty();
-        let has_network = !self.modules.ids_by_kind(ModuleKind::Network).is_empty();
-        let has_volume = !self.modules.ids_by_kind(ModuleKind::Volume).is_empty();
-        let has_tray = !self.modules.ids_by_kind(ModuleKind::Tray).is_empty();
+        let has_battery = self.has_module_kind(ModuleKind::Battery);
+        let has_network = self.has_module_kind(ModuleKind::Network);
+        let has_volume = self.has_module_kind(ModuleKind::Volume);
+        let has_tray = self.has_module_kind(ModuleKind::Tray);
 
         let per_module: Vec<iced::Subscription<Message>> =
             self.modules.iter().map(|(_, m)| m.subscription()).collect();
 
         let module_subs = iced::Subscription::batch(per_module);
-        let niri_sub = niri_subscription();
+        let niri_sub = if self.needs_niri_subscription() {
+            niri_subscription()
+        } else {
+            iced::Subscription::none()
+        };
 
         let needs_dbus = has_battery || has_network || has_volume || has_tray;
         let dbus_sub = if needs_dbus {
@@ -78,8 +110,16 @@ impl App {
             iced::Subscription::none()
         };
 
-        let focus_sub = keyboard_focus_subscription();
-        let ipc_sub = ipc_subscription();
+        let focus_sub = if self.needs_keyboard_focus_subscription() {
+            keyboard_focus_subscription()
+        } else {
+            iced::Subscription::none()
+        };
+        let ipc_sub = if self.needs_ipc_subscription() {
+            ipc_subscription()
+        } else {
+            iced::Subscription::none()
+        };
 
         let needs_tick = self
             .surfaces
@@ -112,5 +152,124 @@ impl App {
             tick_sub,
             perf_sub,
         ])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, ModuleConfig, ModuleParams};
+
+    fn app_with_modules(modules: Vec<ModuleConfig>, bar_module_names: Vec<&str>) -> App {
+        let mut config = Config {
+            modules,
+            ..Config::default()
+        };
+        config.bars[0].modules.top = bar_module_names.into_iter().map(str::to_string).collect();
+        config.bars[0].modules.center.clear();
+        config.bars[0].modules.bottom.clear();
+        App::boot(config, vec![]).0
+    }
+
+    fn module(name: &str, params: ModuleParams) -> ModuleConfig {
+        ModuleConfig {
+            name: name.into(),
+            module_type: name.into(),
+            params,
+        }
+    }
+
+    #[test]
+    fn clock_only_config_does_not_need_niri_subscription() {
+        let app = app_with_modules(
+            vec![module(
+                "clock",
+                ModuleParams::Clock(crate::config::ClockConfig::default()),
+            )],
+            vec!["clock"],
+        );
+
+        assert!(!app.needs_niri_subscription());
+    }
+
+    #[test]
+    fn workspaces_config_needs_niri_subscription() {
+        let app = app_with_modules(
+            vec![module(
+                "workspaces",
+                ModuleParams::Workspaces(crate::config::WorkspacesConfig::default()),
+            )],
+            vec!["workspaces"],
+        );
+
+        assert!(app.needs_niri_subscription());
+    }
+
+    #[test]
+    fn focused_window_config_needs_niri_subscription() {
+        let app = app_with_modules(
+            vec![module("focused-window", ModuleParams::None)],
+            vec!["focused-window"],
+        );
+
+        assert!(app.needs_niri_subscription());
+    }
+
+    #[test]
+    fn manual_output_mode_needs_niri_subscription_for_hotplug() {
+        let (app, _) = App::boot(Config::default(), vec!["eDP-1".into()]);
+
+        assert!(app.needs_niri_subscription());
+    }
+
+    #[test]
+    fn clock_only_config_does_not_need_keyboard_focus_subscription() {
+        let app = app_with_modules(
+            vec![module(
+                "clock",
+                ModuleParams::Clock(crate::config::ClockConfig::default()),
+            )],
+            vec!["clock"],
+        );
+
+        assert!(!app.needs_keyboard_focus_subscription());
+    }
+
+    #[test]
+    fn interactive_modules_need_keyboard_focus_subscription() {
+        let app = app_with_modules(
+            vec![module(
+                "volume",
+                ModuleParams::Volume(crate::config::VolumeConfig::default()),
+            )],
+            vec!["volume"],
+        );
+
+        assert!(app.needs_keyboard_focus_subscription());
+    }
+
+    #[test]
+    fn expand_keybind_needs_keyboard_focus_subscription() {
+        let mut config = Config::default();
+        config.bars[0].expand_keybind = Some("Super+e".into());
+        let (app, _) = App::boot(config, vec![]);
+
+        assert!(app.needs_keyboard_focus_subscription());
+    }
+
+    #[test]
+    fn disabled_expand_does_not_need_ipc_subscription() {
+        let mut config = Config::default();
+        config.bars[0].expand = false;
+        let (app, _) = App::boot(config, vec![]);
+
+        assert!(!app.needs_ipc_subscription());
+    }
+
+    #[test]
+    fn expandable_bar_needs_ipc_subscription() {
+        let (app, _) = App::boot(Config::default(), vec![]);
+
+        assert!(app.needs_ipc_subscription());
     }
 }
