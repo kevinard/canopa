@@ -3,6 +3,7 @@ mod parse;
 
 use anyhow::Context;
 use iced_layershell::reexport::Anchor;
+use std::collections::HashMap;
 
 fn is_known_config_module_type(module_type: &str) -> bool {
     debug_assert_eq!(
@@ -66,19 +67,55 @@ pub struct BatteryConfig {
     /// Percentage at or below which the critical badge and red icon appear.
     /// Default: 15. Valid range: 0–100.
     pub critical_threshold: u8,
+    pub icons: IconRulesConfig,
 }
 
 impl Default for BatteryConfig {
     fn default() -> Self {
         BatteryConfig {
             critical_threshold: 15,
+            icons: IconRulesConfig::default(),
         }
     }
 }
 
-/// Configuration for the network module (no user-configurable params for MVP).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct IconRulesConfig {
+    pub states: HashMap<String, String>,
+    pub thresholds: Vec<IconThreshold>,
+}
+
+impl IconRulesConfig {
+    pub fn icon_for_state(&self, state: &str) -> Option<&str> {
+        self.states.get(state).map(String::as_str)
+    }
+
+    pub fn icon_for_value(&self, value: f64) -> Option<&str> {
+        self.thresholds
+            .iter()
+            .rev()
+            .find(|threshold| value >= threshold.at)
+            .map(|threshold| threshold.icon.as_str())
+    }
+
+    pub fn icon_for_state_or_value(&self, state: Option<&str>, value: Option<f64>) -> Option<&str> {
+        state
+            .and_then(|state| self.icon_for_state(state))
+            .or_else(|| value.and_then(|value| self.icon_for_value(value)))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IconThreshold {
+    pub at: f64,
+    pub icon: String,
+}
+
+/// Configuration for the network module.
 #[derive(Debug, Clone, Default)]
-pub struct NetworkConfig;
+pub struct NetworkConfig {
+    pub icons: IconRulesConfig,
+}
 
 /// Configuration for the tray module.
 #[derive(Debug, Clone, Default)]
@@ -93,11 +130,15 @@ pub struct FocusedWindowConfig;
 pub struct VolumeConfig {
     /// Volume adjustment step per scroll event (percent, 1–100). Default: 5.
     pub step: u8,
+    pub icons: IconRulesConfig,
 }
 
 impl Default for VolumeConfig {
     fn default() -> Self {
-        VolumeConfig { step: 5 }
+        VolumeConfig {
+            step: 5,
+            icons: IconRulesConfig::default(),
+        }
     }
 }
 
@@ -279,6 +320,65 @@ impl Edge {
             Edge::Top => Anchor::Top | Anchor::Left | Anchor::Right,
             Edge::Bottom => Anchor::Bottom | Anchor::Left | Anchor::Right,
         }
+    }
+}
+
+#[cfg(test)]
+mod icon_rule_tests {
+    use super::*;
+
+    #[test]
+    fn icon_rules_select_highest_threshold_at_or_below_value() {
+        let rules = IconRulesConfig {
+            states: std::collections::HashMap::new(),
+            thresholds: vec![
+                IconThreshold {
+                    at: 10.0,
+                    icon: "low".into(),
+                },
+                IconThreshold {
+                    at: 50.0,
+                    icon: "mid".into(),
+                },
+                IconThreshold {
+                    at: 90.0,
+                    icon: "high".into(),
+                },
+            ],
+        };
+
+        assert_eq!(rules.icon_for_value(65.0), Some("mid"));
+    }
+
+    #[test]
+    fn icon_rules_return_none_below_lowest_threshold() {
+        let rules = IconRulesConfig {
+            states: std::collections::HashMap::new(),
+            thresholds: vec![IconThreshold {
+                at: 10.0,
+                icon: "low".into(),
+            }],
+        };
+
+        assert_eq!(rules.icon_for_value(9.0), None);
+    }
+
+    #[test]
+    fn icon_rules_state_takes_precedence_over_value() {
+        let mut states = std::collections::HashMap::new();
+        states.insert("charging".into(), "plug".into());
+        let rules = IconRulesConfig {
+            states,
+            thresholds: vec![IconThreshold {
+                at: 10.0,
+                icon: "low".into(),
+            }],
+        };
+
+        assert_eq!(
+            rules.icon_for_state_or_value(Some("charging"), Some(15.0)),
+            Some("plug")
+        );
     }
 }
 

@@ -147,3 +147,127 @@ modules {
     assert_eq!(config.bars.len(), 1);
     assert_eq!(config.modules.len(), 1);
 }
+
+#[test]
+fn parse_battery_icons() {
+    let kdl = r#"
+modules {
+    module "battery" {
+        icons {
+            icon "low" at=10
+            icon "plug" state="charging"
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    match &config.modules[0].params {
+        crate::config::ModuleParams::Battery(cfg) => {
+            assert_eq!(cfg.icons.thresholds[0].at, 10.0);
+            assert_eq!(cfg.icons.thresholds[0].icon, "low");
+            assert_eq!(
+                cfg.icons.states.get("charging").map(String::as_str),
+                Some("plug")
+            );
+        }
+        other => panic!("expected Battery params, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_icons_rejects_missing_matcher() {
+    let kdl = r#"modules { module "battery" { icons { icon "low" } } }"#;
+    let err = parse(kdl).unwrap_err();
+    assert!(err.to_string().contains("expected exactly one of"));
+}
+
+#[test]
+fn parse_icons_rejects_both_matchers() {
+    let kdl = r#"modules { module "battery" { icons { icon "low" at=10 state="charging" } } }"#;
+    let err = parse(kdl).unwrap_err();
+    assert!(err.to_string().contains("expected exactly one of"));
+}
+
+#[test]
+fn parse_icons_rejects_duplicate_state() {
+    let kdl = r#"
+modules {
+    module "battery" {
+        icons {
+            icon "plug" state="charging"
+            icon "bolt" state="charging"
+        }
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err();
+    assert!(err.to_string().contains("duplicate state"));
+}
+
+#[test]
+fn parse_icons_rejects_duplicate_threshold() {
+    let kdl = r#"
+modules {
+    module "battery" {
+        icons {
+            icon "low" at=10
+            icon "also-low" at=10
+        }
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err();
+    assert!(err.to_string().contains("duplicate threshold"));
+}
+
+#[test]
+fn parse_volume_icons_preserves_step() {
+    let kdl = r#"
+modules {
+    module "volume" {
+        step 8
+        icons {
+            icon "muted" state="muted"
+            icon "loud" at=66
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    match &config.modules[0].params {
+        crate::config::ModuleParams::Volume(cfg) => {
+            assert_eq!(cfg.step, 8);
+            assert_eq!(cfg.icons.thresholds[0].at, 66.0);
+            assert_eq!(
+                cfg.icons.states.get("muted").map(String::as_str),
+                Some("muted")
+            );
+        }
+        other => panic!("expected Volume params, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_network_icons() {
+    let kdl = r#"
+modules {
+    module "network" {
+        icons {
+            icon "ok" state="full"
+            icon "off" state="none"
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    match &config.modules[0].params {
+        crate::config::ModuleParams::Network(cfg) => {
+            assert_eq!(cfg.icons.states.get("full").map(String::as_str), Some("ok"));
+            assert_eq!(
+                cfg.icons.states.get("none").map(String::as_str),
+                Some("off")
+            );
+        }
+        other => panic!("expected Network params, got {other:?}"),
+    }
+}

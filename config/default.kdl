@@ -97,17 +97,39 @@ modules {
     module "volume" {
         // Volume adjustment per scroll event, as a percentage. Range: 1–100. Default: 5.
         step 5
+        // Optional state/value icons. Thresholds mean "at or above".
+        // icons {
+        //     icon "✕" state="muted"
+        //     icon "░" at=1
+        //     icon "▓" at=33
+        //     icon "◈" at=66
+        // }
     }
 
     // network: network connectivity status (connected/disconnected/interface type).
-    // No configurable parameters.
-    module "network"
+    module "network" {
+        // Optional connectivity-state icons.
+        // icons {
+        //     icon "◆" state="full"
+        //     icon "◈" state="limited"
+        //     icon "✕" state="none"
+        // }
+    }
 
     // battery: charge level and charging/discharging state.
     module "battery" {
         // Percentage at or below which the critical badge and alert color appear.
         // Range: 0–100. Default: 15.
         critical-threshold 15
+        // Optional state/value icons. State icons take precedence over thresholds.
+        // icons {
+        //     icon "⚡" state="charging"
+        //     icon "▏" at=0
+        //     icon "░" at=16
+        //     icon "▒" at=31
+        //     icon "▓" at=61
+        //     icon "█" at=96
+        // }
     }
 
     // clock: current time and date display.

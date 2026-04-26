@@ -261,7 +261,11 @@ pub(crate) fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
 }
 
 fn network_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    Box::new(network::NetworkModule::new(ModuleId::new(&mc.name)))
+    let icons = match &mc.params {
+        ModuleParams::Network(cfg) => cfg.icons.clone(),
+        _ => NetworkConfig::default().icons,
+    };
+    Box::new(network::NetworkModule::new(ModuleId::new(&mc.name), icons))
 }
 
 fn battery_synthesized_params() -> ModuleParams {
@@ -277,7 +281,7 @@ fn focused_window_synthesized_params() -> ModuleParams {
 }
 
 fn network_synthesized_params() -> ModuleParams {
-    ModuleParams::Network(NetworkConfig)
+    ModuleParams::Network(NetworkConfig::default())
 }
 
 fn tray_synthesized_params() -> ModuleParams {
@@ -285,21 +289,32 @@ fn tray_synthesized_params() -> ModuleParams {
 }
 
 fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    let step = match &mc.params {
-        ModuleParams::Volume(cfg) => cfg.step,
-        _ => VolumeConfig::default().step,
+    let (step, icons) = match &mc.params {
+        ModuleParams::Volume(cfg) => (cfg.step, cfg.icons.clone()),
+        _ => {
+            let default = VolumeConfig::default();
+            (default.step, default.icons)
+        }
     };
-    Box::new(volume::VolumeModule::new(ModuleId::new(&mc.name), step))
+    Box::new(volume::VolumeModule::new(
+        ModuleId::new(&mc.name),
+        step,
+        icons,
+    ))
 }
 
 fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    let threshold = match &mc.params {
-        ModuleParams::Battery(cfg) => cfg.critical_threshold,
-        _ => BatteryConfig::default().critical_threshold,
+    let (threshold, icons) = match &mc.params {
+        ModuleParams::Battery(cfg) => (cfg.critical_threshold, cfg.icons.clone()),
+        _ => {
+            let default = BatteryConfig::default();
+            (default.critical_threshold, default.icons)
+        }
     };
     Box::new(battery::BatteryModule::new(
         ModuleId::new(&mc.name),
         threshold,
+        icons,
     ))
 }
 

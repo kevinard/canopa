@@ -10,6 +10,7 @@ mod battery;
 mod button;
 mod clock;
 mod focused_window;
+mod icons;
 mod network;
 mod script;
 mod tray;

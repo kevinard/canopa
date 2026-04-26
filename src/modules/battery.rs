@@ -61,13 +61,19 @@ pub(super) struct BatteryModule {
     id: crate::modules::ModuleId,
     /// Percentage threshold for CriticalBadge and red icon. Set from config at construction.
     critical_threshold: u8,
+    icons: crate::config::IconRulesConfig,
 }
 
 impl BatteryModule {
-    pub(super) fn new(id: crate::modules::ModuleId, critical_threshold: u8) -> Self {
+    pub(super) fn new(
+        id: crate::modules::ModuleId,
+        critical_threshold: u8,
+        icons: crate::config::IconRulesConfig,
+    ) -> Self {
         BatteryModule {
             id,
             critical_threshold,
+            icons,
         }
     }
 }
@@ -75,10 +81,16 @@ impl BatteryModule {
 impl crate::modules::view::IconLabel for BatteryModule {
     fn icon(&self, state: &crate::modules::ModuleState) -> String {
         match state {
-            crate::modules::ModuleState::Battery(s) if s.is_charging => "⚡".to_owned(),
-            crate::modules::ModuleState::Battery(s) => {
-                tier_icon(charge_tier(s.percentage, self.critical_threshold)).to_owned()
-            }
+            crate::modules::ModuleState::Battery(s) if s.is_charging => self
+                .icons
+                .icon_for_state_or_value(Some("charging"), Some(s.percentage))
+                .unwrap_or("⚡")
+                .to_owned(),
+            crate::modules::ModuleState::Battery(s) => self
+                .icons
+                .icon_for_value(s.percentage)
+                .unwrap_or_else(|| tier_icon(charge_tier(s.percentage, self.critical_threshold)))
+                .to_owned(),
             _ => String::new(),
         }
     }
@@ -127,11 +139,7 @@ impl crate::modules::Module for BatteryModule {
             _ => return iced::widget::Space::new().into(),
         };
 
-        let icon_str = if battery.is_charging {
-            "⚡"
-        } else {
-            tier_icon(charge_tier(battery.percentage, self.critical_threshold))
-        };
+        let icon_str = <Self as crate::modules::view::IconLabel>::icon(self, state);
         let color = icon_color(
             battery.percentage,
             battery.is_charging,
@@ -197,11 +205,18 @@ impl crate::modules::Module for BatteryModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{IconRulesConfig, IconThreshold};
     use crate::modules::Module;
+    use crate::modules::view::IconLabel;
+    use std::collections::HashMap;
 
     #[test]
     fn battery_module_id_is_battery() {
-        let m = BatteryModule::new(crate::modules::ModuleId::new("battery"), 15);
+        let m = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            IconRulesConfig::default(),
+        );
         assert_eq!(m.id().0, "battery");
         assert_eq!(m.module_type(), "battery");
     }
@@ -249,5 +264,61 @@ mod tests {
     #[test]
     fn icon_color_normal_returns_accent() {
         assert_eq!(icon_color(80.0, false, 15), theme::ACCENT);
+    }
+
+    #[test]
+    fn battery_custom_charging_icon_overrides_threshold() {
+        let mut states = HashMap::new();
+        states.insert("charging".to_string(), "plug".to_string());
+        let icons = IconRulesConfig {
+            states,
+            thresholds: vec![IconThreshold {
+                at: 10.0,
+                icon: "low".to_string(),
+            }],
+        };
+        let m = BatteryModule::new(crate::modules::ModuleId::new("battery"), 15, icons);
+        let state = crate::modules::ModuleState::Battery(BatteryState {
+            percentage: 20.0,
+            is_charging: true,
+        });
+
+        assert_eq!(m.icon(&state), "plug");
+    }
+
+    #[test]
+    fn battery_custom_threshold_icon_overrides_builtin_tier() {
+        let icons = IconRulesConfig {
+            states: HashMap::new(),
+            thresholds: vec![IconThreshold {
+                at: 50.0,
+                icon: "half".to_string(),
+            }],
+        };
+        let m = BatteryModule::new(crate::modules::ModuleId::new("battery"), 15, icons);
+        let state = crate::modules::ModuleState::Battery(BatteryState {
+            percentage: 75.0,
+            is_charging: false,
+        });
+
+        assert_eq!(m.icon(&state), "half");
+    }
+
+    #[test]
+    fn battery_falls_back_to_builtin_icon_without_matching_rule() {
+        let icons = IconRulesConfig {
+            states: HashMap::new(),
+            thresholds: vec![IconThreshold {
+                at: 90.0,
+                icon: "full".to_string(),
+            }],
+        };
+        let m = BatteryModule::new(crate::modules::ModuleId::new("battery"), 15, icons);
+        let state = crate::modules::ModuleState::Battery(BatteryState {
+            percentage: 75.0,
+            is_charging: false,
+        });
+
+        assert_eq!(m.icon(&state), "▓");
     }
 }

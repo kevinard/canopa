@@ -50,20 +50,30 @@ fn tier_color(tier: u8) -> iced::Color {
 pub(super) struct VolumeModule {
     id: crate::modules::ModuleId,
     step: u8,
+    icons: crate::config::IconRulesConfig,
 }
 
 impl VolumeModule {
-    pub(super) fn new(id: crate::modules::ModuleId, step: u8) -> Self {
-        VolumeModule { id, step }
+    pub(super) fn new(
+        id: crate::modules::ModuleId,
+        step: u8,
+        icons: crate::config::IconRulesConfig,
+    ) -> Self {
+        VolumeModule { id, step, icons }
     }
 }
 
 impl crate::modules::view::IconLabel for VolumeModule {
     fn icon(&self, state: &crate::modules::ModuleState) -> String {
         match state {
-            crate::modules::ModuleState::Volume(s) => {
-                tier_icon(volume_tier(s.volume, s.muted)).to_owned()
-            }
+            crate::modules::ModuleState::Volume(s) => self
+                .icons
+                .icon_for_state_or_value(
+                    (volume_tier(s.volume, s.muted) == 0).then_some("muted"),
+                    Some(s.volume),
+                )
+                .unwrap_or_else(|| tier_icon(volume_tier(s.volume, s.muted)))
+                .to_owned(),
             _ => String::new(),
         }
     }
@@ -161,11 +171,18 @@ impl crate::modules::Module for VolumeModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{IconRulesConfig, IconThreshold};
     use crate::modules::Module;
+    use crate::modules::view::IconLabel;
+    use std::collections::HashMap;
 
     #[test]
     fn volume_module_id_is_volume() {
-        let m = VolumeModule::new(crate::modules::ModuleId::new("volume"), 5);
+        let m = VolumeModule::new(
+            crate::modules::ModuleId::new("volume"),
+            5,
+            IconRulesConfig::default(),
+        );
         assert_eq!(m.id().0, "volume");
         assert_eq!(m.module_type(), "volume");
     }
@@ -203,5 +220,61 @@ mod tests {
     #[test]
     fn volume_tier_high() {
         assert_eq!(volume_tier(80.0, false), 3);
+    }
+
+    #[test]
+    fn volume_custom_muted_icon_overrides_threshold() {
+        let mut states = HashMap::new();
+        states.insert("muted".to_string(), "mute".to_string());
+        let icons = IconRulesConfig {
+            states,
+            thresholds: vec![IconThreshold {
+                at: 10.0,
+                icon: "low".to_string(),
+            }],
+        };
+        let m = VolumeModule::new(crate::modules::ModuleId::new("volume"), 5, icons);
+        let state = crate::modules::ModuleState::Volume(VolumeState {
+            volume: 40.0,
+            muted: true,
+        });
+
+        assert_eq!(m.icon(&state), "mute");
+    }
+
+    #[test]
+    fn volume_custom_threshold_icon_overrides_builtin_tier() {
+        let icons = IconRulesConfig {
+            states: HashMap::new(),
+            thresholds: vec![IconThreshold {
+                at: 66.0,
+                icon: "loud".to_string(),
+            }],
+        };
+        let m = VolumeModule::new(crate::modules::ModuleId::new("volume"), 5, icons);
+        let state = crate::modules::ModuleState::Volume(VolumeState {
+            volume: 80.0,
+            muted: false,
+        });
+
+        assert_eq!(m.icon(&state), "loud");
+    }
+
+    #[test]
+    fn volume_falls_back_to_builtin_icon_without_matching_rule() {
+        let icons = IconRulesConfig {
+            states: HashMap::new(),
+            thresholds: vec![IconThreshold {
+                at: 90.0,
+                icon: "max".to_string(),
+            }],
+        };
+        let m = VolumeModule::new(crate::modules::ModuleId::new("volume"), 5, icons);
+        let state = crate::modules::ModuleState::Volume(VolumeState {
+            volume: 80.0,
+            muted: false,
+        });
+
+        assert_eq!(m.icon(&state), "◈");
     }
 }

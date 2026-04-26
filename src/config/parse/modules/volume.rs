@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
 use super::super::{error, kdl};
+use super::icons;
 use crate::config::VolumeConfig;
 
 pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> {
@@ -15,7 +16,8 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> 
         100,
         &error::field_path(idx, "volume", "step"),
     )?;
-    Ok(VolumeConfig { step })
+    let icons = icons::parse_optional(children, &error::module_path(idx, "volume"))?;
+    Ok(VolumeConfig { step, icons })
 }
 
 #[cfg(test)]

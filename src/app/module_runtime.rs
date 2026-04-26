@@ -119,6 +119,7 @@ mod tests {
                 module_type: "battery".into(),
                 params: ModuleParams::Battery(BatteryConfig {
                     critical_threshold: 15,
+                    ..Default::default()
                 }),
             }],
             ..Default::default()
@@ -133,7 +134,7 @@ mod tests {
             modules: vec![ModuleConfig {
                 name: "network".into(),
                 module_type: "network".into(),
-                params: ModuleParams::Network(NetworkConfig),
+                params: ModuleParams::Network(NetworkConfig::default()),
             }],
             ..Default::default()
         };
@@ -147,7 +148,10 @@ mod tests {
             modules: vec![ModuleConfig {
                 name: "volume".into(),
                 module_type: "volume".into(),
-                params: ModuleParams::Volume(VolumeConfig { step: 5 }),
+                params: ModuleParams::Volume(VolumeConfig {
+                    step: 5,
+                    ..Default::default()
+                }),
             }],
             ..Default::default()
         };

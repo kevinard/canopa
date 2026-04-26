@@ -35,6 +35,14 @@ fn icon_str(connectivity: &NetworkConnectivity) -> &'static str {
     }
 }
 
+fn connectivity_state(connectivity: &NetworkConnectivity) -> &'static str {
+    match connectivity {
+        NetworkConnectivity::Full => "full",
+        NetworkConnectivity::Limited => "limited",
+        NetworkConnectivity::None => "none",
+    }
+}
+
 fn icon_color(connectivity: &NetworkConnectivity) -> iced::Color {
     match connectivity {
         NetworkConnectivity::Full => theme::ACCENT,
@@ -45,18 +53,23 @@ fn icon_color(connectivity: &NetworkConnectivity) -> iced::Color {
 
 pub(super) struct NetworkModule {
     id: crate::modules::ModuleId,
+    icons: crate::config::IconRulesConfig,
 }
 
 impl NetworkModule {
-    pub(super) fn new(id: crate::modules::ModuleId) -> Self {
-        NetworkModule { id }
+    pub(super) fn new(id: crate::modules::ModuleId, icons: crate::config::IconRulesConfig) -> Self {
+        NetworkModule { id, icons }
     }
 }
 
 impl crate::modules::view::IconLabel for NetworkModule {
     fn icon(&self, state: &crate::modules::ModuleState) -> String {
         match state {
-            crate::modules::ModuleState::Network(s) => icon_str(&s.connectivity).to_owned(),
+            crate::modules::ModuleState::Network(s) => self
+                .icons
+                .icon_for_state(connectivity_state(&s.connectivity))
+                .unwrap_or_else(|| icon_str(&s.connectivity))
+                .to_owned(),
             _ => String::new(),
         }
     }
@@ -142,11 +155,17 @@ impl crate::modules::Module for NetworkModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::IconRulesConfig;
     use crate::modules::Module;
+    use crate::modules::view::IconLabel;
+    use std::collections::HashMap;
 
     #[test]
     fn network_module_id_is_network() {
-        let m = NetworkModule::new(crate::modules::ModuleId::new("network"));
+        let m = NetworkModule::new(
+            crate::modules::ModuleId::new("network"),
+            IconRulesConfig::default(),
+        );
         assert_eq!(m.id().0, "network");
         assert_eq!(m.module_type(), "network");
     }
@@ -171,5 +190,43 @@ mod tests {
             label: Some("Home WiFi".to_string()),
         };
         assert_eq!(s.label.as_deref(), Some("Home WiFi"));
+    }
+
+    #[test]
+    fn network_custom_state_icon_overrides_builtin_icon() {
+        let mut states = HashMap::new();
+        states.insert("full".to_string(), "ok".to_string());
+        let m = NetworkModule::new(
+            crate::modules::ModuleId::new("network"),
+            IconRulesConfig {
+                states,
+                thresholds: vec![],
+            },
+        );
+        let state = crate::modules::ModuleState::Network(NetworkState {
+            connectivity: NetworkConnectivity::Full,
+            label: None,
+        });
+
+        assert_eq!(m.icon(&state), "ok");
+    }
+
+    #[test]
+    fn network_falls_back_to_builtin_icon_without_matching_rule() {
+        let mut states = HashMap::new();
+        states.insert("none".to_string(), "off".to_string());
+        let m = NetworkModule::new(
+            crate::modules::ModuleId::new("network"),
+            IconRulesConfig {
+                states,
+                thresholds: vec![],
+            },
+        );
+        let state = crate::modules::ModuleState::Network(NetworkState {
+            connectivity: NetworkConnectivity::Full,
+            label: None,
+        });
+
+        assert_eq!(m.icon(&state), "◆");
     }
 }
