@@ -14,6 +14,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<NetworkConfig>
         children,
         &error::module_path(idx, "network"),
         &["icon", "value", "label", "state"],
+        crate::config::states::NETWORK,
     )?;
     Ok(NetworkConfig { icons, format })
 }

@@ -23,6 +23,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<BatteryConfig>
         children,
         &error::module_path(idx, "battery"),
         &["icon", "value", "percent", "state"],
+        crate::config::states::BATTERY,
     )?;
     Ok(BatteryConfig {
         critical_threshold,

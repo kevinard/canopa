@@ -12,6 +12,7 @@ mod clock;
 mod focused_window;
 mod formats;
 mod icons;
+mod segment_styles;
 mod network;
 mod script;
 mod tray;

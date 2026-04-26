@@ -45,6 +45,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> 
         children,
         &error::module_path(idx, "script"),
         &["icon", "value", "output"],
+        crate::config::states::EMPTY,
     )?;
 
     Ok(ScriptConfig {

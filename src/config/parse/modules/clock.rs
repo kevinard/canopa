@@ -30,6 +30,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
         children,
         &error::module_path(idx, "clock"),
         &["icon", "value", "time", "date"],
+        crate::config::states::EMPTY,
     )?;
 
     Ok(ClockConfig {

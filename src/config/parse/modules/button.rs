@@ -34,6 +34,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ButtonConfig> 
         children,
         &error::module_path(idx, "button"),
         &["icon", "value", "label"],
+        crate::config::states::EMPTY,
     )?;
 
     Ok(ButtonConfig {

@@ -12,6 +12,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<FocusedWindowC
         children,
         &error::module_path(idx, "focused-window"),
         &["icon", "value", "title"],
+        crate::config::states::EMPTY,
     )?;
     Ok(FocusedWindowConfig { format })
 }

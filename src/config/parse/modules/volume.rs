@@ -22,6 +22,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> 
         children,
         &error::module_path(idx, "volume"),
         &["icon", "value", "percent", "state"],
+        crate::config::states::VOLUME,
     )?;
     Ok(VolumeConfig {
         step,

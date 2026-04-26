@@ -15,6 +15,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<WorkspacesConf
         children,
         &error::module_path(idx, "workspaces"),
         &["icon", "value", "index", "name", "label", "state"],
+        crate::config::states::WORKSPACES,
     )?;
 
     for ws_node in children.nodes() {

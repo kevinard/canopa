@@ -6,20 +6,29 @@ pub(super) fn parse_optional(
     children: &KdlDocument,
     path: &str,
     allowed: &[&str],
+    allowed_states: &[&str],
 ) -> anyhow::Result<FormatConfig> {
     Ok(FormatConfig {
-        collapsed: parse_field(children, "format", &format!("{path}.format"), allowed)?,
+        collapsed: parse_field(
+            children,
+            "format",
+            &format!("{path}.format"),
+            allowed,
+            allowed_states,
+        )?,
         expanded: parse_field(
             children,
             "expanded-format",
             &format!("{path}.expanded-format"),
             allowed,
+            allowed_states,
         )?,
         horizontal: parse_field(
             children,
             "horizontal-format",
             &format!("{path}.horizontal-format"),
             allowed,
+            allowed_states,
         )?,
     })
 }
@@ -41,16 +50,12 @@ fn parse_field(
     field: &str,
     path: &str,
     allowed: &[&str],
+    allowed_states: &[&str],
 ) -> anyhow::Result<Option<FormatTemplate>> {
     let Some(node) = children.get(field) else {
         return Ok(None);
     };
-    let values: Vec<&str> = node
-        .entries()
-        .iter()
-        .filter(|entry| entry.name().is_none())
-        .map(|entry| entry.value().as_string())
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| anyhow::anyhow!("{path}: expected string value(s)."))?;
-    Ok(Some(FormatTemplate::parse(&values, allowed, path)?))
+    let segments =
+        super::segment_styles::parse_segments(node, allowed, allowed_states, path)?;
+    Ok(Some(FormatTemplate::from_styled(segments)))
 }
