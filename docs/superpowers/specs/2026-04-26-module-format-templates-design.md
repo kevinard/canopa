@@ -5,13 +5,13 @@
 
 ## Summary
 
-Add shared text format templates for every non-tray module. Users can configure where module values appear in rendered text with `{placeholder}` syntax, including a common `{icon}` placeholder that inserts the module's selected icon. Existing configs keep their current behavior unless `format` or `expanded-format` is configured.
+Add shared text format templates for every non-tray module. Users can configure where module values appear in rendered text with `{placeholder}` syntax, including a common `{icon}` placeholder that inserts the module's selected icon. Existing configs keep their current behavior unless `format`, `expanded-format`, or `horizontal-format` is configured.
 
 This builds on the shared icon-rules work: icon selection remains separate, but format templates can include the resolved icon via `{icon}`.
 
 ## Goals
 
-- Provide common `format` and `expanded-format` fields for every module except tray.
+- Provide common `format`, `expanded-format`, and `horizontal-format` fields for every module except tray.
 - Use `{value}` placeholders, with `{{` and `}}` escaping literal braces.
 - Make `{icon}` available to every formatted module.
 - Preserve current module output by default.
@@ -32,6 +32,7 @@ Each non-tray module may define:
 ```kdl
 format "<template>"
 expanded-format "<template>"
+horizontal-format "<template>"
 ```
 
 Examples:
@@ -40,16 +41,19 @@ Examples:
 module "battery" {
     format "{icon} {value}%"
     expanded-format "{icon} {value}% {state}"
+    horizontal-format "{icon} {value}%"
 }
 
 module "volume" {
     format "{icon} {value}%"
     expanded-format "{icon} {state}: {value}%"
+    horizontal-format "{icon} {value}%"
 }
 
 module "network" {
     format "{icon} {value}"
     expanded-format "{icon} {label} ({state})"
+    horizontal-format "{icon} {state}"
 }
 
 module "clock" {
@@ -57,28 +61,38 @@ module "clock" {
     date-format "%a %d %b"
     format "{icon} {time}"
     expanded-format "{icon} {time}\n{date}"
+    horizontal-format "{icon} {time}"
 }
 
 module "focused-window" {
     format "{icon}"
     expanded-format "{title}"
+    horizontal-format "{title}"
 }
 
 module "script" {
     format "{icon} {value}"
+    horizontal-format "{icon} {output}"
 }
 
 module "button" {
     format "{icon}"
     expanded-format "{icon} {label}"
+    horizontal-format "{icon} {label}"
 }
 
 module "workspaces" {
     format "{icon}{label}"
+    horizontal-format "{icon}"
 }
 ```
 
-If `expanded-format` is absent, expanded and horizontal text use `format` when that is present. If both are absent, the module uses its current hard-coded display.
+Fallback order:
+
+- Collapsed/primary rendering uses `format` when present.
+- Expanded rendering uses `expanded-format` when present, otherwise `format` when present.
+- Horizontal rendering uses `horizontal-format` when present, otherwise `expanded-format` when present, otherwise `format` when present.
+- If none of the relevant fields are present, the module uses its current hard-coded display.
 
 ## Shared Types
 
@@ -88,6 +102,7 @@ Add shared template types in `src/config.rs`:
 pub struct FormatConfig {
     pub collapsed: Option<TextTemplate>,
     pub expanded: Option<TextTemplate>,
+    pub horizontal: Option<TextTemplate>,
 }
 
 pub struct TextTemplate {
@@ -182,21 +197,21 @@ For each runtime workspace item:
 
 ## Rendering Behavior
 
-For modules that already use `IconLabel`, a configured `format` replaces the label string in expanded and horizontal views. Collapsed views that are icon-only remain icon-only unless the module already displays text in the collapsed layout.
+For modules that already use `IconLabel`, configured templates replace the label string for the matching render mode: `expanded-format` for expanded vertical bars, `horizontal-format` for horizontal bars, and `format` where the module displays collapsed text. Collapsed views that are icon-only remain icon-only unless the module already displays text in the collapsed layout or a configured `format` deliberately includes text.
 
 For custom-layout modules:
 
-- Clock collapsed uses `format` when present; expanded uses `expanded-format` when present, otherwise `format`.
+- Clock collapsed uses `format` when present; expanded uses `expanded-format` when present, otherwise `format`; horizontal uses `horizontal-format` when present, otherwise the normal fallback order.
 - Script collapsed applies `format` before the existing five-character truncation.
 - Focused-window collapsed can use `format` when configured; otherwise it remains icon-only.
 - Button collapsed can use `format` when configured; otherwise it remains icon-only.
-- Workspace items use `format` for both horizontal and vertical item content; they do not use `expanded-format` because individual workspace items do not have an expanded alternate view.
+- Workspace items use `format` for vertical item content and `horizontal-format` for horizontal item content. If `horizontal-format` is absent, they follow the normal fallback order.
 
 The layout code may still split icon and text into separate widgets when that preserves existing styling, but the visible string comes from the template.
 
 ## Parser Design
 
-Add a reusable parser helper for `format` and `expanded-format`, with allowed placeholder lists supplied by each module parser.
+Add a reusable parser helper for `format`, `expanded-format`, and `horizontal-format`, with allowed placeholder lists supplied by each module parser.
 
 Every non-tray module config struct gains:
 
@@ -208,7 +223,7 @@ Tray remains unchanged.
 
 Validation:
 
-- `format` and `expanded-format` must be non-empty strings if present.
+- `format`, `expanded-format`, and `horizontal-format` must be non-empty strings if present.
 - Unknown placeholders are errors with paths such as `modules[0].battery.format`.
 - Invalid braces are errors with the same field path.
 - Duplicate placeholders are allowed.
@@ -230,7 +245,7 @@ Template tests:
 
 Parser tests:
 
-- Parses `format` and `expanded-format` for battery, volume, network, clock, focused-window, script, button, and workspaces.
+- Parses `format`, `expanded-format`, and `horizontal-format` for battery, volume, network, clock, focused-window, script, button, and workspaces.
 - Rejects `format` for tray.
 - Rejects unknown placeholders for a module.
 
