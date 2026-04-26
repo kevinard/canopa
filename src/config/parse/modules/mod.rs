@@ -15,6 +15,7 @@ mod icons;
 mod network;
 mod script;
 mod segment_styles;
+mod states;
 mod tray;
 mod volume;
 mod workspaces;

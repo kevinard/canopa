@@ -42,16 +42,20 @@ fn tier_icon(tier: u8) -> &'static str {
     }
 }
 
-pub(crate) fn battery_state_key(battery: &BatteryState, critical_threshold: u8) -> &'static str {
+/// Resolve the active state name from runtime data + the merged `StatesConfig`.
+/// `is_charging` short-circuits to "charging"; otherwise the rule with the
+/// smallest threshold ≥ percentage wins (with fallback to the highest rule).
+pub(crate) fn battery_state_key(
+    battery: &BatteryState,
+    states: &crate::config::StatesConfig,
+) -> String {
     if battery.is_charging {
-        "charging"
-    } else {
-        match charge_tier(battery.percentage, critical_threshold) {
-            0 => "critical",
-            1 => "low",
-            _ => "normal",
-        }
+        return "charging".to_string();
     }
+    states
+        .resolve(battery.percentage)
+        .unwrap_or("normal")
+        .to_string()
 }
 
 /// Icon color based on state (AC: #2, #5, #6).
@@ -73,6 +77,7 @@ pub(super) struct BatteryModule {
     id: crate::modules::ModuleId,
     /// Percentage threshold for CriticalBadge and red icon. Set from config at construction.
     critical_threshold: u8,
+    states: crate::config::StatesConfig,
     icons: crate::config::IconRulesConfig,
     format: crate::config::FormatConfig,
 }
@@ -81,12 +86,14 @@ impl BatteryModule {
     pub(super) fn new(
         id: crate::modules::ModuleId,
         critical_threshold: u8,
+        states: crate::config::StatesConfig,
         icons: crate::config::IconRulesConfig,
         format: crate::config::FormatConfig,
     ) -> Self {
         BatteryModule {
             id,
             critical_threshold,
+            states,
             icons,
             format,
         }
@@ -108,7 +115,7 @@ impl BatteryModule {
     ) -> Option<Vec<String>> {
         let icon = self.current_icon(battery);
         let value = format!("{}", battery.percentage.round() as u8);
-        let state = battery_state_key(battery, self.critical_threshold).to_string();
+        let state = battery_state_key(battery, &self.states);
         self.format.template_for(mode).map(|template| {
             template.render_segments(&[
                 ("icon", icon),
@@ -151,16 +158,16 @@ impl BatteryModule {
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
         let icon = self.current_icon(battery);
         let value = format!("{}", battery.percentage.round() as u8);
-        let state = battery_state_key(battery, self.critical_threshold);
+        let state = battery_state_key(battery, &self.states);
         self.format.template_for(mode).map(|template| {
             template.render_styled_segments_with_default(
                 &[
                     ("icon", icon),
                     ("value", value.clone()),
                     ("percent", value),
-                    ("state", state.to_string()),
+                    ("state", state.clone()),
                 ],
-                Some(state),
+                Some(&state),
                 default_style,
             )
         })
@@ -469,6 +476,7 @@ mod tests {
         let m = BatteryModule::new(
             crate::modules::ModuleId::new("battery"),
             15,
+            crate::config::StatesConfig::battery_default(),
             IconRulesConfig::default(),
             crate::config::FormatConfig::default(),
         );
@@ -535,6 +543,7 @@ mod tests {
         let m = BatteryModule::new(
             crate::modules::ModuleId::new("battery"),
             15,
+            crate::config::StatesConfig::battery_default(),
             icons,
             crate::config::FormatConfig::default(),
         );
@@ -558,6 +567,7 @@ mod tests {
         let m = BatteryModule::new(
             crate::modules::ModuleId::new("battery"),
             15,
+            crate::config::StatesConfig::battery_default(),
             icons,
             crate::config::FormatConfig::default(),
         );
@@ -581,6 +591,7 @@ mod tests {
         let m = BatteryModule::new(
             crate::modules::ModuleId::new("battery"),
             15,
+            crate::config::StatesConfig::battery_default(),
             icons,
             crate::config::FormatConfig::default(),
         );
@@ -597,6 +608,7 @@ mod tests {
         let m = BatteryModule::new(
             crate::modules::ModuleId::new("battery"),
             15,
+            crate::config::StatesConfig::battery_default(),
             IconRulesConfig::default(),
             format_config("expanded", "{icon} {value}% {state}"),
         );
@@ -616,6 +628,7 @@ mod tests {
         let m = BatteryModule::new(
             crate::modules::ModuleId::new("battery"),
             15,
+            crate::config::StatesConfig::battery_default(),
             IconRulesConfig::default(),
             format_config("collapsed", "{state}"),
         );
@@ -635,6 +648,7 @@ mod tests {
         let m = BatteryModule::new(
             crate::modules::ModuleId::new("battery"),
             15,
+            crate::config::StatesConfig::battery_default(),
             IconRulesConfig::default(),
             styled_format_config(),
         );

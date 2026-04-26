@@ -50,6 +50,7 @@ fn tier_color(tier: u8) -> iced::Color {
 pub(super) struct VolumeModule {
     id: crate::modules::ModuleId,
     step: u8,
+    states: crate::config::StatesConfig,
     icons: crate::config::IconRulesConfig,
     format: crate::config::FormatConfig,
 }
@@ -58,14 +59,27 @@ impl VolumeModule {
     pub(super) fn new(
         id: crate::modules::ModuleId,
         step: u8,
+        states: crate::config::StatesConfig,
         icons: crate::config::IconRulesConfig,
         format: crate::config::FormatConfig,
     ) -> Self {
         VolumeModule {
             id,
             step,
+            states,
             icons,
             format,
+        }
+    }
+
+    fn state_key(&self, volume: &VolumeState) -> String {
+        if volume.muted {
+            "muted".to_string()
+        } else {
+            self.states
+                .resolve(volume.volume)
+                .unwrap_or("unmuted")
+                .to_string()
         }
     }
 
@@ -90,7 +104,7 @@ impl VolumeModule {
             .unwrap_or_else(|| tier_icon(tier))
             .to_string();
         let value = format!("{}", volume.volume.round() as u64);
-        let state = if tier == 0 { "muted" } else { "unmuted" }.to_string();
+        let state = self.state_key(volume);
         self.format.template_for(mode).map(|template| {
             template.render_segments(&[
                 ("icon", icon),
@@ -122,16 +136,16 @@ impl VolumeModule {
             .unwrap_or_else(|| tier_icon(tier))
             .to_string();
         let value = format!("{}", volume.volume.round() as u64);
-        let state = if tier == 0 { "muted" } else { "unmuted" };
+        let state = self.state_key(volume);
         self.format.template_for(mode).map(|template| {
             template.render_styled_segments_with_default(
                 &[
                     ("icon", icon),
                     ("value", value.clone()),
                     ("percent", value),
-                    ("state", state.to_string()),
+                    ("state", state.clone()),
                 ],
-                Some(state),
+                Some(&state),
                 default_style,
             )
         })
@@ -414,6 +428,7 @@ mod tests {
         let m = VolumeModule::new(
             crate::modules::ModuleId::new("volume"),
             5,
+            crate::config::StatesConfig::volume_default(),
             IconRulesConfig::default(),
             crate::config::FormatConfig::default(),
         );
@@ -470,6 +485,7 @@ mod tests {
         let m = VolumeModule::new(
             crate::modules::ModuleId::new("volume"),
             5,
+            crate::config::StatesConfig::volume_default(),
             icons,
             crate::config::FormatConfig::default(),
         );
@@ -493,6 +509,7 @@ mod tests {
         let m = VolumeModule::new(
             crate::modules::ModuleId::new("volume"),
             5,
+            crate::config::StatesConfig::volume_default(),
             icons,
             crate::config::FormatConfig::default(),
         );
@@ -516,6 +533,7 @@ mod tests {
         let m = VolumeModule::new(
             crate::modules::ModuleId::new("volume"),
             5,
+            crate::config::StatesConfig::volume_default(),
             icons,
             crate::config::FormatConfig::default(),
         );
@@ -532,6 +550,7 @@ mod tests {
         let m = VolumeModule::new(
             crate::modules::ModuleId::new("volume"),
             5,
+            crate::config::StatesConfig::volume_default(),
             IconRulesConfig::default(),
             format_config("horizontal", "{icon} {value}%"),
         );
@@ -551,6 +570,7 @@ mod tests {
         let m = VolumeModule::new(
             crate::modules::ModuleId::new("volume"),
             5,
+            crate::config::StatesConfig::volume_default(),
             IconRulesConfig::default(),
             styled_format_config(),
         );

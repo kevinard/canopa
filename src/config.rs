@@ -70,20 +70,102 @@ pub struct WorkspacesConfig {
     pub format: FormatConfig,
 }
 
+/// A single named state with an upper-bound threshold.
+/// `value <= threshold` matches; the smallest matching threshold wins.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateRule {
+    pub name: String,
+    pub threshold: u8,
+}
+
+/// Ordered list of named state rules sorted by threshold ascending.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StatesConfig {
+    pub rules: Vec<StateRule>,
+}
+
+impl StatesConfig {
+    /// Smallest-threshold-that-covers-`value` lookup. Falls back to the
+    /// highest-threshold rule when `value` exceeds every threshold.
+    pub fn resolve(&self, value: f64) -> Option<&str> {
+        let v = value.clamp(0.0, 100.0).round() as u8;
+        self.rules
+            .iter()
+            .find(|rule| rule.threshold >= v)
+            .or_else(|| self.rules.last())
+            .map(|rule| rule.name.as_str())
+    }
+
+    pub fn names(&self) -> Vec<&str> {
+        self.rules.iter().map(|r| r.name.as_str()).collect()
+    }
+
+    /// Replace the rule whose name matches `name`, or insert a new one.
+    /// Re-sorts by threshold ascending.
+    pub fn upsert(&mut self, name: String, threshold: u8) {
+        if let Some(existing) = self.rules.iter_mut().find(|r| r.name == name) {
+            existing.threshold = threshold;
+        } else {
+            self.rules.push(StateRule { name, threshold });
+        }
+        self.rules.sort_by_key(|r| r.threshold);
+    }
+
+    /// Threshold for the rule named `name`, if any.
+    pub fn threshold_of(&self, name: &str) -> Option<u8> {
+        self.rules
+            .iter()
+            .find(|r| r.name == name)
+            .map(|r| r.threshold)
+    }
+
+    pub fn battery_default() -> Self {
+        StatesConfig {
+            rules: vec![
+                StateRule {
+                    name: "critical".into(),
+                    threshold: 15,
+                },
+                StateRule {
+                    name: "low".into(),
+                    threshold: 30,
+                },
+                StateRule {
+                    name: "normal".into(),
+                    threshold: 100,
+                },
+            ],
+        }
+    }
+
+    pub fn volume_default() -> Self {
+        StatesConfig {
+            rules: vec![StateRule {
+                name: "unmuted".into(),
+                threshold: 100,
+            }],
+        }
+    }
+}
+
 /// Configuration for the battery module.
 #[derive(Debug, Clone)]
 pub struct BatteryConfig {
     /// Percentage at or below which the critical badge and red icon appear.
-    /// Default: 15. Valid range: 0–100.
+    /// Derived from `states` (the threshold of the "critical" rule). Falls back
+    /// to 15 when the user removed the "critical" state entirely.
     pub critical_threshold: u8,
+    pub states: StatesConfig,
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
 }
 
 impl Default for BatteryConfig {
     fn default() -> Self {
+        let states = StatesConfig::battery_default();
         BatteryConfig {
-            critical_threshold: 15,
+            critical_threshold: states.threshold_of("critical").unwrap_or(15),
+            states,
             icons: IconRulesConfig::default(),
             format: FormatConfig::default(),
         }
@@ -384,6 +466,7 @@ pub struct FocusedWindowConfig {
 pub struct VolumeConfig {
     /// Volume adjustment step per scroll event (percent, 1–100). Default: 5.
     pub step: u8,
+    pub states: StatesConfig,
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
 }
@@ -392,6 +475,7 @@ impl Default for VolumeConfig {
     fn default() -> Self {
         VolumeConfig {
             step: 5,
+            states: StatesConfig::volume_default(),
             icons: IconRulesConfig::default(),
             format: FormatConfig::default(),
         }

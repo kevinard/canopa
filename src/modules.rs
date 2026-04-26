@@ -319,36 +319,49 @@ fn tray_synthesized_params() -> ModuleParams {
 }
 
 fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    let (step, icons, format) = match &mc.params {
-        ModuleParams::Volume(cfg) => (cfg.step, cfg.icons.clone(), cfg.format.clone()),
+    let (step, states, icons, format) = match &mc.params {
+        ModuleParams::Volume(cfg) => (
+            cfg.step,
+            cfg.states.clone(),
+            cfg.icons.clone(),
+            cfg.format.clone(),
+        ),
         _ => {
             let default = VolumeConfig::default();
-            (default.step, default.icons, default.format)
+            (default.step, default.states, default.icons, default.format)
         }
     };
     Box::new(volume::VolumeModule::new(
         ModuleId::new(&mc.name),
         step,
+        states,
         icons,
         format,
     ))
 }
 
 fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    let (threshold, icons, format) = match &mc.params {
+    let (threshold, states, icons, format) = match &mc.params {
         ModuleParams::Battery(cfg) => (
             cfg.critical_threshold,
+            cfg.states.clone(),
             cfg.icons.clone(),
             cfg.format.clone(),
         ),
         _ => {
             let default = BatteryConfig::default();
-            (default.critical_threshold, default.icons, default.format)
+            (
+                default.critical_threshold,
+                default.states,
+                default.icons,
+                default.format,
+            )
         }
     };
     Box::new(battery::BatteryModule::new(
         ModuleId::new(&mc.name),
         threshold,
+        states,
         icons,
         format,
     ))

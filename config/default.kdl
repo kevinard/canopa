@@ -161,6 +161,14 @@ modules {
     module "volume" {
         // Volume adjustment per scroll event, as a percentage. Range: 1–100. Default: 5.
         step 5
+        //
+        // Optional `states` block: declare custom volume states. The built-in
+        // numeric state is `unmuted` (threshold 100); `muted` is set when the
+        // sink is muted and short-circuits ahead of the numeric resolution.
+        // states {
+        //     state "quiet" threshold=33
+        //     state "loud"  threshold=100
+        // }
         // Optional display templates. Placeholders: {icon}, {value}, {percent}, {state}.
         // format "{icon}"
         // expanded-format "{icon} {value}%"
@@ -225,6 +233,16 @@ modules {
         // Percentage at or below which the critical badge and alert color appear.
         // Range: 0–100. Default: 15.
         critical-threshold 15
+        //
+        // Optional `states` block: declare custom states or override built-in
+        // thresholds. Each `state` has a name and an upper-bound `threshold`.
+        // The active state is the one with the smallest threshold ≥ value.
+        // Built-ins: critical (15), low (30), normal (100). User entries with
+        // a built-in name replace it; new names are added.
+        // states {
+        //     state "critical" threshold=10
+        //     state "needs-charge" threshold=60
+        // }
         // Optional display templates. Placeholders: {icon}, {value}, {percent}, {state}.
         // format "{icon}"
         // expanded-format "{icon} {value}%"
