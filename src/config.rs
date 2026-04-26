@@ -6,7 +6,7 @@ use anyhow::Context;
 use iced_layershell::reexport::Anchor;
 use std::collections::HashMap;
 
-pub use style::{ColorValue, ResolvedStyle, Style, ThemeToken, Weight};
+pub use style::{ColorValue, ResolvedStyle, SegmentStyles, Style, ThemeToken, Weight};
 
 fn is_known_config_module_type(module_type: &str) -> bool {
     debug_assert_eq!(

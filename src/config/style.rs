@@ -140,6 +140,39 @@ pub struct ResolvedStyle {
     pub weight: Option<Weight>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SegmentStyles {
+    None,
+    Static(Style),
+    Stateful {
+        default: Option<Style>,
+        by_state: Vec<(String, Style)>,
+    },
+}
+
+impl Default for SegmentStyles {
+    fn default() -> Self {
+        SegmentStyles::None
+    }
+}
+
+impl SegmentStyles {
+    pub fn resolve_for(&self, state: Option<&str>) -> ResolvedStyle {
+        match self {
+            SegmentStyles::None => ResolvedStyle::default(),
+            SegmentStyles::Static(s) => s.resolve(),
+            SegmentStyles::Stateful { default, by_state } => {
+                if let Some(state) = state {
+                    if let Some((_, style)) = by_state.iter().find(|(k, _)| k == state) {
+                        return style.resolve();
+                    }
+                }
+                default.map(|s| s.resolve()).unwrap_or_default()
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +227,46 @@ mod tests {
         assert_eq!(Weight::parse("bold").unwrap(), Weight::Bold);
         assert!(Weight::parse("extrabold").is_err());
         assert!(Weight::parse("").is_err());
+    }
+
+    #[test]
+    fn segment_styles_none_resolves_empty() {
+        let s = SegmentStyles::None;
+        assert_eq!(s.resolve_for(None), ResolvedStyle::default());
+        assert_eq!(s.resolve_for(Some("critical")), ResolvedStyle::default());
+    }
+
+    #[test]
+    fn segment_styles_static_always_returns_same() {
+        let style = Style { color: Some(ColorValue::Token(ThemeToken::Accent)), ..Default::default() };
+        let s = SegmentStyles::Static(style);
+        let expected = style.resolve();
+        assert_eq!(s.resolve_for(None), expected);
+        assert_eq!(s.resolve_for(Some("critical")), expected);
+    }
+
+    #[test]
+    fn segment_styles_stateful_picks_matching_state() {
+        let default = Style { color: Some(ColorValue::Token(ThemeToken::Accent)), ..Default::default() };
+        let crit = Style { color: Some(ColorValue::Token(ThemeToken::Critical)), ..Default::default() };
+        let s = SegmentStyles::Stateful {
+            default: Some(default),
+            by_state: vec![("critical".into(), crit)],
+        };
+        assert_eq!(s.resolve_for(Some("critical")), crit.resolve());
+        assert_eq!(s.resolve_for(Some("normal")), default.resolve());
+        assert_eq!(s.resolve_for(None), default.resolve());
+    }
+
+    #[test]
+    fn segment_styles_stateful_no_default_no_match_is_empty() {
+        let s = SegmentStyles::Stateful {
+            default: None,
+            by_state: vec![("critical".into(), Style {
+                color: Some(ColorValue::Token(ThemeToken::Critical)),
+                ..Default::default()
+            })],
+        };
+        assert_eq!(s.resolve_for(Some("normal")), ResolvedStyle::default());
     }
 }
