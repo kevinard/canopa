@@ -120,13 +120,13 @@ pub struct IconThreshold {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FormatConfig {
-    pub collapsed: Option<TextTemplate>,
-    pub expanded: Option<TextTemplate>,
-    pub horizontal: Option<TextTemplate>,
+    pub collapsed: Option<FormatTemplate>,
+    pub expanded: Option<FormatTemplate>,
+    pub horizontal: Option<FormatTemplate>,
 }
 
 impl FormatConfig {
-    pub fn template_for(&self, mode: FormatMode) -> Option<&TextTemplate> {
+    pub fn template_for(&self, mode: FormatMode) -> Option<&FormatTemplate> {
         match mode {
             FormatMode::Collapsed => self.collapsed.as_ref(),
             FormatMode::Expanded => self.expanded.as_ref().or_else(|| self.collapsed.as_ref()),
@@ -144,6 +144,35 @@ pub enum FormatMode {
     Collapsed,
     Expanded,
     Horizontal,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormatTemplate {
+    segments: Vec<TextTemplate>,
+}
+
+impl FormatTemplate {
+    pub fn parse(raw_segments: &[&str], allowed: &[&str], path: &str) -> anyhow::Result<Self> {
+        if raw_segments.is_empty() {
+            anyhow::bail!("{path}: expected at least one string value.");
+        }
+        let mut segments = Vec::with_capacity(raw_segments.len());
+        for raw in raw_segments {
+            segments.push(TextTemplate::parse(raw, allowed, path)?);
+        }
+        Ok(FormatTemplate { segments })
+    }
+
+    pub fn render_segments(&self, values: &[(&str, String)]) -> Vec<String> {
+        self.segments
+            .iter()
+            .map(|segment| segment.render_pairs(values))
+            .collect()
+    }
+
+    pub fn render_joined(&self, values: &[(&str, String)]) -> String {
+        self.render_segments(values).join(" ")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -580,6 +609,18 @@ mod format_template_tests {
         let err = TextTemplate::parse("{missing}", &["value"], "test.format").unwrap_err();
 
         assert!(err.to_string().contains("unknown placeholder"));
+    }
+
+    #[test]
+    fn format_template_renders_multiple_segments() {
+        let template =
+            FormatTemplate::parse(&["{icon}", "{value}%"], &["icon", "value"], "test.format")
+                .unwrap();
+
+        assert_eq!(
+            template.render_segments(&[("icon", "▓".to_string()), ("value", "42".to_string())]),
+            vec!["▓".to_string(), "42%".to_string()]
+        );
     }
 }
 

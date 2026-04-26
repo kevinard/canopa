@@ -126,7 +126,7 @@ impl WorkspaceItemModule {
             let label = configured_label.unwrap_or(&index).to_string();
             let icon = configured_icon.unwrap_or(&index).to_string();
             let name = self.workspace.name.clone().unwrap_or_default();
-            template.render_pairs(&[
+            template.render_joined(&[
                 ("icon", icon),
                 ("value", label.clone()),
                 ("index", index),

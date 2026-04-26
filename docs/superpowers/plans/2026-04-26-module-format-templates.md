@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement `format`, `expanded-format`, and `horizontal-format` templates for every non-tray module, with `{icon}` and module-specific placeholders.
+**Goal:** Implement `format`, `expanded-format`, and `horizontal-format` templates for every non-tray module, with `{icon}`, module-specific placeholders, and multiple string segments per field.
 
-**Architecture:** `src/config.rs` owns parsed `FormatConfig` and `TextTemplate` matching. A shared parser helper reads the three format fields with per-module allowed placeholder lists. Rendering code passes placeholder maps into templates per render mode and falls back to current hard-coded output when no template is configured.
+**Architecture:** `src/config.rs` owns parsed `FormatConfig`, `FormatTemplate`, and `TextTemplate` matching. A shared parser helper reads the three format fields with per-module allowed placeholder lists. Rendering code passes placeholder maps into templates per render mode and renders each configured string argument as a separate segment.
 
 **Tech Stack:** Rust, KDL config parser, existing module trait/render helpers, `cargo test`.
 
@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- Modify `src/config.rs`: add `FormatConfig`, `FormatMode`, `TextTemplate`, and fields on all non-tray module configs.
+- Modify `src/config.rs`: add `FormatConfig`, `FormatMode`, `FormatTemplate`, `TextTemplate`, and fields on all non-tray module configs.
 - Create `src/config/parse/modules/formats.rs`: parse `format`, `expanded-format`, `horizontal-format`.
 - Modify module parsers under `src/config/parse/modules/`: call format parser for every non-tray module and reject formats for tray.
 - Modify `src/modules/view.rs`: add a small helper for rendering formatted icon/text strings without changing existing layout when no format is present.
@@ -24,12 +24,12 @@
 
 - [ ] Write tests in `src/config.rs` for substitution, repeated placeholders, escaped braces, unmatched braces, empty placeholders, and disallowed placeholders.
 - [ ] Run `rtk cargo test config::format_template_tests` and verify it fails because the types do not exist.
-- [ ] Implement `FormatConfig`, `FormatMode`, `TextTemplate::parse`, `TextTemplate::render`, and `FormatConfig::template_for`.
+- [ ] Implement `FormatConfig`, `FormatMode`, `FormatTemplate::parse`, `FormatTemplate::render_segments`, `TextTemplate::parse`, `TextTemplate::render`, and `FormatConfig::template_for`.
 - [ ] Run `rtk cargo test config::format_template_tests`; expect PASS.
 
 ## Task 2: Parser Wiring
 
-- [ ] Add parser tests in `src/config/parse/tests.rs` for `format`, `expanded-format`, and `horizontal-format` on battery, volume, network, clock, focused-window, script, button, and workspaces.
+- [ ] Add parser tests in `src/config/parse/tests.rs` for `format`, `expanded-format`, and `horizontal-format` on battery, volume, network, clock, focused-window, script, button, and workspaces, including multiple string arguments such as `format "{icon}" "{value}%"`.
 - [ ] Add parser tests rejecting `format` on tray and rejecting an unknown placeholder for battery.
 - [ ] Run `rtk cargo test config::parse::tests::parse_battery_formats`; expect FAIL before parser implementation.
 - [ ] Create `src/config/parse/modules/formats.rs` and wire it into each non-tray parser.

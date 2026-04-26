@@ -57,7 +57,7 @@ impl ScriptModule {
         mode: crate::config::FormatMode,
     ) -> Option<String> {
         self.format.template_for(mode).map(|template| {
-            template.render_pairs(&[
+            template.render_joined(&[
                 ("icon", ">_".to_string()),
                 ("value", state.output.clone()),
                 ("output", state.output.clone()),

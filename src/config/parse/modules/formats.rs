@@ -1,7 +1,6 @@
 use ::kdl::KdlDocument;
 
-use super::super::kdl;
-use crate::config::{FormatConfig, TextTemplate};
+use crate::config::{FormatConfig, FormatTemplate};
 
 pub(super) fn parse_optional(
     children: &KdlDocument,
@@ -42,12 +41,16 @@ fn parse_field(
     field: &str,
     path: &str,
     allowed: &[&str],
-) -> anyhow::Result<Option<TextTemplate>> {
+) -> anyhow::Result<Option<FormatTemplate>> {
     let Some(node) = children.get(field) else {
         return Ok(None);
     };
-    let value = kdl::required_string_child(children, field, path)?;
-    Ok(Some(
-        TextTemplate::parse(&value, allowed, path).map_err(|err| anyhow::anyhow!("{err}"))?,
-    ))
+    let values: Vec<&str> = node
+        .entries()
+        .iter()
+        .filter(|entry| entry.name().is_none())
+        .map(|entry| entry.value().as_string())
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| anyhow::anyhow!("{path}: expected string value(s)."))?;
+    Ok(Some(FormatTemplate::parse(&values, allowed, path)?))
 }

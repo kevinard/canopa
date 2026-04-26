@@ -277,7 +277,7 @@ fn parse_battery_formats() {
     let kdl = r#"
 modules {
     module "battery" {
-        format "{icon} {value}%"
+        format "{icon}" "{value}%"
         expanded-format "{icon} {state} {percent}%"
         horizontal-format "{icon}{value}"
     }
@@ -287,6 +287,15 @@ modules {
     match &config.modules[0].params {
         crate::config::ModuleParams::Battery(cfg) => {
             assert!(cfg.format.collapsed.is_some());
+            assert_eq!(
+                cfg.format.collapsed.as_ref().unwrap().render_segments(&[
+                    ("icon", "▓".to_string()),
+                    ("value", "42".to_string()),
+                    ("percent", "42".to_string()),
+                    ("state", "discharging".to_string()),
+                ]),
+                vec!["▓".to_string(), "42%".to_string()]
+            );
             assert!(cfg.format.expanded.is_some());
             assert!(cfg.format.horizontal.is_some());
         }

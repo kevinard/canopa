@@ -30,18 +30,18 @@ This builds on the shared icon-rules work: icon selection remains separate, but 
 Each non-tray module may define:
 
 ```kdl
-format "<template>"
-expanded-format "<template>"
-horizontal-format "<template>"
+format "<template>" ["<template>" ...]
+expanded-format "<template>" ["<template>" ...]
+horizontal-format "<template>" ["<template>" ...]
 ```
 
 Examples:
 
 ```kdl
 module "battery" {
-    format "{icon} {value}%"
-    expanded-format "{icon} {value}% {state}"
-    horizontal-format "{icon} {value}%"
+    format "{icon}" "{value}%"
+    expanded-format "{icon}" "{value}%" "{state}"
+    horizontal-format "{icon}" "{value}%"
 }
 
 module "volume" {
@@ -94,15 +94,21 @@ Fallback order:
 - Horizontal rendering uses `horizontal-format` when present, otherwise `expanded-format` when present, otherwise `format` when present.
 - If none of the relevant fields are present, the module uses its current hard-coded display.
 
+Each string argument is one rendered segment. A single string argument behaves like the current combined string format. Multiple string arguments render as separate text/container segments in order, so users can keep icon/value/state pieces independently laid out.
+
 ## Shared Types
 
 Add shared template types in `src/config.rs`:
 
 ```rust
 pub struct FormatConfig {
-    pub collapsed: Option<TextTemplate>,
-    pub expanded: Option<TextTemplate>,
-    pub horizontal: Option<TextTemplate>,
+    pub collapsed: Option<FormatTemplate>,
+    pub expanded: Option<FormatTemplate>,
+    pub horizontal: Option<FormatTemplate>,
+}
+
+pub struct FormatTemplate {
+    segments: Vec<TextTemplate>,
 }
 
 pub struct TextTemplate {
@@ -111,7 +117,7 @@ pub struct TextTemplate {
 }
 ```
 
-`TextTemplate` parses once at config load. Rendering receives a placeholder map and returns the substituted string.
+Each segment `TextTemplate` parses once at config load. Rendering receives a placeholder map and returns one substituted string per segment.
 
 Template parsing rules:
 
@@ -223,7 +229,7 @@ Tray remains unchanged.
 
 Validation:
 
-- `format`, `expanded-format`, and `horizontal-format` must be non-empty strings if present.
+- `format`, `expanded-format`, and `horizontal-format` must include at least one non-empty string if present.
 - Unknown placeholders are errors with paths such as `modules[0].battery.format`.
 - Invalid braces are errors with the same field path.
 - Duplicate placeholders are allowed.
@@ -238,6 +244,7 @@ Template tests:
 
 - Substitutes `{value}`.
 - Substitutes repeated placeholders.
+- Renders multiple template segments in order.
 - Escapes `{{` and `}}`.
 - Rejects unmatched braces.
 - Rejects empty placeholders.

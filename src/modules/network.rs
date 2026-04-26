@@ -82,6 +82,15 @@ impl NetworkModule {
         network: &NetworkState,
         mode: crate::config::FormatMode,
     ) -> Option<String> {
+        self.formatted_segments(network, mode)
+            .map(|segments| segments.join(" "))
+    }
+
+    fn formatted_segments(
+        &self,
+        network: &NetworkState,
+        mode: crate::config::FormatMode,
+    ) -> Option<Vec<String>> {
         let icon = self
             .icons
             .icon_for_state(connectivity_state(&network.connectivity))
@@ -90,7 +99,7 @@ impl NetworkModule {
         let label = Self::default_label(network);
         let state = connectivity_state(&network.connectivity).to_string();
         self.format.template_for(mode).map(|template| {
-            template.render_pairs(&[
+            template.render_segments(&[
                 ("icon", icon),
                 ("value", label.clone()),
                 ("label", label),
@@ -137,6 +146,26 @@ impl crate::modules::view::IconLabel for NetworkModule {
             }
         };
         self.formatted_text(s, mode)
+    }
+
+    fn formatted_segments_for_layout(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+    ) -> Option<Vec<String>> {
+        let crate::modules::ModuleState::Network(s) = state else {
+            return None;
+        };
+        let mode = match layout {
+            crate::modules::view::IconLabelLayout::Collapsed => {
+                crate::config::FormatMode::Collapsed
+            }
+            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
+            crate::modules::view::IconLabelLayout::Horizontal => {
+                crate::config::FormatMode::Horizontal
+            }
+        };
+        self.formatted_segments(s, mode)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -212,8 +241,8 @@ mod tests {
     use std::collections::HashMap;
 
     fn format_config(field: &str, raw: &str) -> crate::config::FormatConfig {
-        let template = crate::config::TextTemplate::parse(
-            raw,
+        let template = crate::config::FormatTemplate::parse(
+            &[raw],
             &["icon", "value", "label", "state"],
             "test.format",
         )

@@ -36,7 +36,7 @@ impl ButtonModule {
 
     fn formatted_text(&self, mode: crate::config::FormatMode) -> Option<String> {
         self.format.template_for(mode).map(|template| {
-            template.render_pairs(&[
+            template.render_joined(&[
                 ("icon", self.icon.clone()),
                 ("value", self.label.clone()),
                 ("label", self.label.clone()),

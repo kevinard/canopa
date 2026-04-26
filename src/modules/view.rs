@@ -32,6 +32,13 @@ pub(super) trait IconLabel {
     ) -> Option<String> {
         None
     }
+    fn formatted_segments_for_layout(
+        &self,
+        _state: &super::ModuleState,
+        _layout: IconLabelLayout,
+    ) -> Option<Vec<String>> {
+        None
+    }
 
     fn color(&self, _state: &super::ModuleState) -> iced::Color {
         crate::theme::TEXT
@@ -123,6 +130,13 @@ pub(super) fn icon_label_view<'a, M>(
 where
     M: IconLabel,
 {
+    if let Some(segments) = module.formatted_segments_for_layout(state, layout) {
+        return match layout {
+            IconLabelLayout::Collapsed => collapsed_segments(segments, module.color(state)),
+            IconLabelLayout::Expanded => expanded_segments(segments),
+            IconLabelLayout::Horizontal => horizontal_segments(segments),
+        };
+    }
     if let Some(text) = module.formatted_text_for_layout(state, layout) {
         return match layout {
             IconLabelLayout::Collapsed => collapsed_icon(text, module.color(state)),
@@ -144,6 +158,57 @@ where
             module.label_for_layout(state, layout),
         ),
     }
+}
+
+fn segment_text<'a>(segment: String, size: u32, color: iced::Color) -> Element<'a, Message> {
+    text(segment).size(size).color(color).into()
+}
+
+fn collapsed_segments<'a>(segments: Vec<String>, color: iced::Color) -> Element<'a, Message> {
+    container(
+        row(segments
+            .into_iter()
+            .map(|segment| segment_text(segment, 16, color))
+            .collect::<Vec<_>>())
+        .spacing(4)
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(20)
+    .align_x(Alignment::Center)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+fn expanded_segments<'a>(segments: Vec<String>) -> Element<'a, Message> {
+    container(
+        row(segments
+            .into_iter()
+            .map(|segment| segment_text(segment, 12, crate::theme::SUBTEXT))
+            .collect::<Vec<_>>())
+        .spacing(4)
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(20)
+    .align_y(Alignment::Center)
+    .padding([0, 6])
+    .into()
+}
+
+fn horizontal_segments<'a>(segments: Vec<String>) -> Element<'a, Message> {
+    container(
+        row(segments
+            .into_iter()
+            .map(|segment| segment_text(segment, 12, crate::theme::SUBTEXT))
+            .collect::<Vec<_>>())
+        .spacing(4)
+        .align_y(Alignment::Center),
+    )
+    .height(Length::Fill)
+    .align_y(Alignment::Center)
+    .padding([0, 6])
+    .into()
 }
 
 fn expanded_text<'a>(label: impl ToString) -> Element<'a, Message> {

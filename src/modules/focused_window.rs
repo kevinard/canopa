@@ -24,7 +24,7 @@ impl FocusedWindowModule {
 
     fn formatted_text(&self, title: &str, mode: crate::config::FormatMode) -> Option<String> {
         self.format.template_for(mode).map(|template| {
-            template.render_pairs(&[
+            template.render_joined(&[
                 ("icon", "□".to_string()),
                 ("value", title.to_string()),
                 ("title", title.to_string()),
