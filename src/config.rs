@@ -151,7 +151,23 @@ pub enum FormatMode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormatTemplate {
-    segments: Vec<TextTemplate>,
+    segments: Vec<StyledSegment>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StyledSegment {
+    template: TextTemplate,
+    styles: SegmentStyles,
+}
+
+impl StyledSegment {
+    pub fn new(template: TextTemplate) -> Self {
+        StyledSegment { template, styles: SegmentStyles::None }
+    }
+
+    pub fn template(&self) -> &TextTemplate { &self.template }
+    pub fn styles(&self) -> &SegmentStyles { &self.styles }
+    pub fn set_styles(&mut self, styles: SegmentStyles) { self.styles = styles; }
 }
 
 impl FormatTemplate {
@@ -161,20 +177,43 @@ impl FormatTemplate {
         }
         let mut segments = Vec::with_capacity(raw_segments.len());
         for raw in raw_segments {
-            segments.push(TextTemplate::parse(raw, allowed, path)?);
+            segments.push(StyledSegment::new(TextTemplate::parse(raw, allowed, path)?));
         }
         Ok(FormatTemplate { segments })
+    }
+
+    pub fn from_styled(segments: Vec<StyledSegment>) -> Self {
+        FormatTemplate { segments }
+    }
+
+    pub fn segments(&self) -> &[StyledSegment] { &self.segments }
+
+    pub fn set_segment_styles(&mut self, index: usize, styles: SegmentStyles) {
+        if let Some(s) = self.segments.get_mut(index) {
+            s.set_styles(styles);
+        }
     }
 
     pub fn render_segments(&self, values: &[(&str, String)]) -> Vec<String> {
         self.segments
             .iter()
-            .map(|segment| segment.render_pairs(values))
+            .map(|s| s.template.render_pairs(values))
             .collect()
     }
 
     pub fn render_joined(&self, values: &[(&str, String)]) -> String {
         self.render_segments(values).join(" ")
+    }
+
+    pub fn render_styled_segments(
+        &self,
+        values: &[(&str, String)],
+        state: Option<&str>,
+    ) -> Vec<(String, ResolvedStyle)> {
+        self.segments
+            .iter()
+            .map(|s| (s.template.render_pairs(values), s.styles.resolve_for(state)))
+            .collect()
     }
 }
 
@@ -624,6 +663,43 @@ mod format_template_tests {
             template.render_segments(&[("icon", "▓".to_string()), ("value", "42".to_string())]),
             vec!["▓".to_string(), "42%".to_string()]
         );
+    }
+
+    #[test]
+    fn render_styled_segments_returns_resolved_style_per_segment() {
+        use crate::config::style::{ColorValue, SegmentStyles, Style, ThemeToken};
+
+        let mut tmpl = FormatTemplate::parse(&["{icon}", "{value}%"], &["icon", "value"], "test.format").unwrap();
+        tmpl.set_segment_styles(0, SegmentStyles::Static(Style {
+            color: Some(ColorValue::Token(ThemeToken::Accent)),
+            ..Default::default()
+        }));
+        let rendered = tmpl.render_styled_segments(
+            &[("icon", "▓".into()), ("value", "42".into())],
+            None,
+        );
+        assert_eq!(rendered.len(), 2);
+        assert_eq!(rendered[0].0, "▓");
+        assert_eq!(rendered[0].1.color, Some(ThemeToken::Accent.resolve()));
+        assert_eq!(rendered[1].0, "42%");
+        assert_eq!(rendered[1].1, ResolvedStyle::default());
+    }
+
+    #[test]
+    fn render_styled_segments_picks_state_keyed_style() {
+        use crate::config::style::{ColorValue, SegmentStyles, Style, ThemeToken};
+
+        let mut tmpl = FormatTemplate::parse(&["{icon}"], &["icon"], "test.format").unwrap();
+        tmpl.set_segment_styles(0, SegmentStyles::Stateful {
+            default: Some(Style { color: Some(ColorValue::Token(ThemeToken::Accent)), ..Default::default() }),
+            by_state: vec![
+                ("critical".into(), Style { color: Some(ColorValue::Token(ThemeToken::Critical)), ..Default::default() }),
+            ],
+        });
+        let crit = tmpl.render_styled_segments(&[("icon", "x".into())], Some("critical"));
+        assert_eq!(crit[0].1.color, Some(ThemeToken::Critical.resolve()));
+        let norm = tmpl.render_styled_segments(&[("icon", "x".into())], Some("normal"));
+        assert_eq!(norm[0].1.color, Some(ThemeToken::Accent.resolve()));
     }
 }
 
