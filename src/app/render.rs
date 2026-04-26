@@ -87,7 +87,8 @@ impl App {
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);
 
-            let module_view = module.view_for_bar(&state, window, is_horizontal, shows_expanded);
+            let module_view =
+                module.view_for_bar(&state, window, is_horizontal, shows_expanded, &bar.style);
             let scroll_id = id.clone();
             let element: Element<'_, Message> =
                 mouse_area(module_frame(module_view, hovered || focused))

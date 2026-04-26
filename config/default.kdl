@@ -48,6 +48,10 @@ bar "main" {
     // for global (out-of-focus) toggling.
     // expand-keybind "Super+e"
 
+    // Optional default style for all module format segments rendered in this bar.
+    // Individual segment styles override these values property by property.
+    // style color="text" size=12 weight="normal"
+
     // Expand/collapse animation timing.
     animation {
         // Duration of the expand animation in milliseconds. Default: 280.

@@ -546,6 +546,40 @@ fn segment_state_on_stateless_module_is_error() {
 }
 
 #[test]
+fn bar_style_parses_shared_module_segment_defaults() {
+    let config = parse(
+        r##"
+        bar "main" {
+            style color="#112233" size=13 weight="light"
+        }
+    "##,
+    )
+    .unwrap();
+
+    use crate::config::style::{ColorValue, Weight};
+    assert_eq!(
+        config.bars[0].style.color,
+        Some(ColorValue::Rgba(iced::Color::from_rgb8(0x11, 0x22, 0x33)))
+    );
+    assert_eq!(config.bars[0].style.size, Some(13.0));
+    assert_eq!(config.bars[0].style.weight, Some(Weight::Light));
+}
+
+#[test]
+fn bar_style_rejects_state_selector() {
+    let err = parse(
+        r#"
+        bar "main" {
+            style state="critical" color="critical"
+        }
+    "#,
+    )
+    .unwrap_err();
+
+    assert!(format!("{err:#}").contains("state"));
+}
+
+#[test]
 fn parse_formats_for_all_non_tray_modules() {
     let kdl = r#"
 modules {

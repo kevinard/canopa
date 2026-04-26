@@ -170,19 +170,23 @@ pub enum SegmentStyles {
 }
 
 impl SegmentStyles {
-    pub fn resolve_for(&self, state: Option<&str>) -> ResolvedStyle {
+    pub fn style_for(&self, state: Option<&str>) -> Style {
         match self {
-            SegmentStyles::None => ResolvedStyle::default(),
-            SegmentStyles::Static(s) => s.resolve(),
+            SegmentStyles::None => Style::default(),
+            SegmentStyles::Static(s) => *s,
             SegmentStyles::Stateful { default, by_state } => {
                 if let Some(state) = state
                     && let Some((_, style)) = by_state.iter().find(|(k, _)| k == state)
                 {
-                    return style.resolve();
+                    return *style;
                 }
-                default.map(|s| s.resolve()).unwrap_or_default()
+                default.unwrap_or_default()
             }
         }
+    }
+
+    pub fn resolve_for(&self, state: Option<&str>) -> ResolvedStyle {
+        self.style_for(state).resolve()
     }
 }
 

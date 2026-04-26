@@ -106,6 +106,15 @@ impl VolumeModule {
         volume: &VolumeState,
         mode: crate::config::FormatMode,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.styled_segments_with_default(volume, mode, &crate::config::Style::default())
+    }
+
+    fn styled_segments_with_default(
+        &self,
+        volume: &VolumeState,
+        mode: crate::config::FormatMode,
+        default_style: &crate::config::Style,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
         let tier = volume_tier(volume.volume, volume.muted);
         let icon = self
             .icons
@@ -115,7 +124,7 @@ impl VolumeModule {
         let value = format!("{}", volume.volume.round() as u64);
         let state = if tier == 0 { "muted" } else { "unmuted" };
         self.format.template_for(mode).map(|template| {
-            template.render_styled_segments(
+            template.render_styled_segments_with_default(
                 &[
                     ("icon", icon),
                     ("value", value.clone()),
@@ -123,6 +132,7 @@ impl VolumeModule {
                     ("state", state.to_string()),
                 ],
                 Some(state),
+                default_style,
             )
         })
     }
@@ -196,6 +206,19 @@ impl crate::modules::view::IconLabel for VolumeModule {
         state: &crate::modules::ModuleState,
         layout: crate::modules::view::IconLabelLayout,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.styled_segments_for_layout_with_default(
+            state,
+            layout,
+            &crate::config::Style::default(),
+        )
+    }
+
+    fn styled_segments_for_layout_with_default(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+        default_style: &crate::config::Style,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
         let crate::modules::ModuleState::Volume(s) = state else {
             return None;
         };
@@ -208,7 +231,7 @@ impl crate::modules::view::IconLabel for VolumeModule {
                 crate::config::FormatMode::Horizontal
             }
         };
-        self.styled_segments(s, mode)
+        self.styled_segments_with_default(s, mode, default_style)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -236,12 +259,23 @@ impl crate::modules::Module for VolumeModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_collapsed_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         match state {
-            crate::modules::ModuleState::Volume(_) => crate::modules::view::icon_label_view(
-                self,
-                state,
-                crate::modules::view::IconLabelLayout::Collapsed,
-            ),
+            crate::modules::ModuleState::Volume(_) => {
+                crate::modules::view::icon_label_view_with_default(
+                    self,
+                    state,
+                    crate::modules::view::IconLabelLayout::Collapsed,
+                    bar_style,
+                )
+            }
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -250,12 +284,23 @@ impl crate::modules::Module for VolumeModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_expanded_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_expanded_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         match state {
-            crate::modules::ModuleState::Volume(_) => crate::modules::view::icon_label_view(
-                self,
-                state,
-                crate::modules::view::IconLabelLayout::Expanded,
-            ),
+            crate::modules::ModuleState::Volume(_) => {
+                crate::modules::view::icon_label_view_with_default(
+                    self,
+                    state,
+                    crate::modules::view::IconLabelLayout::Expanded,
+                    bar_style,
+                )
+            }
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -264,12 +309,23 @@ impl crate::modules::Module for VolumeModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_horizontal_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_horizontal_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         match state {
-            crate::modules::ModuleState::Volume(_) => crate::modules::view::icon_label_view(
-                self,
-                state,
-                crate::modules::view::IconLabelLayout::Horizontal,
-            ),
+            crate::modules::ModuleState::Volume(_) => {
+                crate::modules::view::icon_label_view_with_default(
+                    self,
+                    state,
+                    crate::modules::view::IconLabelLayout::Horizontal,
+                    bar_style,
+                )
+            }
             _ => iced::widget::Space::new().into(),
         }
     }

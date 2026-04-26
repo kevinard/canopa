@@ -152,6 +152,27 @@ pub trait Module: Send + Sync {
     fn view_horizontal(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
         self.view_expanded(state)
     }
+    fn view_collapsed_with_style(
+        &self,
+        state: &ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
+        self.view_collapsed(state)
+    }
+    fn view_expanded_with_style(
+        &self,
+        state: &ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
+        self.view_expanded(state)
+    }
+    fn view_horizontal_with_style(
+        &self,
+        state: &ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
+        self.view_horizontal(state)
+    }
     /// View used when rendering this module inside a bar surface.
     ///
     /// `window` is the bar's window ID; modules that assign widget IDs (e.g. tray icons)
@@ -163,14 +184,15 @@ pub trait Module: Send + Sync {
         window: iced::window::Id,
         horizontal: bool,
         expanded: bool,
+        bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         let _ = window;
         if expanded {
-            self.view_expanded(state)
+            self.view_expanded_with_style(state, bar_style)
         } else if horizontal {
-            self.view_horizontal(state)
+            self.view_horizontal_with_style(state, bar_style)
         } else {
-            self.view_collapsed(state)
+            self.view_collapsed_with_style(state, bar_style)
         }
     }
     fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {

@@ -100,7 +100,11 @@ impl WorkspaceItemModule {
         }
     }
 
-    fn build_view(&self, horizontal: bool) -> iced::Element<'static, crate::app::Message> {
+    fn build_view(
+        &self,
+        horizontal: bool,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'static, crate::app::Message> {
         use iced::widget::{container, text};
         use iced::{Alignment, Background, Length};
 
@@ -115,7 +119,7 @@ impl WorkspaceItemModule {
             crate::config::FormatMode::Collapsed
         };
         let formatted = self.formatted_segments(mode);
-        let styled = self.styled_segments(mode);
+        let styled = self.styled_segments_with_default(mode, bar_style);
 
         if horizontal {
             if let Some(segments) = styled {
@@ -152,20 +156,25 @@ impl WorkspaceItemModule {
                         .map(|icon| icon.to_string())
                         .unwrap_or_else(|| format!("{ws_num}"))
                 });
-            container(text(content).size(10).color(fg))
-                .width(32)
-                .height(Length::Fill)
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
-                .style(move |_theme| container::Style {
-                    background: Some(Background::Color(bg)),
-                    border: iced::Border {
-                        radius: 4.0.into(),
-                        ..Default::default()
-                    },
+            container(crate::modules::view::styled_segment_text(
+                content,
+                10,
+                fg,
+                crate::modules::view::fallback_resolved_style(bar_style),
+            ))
+            .width(32)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
+            .style(move |_theme| container::Style {
+                background: Some(Background::Color(bg)),
+                border: iced::Border {
+                    radius: 4.0.into(),
                     ..Default::default()
-                })
-                .into()
+                },
+                ..Default::default()
+            })
+            .into()
         } else {
             if let Some(segments) = styled {
                 return container(
@@ -196,33 +205,54 @@ impl WorkspaceItemModule {
                 .into();
             }
             if let Some(content) = formatted.map(|segments| segments.join(" ")) {
-                return container(text(content).size(12).color(fg))
-                    .width(Length::Fill)
-                    .height(20)
-                    .align_x(Alignment::Center)
-                    .align_y(Alignment::Center)
-                    .padding([0, 6])
-                    .style(move |_theme| container::Style {
-                        background: Some(Background::Color(bg)),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            ..Default::default()
-                        },
+                return container(crate::modules::view::styled_segment_text(
+                    content,
+                    12,
+                    fg,
+                    crate::modules::view::fallback_resolved_style(bar_style),
+                ))
+                .width(Length::Fill)
+                .height(20)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .padding([0, 6])
+                .style(move |_theme| container::Style {
+                    background: Some(Background::Color(bg)),
+                    border: iced::Border {
+                        radius: 4.0.into(),
                         ..Default::default()
-                    })
-                    .into();
+                    },
+                    ..Default::default()
+                })
+                .into();
             }
             let icon_str = configured_icon;
             let label_str = configured_label;
 
             let mut parts: Vec<iced::Element<'static, crate::app::Message>> = Vec::new();
+            let style = crate::modules::view::fallback_resolved_style(bar_style);
             if let Some(icon) = icon_str {
-                parts.push(text(icon.to_string()).size(12).color(fg).into());
+                parts.push(crate::modules::view::styled_segment_text(
+                    icon.to_string(),
+                    12,
+                    fg,
+                    style,
+                ));
             } else {
-                parts.push(text(format!("{ws_num}")).size(12).color(fg).into());
+                parts.push(crate::modules::view::styled_segment_text(
+                    format!("{ws_num}"),
+                    12,
+                    fg,
+                    style,
+                ));
             }
             if let Some(lbl) = label_str {
-                parts.push(text(lbl.to_string()).size(12).color(fg).into());
+                parts.push(crate::modules::view::styled_segment_text(
+                    lbl.to_string(),
+                    12,
+                    fg,
+                    style,
+                ));
             }
 
             container(
@@ -287,8 +317,20 @@ impl WorkspaceItemModule {
         &self,
         mode: crate::config::FormatMode,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.styled_segments_with_default(mode, &crate::config::Style::default())
+    }
+
+    fn styled_segments_with_default(
+        &self,
+        mode: crate::config::FormatMode,
+        default_style: &crate::config::Style,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
         self.config.format.template_for(mode).map(|template| {
-            template.render_styled_segments(&self.format_values(), Some(self.state_key()))
+            template.render_styled_segments_with_default(
+                &self.format_values(),
+                Some(self.state_key()),
+                default_style,
+            )
         })
     }
 }
@@ -326,6 +368,7 @@ impl crate::modules::Module for WorkspaceItemModule {
         _window: iced::window::Id,
         horizontal: bool,
         _expanded: bool,
+        bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         // state carries the surface output name; filter this workspace by output.
         let surface_output = match state {
@@ -335,7 +378,7 @@ impl crate::modules::Module for WorkspaceItemModule {
         if !surface_output.is_empty() && self.workspace.output.as_deref() != Some(surface_output) {
             return iced::widget::Space::new().into();
         }
-        self.build_view(horizontal)
+        self.build_view(horizontal, bar_style)
     }
 
     fn on_interaction(

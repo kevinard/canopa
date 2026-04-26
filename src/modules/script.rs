@@ -70,14 +70,24 @@ impl ScriptModule {
         state: &ScriptState,
         mode: crate::config::FormatMode,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.styled_segments_with_default(state, mode, &crate::config::Style::default())
+    }
+
+    fn styled_segments_with_default(
+        &self,
+        state: &ScriptState,
+        mode: crate::config::FormatMode,
+        default_style: &crate::config::Style,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
         self.format.template_for(mode).map(|template| {
-            template.render_styled_segments(
+            template.render_styled_segments_with_default(
                 &[
                     ("icon", ">_".to_string()),
                     ("value", state.output.clone()),
                     ("output", state.output.clone()),
                 ],
                 None,
+                default_style,
             )
         })
     }
@@ -129,15 +139,25 @@ impl crate::modules::Module for ScriptModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_collapsed_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{column, text};
+        use iced::widget::column;
         use iced::{Alignment, Length};
 
         match state {
             ModuleState::Script(s) => {
-                if let Some(segments) =
-                    self.styled_segments(s, crate::config::FormatMode::Collapsed)
-                {
+                if let Some(segments) = self.styled_segments_with_default(
+                    s,
+                    crate::config::FormatMode::Collapsed,
+                    bar_style,
+                ) {
                     return iced::widget::row(
                         segments
                             .into_iter()
@@ -160,10 +180,24 @@ impl crate::modules::Module for ScriptModule {
                     .formatted_text(s, crate::config::FormatMode::Collapsed)
                     .unwrap_or_else(|| s.output.clone());
                 let truncated: String = output.chars().take(5).collect();
-                column![text(">_").size(16), text(truncated).size(11),]
-                    .align_x(Alignment::Center)
-                    .width(Length::Fill)
-                    .into()
+                let style = crate::modules::view::fallback_resolved_style(bar_style);
+                column![
+                    crate::modules::view::styled_segment_text(
+                        ">_".to_string(),
+                        16,
+                        crate::theme::TEXT,
+                        style,
+                    ),
+                    crate::modules::view::styled_segment_text(
+                        truncated,
+                        11,
+                        crate::theme::TEXT,
+                        style,
+                    ),
+                ]
+                .align_x(Alignment::Center)
+                .width(Length::Fill)
+                .into()
             }
             _ => iced::widget::Space::new().into(),
         }
@@ -173,14 +207,25 @@ impl crate::modules::Module for ScriptModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_expanded_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_expanded_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{row, text};
+        use iced::widget::row;
         use iced::{Alignment, Length};
 
         match state {
             ModuleState::Script(s) => {
-                if let Some(segments) = self.styled_segments(s, crate::config::FormatMode::Expanded)
-                {
+                if let Some(segments) = self.styled_segments_with_default(
+                    s,
+                    crate::config::FormatMode::Expanded,
+                    bar_style,
+                ) {
                     return row(segments
                         .into_iter()
                         .map(|(segment, style)| {
@@ -200,10 +245,21 @@ impl crate::modules::Module for ScriptModule {
                 let output = self
                     .formatted_text(s, crate::config::FormatMode::Expanded)
                     .unwrap_or_else(|| s.output.clone());
+                let style = crate::modules::view::fallback_resolved_style(bar_style);
                 row![
-                    text(">_").size(16),
+                    crate::modules::view::styled_segment_text(
+                        ">_".to_string(),
+                        16,
+                        crate::theme::TEXT,
+                        style,
+                    ),
                     iced::widget::Space::new().width(Length::Fill),
-                    text(output).size(13),
+                    crate::modules::view::styled_segment_text(
+                        output,
+                        13,
+                        crate::theme::TEXT,
+                        style,
+                    ),
                 ]
                 .align_y(Alignment::Center)
                 .width(Length::Fill)
@@ -217,14 +273,24 @@ impl crate::modules::Module for ScriptModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_horizontal_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_horizontal_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use crate::modules::view::horizontal_icon_label;
+        use crate::modules::view::horizontal_icon_label_with_style;
 
         match state {
             ModuleState::Script(s) => {
-                if let Some(segments) =
-                    self.styled_segments(s, crate::config::FormatMode::Horizontal)
-                {
+                if let Some(segments) = self.styled_segments_with_default(
+                    s,
+                    crate::config::FormatMode::Horizontal,
+                    bar_style,
+                ) {
                     return iced::widget::container(
                         iced::widget::row(
                             segments
@@ -247,11 +313,12 @@ impl crate::modules::Module for ScriptModule {
                     .padding([0, 6])
                     .into();
                 }
-                horizontal_icon_label(
+                horizontal_icon_label_with_style(
                     ">_",
                     crate::theme::TEXT,
                     self.formatted_text(s, crate::config::FormatMode::Horizontal)
                         .unwrap_or_else(|| s.output.clone()),
+                    bar_style,
                 )
             }
             _ => iced::widget::Space::new().into(),

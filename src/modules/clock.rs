@@ -145,8 +145,17 @@ impl ClockModule {
         state: &ClockState,
         mode: crate::config::FormatMode,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.styled_segments_with_default(state, mode, &crate::config::Style::default())
+    }
+
+    fn styled_segments_with_default(
+        &self,
+        state: &ClockState,
+        mode: crate::config::FormatMode,
+        default_style: &crate::config::Style,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
         self.format.template_for(mode).map(|template| {
-            template.render_styled_segments(
+            template.render_styled_segments_with_default(
                 &[
                     ("icon", "⌚".to_string()),
                     ("value", state.time.clone()),
@@ -154,6 +163,7 @@ impl ClockModule {
                     ("date", state.date.clone()),
                 ],
                 None,
+                default_style,
             )
         })
     }
@@ -215,15 +225,25 @@ impl crate::modules::Module for ClockModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_collapsed_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{column, text};
+        use iced::widget::column;
         use iced::{Alignment, Length};
 
         match state {
             ModuleState::Clock(s) => {
-                if let Some(segments) =
-                    self.styled_segments(s, crate::config::FormatMode::Collapsed)
-                {
+                if let Some(segments) = self.styled_segments_with_default(
+                    s,
+                    crate::config::FormatMode::Collapsed,
+                    bar_style,
+                ) {
                     return iced::widget::row(
                         segments
                             .into_iter()
@@ -245,15 +265,34 @@ impl crate::modules::Module for ClockModule {
                 if let Some(formatted) =
                     self.formatted_text(s, crate::config::FormatMode::Collapsed)
                 {
-                    return column![text(formatted).size(11)]
-                        .align_x(Alignment::Center)
-                        .width(Length::Fill)
-                        .into();
-                }
-                column![text("⌚").size(16), text(s.time.clone()).size(11),]
+                    return column![crate::modules::view::styled_segment_text(
+                        formatted,
+                        11,
+                        crate::theme::TEXT,
+                        crate::modules::view::fallback_resolved_style(bar_style),
+                    )]
                     .align_x(Alignment::Center)
                     .width(Length::Fill)
-                    .into()
+                    .into();
+                }
+                let style = crate::modules::view::fallback_resolved_style(bar_style);
+                column![
+                    crate::modules::view::styled_segment_text(
+                        "⌚".to_string(),
+                        16,
+                        crate::theme::TEXT,
+                        style,
+                    ),
+                    crate::modules::view::styled_segment_text(
+                        s.time.clone(),
+                        11,
+                        crate::theme::TEXT,
+                        style,
+                    ),
+                ]
+                .align_x(Alignment::Center)
+                .width(Length::Fill)
+                .into()
             }
             _ => iced::widget::Space::new().into(),
         }
@@ -263,14 +302,25 @@ impl crate::modules::Module for ClockModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_expanded_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_expanded_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{column, row, text};
+        use iced::widget::{column, row};
         use iced::{Alignment, Length};
 
         match state {
             ModuleState::Clock(s) => {
-                if let Some(segments) = self.styled_segments(s, crate::config::FormatMode::Expanded)
-                {
+                if let Some(segments) = self.styled_segments_with_default(
+                    s,
+                    crate::config::FormatMode::Expanded,
+                    bar_style,
+                ) {
                     return row(segments
                         .into_iter()
                         .map(|(segment, style)| {
@@ -289,17 +339,38 @@ impl crate::modules::Module for ClockModule {
                 }
                 if let Some(formatted) = self.formatted_text(s, crate::config::FormatMode::Expanded)
                 {
-                    return text(formatted).size(12).into();
+                    return crate::modules::view::styled_segment_text(
+                        formatted,
+                        12,
+                        crate::theme::TEXT,
+                        crate::modules::view::fallback_resolved_style(bar_style),
+                    );
                 }
+                let style = crate::modules::view::fallback_resolved_style(bar_style);
                 column![
                     row![
-                        text("⌚").size(16),
+                        crate::modules::view::styled_segment_text(
+                            "⌚".to_string(),
+                            16,
+                            crate::theme::TEXT,
+                            style,
+                        ),
                         iced::widget::Space::new().width(Length::Fill),
-                        text(s.time.clone()).size(13),
+                        crate::modules::view::styled_segment_text(
+                            s.time.clone(),
+                            13,
+                            crate::theme::TEXT,
+                            style,
+                        ),
                     ]
                     .align_y(Alignment::Center)
                     .width(Length::Fill),
-                    text(s.date.clone()).size(11),
+                    crate::modules::view::styled_segment_text(
+                        s.date.clone(),
+                        11,
+                        crate::theme::TEXT,
+                        style,
+                    ),
                 ]
                 .width(Length::Fill)
                 .into()
@@ -312,14 +383,24 @@ impl crate::modules::Module for ClockModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_horizontal_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_horizontal_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use crate::modules::view::horizontal_icon_label;
+        use crate::modules::view::horizontal_icon_label_with_style;
 
         match state {
             ModuleState::Clock(s) => {
-                if let Some(segments) =
-                    self.styled_segments(s, crate::config::FormatMode::Horizontal)
-                {
+                if let Some(segments) = self.styled_segments_with_default(
+                    s,
+                    crate::config::FormatMode::Horizontal,
+                    bar_style,
+                ) {
                     return iced::widget::container(
                         iced::widget::row(
                             segments
@@ -345,9 +426,9 @@ impl crate::modules::Module for ClockModule {
                 if let Some(formatted) =
                     self.formatted_text(s, crate::config::FormatMode::Horizontal)
                 {
-                    horizontal_icon_label("", crate::theme::TEXT, formatted)
+                    horizontal_icon_label_with_style("", crate::theme::TEXT, formatted, bar_style)
                 } else {
-                    horizontal_icon_label("⌚", crate::theme::TEXT, &s.time)
+                    horizontal_icon_label_with_style("⌚", crate::theme::TEXT, &s.time, bar_style)
                 }
             }
             _ => iced::widget::Space::new().into(),

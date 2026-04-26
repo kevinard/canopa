@@ -227,9 +227,26 @@ impl FormatTemplate {
         values: &[(&str, String)],
         state: Option<&str>,
     ) -> Vec<(String, ResolvedStyle)> {
+        self.render_styled_segments_with_default(values, state, &Style::default())
+    }
+
+    pub fn render_styled_segments_with_default(
+        &self,
+        values: &[(&str, String)],
+        state: Option<&str>,
+        default_style: &Style,
+    ) -> Vec<(String, ResolvedStyle)> {
         self.segments
             .iter()
-            .map(|s| (s.template.render_pairs(values), s.styles.resolve_for(state)))
+            .map(|s| {
+                (
+                    s.template.render_pairs(values),
+                    s.styles
+                        .style_for(state)
+                        .merge_over(*default_style)
+                        .resolve(),
+                )
+            })
             .collect()
     }
 }
@@ -495,6 +512,8 @@ pub struct BarConfig {
     pub expand_keybind: Option<String>,
     /// Animation timing for expand/collapse transitions.
     pub animation: AnimationConfig,
+    /// Default text segment style for modules rendered in this bar.
+    pub style: Style,
     /// Ordered module names per zone. Empty lists mean no modules in that zone.
     pub modules: BarModules,
 }
@@ -512,6 +531,7 @@ impl Default for BarConfig {
             hover_delay: 0,
             expand_keybind: None,
             animation: AnimationConfig::default(),
+            style: Style::default(),
             modules: BarModules::default(),
         }
     }
@@ -731,6 +751,40 @@ mod format_template_tests {
         assert_eq!(crit[0].1.color, Some(ThemeToken::Critical.resolve()));
         let norm = tmpl.render_styled_segments(&[("icon", "x".into())], Some("normal"));
         assert_eq!(norm[0].1.color, Some(ThemeToken::Accent.resolve()));
+    }
+
+    #[test]
+    fn render_styled_segments_merges_default_style_under_segment_style() {
+        use crate::config::style::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
+
+        let mut tmpl =
+            FormatTemplate::parse(&["{icon}", "{value}%"], &["icon", "value"], "test.format")
+                .unwrap();
+        tmpl.set_segment_styles(
+            0,
+            SegmentStyles::Static(Style {
+                weight: Some(Weight::Bold),
+                ..Default::default()
+            }),
+        );
+
+        let default_style = Style {
+            color: Some(ColorValue::Token(ThemeToken::Subtext)),
+            size: Some(13.0),
+            weight: Some(Weight::Light),
+        };
+        let rendered = tmpl.render_styled_segments_with_default(
+            &[("icon", "x".into()), ("value", "42".into())],
+            None,
+            &default_style,
+        );
+
+        assert_eq!(rendered[0].1.color, Some(ThemeToken::Subtext.resolve()));
+        assert_eq!(rendered[0].1.size, Some(13.0));
+        assert_eq!(rendered[0].1.weight, Some(Weight::Bold));
+        assert_eq!(rendered[1].1.color, Some(ThemeToken::Subtext.resolve()));
+        assert_eq!(rendered[1].1.size, Some(13.0));
+        assert_eq!(rendered[1].1.weight, Some(Weight::Light));
     }
 }
 

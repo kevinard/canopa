@@ -1,4 +1,4 @@
-use crate::modules::view::collapsed_icon;
+use crate::modules::view::collapsed_icon_with_style;
 use crate::theme;
 
 /// Runtime state for the focused-window module.
@@ -37,14 +37,24 @@ impl FocusedWindowModule {
         title: &str,
         mode: crate::config::FormatMode,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.styled_segments_with_default(title, mode, &crate::config::Style::default())
+    }
+
+    fn styled_segments_with_default(
+        &self,
+        title: &str,
+        mode: crate::config::FormatMode,
+        default_style: &crate::config::Style,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
         self.format.template_for(mode).map(|template| {
-            template.render_styled_segments(
+            template.render_styled_segments_with_default(
                 &[
                     ("icon", "□".to_string()),
                     ("value", title.to_string()),
                     ("title", title.to_string()),
                 ],
                 None,
+                default_style,
             )
         })
     }
@@ -68,6 +78,14 @@ impl crate::modules::Module for FocusedWindowModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_collapsed_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
 
         let title = match state {
@@ -81,9 +99,11 @@ impl crate::modules::Module for FocusedWindowModule {
         }
 
         if let Some(title) = title.as_deref() {
-            if let Some(segments) =
-                self.styled_segments(title, crate::config::FormatMode::Collapsed)
-            {
+            if let Some(segments) = self.styled_segments_with_default(
+                title,
+                crate::config::FormatMode::Collapsed,
+                bar_style,
+            ) {
                 return iced::widget::container(
                     iced::widget::row(
                         segments
@@ -110,21 +130,29 @@ impl crate::modules::Module for FocusedWindowModule {
             if let Some(formatted) =
                 self.formatted_text(title, crate::config::FormatMode::Collapsed)
             {
-                return collapsed_icon(formatted, theme::TEXT);
+                return collapsed_icon_with_style(formatted, theme::TEXT, bar_style);
             }
         }
 
         // Window is focused -> show icon placeholder (AC #2).
         // "□" (U+25A1) is a window-shape placeholder; replaced when icon system is added.
-        collapsed_icon("□", theme::TEXT)
+        collapsed_icon_with_style("□", theme::TEXT, bar_style)
     }
 
     fn view_expanded(
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_expanded_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_expanded_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{container, text};
+        use iced::widget::container;
         use iced::{Alignment, Length};
 
         let title = match state {
@@ -137,9 +165,11 @@ impl crate::modules::Module for FocusedWindowModule {
             return iced::widget::Space::new().into();
         };
 
-        if let Some(segments) =
-            self.styled_segments(&title_str, crate::config::FormatMode::Expanded)
-        {
+        if let Some(segments) = self.styled_segments_with_default(
+            &title_str,
+            crate::config::FormatMode::Expanded,
+            bar_style,
+        ) {
             return container(
                 iced::widget::row(
                     segments
@@ -171,12 +201,12 @@ impl crate::modules::Module for FocusedWindowModule {
 
         // Show title, clipped to module width (AC #3).
         // Iced clips text naturally when container width limits it.
-        container(
-            text(display)
-                .size(12)
-                .color(theme::TEXT)
-                .wrapping(iced::widget::text::Wrapping::None),
-        )
+        container(crate::modules::view::styled_segment_text(
+            display,
+            12,
+            theme::TEXT,
+            crate::modules::view::fallback_resolved_style(bar_style),
+        ))
         .width(Length::Fill)
         .height(20)
         .align_x(Alignment::Start)
@@ -189,8 +219,16 @@ impl crate::modules::Module for FocusedWindowModule {
         &self,
         state: &crate::modules::ModuleState,
     ) -> iced::Element<'_, crate::app::Message> {
+        self.view_horizontal_with_style(state, &crate::config::Style::default())
+    }
+
+    fn view_horizontal_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use iced::widget::{container, text};
+        use iced::widget::container;
         use iced::{Alignment, Length};
 
         let title = match state {
@@ -202,9 +240,11 @@ impl crate::modules::Module for FocusedWindowModule {
             return iced::widget::Space::new().into();
         };
 
-        if let Some(segments) =
-            self.styled_segments(&title_str, crate::config::FormatMode::Horizontal)
-        {
+        if let Some(segments) = self.styled_segments_with_default(
+            &title_str,
+            crate::config::FormatMode::Horizontal,
+            bar_style,
+        ) {
             return container(
                 iced::widget::row(
                     segments
@@ -234,12 +274,12 @@ impl crate::modules::Module for FocusedWindowModule {
             .formatted_text(&title_str, crate::config::FormatMode::Horizontal)
             .unwrap_or(title_str);
 
-        container(
-            text(display)
-                .size(12)
-                .color(theme::TEXT)
-                .wrapping(iced::widget::text::Wrapping::None),
-        )
+        container(crate::modules::view::styled_segment_text(
+            display,
+            12,
+            theme::TEXT,
+            crate::modules::view::fallback_resolved_style(bar_style),
+        ))
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(Alignment::Start)

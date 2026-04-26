@@ -91,7 +91,10 @@ fn resolve_icon_path_uncached(name: &str) -> Option<PathBuf> {
 /// Build an iced widget for one tray item icon.
 ///
 /// All widget data is owned so the element lifetime is `'static`.
-fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Message> {
+fn icon_widget(
+    item: &TrayItem,
+    bar_style: &crate::config::Style,
+) -> iced::Element<'static, crate::app::Message> {
     const ICON_SIZE: u16 = 20;
 
     let icon_element: iced::Element<'static, crate::app::Message> = match &item.icon {
@@ -144,7 +147,12 @@ fn icon_widget(item: &TrayItem) -> iced::Element<'static, crate::app::Message> {
                     .height(ICON_SIZE as u32)
                     .into()
             } else {
-                iced::widget::text("?").size(14).into()
+                crate::modules::view::styled_segment_text(
+                    "?".to_string(),
+                    14,
+                    crate::theme::TEXT,
+                    crate::modules::view::fallback_resolved_style(bar_style),
+                )
             }
         }
     };
@@ -246,10 +254,11 @@ impl TrayIconModule {
         &self,
         horizontal: bool,
         window: iced::window::Id,
+        bar_style: &crate::config::Style,
     ) -> iced::Element<'static, crate::app::Message> {
         use iced::widget::mouse_area;
 
-        let icon = icon_widget(&self.item);
+        let icon = icon_widget(&self.item, bar_style);
         let service = self.item.runtime_id();
         let menu_path = self.item.menu_path.clone();
 
@@ -339,8 +348,9 @@ impl crate::modules::Module for TrayIconModule {
         window: iced::window::Id,
         horizontal: bool,
         _expanded: bool,
+        _bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
-        self.build_view(horizontal, window)
+        self.build_view(horizontal, window, _bar_style)
     }
 
     fn on_interaction(&self, event: InteractionEvent) -> Option<crate::app::Message> {
