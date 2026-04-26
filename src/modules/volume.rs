@@ -100,6 +100,32 @@ impl VolumeModule {
             ])
         })
     }
+
+    fn styled_segments(
+        &self,
+        volume: &VolumeState,
+        mode: crate::config::FormatMode,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        let tier = volume_tier(volume.volume, volume.muted);
+        let icon = self
+            .icons
+            .icon_for_state_or_value((tier == 0).then_some("muted"), Some(volume.volume))
+            .unwrap_or_else(|| tier_icon(tier))
+            .to_string();
+        let value = format!("{}", volume.volume.round() as u64);
+        let state = if tier == 0 { "muted" } else { "unmuted" };
+        self.format.template_for(mode).map(|template| {
+            template.render_styled_segments(
+                &[
+                    ("icon", icon),
+                    ("value", value.clone()),
+                    ("percent", value),
+                    ("state", state.to_string()),
+                ],
+                Some(state),
+            )
+        })
+    }
 }
 
 impl crate::modules::view::IconLabel for VolumeModule {
@@ -163,6 +189,26 @@ impl crate::modules::view::IconLabel for VolumeModule {
             }
         };
         self.formatted_segments(s, mode)
+    }
+
+    fn styled_segments_for_layout(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        let crate::modules::ModuleState::Volume(s) = state else {
+            return None;
+        };
+        let mode = match layout {
+            crate::modules::view::IconLabelLayout::Collapsed => {
+                crate::config::FormatMode::Collapsed
+            }
+            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
+            crate::modules::view::IconLabelLayout::Horizontal => {
+                crate::config::FormatMode::Horizontal
+            }
+        };
+        self.styled_segments(s, mode)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -250,7 +296,9 @@ impl crate::modules::Module for VolumeModule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{IconRulesConfig, IconThreshold};
+    use crate::config::{
+        ColorValue, IconRulesConfig, IconThreshold, SegmentStyles, Style, ThemeToken,
+    };
     use crate::modules::Module;
     use crate::modules::view::IconLabel;
     use std::collections::HashMap;
@@ -262,14 +310,47 @@ mod tests {
             "test.format",
         )
         .unwrap();
-        let mut config = crate::config::FormatConfig::default();
         match field {
-            "collapsed" => config.collapsed = Some(template),
-            "expanded" => config.expanded = Some(template),
-            "horizontal" => config.horizontal = Some(template),
+            "collapsed" => crate::config::FormatConfig {
+                collapsed: Some(template),
+                ..Default::default()
+            },
+            "expanded" => crate::config::FormatConfig {
+                expanded: Some(template),
+                ..Default::default()
+            },
+            "horizontal" => crate::config::FormatConfig {
+                horizontal: Some(template),
+                ..Default::default()
+            },
             _ => unreachable!(),
         }
-        config
+    }
+
+    fn styled_format_config() -> crate::config::FormatConfig {
+        let mut template = crate::config::FormatTemplate::parse(
+            &["{icon}"],
+            &["icon", "value", "percent", "state"],
+            "test.format",
+        )
+        .unwrap();
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Stateful {
+                default: None,
+                by_state: vec![(
+                    "muted".to_string(),
+                    Style {
+                        color: Some(ColorValue::Token(ThemeToken::Overlay0)),
+                        ..Default::default()
+                    },
+                )],
+            },
+        );
+        crate::config::FormatConfig {
+            collapsed: Some(template),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -406,6 +487,40 @@ mod tests {
         assert_eq!(
             m.formatted_text(&state, crate::config::FormatMode::Horizontal),
             Some("◈ 80%".to_string())
+        );
+    }
+
+    #[test]
+    fn volume_styled_segments_resolve_muted_state() {
+        let m = VolumeModule::new(
+            crate::modules::ModuleId::new("volume"),
+            5,
+            IconRulesConfig::default(),
+            styled_format_config(),
+        );
+
+        let muted = VolumeState {
+            volume: 80.0,
+            muted: true,
+        };
+        let unmuted = VolumeState {
+            volume: 80.0,
+            muted: false,
+        };
+
+        assert_eq!(
+            m.styled_segments(&muted, crate::config::FormatMode::Collapsed)
+                .unwrap()[0]
+                .1
+                .color,
+            Some(crate::theme::OVERLAY0)
+        );
+        assert_eq!(
+            m.styled_segments(&unmuted, crate::config::FormatMode::Collapsed)
+                .unwrap()[0]
+                .1
+                .color,
+            None
         );
     }
 }

@@ -107,6 +107,31 @@ impl NetworkModule {
             ])
         })
     }
+
+    fn styled_segments(
+        &self,
+        network: &NetworkState,
+        mode: crate::config::FormatMode,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        let icon = self
+            .icons
+            .icon_for_state(connectivity_state(&network.connectivity))
+            .unwrap_or_else(|| icon_str(&network.connectivity))
+            .to_string();
+        let label = Self::default_label(network);
+        let state = connectivity_state(&network.connectivity);
+        self.format.template_for(mode).map(|template| {
+            template.render_styled_segments(
+                &[
+                    ("icon", icon),
+                    ("value", label.clone()),
+                    ("label", label),
+                    ("state", state.to_string()),
+                ],
+                Some(state),
+            )
+        })
+    }
 }
 
 impl crate::modules::view::IconLabel for NetworkModule {
@@ -166,6 +191,26 @@ impl crate::modules::view::IconLabel for NetworkModule {
             }
         };
         self.formatted_segments(s, mode)
+    }
+
+    fn styled_segments_for_layout(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        let crate::modules::ModuleState::Network(s) = state else {
+            return None;
+        };
+        let mode = match layout {
+            crate::modules::view::IconLabelLayout::Collapsed => {
+                crate::config::FormatMode::Collapsed
+            }
+            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
+            crate::modules::view::IconLabelLayout::Horizontal => {
+                crate::config::FormatMode::Horizontal
+            }
+        };
+        self.styled_segments(s, mode)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -235,7 +280,7 @@ impl crate::modules::Module for NetworkModule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::IconRulesConfig;
+    use crate::config::{ColorValue, IconRulesConfig, SegmentStyles, Style, ThemeToken};
     use crate::modules::Module;
     use crate::modules::view::IconLabel;
     use std::collections::HashMap;
@@ -247,14 +292,56 @@ mod tests {
             "test.format",
         )
         .unwrap();
-        let mut config = crate::config::FormatConfig::default();
         match field {
-            "collapsed" => config.collapsed = Some(template),
-            "expanded" => config.expanded = Some(template),
-            "horizontal" => config.horizontal = Some(template),
+            "collapsed" => crate::config::FormatConfig {
+                collapsed: Some(template),
+                ..Default::default()
+            },
+            "expanded" => crate::config::FormatConfig {
+                expanded: Some(template),
+                ..Default::default()
+            },
+            "horizontal" => crate::config::FormatConfig {
+                horizontal: Some(template),
+                ..Default::default()
+            },
             _ => unreachable!(),
         }
-        config
+    }
+
+    fn styled_format_config() -> crate::config::FormatConfig {
+        let mut template = crate::config::FormatTemplate::parse(
+            &["{icon}"],
+            &["icon", "value", "label", "state"],
+            "test.format",
+        )
+        .unwrap();
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Stateful {
+                default: None,
+                by_state: vec![
+                    (
+                        "limited".to_string(),
+                        Style {
+                            color: Some(ColorValue::Token(ThemeToken::Warning)),
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "none".to_string(),
+                        Style {
+                            color: Some(ColorValue::Token(ThemeToken::Critical)),
+                            ..Default::default()
+                        },
+                    ),
+                ],
+            },
+        );
+        crate::config::FormatConfig {
+            collapsed: Some(template),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -345,6 +432,38 @@ mod tests {
         assert_eq!(
             m.formatted_text(&state, crate::config::FormatMode::Expanded),
             Some("◆ wifi (full)".to_string())
+        );
+    }
+
+    #[test]
+    fn network_styled_segments_resolve_connectivity_state() {
+        let m = NetworkModule::new(
+            crate::modules::ModuleId::new("network"),
+            IconRulesConfig::default(),
+            styled_format_config(),
+        );
+        let limited = NetworkState {
+            connectivity: NetworkConnectivity::Limited,
+            label: None,
+        };
+        let none = NetworkState {
+            connectivity: NetworkConnectivity::None,
+            label: None,
+        };
+
+        assert_eq!(
+            m.styled_segments(&limited, crate::config::FormatMode::Collapsed)
+                .unwrap()[0]
+                .1
+                .color,
+            Some(crate::theme::WARNING)
+        );
+        assert_eq!(
+            m.styled_segments(&none, crate::config::FormatMode::Collapsed)
+                .unwrap()[0]
+                .1
+                .color,
+            Some(crate::theme::CRITICAL)
         );
     }
 }

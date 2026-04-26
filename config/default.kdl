@@ -75,6 +75,20 @@ bar "main" {
 // Module names must match exactly. Type is inferred from the name when the name
 // matches a known type (workspaces, focused-window, battery, clock, network,
 // volume, script, button). For custom names, add a "type" child node.
+//
+// Format templates can be written as quoted string segments:
+//     format "{icon}" "{value}%"
+// or as child `segment` nodes when you want per-segment styling:
+//     format {
+//         segment "{icon}" color="accent" size=18
+//         segment "{value}%" weight="bold"
+//     }
+//
+// Supported style props: color, size, weight.
+// color accepts a theme token or #rrggbb/#rrggbbaa. Theme tokens:
+// accent, text, subtext, base, surface0, surface1, border, overlay0,
+// critical, warning, success.
+// weight accepts: "light", "normal", "bold".
 modules {
     // workspaces: Niri workspace indicators. Click or scroll to switch workspace.
     // Optional: assign labels and icons to specific workspace numbers (1-based).
@@ -83,6 +97,25 @@ modules {
         // Placeholders: {icon}, {value}, {index}, {name}, {label}, {state}.
         // format "{icon}{label}"
         // horizontal-format "{icon}"
+        //
+        // Styled workspace example. State values: focused, active, inactive.
+        // format {
+        //     segment "{icon}" {
+        //         style color="text"
+        //         style state="focused" color="base" weight="bold"
+        //         style state="active" color="accent"
+        //     }
+        //     segment "{label}" {
+        //         style color="subtext"
+        //         style state="focused" color="base" weight="bold"
+        //     }
+        // }
+        // horizontal-format {
+        //     segment "{icon}" {
+        //         style color="text"
+        //         style state="focused" color="base" weight="bold"
+        //     }
+        // }
         // workspace 1 {
         //     label "main"
         //     icon  "󰣇"
@@ -99,6 +132,14 @@ modules {
         // format "{icon}"
         // expanded-format "{title}"
         // horizontal-format "{title}"
+        //
+        // Styled focused-window example.
+        // expanded-format {
+        //     segment "{title}" color="text" weight="bold"
+        // }
+        // horizontal-format {
+        //     segment "{title}" color="text"
+        // }
     }
 
     // volume: audio output level indicator. Scroll on the module to adjust volume.
@@ -109,6 +150,21 @@ modules {
         // format "{icon}"
         // expanded-format "{icon} {value}%"
         // horizontal-format "{icon} {value}%"
+        //
+        // Styled volume example. State values: muted, unmuted.
+        // format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="muted" color="overlay0"
+        //     }
+        // }
+        // expanded-format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="muted" color="overlay0"
+        //     }
+        //     segment "{value}%" color="subtext"
+        // }
         // Optional state/value icons. Thresholds mean "at or above".
         // icons {
         //     icon "✕" state="muted"
@@ -124,6 +180,23 @@ modules {
         // format "{icon}"
         // expanded-format "{icon} {label}"
         // horizontal-format "{icon} {state}"
+        //
+        // Styled network example. State values: full, limited, none.
+        // format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="limited" color="warning"
+        //         style state="none" color="critical"
+        //     }
+        // }
+        // expanded-format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="limited" color="warning"
+        //         style state="none" color="critical"
+        //     }
+        //     segment "{label}" color="subtext"
+        // }
         // Optional connectivity-state icons.
         // icons {
         //     icon "◆" state="full"
@@ -141,6 +214,25 @@ modules {
         // format "{icon}"
         // expanded-format "{icon} {value}%"
         // horizontal-format "{icon} {value}%"
+        //
+        // Styled battery example. State values: charging, critical, low, normal.
+        // format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="charging" color="success"
+        //         style state="critical" color="critical"
+        //         style state="low" color="warning"
+        //     }
+        // }
+        // expanded-format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="charging" color="success"
+        //         style state="critical" color="critical"
+        //         style state="low" color="warning"
+        //     }
+        //     segment "{value}%" color="subtext" weight="bold"
+        // }
         // Optional state/value icons. State icons take precedence over thresholds.
         // icons {
         //     icon "⚡" state="charging"
@@ -164,6 +256,16 @@ modules {
         // format "{icon} {time}"
         // expanded-format "{icon} {time}\n{date}"
         // horizontal-format "{icon} {time}"
+        //
+        // Styled clock example.
+        // format {
+        //     segment "{icon}" color="accent"
+        //     segment "{time}" color="text" weight="bold"
+        // }
+        // expanded-format {
+        //     segment "{time}" color="text" weight="bold"
+        //     segment "{date}" color="subtext"
+        // }
     }
 
     // script: run a shell command periodically and show stdout.
@@ -174,6 +276,12 @@ modules {
     //     format "{icon} {value}"
     //     expanded-format "{icon} {output}"
     //     horizontal-format "{icon} {output}"
+    //     //
+    //     // Styled script example.
+    //     // format {
+    //     //     segment "{icon}" color="accent"
+    //     //     segment "{output}" color="text"
+    //     // }
     // }
 
     // button: user-defined clickable action.
@@ -185,6 +293,15 @@ modules {
     //     format "{icon}"
     //     expanded-format "{icon} {label}"
     //     horizontal-format "{icon} {label}"
+    //     //
+    //     // Styled button example.
+    //     // format {
+    //     //     segment "{icon}" color="accent" weight="bold"
+    //     // }
+    //     // expanded-format {
+    //     //     segment "{icon}" color="accent"
+    //     //     segment "{label}" color="text" weight="bold"
+    //     // }
     // }
 }
 

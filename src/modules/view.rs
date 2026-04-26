@@ -39,6 +39,13 @@ pub(super) trait IconLabel {
     ) -> Option<Vec<String>> {
         None
     }
+    fn styled_segments_for_layout(
+        &self,
+        _state: &super::ModuleState,
+        _layout: IconLabelLayout,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        None
+    }
 
     fn color(&self, _state: &super::ModuleState) -> iced::Color {
         crate::theme::TEXT
@@ -130,6 +137,13 @@ pub(super) fn icon_label_view<'a, M>(
 where
     M: IconLabel,
 {
+    if let Some(segments) = module.styled_segments_for_layout(state, layout) {
+        return match layout {
+            IconLabelLayout::Collapsed => collapsed_styled_segments(segments, module.color(state)),
+            IconLabelLayout::Expanded => expanded_styled_segments(segments),
+            IconLabelLayout::Horizontal => horizontal_styled_segments(segments),
+        };
+    }
     if let Some(segments) = module.formatted_segments_for_layout(state, layout) {
         return match layout {
             IconLabelLayout::Collapsed => collapsed_segments(segments, module.color(state)),
@@ -164,11 +178,51 @@ fn segment_text<'a>(segment: String, size: u32, color: iced::Color) -> Element<'
     text(segment).size(size).color(color).into()
 }
 
+pub(super) fn styled_segment_text<'a>(
+    segment: String,
+    fallback_size: u32,
+    fallback_color: iced::Color,
+    style: crate::config::ResolvedStyle,
+) -> Element<'a, Message> {
+    let mut widget = text(segment)
+        .size(style.size.unwrap_or(fallback_size as f32))
+        .color(style.color.unwrap_or(fallback_color));
+    if let Some(weight) = style.weight {
+        let mut font = iced::Font::DEFAULT;
+        font.weight = match weight {
+            crate::config::Weight::Light => iced::font::Weight::Light,
+            crate::config::Weight::Normal => iced::font::Weight::Normal,
+            crate::config::Weight::Bold => iced::font::Weight::Bold,
+        };
+        widget = widget.font(font);
+    }
+    widget.into()
+}
+
 fn collapsed_segments<'a>(segments: Vec<String>, color: iced::Color) -> Element<'a, Message> {
     container(
         row(segments
             .into_iter()
             .map(|segment| segment_text(segment, 16, color))
+            .collect::<Vec<_>>())
+        .spacing(4)
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(20)
+    .align_x(Alignment::Center)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+fn collapsed_styled_segments<'a>(
+    segments: Vec<(String, crate::config::ResolvedStyle)>,
+    color: iced::Color,
+) -> Element<'a, Message> {
+    container(
+        row(segments
+            .into_iter()
+            .map(|(segment, style)| styled_segment_text(segment, 16, color, style))
             .collect::<Vec<_>>())
         .spacing(4)
         .align_y(Alignment::Center),
@@ -196,11 +250,46 @@ fn expanded_segments<'a>(segments: Vec<String>) -> Element<'a, Message> {
     .into()
 }
 
+fn expanded_styled_segments<'a>(
+    segments: Vec<(String, crate::config::ResolvedStyle)>,
+) -> Element<'a, Message> {
+    container(
+        row(segments
+            .into_iter()
+            .map(|(segment, style)| styled_segment_text(segment, 12, crate::theme::SUBTEXT, style))
+            .collect::<Vec<_>>())
+        .spacing(4)
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(20)
+    .align_y(Alignment::Center)
+    .padding([0, 6])
+    .into()
+}
+
 fn horizontal_segments<'a>(segments: Vec<String>) -> Element<'a, Message> {
     container(
         row(segments
             .into_iter()
             .map(|segment| segment_text(segment, 12, crate::theme::SUBTEXT))
+            .collect::<Vec<_>>())
+        .spacing(4)
+        .align_y(Alignment::Center),
+    )
+    .height(Length::Fill)
+    .align_y(Alignment::Center)
+    .padding([0, 6])
+    .into()
+}
+
+fn horizontal_styled_segments<'a>(
+    segments: Vec<(String, crate::config::ResolvedStyle)>,
+) -> Element<'a, Message> {
+    container(
+        row(segments
+            .into_iter()
+            .map(|(segment, style)| styled_segment_text(segment, 12, crate::theme::SUBTEXT, style))
             .collect::<Vec<_>>())
         .spacing(4)
         .align_y(Alignment::Center),

@@ -3,9 +3,17 @@ use iced::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThemeToken {
-    Accent, Text, Subtext, Base,
-    Surface0, Surface1, Border, Overlay0,
-    Critical, Warning, Success,
+    Accent,
+    Text,
+    Subtext,
+    Base,
+    Surface0,
+    Surface1,
+    Border,
+    Overlay0,
+    Critical,
+    Warning,
+    Success,
 }
 
 impl ThemeToken {
@@ -70,7 +78,9 @@ impl ColorValue {
                 .map(ColorValue::Rgba)
                 .ok_or_else(|| anyhow!("invalid hex color {raw:?}."));
         }
-        Err(anyhow!("unknown color {raw:?}; expected theme token or #rrggbb[aa]."))
+        Err(anyhow!(
+            "unknown color {raw:?}; expected theme token or #rrggbb[aa]."
+        ))
     }
 }
 
@@ -85,12 +95,19 @@ fn parse_hex(hex: &str) -> Option<Color> {
         let s = std::str::from_utf8(chunk).ok()?;
         out[i] = u8::from_str_radix(s, 16).ok()?;
     }
-    Some(Color::from_rgba8(out[0], out[1], out[2], out[3] as f32 / 255.0))
+    Some(Color::from_rgba8(
+        out[0],
+        out[1],
+        out[2],
+        out[3] as f32 / 255.0,
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Weight {
-    Light, Normal, Bold,
+    Light,
+    Normal,
+    Bold,
 }
 
 impl Weight {
@@ -116,6 +133,7 @@ impl Style {
         self.color.is_none() && self.size.is_none() && self.weight.is_none()
     }
 
+    #[allow(dead_code)]
     pub fn merge_over(self, base: Style) -> Style {
         Style {
             color: self.color.or(base.color),
@@ -140,8 +158,9 @@ pub struct ResolvedStyle {
     pub weight: Option<Weight>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum SegmentStyles {
+    #[default]
     None,
     Static(Style),
     Stateful {
@@ -150,22 +169,16 @@ pub enum SegmentStyles {
     },
 }
 
-impl Default for SegmentStyles {
-    fn default() -> Self {
-        SegmentStyles::None
-    }
-}
-
 impl SegmentStyles {
     pub fn resolve_for(&self, state: Option<&str>) -> ResolvedStyle {
         match self {
             SegmentStyles::None => ResolvedStyle::default(),
             SegmentStyles::Static(s) => s.resolve(),
             SegmentStyles::Stateful { default, by_state } => {
-                if let Some(state) = state {
-                    if let Some((_, style)) = by_state.iter().find(|(k, _)| k == state) {
-                        return style.resolve();
-                    }
+                if let Some(state) = state
+                    && let Some((_, style)) = by_state.iter().find(|(k, _)| k == state)
+                {
+                    return style.resolve();
                 }
                 default.map(|s| s.resolve()).unwrap_or_default()
             }
@@ -238,7 +251,10 @@ mod tests {
 
     #[test]
     fn segment_styles_static_always_returns_same() {
-        let style = Style { color: Some(ColorValue::Token(ThemeToken::Accent)), ..Default::default() };
+        let style = Style {
+            color: Some(ColorValue::Token(ThemeToken::Accent)),
+            ..Default::default()
+        };
         let s = SegmentStyles::Static(style);
         let expected = style.resolve();
         assert_eq!(s.resolve_for(None), expected);
@@ -247,8 +263,14 @@ mod tests {
 
     #[test]
     fn segment_styles_stateful_picks_matching_state() {
-        let default = Style { color: Some(ColorValue::Token(ThemeToken::Accent)), ..Default::default() };
-        let crit = Style { color: Some(ColorValue::Token(ThemeToken::Critical)), ..Default::default() };
+        let default = Style {
+            color: Some(ColorValue::Token(ThemeToken::Accent)),
+            ..Default::default()
+        };
+        let crit = Style {
+            color: Some(ColorValue::Token(ThemeToken::Critical)),
+            ..Default::default()
+        };
         let s = SegmentStyles::Stateful {
             default: Some(default),
             by_state: vec![("critical".into(), crit)],
@@ -262,10 +284,13 @@ mod tests {
     fn segment_styles_stateful_no_default_no_match_is_empty() {
         let s = SegmentStyles::Stateful {
             default: None,
-            by_state: vec![("critical".into(), Style {
-                color: Some(ColorValue::Token(ThemeToken::Critical)),
-                ..Default::default()
-            })],
+            by_state: vec![(
+                "critical".into(),
+                Style {
+                    color: Some(ColorValue::Token(ThemeToken::Critical)),
+                    ..Default::default()
+                },
+            )],
         };
         assert_eq!(s.resolve_for(Some("normal")), ResolvedStyle::default());
     }

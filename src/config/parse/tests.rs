@@ -319,6 +319,233 @@ fn parse_tray_rejects_format() {
 }
 
 #[test]
+fn battery_format_accepts_child_node_form() {
+    let kdl = r#"
+modules {
+    module "battery" {
+        format {
+            segment "{icon}"
+            segment "{value}%"
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    match &config.modules[0].params {
+        crate::config::ModuleParams::Battery(cfg) => {
+            assert!(cfg.format.collapsed.is_some());
+            assert_eq!(
+                cfg.format
+                    .collapsed
+                    .as_ref()
+                    .unwrap()
+                    .render_segments(&[("icon", "B".to_string()), ("value", "42".to_string()),]),
+                vec!["B".to_string(), "42%".to_string()]
+            );
+        }
+        other => panic!("expected Battery params, got {other:?}"),
+    }
+}
+
+#[test]
+fn battery_format_mixed() {
+    let kdl = r#"
+modules {
+    module "battery" {
+        format "{icon}" {
+            segment "{value}%"
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    match &config.modules[0].params {
+        crate::config::ModuleParams::Battery(cfg) => {
+            assert!(cfg.format.collapsed.is_some());
+            assert_eq!(
+                cfg.format
+                    .collapsed
+                    .as_ref()
+                    .unwrap()
+                    .render_segments(&[("icon", "B".to_string()), ("value", "42".to_string()),]),
+                vec!["B".to_string(), "42%".to_string()]
+            );
+        }
+        other => panic!("expected Battery params, got {other:?}"),
+    }
+}
+
+#[test]
+fn segment_inline_style_props() {
+    let config = parse(
+        r#"
+        modules {
+            module "battery" {
+                format {
+                    segment "{icon}" color="accent" size=18 weight="bold"
+                    segment "{value}%"
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap();
+    match &config.modules[0].params {
+        crate::config::ModuleParams::Battery(cfg) => {
+            let segs = cfg.format.collapsed.as_ref().unwrap().segments();
+            use crate::config::style::{ColorValue, SegmentStyles, ThemeToken, Weight};
+            match segs[0].styles() {
+                SegmentStyles::Static(s) => {
+                    assert_eq!(s.color, Some(ColorValue::Token(ThemeToken::Accent)));
+                    assert_eq!(s.size, Some(18.0));
+                    assert_eq!(s.weight, Some(Weight::Bold));
+                }
+                other => panic!("expected Static, got {other:?}"),
+            }
+            matches!(segs[1].styles(), SegmentStyles::None);
+        }
+        other => panic!("expected Battery params, got {other:?}"),
+    }
+}
+
+#[test]
+fn segment_stateful_style_children() {
+    let config = parse(
+        r#"
+        modules {
+            module "battery" {
+                format {
+                    segment "{icon}" {
+                        style color="accent"
+                        style state="critical" color="critical"
+                        style state="charging" color="success"
+                    }
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap();
+    match &config.modules[0].params {
+        crate::config::ModuleParams::Battery(cfg) => {
+            let segs = cfg.format.collapsed.as_ref().unwrap().segments();
+            use crate::config::style::SegmentStyles;
+            match segs[0].styles() {
+                SegmentStyles::Stateful { default, by_state } => {
+                    assert!(default.is_some());
+                    assert_eq!(by_state.len(), 2);
+                    assert_eq!(by_state[0].0, "critical");
+                    assert_eq!(by_state[1].0, "charging");
+                }
+                other => panic!("expected Stateful, got {other:?}"),
+            }
+        }
+        other => panic!("expected Battery params, got {other:?}"),
+    }
+}
+
+#[test]
+fn segment_inline_props_and_style_children_is_error() {
+    let err = parse(
+        r#"
+        modules {
+            module "battery" {
+                format {
+                    segment "{icon}" color="accent" {
+                        style state="critical" color="critical"
+                    }
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("inline") || msg.contains("style children"),
+        "got: {msg}"
+    );
+}
+
+#[test]
+fn segment_two_default_styles_is_error() {
+    let err = parse(
+        r#"
+        modules {
+            module "battery" {
+                format {
+                    segment "{icon}" {
+                        style color="accent"
+                        style color="text"
+                    }
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("default"));
+}
+
+#[test]
+fn segment_duplicate_state_is_error() {
+    let err = parse(
+        r#"
+        modules {
+            module "battery" {
+                format {
+                    segment "{icon}" {
+                        style state="critical" color="critical"
+                        style state="critical" color="warning"
+                    }
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("critical"));
+}
+
+#[test]
+fn segment_unknown_state_is_error() {
+    let err = parse(
+        r#"
+        modules {
+            module "battery" {
+                format {
+                    segment "{icon}" {
+                        style state="bogus" color="critical"
+                    }
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("bogus"));
+}
+
+#[test]
+fn segment_state_on_stateless_module_is_error() {
+    let err = parse(
+        r#"
+        modules {
+            module "clock" {
+                format {
+                    segment "{time}" {
+                        style state="critical" color="critical"
+                    }
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("state"));
+}
+
+#[test]
 fn parse_formats_for_all_non_tray_modules() {
     let kdl = r#"
 modules {

@@ -109,39 +109,49 @@ impl WorkspaceItemModule {
         let label_cfg = self.config.workspaces.get(&ws_num);
         let configured_icon = label_cfg.and_then(|c| c.icon.as_deref());
         let configured_label = label_cfg.and_then(|c| c.label.as_deref());
-        let state = if self.workspace.is_focused {
-            "focused"
-        } else if self.workspace.is_active {
-            "active"
-        } else {
-            "inactive"
-        };
         let mode = if horizontal {
             crate::config::FormatMode::Horizontal
         } else {
             crate::config::FormatMode::Collapsed
         };
-        let formatted = self.config.format.template_for(mode).map(|template| {
-            let index = ws_num.to_string();
-            let label = configured_label.unwrap_or(&index).to_string();
-            let icon = configured_icon.unwrap_or(&index).to_string();
-            let name = self.workspace.name.clone().unwrap_or_default();
-            template.render_joined(&[
-                ("icon", icon),
-                ("value", label.clone()),
-                ("index", index),
-                ("name", name),
-                ("label", label),
-                ("state", state.to_string()),
-            ])
-        });
+        let formatted = self.formatted_segments(mode);
+        let styled = self.styled_segments(mode);
 
         if horizontal {
-            let content = formatted.unwrap_or_else(|| {
-                configured_icon
-                    .map(|icon| icon.to_string())
-                    .unwrap_or_else(|| format!("{ws_num}"))
-            });
+            if let Some(segments) = styled {
+                return container(
+                    iced::widget::row(
+                        segments
+                            .into_iter()
+                            .map(|(segment, style)| {
+                                crate::modules::view::styled_segment_text(segment, 10, fg, style)
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .spacing(4)
+                    .align_y(Alignment::Center),
+                )
+                .width(32)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .style(move |_theme| container::Style {
+                    background: Some(Background::Color(bg)),
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .into();
+            }
+            let content = formatted
+                .map(|segments| segments.join(" "))
+                .unwrap_or_else(|| {
+                    configured_icon
+                        .map(|icon| icon.to_string())
+                        .unwrap_or_else(|| format!("{ws_num}"))
+                });
             container(text(content).size(10).color(fg))
                 .width(32)
                 .height(Length::Fill)
@@ -157,7 +167,35 @@ impl WorkspaceItemModule {
                 })
                 .into()
         } else {
-            if let Some(content) = formatted {
+            if let Some(segments) = styled {
+                return container(
+                    iced::widget::row(
+                        segments
+                            .into_iter()
+                            .map(|(segment, style)| {
+                                crate::modules::view::styled_segment_text(segment, 12, fg, style)
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .spacing(4)
+                    .align_y(Alignment::Center),
+                )
+                .width(Length::Fill)
+                .height(20)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .padding([0, 6])
+                .style(move |_theme| container::Style {
+                    background: Some(Background::Color(bg)),
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .into();
+            }
+            if let Some(content) = formatted.map(|segments| segments.join(" ")) {
                 return container(text(content).size(12).color(fg))
                     .width(Length::Fill)
                     .height(20)
@@ -207,6 +245,51 @@ impl WorkspaceItemModule {
             })
             .into()
         }
+    }
+
+    fn state_key(&self) -> &'static str {
+        if self.workspace.is_focused {
+            "focused"
+        } else if self.workspace.is_active {
+            "active"
+        } else {
+            "inactive"
+        }
+    }
+
+    fn format_values(&self) -> Vec<(&'static str, String)> {
+        let ws_num = self.workspace.idx as u32;
+        let index = ws_num.to_string();
+        let label_cfg = self.config.workspaces.get(&ws_num);
+        let configured_icon = label_cfg.and_then(|c| c.icon.as_deref());
+        let configured_label = label_cfg.and_then(|c| c.label.as_deref());
+        let label = configured_label.unwrap_or(&index).to_string();
+        let icon = configured_icon.unwrap_or(&index).to_string();
+        let name = self.workspace.name.clone().unwrap_or_default();
+        vec![
+            ("icon", icon),
+            ("value", label.clone()),
+            ("index", index),
+            ("name", name),
+            ("label", label),
+            ("state", self.state_key().to_string()),
+        ]
+    }
+
+    fn formatted_segments(&self, mode: crate::config::FormatMode) -> Option<Vec<String>> {
+        self.config
+            .format
+            .template_for(mode)
+            .map(|template| template.render_segments(&self.format_values()))
+    }
+
+    fn styled_segments(
+        &self,
+        mode: crate::config::FormatMode,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.config.format.template_for(mode).map(|template| {
+            template.render_styled_segments(&self.format_values(), Some(self.state_key()))
+        })
     }
 }
 
@@ -284,6 +367,7 @@ impl crate::modules::Module for WorkspaceItemModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken};
     use crate::modules::Module;
 
     fn make_workspace(idx: u8, is_focused: bool) -> niri_ipc::Workspace {
@@ -300,6 +384,35 @@ mod tests {
             is_active: is_focused,
             is_focused,
             active_window_id: None,
+        }
+    }
+
+    fn workspace_format_config() -> crate::config::WorkspacesConfig {
+        let mut template = crate::config::FormatTemplate::parse(
+            &["{label}"],
+            &["icon", "value", "index", "name", "label", "state"],
+            "test.format",
+        )
+        .unwrap();
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Stateful {
+                default: None,
+                by_state: vec![(
+                    "focused".to_string(),
+                    Style {
+                        color: Some(ColorValue::Token(ThemeToken::Accent)),
+                        ..Default::default()
+                    },
+                )],
+            },
+        );
+        crate::config::WorkspacesConfig {
+            format: crate::config::FormatConfig {
+                collapsed: Some(template),
+                ..Default::default()
+            },
+            ..Default::default()
         }
     }
 
@@ -440,5 +553,42 @@ mod tests {
 
         assert!(m.workspace.is_active);
         assert!(m.workspace.is_focused);
+    }
+
+    #[test]
+    fn workspace_item_styled_segments_resolve_per_item_state() {
+        let config = workspace_format_config();
+        let focused =
+            WorkspaceItemModule::new(make_workspace(0, true), config.clone(), "workspaces".into());
+        let mut active_ws = make_workspace(1, false);
+        active_ws.is_active = true;
+        let active = WorkspaceItemModule::new(active_ws, config.clone(), "workspaces".into());
+        let inactive =
+            WorkspaceItemModule::new(make_workspace(2, false), config, "workspaces".into());
+
+        assert_eq!(
+            focused
+                .styled_segments(crate::config::FormatMode::Collapsed)
+                .unwrap()[0]
+                .1
+                .color,
+            Some(theme::ACCENT)
+        );
+        assert_eq!(
+            active
+                .styled_segments(crate::config::FormatMode::Collapsed)
+                .unwrap()[0]
+                .1
+                .color,
+            None
+        );
+        assert_eq!(
+            inactive
+                .styled_segments(crate::config::FormatMode::Collapsed)
+                .unwrap()[0]
+                .1
+                .color,
+            None
+        );
     }
 }

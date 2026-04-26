@@ -31,6 +31,23 @@ impl FocusedWindowModule {
             ])
         })
     }
+
+    fn styled_segments(
+        &self,
+        title: &str,
+        mode: crate::config::FormatMode,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.format.template_for(mode).map(|template| {
+            template.render_styled_segments(
+                &[
+                    ("icon", "□".to_string()),
+                    ("value", title.to_string()),
+                    ("title", title.to_string()),
+                ],
+                None,
+            )
+        })
+    }
 }
 
 impl crate::modules::Module for FocusedWindowModule {
@@ -64,6 +81,32 @@ impl crate::modules::Module for FocusedWindowModule {
         }
 
         if let Some(title) = title.as_deref() {
+            if let Some(segments) =
+                self.styled_segments(title, crate::config::FormatMode::Collapsed)
+            {
+                return iced::widget::container(
+                    iced::widget::row(
+                        segments
+                            .into_iter()
+                            .map(|(segment, style)| {
+                                crate::modules::view::styled_segment_text(
+                                    segment,
+                                    16,
+                                    theme::TEXT,
+                                    style,
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .spacing(4)
+                    .align_y(iced::Alignment::Center),
+                )
+                .width(iced::Length::Fill)
+                .height(20)
+                .align_x(iced::Alignment::Center)
+                .align_y(iced::Alignment::Center)
+                .into();
+            }
             if let Some(formatted) =
                 self.formatted_text(title, crate::config::FormatMode::Collapsed)
             {
@@ -93,6 +136,34 @@ impl crate::modules::Module for FocusedWindowModule {
         let Some(title_str) = title.clone() else {
             return iced::widget::Space::new().into();
         };
+
+        if let Some(segments) =
+            self.styled_segments(&title_str, crate::config::FormatMode::Expanded)
+        {
+            return container(
+                iced::widget::row(
+                    segments
+                        .into_iter()
+                        .map(|(segment, style)| {
+                            crate::modules::view::styled_segment_text(
+                                segment,
+                                12,
+                                theme::TEXT,
+                                style,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .spacing(4)
+                .align_y(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .height(20)
+            .align_x(Alignment::Start)
+            .align_y(Alignment::Center)
+            .padding([0, 6])
+            .into();
+        }
 
         let display = self
             .formatted_text(&title_str, crate::config::FormatMode::Expanded)
@@ -131,6 +202,34 @@ impl crate::modules::Module for FocusedWindowModule {
             return iced::widget::Space::new().into();
         };
 
+        if let Some(segments) =
+            self.styled_segments(&title_str, crate::config::FormatMode::Horizontal)
+        {
+            return container(
+                iced::widget::row(
+                    segments
+                        .into_iter()
+                        .map(|(segment, style)| {
+                            crate::modules::view::styled_segment_text(
+                                segment,
+                                12,
+                                theme::TEXT,
+                                style,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .spacing(4)
+                .align_y(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Start)
+            .align_y(Alignment::Center)
+            .padding([0, 6])
+            .into();
+        }
+
         let display = self
             .formatted_text(&title_str, crate::config::FormatMode::Horizontal)
             .unwrap_or(title_str);
@@ -153,7 +252,29 @@ impl crate::modules::Module for FocusedWindowModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
     use crate::modules::Module;
+
+    fn styled_format_config() -> crate::config::FormatConfig {
+        let mut template = crate::config::FormatTemplate::parse(
+            &["{title}"],
+            &["icon", "value", "title"],
+            "test.format",
+        )
+        .unwrap();
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Static(Style {
+                color: Some(ColorValue::Token(ThemeToken::Accent)),
+                weight: Some(Weight::Bold),
+                ..Default::default()
+            }),
+        );
+        crate::config::FormatConfig {
+            collapsed: Some(template),
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn focused_window_module_id_is_focused_window() {
@@ -177,5 +298,19 @@ mod tests {
             title: Some("Firefox".to_string()),
         };
         assert_eq!(state.title.as_deref(), Some("Firefox"));
+    }
+
+    #[test]
+    fn focused_window_styled_segments_resolve_inline_style() {
+        let m = FocusedWindowModule::new(
+            crate::modules::ModuleId::new("focused-window"),
+            styled_format_config(),
+        );
+        let segment = &m
+            .styled_segments("Firefox", crate::config::FormatMode::Collapsed)
+            .unwrap()[0];
+
+        assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
+        assert_eq!(segment.1.weight, Some(Weight::Bold));
     }
 }

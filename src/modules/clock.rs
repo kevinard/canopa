@@ -139,6 +139,24 @@ impl ClockModule {
             ])
         })
     }
+
+    fn styled_segments(
+        &self,
+        state: &ClockState,
+        mode: crate::config::FormatMode,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.format.template_for(mode).map(|template| {
+            template.render_styled_segments(
+                &[
+                    ("icon", "⌚".to_string()),
+                    ("value", state.time.clone()),
+                    ("time", state.time.clone()),
+                    ("date", state.date.clone()),
+                ],
+                None,
+            )
+        })
+    }
 }
 
 impl crate::modules::Module for ClockModule {
@@ -203,6 +221,27 @@ impl crate::modules::Module for ClockModule {
 
         match state {
             ModuleState::Clock(s) => {
+                if let Some(segments) =
+                    self.styled_segments(s, crate::config::FormatMode::Collapsed)
+                {
+                    return iced::widget::row(
+                        segments
+                            .into_iter()
+                            .map(|(segment, style)| {
+                                crate::modules::view::styled_segment_text(
+                                    segment,
+                                    11,
+                                    crate::theme::TEXT,
+                                    style,
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill)
+                    .into();
+                }
                 if let Some(formatted) =
                     self.formatted_text(s, crate::config::FormatMode::Collapsed)
                 {
@@ -230,6 +269,24 @@ impl crate::modules::Module for ClockModule {
 
         match state {
             ModuleState::Clock(s) => {
+                if let Some(segments) = self.styled_segments(s, crate::config::FormatMode::Expanded)
+                {
+                    return row(segments
+                        .into_iter()
+                        .map(|(segment, style)| {
+                            crate::modules::view::styled_segment_text(
+                                segment,
+                                12,
+                                crate::theme::TEXT,
+                                style,
+                            )
+                        })
+                        .collect::<Vec<_>>())
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill)
+                    .into();
+                }
                 if let Some(formatted) = self.formatted_text(s, crate::config::FormatMode::Expanded)
                 {
                     return text(formatted).size(12).into();
@@ -260,6 +317,31 @@ impl crate::modules::Module for ClockModule {
 
         match state {
             ModuleState::Clock(s) => {
+                if let Some(segments) =
+                    self.styled_segments(s, crate::config::FormatMode::Horizontal)
+                {
+                    return iced::widget::container(
+                        iced::widget::row(
+                            segments
+                                .into_iter()
+                                .map(|(segment, style)| {
+                                    crate::modules::view::styled_segment_text(
+                                        segment,
+                                        12,
+                                        crate::theme::TEXT,
+                                        style,
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                        .spacing(4)
+                        .align_y(iced::Alignment::Center),
+                    )
+                    .height(iced::Length::Fill)
+                    .align_y(iced::Alignment::Center)
+                    .padding([0, 6])
+                    .into();
+                }
                 if let Some(formatted) =
                     self.formatted_text(s, crate::config::FormatMode::Horizontal)
                 {
@@ -276,7 +358,29 @@ impl crate::modules::Module for ClockModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
     use crate::modules::Module;
+
+    fn styled_format_config() -> crate::config::FormatConfig {
+        let mut template = crate::config::FormatTemplate::parse(
+            &["{time}"],
+            &["icon", "value", "time", "date"],
+            "test.format",
+        )
+        .unwrap();
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Static(Style {
+                color: Some(ColorValue::Token(ThemeToken::Accent)),
+                weight: Some(Weight::Bold),
+                ..Default::default()
+            }),
+        );
+        crate::config::FormatConfig {
+            collapsed: Some(template),
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn clock_module_id_is_clock() {
@@ -300,6 +404,26 @@ mod tests {
         );
         assert_eq!(m.id().0, "my-clock");
         assert_eq!(m.module_type(), "clock");
+    }
+
+    #[test]
+    fn clock_styled_segments_resolve_inline_style() {
+        let m = ClockModule::new(
+            crate::modules::ModuleId::new("clock"),
+            "%H:%M".into(),
+            "%a".into(),
+            styled_format_config(),
+        );
+        let state = ClockState {
+            time: "12:34".into(),
+            date: "Mon".into(),
+        };
+        let segment = &m
+            .styled_segments(&state, crate::config::FormatMode::Collapsed)
+            .unwrap()[0];
+
+        assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
+        assert_eq!(segment.1.weight, Some(Weight::Bold));
     }
 
     #[test]

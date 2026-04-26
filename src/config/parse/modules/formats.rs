@@ -55,7 +55,6 @@ fn parse_field(
     let Some(node) = children.get(field) else {
         return Ok(None);
     };
-    let segments =
-        super::segment_styles::parse_segments(node, allowed, allowed_states, path)?;
+    let segments = super::segment_styles::parse_segments(node, allowed, allowed_states, path)?;
     Ok(Some(FormatTemplate::from_styled(segments)))
 }

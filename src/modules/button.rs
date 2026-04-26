@@ -43,6 +43,22 @@ impl ButtonModule {
             ])
         })
     }
+
+    fn styled_segments(
+        &self,
+        mode: crate::config::FormatMode,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.format.template_for(mode).map(|template| {
+            template.render_styled_segments(
+                &[
+                    ("icon", self.icon.clone()),
+                    ("value", self.label.clone()),
+                    ("label", self.label.clone()),
+                ],
+                None,
+            )
+        })
+    }
 }
 
 impl crate::modules::Module for ButtonModule {
@@ -107,6 +123,25 @@ impl crate::modules::Module for ButtonModule {
 
         match state {
             ModuleState::Button(_) => {
+                if let Some(segments) = self.styled_segments(crate::config::FormatMode::Collapsed) {
+                    return iced::widget::row(
+                        segments
+                            .into_iter()
+                            .map(|(segment, style)| {
+                                crate::modules::view::styled_segment_text(
+                                    segment,
+                                    16,
+                                    crate::theme::TEXT,
+                                    style,
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill)
+                    .into();
+                }
                 let content = self
                     .formatted_text(crate::config::FormatMode::Collapsed)
                     .unwrap_or_else(|| self.icon.clone());
@@ -128,18 +163,37 @@ impl crate::modules::Module for ButtonModule {
         use iced::{Alignment, Length};
 
         match state {
-            ModuleState::Button(_) => row![
-                text(self.icon.clone()).size(16),
-                iced::widget::Space::new().width(Length::Fill),
-                text(
-                    self.formatted_text(crate::config::FormatMode::Expanded)
-                        .unwrap_or_else(|| self.label.clone())
-                )
-                .size(13),
-            ]
-            .align_y(Alignment::Center)
-            .width(Length::Fill)
-            .into(),
+            ModuleState::Button(_) => {
+                if let Some(segments) = self.styled_segments(crate::config::FormatMode::Expanded) {
+                    return row(segments
+                        .into_iter()
+                        .map(|(segment, style)| {
+                            crate::modules::view::styled_segment_text(
+                                segment,
+                                13,
+                                crate::theme::TEXT,
+                                style,
+                            )
+                        })
+                        .collect::<Vec<_>>())
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill)
+                    .into();
+                }
+                row![
+                    text(self.icon.clone()).size(16),
+                    iced::widget::Space::new().width(Length::Fill),
+                    text(
+                        self.formatted_text(crate::config::FormatMode::Expanded)
+                            .unwrap_or_else(|| self.label.clone())
+                    )
+                    .size(13),
+                ]
+                .align_y(Alignment::Center)
+                .width(Length::Fill)
+                .into()
+            }
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -152,12 +206,38 @@ impl crate::modules::Module for ButtonModule {
         use crate::modules::view::horizontal_icon_label;
 
         match state {
-            ModuleState::Button(_) => horizontal_icon_label(
-                self.icon.clone(),
-                crate::theme::TEXT,
-                self.formatted_text(crate::config::FormatMode::Horizontal)
-                    .unwrap_or_else(|| self.label.clone()),
-            ),
+            ModuleState::Button(_) => {
+                if let Some(segments) = self.styled_segments(crate::config::FormatMode::Horizontal)
+                {
+                    return iced::widget::container(
+                        iced::widget::row(
+                            segments
+                                .into_iter()
+                                .map(|(segment, style)| {
+                                    crate::modules::view::styled_segment_text(
+                                        segment,
+                                        12,
+                                        crate::theme::TEXT,
+                                        style,
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                        .spacing(4)
+                        .align_y(iced::Alignment::Center),
+                    )
+                    .height(iced::Length::Fill)
+                    .align_y(iced::Alignment::Center)
+                    .padding([0, 6])
+                    .into();
+                }
+                horizontal_icon_label(
+                    self.icon.clone(),
+                    crate::theme::TEXT,
+                    self.formatted_text(crate::config::FormatMode::Horizontal)
+                        .unwrap_or_else(|| self.label.clone()),
+                )
+            }
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -166,7 +246,29 @@ impl crate::modules::Module for ButtonModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
     use crate::modules::Module;
+
+    fn styled_format_config() -> crate::config::FormatConfig {
+        let mut template = crate::config::FormatTemplate::parse(
+            &["{label}"],
+            &["icon", "value", "label"],
+            "test.format",
+        )
+        .unwrap();
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Static(Style {
+                color: Some(ColorValue::Token(ThemeToken::Accent)),
+                weight: Some(Weight::Bold),
+                ..Default::default()
+            }),
+        );
+        crate::config::FormatConfig {
+            collapsed: Some(template),
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn button_module_id_is_button() {
@@ -193,6 +295,23 @@ mod tests {
         // Verify ButtonEvent::Ready constructs and is Debug-formattable.
         let e = ButtonEvent::Ready;
         let _ = format!("{:?}", e);
+    }
+
+    #[test]
+    fn button_styled_segments_resolve_inline_style() {
+        let m = ButtonModule::new(
+            crate::modules::ModuleId::new("button"),
+            "Launch".into(),
+            ">".into(),
+            "kitty".into(),
+            styled_format_config(),
+        );
+        let segment = &m
+            .styled_segments(crate::config::FormatMode::Collapsed)
+            .unwrap()[0];
+
+        assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
+        assert_eq!(segment.1.weight, Some(Weight::Bold));
     }
 
     #[test]

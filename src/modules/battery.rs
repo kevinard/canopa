@@ -42,6 +42,18 @@ fn tier_icon(tier: u8) -> &'static str {
     }
 }
 
+pub(crate) fn battery_state_key(battery: &BatteryState, critical_threshold: u8) -> &'static str {
+    if battery.is_charging {
+        "charging"
+    } else {
+        match charge_tier(battery.percentage, critical_threshold) {
+            0 => "critical",
+            1 => "low",
+            _ => "normal",
+        }
+    }
+}
+
 /// Icon color based on state (AC: #2, #5, #6).
 ///
 /// Priority: charging > critical > warning > normal
@@ -94,7 +106,21 @@ impl BatteryModule {
         battery: &BatteryState,
         mode: crate::config::FormatMode,
     ) -> Option<Vec<String>> {
-        let icon = if battery.is_charging {
+        let icon = self.current_icon(battery);
+        let value = format!("{}", battery.percentage.round() as u8);
+        let state = battery_state_key(battery, self.critical_threshold).to_string();
+        self.format.template_for(mode).map(|template| {
+            template.render_segments(&[
+                ("icon", icon),
+                ("value", value.clone()),
+                ("percent", value),
+                ("state", state),
+            ])
+        })
+    }
+
+    fn current_icon(&self, battery: &BatteryState) -> String {
+        if battery.is_charging {
             self.icons
                 .icon_for_state_or_value(Some("charging"), Some(battery.percentage))
                 .unwrap_or("⚡")
@@ -106,20 +132,27 @@ impl BatteryModule {
                     tier_icon(charge_tier(battery.percentage, self.critical_threshold))
                 })
                 .to_owned()
-        };
+        }
+    }
+
+    fn styled_segments(
+        &self,
+        battery: &BatteryState,
+        mode: crate::config::FormatMode,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        let icon = self.current_icon(battery);
         let value = format!("{}", battery.percentage.round() as u8);
-        let state = if battery.is_charging {
-            "charging".to_string()
-        } else {
-            "discharging".to_string()
-        };
+        let state = battery_state_key(battery, self.critical_threshold);
         self.format.template_for(mode).map(|template| {
-            template.render_segments(&[
-                ("icon", icon),
-                ("value", value.clone()),
-                ("percent", value),
-                ("state", state),
-            ])
+            template.render_styled_segments(
+                &[
+                    ("icon", icon),
+                    ("value", value.clone()),
+                    ("percent", value),
+                    ("state", state.to_string()),
+                ],
+                Some(state),
+            )
         })
     }
 }
@@ -186,6 +219,26 @@ impl crate::modules::view::IconLabel for BatteryModule {
             }
         };
         self.formatted_segments(s, mode)
+    }
+
+    fn styled_segments_for_layout(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        let crate::modules::ModuleState::Battery(s) = state else {
+            return None;
+        };
+        let mode = match layout {
+            crate::modules::view::IconLabelLayout::Collapsed => {
+                crate::config::FormatMode::Collapsed
+            }
+            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
+            crate::modules::view::IconLabelLayout::Horizontal => {
+                crate::config::FormatMode::Horizontal
+            }
+        };
+        self.styled_segments(s, mode)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -293,7 +346,9 @@ impl crate::modules::Module for BatteryModule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{IconRulesConfig, IconThreshold};
+    use crate::config::{
+        ColorValue, IconRulesConfig, IconThreshold, SegmentStyles, Style, ThemeToken,
+    };
     use crate::modules::Module;
     use crate::modules::view::IconLabel;
     use std::collections::HashMap;
@@ -305,14 +360,50 @@ mod tests {
             "test.format",
         )
         .unwrap();
-        let mut config = crate::config::FormatConfig::default();
         match field {
-            "collapsed" => config.collapsed = Some(template),
-            "expanded" => config.expanded = Some(template),
-            "horizontal" => config.horizontal = Some(template),
+            "collapsed" => crate::config::FormatConfig {
+                collapsed: Some(template),
+                ..Default::default()
+            },
+            "expanded" => crate::config::FormatConfig {
+                expanded: Some(template),
+                ..Default::default()
+            },
+            "horizontal" => crate::config::FormatConfig {
+                horizontal: Some(template),
+                ..Default::default()
+            },
             _ => unreachable!(),
         }
-        config
+    }
+
+    fn styled_format_config() -> crate::config::FormatConfig {
+        let mut template = crate::config::FormatTemplate::parse(
+            &["{icon}", "{value}%"],
+            &["icon", "value", "percent", "state"],
+            "test.format",
+        )
+        .unwrap();
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Stateful {
+                default: Some(Style {
+                    color: Some(ColorValue::Token(ThemeToken::Accent)),
+                    ..Default::default()
+                }),
+                by_state: vec![(
+                    "critical".to_string(),
+                    Style {
+                        color: Some(ColorValue::Token(ThemeToken::Critical)),
+                        ..Default::default()
+                    },
+                )],
+            },
+        );
+        crate::config::FormatConfig {
+            collapsed: Some(template),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -458,7 +549,46 @@ mod tests {
 
         assert_eq!(
             m.formatted_text(&state, crate::config::FormatMode::Expanded),
-            Some("▒ 42% discharging".to_string())
+            Some("▒ 42% normal".to_string())
         );
+    }
+
+    #[test]
+    fn battery_state_placeholder_uses_widened_vocabulary() {
+        let m = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            IconRulesConfig::default(),
+            format_config("collapsed", "{state}"),
+        );
+        let state = BatteryState {
+            percentage: 5.0,
+            is_charging: false,
+        };
+
+        assert_eq!(
+            m.formatted_segments(&state, crate::config::FormatMode::Collapsed),
+            Some(vec!["critical".to_string()])
+        );
+    }
+
+    #[test]
+    fn battery_styled_segments_resolve_critical_state() {
+        let m = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            IconRulesConfig::default(),
+            styled_format_config(),
+        );
+        let state = BatteryState {
+            percentage: 5.0,
+            is_charging: false,
+        };
+
+        let segments = m
+            .styled_segments(&state, crate::config::FormatMode::Collapsed)
+            .unwrap();
+        assert_eq!(segments[0].1.color, Some(crate::theme::CRITICAL));
+        assert_eq!(segments[1].1, crate::config::ResolvedStyle::default());
     }
 }

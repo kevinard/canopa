@@ -6,6 +6,7 @@ use anyhow::Context;
 use iced_layershell::reexport::Anchor;
 use std::collections::HashMap;
 
+#[allow(unused_imports)]
 pub use style::{ColorValue, ResolvedStyle, SegmentStyles, Style, ThemeToken, Weight};
 
 fn is_known_config_module_type(module_type: &str) -> bool {
@@ -132,12 +133,12 @@ impl FormatConfig {
     pub fn template_for(&self, mode: FormatMode) -> Option<&FormatTemplate> {
         match mode {
             FormatMode::Collapsed => self.collapsed.as_ref(),
-            FormatMode::Expanded => self.expanded.as_ref().or_else(|| self.collapsed.as_ref()),
+            FormatMode::Expanded => self.expanded.as_ref().or(self.collapsed.as_ref()),
             FormatMode::Horizontal => self
                 .horizontal
                 .as_ref()
-                .or_else(|| self.expanded.as_ref())
-                .or_else(|| self.collapsed.as_ref()),
+                .or(self.expanded.as_ref())
+                .or(self.collapsed.as_ref()),
         }
     }
 }
@@ -162,15 +163,27 @@ pub struct StyledSegment {
 
 impl StyledSegment {
     pub fn new(template: TextTemplate) -> Self {
-        StyledSegment { template, styles: SegmentStyles::None }
+        StyledSegment {
+            template,
+            styles: SegmentStyles::None,
+        }
     }
 
-    pub fn template(&self) -> &TextTemplate { &self.template }
-    pub fn styles(&self) -> &SegmentStyles { &self.styles }
-    pub fn set_styles(&mut self, styles: SegmentStyles) { self.styles = styles; }
+    #[allow(dead_code)]
+    pub fn template(&self) -> &TextTemplate {
+        &self.template
+    }
+    #[allow(dead_code)]
+    pub fn styles(&self) -> &SegmentStyles {
+        &self.styles
+    }
+    pub fn set_styles(&mut self, styles: SegmentStyles) {
+        self.styles = styles;
+    }
 }
 
 impl FormatTemplate {
+    #[allow(dead_code)]
     pub fn parse(raw_segments: &[&str], allowed: &[&str], path: &str) -> anyhow::Result<Self> {
         if raw_segments.is_empty() {
             anyhow::bail!("{path}: expected at least one string value.");
@@ -186,8 +199,12 @@ impl FormatTemplate {
         FormatTemplate { segments }
     }
 
-    pub fn segments(&self) -> &[StyledSegment] { &self.segments }
+    #[allow(dead_code)]
+    pub fn segments(&self) -> &[StyledSegment] {
+        &self.segments
+    }
 
+    #[allow(dead_code)]
     pub fn set_segment_styles(&mut self, index: usize, styles: SegmentStyles) {
         if let Some(s) = self.segments.get_mut(index) {
             s.set_styles(styles);
@@ -296,6 +313,7 @@ impl TextTemplate {
         Ok(TextTemplate { parts })
     }
 
+    #[allow(dead_code)]
     pub fn render(&self, values: &HashMap<&str, &str>) -> String {
         let mut rendered = String::new();
         for part in &self.parts {
@@ -669,15 +687,18 @@ mod format_template_tests {
     fn render_styled_segments_returns_resolved_style_per_segment() {
         use crate::config::style::{ColorValue, SegmentStyles, Style, ThemeToken};
 
-        let mut tmpl = FormatTemplate::parse(&["{icon}", "{value}%"], &["icon", "value"], "test.format").unwrap();
-        tmpl.set_segment_styles(0, SegmentStyles::Static(Style {
-            color: Some(ColorValue::Token(ThemeToken::Accent)),
-            ..Default::default()
-        }));
-        let rendered = tmpl.render_styled_segments(
-            &[("icon", "▓".into()), ("value", "42".into())],
-            None,
+        let mut tmpl =
+            FormatTemplate::parse(&["{icon}", "{value}%"], &["icon", "value"], "test.format")
+                .unwrap();
+        tmpl.set_segment_styles(
+            0,
+            SegmentStyles::Static(Style {
+                color: Some(ColorValue::Token(ThemeToken::Accent)),
+                ..Default::default()
+            }),
         );
+        let rendered =
+            tmpl.render_styled_segments(&[("icon", "▓".into()), ("value", "42".into())], None);
         assert_eq!(rendered.len(), 2);
         assert_eq!(rendered[0].0, "▓");
         assert_eq!(rendered[0].1.color, Some(ThemeToken::Accent.resolve()));
@@ -690,12 +711,22 @@ mod format_template_tests {
         use crate::config::style::{ColorValue, SegmentStyles, Style, ThemeToken};
 
         let mut tmpl = FormatTemplate::parse(&["{icon}"], &["icon"], "test.format").unwrap();
-        tmpl.set_segment_styles(0, SegmentStyles::Stateful {
-            default: Some(Style { color: Some(ColorValue::Token(ThemeToken::Accent)), ..Default::default() }),
-            by_state: vec![
-                ("critical".into(), Style { color: Some(ColorValue::Token(ThemeToken::Critical)), ..Default::default() }),
-            ],
-        });
+        tmpl.set_segment_styles(
+            0,
+            SegmentStyles::Stateful {
+                default: Some(Style {
+                    color: Some(ColorValue::Token(ThemeToken::Accent)),
+                    ..Default::default()
+                }),
+                by_state: vec![(
+                    "critical".into(),
+                    Style {
+                        color: Some(ColorValue::Token(ThemeToken::Critical)),
+                        ..Default::default()
+                    },
+                )],
+            },
+        );
         let crit = tmpl.render_styled_segments(&[("icon", "x".into())], Some("critical"));
         assert_eq!(crit[0].1.color, Some(ThemeToken::Critical.resolve()));
         let norm = tmpl.render_styled_segments(&[("icon", "x".into())], Some("normal"));

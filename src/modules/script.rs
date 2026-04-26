@@ -64,6 +64,23 @@ impl ScriptModule {
             ])
         })
     }
+
+    fn styled_segments(
+        &self,
+        state: &ScriptState,
+        mode: crate::config::FormatMode,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.format.template_for(mode).map(|template| {
+            template.render_styled_segments(
+                &[
+                    ("icon", ">_".to_string()),
+                    ("value", state.output.clone()),
+                    ("output", state.output.clone()),
+                ],
+                None,
+            )
+        })
+    }
 }
 
 impl crate::modules::Module for ScriptModule {
@@ -118,6 +135,27 @@ impl crate::modules::Module for ScriptModule {
 
         match state {
             ModuleState::Script(s) => {
+                if let Some(segments) =
+                    self.styled_segments(s, crate::config::FormatMode::Collapsed)
+                {
+                    return iced::widget::row(
+                        segments
+                            .into_iter()
+                            .map(|(segment, style)| {
+                                crate::modules::view::styled_segment_text(
+                                    segment,
+                                    11,
+                                    crate::theme::TEXT,
+                                    style,
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill)
+                    .into();
+                }
                 let output = self
                     .formatted_text(s, crate::config::FormatMode::Collapsed)
                     .unwrap_or_else(|| s.output.clone());
@@ -141,6 +179,24 @@ impl crate::modules::Module for ScriptModule {
 
         match state {
             ModuleState::Script(s) => {
+                if let Some(segments) = self.styled_segments(s, crate::config::FormatMode::Expanded)
+                {
+                    return row(segments
+                        .into_iter()
+                        .map(|(segment, style)| {
+                            crate::modules::view::styled_segment_text(
+                                segment,
+                                13,
+                                crate::theme::TEXT,
+                                style,
+                            )
+                        })
+                        .collect::<Vec<_>>())
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill)
+                    .into();
+                }
                 let output = self
                     .formatted_text(s, crate::config::FormatMode::Expanded)
                     .unwrap_or_else(|| s.output.clone());
@@ -165,12 +221,39 @@ impl crate::modules::Module for ScriptModule {
         use crate::modules::view::horizontal_icon_label;
 
         match state {
-            ModuleState::Script(s) => horizontal_icon_label(
-                ">_",
-                crate::theme::TEXT,
-                self.formatted_text(s, crate::config::FormatMode::Horizontal)
-                    .unwrap_or_else(|| s.output.clone()),
-            ),
+            ModuleState::Script(s) => {
+                if let Some(segments) =
+                    self.styled_segments(s, crate::config::FormatMode::Horizontal)
+                {
+                    return iced::widget::container(
+                        iced::widget::row(
+                            segments
+                                .into_iter()
+                                .map(|(segment, style)| {
+                                    crate::modules::view::styled_segment_text(
+                                        segment,
+                                        12,
+                                        crate::theme::TEXT,
+                                        style,
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                        .spacing(4)
+                        .align_y(iced::Alignment::Center),
+                    )
+                    .height(iced::Length::Fill)
+                    .align_y(iced::Alignment::Center)
+                    .padding([0, 6])
+                    .into();
+                }
+                horizontal_icon_label(
+                    ">_",
+                    crate::theme::TEXT,
+                    self.formatted_text(s, crate::config::FormatMode::Horizontal)
+                        .unwrap_or_else(|| s.output.clone()),
+                )
+            }
             _ => iced::widget::Space::new().into(),
         }
     }
@@ -179,7 +262,29 @@ impl crate::modules::Module for ScriptModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
     use crate::modules::Module;
+
+    fn styled_format_config() -> crate::config::FormatConfig {
+        let mut template = crate::config::FormatTemplate::parse(
+            &["{output}"],
+            &["icon", "value", "output"],
+            "test.format",
+        )
+        .unwrap();
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Static(Style {
+                color: Some(ColorValue::Token(ThemeToken::Accent)),
+                weight: Some(Weight::Bold),
+                ..Default::default()
+            }),
+        );
+        crate::config::FormatConfig {
+            collapsed: Some(template),
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn script_module_id_is_script() {
@@ -217,6 +322,25 @@ mod tests {
     fn script_event_failed_variant() {
         // Ensure the Failed variant constructs without issue.
         let _ev = ScriptEvent::Failed;
+    }
+
+    #[test]
+    fn script_styled_segments_resolve_inline_style() {
+        let m = ScriptModule::new(
+            crate::modules::ModuleId::new("script"),
+            "echo hi".into(),
+            5,
+            styled_format_config(),
+        );
+        let state = ScriptState {
+            output: "ok".into(),
+        };
+        let segment = &m
+            .styled_segments(&state, crate::config::FormatMode::Collapsed)
+            .unwrap()[0];
+
+        assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
+        assert_eq!(segment.1.weight, Some(Weight::Bold));
     }
 
     #[test]
