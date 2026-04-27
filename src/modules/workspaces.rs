@@ -47,16 +47,18 @@ impl crate::modules::Module for WorkspacesModule {
         iced::Subscription::none()
     }
 
-    fn view_collapsed(
+    fn view_collapsed_with_style(
         &self,
         _state: &crate::modules::ModuleState,
+        _bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded(
+    fn view_expanded_with_style(
         &self,
         _state: &crate::modules::ModuleState,
+        _bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
@@ -123,18 +125,7 @@ impl WorkspaceItemModule {
 
         if horizontal {
             if let Some(segments) = styled {
-                return container(
-                    iced::widget::row(
-                        segments
-                            .into_iter()
-                            .map(|(segment, style)| {
-                                crate::modules::view::styled_segment_text(segment, 10, fg, style)
-                            })
-                            .collect::<Vec<_>>(),
-                    )
-                    .spacing(4)
-                    .align_y(Alignment::Center),
-                )
+                return container(crate::modules::view::styled_segments_row(segments, 10, fg))
                 .width(32)
                 .height(Length::Fill)
                 .align_x(Alignment::Center)
@@ -177,18 +168,7 @@ impl WorkspaceItemModule {
             .into()
         } else {
             if let Some(segments) = styled {
-                return container(
-                    iced::widget::row(
-                        segments
-                            .into_iter()
-                            .map(|(segment, style)| {
-                                crate::modules::view::styled_segment_text(segment, 12, fg, style)
-                            })
-                            .collect::<Vec<_>>(),
-                    )
-                    .spacing(4)
-                    .align_y(Alignment::Center),
-                )
+                return container(crate::modules::view::styled_segments_row(segments, 12, fg))
                 .width(Length::Fill)
                 .height(20)
                 .align_x(Alignment::Center)
@@ -313,6 +293,7 @@ impl WorkspaceItemModule {
             .map(|template| template.render_segments(&self.format_values()))
     }
 
+    #[cfg(test)]
     fn styled_segments(
         &self,
         mode: crate::config::FormatMode,
@@ -348,16 +329,18 @@ impl crate::modules::Module for WorkspaceItemModule {
         iced::Subscription::none()
     }
 
-    fn view_collapsed(
+    fn view_collapsed_with_style(
         &self,
         _state: &crate::modules::ModuleState,
+        _bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded(
+    fn view_expanded_with_style(
         &self,
         _state: &crate::modules::ModuleState,
+        _bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }

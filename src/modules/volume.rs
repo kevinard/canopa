@@ -89,6 +89,7 @@ impl VolumeModule {
         }
     }
 
+    #[cfg(test)]
     fn formatted_text(
         &self,
         volume: &VolumeState,
@@ -197,13 +198,6 @@ impl crate::modules::Module for VolumeModule {
         iced::Subscription::none() // fed via Message::Volume from app.rs
     }
 
-    fn view_collapsed(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_collapsed_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -222,13 +216,6 @@ impl crate::modules::Module for VolumeModule {
         }
     }
 
-    fn view_expanded(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_expanded_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_expanded_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -245,13 +232,6 @@ impl crate::modules::Module for VolumeModule {
             }
             _ => iced::widget::Space::new().into(),
         }
-    }
-
-    fn view_horizontal(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_horizontal_with_style(state, &crate::config::Style::default())
     }
 
     fn view_horizontal_with_style(

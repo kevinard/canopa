@@ -202,11 +202,19 @@ impl crate::modules::Module for TrayModule {
         iced::Subscription::none()
     }
 
-    fn view_collapsed(&self, _state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
+    fn view_collapsed_with_style(
+        &self,
+        _state: &ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded(&self, _state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
+    fn view_expanded_with_style(
+        &self,
+        _state: &ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 
@@ -326,11 +334,19 @@ impl crate::modules::Module for TrayIconModule {
         iced::Subscription::none()
     }
 
-    fn view_collapsed(&self, _state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
+    fn view_collapsed_with_style(
+        &self,
+        _state: &ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded(&self, _state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
+    fn view_expanded_with_style(
+        &self,
+        _state: &ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
     }
 

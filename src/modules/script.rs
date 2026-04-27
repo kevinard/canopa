@@ -65,6 +65,7 @@ impl ScriptModule {
         })
     }
 
+    #[cfg(test)]
     fn styled_segments(
         &self,
         state: &ScriptState,
@@ -135,19 +136,13 @@ impl crate::modules::Module for ScriptModule {
         )
     }
 
-    fn view_collapsed(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_collapsed_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
+        use crate::modules::view::{fallback_resolved_style, styled_segment_text, styled_segments_row};
         use iced::widget::column;
         use iced::{Alignment, Length};
 
@@ -158,42 +153,18 @@ impl crate::modules::Module for ScriptModule {
                     crate::config::FormatMode::Collapsed,
                     bar_style,
                 ) {
-                    return iced::widget::row(
-                        segments
-                            .into_iter()
-                            .map(|(segment, style)| {
-                                crate::modules::view::styled_segment_text(
-                                    segment,
-                                    11,
-                                    crate::theme::TEXT,
-                                    style,
-                                )
-                            })
-                            .collect::<Vec<_>>(),
-                    )
-                    .spacing(4)
-                    .align_y(Alignment::Center)
-                    .width(Length::Fill)
-                    .into();
+                    return styled_segments_row(segments, 11, crate::theme::TEXT)
+                        .width(Length::Fill)
+                        .into();
                 }
                 let output = self
                     .formatted_text(s, crate::config::FormatMode::Collapsed)
                     .unwrap_or_else(|| s.output.clone());
                 let truncated: String = output.chars().take(5).collect();
-                let style = crate::modules::view::fallback_resolved_style(bar_style);
+                let style = fallback_resolved_style(bar_style);
                 column![
-                    crate::modules::view::styled_segment_text(
-                        ">_".to_string(),
-                        16,
-                        crate::theme::TEXT,
-                        style,
-                    ),
-                    crate::modules::view::styled_segment_text(
-                        truncated,
-                        11,
-                        crate::theme::TEXT,
-                        style,
-                    ),
+                    styled_segment_text(">_".to_string(), 16, crate::theme::TEXT, style),
+                    styled_segment_text(truncated, 11, crate::theme::TEXT, style),
                 ]
                 .align_x(Alignment::Center)
                 .width(Length::Fill)
@@ -203,19 +174,13 @@ impl crate::modules::Module for ScriptModule {
         }
     }
 
-    fn view_expanded(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_expanded_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_expanded_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
+        use crate::modules::view::{fallback_resolved_style, styled_segment_text, styled_segments_row};
         use iced::widget::row;
         use iced::{Alignment, Length};
 
@@ -226,40 +191,18 @@ impl crate::modules::Module for ScriptModule {
                     crate::config::FormatMode::Expanded,
                     bar_style,
                 ) {
-                    return row(segments
-                        .into_iter()
-                        .map(|(segment, style)| {
-                            crate::modules::view::styled_segment_text(
-                                segment,
-                                13,
-                                crate::theme::TEXT,
-                                style,
-                            )
-                        })
-                        .collect::<Vec<_>>())
-                    .spacing(4)
-                    .align_y(Alignment::Center)
-                    .width(Length::Fill)
-                    .into();
+                    return styled_segments_row(segments, 13, crate::theme::TEXT)
+                        .width(Length::Fill)
+                        .into();
                 }
                 let output = self
                     .formatted_text(s, crate::config::FormatMode::Expanded)
                     .unwrap_or_else(|| s.output.clone());
-                let style = crate::modules::view::fallback_resolved_style(bar_style);
+                let style = fallback_resolved_style(bar_style);
                 row![
-                    crate::modules::view::styled_segment_text(
-                        ">_".to_string(),
-                        16,
-                        crate::theme::TEXT,
-                        style,
-                    ),
+                    styled_segment_text(">_".to_string(), 16, crate::theme::TEXT, style),
                     iced::widget::Space::new().width(Length::Fill),
-                    crate::modules::view::styled_segment_text(
-                        output,
-                        13,
-                        crate::theme::TEXT,
-                        style,
-                    ),
+                    styled_segment_text(output, 13, crate::theme::TEXT, style),
                 ]
                 .align_y(Alignment::Center)
                 .width(Length::Fill)
@@ -269,20 +212,15 @@ impl crate::modules::Module for ScriptModule {
         }
     }
 
-    fn view_horizontal(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_horizontal_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_horizontal_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use crate::modules::view::horizontal_icon_label_with_style;
+        use crate::modules::view::{horizontal_icon_label_with_style, styled_segments_row};
+        use iced::widget::container;
+        use iced::{Alignment, Length};
 
         match state {
             ModuleState::Script(s) => {
@@ -291,27 +229,11 @@ impl crate::modules::Module for ScriptModule {
                     crate::config::FormatMode::Horizontal,
                     bar_style,
                 ) {
-                    return iced::widget::container(
-                        iced::widget::row(
-                            segments
-                                .into_iter()
-                                .map(|(segment, style)| {
-                                    crate::modules::view::styled_segment_text(
-                                        segment,
-                                        12,
-                                        crate::theme::TEXT,
-                                        style,
-                                    )
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                        .spacing(4)
-                        .align_y(iced::Alignment::Center),
-                    )
-                    .height(iced::Length::Fill)
-                    .align_y(iced::Alignment::Center)
-                    .padding([0, 6])
-                    .into();
+                    return container(styled_segments_row(segments, 12, crate::theme::TEXT))
+                        .height(Length::Fill)
+                        .align_y(Alignment::Center)
+                        .padding([0, 6])
+                        .into();
                 }
                 horizontal_icon_label_with_style(
                     ">_",

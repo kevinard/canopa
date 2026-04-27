@@ -140,6 +140,7 @@ impl ClockModule {
         })
     }
 
+    #[cfg(test)]
     fn styled_segments(
         &self,
         state: &ClockState,
@@ -221,13 +222,6 @@ impl crate::modules::Module for ClockModule {
 
     // Clock keeps custom views: collapsed renders icon + time in a column and
     // expanded renders time plus a second date row.
-    fn view_collapsed(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_collapsed_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -244,21 +238,11 @@ impl crate::modules::Module for ClockModule {
                     crate::config::FormatMode::Collapsed,
                     bar_style,
                 ) {
-                    return iced::widget::row(
-                        segments
-                            .into_iter()
-                            .map(|(segment, style)| {
-                                crate::modules::view::styled_segment_text(
-                                    segment,
-                                    11,
-                                    crate::theme::TEXT,
-                                    style,
-                                )
-                            })
-                            .collect::<Vec<_>>(),
+                    return crate::modules::view::styled_segments_row(
+                        segments,
+                        11,
+                        crate::theme::TEXT,
                     )
-                    .spacing(4)
-                    .align_y(Alignment::Center)
                     .width(Length::Fill)
                     .into();
                 }
@@ -298,13 +282,6 @@ impl crate::modules::Module for ClockModule {
         }
     }
 
-    fn view_expanded(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_expanded_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_expanded_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -321,19 +298,11 @@ impl crate::modules::Module for ClockModule {
                     crate::config::FormatMode::Expanded,
                     bar_style,
                 ) {
-                    return row(segments
-                        .into_iter()
-                        .map(|(segment, style)| {
-                            crate::modules::view::styled_segment_text(
-                                segment,
-                                12,
-                                crate::theme::TEXT,
-                                style,
-                            )
-                        })
-                        .collect::<Vec<_>>())
-                    .spacing(4)
-                    .align_y(Alignment::Center)
+                    return crate::modules::view::styled_segments_row(
+                        segments,
+                        12,
+                        crate::theme::TEXT,
+                    )
                     .width(Length::Fill)
                     .into();
                 }
@@ -379,13 +348,6 @@ impl crate::modules::Module for ClockModule {
         }
     }
 
-    fn view_horizontal(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_horizontal_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_horizontal_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -401,23 +363,11 @@ impl crate::modules::Module for ClockModule {
                     crate::config::FormatMode::Horizontal,
                     bar_style,
                 ) {
-                    return iced::widget::container(
-                        iced::widget::row(
-                            segments
-                                .into_iter()
-                                .map(|(segment, style)| {
-                                    crate::modules::view::styled_segment_text(
-                                        segment,
-                                        12,
-                                        crate::theme::TEXT,
-                                        style,
-                                    )
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                        .spacing(4)
-                        .align_y(iced::Alignment::Center),
-                    )
+                    return iced::widget::container(crate::modules::view::styled_segments_row(
+                        segments,
+                        12,
+                        crate::theme::TEXT,
+                    ))
                     .height(iced::Length::Fill)
                     .align_y(iced::Alignment::Center)
                     .padding([0, 6])

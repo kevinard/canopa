@@ -32,6 +32,7 @@ impl FocusedWindowModule {
         })
     }
 
+    #[cfg(test)]
     fn styled_segments(
         &self,
         title: &str,
@@ -74,13 +75,6 @@ impl crate::modules::Module for FocusedWindowModule {
         iced::Subscription::none()
     }
 
-    fn view_collapsed(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_collapsed_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -105,21 +99,7 @@ impl crate::modules::Module for FocusedWindowModule {
                 bar_style,
             ) {
                 return iced::widget::container(
-                    iced::widget::row(
-                        segments
-                            .into_iter()
-                            .map(|(segment, style)| {
-                                crate::modules::view::styled_segment_text(
-                                    segment,
-                                    16,
-                                    theme::TEXT,
-                                    style,
-                                )
-                            })
-                            .collect::<Vec<_>>(),
-                    )
-                    .spacing(4)
-                    .align_y(iced::Alignment::Center),
+                    crate::modules::view::styled_segments_row(segments, 16, theme::TEXT),
                 )
                 .width(iced::Length::Fill)
                 .height(20)
@@ -137,13 +117,6 @@ impl crate::modules::Module for FocusedWindowModule {
         // Window is focused -> show icon placeholder (AC #2).
         // "□" (U+25A1) is a window-shape placeholder; replaced when icon system is added.
         collapsed_icon_with_style("□", theme::TEXT, bar_style)
-    }
-
-    fn view_expanded(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_expanded_with_style(state, &crate::config::Style::default())
     }
 
     fn view_expanded_with_style(
@@ -170,23 +143,11 @@ impl crate::modules::Module for FocusedWindowModule {
             crate::config::FormatMode::Expanded,
             bar_style,
         ) {
-            return container(
-                iced::widget::row(
-                    segments
-                        .into_iter()
-                        .map(|(segment, style)| {
-                            crate::modules::view::styled_segment_text(
-                                segment,
-                                12,
-                                theme::TEXT,
-                                style,
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                )
-                .spacing(4)
-                .align_y(Alignment::Center),
-            )
+            return container(crate::modules::view::styled_segments_row(
+                segments,
+                12,
+                theme::TEXT,
+            ))
             .width(Length::Fill)
             .height(20)
             .align_x(Alignment::Start)
@@ -215,13 +176,6 @@ impl crate::modules::Module for FocusedWindowModule {
         .into()
     }
 
-    fn view_horizontal(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_horizontal_with_style(state, &crate::config::Style::default())
-    }
-
     fn view_horizontal_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -245,23 +199,11 @@ impl crate::modules::Module for FocusedWindowModule {
             crate::config::FormatMode::Horizontal,
             bar_style,
         ) {
-            return container(
-                iced::widget::row(
-                    segments
-                        .into_iter()
-                        .map(|(segment, style)| {
-                            crate::modules::view::styled_segment_text(
-                                segment,
-                                12,
-                                theme::TEXT,
-                                style,
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                )
-                .spacing(4)
-                .align_y(Alignment::Center),
-            )
+            return container(crate::modules::view::styled_segments_row(
+                segments,
+                12,
+                theme::TEXT,
+            ))
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Alignment::Start)

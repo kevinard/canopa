@@ -191,6 +191,22 @@ where
     }
 }
 
+/// Build a centred, 4px-spaced row of styled segments. Container wrapping
+/// (width/height/padding) is the caller's responsibility — this helper exists
+/// only to eliminate the per-module map+spacing+align boilerplate.
+pub(super) fn styled_segments_row<'a>(
+    segments: Vec<(String, crate::config::ResolvedStyle)>,
+    size: u32,
+    color: iced::Color,
+) -> iced::widget::Row<'a, Message> {
+    row(segments
+        .into_iter()
+        .map(|(segment, style)| styled_segment_text(segment, size, color, style))
+        .collect::<Vec<_>>())
+    .spacing(4)
+    .align_y(Alignment::Center)
+}
+
 pub(super) fn styled_segment_text<'a>(
     segment: String,
     fallback_size: u32,
@@ -222,54 +238,33 @@ fn collapsed_styled_segments<'a>(
     segments: Vec<(String, crate::config::ResolvedStyle)>,
     color: iced::Color,
 ) -> Element<'a, Message> {
-    container(
-        row(segments
-            .into_iter()
-            .map(|(segment, style)| styled_segment_text(segment, 16, color, style))
-            .collect::<Vec<_>>())
-        .spacing(4)
-        .align_y(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .height(20)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .into()
+    container(styled_segments_row(segments, 16, color))
+        .width(Length::Fill)
+        .height(20)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 fn expanded_styled_segments<'a>(
     segments: Vec<(String, crate::config::ResolvedStyle)>,
 ) -> Element<'a, Message> {
-    container(
-        row(segments
-            .into_iter()
-            .map(|(segment, style)| styled_segment_text(segment, 12, crate::theme::SUBTEXT, style))
-            .collect::<Vec<_>>())
-        .spacing(4)
-        .align_y(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .height(20)
-    .align_y(Alignment::Center)
-    .padding([0, 6])
-    .into()
+    container(styled_segments_row(segments, 12, crate::theme::SUBTEXT))
+        .width(Length::Fill)
+        .height(20)
+        .align_y(Alignment::Center)
+        .padding([0, 6])
+        .into()
 }
 
 fn horizontal_styled_segments<'a>(
     segments: Vec<(String, crate::config::ResolvedStyle)>,
 ) -> Element<'a, Message> {
-    container(
-        row(segments
-            .into_iter()
-            .map(|(segment, style)| styled_segment_text(segment, 12, crate::theme::SUBTEXT, style))
-            .collect::<Vec<_>>())
-        .spacing(4)
-        .align_y(Alignment::Center),
-    )
-    .height(Length::Fill)
-    .align_y(Alignment::Center)
-    .padding([0, 6])
-    .into()
+    container(styled_segments_row(segments, 12, crate::theme::SUBTEXT))
+        .height(Length::Fill)
+        .align_y(Alignment::Center)
+        .padding([0, 6])
+        .into()
 }
 
 #[cfg(test)]

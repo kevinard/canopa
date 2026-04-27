@@ -146,33 +146,24 @@ pub trait Module: Send + Sync {
         self.kind().as_str()
     }
     fn subscription(&self) -> iced::Subscription<crate::app::Message>;
-    fn view_collapsed(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message>;
-    fn view_expanded(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message>;
-    /// View for horizontal bars (top/bottom). Modules render single-line, shrink-width content
-    /// suited for a side-by-side row layout. Defaults to `view_expanded`.
-    fn view_horizontal(&self, state: &ModuleState) -> iced::Element<'_, crate::app::Message> {
-        self.view_expanded(state)
-    }
     fn view_collapsed_with_style(
         &self,
         state: &ModuleState,
-        _bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_collapsed(state)
-    }
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message>;
     fn view_expanded_with_style(
         &self,
         state: &ModuleState,
-        _bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_expanded(state)
-    }
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message>;
+    /// View for horizontal bars (top/bottom). Single-line, shrink-width content
+    /// suited for a side-by-side row layout. Defaults to `view_expanded_with_style`.
     fn view_horizontal_with_style(
         &self,
         state: &ModuleState,
-        _bar_style: &crate::config::Style,
+        bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
-        self.view_horizontal(state)
+        self.view_expanded_with_style(state, bar_style)
     }
     /// View used when rendering this module inside a bar surface.
     ///
