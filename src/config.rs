@@ -500,8 +500,18 @@ impl Default for NetworkConfig {
 }
 
 /// Configuration for the tray module.
-#[derive(Debug, Clone, Default)]
-pub struct TrayConfig;
+#[derive(Debug, Clone)]
+pub struct TrayConfig {
+    pub tooltip: TooltipSetting,
+}
+
+impl Default for TrayConfig {
+    fn default() -> Self {
+        TrayConfig {
+            tooltip: TooltipSetting::Default,
+        }
+    }
+}
 
 /// Configuration for the focused-window module (no user-configurable params).
 #[derive(Debug, Clone)]
@@ -1192,7 +1202,7 @@ mod tests {
         config.modules = vec![ModuleConfig {
             name: "tray".into(),
             module_type: "tray".into(),
-            params: ModuleParams::Tray(TrayConfig),
+            params: ModuleParams::Tray(TrayConfig::default()),
             actions: crate::config::ModuleActionsConfig::default(),
         }];
         assert!(validate(&config).is_ok());

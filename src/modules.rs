@@ -306,7 +306,7 @@ fn network_synthesized_params() -> ModuleParams {
 }
 
 fn tray_synthesized_params() -> ModuleParams {
-    ModuleParams::Tray(TrayConfig)
+    ModuleParams::Tray(TrayConfig::default())
 }
 
 fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {

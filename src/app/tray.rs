@@ -329,7 +329,7 @@ mod tests {
             modules: vec![ModuleConfig {
                 name: "tray".into(),
                 module_type: "tray".into(),
-                params: ModuleParams::Tray(crate::config::TrayConfig),
+                params: ModuleParams::Tray(crate::config::TrayConfig::default()),
                 actions: crate::config::ModuleActionsConfig::default(),
             }],
             ..Config::default()
