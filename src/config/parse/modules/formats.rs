@@ -65,3 +65,107 @@ fn parse_field(
     let segments = super::segment_styles::parse_segments(node, allowed, allowed_states, path)?;
     Ok(Some(FormatTemplate::from_styled(segments)))
 }
+
+use crate::config::TooltipSetting;
+
+/// Parse the optional `tooltip` field on a module's child block.
+///
+/// Accepts:
+/// - absence => `TooltipSetting::Default`
+/// - `tooltip "..."` (positional string, optionally multiple segments) => `Custom`
+/// - `tooltip { segment ... }` (styled-segment block) => `Custom`
+/// - `tooltip #false` => `Disabled`
+/// - `tooltip #true` => error
+pub(super) fn parse_tooltip_field(
+    children: &KdlDocument,
+    module_path: &str,
+    allowed_placeholders: &[&str],
+    allowed_states: &[&str],
+) -> anyhow::Result<TooltipSetting> {
+    let Some(node) = children.get("tooltip") else {
+        return Ok(TooltipSetting::Default);
+    };
+    let path = format!("{module_path}.tooltip");
+
+    // Single bool entry (no children, one positional bool) => enabled/disabled flag.
+    let positional: Vec<_> = node.entries().iter().filter(|e| e.name().is_none()).collect();
+    if node.children().is_none() && positional.len() == 1 {
+        if let Some(b) = positional[0].value().as_bool() {
+            if b {
+                anyhow::bail!(
+                    "{path}: tooltip true is not allowed; omit the field to use the default."
+                );
+            }
+            return Ok(TooltipSetting::Disabled);
+        }
+    }
+
+    // Otherwise: delegate to the shared styled-segment parser.
+    let segments =
+        super::segment_styles::parse_segments(node, allowed_placeholders, allowed_states, &path)?;
+    Ok(TooltipSetting::Custom(crate::config::FormatTemplate::from_styled(segments)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::kdl::KdlDocument;
+
+    fn parse(src: &str) -> KdlDocument {
+        src.parse().expect("kdl parse")
+    }
+
+    fn allowed() -> &'static [&'static str] {
+        &["icon", "value", "state"]
+    }
+
+    #[test]
+    fn tooltip_absent_returns_default_setting() {
+        let doc = parse("");
+        let s = parse_tooltip_field(&doc, "m", allowed(), &[]).unwrap();
+        assert!(matches!(s, crate::config::TooltipSetting::Default));
+    }
+
+    #[test]
+    fn tooltip_string_returns_custom() {
+        let doc = parse(r#"tooltip "{value}%""#);
+        let s = parse_tooltip_field(&doc, "m", allowed(), &[]).unwrap();
+        assert!(matches!(s, crate::config::TooltipSetting::Custom(_)));
+    }
+
+    #[test]
+    fn tooltip_false_returns_disabled() {
+        let doc = parse("tooltip #false");
+        let s = parse_tooltip_field(&doc, "m", allowed(), &[]).unwrap();
+        assert!(matches!(s, crate::config::TooltipSetting::Disabled));
+    }
+
+    #[test]
+    fn tooltip_true_errors() {
+        let doc = parse("tooltip #true");
+        let err = parse_tooltip_field(&doc, "m", allowed(), &[])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("tooltip true is not allowed"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn tooltip_block_returns_custom() {
+        let doc = parse(
+            r#"tooltip {
+                segment "{icon}"
+                segment "{value}"
+            }"#,
+        );
+        let s = parse_tooltip_field(&doc, "m", allowed(), &[]).unwrap();
+        match s {
+            crate::config::TooltipSetting::Custom(t) => {
+                assert_eq!(t.segments().len(), 2);
+            }
+            _ => panic!("expected Custom"),
+        }
+    }
+}
