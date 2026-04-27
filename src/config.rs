@@ -158,6 +158,7 @@ pub struct BatteryConfig {
     pub states: StatesConfig,
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
 }
 
 impl Default for BatteryConfig {
@@ -168,6 +169,7 @@ impl Default for BatteryConfig {
             states,
             icons: IconRulesConfig::default(),
             format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
         }
     }
 }

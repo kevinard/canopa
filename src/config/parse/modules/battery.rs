@@ -53,12 +53,19 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<BatteryConfig>
         &["icon", "value", "percent", "state"],
         &allowed_states,
     )?;
+    let tooltip = formats::parse_tooltip_field(
+        children,
+        &module_path,
+        &["icon", "value", "percent", "state"],
+        &allowed_states,
+    )?;
 
     Ok(BatteryConfig {
         critical_threshold,
         states: states_config,
         icons,
         format,
+        tooltip,
     })
 }
 
@@ -146,6 +153,31 @@ mod tests {
         let kdl = r#"modules { module "battery" { states { state "" threshold=10 } } }"#;
         let err = parse(kdl).unwrap_err().to_string();
         assert!(err.contains("must not be empty"), "got: {err}");
+    }
+
+    #[test]
+    fn tooltip_string_parsed() {
+        let cfg = battery_config(r#"modules { module "battery" { tooltip "{value}%" } }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+    }
+
+    #[test]
+    fn tooltip_false_disables() {
+        let cfg = battery_config(r#"modules { module "battery" { tooltip #false } }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+    }
+
+    #[test]
+    fn tooltip_true_errors() {
+        let kdl = r#"modules { module "battery" { tooltip #true } }"#;
+        let err = crate::config::parse::parse(kdl).unwrap_err().to_string();
+        assert!(err.contains("tooltip true"), "got: {err}");
+    }
+
+    #[test]
+    fn tooltip_absent_is_default() {
+        let cfg = battery_config(r#"modules { module "battery" {} }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
     }
 
     #[test]
