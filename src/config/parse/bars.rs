@@ -2,7 +2,8 @@ use ::kdl::{KdlDocument, KdlNode};
 
 use super::super::{AnimationConfig, BarConfig, BarModules, Edge, ExpandTrigger};
 use super::animation;
-use crate::config::style::{ColorValue, Style, Weight};
+use super::style::parse_style_props;
+use crate::config::style::Style;
 
 pub(super) fn parse(doc: &KdlDocument) -> anyhow::Result<Vec<BarConfig>> {
     let mut result = Vec::new();
@@ -159,48 +160,10 @@ fn parse_style_node(node: &KdlNode, path: &str) -> anyhow::Result<Style> {
     if node.children().is_some() {
         anyhow::bail!("{path}: style does not support child nodes.");
     }
-
-    let mut style = Style::default();
-    for entry in node.entries() {
-        let Some(name) = entry.name() else {
-            anyhow::bail!("{path}: unexpected positional argument on `style`.");
-        };
-        match name.value() {
-            "color" => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.color: expected string."))?;
-                style.color =
-                    Some(ColorValue::parse(raw).map_err(|e| anyhow::anyhow!("{path}.color: {e}"))?);
-            }
-            "size" => {
-                let f = entry
-                    .value()
-                    .as_float()
-                    .or_else(|| entry.value().as_integer().map(|i| i as f64))
-                    .ok_or_else(|| anyhow::anyhow!("{path}.size: expected number."))?;
-                if f <= 0.0 {
-                    anyhow::bail!("{path}.size: must be positive, got {f}.");
-                }
-                style.size = Some(f as f32);
-            }
-            "weight" => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.weight: expected string."))?;
-                style.weight =
-                    Some(Weight::parse(raw).map_err(|e| anyhow::anyhow!("{path}.weight: {e}"))?);
-            }
-            "state" => {
-                anyhow::bail!("{path}: `state` is only valid on module segment styles.");
-            }
-            other => {
-                anyhow::bail!("{path}: unknown property {other:?}.");
-            }
-        }
+    if node.entries().iter().any(|e| e.name().is_none()) {
+        anyhow::bail!("{path}: unexpected positional argument on `style`.");
     }
+    let (style, _) = parse_style_props(node, path, false)?;
     Ok(style)
 }
 

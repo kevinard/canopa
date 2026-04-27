@@ -2,6 +2,13 @@ use ::kdl::KdlNode;
 
 use crate::config::ModuleActionsConfig;
 
+/// Parse a module's `actions { click "<cmd>" right-click "<cmd>" }` block.
+///
+/// Action commands are executed via `sh -c "<cmd>"` (see `command::CommandSpec::Shell`).
+/// The full string is interpreted by the shell, so quoting, globbing, pipes, and
+/// substitutions all apply. Configs are user-owned, so this is intentional, but
+/// callers should treat any value originating from the config file as
+/// shell-evaluated when documenting or surfacing it to the user.
 pub(super) fn parse(
     node: &KdlNode,
     idx: usize,

@@ -133,7 +133,6 @@ impl Style {
         self.color.is_none() && self.size.is_none() && self.weight.is_none()
     }
 
-    #[allow(dead_code)]
     pub fn merge_over(self, base: Style) -> Style {
         Style {
             color: self.color.or(base.color),

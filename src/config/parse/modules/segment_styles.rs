@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
-use crate::config::style::{ColorValue, SegmentStyles, Style, Weight};
+use super::super::style::parse_style_props;
+use crate::config::style::{SegmentStyles, Style};
 use crate::config::{StyledSegment, TextTemplate};
 
 pub(super) fn parse_segments(
@@ -10,6 +11,17 @@ pub(super) fn parse_segments(
     path: &str,
 ) -> anyhow::Result<Vec<StyledSegment>> {
     let mut out = Vec::new();
+    let has_positional = node.entries().iter().any(|e| e.name().is_none());
+    let has_segment_children = node
+        .children()
+        .map(|c| c.nodes().iter().any(|n| n.name().value() == "segment"))
+        .unwrap_or(false);
+
+    if has_positional && has_segment_children {
+        anyhow::bail!(
+            "{path}: positional segment strings and `segment {{}}` children are mutually exclusive."
+        );
+    }
 
     for entry in node.entries() {
         if entry.name().is_some() {
@@ -84,45 +96,7 @@ fn parse_segment(
 /// Parse style props directly on a `segment` node. The positional template arg
 /// is ignored. `state` is rejected here (only valid on `style` children).
 fn parse_inline_style_props(node: &KdlNode, path: &str) -> anyhow::Result<Style> {
-    let mut style = Style::default();
-    for entry in node.entries() {
-        let Some(name) = entry.name() else { continue };
-        match name.value() {
-            "color" => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.color: expected string."))?;
-                style.color =
-                    Some(ColorValue::parse(raw).map_err(|e| anyhow::anyhow!("{path}.color: {e}"))?);
-            }
-            "size" => {
-                let f = entry
-                    .value()
-                    .as_float()
-                    .or_else(|| entry.value().as_integer().map(|i| i as f64))
-                    .ok_or_else(|| anyhow::anyhow!("{path}.size: expected number."))?;
-                if f <= 0.0 {
-                    anyhow::bail!("{path}.size: must be positive, got {f}.");
-                }
-                style.size = Some(f as f32);
-            }
-            "weight" => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.weight: expected string."))?;
-                style.weight =
-                    Some(Weight::parse(raw).map_err(|e| anyhow::anyhow!("{path}.weight: {e}"))?);
-            }
-            "state" => {
-                anyhow::bail!("{path}: `state` is only valid on `style` children, not inline.");
-            }
-            other => {
-                anyhow::bail!("{path}: unknown property {other:?}.");
-            }
-        }
-    }
+    let (style, _) = parse_style_props(node, path, false)?;
     Ok(style)
 }
 
@@ -174,51 +148,8 @@ fn parse_style_children(
 }
 
 fn parse_one_style(node: &KdlNode, path: &str) -> anyhow::Result<(Style, Option<String>)> {
-    let mut style = Style::default();
-    let mut state: Option<String> = None;
-    for entry in node.entries() {
-        let Some(name) = entry.name() else {
-            anyhow::bail!("{path}: unexpected positional argument on `style`.");
-        };
-        match name.value() {
-            "color" => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.color: expected string."))?;
-                style.color =
-                    Some(ColorValue::parse(raw).map_err(|e| anyhow::anyhow!("{path}.color: {e}"))?);
-            }
-            "size" => {
-                let f = entry
-                    .value()
-                    .as_float()
-                    .or_else(|| entry.value().as_integer().map(|i| i as f64))
-                    .ok_or_else(|| anyhow::anyhow!("{path}.size: expected number."))?;
-                if f <= 0.0 {
-                    anyhow::bail!("{path}.size: must be positive, got {f}.");
-                }
-                style.size = Some(f as f32);
-            }
-            "weight" => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.weight: expected string."))?;
-                style.weight =
-                    Some(Weight::parse(raw).map_err(|e| anyhow::anyhow!("{path}.weight: {e}"))?);
-            }
-            "state" => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.state: expected string."))?;
-                state = Some(raw.to_string());
-            }
-            other => {
-                anyhow::bail!("{path}: unknown property {other:?}.");
-            }
-        }
+    if node.entries().iter().any(|e| e.name().is_none()) {
+        anyhow::bail!("{path}: unexpected positional argument on `style`.");
     }
-    Ok((style, state))
+    parse_style_props(node, path, true)
 }

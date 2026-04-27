@@ -66,6 +66,7 @@ impl App {
                     ModuleState::Script(ScriptState { output: text }),
                 );
             }
+            // Keep the previous output visible on failure rather than blanking the module.
             ModuleEvent::Script(ScriptEvent::Failed) => {}
             ModuleEvent::Button(ButtonEvent::Ready) => {
                 insert_module_state_if_changed(

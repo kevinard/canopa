@@ -33,13 +33,20 @@ pub(super) fn parse_optional(
     })
 }
 
-pub(super) fn reject_if_present(children: Option<&KdlDocument>, path: &str) -> anyhow::Result<()> {
+/// Error if any of the format fields (`format`, `expanded-format`,
+/// `horizontal-format`) are present. Used by modules that do not render
+/// templated text — e.g. tray, which composes its own per-icon view.
+pub(super) fn reject_format_fields(
+    children: Option<&KdlDocument>,
+    path: &str,
+    module_label: &str,
+) -> anyhow::Result<()> {
     let Some(children) = children else {
         return Ok(());
     };
     for field in ["format", "expanded-format", "horizontal-format"] {
         if children.get(field).is_some() {
-            anyhow::bail!("{path}.{field}: tray does not support format templates.");
+            anyhow::bail!("{path}.{field}: {module_label} does not support format templates.");
         }
     }
     Ok(())

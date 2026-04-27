@@ -10,14 +10,6 @@ pub(super) struct ModuleRuntime {
 }
 
 impl ModuleRuntime {
-    pub(super) fn from_modules(modules: Vec<(Zone, Box<dyn Module>)>) -> Self {
-        Self {
-            store: super::module_store::ModuleStore::from_modules(modules),
-            states: HashMap::new(),
-            actions: HashMap::new(),
-        }
-    }
-
     pub(super) fn from_modules_with_actions(
         modules: Vec<(Zone, Box<dyn Module>, ModuleActionsConfig)>,
     ) -> Self {
@@ -40,7 +32,7 @@ impl ModuleRuntime {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn is_empty(&self) -> bool {
         self.store.is_empty()
     }
@@ -63,12 +55,7 @@ impl ModuleRuntime {
         self.store.iter()
     }
 
-    #[allow(dead_code)]
-    pub(super) fn iter_mut(&mut self) -> impl Iterator<Item = &mut (Zone, Box<dyn Module>)> {
-        self.store.iter_mut()
-    }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn push(&mut self, zone: Zone, module: Box<dyn Module>) {
         self.store.push(zone, module);
     }

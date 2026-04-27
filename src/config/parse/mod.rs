@@ -4,6 +4,7 @@ mod bars;
 mod error;
 mod kdl;
 mod modules;
+mod style;
 
 use ::kdl::KdlDocument;
 

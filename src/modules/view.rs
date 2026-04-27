@@ -7,12 +7,23 @@ use iced::widget::{container, row, text};
 use iced::{Alignment, Element, Length};
 
 use crate::app::Message;
+use crate::config::FormatMode;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum IconLabelLayout {
     Collapsed,
     Expanded,
     Horizontal,
+}
+
+impl From<IconLabelLayout> for FormatMode {
+    fn from(layout: IconLabelLayout) -> Self {
+        match layout {
+            IconLabelLayout::Collapsed => FormatMode::Collapsed,
+            IconLabelLayout::Expanded => FormatMode::Expanded,
+            IconLabelLayout::Horizontal => FormatMode::Horizontal,
+        }
+    }
 }
 
 /// State-derived data for modules that render as an icon plus a short label.
@@ -25,34 +36,15 @@ pub(super) trait IconLabel {
     fn label_for_layout(&self, state: &super::ModuleState, _layout: IconLabelLayout) -> String {
         self.label(state)
     }
-    fn formatted_text_for_layout(
-        &self,
-        _state: &super::ModuleState,
-        _layout: IconLabelLayout,
-    ) -> Option<String> {
-        None
-    }
-    fn formatted_segments_for_layout(
-        &self,
-        _state: &super::ModuleState,
-        _layout: IconLabelLayout,
-    ) -> Option<Vec<String>> {
-        None
-    }
+    /// Render styled segments for a given layout if a format template is configured.
+    /// Returns `None` to fall back to the default icon+label rendering.
     fn styled_segments_for_layout(
         &self,
         _state: &super::ModuleState,
         _layout: IconLabelLayout,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        None
-    }
-    fn styled_segments_for_layout_with_default(
-        &self,
-        state: &super::ModuleState,
-        layout: IconLabelLayout,
         _default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_for_layout(state, layout)
+        None
     }
 
     fn color(&self, _state: &super::ModuleState) -> iced::Color {
@@ -67,10 +59,6 @@ pub(super) trait IconLabel {
 /// │       ⚡       │  icon centred, size 16
 /// └────────────────┘
 /// ```
-pub(super) fn collapsed_icon<'a>(icon: impl ToString, color: iced::Color) -> Element<'a, Message> {
-    collapsed_icon_with_style(icon, color, &crate::config::Style::default())
-}
-
 pub(super) fn collapsed_icon_with_style<'a>(
     icon: impl ToString,
     color: iced::Color,
@@ -99,14 +87,6 @@ pub(super) fn collapsed_icon_with_style<'a>(
 /// │ ⚡  75%      │  icon size 16 + label size 12 (subtext colour)
 /// └──────────────┘
 /// ```
-pub(super) fn horizontal_icon_label<'a>(
-    icon: impl ToString,
-    icon_color: iced::Color,
-    label: impl ToString,
-) -> Element<'a, Message> {
-    horizontal_icon_label_with_style(icon, icon_color, label, &crate::config::Style::default())
-}
-
 pub(super) fn horizontal_icon_label_with_style<'a>(
     icon: impl ToString,
     icon_color: iced::Color,
@@ -144,14 +124,6 @@ pub(super) fn horizontal_icon_label_with_style<'a>(
 /// │ ⚡  75%                       │  icon size 16 + label size 12 (subtext colour)
 /// └───────────────────────────────┘
 /// ```
-pub(super) fn expanded_icon_label<'a>(
-    icon: impl ToString,
-    icon_color: iced::Color,
-    label: impl ToString,
-) -> Element<'a, Message> {
-    expanded_icon_label_with_style(icon, icon_color, label, &crate::config::Style::default())
-}
-
 pub(super) fn expanded_icon_label_with_style<'a>(
     icon: impl ToString,
     icon_color: iced::Color,
@@ -183,17 +155,6 @@ pub(super) fn expanded_icon_label_with_style<'a>(
     .into()
 }
 
-pub(super) fn icon_label_view<'a, M>(
-    module: &'a M,
-    state: &super::ModuleState,
-    layout: IconLabelLayout,
-) -> Element<'a, Message>
-where
-    M: IconLabel,
-{
-    icon_label_view_with_default(module, state, layout, &crate::config::Style::default())
-}
-
 pub(super) fn icon_label_view_with_default<'a, M>(
     module: &'a M,
     state: &super::ModuleState,
@@ -203,29 +164,11 @@ pub(super) fn icon_label_view_with_default<'a, M>(
 where
     M: IconLabel,
 {
-    if let Some(segments) =
-        module.styled_segments_for_layout_with_default(state, layout, default_style)
-    {
+    if let Some(segments) = module.styled_segments_for_layout(state, layout, default_style) {
         return match layout {
             IconLabelLayout::Collapsed => collapsed_styled_segments(segments, module.color(state)),
             IconLabelLayout::Expanded => expanded_styled_segments(segments),
             IconLabelLayout::Horizontal => horizontal_styled_segments(segments),
-        };
-    }
-    if let Some(segments) = module.formatted_segments_for_layout(state, layout) {
-        return match layout {
-            IconLabelLayout::Collapsed => collapsed_segments(segments, module.color(state)),
-            IconLabelLayout::Expanded => expanded_segments(segments),
-            IconLabelLayout::Horizontal => horizontal_segments(segments),
-        };
-    }
-    if let Some(text) = module.formatted_text_for_layout(state, layout) {
-        return match layout {
-            IconLabelLayout::Collapsed => {
-                collapsed_icon_with_style(text, module.color(state), default_style)
-            }
-            IconLabelLayout::Expanded => expanded_text_with_style(text, default_style),
-            IconLabelLayout::Horizontal => horizontal_text_with_style(text, default_style),
         };
     }
 
@@ -246,10 +189,6 @@ where
             default_style,
         ),
     }
-}
-
-fn segment_text<'a>(segment: String, size: u32, color: iced::Color) -> Element<'a, Message> {
-    text(segment).size(size).color(color).into()
 }
 
 pub(super) fn styled_segment_text<'a>(
@@ -279,22 +218,6 @@ pub(super) fn fallback_resolved_style(
     default_style.resolve()
 }
 
-fn collapsed_segments<'a>(segments: Vec<String>, color: iced::Color) -> Element<'a, Message> {
-    container(
-        row(segments
-            .into_iter()
-            .map(|segment| segment_text(segment, 16, color))
-            .collect::<Vec<_>>())
-        .spacing(4)
-        .align_y(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .height(20)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .into()
-}
-
 fn collapsed_styled_segments<'a>(
     segments: Vec<(String, crate::config::ResolvedStyle)>,
     color: iced::Color,
@@ -311,22 +234,6 @@ fn collapsed_styled_segments<'a>(
     .height(20)
     .align_x(Alignment::Center)
     .align_y(Alignment::Center)
-    .into()
-}
-
-fn expanded_segments<'a>(segments: Vec<String>) -> Element<'a, Message> {
-    container(
-        row(segments
-            .into_iter()
-            .map(|segment| segment_text(segment, 12, crate::theme::SUBTEXT))
-            .collect::<Vec<_>>())
-        .spacing(4)
-        .align_y(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .height(20)
-    .align_y(Alignment::Center)
-    .padding([0, 6])
     .into()
 }
 
@@ -348,21 +255,6 @@ fn expanded_styled_segments<'a>(
     .into()
 }
 
-fn horizontal_segments<'a>(segments: Vec<String>) -> Element<'a, Message> {
-    container(
-        row(segments
-            .into_iter()
-            .map(|segment| segment_text(segment, 12, crate::theme::SUBTEXT))
-            .collect::<Vec<_>>())
-        .spacing(4)
-        .align_y(Alignment::Center),
-    )
-    .height(Length::Fill)
-    .align_y(Alignment::Center)
-    .padding([0, 6])
-    .into()
-}
-
 fn horizontal_styled_segments<'a>(
     segments: Vec<(String, crate::config::ResolvedStyle)>,
 ) -> Element<'a, Message> {
@@ -374,47 +266,6 @@ fn horizontal_styled_segments<'a>(
         .spacing(4)
         .align_y(Alignment::Center),
     )
-    .height(Length::Fill)
-    .align_y(Alignment::Center)
-    .padding([0, 6])
-    .into()
-}
-
-fn expanded_text<'a>(label: impl ToString) -> Element<'a, Message> {
-    expanded_text_with_style(label, &crate::config::Style::default())
-}
-
-fn expanded_text_with_style<'a>(
-    label: impl ToString,
-    default_style: &crate::config::Style,
-) -> Element<'a, Message> {
-    container(styled_segment_text(
-        label.to_string(),
-        12,
-        crate::theme::SUBTEXT,
-        fallback_resolved_style(default_style),
-    ))
-    .width(Length::Fill)
-    .height(20)
-    .align_y(Alignment::Center)
-    .padding([0, 6])
-    .into()
-}
-
-fn horizontal_text<'a>(label: impl ToString) -> Element<'a, Message> {
-    horizontal_text_with_style(label, &crate::config::Style::default())
-}
-
-fn horizontal_text_with_style<'a>(
-    label: impl ToString,
-    default_style: &crate::config::Style,
-) -> Element<'a, Message> {
-    container(styled_segment_text(
-        label.to_string(),
-        12,
-        crate::theme::SUBTEXT,
-        fallback_resolved_style(default_style),
-    ))
     .height(Length::Fill)
     .align_y(Alignment::Center)
     .padding([0, 6])

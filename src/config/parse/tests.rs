@@ -437,7 +437,7 @@ modules {
 }
 
 #[test]
-fn battery_format_mixed() {
+fn battery_format_mixed_errors() {
     let kdl = r#"
 modules {
     module "battery" {
@@ -447,21 +447,11 @@ modules {
     }
 }
 "#;
-    let config = parse(kdl).unwrap();
-    match &config.modules[0].params {
-        crate::config::ModuleParams::Battery(cfg) => {
-            assert!(cfg.format.collapsed.is_some());
-            assert_eq!(
-                cfg.format
-                    .collapsed
-                    .as_ref()
-                    .unwrap()
-                    .render_segments(&[("icon", "B".to_string()), ("value", "42".to_string()),]),
-                vec!["B".to_string(), "42%".to_string()]
-            );
-        }
-        other => panic!("expected Battery params, got {other:?}"),
-    }
+    let err = parse(kdl).unwrap_err().to_string();
+    assert!(
+        err.contains("mutually exclusive"),
+        "expected 'mutually exclusive' in error, got: {err}"
+    );
 }
 
 #[test]

@@ -10,11 +10,22 @@ pub(super) fn parse_optional(
     path: &str,
     defaults: StatesConfig,
 ) -> anyhow::Result<StatesConfig> {
+    let (merged, _) = parse_optional_with_names(children, path, defaults)?;
+    Ok(merged)
+}
+
+/// Same as [`parse_optional`] but also returns the names supplied by the user.
+/// Callers can use the name set to detect overrides without re-walking the KDL.
+pub(super) fn parse_optional_with_names(
+    children: &KdlDocument,
+    path: &str,
+    defaults: StatesConfig,
+) -> anyhow::Result<(StatesConfig, Vec<String>)> {
     let Some(node) = children.get("states") else {
-        return Ok(defaults);
+        return Ok((defaults, Vec::new()));
     };
     let Some(state_children) = node.children() else {
-        return Ok(defaults);
+        return Ok((defaults, Vec::new()));
     };
 
     let mut merged = defaults;
@@ -30,7 +41,7 @@ pub(super) fn parse_optional(
         merged.upsert(name, threshold);
     }
 
-    Ok(merged)
+    Ok((merged, seen))
 }
 
 fn parse_state_node(node: &KdlNode, path: &str) -> anyhow::Result<(String, u8)> {

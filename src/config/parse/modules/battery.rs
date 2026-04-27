@@ -14,8 +14,11 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<BatteryConfig>
     let module_path = error::module_path(idx, "battery");
 
     // Start from built-in defaults and apply the user's `states` block (if any).
-    let states_config =
-        states::parse_optional(children, &module_path, StatesConfig::battery_default())?;
+    let (mut states_config, user_state_names) = states::parse_optional_with_names(
+        children,
+        &module_path,
+        StatesConfig::battery_default(),
+    )?;
 
     // Backward-compat: `critical-threshold N`. If `states` redefines `critical`,
     // that wins; otherwise this overrides the built-in critical threshold.
@@ -32,19 +35,8 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<BatteryConfig>
         None
     };
 
-    let mut states_config = states_config;
-    let user_set_critical_via_states = children
-        .get("states")
-        .and_then(|n| n.children())
-        .map(|doc| {
-            doc.nodes()
-                .iter()
-                .any(|c| c.entries().iter().any(|e| e.value().as_string() == Some("critical")))
-        })
-        .unwrap_or(false);
-
     if let Some(t) = critical_override {
-        if !user_set_critical_via_states {
+        if !user_state_names.iter().any(|n| n == "critical") {
             states_config.upsert("critical".into(), t);
         }
         // If both set "critical", `states` wins silently (deprecation path).

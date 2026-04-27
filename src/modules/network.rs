@@ -82,15 +82,6 @@ impl NetworkModule {
         network: &NetworkState,
         mode: crate::config::FormatMode,
     ) -> Option<String> {
-        self.formatted_segments(network, mode)
-            .map(|segments| segments.join(" "))
-    }
-
-    fn formatted_segments(
-        &self,
-        network: &NetworkState,
-        mode: crate::config::FormatMode,
-    ) -> Option<Vec<String>> {
         let icon = self
             .icons
             .icon_for_state(connectivity_state(&network.connectivity))
@@ -99,21 +90,13 @@ impl NetworkModule {
         let label = Self::default_label(network);
         let state = connectivity_state(&network.connectivity).to_string();
         self.format.template_for(mode).map(|template| {
-            template.render_segments(&[
+            template.render_joined(&[
                 ("icon", icon),
                 ("value", label.clone()),
                 ("label", label),
                 ("state", state),
             ])
         })
-    }
-
-    fn styled_segments(
-        &self,
-        network: &NetworkState,
-        mode: crate::config::FormatMode,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_with_default(network, mode, &crate::config::Style::default())
     }
 
     fn styled_segments_with_default(
@@ -163,59 +146,7 @@ impl crate::modules::view::IconLabel for NetworkModule {
         }
     }
 
-    fn formatted_text_for_layout(
-        &self,
-        state: &crate::modules::ModuleState,
-        layout: crate::modules::view::IconLabelLayout,
-    ) -> Option<String> {
-        let crate::modules::ModuleState::Network(s) = state else {
-            return None;
-        };
-        let mode = match layout {
-            crate::modules::view::IconLabelLayout::Collapsed => {
-                crate::config::FormatMode::Collapsed
-            }
-            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
-            crate::modules::view::IconLabelLayout::Horizontal => {
-                crate::config::FormatMode::Horizontal
-            }
-        };
-        self.formatted_text(s, mode)
-    }
-
-    fn formatted_segments_for_layout(
-        &self,
-        state: &crate::modules::ModuleState,
-        layout: crate::modules::view::IconLabelLayout,
-    ) -> Option<Vec<String>> {
-        let crate::modules::ModuleState::Network(s) = state else {
-            return None;
-        };
-        let mode = match layout {
-            crate::modules::view::IconLabelLayout::Collapsed => {
-                crate::config::FormatMode::Collapsed
-            }
-            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
-            crate::modules::view::IconLabelLayout::Horizontal => {
-                crate::config::FormatMode::Horizontal
-            }
-        };
-        self.formatted_segments(s, mode)
-    }
-
     fn styled_segments_for_layout(
-        &self,
-        state: &crate::modules::ModuleState,
-        layout: crate::modules::view::IconLabelLayout,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_for_layout_with_default(
-            state,
-            layout,
-            &crate::config::Style::default(),
-        )
-    }
-
-    fn styled_segments_for_layout_with_default(
         &self,
         state: &crate::modules::ModuleState,
         layout: crate::modules::view::IconLabelLayout,
@@ -224,16 +155,7 @@ impl crate::modules::view::IconLabel for NetworkModule {
         let crate::modules::ModuleState::Network(s) = state else {
             return None;
         };
-        let mode = match layout {
-            crate::modules::view::IconLabelLayout::Collapsed => {
-                crate::config::FormatMode::Collapsed
-            }
-            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
-            crate::modules::view::IconLabelLayout::Horizontal => {
-                crate::config::FormatMode::Horizontal
-            }
-        };
-        self.styled_segments_with_default(s, mode, default_style)
+        self.styled_segments_with_default(s, layout.into(), default_style)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -508,14 +430,14 @@ mod tests {
         };
 
         assert_eq!(
-            m.styled_segments(&limited, crate::config::FormatMode::Collapsed)
+            m.styled_segments_with_default(&limited, crate::config::FormatMode::Collapsed, &crate::config::Style::default())
                 .unwrap()[0]
                 .1
                 .color,
             Some(crate::theme::WARNING)
         );
         assert_eq!(
-            m.styled_segments(&none, crate::config::FormatMode::Collapsed)
+            m.styled_segments_with_default(&none, crate::config::FormatMode::Collapsed, &crate::config::Style::default())
                 .unwrap()[0]
                 .1
                 .color,

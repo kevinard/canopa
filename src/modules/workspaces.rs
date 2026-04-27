@@ -105,7 +105,7 @@ impl WorkspaceItemModule {
         horizontal: bool,
         bar_style: &crate::config::Style,
     ) -> iced::Element<'static, crate::app::Message> {
-        use iced::widget::{container, text};
+        use iced::widget::container;
         use iced::{Alignment, Background, Length};
 
         let (bg, fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);

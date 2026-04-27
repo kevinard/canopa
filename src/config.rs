@@ -251,11 +251,11 @@ impl StyledSegment {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn template(&self) -> &TextTemplate {
         &self.template
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn styles(&self) -> &SegmentStyles {
         &self.styles
     }
@@ -265,7 +265,7 @@ impl StyledSegment {
 }
 
 impl FormatTemplate {
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn parse(raw_segments: &[&str], allowed: &[&str], path: &str) -> anyhow::Result<Self> {
         if raw_segments.is_empty() {
             anyhow::bail!("{path}: expected at least one string value.");
@@ -281,12 +281,12 @@ impl FormatTemplate {
         FormatTemplate { segments }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn segments(&self) -> &[StyledSegment] {
         &self.segments
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn set_segment_styles(&mut self, index: usize, styles: SegmentStyles) {
         if let Some(s) = self.segments.get_mut(index) {
             s.set_styles(styles);
@@ -304,6 +304,7 @@ impl FormatTemplate {
         self.render_segments(values).join(" ")
     }
 
+    #[cfg(test)]
     pub fn render_styled_segments(
         &self,
         values: &[(&str, String)],
@@ -412,7 +413,7 @@ impl TextTemplate {
         Ok(TextTemplate { parts })
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn render(&self, values: &HashMap<&str, &str>) -> String {
         let mut rendered = String::new();
         for part in &self.parts {

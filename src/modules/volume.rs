@@ -18,6 +18,12 @@ pub enum VolumeEvent {
 
 /// Map volume + mute to a display tier.
 /// Tier 0=Muted/Zero, 1=Low (1–32%), 2=Medium (33–65%), 3=High (>65%)
+///
+/// Tiers back the built-in icon fallback (`tier_icon`) when `IconRulesConfig`
+/// has no value rules, and the hard-coded `tier_color` palette. User-supplied
+/// state names live in `StatesConfig` and drive format template selectors —
+/// the two paths are deliberate. See `battery::charge_tier` for the same
+/// rationale.
 fn volume_tier(volume: f64, muted: bool) -> u8 {
     if muted || volume < 0.5 {
         0
@@ -88,15 +94,6 @@ impl VolumeModule {
         volume: &VolumeState,
         mode: crate::config::FormatMode,
     ) -> Option<String> {
-        self.formatted_segments(volume, mode)
-            .map(|segments| segments.join(" "))
-    }
-
-    fn formatted_segments(
-        &self,
-        volume: &VolumeState,
-        mode: crate::config::FormatMode,
-    ) -> Option<Vec<String>> {
         let tier = volume_tier(volume.volume, volume.muted);
         let icon = self
             .icons
@@ -106,21 +103,13 @@ impl VolumeModule {
         let value = format!("{}", volume.volume.round() as u64);
         let state = self.state_key(volume);
         self.format.template_for(mode).map(|template| {
-            template.render_segments(&[
+            template.render_joined(&[
                 ("icon", icon),
                 ("value", value.clone()),
                 ("percent", value),
                 ("state", state),
             ])
         })
-    }
-
-    fn styled_segments(
-        &self,
-        volume: &VolumeState,
-        mode: crate::config::FormatMode,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_with_default(volume, mode, &crate::config::Style::default())
     }
 
     fn styled_segments_with_default(
@@ -175,59 +164,7 @@ impl crate::modules::view::IconLabel for VolumeModule {
         }
     }
 
-    fn formatted_text_for_layout(
-        &self,
-        state: &crate::modules::ModuleState,
-        layout: crate::modules::view::IconLabelLayout,
-    ) -> Option<String> {
-        let crate::modules::ModuleState::Volume(s) = state else {
-            return None;
-        };
-        let mode = match layout {
-            crate::modules::view::IconLabelLayout::Collapsed => {
-                crate::config::FormatMode::Collapsed
-            }
-            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
-            crate::modules::view::IconLabelLayout::Horizontal => {
-                crate::config::FormatMode::Horizontal
-            }
-        };
-        self.formatted_text(s, mode)
-    }
-
-    fn formatted_segments_for_layout(
-        &self,
-        state: &crate::modules::ModuleState,
-        layout: crate::modules::view::IconLabelLayout,
-    ) -> Option<Vec<String>> {
-        let crate::modules::ModuleState::Volume(s) = state else {
-            return None;
-        };
-        let mode = match layout {
-            crate::modules::view::IconLabelLayout::Collapsed => {
-                crate::config::FormatMode::Collapsed
-            }
-            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
-            crate::modules::view::IconLabelLayout::Horizontal => {
-                crate::config::FormatMode::Horizontal
-            }
-        };
-        self.formatted_segments(s, mode)
-    }
-
     fn styled_segments_for_layout(
-        &self,
-        state: &crate::modules::ModuleState,
-        layout: crate::modules::view::IconLabelLayout,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_for_layout_with_default(
-            state,
-            layout,
-            &crate::config::Style::default(),
-        )
-    }
-
-    fn styled_segments_for_layout_with_default(
         &self,
         state: &crate::modules::ModuleState,
         layout: crate::modules::view::IconLabelLayout,
@@ -236,16 +173,7 @@ impl crate::modules::view::IconLabel for VolumeModule {
         let crate::modules::ModuleState::Volume(s) = state else {
             return None;
         };
-        let mode = match layout {
-            crate::modules::view::IconLabelLayout::Collapsed => {
-                crate::config::FormatMode::Collapsed
-            }
-            crate::modules::view::IconLabelLayout::Expanded => crate::config::FormatMode::Expanded,
-            crate::modules::view::IconLabelLayout::Horizontal => {
-                crate::config::FormatMode::Horizontal
-            }
-        };
-        self.styled_segments_with_default(s, mode, default_style)
+        self.styled_segments_with_default(s, layout.into(), default_style)
     }
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
@@ -585,14 +513,14 @@ mod tests {
         };
 
         assert_eq!(
-            m.styled_segments(&muted, crate::config::FormatMode::Collapsed)
+            m.styled_segments_with_default(&muted, crate::config::FormatMode::Collapsed, &crate::config::Style::default())
                 .unwrap()[0]
                 .1
                 .color,
             Some(crate::theme::OVERLAY0)
         );
         assert_eq!(
-            m.styled_segments(&unmuted, crate::config::FormatMode::Collapsed)
+            m.styled_segments_with_default(&unmuted, crate::config::FormatMode::Collapsed, &crate::config::Style::default())
                 .unwrap()[0]
                 .1
                 .color,
