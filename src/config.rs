@@ -225,6 +225,29 @@ impl FormatConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum TooltipSetting {
+    Default,
+    Disabled,
+    Custom(FormatTemplate),
+}
+
+impl Default for TooltipSetting {
+    fn default() -> Self {
+        TooltipSetting::Default
+    }
+}
+
+impl TooltipSetting {
+    pub fn resolve(&self, default_template: Option<FormatTemplate>) -> Option<FormatTemplate> {
+        match self {
+            TooltipSetting::Default => default_template,
+            TooltipSetting::Disabled => None,
+            TooltipSetting::Custom(t) => Some(t.clone()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormatMode {
     Collapsed,
