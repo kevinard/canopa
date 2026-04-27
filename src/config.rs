@@ -25,6 +25,7 @@ pub struct ClockConfig {
     pub time_format: String,
     pub date_format: String,
     pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
 }
 
 impl Default for ClockConfig {
@@ -33,6 +34,7 @@ impl Default for ClockConfig {
             time_format: String::from("%H:%M"),
             date_format: String::from("%a %d %b"),
             format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
         }
     }
 }
@@ -43,6 +45,7 @@ pub struct ScriptConfig {
     pub command: String,
     pub interval: u64, // seconds between executions
     pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
 }
 
 /// Configuration for the button module — all fields required.
@@ -52,6 +55,7 @@ pub struct ButtonConfig {
     pub icon: String,
     pub on_click: String,
     pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
 }
 
 /// Per-workspace label and icon for the workspaces module.
@@ -62,12 +66,23 @@ pub struct WorkspaceLabelConfig {
 }
 
 /// Configuration for the workspaces module — optional label/icon per workspace number.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct WorkspacesConfig {
     /// Maps workspace number (1-based: ws.idx + 1) to label/icon config.
     /// Absent key → workspace shows number only.
     pub workspaces: std::collections::HashMap<u32, WorkspaceLabelConfig>,
     pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
+}
+
+impl Default for WorkspacesConfig {
+    fn default() -> Self {
+        WorkspacesConfig {
+            workspaces: std::collections::HashMap::default(),
+            format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
+        }
+    }
 }
 
 /// A single named state with an upper-bound threshold.
@@ -467,10 +482,21 @@ impl TextTemplate {
 }
 
 /// Configuration for the network module.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NetworkConfig {
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        NetworkConfig {
+            icons: IconRulesConfig::default(),
+            format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
+        }
+    }
 }
 
 /// Configuration for the tray module.
@@ -478,9 +504,19 @@ pub struct NetworkConfig {
 pub struct TrayConfig;
 
 /// Configuration for the focused-window module (no user-configurable params).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FocusedWindowConfig {
     pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
+}
+
+impl Default for FocusedWindowConfig {
+    fn default() -> Self {
+        FocusedWindowConfig {
+            format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
+        }
+    }
 }
 
 /// Configuration for the volume module — scroll step in percent.
@@ -1246,6 +1282,7 @@ mod tests {
             time_format: "%I:%M %p".into(),
             date_format: "%Y-%m-%d".into(),
             format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
         });
         match params {
             ModuleParams::Clock(cfg) => {
@@ -1262,6 +1299,7 @@ mod tests {
             command: "echo hi".into(),
             interval: 10,
             format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
         };
         assert_eq!(cfg.command, "echo hi");
         assert_eq!(cfg.interval, 10);
@@ -1273,6 +1311,7 @@ mod tests {
             command: "date".into(),
             interval: 30,
             format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
         });
         match params {
             ModuleParams::Script(cfg) => {
@@ -1290,6 +1329,7 @@ mod tests {
             icon: ">".into(),
             on_click: "kitty".into(),
             format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
         };
         assert_eq!(cfg.label, "Launch Terminal");
         assert_eq!(cfg.icon, ">");
@@ -1303,6 +1343,7 @@ mod tests {
             icon: ">".into(),
             on_click: "kitty".into(),
             format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
         });
         match params {
             ModuleParams::Button(cfg) => {

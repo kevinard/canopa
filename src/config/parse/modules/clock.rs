@@ -32,11 +32,18 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
         &["icon", "value", "time", "date"],
         crate::config::states::EMPTY,
     )?;
+    let tooltip = formats::parse_tooltip_field(
+        children,
+        &error::module_path(idx, "clock"),
+        &["icon", "value", "time", "date"],
+        crate::config::states::EMPTY,
+    )?;
 
     Ok(ClockConfig {
         time_format,
         date_format,
         format,
+        tooltip,
     })
 }
 
@@ -44,6 +51,44 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
 mod tests {
     use crate::config::ModuleParams;
     use crate::config::parse::parse;
+
+    fn clock_config(kdl: &str) -> crate::config::ClockConfig {
+        let cfg = parse(kdl).unwrap();
+        let m = cfg
+            .modules
+            .iter()
+            .find(|m| m.name == "clock")
+            .expect("clock module");
+        match &m.params {
+            ModuleParams::Clock(c) => c.clone(),
+            _ => panic!("expected Clock params"),
+        }
+    }
+
+    #[test]
+    fn tooltip_string_parsed() {
+        let cfg = clock_config(r#"modules { module "clock" { tooltip "{date}" } }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+    }
+
+    #[test]
+    fn tooltip_false_disables() {
+        let cfg = clock_config(r#"modules { module "clock" { tooltip #false } }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+    }
+
+    #[test]
+    fn tooltip_true_errors() {
+        let kdl = r#"modules { module "clock" { tooltip #true } }"#;
+        let err = crate::config::parse::parse(kdl).unwrap_err().to_string();
+        assert!(err.contains("tooltip true"), "got: {err}");
+    }
+
+    #[test]
+    fn tooltip_absent_is_default() {
+        let cfg = clock_config(r#"modules { module "clock" {} }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+    }
 
     #[test]
     fn parse_clock_with_custom_formats() {

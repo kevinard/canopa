@@ -304,6 +304,7 @@ mod tests {
                         icon: ">".into(),
                         on_click: "true".into(),
                         format: crate::config::FormatConfig::default(),
+                        tooltip: crate::config::TooltipSetting::Default,
                     }),
                     actions: crate::config::ModuleActionsConfig::default(),
                 },
