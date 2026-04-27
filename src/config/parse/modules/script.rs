@@ -47,11 +47,18 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> 
         &["icon", "value", "output"],
         crate::config::states::EMPTY,
     )?;
+    let tooltip = formats::parse_tooltip_field(
+        children,
+        &error::module_path(idx, "script"),
+        &["icon", "value", "output"],
+        crate::config::states::EMPTY,
+    )?;
 
     Ok(ScriptConfig {
         command,
         interval,
         format,
+        tooltip,
     })
 }
 
@@ -59,6 +66,48 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> 
 mod tests {
     use crate::config::ModuleParams;
     use crate::config::parse::parse;
+
+    fn script_config(kdl: &str) -> crate::config::ScriptConfig {
+        let cfg = parse(kdl).unwrap();
+        let m = cfg
+            .modules
+            .iter()
+            .find(|m| m.name == "script")
+            .expect("script module");
+        match &m.params {
+            ModuleParams::Script(s) => s.clone(),
+            _ => panic!("expected Script params"),
+        }
+    }
+
+    #[test]
+    fn tooltip_string_parsed() {
+        let cfg = script_config(
+            "modules { module \"script\" { command \"date\"; tooltip \"{output}\" } }",
+        );
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+    }
+
+    #[test]
+    fn tooltip_false_disables() {
+        let cfg = script_config(
+            "modules { module \"script\" { command \"date\"; tooltip #false } }",
+        );
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+    }
+
+    #[test]
+    fn tooltip_true_errors() {
+        let kdl = "modules { module \"script\" { command \"date\"; tooltip #true } }";
+        let err = crate::config::parse::parse(kdl).unwrap_err().to_string();
+        assert!(err.contains("tooltip true"), "got: {err}");
+    }
+
+    #[test]
+    fn tooltip_absent_is_default() {
+        let cfg = script_config(r#"modules { module "script" { command "date" } }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+    }
 
     #[test]
     fn parse_script_with_command_and_interval() {
