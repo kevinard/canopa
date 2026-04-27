@@ -31,17 +31,62 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> 
         &["icon", "value", "percent", "state"],
         &allowed_states,
     )?;
+    let tooltip = formats::parse_tooltip_field(
+        children,
+        &module_path,
+        &["icon", "value", "percent", "state"],
+        &allowed_states,
+    )?;
     Ok(VolumeConfig {
         step,
         states: states_config,
         icons,
         format,
+        tooltip,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use crate::config::parse::parse;
+
+    fn volume_config(kdl: &str) -> crate::config::VolumeConfig {
+        let cfg = parse(kdl).unwrap();
+        let m = cfg
+            .modules
+            .iter()
+            .find(|m| m.name == "volume")
+            .expect("volume module");
+        match &m.params {
+            crate::config::ModuleParams::Volume(v) => v.clone(),
+            _ => panic!("expected Volume params"),
+        }
+    }
+
+    #[test]
+    fn tooltip_string_parsed() {
+        let cfg = volume_config(r#"modules { module "volume" { tooltip "{value}%" } }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+    }
+
+    #[test]
+    fn tooltip_false_disables() {
+        let cfg = volume_config(r#"modules { module "volume" { tooltip #false } }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+    }
+
+    #[test]
+    fn tooltip_true_errors() {
+        let kdl = r#"modules { module "volume" { tooltip #true } }"#;
+        let err = crate::config::parse::parse(kdl).unwrap_err().to_string();
+        assert!(err.contains("tooltip true"), "got: {err}");
+    }
+
+    #[test]
+    fn tooltip_absent_is_default() {
+        let cfg = volume_config(r#"modules { module "volume" {} }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+    }
 
     #[test]
     fn parse_optional_u8_range_reports_out_of_range() {

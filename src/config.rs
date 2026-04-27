@@ -491,6 +491,7 @@ pub struct VolumeConfig {
     pub states: StatesConfig,
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
 }
 
 impl Default for VolumeConfig {
@@ -500,6 +501,7 @@ impl Default for VolumeConfig {
             states: StatesConfig::volume_default(),
             icons: IconRulesConfig::default(),
             format: FormatConfig::default(),
+            tooltip: TooltipSetting::Default,
         }
     }
 }
