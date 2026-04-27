@@ -45,12 +45,19 @@ pub(super) fn parse(
         &["icon", "value", "label"],
         crate::config::states::EMPTY,
     )?;
+    let tooltip = formats::parse_tooltip_field(
+        children,
+        &error::module_path(idx, "button"),
+        &["icon", "value", "label"],
+        crate::config::states::EMPTY,
+    )?;
 
     Ok(ButtonConfig {
         label,
         icon,
         on_click,
         format,
+        tooltip,
     })
 }
 
@@ -58,6 +65,50 @@ pub(super) fn parse(
 mod tests {
     use crate::config::ModuleParams;
     use crate::config::parse::parse;
+
+    fn button_config(kdl: &str) -> crate::config::ButtonConfig {
+        let cfg = parse(kdl).unwrap();
+        let m = cfg
+            .modules
+            .iter()
+            .find(|m| m.name == "button")
+            .expect("button module");
+        match &m.params {
+            ModuleParams::Button(b) => b.clone(),
+            _ => panic!("expected Button params"),
+        }
+    }
+
+    #[test]
+    fn tooltip_string_parsed() {
+        let cfg = button_config(
+            "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\"; tooltip \"{label}\" } }",
+        );
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+    }
+
+    #[test]
+    fn tooltip_false_disables() {
+        let cfg = button_config(
+            "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\"; tooltip #false } }",
+        );
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+    }
+
+    #[test]
+    fn tooltip_true_errors() {
+        let kdl = "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\"; tooltip #true } }";
+        let err = crate::config::parse::parse(kdl).unwrap_err().to_string();
+        assert!(err.contains("tooltip true"), "got: {err}");
+    }
+
+    #[test]
+    fn tooltip_absent_is_default() {
+        let cfg = button_config(
+            "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\" } }",
+        );
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+    }
 
     #[test]
     fn parse_button_with_all_params() {
