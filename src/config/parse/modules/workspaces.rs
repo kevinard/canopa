@@ -17,11 +17,17 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<WorkspacesConf
         &["icon", "value", "index", "name", "label", "state"],
         crate::config::states::WORKSPACES,
     )?;
+    config.tooltip = formats::parse_tooltip_field(
+        children,
+        &error::module_path(idx, "workspaces"),
+        &["icon", "value", "index", "name", "label", "state"],
+        crate::config::states::WORKSPACES,
+    )?;
 
     for ws_node in children.nodes() {
         if matches!(
             ws_node.name().value(),
-            "format" | "expanded-format" | "horizontal-format"
+            "format" | "expanded-format" | "horizontal-format" | "tooltip"
         ) {
             continue;
         }
@@ -75,6 +81,44 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<WorkspacesConf
 mod tests {
     use crate::config::ModuleParams;
     use crate::config::parse::parse;
+
+    fn workspaces_config(kdl: &str) -> crate::config::WorkspacesConfig {
+        let cfg = parse(kdl).unwrap();
+        let m = cfg
+            .modules
+            .iter()
+            .find(|m| m.name == "workspaces")
+            .expect("workspaces module");
+        match &m.params {
+            ModuleParams::Workspaces(w) => w.clone(),
+            _ => panic!("expected Workspaces params"),
+        }
+    }
+
+    #[test]
+    fn tooltip_string_parsed() {
+        let cfg = workspaces_config(r#"modules { module "workspaces" { tooltip "{label}" } }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+    }
+
+    #[test]
+    fn tooltip_false_disables() {
+        let cfg = workspaces_config(r#"modules { module "workspaces" { tooltip #false } }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+    }
+
+    #[test]
+    fn tooltip_true_errors() {
+        let kdl = r#"modules { module "workspaces" { tooltip #true } }"#;
+        let err = crate::config::parse::parse(kdl).unwrap_err().to_string();
+        assert!(err.contains("tooltip true"), "got: {err}");
+    }
+
+    #[test]
+    fn tooltip_absent_is_default() {
+        let cfg = workspaces_config(r#"modules { module "workspaces" {} }"#);
+        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+    }
 
     #[test]
     fn parse_workspaces_with_label_and_icon() {
