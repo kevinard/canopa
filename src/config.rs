@@ -618,6 +618,9 @@ pub struct BarConfig {
     pub expand_trigger: ExpandTrigger,
     /// Dwell delay (ms) before hover expands the bar. Only used when expand_trigger = Hover.
     pub hover_delay: u64,
+    /// Dwell delay (ms) before a module's tooltip appears on hover.
+    /// Default 500. Hide is always immediate on hover-exit.
+    pub tooltip_delay_ms: u32,
     /// Keybind for in-bar expand/collapse while the bar has keyboard focus.
     /// Also documents the compositor keybind the user should bind to `niribar --toggle-expand`
     /// for global (unfocused) toggling.
@@ -641,6 +644,7 @@ impl Default for BarConfig {
             expand: true,
             expand_trigger: ExpandTrigger::Click,
             hover_delay: 0,
+            tooltip_delay_ms: 500,
             expand_keybind: None,
             animation: AnimationConfig::default(),
             style: Style::default(),

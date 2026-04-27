@@ -116,6 +116,22 @@ fn parse_single_bar_node(node: &KdlNode, name: &str) -> anyhow::Result<BarConfig
         .and_then(|v| u64::try_from(v).ok())
         .unwrap_or(defaults.hover_delay);
 
+    let tooltip_delay_ms: u32 = match children.get_arg("tooltip-delay") {
+        None => defaults.tooltip_delay_ms,
+        Some(v) => {
+            let i = v.as_integer().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{prefix}.tooltip-delay: expected a non-negative integer (milliseconds)."
+                )
+            })?;
+            u32::try_from(i).map_err(|_| {
+                anyhow::anyhow!(
+                    "{prefix}.tooltip-delay: expected a non-negative integer (milliseconds)."
+                )
+            })?
+        }
+    };
+
     let expand = match children.get_arg("expand") {
         None => defaults.expand,
         Some(v) => v.as_bool().ok_or_else(|| {
@@ -149,6 +165,7 @@ fn parse_single_bar_node(node: &KdlNode, name: &str) -> anyhow::Result<BarConfig
         expand,
         expand_trigger,
         hover_delay,
+        tooltip_delay_ms,
         expand_keybind,
         animation: anim_config,
         style,
@@ -312,6 +329,26 @@ bar "main" {
     fn parse_hover_delay_defaults_to_zero() {
         let config = parse("").unwrap();
         assert_eq!(config.bars[0].hover_delay, 0);
+    }
+
+    #[test]
+    fn parse_tooltip_delay() {
+        let kdl = r#"bar "main" { tooltip-delay 250 }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(config.bars[0].tooltip_delay_ms, 250);
+    }
+
+    #[test]
+    fn parse_tooltip_delay_defaults_to_500() {
+        let config = parse(r#"bar "main" {}"#).unwrap();
+        assert_eq!(config.bars[0].tooltip_delay_ms, 500);
+    }
+
+    #[test]
+    fn parse_tooltip_delay_negative_errors() {
+        let kdl = r#"bar "main" { tooltip-delay -1 }"#;
+        let err = parse(kdl).unwrap_err().to_string();
+        assert!(err.contains("tooltip-delay"), "got: {err}");
     }
 
     #[test]
