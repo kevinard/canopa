@@ -89,18 +89,22 @@ impl VolumeModule {
         }
     }
 
+    fn current_icon(&self, volume: &VolumeState) -> String {
+        let tier = volume_tier(volume.volume, volume.muted);
+        let state = self.state_key(volume);
+        self.icons
+            .icon_for_state_or_value(Some(&state), Some(volume.volume))
+            .unwrap_or_else(|| tier_icon(tier))
+            .to_string()
+    }
+
     #[cfg(test)]
     fn formatted_text(
         &self,
         volume: &VolumeState,
         mode: crate::config::FormatMode,
     ) -> Option<String> {
-        let tier = volume_tier(volume.volume, volume.muted);
-        let icon = self
-            .icons
-            .icon_for_state_or_value((tier == 0).then_some("muted"), Some(volume.volume))
-            .unwrap_or_else(|| tier_icon(tier))
-            .to_string();
+        let icon = self.current_icon(volume);
         let value = format!("{}", volume.volume.round() as u64);
         let state = self.state_key(volume);
         self.format.template_for(mode).map(|template| {
@@ -119,12 +123,7 @@ impl VolumeModule {
         mode: crate::config::FormatMode,
         default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        let tier = volume_tier(volume.volume, volume.muted);
-        let icon = self
-            .icons
-            .icon_for_state_or_value((tier == 0).then_some("muted"), Some(volume.volume))
-            .unwrap_or_else(|| tier_icon(tier))
-            .to_string();
+        let icon = self.current_icon(volume);
         let value = format!("{}", volume.volume.round() as u64);
         let state = self.state_key(volume);
         self.format.template_for(mode).map(|template| {
@@ -145,14 +144,7 @@ impl VolumeModule {
 impl crate::modules::view::IconLabel for VolumeModule {
     fn icon(&self, state: &crate::modules::ModuleState) -> String {
         match state {
-            crate::modules::ModuleState::Volume(s) => self
-                .icons
-                .icon_for_state_or_value(
-                    (volume_tier(s.volume, s.muted) == 0).then_some("muted"),
-                    Some(s.volume),
-                )
-                .unwrap_or_else(|| tier_icon(volume_tier(s.volume, s.muted)))
-                .to_owned(),
+            crate::modules::ModuleState::Volume(s) => self.current_icon(s),
             _ => String::new(),
         }
     }
@@ -406,6 +398,34 @@ mod tests {
     }
 
     #[test]
+    fn volume_custom_state_icon_overrides_thresholds() {
+        let mut states_config = crate::config::StatesConfig::volume_default();
+        states_config.upsert("quiet".to_string(), 33);
+        let mut states = HashMap::new();
+        states.insert("quiet".to_string(), "quiet-icon".to_string());
+        let icons = IconRulesConfig {
+            states,
+            thresholds: vec![IconThreshold {
+                at: 1.0,
+                icon: "threshold".to_string(),
+            }],
+        };
+        let m = VolumeModule::new(
+            crate::modules::ModuleId::new("volume"),
+            5,
+            states_config,
+            icons,
+            crate::config::FormatConfig::default(),
+        );
+        let state = crate::modules::ModuleState::Volume(VolumeState {
+            volume: 20.0,
+            muted: false,
+        });
+
+        assert_eq!(m.icon(&state), "quiet-icon");
+    }
+
+    #[test]
     fn volume_custom_threshold_icon_overrides_builtin_tier() {
         let icons = IconRulesConfig {
             states: HashMap::new(),
@@ -493,15 +513,23 @@ mod tests {
         };
 
         assert_eq!(
-            m.styled_segments_with_default(&muted, crate::config::FormatMode::Collapsed, &crate::config::Style::default())
-                .unwrap()[0]
+            m.styled_segments_with_default(
+                &muted,
+                crate::config::FormatMode::Collapsed,
+                &crate::config::Style::default()
+            )
+            .unwrap()[0]
                 .1
                 .color,
             Some(crate::theme::OVERLAY0)
         );
         assert_eq!(
-            m.styled_segments_with_default(&unmuted, crate::config::FormatMode::Collapsed, &crate::config::Style::default())
-                .unwrap()[0]
+            m.styled_segments_with_default(
+                &unmuted,
+                crate::config::FormatMode::Collapsed,
+                &crate::config::Style::default()
+            )
+            .unwrap()[0]
                 .1
                 .color,
             None

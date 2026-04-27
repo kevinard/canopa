@@ -252,10 +252,6 @@ impl StyledSegment {
     }
 
     #[cfg(test)]
-    pub fn template(&self) -> &TextTemplate {
-        &self.template
-    }
-    #[cfg(test)]
     pub fn styles(&self) -> &SegmentStyles {
         &self.styles
     }
@@ -1594,7 +1590,9 @@ mod tests {
 }
 
 pub mod states {
+    #[cfg(test)]
     pub const BATTERY: &[&str] = &["charging", "critical", "low", "normal"];
+    #[cfg(test)]
     pub const VOLUME: &[&str] = &["muted", "unmuted"];
     pub const NETWORK: &[&str] = &["full", "limited", "none"];
     pub const WORKSPACES: &[&str] = &["focused", "active", "inactive"];

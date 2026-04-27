@@ -60,10 +60,6 @@ impl ModuleRuntime {
         self.store.push(zone, module);
     }
 
-    pub(super) fn insert(&mut self, index: usize, item: (Zone, Box<dyn Module>)) {
-        self.store.insert(index, item);
-    }
-
     pub(super) fn insert_with_actions(
         &mut self,
         index: usize,

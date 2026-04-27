@@ -184,6 +184,7 @@ impl SegmentStyles {
         }
     }
 
+    #[cfg(test)]
     pub fn resolve_for(&self, state: Option<&str>) -> ResolvedStyle {
         self.style_for(state).resolve()
     }

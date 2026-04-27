@@ -23,14 +23,14 @@ pub enum BatteryEvent {
 /// per state). User-supplied state names live in `StatesConfig` and are used
 /// for format template selectors (`state="…"`); the two paths are deliberate.
 fn charge_tier(percentage: f64, critical_threshold: u8) -> u8 {
-    let pct = percentage.clamp(0.0, 100.0) as u8;
-    if pct <= critical_threshold {
+    let pct = percentage.clamp(0.0, 100.0);
+    if pct <= f64::from(critical_threshold) {
         0 // Critical
-    } else if pct <= 30 {
+    } else if pct <= 30.0 {
         1 // Low
-    } else if pct <= 60 {
+    } else if pct <= 60.0 {
         2 // Medium
-    } else if pct <= 95 {
+    } else if pct <= 95.0 {
         3 // High
     } else {
         4 // Full
@@ -124,19 +124,29 @@ impl BatteryModule {
     }
 
     fn current_icon(&self, battery: &BatteryState) -> String {
-        if battery.is_charging {
-            self.icons
-                .icon_for_state_or_value(Some("charging"), Some(battery.percentage))
-                .unwrap_or("⚡")
-                .to_owned()
-        } else {
-            self.icons
-                .icon_for_value(battery.percentage)
-                .unwrap_or_else(|| {
+        let state = battery_state_key(battery, &self.states);
+        self.icons
+            .icon_for_state_or_value(Some(&state), Some(battery.percentage))
+            .unwrap_or_else(|| {
+                if battery.is_charging {
+                    "⚡"
+                } else {
                     tier_icon(charge_tier(battery.percentage, self.critical_threshold))
-                })
-                .to_owned()
-        }
+                }
+            })
+            .to_owned()
+    }
+
+    fn collapsed_styled_segments_with_default(
+        &self,
+        battery: &BatteryState,
+        default_style: &crate::config::Style,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        self.styled_segments_with_default(
+            battery,
+            crate::config::FormatMode::Collapsed,
+            default_style,
+        )
     }
 
     fn styled_segments_with_default(
@@ -166,16 +176,7 @@ impl BatteryModule {
 impl crate::modules::view::IconLabel for BatteryModule {
     fn icon(&self, state: &crate::modules::ModuleState) -> String {
         match state {
-            crate::modules::ModuleState::Battery(s) if s.is_charging => self
-                .icons
-                .icon_for_state_or_value(Some("charging"), Some(s.percentage))
-                .unwrap_or("⚡")
-                .to_owned(),
-            crate::modules::ModuleState::Battery(s) => self
-                .icons
-                .icon_for_value(s.percentage)
-                .unwrap_or_else(|| tier_icon(charge_tier(s.percentage, self.critical_threshold)))
-                .to_owned(),
+            crate::modules::ModuleState::Battery(s) => self.current_icon(s),
             _ => String::new(),
         }
     }
@@ -237,27 +238,30 @@ impl crate::modules::Module for BatteryModule {
             _ => return iced::widget::Space::new().into(),
         };
 
-        let icon_str = self
-            .formatted_text(battery, crate::config::FormatMode::Collapsed)
-            .unwrap_or_else(|| <Self as crate::modules::view::IconLabel>::icon(self, state));
         let color = icon_color(
             battery.percentage,
             battery.is_charging,
             self.critical_threshold,
         );
+        let style = crate::modules::view::fallback_resolved_style(bar_style);
 
         // Battery needs the raw container (not the helper) because it may be stacked
         // with the CriticalBadge overlay below.
-        let icon = container(crate::modules::view::styled_segment_text(
-            icon_str,
-            16,
-            color,
-            crate::modules::view::fallback_resolved_style(bar_style),
-        ))
-        .width(Length::Fill)
-        .height(20)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center);
+        let content = if let Some(segments) =
+            self.collapsed_styled_segments_with_default(battery, bar_style)
+        {
+            crate::modules::view::styled_segments_row(segments, 16, color).into()
+        } else {
+            let icon_str = self
+                .formatted_text(battery, crate::config::FormatMode::Collapsed)
+                .unwrap_or_else(|| <Self as crate::modules::view::IconLabel>::icon(self, state));
+            crate::modules::view::styled_segment_text(icon_str, 16, color, style)
+        };
+        let icon = container(content)
+            .width(Length::Fill)
+            .height(20)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
 
         // CriticalBadge: shown when collapsed AND at/below threshold (AC: #3, UX-DR17).
         if battery.percentage <= self.critical_threshold as f64 {
@@ -412,6 +416,11 @@ mod tests {
     }
 
     #[test]
+    fn charge_tier_uses_exact_percentage_above_threshold() {
+        assert_eq!(charge_tier(15.6, 15), 1);
+    }
+
+    #[test]
     fn charge_tier_full() {
         assert_eq!(charge_tier(100.0, 15), 4);
     }
@@ -424,6 +433,11 @@ mod tests {
     #[test]
     fn icon_color_critical_not_charging_returns_critical() {
         assert_eq!(icon_color(10.0, false, 15), theme::CRITICAL);
+    }
+
+    #[test]
+    fn icon_color_uses_exact_percentage_above_threshold() {
+        assert_eq!(icon_color(15.6, false, 15), theme::WARNING);
     }
 
     #[test]
@@ -460,6 +474,32 @@ mod tests {
         });
 
         assert_eq!(m.icon(&state), "plug");
+    }
+
+    #[test]
+    fn battery_custom_state_icon_overrides_thresholds() {
+        let mut states = HashMap::new();
+        states.insert("critical".to_string(), "crit".to_string());
+        let icons = IconRulesConfig {
+            states,
+            thresholds: vec![IconThreshold {
+                at: 0.0,
+                icon: "threshold".to_string(),
+            }],
+        };
+        let m = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            crate::config::StatesConfig::battery_default(),
+            icons,
+            crate::config::FormatConfig::default(),
+        );
+        let state = crate::modules::ModuleState::Battery(BatteryState {
+            percentage: 10.0,
+            is_charging: false,
+        });
+
+        assert_eq!(m.icon(&state), "crit");
     }
 
     #[test]
@@ -571,6 +611,28 @@ mod tests {
                 &crate::config::Style::default(),
             )
             .unwrap();
+        assert_eq!(segments[0].1.color, Some(crate::theme::CRITICAL));
+        assert_eq!(segments[1].1, crate::config::ResolvedStyle::default());
+    }
+
+    #[test]
+    fn battery_collapsed_styled_segments_resolve_critical_state() {
+        let m = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            crate::config::StatesConfig::battery_default(),
+            IconRulesConfig::default(),
+            styled_format_config(),
+        );
+        let state = BatteryState {
+            percentage: 5.0,
+            is_charging: false,
+        };
+
+        let segments = m
+            .collapsed_styled_segments_with_default(&state, &crate::config::Style::default())
+            .unwrap();
+
         assert_eq!(segments[0].1.color, Some(crate::theme::CRITICAL));
         assert_eq!(segments[1].1, crate::config::ResolvedStyle::default());
     }
