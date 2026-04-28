@@ -1,6 +1,7 @@
 mod defaults;
 mod parse;
 pub mod style;
+pub mod tooltip_defaults;
 
 use anyhow::Context;
 use iced_layershell::reexport::Anchor;
