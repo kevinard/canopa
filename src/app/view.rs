@@ -19,6 +19,10 @@ impl App {
             return render_popup_model(model, window, hovered_item, focused_item);
         }
 
+        if let Some(popup) = self.surfaces.tooltip_popup(window) {
+            return crate::surface::tooltip_popup::view_tooltip(&popup.tree);
+        }
+
         render_bar_model(self.bar_render_model(window), window)
     }
 
