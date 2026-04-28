@@ -15,11 +15,20 @@ pub(super) struct PopupMeta {
     pub(super) bar_name: String,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct TooltipPopup {
+    pub window: iced::window::Id,
+    pub target_window: iced::window::Id,
+    pub target_module: crate::modules::ModuleId,
+    pub tree: crate::surface::tooltip_popup::TooltipTree,
+}
+
 pub(super) struct SurfaceManager {
     pub(super) surfaces: HashMap<iced::window::Id, SurfaceState>,
     pub(super) pending_surface_keys: HashMap<iced::window::Id, (String, String)>,
     pub(super) manual_outputs: bool,
     pub(super) popups: HashMap<iced::window::Id, PopupMeta>,
+    pub(super) tooltip_popups: HashMap<iced::window::Id, TooltipPopup>,
     pub(super) last_cursor: Option<(iced::window::Id, iced::Point)>,
 }
 
@@ -35,6 +44,7 @@ impl SurfaceManager {
             pending_surface_keys,
             manual_outputs,
             popups: HashMap::new(),
+            tooltip_popups: HashMap::new(),
             last_cursor: None,
         }
     }
@@ -137,7 +147,31 @@ impl SurfaceManager {
     }
 
     pub(super) fn has_any_popup(&self) -> bool {
-        !self.popups.is_empty()
+        !self.popups.is_empty() || !self.tooltip_popups.is_empty()
+    }
+
+    pub(super) fn tooltip_popup(&self, window: iced::window::Id) -> Option<&TooltipPopup> {
+        self.tooltip_popups.get(&window)
+    }
+
+    pub(super) fn insert_tooltip_popup(&mut self, popup: TooltipPopup) {
+        self.tooltip_popups.insert(popup.window, popup);
+    }
+
+    pub(super) fn remove_tooltip_popup(
+        &mut self,
+        window: iced::window::Id,
+    ) -> Option<TooltipPopup> {
+        self.tooltip_popups.remove(&window)
+    }
+
+    pub(super) fn tooltip_popup_for_target(
+        &self,
+        target_window: iced::window::Id,
+    ) -> Option<&TooltipPopup> {
+        self.tooltip_popups
+            .values()
+            .find(|p| p.target_window == target_window)
     }
 }
 
