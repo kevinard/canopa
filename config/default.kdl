@@ -42,6 +42,10 @@ bar "main" {
     // Only relevant when expand-trigger is "hover". Default: 0 (expand immediately).
     hover-delay 0
 
+    // Milliseconds of cursor dwell before a module's tooltip appears on hover.
+    // Default: 500. Hide is always immediate on hover-exit.
+    // tooltip-delay 500
+
     // Keyboard shortcut to expand/collapse while the bar has keyboard focus.
     // Optional. Format: modifier+key, e.g. "Super+e" or "Ctrl+b".
     // Also documents the compositor keybind to bind to `niribar --toggle-expand`
@@ -135,6 +139,11 @@ modules {
         //     label "web"
         //     icon  "󰖟"
         // }
+        //
+        // Tooltip on hover. Same grammar as `format` (string segments or
+        // styled `segment` block). Use `tooltip #false` to disable.
+        // Omit to use the module's built-in default (none for workspaces).
+        // tooltip "{label}"
     }
 
     // focused-window: shows the title of the focused window on this output.
@@ -155,6 +164,10 @@ modules {
         //     click "niri msg action focus-window-up"
         //     right-click "niri msg action close-window"
         // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{title}").
+        // tooltip "{title}"
     }
 
     // volume: audio output level indicator. Scroll on the module to adjust volume.
@@ -195,6 +208,10 @@ modules {
         //     icon "▓" at=33
         //     icon "◈" at=66
         // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{value}%").
+        // tooltip "{value}%"
     }
 
     // network: network connectivity status (connected/disconnected/interface type).
@@ -226,6 +243,10 @@ modules {
         //     icon "◈" state="limited"
         //     icon "✕" state="none"
         // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{label}").
+        // tooltip "{label}"
     }
 
     // battery: charge level and charging/discharging state.
@@ -275,6 +296,10 @@ modules {
         //     icon "▓" at=61
         //     icon "█" at=96
         // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{value}% {state}").
+        // tooltip "{value}% {state}"
     }
 
     // clock: current time and date display.
@@ -303,6 +328,10 @@ modules {
         //     click "gnome-clocks"
         //     right-click "notify-send \"$(date)\""
         // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{date}").
+        // tooltip "{date}"
     }
 
     // script: run a shell command periodically and show stdout.
@@ -319,6 +348,10 @@ modules {
     //     //     segment "{icon}" color="accent"
     //     //     segment "{output}" color="text"
     //     // }
+    //     //
+    //     // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+    //     // to disable. Omit for no tooltip (script has no built-in default).
+    //     // tooltip "{output}"
     // }
 
     // button: user-defined clickable action.
@@ -343,6 +376,10 @@ modules {
     //         click "kitty"
     //         right-click "notify-send Launch"
     //     }
+    //     //
+    //     // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+    //     // to disable. Omit for no tooltip (button has no built-in default).
+    //     // tooltip "{label}"
     // }
 }
 
