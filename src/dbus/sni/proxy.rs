@@ -31,6 +31,11 @@ pub(super) trait SniItem {
     #[zbus(property)]
     fn menu(&self) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
 
+    /// SNI ToolTip property: (icon-name, icon-pixmap, title, description).
+    /// We use only `title` and `description`.
+    #[zbus(property)]
+    fn tool_tip(&self) -> zbus::Result<(String, Vec<(i32, i32, Vec<u8>)>, String, String)>;
+
     #[zbus(signal)]
     fn new_icon(&self) -> zbus::Result<()>;
 

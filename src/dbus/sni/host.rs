@@ -19,6 +19,21 @@ pub struct TrayItem {
     pub(crate) status: ItemStatus,
     /// D-Bus path for the context menu (`org.kde.DBusMenu`), if the item exposes one.
     pub(crate) menu_path: Option<OwnedObjectPath>,
+    /// SNI ToolTip property, if the item exposes one. None when the property
+    /// errors or is empty (no title and no description).
+    pub(crate) tooltip: Option<SniTooltip>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SniTooltip {
+    pub title: String,
+    pub description: String,
+}
+
+impl SniTooltip {
+    pub fn is_empty(&self) -> bool {
+        self.title.trim().is_empty() && self.description.trim().is_empty()
+    }
 }
 
 impl TrayItem {
@@ -101,12 +116,21 @@ pub(crate) async fn fetch_item(
 
     let menu_path = proxy.menu().await.ok();
 
+    let tooltip = match proxy.tool_tip().await {
+        Ok((_, _, title, description)) => {
+            let t = SniTooltip { title, description };
+            if t.is_empty() { None } else { Some(t) }
+        }
+        Err(_) => None,
+    };
+
     Some(TrayItem {
         service: service.to_string(),
         object_path: zbus::zvariant::OwnedObjectPath::try_from(object_path.as_str()).ok()?,
         icon,
         status,
         menu_path,
+        tooltip,
     })
 }
 
@@ -326,6 +350,7 @@ mod tests {
             icon: TrayIcon::Named("utilities-terminal".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
         assert_eq!(item.service, "org.kde.konsole");
         assert!(matches!(item.status, ItemStatus::Active));
@@ -339,6 +364,7 @@ mod tests {
             icon: TrayIcon::Named("utilities-terminal".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
 
         assert_eq!(item.runtime_id(), ":1.99/org/kde/tray");
@@ -352,6 +378,7 @@ mod tests {
             icon: TrayIcon::Named("utilities-terminal".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
 
         assert_eq!(item.runtime_id(), ":1.42/StatusNotifierItem");
