@@ -185,15 +185,16 @@ impl App {
                 Task::none()
             }
             SurfaceEvent::ModuleHoverEnter(id, window) => {
-                self.surface_mut(window).hovered_module = Some(id);
-                Task::none()
+                self.handle_module_hover_enter(id, window)
             }
             SurfaceEvent::ModuleHoverExit(id, window) => {
-                let s = self.surface_mut(window);
-                if s.hovered_module.as_ref() == Some(&id) {
-                    s.hovered_module = None;
-                }
-                Task::none()
+                self.handle_module_hover_exit(id, window)
+            }
+            SurfaceEvent::TooltipDwellElapsed { window, module } => {
+                self.handle_tooltip_dwell_elapsed(window, module)
+            }
+            SurfaceEvent::CloseTooltip { window } => {
+                Task::batch(self.close_tooltip_popup_if_open(window))
             }
             SurfaceEvent::BarClick(window) => self.handle_bar_click(window),
             SurfaceEvent::BarHoverEnter(window) => self.handle_bar_hover_enter(window),
@@ -381,6 +382,83 @@ impl App {
             }
         }
         pos
+    }
+
+    fn handle_module_hover_enter(
+        &mut self,
+        id: crate::modules::ModuleId,
+        window: iced::window::Id,
+    ) -> Task<Message> {
+        let resolved = self.resolved_tooltip_for(window, &id);
+        let s = self.surface_mut(window);
+        s.hovered_module = Some(id.clone());
+
+        let mut tasks = Vec::new();
+        let close = self.close_tooltip_popup_if_open(window);
+        if !close.is_empty() {
+            tasks.extend(close);
+        }
+
+        if resolved.is_some() {
+            self.surface_mut(window).tooltip_pending = Some((id, 0.0));
+        } else {
+            self.surface_mut(window).tooltip_pending = None;
+        }
+
+        Task::batch(tasks)
+    }
+
+    fn handle_module_hover_exit(
+        &mut self,
+        id: crate::modules::ModuleId,
+        window: iced::window::Id,
+    ) -> Task<Message> {
+        let s = self.surface_mut(window);
+        if s.hovered_module.as_ref() == Some(&id) {
+            s.hovered_module = None;
+        }
+        if let Some((pending_id, _)) = &s.tooltip_pending {
+            if pending_id == &id {
+                s.tooltip_pending = None;
+            }
+        }
+        let close = self.close_tooltip_popup_if_open_for(window, &id);
+        Task::batch(close)
+    }
+
+    fn handle_tooltip_dwell_elapsed(
+        &mut self,
+        window: iced::window::Id,
+        module: crate::modules::ModuleId,
+    ) -> Task<Message> {
+        let _ = (window, module);
+        Task::none()
+    }
+
+    pub(super) fn resolved_tooltip_for(
+        &self,
+        window: iced::window::Id,
+        module: &crate::modules::ModuleId,
+    ) -> Option<crate::config::FormatTemplate> {
+        let _ = (window, module);
+        None
+    }
+
+    pub(super) fn close_tooltip_popup_if_open(
+        &mut self,
+        window: iced::window::Id,
+    ) -> Vec<Task<Message>> {
+        let _ = window;
+        Vec::new()
+    }
+
+    pub(super) fn close_tooltip_popup_if_open_for(
+        &mut self,
+        window: iced::window::Id,
+        module: &crate::modules::ModuleId,
+    ) -> Vec<Task<Message>> {
+        let _ = (window, module);
+        Vec::new()
     }
 }
 

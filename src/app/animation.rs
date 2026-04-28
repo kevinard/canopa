@@ -89,6 +89,7 @@ impl App {
             let effective_hover_delay = effective_bar.hover_delay;
             let effective_expand_ms = effective_bar.animation.expand_ms;
             let effective_collapse_ms = effective_bar.animation.collapse_ms;
+            let effective_tooltip_delay = effective_bar.tooltip_delay_ms;
             let s = self.surfaces.get_mut(&wid).unwrap();
 
             if let Some(elapsed) = s.hover_pending_ms {
@@ -100,9 +101,26 @@ impl App {
                 } else {
                     s.hover_pending_ms = Some(new_elapsed);
                 }
-                continue;
+                // Do not `continue` — tooltip dwell may also be advancing.
             }
 
+            let s = self.surfaces.get_mut(&wid).unwrap();
+            if let Some((module, elapsed)) = s.tooltip_pending.clone() {
+                let new_elapsed = elapsed + TICK_MS;
+                if new_elapsed >= effective_tooltip_delay as f32 {
+                    s.tooltip_pending = None;
+                    tasks.push(Task::done(Message::Surface(
+                        super::messages::SurfaceEvent::TooltipDwellElapsed {
+                            window: wid,
+                            module,
+                        },
+                    )));
+                } else {
+                    s.tooltip_pending = Some((module, new_elapsed));
+                }
+            }
+
+            let s = self.surfaces.get_mut(&wid).unwrap();
             match s.expand {
                 ExpandState::Expanding(progress) => {
                     let new_progress = (progress + TICK_MS / effective_expand_ms).min(1.0);
@@ -141,5 +159,69 @@ impl App {
             }
         }
         Task::batch(tasks)
+    }
+}
+
+#[cfg(test)]
+mod tooltip_dwell_tests {
+    use super::*;
+    use crate::modules::ModuleId;
+
+    fn boot_with_tooltip_delay(delay_ms: u32) -> (App, iced::window::Id) {
+        let mut config = crate::config::Config::default();
+        config.bars[0].tooltip_delay_ms = delay_ms;
+        let (mut app, _task) = App::boot(config, vec![]);
+        let wid = iced::window::Id::unique();
+        let _ = app.surface_mut(wid);
+        (app, wid)
+    }
+
+    #[test]
+    fn dwell_advances_under_threshold_does_not_fire() {
+        let (mut app, wid) = boot_with_tooltip_delay(200);
+        let id = ModuleId::new("clock");
+        app.surface_mut(wid).tooltip_pending = Some((id.clone(), 0.0));
+
+        for _ in 0..6 {
+            let _ = app.handle_tick();
+        }
+        let s = app.surface(wid).unwrap();
+        assert!(matches!(&s.tooltip_pending, Some((m, _)) if m == &id));
+    }
+
+    #[test]
+    fn dwell_crosses_threshold_clears_pending() {
+        let (mut app, wid) = boot_with_tooltip_delay(32);
+        let id = ModuleId::new("clock");
+        app.surface_mut(wid).tooltip_pending = Some((id, 0.0));
+
+        let _ = app.handle_tick();
+        let _ = app.handle_tick();
+        assert!(app.surface(wid).unwrap().tooltip_pending.is_none());
+    }
+
+    #[test]
+    fn hover_exit_during_dwell_cancels() {
+        let (mut app, wid) = boot_with_tooltip_delay(500);
+        let id = ModuleId::new("clock");
+        app.surface_mut(wid).tooltip_pending = Some((id.clone(), 50.0));
+
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::ModuleHoverExit(
+            id, wid,
+        ));
+        assert!(app.surface(wid).unwrap().tooltip_pending.is_none());
+    }
+
+    #[test]
+    fn hover_enter_on_other_module_replaces_pending() {
+        let (mut app, wid) = boot_with_tooltip_delay(500);
+        let a = ModuleId::new("clock");
+        let b = ModuleId::new("battery");
+        app.surface_mut(wid).tooltip_pending = Some((a, 50.0));
+
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::ModuleHoverEnter(
+            b, wid,
+        ));
+        assert!(app.surface(wid).unwrap().tooltip_pending.is_none());
     }
 }

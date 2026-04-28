@@ -25,6 +25,18 @@ pub enum SurfaceEvent {
     ToggleExpand,
     CursorMoved(iced::window::Id, Point),
     WindowSized(iced::window::Id, u32, u32),
+    /// Fired by the animation tick when a module's tooltip dwell delay
+    /// has elapsed. Phase 4 wires the popup-open path on this.
+    TooltipDwellElapsed {
+        window: iced::window::Id,
+        module: ModuleId,
+    },
+    /// Fired by the app to request closing any open tooltip popup
+    /// for `window` — used on hover-exit, click, escape, focus-loss,
+    /// and when a menu popup opens.
+    CloseTooltip {
+        window: iced::window::Id,
+    },
 }
 
 #[allow(dead_code)]
