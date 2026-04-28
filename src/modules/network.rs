@@ -180,6 +180,29 @@ impl crate::modules::Module for NetworkModule {
         iced::Subscription::none() // fed via Message::Network from app.rs
     }
 
+    fn tooltip_values(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> Vec<(&'static str, String)> {
+        if let crate::modules::ModuleState::Network(n) = state {
+            let icon = self
+                .icons
+                .icon_for_state(connectivity_state(&n.connectivity))
+                .unwrap_or_else(|| icon_str(&n.connectivity))
+                .to_string();
+            let label = Self::default_label(n);
+            let s = connectivity_state(&n.connectivity).to_string();
+            vec![
+                ("icon", icon),
+                ("value", label.clone()),
+                ("label", label),
+                ("state", s),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn view_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,

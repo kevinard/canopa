@@ -190,6 +190,25 @@ impl crate::modules::Module for VolumeModule {
         iced::Subscription::none() // fed via Message::Volume from app.rs
     }
 
+    fn tooltip_values(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> Vec<(&'static str, String)> {
+        if let crate::modules::ModuleState::Volume(v) = state {
+            let icon = self.current_icon(v);
+            let value = format!("{}", v.volume.round() as u64);
+            let s = self.state_key(v);
+            vec![
+                ("icon", icon),
+                ("value", value.clone()),
+                ("percent", value),
+                ("state", s),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn view_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,

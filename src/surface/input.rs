@@ -100,7 +100,9 @@ fn keyboard_handler(
                 size.height as u32,
             ),
         )),
-        Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => None,
+        Event::Mouse(iced::mouse::Event::CursorMoved { position }) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::CursorMoved(window, position),
+        )),
         Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
             // Expand keybind check takes priority over navigation bindings.
             // ToggleExpand is global (IPC design) — no per-surface window ID needed.
@@ -193,16 +195,22 @@ mod tests {
     }
 
     #[test]
-    fn cursor_motion_does_not_emit_app_message() {
+    fn cursor_motion_emits_cursor_moved_event() {
+        let wid = iced::window::Id::unique();
         let msg = keyboard_handler(
             Event::Mouse(iced::mouse::Event::CursorMoved {
                 position: iced::Point::new(12.0, 34.0),
             }),
             iced::event::Status::Ignored,
-            iced::window::Id::unique(),
+            wid,
         );
 
-        assert!(msg.is_none());
+        assert!(matches!(
+            msg,
+            Some(crate::app::Message::Surface(
+                crate::app::messages::SurfaceEvent::CursorMoved(w, p)
+            )) if w == wid && p == iced::Point::new(12.0, 34.0)
+        ));
     }
 
     #[test]

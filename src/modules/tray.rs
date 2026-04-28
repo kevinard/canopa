@@ -340,6 +340,16 @@ impl crate::modules::Module for TrayIconModule {
         iced::Subscription::none()
     }
 
+    fn tooltip_values(&self, _state: &ModuleState) -> Vec<(&'static str, String)> {
+        match self.item.tooltip.as_ref() {
+            Some(t) => vec![
+                ("title", t.title.clone()),
+                ("description", t.description.clone()),
+            ],
+            None => Vec::new(),
+        }
+    }
+
     fn view_collapsed_with_style(
         &self,
         _state: &ModuleState,

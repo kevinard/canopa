@@ -103,6 +103,21 @@ impl crate::modules::Module for ScriptModule {
         crate::modules::ModuleKind::Script
     }
 
+    fn tooltip_values(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> Vec<(&'static str, String)> {
+        if let crate::modules::ModuleState::Script(s) = state {
+            vec![
+                ("icon", ">_".into()),
+                ("value", s.output.clone()),
+                ("output", s.output.clone()),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         use iced::futures::stream;
 

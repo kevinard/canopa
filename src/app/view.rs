@@ -20,7 +20,7 @@ impl App {
         }
 
         if let Some(popup) = self.surfaces.tooltip_popup(window) {
-            return crate::surface::tooltip_popup::view_tooltip(&popup.tree);
+            return render_tooltip_popup(&popup.tree);
         }
 
         render_bar_model(self.bar_render_model(window), window)
@@ -32,6 +32,33 @@ impl App {
             text_color: crate::theme::TEXT,
         }
     }
+}
+
+fn render_tooltip_popup<'a>(
+    tree: &'a crate::surface::tooltip_popup::TooltipTree,
+) -> Element<'a, Message> {
+    use crate::surface::tooltip_popup::{compute_position, popup_size, view_tooltip};
+
+    let size = popup_size(tree);
+    let (x, y) = compute_position(tree, size, 4);
+    let inner = view_tooltip::<Message>(tree);
+
+    container(
+        container(inner)
+            .width(Length::Fixed(size.0 as f32))
+            .height(Length::Fixed(size.1 as f32)),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_x(iced::Alignment::Start)
+    .align_y(iced::Alignment::Start)
+    .padding(iced::Padding {
+        top: y.max(0) as f32,
+        right: 0.0,
+        bottom: 0.0,
+        left: x.max(0) as f32,
+    })
+    .into()
 }
 
 fn render_popup_model<'a>(

@@ -5,7 +5,7 @@ use crate::config::ExpandTrigger;
 use crate::surface::expand::ExpandState;
 
 impl App {
-    fn bar_for_window(&self, window: iced::window::Id) -> &crate::config::BarConfig {
+    pub(super) fn bar_for_window(&self, window: iced::window::Id) -> &crate::config::BarConfig {
         let bar_name = self
             .surface(window)
             .map(|s| s.bar_name.clone())

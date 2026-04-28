@@ -23,6 +23,31 @@ pub struct TooltipTree {
     pub bar_edge: Edge,
 }
 
+/// Estimate the logical pixel size `(width, height)` of the tooltip popup.
+/// Used to size the layer-shell content so the popup can be positioned
+/// correctly within the full-screen overlay.
+pub fn popup_size(tree: &TooltipTree) -> (u32, u32) {
+    const CHAR_WIDTH: u32 = 8;
+    const ROW_HEIGHT: u32 = 26;
+    const SPACING: u32 = 4;
+    const H_PADDING: u32 = 16;
+    const V_PADDING: u32 = 8;
+    const MIN_WIDTH: u32 = 32;
+    const MAX_WIDTH: u32 = 480;
+
+    let segs_chars: u32 = tree
+        .segments
+        .iter()
+        .map(|s| s.text.chars().count() as u32)
+        .sum();
+    let spacing_total = (tree.segments.len().saturating_sub(1) as u32) * SPACING;
+    let width = (segs_chars * CHAR_WIDTH + spacing_total + H_PADDING)
+        .max(MIN_WIDTH)
+        .min(MAX_WIDTH);
+    let height = ROW_HEIGHT + V_PADDING;
+    (width, height)
+}
+
 /// Compute the popup's top-left position (screen coordinates) given the
 /// tree, the popup's logical (width, height), and a small gap in pixels.
 pub fn compute_position(tree: &TooltipTree, size: (u32, u32), gap: i32) -> (i32, i32) {

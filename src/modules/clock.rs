@@ -179,6 +179,22 @@ impl crate::modules::Module for ClockModule {
         crate::modules::ModuleKind::Clock
     }
 
+    fn tooltip_values(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> Vec<(&'static str, String)> {
+        if let crate::modules::ModuleState::Clock(c) = state {
+            vec![
+                ("icon", "⌚".into()),
+                ("value", c.time.clone()),
+                ("time", c.time.clone()),
+                ("date", c.date.clone()),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         // Tick only as often as the configured formats can visibly change.
         // The id is included in the key tuple so multiple clock instances subscribe independently.

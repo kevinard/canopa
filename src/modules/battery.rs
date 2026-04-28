@@ -224,6 +224,25 @@ impl crate::modules::Module for BatteryModule {
         iced::Subscription::none()
     }
 
+    fn tooltip_values(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> Vec<(&'static str, String)> {
+        if let crate::modules::ModuleState::Battery(b) = state {
+            let icon = self.current_icon(b);
+            let value = format!("{}", b.percentage.round() as u8);
+            let s = battery_state_key(b, &self.states);
+            vec![
+                ("icon", icon),
+                ("value", value.clone()),
+                ("percent", value),
+                ("state", s),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn view_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,

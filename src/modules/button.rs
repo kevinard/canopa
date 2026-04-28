@@ -80,6 +80,17 @@ impl crate::modules::Module for ButtonModule {
         crate::modules::ModuleKind::Button
     }
 
+    fn tooltip_values(
+        &self,
+        _state: &crate::modules::ModuleState,
+    ) -> Vec<(&'static str, String)> {
+        vec![
+            ("icon", self.icon.clone()),
+            ("value", self.label.clone()),
+            ("label", self.label.clone()),
+        ]
+    }
+
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         iced::Subscription::run_with(self.id.clone(), |id: &crate::modules::ModuleId| {
             let id = id.clone();

@@ -15,6 +15,36 @@ pub(super) struct PopupMeta {
     pub(super) bar_name: String,
 }
 
+fn render_to_segments(
+    template: &crate::config::FormatTemplate,
+    values: &[(&str, String)],
+    state: Option<&str>,
+) -> Vec<crate::surface::tooltip_popup::RenderedSegment> {
+    let owned: Vec<(&str, String)> = values
+        .iter()
+        .map(|(k, v)| (*k, v.clone()))
+        .collect();
+    template
+        .render_styled_segments_with_default(&owned, state, &crate::config::Style::default())
+        .into_iter()
+        .map(|(text, style)| crate::surface::tooltip_popup::RenderedSegment { text, style })
+        .collect()
+}
+
+fn spawn_tooltip_popup_window() -> (iced::window::Id, Task<Message>) {
+    let settings = NewLayerShellSettings {
+        anchor: iced_layershell::reexport::Anchor::Left
+            | iced_layershell::reexport::Anchor::Right
+            | iced_layershell::reexport::Anchor::Top
+            | iced_layershell::reexport::Anchor::Bottom,
+        exclusive_zone: Some(-1),
+        size: Some((0, 0)),
+        layer: iced_layershell::reexport::Layer::Overlay,
+        ..Default::default()
+    };
+    Message::layershell_open(settings)
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct TooltipPopup {
     pub window: iced::window::Id,
@@ -212,6 +242,8 @@ impl App {
                 if has_tray && self.surfaces.last_cursor() != Some((window, pos)) {
                     self.surfaces.set_last_cursor(Some((window, pos)));
                 }
+                self.surface_mut(window).last_pointer_position =
+                    (pos.x as i32, pos.y as i32);
                 Task::none()
             }
             SurfaceEvent::WindowSized(window, w, h) => {
@@ -462,15 +494,66 @@ impl App {
 
     fn handle_tooltip_dwell_elapsed(
         &mut self,
-        window: iced::window::Id,
+        target_window: iced::window::Id,
         module: crate::modules::ModuleId,
     ) -> Task<Message> {
-        // TODO: spawn a TooltipPopup layer-shell window using
-        // tooltip_values_for / tooltip_anchor_for / spawn_tooltip_popup_window.
-        // Deferred: per-module value-bag plumbing (Phase 5 wires the tray case
-        // and informs the shape of the helper API).
-        let _ = (window, module);
-        Task::none()
+        let template = match self.resolved_tooltip_for(target_window, &module) {
+            Some(t) => t,
+            None => return Task::none(),
+        };
+
+        let values = self.tooltip_values_for(target_window, &module);
+        let rendered = render_to_segments(&template, &values, None);
+
+        if rendered.iter().all(|s| s.text.trim().is_empty()) {
+            return Task::none();
+        }
+
+        let (anchor, screen_size, bar_edge) = self.tooltip_anchor_for(target_window);
+
+        let tree = crate::surface::tooltip_popup::TooltipTree {
+            segments: rendered,
+            anchor,
+            screen_size,
+            bar_edge,
+        };
+
+        let (popup_wid, open_task) = spawn_tooltip_popup_window();
+
+        self.surfaces.insert_tooltip_popup(TooltipPopup {
+            window: popup_wid,
+            target_window,
+            target_module: module,
+            tree,
+        });
+
+        open_task
+    }
+
+    fn tooltip_values_for(
+        &self,
+        window: iced::window::Id,
+        module: &crate::modules::ModuleId,
+    ) -> Vec<(&'static str, String)> {
+        let m = match self.modules.get(module) {
+            Some(m) => m,
+            None => return Vec::new(),
+        };
+        let default_state = crate::modules::ModuleState::default();
+        let state = self.modules.state(module).unwrap_or(&default_state);
+        let _ = window;
+        m.tooltip_values(state)
+    }
+
+    fn tooltip_anchor_for(
+        &self,
+        window: iced::window::Id,
+    ) -> ((i32, i32), (u32, u32), crate::config::Edge) {
+        let s = self.surface(window);
+        let screen = s.map(|s| s.screen_size).unwrap_or((0, 0));
+        let anchor = s.map(|s| s.last_pointer_position).unwrap_or((0, 0));
+        let edge = self.bar_for_window(window).edge.clone();
+        (anchor, screen, edge)
     }
 
     pub(super) fn resolved_tooltip_for(

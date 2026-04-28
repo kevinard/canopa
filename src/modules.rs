@@ -190,6 +190,12 @@ pub trait Module: Send + Sync {
     fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {
         None
     }
+    /// Value bag for tooltip template rendering. Mirrors the placeholders the
+    /// module's `format` template accepts. Default returns `Vec::new()`,
+    /// meaning placeholders won't be substituted.
+    fn tooltip_values(&self, _state: &ModuleState) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
     /// Update dynamic workspace item data without rebuilding module instances.
     /// Non-workspace modules ignore this hook.
     fn update_workspace(&mut self, _workspace: &niri_ipc::Workspace) {}

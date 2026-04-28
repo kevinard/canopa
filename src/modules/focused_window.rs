@@ -75,6 +75,22 @@ impl crate::modules::Module for FocusedWindowModule {
         iced::Subscription::none()
     }
 
+    fn tooltip_values(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> Vec<(&'static str, String)> {
+        if let crate::modules::ModuleState::FocusedWindow(s) = state {
+            let title = s.title.clone().unwrap_or_default();
+            vec![
+                ("icon", "□".into()),
+                ("value", title.clone()),
+                ("title", title),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn view_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,

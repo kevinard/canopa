@@ -32,6 +32,9 @@ pub struct SurfaceState {
     /// Module currently being dwelled on for tooltip purposes plus the
     /// elapsed milliseconds since hover-enter. None means no pending dwell.
     pub tooltip_pending: Option<(crate::modules::ModuleId, f32)>,
+    /// Last cursor position observed inside this surface, in logical pixels
+    /// relative to the surface origin. Used as the tooltip popup anchor.
+    pub last_pointer_position: (i32, i32),
     /// Logical size (width, height) of this surface as last reported by the compositor.
     /// Used to clamp tray menu popup positions near screen edges.
     pub screen_size: (u32, u32),
@@ -49,6 +52,7 @@ impl SurfaceState {
             bar_hovered: false,
             hover_pending_ms: None,
             tooltip_pending: None,
+            last_pointer_position: (0, 0),
             screen_size: (0, 0),
         }
     }
@@ -88,6 +92,7 @@ mod tests {
             bar_hovered: false,
             hover_pending_ms: None,
             tooltip_pending: None,
+            last_pointer_position: (0, 0),
             screen_size: (0, 0),
         };
         assert_eq!(state.expand, ExpandState::Expanded);
