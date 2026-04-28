@@ -21,16 +21,22 @@ impl App {
     }
 
     pub(super) fn handle_bar_focus_lost(&mut self, window: iced::window::Id) -> Task<Message> {
+        let mut tasks = self.close_tooltip_popup_if_open(window);
         let s = self.surface_mut(window);
         s.focused_module = None;
         s.module_activated = false;
-        Task::done(Message::KeyboardInteractivityChange {
+        tasks.push(Task::done(Message::KeyboardInteractivityChange {
             id: window,
             keyboard_interactivity: KeyboardInteractivity::OnDemand,
-        })
+        }));
+        Task::batch(tasks)
     }
 
     pub(super) fn handle_escape_pressed(&mut self, window: iced::window::Id) -> Task<Message> {
+        let close_tt = self.close_tooltip_popup_if_open(window);
+        if !close_tt.is_empty() {
+            return Task::batch(close_tt);
+        }
         if self.surfaces.has_popup(window) {
             return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
         }

@@ -465,6 +465,10 @@ impl App {
         window: iced::window::Id,
         module: crate::modules::ModuleId,
     ) -> Task<Message> {
+        // TODO: spawn a TooltipPopup layer-shell window using
+        // tooltip_values_for / tooltip_anchor_for / spawn_tooltip_popup_window.
+        // Deferred: per-module value-bag plumbing (Phase 5 wires the tray case
+        // and informs the shape of the helper API).
         let _ = (window, module);
         Task::none()
     }
@@ -474,24 +478,56 @@ impl App {
         window: iced::window::Id,
         module: &crate::modules::ModuleId,
     ) -> Option<crate::config::FormatTemplate> {
-        let _ = (window, module);
-        None
+        use crate::config::ModuleParams;
+        use crate::config::tooltip_defaults as td;
+
+        let mc = self.config.modules.iter().find(|m| m.name == module.0)?;
+
+        let (setting, default) = match &mc.params {
+            ModuleParams::Battery(c) => (&c.tooltip, td::battery_default()),
+            ModuleParams::Volume(c) => (&c.tooltip, td::volume_default()),
+            ModuleParams::Clock(c) => (&c.tooltip, td::clock_default()),
+            ModuleParams::Network(c) => (&c.tooltip, td::network_default()),
+            ModuleParams::FocusedWindow(c) => (&c.tooltip, td::focused_window_default()),
+            ModuleParams::Workspaces(c) => (&c.tooltip, td::workspaces_default()),
+            ModuleParams::Button(c) => (&c.tooltip, td::button_default()),
+            ModuleParams::Script(c) => (&c.tooltip, td::script_default()),
+            ModuleParams::Tray(c) => (&c.tooltip, td::tray_default()),
+            ModuleParams::None => return None,
+        };
+        let _ = window;
+        setting.resolve(default)
     }
 
     pub(super) fn close_tooltip_popup_if_open(
         &mut self,
-        window: iced::window::Id,
+        target_window: iced::window::Id,
     ) -> Vec<Task<Message>> {
-        let _ = window;
+        let popup_wid = self
+            .surfaces
+            .tooltip_popup_for_target(target_window)
+            .map(|p| p.window);
+        if let Some(wid) = popup_wid {
+            self.surfaces.remove_tooltip_popup(wid);
+            return vec![Task::done(Message::RemoveWindow(wid))];
+        }
         Vec::new()
     }
 
     pub(super) fn close_tooltip_popup_if_open_for(
         &mut self,
-        window: iced::window::Id,
+        target_window: iced::window::Id,
         module: &crate::modules::ModuleId,
     ) -> Vec<Task<Message>> {
-        let _ = (window, module);
+        let popup_wid = self
+            .surfaces
+            .tooltip_popup_for_target(target_window)
+            .filter(|p| &p.target_module == module)
+            .map(|p| p.window);
+        if let Some(wid) = popup_wid {
+            self.surfaces.remove_tooltip_popup(wid);
+            return vec![Task::done(Message::RemoveWindow(wid))];
+        }
         Vec::new()
     }
 }

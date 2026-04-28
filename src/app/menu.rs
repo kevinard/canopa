@@ -163,15 +163,22 @@ impl App {
         tree: crate::surface::menu_popup::MenuTree,
         bar_name: String,
     ) -> Task<Message> {
-        let existing_ids: Vec<iced::window::Id> = self.surfaces.popup_ids().collect();
-        let mut tasks: Vec<Task<Message>> = existing_ids
+        let close_tt: Vec<Task<Message>> = self
+            .surfaces
+            .surfaces()
+            .map(|(wid, _)| *wid)
+            .collect::<Vec<_>>()
             .into_iter()
-            .map(|id| {
-                self.surfaces.remove_popup(id);
-                self.menu.clear_window(id);
-                Task::done(Message::RemoveWindow(id))
-            })
+            .flat_map(|wid| self.close_tooltip_popup_if_open(wid))
             .collect();
+
+        let existing_ids: Vec<iced::window::Id> = self.surfaces.popup_ids().collect();
+        let mut tasks: Vec<Task<Message>> = close_tt;
+        tasks.extend(existing_ids.into_iter().map(|id| {
+            self.surfaces.remove_popup(id);
+            self.menu.clear_window(id);
+            Task::done(Message::RemoveWindow(id))
+        }));
 
         let settings = iced_layershell::reexport::NewLayerShellSettings {
             anchor: iced_layershell::reexport::Anchor::Left

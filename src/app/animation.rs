@@ -14,6 +14,10 @@ impl App {
     }
 
     pub(super) fn handle_bar_click(&mut self, window: iced::window::Id) -> Task<Message> {
+        let close_tt = self.close_tooltip_popup_if_open(window);
+        if !close_tt.is_empty() {
+            return Task::batch(close_tt);
+        }
         if self.surfaces.has_any_popup() {
             return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
         }
@@ -92,19 +96,7 @@ impl App {
             let effective_tooltip_delay = effective_bar.tooltip_delay_ms;
             let s = self.surfaces.get_mut(&wid).unwrap();
 
-            if let Some(elapsed) = s.hover_pending_ms {
-                let new_elapsed = elapsed + TICK_MS;
-                if new_elapsed >= effective_hover_delay as f32 {
-                    s.hover_pending_ms = None;
-                    s.expand = ExpandState::Expanding(0.0);
-                    tasks.push(self.overlay_size_change_for(wid));
-                } else {
-                    s.hover_pending_ms = Some(new_elapsed);
-                }
-                // Do not `continue` — tooltip dwell may also be advancing.
-            }
-
-            let s = self.surfaces.get_mut(&wid).unwrap();
+            // Tooltip dwell advances independently of hover-pending and expand.
             if let Some((module, elapsed)) = s.tooltip_pending.clone() {
                 let new_elapsed = elapsed + TICK_MS;
                 if new_elapsed >= effective_tooltip_delay as f32 {
@@ -121,6 +113,18 @@ impl App {
             }
 
             let s = self.surfaces.get_mut(&wid).unwrap();
+            if let Some(elapsed) = s.hover_pending_ms {
+                let new_elapsed = elapsed + TICK_MS;
+                if new_elapsed >= effective_hover_delay as f32 {
+                    s.hover_pending_ms = None;
+                    s.expand = ExpandState::Expanding(0.0);
+                    tasks.push(self.overlay_size_change_for(wid));
+                } else {
+                    s.hover_pending_ms = Some(new_elapsed);
+                }
+                continue;
+            }
+
             match s.expand {
                 ExpandState::Expanding(progress) => {
                     let new_progress = (progress + TICK_MS / effective_expand_ms).min(1.0);
