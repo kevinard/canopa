@@ -258,6 +258,12 @@ impl TrayIconModule {
         }
     }
 
+    /// Returns the SNI ToolTip data for this icon, if the item exposes one.
+    #[allow(dead_code)]
+    pub(crate) fn sni_tooltip(&self) -> Option<&crate::dbus::sni::host::SniTooltip> {
+        self.item.tooltip.as_ref()
+    }
+
     fn build_view(
         &self,
         horizontal: bool,
