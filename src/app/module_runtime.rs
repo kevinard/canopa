@@ -259,6 +259,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         }
     }
 
@@ -967,6 +968,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
 
         let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item]));
@@ -996,6 +998,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
 
         let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item]));
@@ -1023,6 +1026,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app-old".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
         let replacement = TrayItem {
             icon: crate::dbus::sni::host::TrayIcon::Named("app-new".into()),
@@ -1050,6 +1054,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
 
         let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item]));

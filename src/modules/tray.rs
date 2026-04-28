@@ -430,6 +430,7 @@ mod tests {
             icon: TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
         let m = TrayIconModule::new(item, "tray".into());
         assert_eq!(m.id().0, "tray:org.test.App");
@@ -445,6 +446,7 @@ mod tests {
             icon: TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
         let m = TrayIconModule::new(item, "tray".into());
         let msg = m.on_interaction(InteractionEvent::Clicked).unwrap();
@@ -466,6 +468,7 @@ mod tests {
             menu_path: Some(
                 zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap(),
             ),
+            tooltip: None,
         };
         let m = TrayIconModule::new(item, "tray".into());
         let msg = m

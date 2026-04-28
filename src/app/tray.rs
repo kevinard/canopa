@@ -346,6 +346,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         }
     }
 
@@ -386,6 +387,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
 
         let _ = tray.apply_host_event(&TrayEvent::Snapshot(vec![item.clone()]));
@@ -408,6 +410,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
 
         let _ = tray.apply_host_event(&TrayEvent::ItemAdded(item));
@@ -428,6 +431,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: Some(OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap()),
+            tooltip: None,
         };
 
         let _ = app.handle_tray_event(TrayEvent::ItemAdded(item));
@@ -448,6 +452,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
             menu_path: Some(OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap()),
+            tooltip: None,
         };
 
         let _ = app.handle_tray_event(TrayEvent::ItemAdded(item));
@@ -471,6 +476,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app-a".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
         let item_b = TrayItem {
             service: ":1.55".into(),
@@ -478,6 +484,7 @@ mod tests {
             icon: crate::dbus::sni::host::TrayIcon::Named("app-b".into()),
             status: ItemStatus::Active,
             menu_path: None,
+            tooltip: None,
         };
 
         let active = tray.apply_host_event(&TrayEvent::Snapshot(vec![item_a, item_b]));
