@@ -5,6 +5,7 @@ mod layout;
 mod menu;
 pub(crate) mod messages;
 mod module_events;
+mod module_graph;
 mod module_runtime;
 mod module_state;
 mod module_store;
@@ -24,11 +25,10 @@ use std::collections::HashMap;
 use iced::Task;
 use iced_layershell::to_layer_message;
 
-use crate::config::{Config, ModuleConfig};
+use crate::config::Config;
 use crate::dbus::DbusConnections;
 #[cfg(test)]
 use crate::modules::ModuleId;
-use crate::modules::{MODULE_DESCRIPTORS, Module, ModuleDescriptor, Zone, build_registry};
 use crate::surface::SurfaceState;
 use crate::surface::input::init_expand_keybind;
 
@@ -133,12 +133,6 @@ impl Message {
     }
 }
 
-fn descriptor_for_config_name(module_type: &str) -> Option<&'static ModuleDescriptor> {
-    MODULE_DESCRIPTORS
-        .iter()
-        .find(|descriptor| descriptor.config_name == module_type)
-}
-
 impl App {
     /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
     /// Empty means `StartMode::AllScreens` handles window creation (single "all" bar case).
@@ -147,64 +141,8 @@ impl App {
         // Subsequent calls are silently ignored (OnceLock semantics).
         init_expand_keybind(config.bars[0].expand_keybind.as_deref());
 
-        let registry = build_registry();
-        let descriptors: HashMap<&str, &ModuleDescriptor> = MODULE_DESCRIPTORS
-            .iter()
-            .map(|d| (d.config_name, d))
-            .collect();
-        let module_map: std::collections::HashMap<&str, &crate::config::ModuleConfig> = config
-            .modules
-            .iter()
-            .map(|mc| (mc.name.as_str(), mc))
-            .collect();
-        // Build an ordered (zone, name) list by walking all bar sections. A module name that
-        // appears in multiple bars is registered only once — first appearance wins the zone.
-        let mut ordered: Vec<(Zone, String)> = Vec::new();
-        let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for bar in &config.bars {
-            for (zone, names) in [
-                (Zone::Top, &bar.modules.top),
-                (Zone::Center, &bar.modules.center),
-                (Zone::Bottom, &bar.modules.bottom),
-            ] {
-                for name in names {
-                    if seen_names.insert(name.clone()) {
-                        ordered.push((zone.clone(), name.clone()));
-                    }
-                }
-            }
-        }
-        let mut modules: Vec<(Zone, Box<dyn Module>, crate::config::ModuleActionsConfig)> =
-            Vec::new();
-        for (zone, name) in &ordered {
-            let synthesized;
-            let (mc, descriptor, ctor) = if let Some(&mc) = module_map.get(name.as_str()) {
-                let Some(descriptor) = descriptor_for_config_name(mc.module_type.as_str()) else {
-                    continue;
-                };
-                let Some(ctor) = registry.get(mc.module_type.as_str()).copied() else {
-                    continue;
-                };
-                (mc, descriptor, ctor)
-            } else if let Some(descriptor) = descriptors.get(name.as_str()) {
-                let Some(params) = descriptor.synthesized_params() else {
-                    continue;
-                };
-                synthesized = ModuleConfig {
-                    name: name.clone(),
-                    module_type: descriptor.config_name.to_string(),
-                    params,
-                    actions: crate::config::ModuleActionsConfig::default(),
-                };
-                (&synthesized, *descriptor, descriptor.constructor)
-            } else {
-                continue;
-            };
-            let module = ctor(mc);
-            debug_assert_eq!(module.module_type(), module.kind().as_str());
-            debug_assert_eq!(module.kind(), descriptor.kind);
-            modules.push((zone.clone(), module, mc.actions.clone()));
-        }
+        let module_graph = module_graph::build_module_graph(&config)
+            .expect("validated config should build a module graph");
         // Create one surface per (output_name, bar_name) pair when in manual mode.
         // When allowed_outputs is empty, StartMode::AllScreens handles window creation.
         let mut pending_surface_keys: HashMap<iced::window::Id, (String, String)> = HashMap::new();
@@ -235,7 +173,7 @@ impl App {
             shared: shared::SharedContext::new(),
             surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
             menu: menu::MenuSystem::default(),
-            modules: module_runtime::ModuleRuntime::from_modules_with_actions(modules),
+            modules: module_runtime::ModuleRuntime::from_modules_with_actions(module_graph.modules),
             niri: niri::AppNiriState::new(),
             tray: tray::TrayState::default(),
             perf: perf::PerfTracker::from_env(),
@@ -294,7 +232,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::config::{Edge, ExpandTrigger};
-    use crate::modules::{MODULE_DESCRIPTORS, ModuleKind};
+    use crate::modules::{MODULE_DESCRIPTORS, ModuleKind, Zone};
     use crate::niri::NiriEvent;
     use crate::surface::expand::ExpandState;
 
