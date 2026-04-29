@@ -9,16 +9,11 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<NetworkConfig>
     let Some(children) = node.children() else {
         return Ok(NetworkConfig::default());
     };
-    let icons = icons::parse_optional(children, &error::module_path(idx, "network"))?;
-    let format = formats::parse_optional(
+    let module_path = error::module_path(idx, "network");
+    let icons = icons::parse_optional(children, &module_path)?;
+    let (format, tooltip) = formats::parse_format_and_tooltip(
         children,
-        &error::module_path(idx, "network"),
-        &["icon", "value", "label", "state"],
-        crate::config::states::NETWORK,
-    )?;
-    let tooltip = formats::parse_tooltip_field(
-        children,
-        &error::module_path(idx, "network"),
+        &module_path,
         &["icon", "value", "label", "state"],
         crate::config::states::NETWORK,
     )?;

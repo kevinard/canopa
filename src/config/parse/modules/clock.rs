@@ -26,15 +26,10 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
         &error::field_path(idx, "clock", "date-format"),
         "a chrono format string such as \"%a %d %b\"",
     )?;
-    let format = formats::parse_optional(
+    let module_path = error::module_path(idx, "clock");
+    let (format, tooltip) = formats::parse_format_and_tooltip(
         children,
-        &error::module_path(idx, "clock"),
-        &["icon", "value", "time", "date"],
-        crate::config::states::EMPTY,
-    )?;
-    let tooltip = formats::parse_tooltip_field(
-        children,
-        &error::module_path(idx, "clock"),
+        &module_path,
         &["icon", "value", "time", "date"],
         crate::config::states::EMPTY,
     )?;

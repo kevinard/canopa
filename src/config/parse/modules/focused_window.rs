@@ -8,15 +8,10 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<FocusedWindowC
     let Some(children) = node.children() else {
         return Ok(FocusedWindowConfig::default());
     };
-    let format = formats::parse_optional(
+    let module_path = error::module_path(idx, "focused-window");
+    let (format, tooltip) = formats::parse_format_and_tooltip(
         children,
-        &error::module_path(idx, "focused-window"),
-        &["icon", "value", "title"],
-        crate::config::states::EMPTY,
-    )?;
-    let tooltip = formats::parse_tooltip_field(
-        children,
-        &error::module_path(idx, "focused-window"),
+        &module_path,
         &["icon", "value", "title"],
         crate::config::states::EMPTY,
     )?;

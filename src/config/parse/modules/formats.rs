@@ -33,6 +33,18 @@ pub(super) fn parse_optional(
     })
 }
 
+pub(super) fn parse_format_and_tooltip(
+    children: &KdlDocument,
+    module_path: &str,
+    placeholders: &[&str],
+    allowed_states: &[&str],
+) -> anyhow::Result<(FormatConfig, TooltipSetting)> {
+    Ok((
+        parse_optional(children, module_path, placeholders, allowed_states)?,
+        parse_tooltip_field(children, module_path, placeholders, allowed_states)?,
+    ))
+}
+
 /// Error if any of the format fields (`format`, `expanded-format`,
 /// `horizontal-format`) are present. Used by modules that do not render
 /// templated text — e.g. tray, which composes its own per-icon view.

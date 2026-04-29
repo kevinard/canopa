@@ -41,15 +41,10 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> 
         }
     };
 
-    let format = formats::parse_optional(
+    let module_path = error::module_path(idx, "script");
+    let (format, tooltip) = formats::parse_format_and_tooltip(
         children,
-        &error::module_path(idx, "script"),
-        &["icon", "value", "output"],
-        crate::config::states::EMPTY,
-    )?;
-    let tooltip = formats::parse_tooltip_field(
-        children,
-        &error::module_path(idx, "script"),
+        &module_path,
         &["icon", "value", "output"],
         crate::config::states::EMPTY,
     )?;

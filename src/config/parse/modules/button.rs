@@ -39,15 +39,9 @@ pub(super) fn parse(
             "{on_click_path}: missing required parameter. Expected: a string value or actions.click."
         );
     };
-    let format = formats::parse_optional(
+    let (format, tooltip) = formats::parse_format_and_tooltip(
         children,
-        &error::module_path(idx, "button"),
-        &["icon", "value", "label"],
-        crate::config::states::EMPTY,
-    )?;
-    let tooltip = formats::parse_tooltip_field(
-        children,
-        &error::module_path(idx, "button"),
+        &button_path,
         &["icon", "value", "label"],
         crate::config::states::EMPTY,
     )?;

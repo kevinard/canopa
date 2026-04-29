@@ -11,18 +11,14 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<WorkspacesConf
         return Ok(config); // No workspace config — all workspaces show number only.
     };
 
-    config.format = formats::parse_optional(
+    let (format, tooltip) = formats::parse_format_and_tooltip(
         children,
         &error::module_path(idx, "workspaces"),
         &["icon", "value", "index", "name", "label", "state"],
         crate::config::states::WORKSPACES,
     )?;
-    config.tooltip = formats::parse_tooltip_field(
-        children,
-        &error::module_path(idx, "workspaces"),
-        &["icon", "value", "index", "name", "label", "state"],
-        crate::config::states::WORKSPACES,
-    )?;
+    config.format = format;
+    config.tooltip = tooltip;
 
     for ws_node in children.nodes() {
         if matches!(

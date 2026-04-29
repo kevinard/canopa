@@ -25,13 +25,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<VolumeConfig> 
 
     let mut allowed_states: Vec<&str> = vec!["muted"];
     allowed_states.extend(states_config.names());
-    let format = formats::parse_optional(
-        children,
-        &module_path,
-        &["icon", "value", "percent", "state"],
-        &allowed_states,
-    )?;
-    let tooltip = formats::parse_tooltip_field(
+    let (format, tooltip) = formats::parse_format_and_tooltip(
         children,
         &module_path,
         &["icon", "value", "percent", "state"],
