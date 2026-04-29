@@ -88,22 +88,29 @@ pub(super) fn parse_tooltip_field(
     let path = format!("{module_path}.tooltip");
 
     // Single bool entry (no children, one positional bool) => enabled/disabled flag.
-    let positional: Vec<_> = node.entries().iter().filter(|e| e.name().is_none()).collect();
-    if node.children().is_none() && positional.len() == 1 {
-        if let Some(b) = positional[0].value().as_bool() {
-            if b {
-                anyhow::bail!(
-                    "{path}: tooltip true is not allowed; omit the field to use the default."
-                );
-            }
-            return Ok(TooltipSetting::Disabled);
+    let positional: Vec<_> = node
+        .entries()
+        .iter()
+        .filter(|e| e.name().is_none())
+        .collect();
+    if node.children().is_none()
+        && positional.len() == 1
+        && let Some(b) = positional[0].value().as_bool()
+    {
+        if b {
+            anyhow::bail!(
+                "{path}: tooltip true is not allowed; omit the field to use the default."
+            );
         }
+        return Ok(TooltipSetting::Disabled);
     }
 
     // Otherwise: delegate to the shared styled-segment parser.
     let segments =
         super::segment_styles::parse_segments(node, allowed_placeholders, allowed_states, &path)?;
-    Ok(TooltipSetting::Custom(crate::config::FormatTemplate::from_styled(segments)))
+    Ok(TooltipSetting::Custom(
+        crate::config::FormatTemplate::from_styled(segments),
+    ))
 }
 
 #[cfg(test)]
@@ -146,10 +153,7 @@ mod tests {
         let err = parse_tooltip_field(&doc, "m", allowed(), &[])
             .unwrap_err()
             .to_string();
-        assert!(
-            err.contains("tooltip true is not allowed"),
-            "got: {err}"
-        );
+        assert!(err.contains("tooltip true is not allowed"), "got: {err}");
     }
 
     #[test]

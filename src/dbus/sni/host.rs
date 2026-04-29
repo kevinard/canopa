@@ -34,6 +34,13 @@ impl SniTooltip {
     pub fn is_empty(&self) -> bool {
         self.title.trim().is_empty() && self.description.trim().is_empty()
     }
+
+    pub fn normalized(title: String, description: String) -> Self {
+        Self {
+            title: title.chars().take(512).collect(),
+            description: description.chars().take(1024).collect(),
+        }
+    }
 }
 
 impl TrayItem {
@@ -118,7 +125,7 @@ pub(crate) async fn fetch_item(
 
     let tooltip = match proxy.tool_tip().await {
         Ok((_, _, title, description)) => {
-            let t = SniTooltip { title, description };
+            let t = SniTooltip::normalized(title, description);
             if t.is_empty() { None } else { Some(t) }
         }
         Err(_) => None,
@@ -368,6 +375,14 @@ mod tests {
         };
 
         assert_eq!(item.runtime_id(), ":1.99/org/kde/tray");
+    }
+
+    #[test]
+    fn sni_tooltip_normalized_caps_untrusted_text() {
+        let tooltip = SniTooltip::normalized("x".repeat(600), "y".repeat(1200));
+
+        assert_eq!(tooltip.title.chars().count(), 512);
+        assert_eq!(tooltip.description.chars().count(), 1024);
     }
 
     #[test]

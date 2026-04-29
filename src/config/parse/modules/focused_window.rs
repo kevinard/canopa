@@ -4,6 +4,25 @@ use super::super::error;
 use super::formats;
 use crate::config::FocusedWindowConfig;
 
+pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<FocusedWindowConfig> {
+    let Some(children) = node.children() else {
+        return Ok(FocusedWindowConfig::default());
+    };
+    let format = formats::parse_optional(
+        children,
+        &error::module_path(idx, "focused-window"),
+        &["icon", "value", "title"],
+        crate::config::states::EMPTY,
+    )?;
+    let tooltip = formats::parse_tooltip_field(
+        children,
+        &error::module_path(idx, "focused-window"),
+        &["icon", "value", "title"],
+        crate::config::states::EMPTY,
+    )?;
+    Ok(FocusedWindowConfig { format, tooltip })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::parse::parse;
@@ -23,14 +42,22 @@ mod tests {
 
     #[test]
     fn tooltip_string_parsed() {
-        let cfg = focused_window_config(r#"modules { module "focused-window" { tooltip "{title}" } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+        let cfg =
+            focused_window_config(r#"modules { module "focused-window" { tooltip "{title}" } }"#);
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Custom(_)
+        ));
     }
 
     #[test]
     fn tooltip_false_disables() {
-        let cfg = focused_window_config(r#"modules { module "focused-window" { tooltip #false } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+        let cfg =
+            focused_window_config(r#"modules { module "focused-window" { tooltip #false } }"#);
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Disabled
+        ));
     }
 
     #[test]
@@ -43,25 +70,9 @@ mod tests {
     #[test]
     fn tooltip_absent_is_default() {
         let cfg = focused_window_config(r#"modules { module "focused-window" {} }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Default
+        ));
     }
-}
-
-pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<FocusedWindowConfig> {
-    let Some(children) = node.children() else {
-        return Ok(FocusedWindowConfig::default());
-    };
-    let format = formats::parse_optional(
-        children,
-        &error::module_path(idx, "focused-window"),
-        &["icon", "value", "title"],
-        crate::config::states::EMPTY,
-    )?;
-    let tooltip = formats::parse_tooltip_field(
-        children,
-        &error::module_path(idx, "focused-window"),
-        &["icon", "value", "title"],
-        crate::config::states::EMPTY,
-    )?;
-    Ok(FocusedWindowConfig { format, tooltip })
 }

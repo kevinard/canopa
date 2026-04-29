@@ -3,6 +3,7 @@
 // host.rs imports them via `use super::proxy::*;`.
 
 pub(crate) type SniPixmap = (i32, i32, Vec<u8>);
+pub(super) type SniToolTipProperty = (String, Vec<SniPixmap>, String, String);
 pub(super) type Props = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
 pub(super) type RawMenuItem = (i32, Props, Vec<zbus::zvariant::OwnedValue>);
 pub(super) type RawMenuLayout = (u32, RawMenuItem);
@@ -34,7 +35,7 @@ pub(super) trait SniItem {
     /// SNI ToolTip property: (icon-name, icon-pixmap, title, description).
     /// We use only `title` and `description`.
     #[zbus(property)]
-    fn tool_tip(&self) -> zbus::Result<(String, Vec<(i32, i32, Vec<u8>)>, String, String)>;
+    fn tool_tip(&self) -> zbus::Result<SniToolTipProperty>;
 
     #[zbus(signal)]
     fn new_icon(&self) -> zbus::Result<()>;

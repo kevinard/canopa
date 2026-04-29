@@ -243,17 +243,12 @@ impl FormatConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum TooltipSetting {
+    #[default]
     Default,
     Disabled,
     Custom(FormatTemplate),
-}
-
-impl Default for TooltipSetting {
-    fn default() -> Self {
-        TooltipSetting::Default
-    }
 }
 
 impl TooltipSetting {

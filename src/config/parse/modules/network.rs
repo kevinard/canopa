@@ -5,6 +5,30 @@ use super::formats;
 use super::icons;
 use crate::config::NetworkConfig;
 
+pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<NetworkConfig> {
+    let Some(children) = node.children() else {
+        return Ok(NetworkConfig::default());
+    };
+    let icons = icons::parse_optional(children, &error::module_path(idx, "network"))?;
+    let format = formats::parse_optional(
+        children,
+        &error::module_path(idx, "network"),
+        &["icon", "value", "label", "state"],
+        crate::config::states::NETWORK,
+    )?;
+    let tooltip = formats::parse_tooltip_field(
+        children,
+        &error::module_path(idx, "network"),
+        &["icon", "value", "label", "state"],
+        crate::config::states::NETWORK,
+    )?;
+    Ok(NetworkConfig {
+        icons,
+        format,
+        tooltip,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::parse::parse;
@@ -25,13 +49,19 @@ mod tests {
     #[test]
     fn tooltip_string_parsed() {
         let cfg = network_config(r#"modules { module "network" { tooltip "{label}" } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Custom(_)
+        ));
     }
 
     #[test]
     fn tooltip_false_disables() {
         let cfg = network_config(r#"modules { module "network" { tooltip #false } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Disabled
+        ));
     }
 
     #[test]
@@ -44,26 +74,9 @@ mod tests {
     #[test]
     fn tooltip_absent_is_default() {
         let cfg = network_config(r#"modules { module "network" {} }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Default
+        ));
     }
-}
-
-pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<NetworkConfig> {
-    let Some(children) = node.children() else {
-        return Ok(NetworkConfig::default());
-    };
-    let icons = icons::parse_optional(children, &error::module_path(idx, "network"))?;
-    let format = formats::parse_optional(
-        children,
-        &error::module_path(idx, "network"),
-        &["icon", "value", "label", "state"],
-        crate::config::states::NETWORK,
-    )?;
-    let tooltip = formats::parse_tooltip_field(
-        children,
-        &error::module_path(idx, "network"),
-        &["icon", "value", "label", "state"],
-        crate::config::states::NETWORK,
-    )?;
-    Ok(NetworkConfig { icons, format, tooltip })
 }

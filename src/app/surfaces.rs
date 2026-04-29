@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Index, IndexMut};
 
 use iced::Task;
-use iced_layershell::reexport::{NewLayerShellSettings, OutputOption};
+use iced_layershell::reexport::{
+    Anchor, KeyboardInteractivity, NewLayerShellSettings, OutputOption,
+};
 
 use super::{App, Message};
 use crate::modules::ModuleKind;
@@ -20,10 +22,7 @@ fn render_to_segments(
     values: &[(&str, String)],
     state: Option<&str>,
 ) -> Vec<crate::surface::tooltip_popup::RenderedSegment> {
-    let owned: Vec<(&str, String)> = values
-        .iter()
-        .map(|(k, v)| (*k, v.clone()))
-        .collect();
+    let owned: Vec<(&str, String)> = values.iter().map(|(k, v)| (*k, v.clone())).collect();
     template
         .render_styled_segments_with_default(&owned, state, &crate::config::Style::default())
         .into_iter()
@@ -31,17 +30,62 @@ fn render_to_segments(
         .collect()
 }
 
-fn spawn_tooltip_popup_window() -> (iced::window::Id, Task<Message>) {
-    let settings = NewLayerShellSettings {
-        anchor: iced_layershell::reexport::Anchor::Left
-            | iced_layershell::reexport::Anchor::Right
-            | iced_layershell::reexport::Anchor::Top
-            | iced_layershell::reexport::Anchor::Bottom,
+fn tooltip_margin(
+    tree: &crate::surface::tooltip_popup::TooltipTree,
+    size: (u32, u32),
+    gap: i32,
+) -> (i32, i32, i32, i32) {
+    let (w, h) = (size.0 as i32, size.1 as i32);
+    let (bar_w, bar_h) = (tree.bar_size.0 as i32, tree.bar_size.1 as i32);
+    let (ax, ay) = tree.anchor;
+    match tree.bar_edge {
+        crate::config::Edge::Top => {
+            let left = (ax - w / 2).clamp(0, (bar_w - w).max(0));
+            (bar_h + gap, 0, 0, left)
+        }
+        crate::config::Edge::Bottom => {
+            let left = (ax - w / 2).clamp(0, (bar_w - w).max(0));
+            (0, 0, bar_h + gap, left)
+        }
+        crate::config::Edge::Left => {
+            let top = (ay - h / 2).clamp(0, (bar_h - h).max(0));
+            (top, 0, 0, bar_w + gap)
+        }
+        crate::config::Edge::Right => {
+            let top = (ay - h / 2).clamp(0, (bar_h - h).max(0));
+            (top, bar_w + gap, 0, 0)
+        }
+    }
+}
+
+fn tooltip_anchor(tree: &crate::surface::tooltip_popup::TooltipTree) -> Anchor {
+    match tree.bar_edge {
+        crate::config::Edge::Top => Anchor::Left | Anchor::Top,
+        crate::config::Edge::Bottom => Anchor::Left | Anchor::Bottom,
+        crate::config::Edge::Left => Anchor::Left | Anchor::Top,
+        crate::config::Edge::Right => Anchor::Right | Anchor::Top,
+    }
+}
+
+fn tooltip_popup_window_settings(
+    tree: &crate::surface::tooltip_popup::TooltipTree,
+) -> NewLayerShellSettings {
+    let size = crate::surface::tooltip_popup::popup_size(tree);
+    NewLayerShellSettings {
+        anchor: tooltip_anchor(tree),
         exclusive_zone: Some(-1),
-        size: Some((0, 0)),
+        size: Some(size),
+        margin: Some(tooltip_margin(tree, size, 4)),
         layer: iced_layershell::reexport::Layer::Overlay,
+        keyboard_interactivity: KeyboardInteractivity::None,
         ..Default::default()
-    };
+    }
+}
+
+fn spawn_tooltip_popup_window(
+    tree: &crate::surface::tooltip_popup::TooltipTree,
+) -> (iced::window::Id, Task<Message>) {
+    let settings = tooltip_popup_window_settings(tree);
     Message::layershell_open(settings)
 }
 
@@ -51,6 +95,13 @@ pub(super) struct TooltipPopup {
     pub target_window: iced::window::Id,
     pub target_module: crate::modules::ModuleId,
     pub tree: crate::surface::tooltip_popup::TooltipTree,
+}
+
+struct TooltipAnchor {
+    anchor: (i32, i32),
+    bar_size: (u32, u32),
+    screen_size: (u32, u32),
+    bar_edge: crate::config::Edge,
 }
 
 pub(super) struct SurfaceManager {
@@ -184,6 +235,13 @@ impl SurfaceManager {
         self.tooltip_popups.get(&window)
     }
 
+    pub(super) fn tooltip_popup_mut(
+        &mut self,
+        window: iced::window::Id,
+    ) -> Option<&mut TooltipPopup> {
+        self.tooltip_popups.get_mut(&window)
+    }
+
     pub(super) fn insert_tooltip_popup(&mut self, popup: TooltipPopup) {
         self.tooltip_popups.insert(popup.window, popup);
     }
@@ -228,6 +286,10 @@ impl IndexMut<iced::window::Id> for SurfaceManager {
 }
 
 impl App {
+    fn is_tooltip_popup_window(&self, window: iced::window::Id) -> bool {
+        self.surfaces.tooltip_popup(window).is_some()
+    }
+
     pub(super) fn handle_surface_event(
         &mut self,
         event: super::messages::SurfaceEvent,
@@ -236,44 +298,84 @@ impl App {
 
         match event {
             SurfaceEvent::CursorMoved(window, pos) => {
+                if self.is_tooltip_popup_window(window) {
+                    return Task::none();
+                }
                 let has_tray = self.modules.iter().any(|(_, module)| {
                     matches!(module.kind(), ModuleKind::Tray | ModuleKind::TrayIcon)
                 });
                 if has_tray && self.surfaces.last_cursor() != Some((window, pos)) {
                     self.surfaces.set_last_cursor(Some((window, pos)));
                 }
-                self.surface_mut(window).last_pointer_position =
-                    (pos.x as i32, pos.y as i32);
+                self.surface_mut(window).last_pointer_position = (pos.x as i32, pos.y as i32);
                 Task::none()
             }
             SurfaceEvent::WindowSized(window, w, h) => {
-                self.surfaces.surface_mut(window).screen_size = (w, h);
+                if let Some(popup) = self.surfaces.tooltip_popup_mut(window) {
+                    popup.tree.screen_size = (w, h);
+                } else {
+                    self.surfaces.surface_mut(window).screen_size = (w, h);
+                }
                 Task::none()
             }
             SurfaceEvent::ModuleHoverEnter(id, window) => {
                 self.handle_module_hover_enter(id, window)
             }
-            SurfaceEvent::ModuleHoverExit(id, window) => {
-                self.handle_module_hover_exit(id, window)
-            }
+            SurfaceEvent::ModuleHoverExit(id, window) => self.handle_module_hover_exit(id, window),
             SurfaceEvent::TooltipDwellElapsed { window, module } => {
                 self.handle_tooltip_dwell_elapsed(window, module)
             }
             SurfaceEvent::CloseTooltip { window } => {
                 Task::batch(self.close_tooltip_popup_if_open(window))
             }
+            SurfaceEvent::BarClick(window) if self.is_tooltip_popup_window(window) => Task::none(),
             SurfaceEvent::BarClick(window) => self.handle_bar_click(window),
+            SurfaceEvent::BarHoverEnter(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::BarHoverEnter(window) => self.handle_bar_hover_enter(window),
+            SurfaceEvent::BarHoverExit(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::BarHoverExit(window) => self.handle_bar_hover_exit(window),
             SurfaceEvent::Tick => self.handle_tick(),
+            SurfaceEvent::BarFocusGained(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::BarFocusGained(window) => self.handle_bar_focus_gained(window),
+            SurfaceEvent::BarFocusLost(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::BarFocusLost(window) => self.handle_bar_focus_lost(window),
+            SurfaceEvent::EscapePressed(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::EscapePressed(window) => self.handle_escape_pressed(window),
+            SurfaceEvent::FocusMoveNext(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::FocusMoveNext(window) => self.handle_focus_move(window, true),
+            SurfaceEvent::FocusMovePrev(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::FocusMovePrev(window) => self.handle_focus_move(window, false),
+            SurfaceEvent::FocusNextZone(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::FocusNextZone(window) => self.handle_focus_zone(window, true),
+            SurfaceEvent::FocusPrevZone(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::FocusPrevZone(window) => self.handle_focus_zone(window, false),
+            SurfaceEvent::KeyboardActivate(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::KeyboardActivate(window) => self.handle_keyboard_activate(window),
+            SurfaceEvent::KeyboardSecondaryActivate(window)
+                if self.is_tooltip_popup_window(window) =>
+            {
+                Task::none()
+            }
             SurfaceEvent::KeyboardSecondaryActivate(window) => {
                 self.handle_keyboard_secondary_activate(window)
             }
@@ -483,10 +585,10 @@ impl App {
         if s.hovered_module.as_ref() == Some(&id) {
             s.hovered_module = None;
         }
-        if let Some((pending_id, _)) = &s.tooltip_pending {
-            if pending_id == &id {
-                s.tooltip_pending = None;
-            }
+        if let Some((pending_id, _)) = &s.tooltip_pending
+            && pending_id == &id
+        {
+            s.tooltip_pending = None;
         }
         let close = self.close_tooltip_popup_if_open_for(window, &id);
         Task::batch(close)
@@ -497,6 +599,14 @@ impl App {
         target_window: iced::window::Id,
         module: crate::modules::ModuleId,
     ) -> Task<Message> {
+        if self
+            .surface(target_window)
+            .and_then(|s| s.hovered_module.as_ref())
+            != Some(&module)
+        {
+            return Task::none();
+        }
+
         let template = match self.resolved_tooltip_for(target_window, &module) {
             Some(t) => t,
             None => return Task::none(),
@@ -509,16 +619,17 @@ impl App {
             return Task::none();
         }
 
-        let (anchor, screen_size, bar_edge) = self.tooltip_anchor_for(target_window);
+        let placement = self.tooltip_anchor_for(target_window);
 
         let tree = crate::surface::tooltip_popup::TooltipTree {
             segments: rendered,
-            anchor,
-            screen_size,
-            bar_edge,
+            anchor: placement.anchor,
+            bar_size: placement.bar_size,
+            screen_size: placement.screen_size,
+            bar_edge: placement.bar_edge,
         };
 
-        let (popup_wid, open_task) = spawn_tooltip_popup_window();
+        let (popup_wid, open_task) = spawn_tooltip_popup_window(&tree);
 
         self.surfaces.insert_tooltip_popup(TooltipPopup {
             window: popup_wid,
@@ -545,15 +656,18 @@ impl App {
         m.tooltip_values(state)
     }
 
-    fn tooltip_anchor_for(
-        &self,
-        window: iced::window::Id,
-    ) -> ((i32, i32), (u32, u32), crate::config::Edge) {
+    fn tooltip_anchor_for(&self, window: iced::window::Id) -> TooltipAnchor {
         let s = self.surface(window);
         let screen = s.map(|s| s.screen_size).unwrap_or((0, 0));
+        let bar_size = screen;
         let anchor = s.map(|s| s.last_pointer_position).unwrap_or((0, 0));
         let edge = self.bar_for_window(window).edge.clone();
-        (anchor, screen, edge)
+        TooltipAnchor {
+            anchor,
+            bar_size,
+            screen_size: screen,
+            bar_edge: edge,
+        }
     }
 
     pub(super) fn resolved_tooltip_for(
@@ -564,7 +678,11 @@ impl App {
         use crate::config::ModuleParams;
         use crate::config::tooltip_defaults as td;
 
-        let mc = self.config.modules.iter().find(|m| m.name == module.0)?;
+        let config_name = self
+            .modules
+            .config_name_for(module)
+            .unwrap_or(module.0.as_str());
+        let mc = self.config.modules.iter().find(|m| m.name == config_name)?;
 
         let (setting, default) = match &mc.params {
             ModuleParams::Battery(c) => (&c.tooltip, td::battery_default()),
@@ -628,6 +746,16 @@ mod tests {
 
     fn test_wid() -> iced::window::Id {
         iced::window::Id::unique()
+    }
+
+    fn tooltip_tree(edge: crate::config::Edge) -> crate::surface::tooltip_popup::TooltipTree {
+        crate::surface::tooltip_popup::TooltipTree {
+            segments: vec![],
+            anchor: (24, 500),
+            bar_size: (48, 1080),
+            screen_size: (48, 1080),
+            bar_edge: edge,
+        }
     }
 
     #[test]
@@ -848,5 +976,182 @@ mod tests {
         ));
 
         assert_eq!(app.surface(wid).unwrap().hovered_module, Some(id));
+    }
+
+    #[test]
+    fn tooltip_resolution_uses_dynamic_module_config_name() {
+        let item = crate::dbus::sni::host::TrayItem {
+            service: "org.test.App".into(),
+            object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
+            icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
+            status: crate::dbus::sni::host::ItemStatus::Active,
+            menu_path: None,
+            tooltip: Some(crate::dbus::sni::host::SniTooltip {
+                title: "Test App".into(),
+                description: String::new(),
+            }),
+        };
+        let mut config = crate::config::Config {
+            modules: vec![crate::config::ModuleConfig {
+                name: "tray".into(),
+                module_type: "tray".into(),
+                params: crate::config::ModuleParams::Tray(crate::config::TrayConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..crate::config::Config::default()
+        };
+        config.bars[0].modules.bottom = vec!["tray".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+
+        let _ = app.handle_tray_event(crate::dbus::sni::host::TrayEvent::ItemAdded(item));
+        let tray_icon_id = app
+            .modules
+            .ids_by_kind(crate::modules::ModuleKind::TrayIcon)
+            .first()
+            .cloned()
+            .expect("tray icon inserted");
+
+        assert!(
+            app.resolved_tooltip_for(test_wid(), &tray_icon_id)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn stale_tooltip_dwell_does_not_open_popup() {
+        let mut config = crate::config::Config {
+            modules: vec![crate::config::ModuleConfig {
+                name: "battery".into(),
+                module_type: "battery".into(),
+                params: crate::config::ModuleParams::Battery(
+                    crate::config::BatteryConfig::default(),
+                ),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..crate::config::Config::default()
+        };
+        config.bars[0].modules.bottom = vec!["battery".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let wid = test_wid();
+        let module = ModuleId::new("battery");
+        app.modules.set_state(
+            module.clone(),
+            crate::modules::ModuleState::Battery(crate::modules::battery::BatteryState {
+                percentage: 74.0,
+                is_charging: false,
+            }),
+        );
+        app.surface_mut(wid).hovered_module = None;
+
+        let _ = app.handle_tooltip_dwell_elapsed(wid, module);
+
+        assert!(app.surfaces.tooltip_popups.is_empty());
+    }
+
+    #[test]
+    fn tooltip_popup_window_size_updates_popup_tree_screen_size() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let popup = test_wid();
+        app.surfaces.insert_tooltip_popup(TooltipPopup {
+            window: popup,
+            target_window: test_wid(),
+            target_module: ModuleId::new("clock"),
+            tree: crate::surface::tooltip_popup::TooltipTree {
+                segments: vec![],
+                anchor: (0, 0),
+                bar_size: (48, 1080),
+                screen_size: (48, 1080),
+                bar_edge: crate::config::Edge::Left,
+            },
+        });
+
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::WindowSized(
+            popup, 1920, 1080,
+        ));
+
+        assert_eq!(
+            app.surfaces
+                .tooltip_popup(popup)
+                .expect("tooltip popup")
+                .tree
+                .screen_size,
+            (1920, 1080)
+        );
+    }
+
+    #[test]
+    fn tooltip_popup_window_is_not_keyboard_interactive() {
+        let tree = tooltip_tree(crate::config::Edge::Left);
+        assert_eq!(
+            tooltip_popup_window_settings(&tree).keyboard_interactivity,
+            KeyboardInteractivity::None
+        );
+    }
+
+    #[test]
+    fn tooltip_popup_window_is_sized_to_content_not_full_overlay() {
+        let tree = tooltip_tree(crate::config::Edge::Left);
+        let settings = tooltip_popup_window_settings(&tree);
+
+        assert_eq!(settings.size, Some((32, 34)));
+        assert_eq!(settings.anchor, Anchor::Left | Anchor::Top);
+        assert_eq!(settings.margin, Some((483, 0, 0, 52)));
+    }
+
+    #[test]
+    fn right_edge_tooltip_uses_right_anchor_margin() {
+        let tree = tooltip_tree(crate::config::Edge::Right);
+        let settings = tooltip_popup_window_settings(&tree);
+
+        assert_eq!(settings.anchor, Anchor::Right | Anchor::Top);
+        assert_eq!(settings.margin, Some((483, 52, 0, 0)));
+    }
+
+    #[test]
+    fn tooltip_popup_focus_events_do_not_create_bar_surface() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let popup = test_wid();
+        app.surfaces.insert_tooltip_popup(TooltipPopup {
+            window: popup,
+            target_window: test_wid(),
+            target_module: ModuleId::new("clock"),
+            tree: crate::surface::tooltip_popup::TooltipTree {
+                segments: vec![],
+                anchor: (0, 0),
+                bar_size: (48, 1080),
+                screen_size: (1920, 1080),
+                bar_edge: crate::config::Edge::Left,
+            },
+        });
+
+        let _ =
+            app.handle_surface_event(super::super::messages::SurfaceEvent::BarFocusGained(popup));
+
+        assert!(app.surface(popup).is_none());
+    }
+
+    #[test]
+    fn tooltip_popup_cursor_events_do_not_create_bar_surface() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let popup = test_wid();
+        app.surfaces.insert_tooltip_popup(TooltipPopup {
+            window: popup,
+            target_window: test_wid(),
+            target_module: ModuleId::new("clock"),
+            tree: crate::surface::tooltip_popup::TooltipTree {
+                segments: vec![],
+                anchor: (0, 0),
+                bar_size: (48, 1080),
+                screen_size: (1920, 1080),
+                bar_edge: crate::config::Edge::Left,
+            },
+        });
+
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::CursorMoved(
+            popup,
+            iced::Point::new(10.0, 20.0),
+        ));
+
+        assert!(app.surface(popup).is_none());
     }
 }

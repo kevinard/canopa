@@ -90,6 +90,10 @@ impl ModuleRuntime {
         self.store.get(id)
     }
 
+    pub(super) fn config_name_for(&self, id: &ModuleId) -> Option<&str> {
+        self.get(id).and_then(Module::config_name)
+    }
+
     pub(super) fn action_for(
         &self,
         id: &ModuleId,
