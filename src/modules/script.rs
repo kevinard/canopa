@@ -80,17 +80,19 @@ impl ScriptModule {
         mode: crate::config::FormatMode,
         default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.format.template_for(mode).map(|template| {
-            template.render_styled_segments_with_default(
-                &[
-                    ("icon", ">_".to_string()),
-                    ("value", state.output.clone()),
-                    ("output", state.output.clone()),
-                ],
-                None,
-                default_style,
-            )
-        })
+        use std::borrow::Cow;
+
+        crate::modules::view::render_format_segments(
+            &self.format,
+            mode,
+            &[
+                ("icon", Cow::Borrowed(">_")),
+                ("value", Cow::Borrowed(state.output.as_str())),
+                ("output", Cow::Borrowed(state.output.as_str())),
+            ],
+            None,
+            default_style,
+        )
     }
 }
 

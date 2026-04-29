@@ -155,21 +155,23 @@ impl BatteryModule {
         mode: crate::config::FormatMode,
         default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        use std::borrow::Cow;
+
         let icon = self.current_icon(battery);
         let value = format!("{}", battery.percentage.round() as u8);
         let state = battery_state_key(battery, &self.states);
-        self.format.template_for(mode).map(|template| {
-            template.render_styled_segments_with_default(
-                &[
-                    ("icon", icon),
-                    ("value", value.clone()),
-                    ("percent", value),
-                    ("state", state.clone()),
-                ],
-                Some(&state),
-                default_style,
-            )
-        })
+        crate::modules::view::render_format_segments(
+            &self.format,
+            mode,
+            &[
+                ("icon", Cow::Owned(icon)),
+                ("value", Cow::Borrowed(value.as_str())),
+                ("percent", Cow::Borrowed(value.as_str())),
+                ("state", Cow::Borrowed(state.as_str())),
+            ],
+            Some(&state),
+            default_style,
+        )
     }
 }
 

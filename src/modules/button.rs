@@ -57,17 +57,19 @@ impl ButtonModule {
         mode: crate::config::FormatMode,
         default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.format.template_for(mode).map(|template| {
-            template.render_styled_segments_with_default(
-                &[
-                    ("icon", self.icon.clone()),
-                    ("value", self.label.clone()),
-                    ("label", self.label.clone()),
-                ],
-                None,
-                default_style,
-            )
-        })
+        use std::borrow::Cow;
+
+        crate::modules::view::render_format_segments(
+            &self.format,
+            mode,
+            &[
+                ("icon", Cow::Borrowed(self.icon.as_str())),
+                ("value", Cow::Borrowed(self.label.as_str())),
+                ("label", Cow::Borrowed(self.label.as_str())),
+            ],
+            None,
+            default_style,
+        )
     }
 }
 

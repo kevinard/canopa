@@ -155,18 +155,20 @@ impl ClockModule {
         mode: crate::config::FormatMode,
         default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.format.template_for(mode).map(|template| {
-            template.render_styled_segments_with_default(
-                &[
-                    ("icon", "⌚".to_string()),
-                    ("value", state.time.clone()),
-                    ("time", state.time.clone()),
-                    ("date", state.date.clone()),
-                ],
-                None,
-                default_style,
-            )
-        })
+        use std::borrow::Cow;
+
+        crate::modules::view::render_format_segments(
+            &self.format,
+            mode,
+            &[
+                ("icon", Cow::Borrowed("⌚")),
+                ("value", Cow::Borrowed(state.time.as_str())),
+                ("time", Cow::Borrowed(state.time.as_str())),
+                ("date", Cow::Borrowed(state.date.as_str())),
+            ],
+            None,
+            default_style,
+        )
     }
 }
 

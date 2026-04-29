@@ -47,17 +47,19 @@ impl FocusedWindowModule {
         mode: crate::config::FormatMode,
         default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.format.template_for(mode).map(|template| {
-            template.render_styled_segments_with_default(
-                &[
-                    ("icon", "□".to_string()),
-                    ("value", title.to_string()),
-                    ("title", title.to_string()),
-                ],
-                None,
-                default_style,
-            )
-        })
+        use std::borrow::Cow;
+
+        crate::modules::view::render_format_segments(
+            &self.format,
+            mode,
+            &[
+                ("icon", Cow::Borrowed("□")),
+                ("value", Cow::Borrowed(title)),
+                ("title", Cow::Borrowed(title)),
+            ],
+            None,
+            default_style,
+        )
     }
 }
 

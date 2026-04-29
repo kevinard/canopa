@@ -10,6 +10,8 @@ use std::collections::HashMap;
 #[allow(unused_imports)]
 pub use style::{ColorValue, ResolvedStyle, SegmentStyles, Style, ThemeToken, Weight};
 
+pub type FormatValue<'a> = (&'static str, std::borrow::Cow<'a, str>);
+
 fn is_known_config_module_type(module_type: &str) -> bool {
     crate::modules::ModuleKind::from_config_name(module_type).is_some()
 }
@@ -358,6 +360,26 @@ impl FormatTemplate {
             })
             .collect()
     }
+
+    pub fn render_styled_cow_segments_with_default(
+        &self,
+        values: &[FormatValue<'_>],
+        state: Option<&str>,
+        default_style: &Style,
+    ) -> Vec<(String, ResolvedStyle)> {
+        self.segments
+            .iter()
+            .map(|s| {
+                (
+                    s.template.render_cow_pairs(values),
+                    s.styles
+                        .style_for(state)
+                        .merge_over(*default_style)
+                        .resolve(),
+                )
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -456,6 +478,21 @@ impl TextTemplate {
     }
 
     pub fn render_pairs(&self, values: &[(&str, String)]) -> String {
+        let mut rendered = String::new();
+        for part in &self.parts {
+            match part {
+                TemplatePart::Literal(value) => rendered.push_str(value),
+                TemplatePart::Placeholder(name) => {
+                    if let Some((_, value)) = values.iter().find(|(key, _)| key == &name.as_str()) {
+                        rendered.push_str(value);
+                    }
+                }
+            }
+        }
+        rendered
+    }
+
+    pub fn render_cow_pairs(&self, values: &[FormatValue<'_>]) -> String {
         let mut rendered = String::new();
         for part in &self.parts {
             match part {
@@ -810,6 +847,18 @@ mod format_template_tests {
         let template = TextTemplate::parse("{value}% left", &["value"], "test.format").unwrap();
 
         assert_eq!(template.render(&vars(&[("value", "42")])), "42% left");
+    }
+
+    #[test]
+    fn format_template_renders_borrowed_pairs() {
+        let template =
+            TextTemplate::parse("{icon} {value}", &["icon", "value"], "test.format").unwrap();
+        let values = [
+            ("icon", std::borrow::Cow::Borrowed("I")),
+            ("value", std::borrow::Cow::Owned("42".to_string())),
+        ];
+
+        assert_eq!(template.render_cow_pairs(&values), "I 42");
     }
 
     #[test]

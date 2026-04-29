@@ -106,6 +106,8 @@ impl NetworkModule {
         mode: crate::config::FormatMode,
         default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        use std::borrow::Cow;
+
         let icon = self
             .icons
             .icon_for_state(connectivity_state(&network.connectivity))
@@ -113,18 +115,18 @@ impl NetworkModule {
             .to_string();
         let label = Self::default_label(network);
         let state = connectivity_state(&network.connectivity);
-        self.format.template_for(mode).map(|template| {
-            template.render_styled_segments_with_default(
-                &[
-                    ("icon", icon),
-                    ("value", label.clone()),
-                    ("label", label),
-                    ("state", state.to_string()),
-                ],
-                Some(state),
-                default_style,
-            )
-        })
+        crate::modules::view::render_format_segments(
+            &self.format,
+            mode,
+            &[
+                ("icon", Cow::Owned(icon)),
+                ("value", Cow::Borrowed(label.as_str())),
+                ("label", Cow::Borrowed(label.as_str())),
+                ("state", Cow::Borrowed(state)),
+            ],
+            Some(state),
+            default_style,
+        )
     }
 }
 

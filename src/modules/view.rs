@@ -234,6 +234,18 @@ pub(super) fn fallback_resolved_style(
     default_style.resolve()
 }
 
+pub(super) fn render_format_segments<'a>(
+    format: &crate::config::FormatConfig,
+    mode: crate::config::FormatMode,
+    values: &[crate::config::FormatValue<'a>],
+    state: Option<&str>,
+    default_style: &crate::config::Style,
+) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+    format.template_for(mode).map(|template| {
+        template.render_styled_cow_segments_with_default(values, state, default_style)
+    })
+}
+
 fn collapsed_styled_segments<'a>(
     segments: Vec<(String, crate::config::ResolvedStyle)>,
     color: iced::Color,
