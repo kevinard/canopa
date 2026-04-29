@@ -1,6 +1,8 @@
 use iced::Task;
 
+use super::module_runtime::ModuleOrigin;
 use super::{App, Message};
+use crate::modules::ModuleId;
 use crate::modules::workspaces::WorkspaceItemModule;
 use crate::modules::{ModuleKind, ModuleState};
 use crate::niri::NiriEvent;
@@ -165,8 +167,14 @@ impl App {
             perf.record_workspace_rebuild();
         }
 
+        let stale_item_ids: Vec<_> = self
+            .modules
+            .iter()
+            .filter(|(_, module)| module.kind() == ModuleKind::WorkspaceItem)
+            .map(|(_, module)| module.id())
+            .collect();
         self.modules
-            .retain(|(_, m)| m.kind() != ModuleKind::WorkspaceItem);
+            .retain(|(_, module)| module.kind() != ModuleKind::WorkspaceItem);
 
         // Collect current placeholder slots after stale generated modules are removed:
         // (index, zone, config_name, WorkspacesConfig clone).
@@ -198,7 +206,7 @@ impl App {
 
         // Clear focused/hovered module on every surface if they pointed at a workspace item
         // that may no longer exist after this rebuild.
-        self.clear_surface_module_refs_with_prefix("workspace:");
+        self.clear_surface_module_refs(&stale_item_ids);
 
         // Sort workspaces by idx to match Niri's scrollable-tiling order.
         let mut sorted: Vec<niri_ipc::Workspace> = workspaces.to_vec();
@@ -210,10 +218,12 @@ impl App {
             for ws in sorted.iter().rev() {
                 let item = WorkspaceItemModule::new(ws.clone(), cfg.clone(), config_name.clone());
                 let actions = self.actions_for_config_module(config_name);
-                self.modules.insert_with_actions(
+                let origin = ModuleOrigin::ExpandedFrom(ModuleId::new(config_name));
+                self.modules.insert_with_actions_and_origin(
                     insert_at,
                     (zone.clone(), Box::new(item)),
                     actions,
+                    origin,
                 );
             }
         }

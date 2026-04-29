@@ -3,8 +3,10 @@ use std::collections::BTreeMap;
 use iced::Task;
 use zbus::zvariant::OwnedObjectPath;
 
+use super::module_runtime::ModuleOrigin;
 use super::{App, Message, messages};
 use crate::dbus::sni::host::{ItemStatus, TrayEvent, TrayItem};
+use crate::modules::ModuleId;
 use crate::modules::ModuleKind;
 
 #[derive(Debug, Clone, Default)]
@@ -119,9 +121,15 @@ impl App {
 
         match event {
             TrayEvent::Snapshot(_) => {
+                let stale_icon_ids: Vec<_> = self
+                    .modules
+                    .iter()
+                    .filter(|(_, module)| module.kind() == ModuleKind::TrayIcon)
+                    .map(|(_, module)| module.id())
+                    .collect();
                 self.modules
-                    .retain(|(_, m)| m.kind() != ModuleKind::TrayIcon);
-                self.clear_surface_module_refs_with_prefix("tray:");
+                    .retain(|(_, module)| module.kind() != ModuleKind::TrayIcon);
+                self.clear_surface_module_refs(&stale_icon_ids);
 
                 let tray_slots = self.find_tray_slots();
                 for (slot_idx, zone, config_name) in tray_slots.iter().rev() {
@@ -129,10 +137,12 @@ impl App {
                     for item in active_items.iter().rev() {
                         let icon_module = TrayIconModule::new(item.clone(), config_name.clone());
                         let actions = self.actions_for_config_module(config_name);
-                        self.modules.insert_with_actions(
+                        let origin = ModuleOrigin::ExpandedFrom(ModuleId::new(config_name));
+                        self.modules.insert_with_actions_and_origin(
                             insert_at,
                             (zone.clone(), Box::new(icon_module)),
                             actions,
+                            origin,
                         );
                     }
                 }
@@ -147,10 +157,12 @@ impl App {
                         let insert_at = self.tray_insert_position(*slot_idx, config_name);
                         let icon_module = TrayIconModule::new(item.clone(), config_name.clone());
                         let actions = self.actions_for_config_module(config_name);
-                        self.modules.insert_with_actions(
+                        let origin = ModuleOrigin::ExpandedFrom(ModuleId::new(config_name));
+                        self.modules.insert_with_actions_and_origin(
                             insert_at,
                             (zone.clone(), Box::new(icon_module)),
                             actions,
+                            origin,
                         );
                     }
                 }

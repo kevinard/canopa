@@ -1100,12 +1100,15 @@ mod tests {
     }
 
     #[test]
-    fn clear_surface_module_refs_with_prefix_clears_focus_and_hover() {
+    fn clear_surface_module_refs_clears_focus_and_hover_for_matching_ids() {
         let (mut app, wid) = make_interact_app();
         app.surface_mut(wid).focused_module = Some(ModuleId::new("workspace:1"));
         app.surface_mut(wid).hovered_module = Some(ModuleId::new("workspace:2"));
 
-        app.clear_surface_module_refs_with_prefix("workspace:");
+        app.clear_surface_module_refs(&[
+            ModuleId::new("workspace:1"),
+            ModuleId::new("workspace:2"),
+        ]);
 
         assert!(app.surfaces[&wid].focused_module.is_none());
         assert!(app.surfaces[&wid].hovered_module.is_none());

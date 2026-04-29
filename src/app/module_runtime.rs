@@ -3,10 +3,17 @@ use std::collections::{HashMap, HashSet};
 use crate::config::ModuleActionsConfig;
 use crate::modules::{Module, ModuleId, ModuleKind, ModuleState, Zone};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum ModuleOrigin {
+    Configured,
+    ExpandedFrom(ModuleId),
+}
+
 pub(super) struct ModuleRuntime {
     store: super::module_store::ModuleStore,
     states: HashMap<ModuleId, ModuleState>,
     actions: HashMap<ModuleId, ModuleActionsConfig>,
+    origins: HashMap<ModuleId, ModuleOrigin>,
 }
 
 impl ModuleRuntime {
@@ -14,13 +21,15 @@ impl ModuleRuntime {
         modules: Vec<(Zone, Box<dyn Module>, ModuleActionsConfig)>,
     ) -> Self {
         let mut actions = HashMap::new();
+        let mut origins = HashMap::new();
         let ordered = modules
             .into_iter()
             .map(|(zone, module, module_actions)| {
                 let id = module.id();
                 if module_actions != ModuleActionsConfig::default() {
-                    actions.insert(id, module_actions);
+                    actions.insert(id.clone(), module_actions);
                 }
+                origins.insert(id, ModuleOrigin::Configured);
                 (zone, module)
             })
             .collect();
@@ -29,6 +38,7 @@ impl ModuleRuntime {
             store: super::module_store::ModuleStore::from_modules(ordered),
             states: HashMap::new(),
             actions,
+            origins,
         }
     }
 
@@ -66,13 +76,24 @@ impl ModuleRuntime {
         item: (Zone, Box<dyn Module>),
         actions: ModuleActionsConfig,
     ) {
+        self.insert_with_actions_and_origin(index, item, actions, ModuleOrigin::Configured);
+    }
+
+    pub(super) fn insert_with_actions_and_origin(
+        &mut self,
+        index: usize,
+        item: (Zone, Box<dyn Module>),
+        actions: ModuleActionsConfig,
+        origin: ModuleOrigin,
+    ) {
         let id = item.1.id();
         self.store.insert(index, item);
         if actions == ModuleActionsConfig::default() {
             self.actions.remove(&id);
         } else {
-            self.actions.insert(id, actions);
+            self.actions.insert(id.clone(), actions);
         }
+        self.origins.insert(id, origin);
     }
 
     pub(super) fn retain(&mut self, keep: impl FnMut(&(Zone, Box<dyn Module>)) -> bool) {
@@ -80,6 +101,15 @@ impl ModuleRuntime {
         let retained_ids: HashSet<_> = self.store.iter().map(|(_, module)| module.id()).collect();
         self.states.retain(|id, _| retained_ids.contains(id));
         self.actions.retain(|id, _| retained_ids.contains(id));
+        self.origins.retain(|id, _| retained_ids.contains(id));
+    }
+
+    pub(super) fn ids_by_origin(&self, origin: &ModuleOrigin) -> Vec<ModuleId> {
+        self.origins
+            .iter()
+            .filter(|(_, item_origin)| *item_origin == origin)
+            .map(|(id, _)| id.clone())
+            .collect()
     }
 
     pub(super) fn ids_by_kind(&self, kind: ModuleKind) -> &[ModuleId] {
