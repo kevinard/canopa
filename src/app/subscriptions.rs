@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use super::{App, Message, messages};
 use crate::ipc::ipc_subscription;
-use crate::modules::ModuleKind;
+use crate::modules::{ModuleCapabilities, ModuleKind, descriptor_for_kind};
 use crate::niri::subscription::niri_subscription;
 use crate::surface::input::keyboard_focus_subscription;
 
@@ -25,9 +25,15 @@ impl App {
         !self.modules.ids_by_kind(kind).is_empty()
     }
 
+    fn has_capability(&self, predicate: impl Fn(ModuleCapabilities) -> bool) -> bool {
+        self.modules
+            .iter()
+            .filter_map(|(_, module)| descriptor_for_kind(module.kind()))
+            .any(|descriptor| predicate(descriptor.capabilities))
+    }
+
     fn needs_niri_subscription(&self) -> bool {
-        self.has_module_kind(ModuleKind::Workspaces)
-            || self.has_module_kind(ModuleKind::FocusedWindow)
+        self.has_capability(|capabilities| capabilities.needs_niri)
             || self.surfaces.manual_outputs()
     }
 
@@ -36,10 +42,7 @@ impl App {
             .bars
             .iter()
             .any(|bar| bar.expand_keybind.is_some())
-            || self.has_module_kind(ModuleKind::Button)
-            || self.has_module_kind(ModuleKind::Volume)
-            || self.has_module_kind(ModuleKind::Workspaces)
-            || self.has_module_kind(ModuleKind::Tray)
+            || self.has_capability(|capabilities| capabilities.needs_keyboard_focus)
     }
 
     fn needs_ipc_subscription(&self) -> bool {
@@ -54,6 +57,10 @@ impl App {
         let has_network = self.has_module_kind(ModuleKind::Network);
         let has_volume = self.has_module_kind(ModuleKind::Volume);
         let has_tray = self.has_module_kind(ModuleKind::Tray);
+        let needs_system_dbus = self.has_capability(|capabilities| capabilities.needs_system_dbus);
+        let needs_session_dbus =
+            self.has_capability(|capabilities| capabilities.needs_session_dbus);
+        let needs_wireplumber = self.has_capability(|capabilities| capabilities.needs_wireplumber);
 
         let per_module: Vec<iced::Subscription<Message>> =
             self.modules.iter().map(|(_, m)| m.subscription()).collect();
@@ -65,7 +72,7 @@ impl App {
             iced::Subscription::none()
         };
 
-        let needs_dbus = has_battery || has_network || has_volume || has_tray;
+        let needs_dbus = needs_system_dbus || needs_session_dbus || needs_wireplumber;
         let dbus_sub = if needs_dbus {
             crate::dbus::dbus_init_subscription()
         } else {

@@ -214,18 +214,37 @@ pub(crate) type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn 
 /// Type alias for a synthesized-params factory used when a built-in module is undeclared.
 pub(crate) type SynthesizedParamsFactory = fn() -> ModuleParams;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ModuleCapabilities {
+    pub needs_niri: bool,
+    pub needs_keyboard_focus: bool,
+    pub needs_system_dbus: bool,
+    pub needs_session_dbus: bool,
+    pub needs_wireplumber: bool,
+}
+
+impl ModuleCapabilities {
+    pub(crate) const NONE: Self = Self {
+        needs_niri: false,
+        needs_keyboard_focus: false,
+        needs_system_dbus: false,
+        needs_session_dbus: false,
+        needs_wireplumber: false,
+    };
+}
+
 macro_rules! config_module_descriptors {
     ($macro:ident) => {
         $macro! {
-            (ModuleKind::Battery, "battery", battery_ctor, Some(battery_synthesized_params as SynthesizedParamsFactory)),
-            (ModuleKind::Button, "button", button_ctor, None),
-            (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory)),
-            (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor, Some(focused_window_synthesized_params as SynthesizedParamsFactory)),
-            (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory)),
-            (ModuleKind::Script, "script", script_ctor, None),
-            (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory)),
-            (ModuleKind::Volume, "volume", volume_ctor, Some(volume_synthesized_params as SynthesizedParamsFactory)),
-            (ModuleKind::Workspaces, "workspaces", workspaces_ctor, Some(workspaces_synthesized_params as SynthesizedParamsFactory)),
+            (ModuleKind::Battery, "battery", battery_ctor, Some(battery_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }),
+            (ModuleKind::Button, "button", button_ctor, None, ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }),
+            (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE),
+            (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor, Some(focused_window_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }),
+            (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }),
+            (ModuleKind::Script, "script", script_ctor, None, ModuleCapabilities::NONE),
+            (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, needs_session_dbus: true, ..ModuleCapabilities::NONE }),
+            (ModuleKind::Volume, "volume", volume_ctor, Some(volume_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, needs_wireplumber: true, ..ModuleCapabilities::NONE }),
+            (ModuleKind::Workspaces, "workspaces", workspaces_ctor, Some(workspaces_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, needs_keyboard_focus: true, ..ModuleCapabilities::NONE }),
         }
     };
 }
@@ -237,6 +256,7 @@ pub(crate) struct ModuleDescriptor {
     pub config_name: &'static str,
     pub constructor: ModuleConstructor,
     pub synthesized_params_factory: Option<SynthesizedParamsFactory>,
+    pub capabilities: ModuleCapabilities,
 }
 
 impl ModuleDescriptor {
@@ -246,19 +266,20 @@ impl ModuleDescriptor {
 }
 
 macro_rules! build_config_kinds {
-    ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr)),* $(,)?) => {
+    ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr, $capabilities:expr)),* $(,)?) => {
         &[$($kind),*]
     };
 }
 
 macro_rules! build_module_descriptors {
-    ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr)),* $(,)?) => {
+    ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr, $capabilities:expr)),* $(,)?) => {
         &[
             $(ModuleDescriptor {
                 kind: $kind,
                 config_name: $config_name,
                 constructor: $ctor,
                 synthesized_params_factory: $factory,
+                capabilities: $capabilities,
             }),*
         ]
     };
@@ -279,6 +300,12 @@ pub(crate) fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
             (descriptor.config_name, descriptor.constructor)
         })
         .collect()
+}
+
+pub(crate) fn descriptor_for_kind(kind: ModuleKind) -> Option<&'static ModuleDescriptor> {
+    MODULE_DESCRIPTORS
+        .iter()
+        .find(|descriptor| descriptor.kind == kind)
 }
 
 fn network_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
@@ -542,6 +569,18 @@ mod tests {
                 Some(descriptor.kind)
             );
         }
+    }
+
+    #[test]
+    fn descriptors_capture_subscription_capabilities() {
+        let tray = descriptor_for_kind(ModuleKind::Tray).expect("tray descriptor");
+        assert!(tray.capabilities.needs_session_dbus);
+        assert!(tray.capabilities.needs_keyboard_focus);
+
+        let focused_window =
+            descriptor_for_kind(ModuleKind::FocusedWindow).expect("focused-window descriptor");
+        assert!(focused_window.capabilities.needs_niri);
+        assert!(!focused_window.capabilities.needs_system_dbus);
     }
 
     #[test]
