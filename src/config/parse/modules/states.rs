@@ -77,9 +77,14 @@ fn parse_state_node(node: &KdlNode, path: &str) -> anyhow::Result<(String, u8)> 
     let threshold = threshold_value
         .as_integer()
         .ok_or_else(|| anyhow::anyhow!("{path}: `threshold` must be an integer."))?;
-    let threshold = u8::try_from(threshold).ok().filter(|n| *n <= 100).ok_or_else(|| {
-        anyhow::anyhow!("{path}: `threshold` {threshold} out of range. Expected: integer 0–100.")
-    })?;
+    let threshold = u8::try_from(threshold)
+        .ok()
+        .filter(|n| *n <= 100)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{path}: `threshold` {threshold} out of range. Expected: integer 0–100."
+            )
+        })?;
 
     Ok((name.to_string(), threshold))
 }

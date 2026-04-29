@@ -190,10 +190,7 @@ impl crate::modules::Module for VolumeModule {
         iced::Subscription::none() // fed via Message::Volume from app.rs
     }
 
-    fn tooltip_values(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> Vec<(&'static str, String)> {
+    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Volume(v) = state {
             let icon = self.current_icon(v);
             let value = format!("{}", v.volume.round() as u64);

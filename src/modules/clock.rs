@@ -179,10 +179,7 @@ impl crate::modules::Module for ClockModule {
         crate::modules::ModuleKind::Clock
     }
 
-    fn tooltip_values(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> Vec<(&'static str, String)> {
+    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Clock(c) = state {
             vec![
                 ("icon", "⌚".into()),

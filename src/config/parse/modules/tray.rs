@@ -9,12 +9,7 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<TrayConfig> {
     formats::reject_format_fields(node.children(), &module_path, "tray")?;
 
     let tooltip = if let Some(children) = node.children() {
-        formats::parse_tooltip_field(
-            children,
-            &module_path,
-            &["title", "description"],
-            &[],
-        )?
+        formats::parse_tooltip_field(children, &module_path, &["title", "description"], &[])?
     } else {
         crate::config::TooltipSetting::Default
     };
@@ -49,13 +44,19 @@ mod tests {
     #[test]
     fn tooltip_title_string_parsed() {
         let cfg = tray_config(r#"modules { module "tray" { tooltip "{title}" } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Custom(_)
+        ));
     }
 
     #[test]
     fn tooltip_false_disables() {
         let cfg = tray_config(r#"modules { module "tray" { tooltip #false } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Disabled
+        ));
     }
 
     #[test]
@@ -68,6 +69,9 @@ mod tests {
     #[test]
     fn tooltip_absent_is_default() {
         let cfg = tray_config(r#"modules { module "tray" {} }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Default
+        ));
     }
 }

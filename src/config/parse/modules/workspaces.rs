@@ -98,13 +98,19 @@ mod tests {
     #[test]
     fn tooltip_string_parsed() {
         let cfg = workspaces_config(r#"modules { module "workspaces" { tooltip "{label}" } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Custom(_)
+        ));
     }
 
     #[test]
     fn tooltip_false_disables() {
         let cfg = workspaces_config(r#"modules { module "workspaces" { tooltip #false } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Disabled
+        ));
     }
 
     #[test]
@@ -117,7 +123,10 @@ mod tests {
     #[test]
     fn tooltip_absent_is_default() {
         let cfg = workspaces_config(r#"modules { module "workspaces" {} }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Default
+        ));
     }
 
     #[test]

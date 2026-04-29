@@ -84,7 +84,10 @@ mod tests {
         let cfg = button_config(
             "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\"; tooltip \"{label}\" } }",
         );
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Custom(_)
+        ));
     }
 
     #[test]
@@ -92,7 +95,10 @@ mod tests {
         let cfg = button_config(
             "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\"; tooltip #false } }",
         );
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Disabled
+        ));
     }
 
     #[test]
@@ -107,7 +113,10 @@ mod tests {
         let cfg = button_config(
             "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\" } }",
         );
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Default
+        ));
     }
 
     #[test]

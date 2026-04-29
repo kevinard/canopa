@@ -103,10 +103,7 @@ impl crate::modules::Module for ScriptModule {
         crate::modules::ModuleKind::Script
     }
 
-    fn tooltip_values(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> Vec<(&'static str, String)> {
+    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Script(s) = state {
             vec![
                 ("icon", ">_".into()),
@@ -157,7 +154,9 @@ impl crate::modules::Module for ScriptModule {
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use crate::modules::view::{fallback_resolved_style, styled_segment_text, styled_segments_row};
+        use crate::modules::view::{
+            fallback_resolved_style, styled_segment_text, styled_segments_row,
+        };
         use iced::widget::column;
         use iced::{Alignment, Length};
 
@@ -195,7 +194,9 @@ impl crate::modules::Module for ScriptModule {
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use crate::modules::view::{fallback_resolved_style, styled_segment_text, styled_segments_row};
+        use crate::modules::view::{
+            fallback_resolved_style, styled_segment_text, styled_segments_row,
+        };
         use iced::widget::row;
         use iced::{Alignment, Length};
 

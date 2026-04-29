@@ -85,15 +85,20 @@ mod tests {
         let cfg = script_config(
             "modules { module \"script\" { command \"date\"; tooltip \"{output}\" } }",
         );
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Custom(_)
+        ));
     }
 
     #[test]
     fn tooltip_false_disables() {
-        let cfg = script_config(
-            "modules { module \"script\" { command \"date\"; tooltip #false } }",
-        );
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+        let cfg =
+            script_config("modules { module \"script\" { command \"date\"; tooltip #false } }");
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Disabled
+        ));
     }
 
     #[test]
@@ -106,7 +111,10 @@ mod tests {
     #[test]
     fn tooltip_absent_is_default() {
         let cfg = script_config(r#"modules { module "script" { command "date" } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Default
+        ));
     }
 
     #[test]

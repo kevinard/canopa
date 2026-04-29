@@ -224,10 +224,7 @@ impl crate::modules::Module for BatteryModule {
         iced::Subscription::none()
     }
 
-    fn tooltip_values(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> Vec<(&'static str, String)> {
+    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Battery(b) = state {
             let icon = self.current_icon(b);
             let value = format!("{}", b.percentage.round() as u8);

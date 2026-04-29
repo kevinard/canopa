@@ -126,19 +126,19 @@ impl WorkspaceItemModule {
         if horizontal {
             if let Some(segments) = styled {
                 return container(crate::modules::view::styled_segments_row(segments, 10, fg))
-                .width(32)
-                .height(Length::Fill)
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
-                .style(move |_theme| container::Style {
-                    background: Some(Background::Color(bg)),
-                    border: iced::Border {
-                        radius: 4.0.into(),
+                    .width(32)
+                    .height(Length::Fill)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .style(move |_theme| container::Style {
+                        background: Some(Background::Color(bg)),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        },
                         ..Default::default()
-                    },
-                    ..Default::default()
-                })
-                .into();
+                    })
+                    .into();
             }
             let content = formatted
                 .map(|segments| segments.join(" "))
@@ -169,20 +169,20 @@ impl WorkspaceItemModule {
         } else {
             if let Some(segments) = styled {
                 return container(crate::modules::view::styled_segments_row(segments, 12, fg))
-                .width(Length::Fill)
-                .height(20)
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
-                .padding([0, 6])
-                .style(move |_theme| container::Style {
-                    background: Some(Background::Color(bg)),
-                    border: iced::Border {
-                        radius: 4.0.into(),
+                    .width(Length::Fill)
+                    .height(20)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .padding([0, 6])
+                    .style(move |_theme| container::Style {
+                        background: Some(Background::Color(bg)),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        },
                         ..Default::default()
-                    },
-                    ..Default::default()
-                })
-                .into();
+                    })
+                    .into();
             }
             if let Some(content) = formatted.map(|segments| segments.join(" ")) {
                 return container(crate::modules::view::styled_segment_text(

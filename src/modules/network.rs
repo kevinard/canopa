@@ -180,10 +180,7 @@ impl crate::modules::Module for NetworkModule {
         iced::Subscription::none() // fed via Message::Network from app.rs
     }
 
-    fn tooltip_values(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> Vec<(&'static str, String)> {
+    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Network(n) = state {
             let icon = self
                 .icons
@@ -433,15 +430,23 @@ mod tests {
         };
 
         assert_eq!(
-            m.styled_segments_with_default(&limited, crate::config::FormatMode::Collapsed, &crate::config::Style::default())
-                .unwrap()[0]
+            m.styled_segments_with_default(
+                &limited,
+                crate::config::FormatMode::Collapsed,
+                &crate::config::Style::default()
+            )
+            .unwrap()[0]
                 .1
                 .color,
             Some(crate::theme::WARNING)
         );
         assert_eq!(
-            m.styled_segments_with_default(&none, crate::config::FormatMode::Collapsed, &crate::config::Style::default())
-                .unwrap()[0]
+            m.styled_segments_with_default(
+                &none,
+                crate::config::FormatMode::Collapsed,
+                &crate::config::Style::default()
+            )
+            .unwrap()[0]
                 .1
                 .color,
             Some(crate::theme::CRITICAL)

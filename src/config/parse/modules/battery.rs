@@ -158,13 +158,19 @@ mod tests {
     #[test]
     fn tooltip_string_parsed() {
         let cfg = battery_config(r#"modules { module "battery" { tooltip "{value}%" } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Custom(_)));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Custom(_)
+        ));
     }
 
     #[test]
     fn tooltip_false_disables() {
         let cfg = battery_config(r#"modules { module "battery" { tooltip #false } }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Disabled));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Disabled
+        ));
     }
 
     #[test]
@@ -177,7 +183,10 @@ mod tests {
     #[test]
     fn tooltip_absent_is_default() {
         let cfg = battery_config(r#"modules { module "battery" {} }"#);
-        assert!(matches!(cfg.tooltip, crate::config::TooltipSetting::Default));
+        assert!(matches!(
+            cfg.tooltip,
+            crate::config::TooltipSetting::Default
+        ));
     }
 
     #[test]

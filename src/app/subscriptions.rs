@@ -121,14 +121,9 @@ impl App {
             iced::Subscription::none()
         };
 
-        let needs_tick = self
-            .surfaces
-            .values()
-            .any(|s| {
-                s.expand.is_animating()
-                    || s.hover_pending_ms.is_some()
-                    || s.tooltip_pending.is_some()
-            });
+        let needs_tick = self.surfaces.values().any(|s| {
+            s.expand.is_animating() || s.hover_pending_ms.is_some() || s.tooltip_pending.is_some()
+        });
         let tick_sub = if needs_tick {
             iced::time::every(Duration::from_millis(16))
                 .map(|_| Message::Surface(messages::SurfaceEvent::Tick))

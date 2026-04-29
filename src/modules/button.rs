@@ -80,10 +80,7 @@ impl crate::modules::Module for ButtonModule {
         crate::modules::ModuleKind::Button
     }
 
-    fn tooltip_values(
-        &self,
-        _state: &crate::modules::ModuleState,
-    ) -> Vec<(&'static str, String)> {
+    fn tooltip_values(&self, _state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         vec![
             ("icon", self.icon.clone()),
             ("value", self.label.clone()),
@@ -140,7 +137,9 @@ impl crate::modules::Module for ButtonModule {
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use crate::modules::view::{fallback_resolved_style, styled_segment_text, styled_segments_row};
+        use crate::modules::view::{
+            fallback_resolved_style, styled_segment_text, styled_segments_row,
+        };
         use iced::widget::column;
         use iced::{Alignment, Length};
 
@@ -176,7 +175,9 @@ impl crate::modules::Module for ButtonModule {
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         use crate::modules::ModuleState;
-        use crate::modules::view::{fallback_resolved_style, styled_segment_text, styled_segments_row};
+        use crate::modules::view::{
+            fallback_resolved_style, styled_segment_text, styled_segments_row,
+        };
         use iced::widget::row;
         use iced::{Alignment, Length};
 

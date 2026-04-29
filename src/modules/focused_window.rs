@@ -75,10 +75,7 @@ impl crate::modules::Module for FocusedWindowModule {
         iced::Subscription::none()
     }
 
-    fn tooltip_values(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> Vec<(&'static str, String)> {
+    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::FocusedWindow(s) = state {
             let title = s.title.clone().unwrap_or_default();
             vec![
@@ -114,9 +111,11 @@ impl crate::modules::Module for FocusedWindowModule {
                 crate::config::FormatMode::Collapsed,
                 bar_style,
             ) {
-                return iced::widget::container(
-                    crate::modules::view::styled_segments_row(segments, 16, theme::TEXT),
-                )
+                return iced::widget::container(crate::modules::view::styled_segments_row(
+                    segments,
+                    16,
+                    theme::TEXT,
+                ))
                 .width(iced::Length::Fill)
                 .height(20)
                 .align_x(iced::Alignment::Center)
