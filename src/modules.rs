@@ -46,6 +46,17 @@ impl ModuleKind {
     pub(crate) const CONFIG_KINDS: &'static [ModuleKind] = _CONFIG_KINDS_FROM_DESCRIPTORS;
 
     pub(crate) fn as_str(self) -> &'static str {
+        self.config_name().unwrap_or_else(|| self.runtime_name())
+    }
+
+    pub(crate) fn config_name(self) -> Option<&'static str> {
+        MODULE_DESCRIPTORS
+            .iter()
+            .find(|descriptor| descriptor.kind == self)
+            .map(|descriptor| descriptor.config_name)
+    }
+
+    pub(crate) fn runtime_name(self) -> &'static str {
         match self {
             ModuleKind::Battery => "battery",
             ModuleKind::Button => "button",
@@ -62,20 +73,10 @@ impl ModuleKind {
     }
 
     pub(crate) fn from_config_name(s: &str) -> Option<Self> {
-        match s {
-            "battery" => Some(ModuleKind::Battery),
-            "button" => Some(ModuleKind::Button),
-            "network" => Some(ModuleKind::Network),
-            "volume" => Some(ModuleKind::Volume),
-            "clock" => Some(ModuleKind::Clock),
-            "script" => Some(ModuleKind::Script),
-            "workspaces" => Some(ModuleKind::Workspaces),
-            "workspace_item" => Some(ModuleKind::WorkspaceItem),
-            "focused-window" => Some(ModuleKind::FocusedWindow),
-            "tray" => Some(ModuleKind::Tray),
-            "tray_icon" => Some(ModuleKind::TrayIcon),
-            _ => None,
-        }
+        MODULE_DESCRIPTORS
+            .iter()
+            .find(|descriptor| descriptor.config_name == s)
+            .map(|descriptor| descriptor.kind)
     }
 }
 
@@ -481,12 +482,35 @@ mod tests {
             (ModuleKind::Tray, "tray"),
             (ModuleKind::Volume, "volume"),
             (ModuleKind::Workspaces, "workspaces"),
-            (ModuleKind::WorkspaceItem, "workspace_item"),
-            (ModuleKind::TrayIcon, "tray_icon"),
         ] {
             assert_eq!(kind.as_str(), name);
             assert_eq!(ModuleKind::from_config_name(name), Some(kind));
         }
+
+        for (kind, name) in [
+            (ModuleKind::WorkspaceItem, "workspace_item"),
+            (ModuleKind::TrayIcon, "tray_icon"),
+        ] {
+            assert_eq!(kind.as_str(), name);
+            assert_eq!(ModuleKind::from_config_name(name), None);
+        }
+    }
+
+    #[test]
+    fn module_kind_names_are_descriptor_backed_for_config_modules() {
+        for descriptor in MODULE_DESCRIPTORS {
+            assert_eq!(descriptor.kind.config_name(), Some(descriptor.config_name));
+            assert_eq!(
+                ModuleKind::from_config_name(descriptor.config_name),
+                Some(descriptor.kind)
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_only_kinds_are_not_config_names() {
+        assert_eq!(ModuleKind::WorkspaceItem.config_name(), None);
+        assert_eq!(ModuleKind::TrayIcon.config_name(), None);
     }
 
     #[test]

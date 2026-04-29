@@ -96,7 +96,7 @@ fn parse_named_module_missing_explicit_type_errors() {
 }
 
 #[test]
-fn parse_runtime_only_module_type_reaches_runtime_only_error() {
+fn parse_runtime_only_module_type_is_unknown_config_type() {
     let kdl = r#"
 modules {
     module "tray-copy" {
@@ -107,12 +107,12 @@ modules {
     let err = parse(kdl).unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("runtime-only and cannot appear in config"),
-        "expected runtime-only rejection, got: {msg}"
+        msg.contains("unknown module type"),
+        "expected unknown type rejection, got: {msg}"
     );
     assert!(
         msg.contains("tray_icon"),
-        "expected runtime-only kind in error, got: {msg}"
+        "expected rejected type in error, got: {msg}"
     );
 }
 

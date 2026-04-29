@@ -11,13 +11,7 @@ use std::collections::HashMap;
 pub use style::{ColorValue, ResolvedStyle, SegmentStyles, Style, ThemeToken, Weight};
 
 fn is_known_config_module_type(module_type: &str) -> bool {
-    debug_assert_eq!(
-        crate::modules::MODULE_DESCRIPTORS.len(),
-        crate::modules::ModuleKind::CONFIG_KINDS.len()
-    );
-    crate::modules::MODULE_DESCRIPTORS
-        .iter()
-        .any(|descriptor| descriptor.config_name == module_type)
+    crate::modules::ModuleKind::from_config_name(module_type).is_some()
 }
 
 /// Format strings for the clock module (AC: #4, #5).
