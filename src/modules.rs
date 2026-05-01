@@ -209,7 +209,8 @@ pub trait Module: Send + Sync {
 }
 
 /// Type alias for a module constructor function.
-pub(crate) type ModuleConstructor = fn(&crate::config::ModuleConfig) -> Box<dyn Module>;
+pub(crate) type ModuleConstructor =
+    fn(&crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>>;
 
 /// Type alias for a synthesized-params factory used when a built-in module is undeclared.
 pub(crate) type SynthesizedParamsFactory = fn() -> ModuleParams;
@@ -308,7 +309,7 @@ pub(crate) fn descriptor_for_kind(kind: ModuleKind) -> Option<&'static ModuleDes
         .find(|descriptor| descriptor.kind == kind)
 }
 
-fn network_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+fn network_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     let (icons, format) = match &mc.params {
         ModuleParams::Network(cfg) => (cfg.icons.clone(), cfg.format.clone()),
         _ => {
@@ -316,11 +317,11 @@ fn network_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
             (default.icons, default.format)
         }
     };
-    Box::new(network::NetworkModule::new(
+    Ok(Box::new(network::NetworkModule::new(
         ModuleId::new(&mc.name),
         icons,
         format,
-    ))
+    )))
 }
 
 fn battery_synthesized_params() -> ModuleParams {
@@ -343,7 +344,7 @@ fn tray_synthesized_params() -> ModuleParams {
     ModuleParams::Tray(TrayConfig::default())
 }
 
-fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+fn volume_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     let (step, states, icons, format) = match &mc.params {
         ModuleParams::Volume(cfg) => (
             cfg.step,
@@ -356,16 +357,16 @@ fn volume_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
             (default.step, default.states, default.icons, default.format)
         }
     };
-    Box::new(volume::VolumeModule::new(
+    Ok(Box::new(volume::VolumeModule::new(
         ModuleId::new(&mc.name),
         step,
         states,
         icons,
         format,
-    ))
+    )))
 }
 
-fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+fn battery_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     let (threshold, states, icons, format) = match &mc.params {
         ModuleParams::Battery(cfg) => (
             cfg.critical_threshold,
@@ -383,29 +384,32 @@ fn battery_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
             )
         }
     };
-    Box::new(battery::BatteryModule::new(
+    Ok(Box::new(battery::BatteryModule::new(
         ModuleId::new(&mc.name),
         threshold,
         states,
         icons,
         format,
-    ))
+    )))
 }
 
-fn button_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+fn button_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     match &mc.params {
-        ModuleParams::Button(cfg) => Box::new(button::ButtonModule::new(
+        ModuleParams::Button(cfg) => Ok(Box::new(button::ButtonModule::new(
             ModuleId::new(&mc.name),
             cfg.label.clone(),
             cfg.icon.clone(),
             cfg.on_click.clone(),
             cfg.format.clone(),
-        )),
-        _ => panic!("button_ctor called with non-Button params — this is a programming error"),
+        ))),
+        _ => anyhow::bail!(
+            "button constructor called with non-button params for {:?}",
+            mc.name
+        ),
     }
 }
 
-fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+fn clock_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     let (time_fmt, date_fmt, format) = match &mc.params {
         ModuleParams::Clock(cfg) => (
             cfg.time_format.clone(),
@@ -417,50 +421,53 @@ fn clock_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
             (d.time_format, d.date_format, d.format)
         }
     };
-    Box::new(clock::ClockModule::new(
+    Ok(Box::new(clock::ClockModule::new(
         ModuleId::new(&mc.name),
         time_fmt,
         date_fmt,
         format,
-    ))
+    )))
 }
 
-fn script_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+fn script_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     match &mc.params {
-        ModuleParams::Script(cfg) => Box::new(script::ScriptModule::new(
+        ModuleParams::Script(cfg) => Ok(Box::new(script::ScriptModule::new(
             ModuleId::new(&mc.name),
             cfg.command.clone(),
             cfg.interval,
             cfg.format.clone(),
-        )),
-        _ => panic!("script_ctor called with non-Script params — this is a programming error"),
+        ))),
+        _ => anyhow::bail!(
+            "script constructor called with non-script params for {:?}",
+            mc.name
+        ),
     }
 }
 
-fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     let config = match &mc.params {
         ModuleParams::Workspaces(c) => c.clone(),
         _ => crate::config::WorkspacesConfig::default(),
     };
-    Box::new(workspaces::WorkspacesModule::new(
+    Ok(Box::new(workspaces::WorkspacesModule::new(
         ModuleId::new(&mc.name),
         config,
-    ))
+    )))
 }
 
-fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
+fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     let format = match &mc.params {
         ModuleParams::FocusedWindow(cfg) => cfg.format.clone(),
         _ => crate::config::FocusedWindowConfig::default().format,
     };
-    Box::new(focused_window::FocusedWindowModule::new(
+    Ok(Box::new(focused_window::FocusedWindowModule::new(
         ModuleId::new(&mc.name),
         format,
-    ))
+    )))
 }
 
-fn tray_ctor(mc: &crate::config::ModuleConfig) -> Box<dyn Module> {
-    Box::new(tray::TrayModule::new(ModuleId::new(&mc.name)))
+fn tray_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
+    Ok(Box::new(tray::TrayModule::new(ModuleId::new(&mc.name))))
 }
 
 fn volume_synthesized_params() -> ModuleParams {
@@ -538,6 +545,21 @@ mod tests {
     fn runtime_only_kinds_are_not_config_names() {
         assert_eq!(ModuleKind::WorkspaceItem.config_name(), None);
         assert_eq!(ModuleKind::TrayIcon.config_name(), None);
+    }
+
+    #[test]
+    fn script_constructor_reports_wrong_params() {
+        let module_config = crate::config::ModuleConfig {
+            name: "bad".into(),
+            module_type: "script".into(),
+            params: crate::config::ModuleParams::None,
+            actions: crate::config::ModuleActionsConfig::default(),
+        };
+        let err = match script_ctor(&module_config) {
+            Ok(_) => panic!("expected script constructor error"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("script"));
     }
 
     #[test]

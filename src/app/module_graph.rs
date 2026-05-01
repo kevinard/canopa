@@ -69,7 +69,8 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
             continue;
         };
 
-        let module = constructor(module_config);
+        let module = constructor(module_config)
+            .with_context(|| format!("failed to construct module {:?}", module_config.name))?;
         debug_assert_eq!(module.module_type(), module.kind().as_str());
         debug_assert_eq!(module.kind(), descriptor.kind);
         modules.push((zone.clone(), module, module_config.actions.clone()));

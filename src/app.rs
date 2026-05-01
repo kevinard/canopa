@@ -1613,7 +1613,8 @@ mod tests {
             module_type: "clock".into(),
             params: ModuleParams::Clock(ClockConfig::default()),
             actions: crate::config::ModuleActionsConfig::default(),
-        });
+        })
+        .unwrap();
 
         assert_eq!(module.kind(), descriptor.kind);
         assert_eq!(module.module_type(), descriptor.config_name);
