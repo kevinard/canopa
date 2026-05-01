@@ -841,6 +841,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let bar = App::bar_for_surface_name(&config.bars, "side");
         assert_eq!(bar.name, "side");
@@ -855,6 +856,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let bar = App::bar_for_surface_name(&config.bars, "nonexistent");
         assert_eq!(bar.name, "main");
@@ -878,6 +880,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
         assert_eq!(
@@ -897,6 +900,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
         let bar_names: Vec<&str> = app
@@ -920,6 +924,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
         let output_names: Vec<&str> = app
@@ -951,6 +956,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
         let names: Vec<String> = app

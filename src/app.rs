@@ -140,6 +140,7 @@ impl App {
         // Initialize the in-bar keybind for expand/collapse once at startup.
         // Subsequent calls are silently ignored (OnceLock semantics).
         init_expand_keybind(config.bars[0].expand_keybind.as_deref());
+        let _command_policy = &config.command_policy;
 
         let module_graph = module_graph::build_module_graph(&config)
             .expect("validated config should build a module graph");
@@ -1082,7 +1083,7 @@ mod tests {
                     params: ModuleParams::Button(ButtonConfig {
                         label: "test".into(),
                         icon: ">".into(),
-                        on_click: "true".into(),
+                        on_click: crate::config::CommandConfig::Shell("true".into()),
                         format: crate::config::FormatConfig::default(),
                         tooltip: crate::config::TooltipSetting::Default,
                     }),
@@ -1550,6 +1551,7 @@ mod tests {
                 params: ModuleParams::Clock(ClockConfig::default()),
                 actions: crate::config::ModuleActionsConfig::default(),
             }],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec![]);
         let instantiated: Vec<String> = app.modules.iter().map(|(_, m)| m.id().0.clone()).collect();
@@ -1721,6 +1723,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         // Boot without "HDMI-A-1" in allowed (bar does not target it).
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
@@ -1759,6 +1762,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         app.surfaces.manual_outputs = true; // simulate manual mode
@@ -1807,6 +1811,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len(); // 2 surfaces for eDP-1 (2 bars × 1 output)
@@ -1857,6 +1862,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         let (mut app, _) = App::boot(config, vec![]);
         app.surfaces.manual_outputs = true;

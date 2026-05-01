@@ -85,9 +85,7 @@ impl App {
         event: InteractionEvent,
     ) -> Task<Message> {
         if let Some(command) = self.modules.action_for(id, &event) {
-            let _ = crate::command::spawn_command_fire_and_forget(
-                crate::command::CommandSpec::Shell(command),
-            );
+            let _ = crate::command::spawn_config_command_fire_and_forget(command);
             return Task::none();
         }
 

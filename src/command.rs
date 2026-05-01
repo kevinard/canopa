@@ -1,10 +1,10 @@
 //! Centralized external process execution helpers.
 //!
 //! This is the app's process-launch audit point. Configured script polling and
-//! button clicks intentionally use `CommandSpec::Shell` to preserve existing
-//! shell-based config syntax. Internal app commands, such as `wpctl` volume
-//! adjustment, must use `CommandSpec::Argv` so fixed program/argument boundaries
-//! stay explicit.
+//! button clicks use `CommandConfig` so config can preserve existing shell
+//! syntax or opt into argv boundaries. Internal app commands, such as `wpctl`
+//! volume adjustment, must use `CommandSpec::Argv` so fixed
+//! program/argument boundaries stay explicit.
 
 pub const MAX_COMMAND_OUTPUT_BYTES: usize = 4096;
 
@@ -168,6 +168,30 @@ pub async fn run_command_capture_stdout(
     }
 }
 
+pub async fn run_config_command_capture_stdout(
+    config: &crate::config::CommandConfig,
+    timeout: std::time::Duration,
+    max_output_bytes: usize,
+) -> std::io::Result<CaptureResult> {
+    match config {
+        crate::config::CommandConfig::Shell(command) => {
+            run_command_capture_stdout(CommandSpec::Shell(command), timeout, max_output_bytes).await
+        }
+        crate::config::CommandConfig::Argv { program, args } => {
+            let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+            run_command_capture_stdout(
+                CommandSpec::Argv {
+                    program,
+                    args: &borrowed,
+                },
+                timeout,
+                max_output_bytes,
+            )
+            .await
+        }
+    }
+}
+
 /// Spawn a command detached. An OS thread is created per call to reap the
 /// child. Intended for user-initiated actions (button clicks, keybinds) where
 /// invocation rate is low; do not call in tight loops.
@@ -177,6 +201,23 @@ pub fn spawn_command_fire_and_forget(spec: CommandSpec<'_>) -> std::io::Result<S
         let _ = child.wait();
     });
     Ok(SpawnResult::Spawned)
+}
+
+pub fn spawn_config_command_fire_and_forget(
+    config: &crate::config::CommandConfig,
+) -> std::io::Result<SpawnResult> {
+    match config {
+        crate::config::CommandConfig::Shell(command) => {
+            spawn_command_fire_and_forget(CommandSpec::Shell(command))
+        }
+        crate::config::CommandConfig::Argv { program, args } => {
+            let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+            spawn_command_fire_and_forget(CommandSpec::Argv {
+                program,
+                args: &borrowed,
+            })
+        }
+    }
 }
 
 async fn run_command_status(spec: CommandSpec<'_>) -> std::io::Result<std::process::ExitStatus> {
@@ -317,5 +358,33 @@ mod tests {
             default_sink_volume_args("5%+"),
             ["set-volume", "-l", "1", "@DEFAULT_AUDIO_SINK@", "5%+"]
         );
+    }
+
+    #[test]
+    fn argv_command_spec_keeps_argument_boundaries() {
+        let args = ["hello world", "$(ignored)"];
+        let spec = CommandSpec::Argv {
+            program: "printf",
+            args: &args,
+        };
+        assert!(format!("{spec:?}").contains("Argv"));
+    }
+
+    #[tokio::test]
+    async fn run_config_command_capture_stdout_uses_argv_boundaries() {
+        let config = crate::config::CommandConfig::Argv {
+            program: "printf".into(),
+            args: vec!["hello world".into()],
+        };
+
+        let out = run_config_command_capture_stdout(
+            &config,
+            Duration::from_secs(1),
+            MAX_COMMAND_OUTPUT_BYTES,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(out, CaptureResult::Success("hello world".to_string()));
     }
 }

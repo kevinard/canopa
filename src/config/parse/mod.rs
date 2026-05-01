@@ -8,7 +8,7 @@ mod style;
 
 use ::kdl::KdlDocument;
 
-use super::{BarConfig, Config, ModuleConfig};
+use super::{BarConfig, CommandConfig, CommandPolicy, Config, ModuleConfig, ModuleParams};
 use crate::modules::ModuleKind;
 
 /// Parse a KDL string into a fully-typed `Config`.
@@ -23,7 +23,86 @@ pub(super) fn parse(input: &str) -> anyhow::Result<Config> {
         bars
     };
     let modules = parse_modules_section(&doc)?;
-    Ok(Config { bars, modules })
+    let command_policy = parse_command_policy(&doc)?;
+    reject_disallowed_shell_commands(&modules, &command_policy)?;
+    Ok(Config {
+        bars,
+        modules,
+        command_policy,
+    })
+}
+
+fn parse_command_policy(doc: &KdlDocument) -> anyhow::Result<CommandPolicy> {
+    let Some(node) = doc.get("command-policy") else {
+        return Ok(CommandPolicy::default());
+    };
+    let Some(children) = node.children() else {
+        return Ok(CommandPolicy::default());
+    };
+
+    let mut policy = CommandPolicy::default();
+    if let Some(value) = children.get_arg("allow-shell") {
+        policy.allow_shell = value.as_bool().ok_or_else(|| {
+            anyhow::anyhow!("command-policy.allow-shell: expected #true or #false.")
+        })?;
+    }
+    if let Some(value) = children.get_arg("action-timeout-ms") {
+        let timeout = value.as_integer().ok_or_else(|| {
+            anyhow::anyhow!("command-policy.action-timeout-ms: expected a positive integer.")
+        })?;
+        policy.action_timeout_ms = u64::try_from(timeout).map_err(|_| {
+            anyhow::anyhow!("command-policy.action-timeout-ms: expected a positive integer.")
+        })?;
+        if policy.action_timeout_ms == 0 {
+            anyhow::bail!("command-policy.action-timeout-ms: expected a positive integer.");
+        }
+    }
+
+    Ok(policy)
+}
+
+fn reject_disallowed_shell_commands(
+    modules: &[ModuleConfig],
+    policy: &CommandPolicy,
+) -> anyhow::Result<()> {
+    if policy.allow_shell {
+        return Ok(());
+    }
+
+    for (idx, module) in modules.iter().enumerate() {
+        if let Some(command) = module.actions.click.as_ref()
+            && matches!(command, CommandConfig::Shell(_))
+        {
+            anyhow::bail!(
+                "modules[{idx}].{}.actions.click: shell commands are disabled by command-policy.allow-shell #false; use an argv block.",
+                module.module_type
+            );
+        }
+        if let Some(command) = module.actions.right_click.as_ref()
+            && matches!(command, CommandConfig::Shell(_))
+        {
+            anyhow::bail!(
+                "modules[{idx}].{}.actions.right-click: shell commands are disabled by command-policy.allow-shell #false; use an argv block.",
+                module.module_type
+            );
+        }
+
+        match &module.params {
+            ModuleParams::Script(config) if matches!(config.command, CommandConfig::Shell(_)) => {
+                anyhow::bail!(
+                    "modules[{idx}].script.command: shell commands are disabled by command-policy.allow-shell #false; use an argv block."
+                );
+            }
+            ModuleParams::Button(config) if matches!(config.on_click, CommandConfig::Shell(_)) => {
+                anyhow::bail!(
+                    "modules[{idx}].button.on-click: shell commands are disabled by command-policy.allow-shell #false; use an argv block."
+                );
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>> {

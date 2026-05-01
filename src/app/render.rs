@@ -520,6 +520,7 @@ mod tests {
                 params: ModuleParams::Clock(ClockConfig::default()),
                 actions: crate::config::ModuleActionsConfig::default(),
             }],
+            command_policy: crate::config::CommandPolicy::default(),
         };
         config.bars[0].modules.top = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);

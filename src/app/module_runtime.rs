@@ -128,11 +128,11 @@ impl ModuleRuntime {
         &self,
         id: &ModuleId,
         event: &crate::modules::InteractionEvent,
-    ) -> Option<&str> {
+    ) -> Option<&crate::config::CommandConfig> {
         let actions = self.actions.get(id)?;
         match event {
-            crate::modules::InteractionEvent::Clicked => actions.click.as_deref(),
-            crate::modules::InteractionEvent::RightClicked(_) => actions.right_click.as_deref(),
+            crate::modules::InteractionEvent::Clicked => actions.click.as_ref(),
+            crate::modules::InteractionEvent::RightClicked(_) => actions.right_click.as_ref(),
             _ => None,
         }
     }
@@ -394,7 +394,7 @@ mod tests {
                 name: "script".into(),
                 module_type: "script".into(),
                 params: ModuleParams::Script(ScriptConfig {
-                    command: "echo hi".into(),
+                    command: crate::config::CommandConfig::Shell("echo hi".into()),
                     interval: 5,
                     format: crate::config::FormatConfig::default(),
                     tooltip: crate::config::TooltipSetting::Default,
@@ -485,7 +485,7 @@ mod tests {
                 params: ModuleParams::Button(ButtonConfig {
                     label: "Launch".into(),
                     icon: ">".into(),
-                    on_click: "kitty".into(),
+                    on_click: crate::config::CommandConfig::Shell("kitty".into()),
                     format: crate::config::FormatConfig::default(),
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
@@ -538,12 +538,16 @@ mod tests {
                 params: ModuleParams::Button(ButtonConfig {
                     label: "Launch".into(),
                     icon: ">".into(),
-                    on_click: format!("printf legacy >{legacy_path}"),
+                    on_click: crate::config::CommandConfig::Shell(format!(
+                        "printf legacy >{legacy_path}"
+                    )),
                     format: crate::config::FormatConfig::default(),
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
                 actions: ModuleActionsConfig {
-                    click: Some(format!("printf action >{action_path}")),
+                    click: Some(crate::config::CommandConfig::Shell(format!(
+                        "printf action >{action_path}"
+                    ))),
                     right_click: None,
                 },
             }],
@@ -583,7 +587,9 @@ mod tests {
                 params: ModuleParams::Clock(ClockConfig::default()),
                 actions: ModuleActionsConfig {
                     click: None,
-                    right_click: Some(format!("printf right >{action_path}")),
+                    right_click: Some(crate::config::CommandConfig::Shell(format!(
+                        "printf right >{action_path}"
+                    ))),
                 },
             }],
             ..Default::default()
@@ -612,7 +618,7 @@ mod tests {
                 name: "script".into(),
                 module_type: "script".into(),
                 params: ModuleParams::Script(ScriptConfig {
-                    command: "echo hi".into(),
+                    command: crate::config::CommandConfig::Shell("echo hi".into()),
                     interval: 5,
                     format: crate::config::FormatConfig::default(),
                     tooltip: crate::config::TooltipSetting::Default,
@@ -871,7 +877,9 @@ mod tests {
     #[test]
     fn tray_icon_inherits_actions_from_tray_placeholder() {
         let mut config = make_tray_config();
-        config.modules[0].actions.right_click = Some("notify-send tray".into());
+        config.modules[0].actions.right_click = Some(crate::config::CommandConfig::Shell(
+            "notify-send tray".into(),
+        ));
         let (mut app, _) = App::boot(config, vec![]);
 
         let _ = app.update(Message::Tray(TrayRuntimeEvent::Host(TrayEvent::Snapshot(
@@ -883,7 +891,9 @@ mod tests {
                 &ModuleId::new("tray:org.test.App"),
                 &crate::modules::InteractionEvent::RightClicked(iced::window::Id::unique()),
             ),
-            Some("notify-send tray")
+            Some(&crate::config::CommandConfig::Shell(
+                "notify-send tray".into()
+            ))
         );
     }
 
@@ -897,7 +907,9 @@ mod tests {
                 module_type: "workspaces".into(),
                 params: ModuleParams::Workspaces(crate::config::WorkspacesConfig::default()),
                 actions: crate::config::ModuleActionsConfig {
-                    click: Some("notify-send workspace".into()),
+                    click: Some(crate::config::CommandConfig::Shell(
+                        "notify-send workspace".into(),
+                    )),
                     right_click: None,
                 },
             }],
@@ -917,7 +929,9 @@ mod tests {
                 &ModuleId::new("workspace:1"),
                 &crate::modules::InteractionEvent::Clicked,
             ),
-            Some("notify-send workspace")
+            Some(&crate::config::CommandConfig::Shell(
+                "notify-send workspace".into()
+            ))
         );
     }
 

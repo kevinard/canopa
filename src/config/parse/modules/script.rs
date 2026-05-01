@@ -1,24 +1,25 @@
 use ::kdl::KdlNode;
 
-use super::super::{error, kdl};
+use super::super::{actions, error};
 use super::formats;
 use crate::config::ScriptConfig;
 
 pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
     let command_path = error::field_path(idx, "script", "command");
     let children = node.children().ok_or_else(|| {
-        anyhow::anyhow!("{command_path}: missing required parameter. Expected: a string value.")
+        anyhow::anyhow!(
+            "{command_path}: missing required parameter. Expected: a string value or argv block."
+        )
     })?;
 
     if children.get("command").is_none() {
-        anyhow::bail!("{command_path}: missing required parameter. Expected: a string value.");
+        anyhow::bail!(
+            "{command_path}: missing required parameter. Expected: a string value or argv block."
+        );
     }
-    let command = kdl::optional_nonempty_string_child(
-        children,
-        "command",
-        String::new(),
+    let command = actions::parse_command_node(
+        children.get("command").expect("checked above"),
         &command_path,
-        "a shell command string",
     )?;
 
     let interval = match children.get("interval") {
@@ -126,8 +127,37 @@ modules {
         assert_eq!(config.modules.len(), 1);
         match &config.modules[0].params {
             ModuleParams::Script(cfg) => {
-                assert_eq!(cfg.command, "date");
+                assert_eq!(
+                    cfg.command,
+                    crate::config::CommandConfig::Shell("date".into())
+                );
                 assert_eq!(cfg.interval, 10);
+            }
+            _ => panic!("expected ModuleParams::Script"),
+        }
+    }
+
+    #[test]
+    fn parse_script_argv_command() {
+        let kdl = r#"
+modules {
+    module "script" {
+        command {
+            argv "printf" "hello"
+        }
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        match &config.modules[0].params {
+            ModuleParams::Script(cfg) => {
+                assert_eq!(
+                    cfg.command,
+                    crate::config::CommandConfig::Argv {
+                        program: "printf".into(),
+                        args: vec!["hello".into()],
+                    }
+                );
             }
             _ => panic!("expected ModuleParams::Script"),
         }
@@ -145,7 +175,10 @@ modules {
         let config = parse(kdl).unwrap();
         match &config.modules[0].params {
             ModuleParams::Script(cfg) => {
-                assert_eq!(cfg.command, "date");
+                assert_eq!(
+                    cfg.command,
+                    crate::config::CommandConfig::Shell("date".into())
+                );
                 assert_eq!(cfg.interval, 5);
             }
             _ => panic!("expected ModuleParams::Script"),

@@ -12,6 +12,27 @@ pub use style::{ColorValue, ResolvedStyle, SegmentStyles, Style, ThemeToken, Wei
 
 pub type FormatValue<'a> = (&'static str, std::borrow::Cow<'a, str>);
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CommandConfig {
+    Shell(String),
+    Argv { program: String, args: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandPolicy {
+    pub allow_shell: bool,
+    pub action_timeout_ms: u64,
+}
+
+impl Default for CommandPolicy {
+    fn default() -> Self {
+        CommandPolicy {
+            allow_shell: true,
+            action_timeout_ms: 3000,
+        }
+    }
+}
+
 fn is_known_config_module_type(module_type: &str) -> bool {
     crate::modules::ModuleKind::from_config_name(module_type).is_some()
 }
@@ -39,7 +60,7 @@ impl Default for ClockConfig {
 /// Command and polling interval for the script module.
 #[derive(Debug, Clone)]
 pub struct ScriptConfig {
-    pub command: String,
+    pub command: CommandConfig,
     pub interval: u64, // seconds between executions
     pub format: FormatConfig,
     pub tooltip: TooltipSetting,
@@ -50,7 +71,7 @@ pub struct ScriptConfig {
 pub struct ButtonConfig {
     pub label: String,
     pub icon: String,
-    pub on_click: String,
+    pub on_click: CommandConfig,
     pub format: FormatConfig,
     pub tooltip: TooltipSetting,
 }
@@ -597,8 +618,8 @@ pub enum ModuleParams {
 /// Shared user-triggered actions available on every config-declared module.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleActionsConfig {
-    pub click: Option<String>,
-    pub right_click: Option<String>,
+    pub click: Option<CommandConfig>,
+    pub right_click: Option<CommandConfig>,
 }
 
 /// A single module entry from the config, specifying name, type, and module params.
@@ -622,6 +643,7 @@ pub struct Config {
     /// no `bar` sections appear in the config file).
     pub bars: Vec<BarConfig>,
     pub modules: Vec<ModuleConfig>,
+    pub command_policy: CommandPolicy,
 }
 
 impl Default for Config {
@@ -629,6 +651,7 @@ impl Default for Config {
         Config {
             bars: vec![BarConfig::default()],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         }
     }
 }
@@ -1345,26 +1368,26 @@ mod tests {
     #[test]
     fn script_config_stores_command_and_interval() {
         let cfg = ScriptConfig {
-            command: "echo hi".into(),
+            command: CommandConfig::Shell("echo hi".into()),
             interval: 10,
             format: FormatConfig::default(),
             tooltip: TooltipSetting::Default,
         };
-        assert_eq!(cfg.command, "echo hi");
+        assert_eq!(cfg.command, CommandConfig::Shell("echo hi".into()));
         assert_eq!(cfg.interval, 10);
     }
 
     #[test]
     fn module_params_script_stores_config() {
         let params = ModuleParams::Script(ScriptConfig {
-            command: "date".into(),
+            command: CommandConfig::Shell("date".into()),
             interval: 30,
             format: FormatConfig::default(),
             tooltip: TooltipSetting::Default,
         });
         match params {
             ModuleParams::Script(cfg) => {
-                assert_eq!(cfg.command, "date");
+                assert_eq!(cfg.command, CommandConfig::Shell("date".into()));
                 assert_eq!(cfg.interval, 30);
             }
             _ => panic!("expected ModuleParams::Script"),
@@ -1376,13 +1399,13 @@ mod tests {
         let cfg = ButtonConfig {
             label: "Launch Terminal".into(),
             icon: ">".into(),
-            on_click: "kitty".into(),
+            on_click: CommandConfig::Shell("kitty".into()),
             format: FormatConfig::default(),
             tooltip: TooltipSetting::Default,
         };
         assert_eq!(cfg.label, "Launch Terminal");
         assert_eq!(cfg.icon, ">");
-        assert_eq!(cfg.on_click, "kitty");
+        assert_eq!(cfg.on_click, CommandConfig::Shell("kitty".into()));
     }
 
     #[test]
@@ -1390,7 +1413,7 @@ mod tests {
         let params = ModuleParams::Button(ButtonConfig {
             label: "launch".into(),
             icon: ">".into(),
-            on_click: "kitty".into(),
+            on_click: CommandConfig::Shell("kitty".into()),
             format: FormatConfig::default(),
             tooltip: TooltipSetting::Default,
         });
@@ -1398,7 +1421,7 @@ mod tests {
             ModuleParams::Button(cfg) => {
                 assert_eq!(cfg.label, "launch");
                 assert_eq!(cfg.icon, ">");
-                assert_eq!(cfg.on_click, "kitty");
+                assert_eq!(cfg.on_click, CommandConfig::Shell("kitty".into()));
             }
             _ => panic!("expected ModuleParams::Button"),
         }
@@ -1482,6 +1505,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("duplicate name"), "got: {err}");
@@ -1497,6 +1521,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("collapsed-width"), "got: {err}");
@@ -1554,6 +1579,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         };
         let bars = config.bars_for_output("eDP-1");
         assert_eq!(bars.len(), 2);
@@ -1580,6 +1606,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         };
         let bars = config.bars_for_output("eDP-1");
         assert_eq!(bars.len(), 2); // "main" (all) + "extra" (eDP-1)
@@ -1610,6 +1637,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         };
         let bars = config.bars_for_output("DP-1");
         assert_eq!(bars[0].name, "first");
@@ -1633,6 +1661,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         };
         assert!(validate(&config).is_ok());
     }
@@ -1653,6 +1682,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("side"), "got: {err}");
@@ -1675,6 +1705,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
         assert!(
@@ -1693,6 +1724,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            command_policy: CommandPolicy::default(),
         };
         // "DP-1" (uppercase) does not match "dp-1" (lowercase)
         assert!(config.bars_for_output("DP-1").is_empty());

@@ -16,9 +16,12 @@ pub enum ScriptEvent {
 const MAX_SCRIPT_OUTPUT_BYTES: usize = crate::command::MAX_COMMAND_OUTPUT_BYTES;
 const SCRIPT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
-async fn run_script_command(cmd: &str, timeout: std::time::Duration) -> ScriptEvent {
-    match crate::command::run_command_capture_stdout(
-        crate::command::CommandSpec::Shell(cmd),
+async fn run_script_command(
+    command: &crate::config::CommandConfig,
+    timeout: std::time::Duration,
+) -> ScriptEvent {
+    match crate::command::run_config_command_capture_stdout(
+        command,
         timeout,
         MAX_SCRIPT_OUTPUT_BYTES,
     )
@@ -31,7 +34,7 @@ async fn run_script_command(cmd: &str, timeout: std::time::Duration) -> ScriptEv
 
 pub(super) struct ScriptModule {
     id: crate::modules::ModuleId,
-    command: String,
+    command: crate::config::CommandConfig,
     interval: u64,
     format: crate::config::FormatConfig,
 }
@@ -39,7 +42,7 @@ pub(super) struct ScriptModule {
 impl ScriptModule {
     pub(super) fn new(
         id: crate::modules::ModuleId,
-        command: String,
+        command: crate::config::CommandConfig,
         interval: u64,
         format: crate::config::FormatConfig,
     ) -> Self {
@@ -297,7 +300,7 @@ mod tests {
     fn script_module_id_is_script() {
         let m = ScriptModule::new(
             crate::modules::ModuleId::new("script"),
-            "echo hi".into(),
+            crate::config::CommandConfig::Shell("echo hi".into()),
             5,
             crate::config::FormatConfig::default(),
         );
@@ -309,7 +312,7 @@ mod tests {
     fn script_module_custom_id() {
         let m = ScriptModule::new(
             crate::modules::ModuleId::new("status"),
-            "date".into(),
+            crate::config::CommandConfig::Shell("date".into()),
             5,
             crate::config::FormatConfig::default(),
         );
@@ -335,7 +338,7 @@ mod tests {
     fn script_styled_segments_resolve_inline_style() {
         let m = ScriptModule::new(
             crate::modules::ModuleId::new("script"),
-            "echo hi".into(),
+            crate::config::CommandConfig::Shell("echo hi".into()),
             5,
             styled_format_config(),
         );
@@ -362,22 +365,24 @@ mod tests {
 
     #[tokio::test]
     async fn run_script_command_times_out() {
-        let event = run_script_command("sleep 2", std::time::Duration::from_millis(25)).await;
+        let command = crate::config::CommandConfig::Shell("sleep 2".into());
+        let event = run_script_command(&command, std::time::Duration::from_millis(25)).await;
 
         assert!(matches!(event, ScriptEvent::Failed));
     }
 
     #[tokio::test]
     async fn run_script_command_preserves_shell_mode() {
-        let event =
-            run_script_command("printf '%s' script-ok", std::time::Duration::from_secs(1)).await;
+        let command = crate::config::CommandConfig::Shell("printf '%s' script-ok".into());
+        let event = run_script_command(&command, std::time::Duration::from_secs(1)).await;
 
         assert_eq!(event, ScriptEvent::Output("script-ok".to_string()));
     }
 
     #[tokio::test]
     async fn run_script_command_maps_nonzero_exit_to_failed() {
-        let event = run_script_command("false", std::time::Duration::from_secs(1)).await;
+        let command = crate::config::CommandConfig::Shell("false".into());
+        let event = run_script_command(&command, std::time::Duration::from_secs(1)).await;
 
         assert_eq!(event, ScriptEvent::Failed);
     }

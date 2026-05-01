@@ -162,12 +162,14 @@ modules {
 "#;
     let config = parse(kdl).unwrap();
     assert_eq!(
-        config.modules[0].actions.click.as_deref(),
-        Some("gnome-clocks")
+        config.modules[0].actions.click,
+        Some(crate::config::CommandConfig::Shell("gnome-clocks".into()))
     );
     assert_eq!(
-        config.modules[0].actions.right_click.as_deref(),
-        Some("notify-send clock")
+        config.modules[0].actions.right_click,
+        Some(crate::config::CommandConfig::Shell(
+            "notify-send clock".into()
+        ))
     );
 }
 
@@ -234,7 +236,53 @@ modules {
 }
 "#;
     let config = parse(kdl).unwrap();
-    assert_eq!(config.modules[0].actions.click.as_deref(), Some("kitty"));
+    assert_eq!(
+        config.modules[0].actions.click,
+        Some(crate::config::CommandConfig::Shell("kitty".into()))
+    );
+}
+
+#[test]
+fn parse_module_actions_argv_command() {
+    let kdl = r#"
+modules {
+    module "clock" {
+        actions {
+            click {
+                argv "notify-send" "clock"
+            }
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    assert_eq!(
+        config.modules[0].actions.click,
+        Some(crate::config::CommandConfig::Argv {
+            program: "notify-send".into(),
+            args: vec!["clock".into()],
+        })
+    );
+}
+
+#[test]
+fn parse_command_policy_rejects_shell_commands_when_disabled() {
+    let kdl = r#"
+command-policy {
+    allow-shell #false
+}
+modules {
+    module "script" {
+        command "date"
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("allow-shell #false") && msg.contains("argv"),
+        "expected shell policy rejection, got: {msg}"
+    );
 }
 
 #[test]

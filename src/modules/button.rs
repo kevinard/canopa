@@ -13,7 +13,7 @@ pub(super) struct ButtonModule {
     id: crate::modules::ModuleId,
     label: String,
     icon: String,
-    on_click: String,
+    on_click: crate::config::CommandConfig,
     format: crate::config::FormatConfig,
 }
 
@@ -22,7 +22,7 @@ impl ButtonModule {
         id: crate::modules::ModuleId,
         label: String,
         icon: String,
-        on_click: String,
+        on_click: crate::config::CommandConfig,
         format: crate::config::FormatConfig,
     ) -> Self {
         ButtonModule {
@@ -122,9 +122,7 @@ impl crate::modules::Module for ButtonModule {
         match event {
             InteractionEvent::Clicked => {
                 // Fire-and-forget from the UI, but reap the child in a background thread.
-                let _ = crate::command::spawn_command_fire_and_forget(
-                    crate::command::CommandSpec::Shell(&self.on_click),
-                );
+                let _ = crate::command::spawn_config_command_fire_and_forget(&self.on_click);
                 None
             }
             _ => None,
@@ -279,7 +277,7 @@ mod tests {
             crate::modules::ModuleId::new("button"),
             "Launch".into(),
             ">".into(),
-            "kitty".into(),
+            crate::config::CommandConfig::Shell("kitty".into()),
             crate::config::FormatConfig::default(),
         );
         assert_eq!(m.id().0, "button");
@@ -306,7 +304,7 @@ mod tests {
             crate::modules::ModuleId::new("button"),
             "Launch".into(),
             ">".into(),
-            "kitty".into(),
+            crate::config::CommandConfig::Shell("kitty".into()),
             styled_format_config(),
         );
         let segment = &m

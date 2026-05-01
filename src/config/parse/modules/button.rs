@@ -1,6 +1,6 @@
 use ::kdl::KdlNode;
 
-use super::super::{error, kdl};
+use super::super::{actions, error, kdl};
 use super::formats;
 use crate::config::{ButtonConfig, ModuleActionsConfig};
 
@@ -31,12 +31,15 @@ pub(super) fn parse(
     let icon = kdl::required_string_child(children, "icon", &icon_path)?;
 
     let on_click = if children.get("on-click").is_some() {
-        kdl::required_string_child(children, "on-click", &on_click_path)?
+        actions::parse_command_node(
+            children.get("on-click").expect("checked above"),
+            &on_click_path,
+        )?
     } else if let Some(command) = actions.click.as_ref() {
         command.clone()
     } else {
         anyhow::bail!(
-            "{on_click_path}: missing required parameter. Expected: a string value or actions.click."
+            "{on_click_path}: missing required parameter. Expected: a string value, argv block, or actions.click."
         );
     };
     let (format, tooltip) = formats::parse_format_and_tooltip(
@@ -130,7 +133,38 @@ modules {
             ModuleParams::Button(cfg) => {
                 assert_eq!(cfg.label, "Launch Terminal");
                 assert_eq!(cfg.icon, ">");
-                assert_eq!(cfg.on_click, "kitty");
+                assert_eq!(
+                    cfg.on_click,
+                    crate::config::CommandConfig::Shell("kitty".into())
+                );
+            }
+            _ => panic!("expected ModuleParams::Button"),
+        }
+    }
+
+    #[test]
+    fn parse_button_argv_on_click() {
+        let kdl = r#"
+modules {
+    module "button" {
+        label "Run"
+        icon ">"
+        on-click {
+            argv "true"
+        }
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        match &config.modules[0].params {
+            ModuleParams::Button(cfg) => {
+                assert_eq!(
+                    cfg.on_click,
+                    crate::config::CommandConfig::Argv {
+                        program: "true".into(),
+                        args: vec![],
+                    }
+                );
             }
             _ => panic!("expected ModuleParams::Button"),
         }
