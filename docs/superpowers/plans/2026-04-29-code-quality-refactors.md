@@ -716,7 +716,7 @@ rtk git commit -m "refactor: track dynamic module origins explicitly"
 - Modify: `src/modules/button.rs`
 - Test: `src/command.rs`, parser tests
 
-- [ ] **Step 1: Add command config enum tests**
+- [x] **Step 1: Add command config enum tests**
 
 In `src/command.rs`, add:
 
@@ -751,7 +751,7 @@ module "button" {
 }
 ```
 
-- [ ] **Step 2: Add owned config command type**
+- [x] **Step 2: Add owned config command type**
 
 In `src/config.rs`, add:
 
@@ -765,7 +765,7 @@ pub enum CommandConfig {
 
 Change script/button/action command fields from `String` to `CommandConfig` where appropriate. Keep string KDL syntax mapped to `Shell(String)` for compatibility.
 
-- [ ] **Step 3: Bridge config command into runtime command**
+- [x] **Step 3: Bridge config command into runtime command**
 
 In `src/command.rs`, add:
 
@@ -785,7 +785,7 @@ impl<'a> From<&'a crate::config::CommandConfig> for CommandSpec<'a> {
 
 Do not keep the `Box::leak` version in final code. Instead implement call-site helpers that hold `Vec<&str>` locally while invoking the command. The temporary snippet is only a forcing function to reveal lifetime constraints during implementation.
 
-- [ ] **Step 4: Implement non-leaking helpers**
+- [x] **Step 4: Implement non-leaking helpers**
 
 Add:
 
@@ -813,7 +813,7 @@ pub async fn run_config_command_capture_stdout(
 
 Add a matching `spawn_config_command_fire_and_forget`.
 
-- [ ] **Step 5: Add policy knobs**
+- [x] **Step 5: Add policy knobs**
 
 Add to `Config`:
 
@@ -838,7 +838,7 @@ CommandPolicy {
 
 Wire parsing so users can later disable shell commands globally. When disabled, reject `CommandConfig::Shell` during config parsing with an actionable error.
 
-- [ ] **Step 6: Run command and parser tests**
+- [x] **Step 6: Run command and parser tests**
 
 Run:
 
@@ -848,7 +848,7 @@ rtk cargo test command config::parse::modules::script config::parse::modules::bu
 
 Expected: pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 rtk git add src/command.rs src/config.rs src/config/parse/actions.rs src/config/parse/modules/script.rs src/config/parse/modules/button.rs src/modules/script.rs src/modules/button.rs
@@ -862,7 +862,7 @@ rtk git commit -m "feat: support argv command configuration"
 - Modify: `src/app/module_graph.rs`
 - Test: `src/modules.rs`, `src/app/module_graph.rs`
 
-- [ ] **Step 1: Add constructor mismatch test**
+- [x] **Step 1: Add constructor mismatch test**
 
 In `src/modules.rs`, add:
 
@@ -880,7 +880,7 @@ fn script_constructor_reports_wrong_params() {
 }
 ```
 
-- [ ] **Step 2: Change constructor type**
+- [x] **Step 2: Change constructor type**
 
 Change:
 
@@ -897,7 +897,7 @@ pub(crate) type ModuleConstructor =
 
 Update every constructor to return `Ok(Box::new(...))`.
 
-- [ ] **Step 3: Replace constructor panics**
+- [x] **Step 3: Replace constructor panics**
 
 Change script/button mismatches from `panic!` to:
 
@@ -907,7 +907,7 @@ _ => anyhow::bail!("script constructor called with non-script params for {:?}", 
 
 and similarly for button.
 
-- [ ] **Step 4: Propagate errors from module graph**
+- [x] **Step 4: Propagate errors from module graph**
 
 In `src/app/module_graph.rs`, change:
 
@@ -922,7 +922,7 @@ let module = ctor(mc)
     .with_context(|| format!("failed to construct module {:?}", mc.name))?;
 ```
 
-- [ ] **Step 5: Run constructor tests**
+- [x] **Step 5: Run constructor tests**
 
 Run:
 
@@ -932,7 +932,7 @@ rtk cargo test script_constructor_reports_wrong_params app::module_graph
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 rtk git add src/modules.rs src/app/module_graph.rs
@@ -944,7 +944,7 @@ rtk git commit -m "refactor: make module constructors fallible"
 **Files:**
 - Modify as needed based on compiler/test findings.
 
-- [ ] **Step 1: Format**
+- [x] **Step 1: Format**
 
 Run:
 
@@ -954,7 +954,7 @@ rtk cargo fmt
 
 Expected: no errors.
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
 Run:
 
@@ -964,7 +964,7 @@ rtk cargo test
 
 Expected: all tests pass.
 
-- [ ] **Step 3: Run clippy if available**
+- [x] **Step 3: Run clippy if available**
 
 Run:
 
@@ -974,7 +974,7 @@ rtk cargo clippy --all-targets -- -D warnings
 
 Expected: pass. If clippy is not installed, record that in the final handoff.
 
-- [ ] **Step 4: Inspect remaining duplication**
+- [x] **Step 4: Inspect remaining duplication**
 
 Run:
 
@@ -988,7 +988,7 @@ Expected:
 - `CommandSpec::Shell` appears only in command helpers/tests and compatibility paths.
 - `starts_with(` is not used to identify dynamic module ownership.
 
-- [ ] **Step 5: Final commit**
+- [x] **Step 5: Final commit**
 
 ```bash
 rtk git status --short
@@ -1001,4 +1001,3 @@ rtk git commit -m "test: verify code quality refactors"
 - Spec coverage: The plan maps to all review findings: descriptor duplication, module graph extraction, shared template rendering, parser dispatch, subscription capabilities, dynamic origins, command execution policy, fallible constructors, and verification.
 - Placeholder scan: No task uses TBD/TODO/fill-in placeholders. Where an implementation must be adapted to compile, the plan gives the exact target API and verification command.
 - Type consistency: The plan uses `ModuleCapabilities`, `ModuleGraph`, `ModuleOrigin`, `CommandConfig`, and `CommandPolicy` consistently across the tasks that introduce and consume them.
-

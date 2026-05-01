@@ -43,8 +43,6 @@ pub enum ModuleKind {
 }
 
 impl ModuleKind {
-    pub(crate) const CONFIG_KINDS: &'static [ModuleKind] = _CONFIG_KINDS_FROM_DESCRIPTORS;
-
     pub(crate) fn as_str(self) -> &'static str {
         self.config_name().unwrap_or_else(|| self.runtime_name())
     }
@@ -266,12 +264,6 @@ impl ModuleDescriptor {
     }
 }
 
-macro_rules! build_config_kinds {
-    ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr, $capabilities:expr)),* $(,)?) => {
-        &[$($kind),*]
-    };
-}
-
 macro_rules! build_module_descriptors {
     ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr, $capabilities:expr)),* $(,)?) => {
         &[
@@ -288,9 +280,6 @@ macro_rules! build_module_descriptors {
 
 pub(crate) const MODULE_DESCRIPTORS: &[ModuleDescriptor] =
     config_module_descriptors!(build_module_descriptors);
-
-const _CONFIG_KINDS_FROM_DESCRIPTORS: &[ModuleKind] =
-    config_module_descriptors!(build_config_kinds);
 
 /// Build the static module registry mapping config name → constructor.
 pub(crate) fn build_registry() -> HashMap<&'static str, ModuleConstructor> {

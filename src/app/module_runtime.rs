@@ -70,15 +70,6 @@ impl ModuleRuntime {
         self.store.push(zone, module);
     }
 
-    pub(super) fn insert_with_actions(
-        &mut self,
-        index: usize,
-        item: (Zone, Box<dyn Module>),
-        actions: ModuleActionsConfig,
-    ) {
-        self.insert_with_actions_and_origin(index, item, actions, ModuleOrigin::Configured);
-    }
-
     pub(super) fn insert_with_actions_and_origin(
         &mut self,
         index: usize,
@@ -102,14 +93,6 @@ impl ModuleRuntime {
         self.states.retain(|id, _| retained_ids.contains(id));
         self.actions.retain(|id, _| retained_ids.contains(id));
         self.origins.retain(|id, _| retained_ids.contains(id));
-    }
-
-    pub(super) fn ids_by_origin(&self, origin: &ModuleOrigin) -> Vec<ModuleId> {
-        self.origins
-            .iter()
-            .filter(|(_, item_origin)| *item_origin == origin)
-            .map(|(id, _)| id.clone())
-            .collect()
     }
 
     pub(super) fn ids_by_kind(&self, kind: ModuleKind) -> &[ModuleId] {
