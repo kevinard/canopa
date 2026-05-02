@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use iced::Task;
+use iced_layershell::actions::IcedNewPopupSettings;
 use iced_layershell::reexport::KeyboardInteractivity;
 
 use super::{App, Message};
@@ -60,6 +61,41 @@ impl MenuSystem {
     pub(super) fn clear_window(&mut self, window: iced::window::Id) {
         self.hovered.remove(&window);
         self.focused.remove(&window);
+    }
+}
+
+fn menu_popup_window_settings(
+    edge: &crate::config::Edge,
+    bar_size: u32,
+    tree: &crate::surface::menu_popup::MenuTree,
+) -> IcedNewPopupSettings {
+    let size = crate::surface::menu_popup::popup_size(tree);
+    let (popup_w, popup_h) = (size.0 as i32, size.1 as i32);
+    let (parent_w, parent_h) = (tree.screen_size.0 as i32, tree.screen_size.1 as i32);
+    let (anchor_x, anchor_y) = tree.anchor;
+    let clamped_x = if parent_w > 0 {
+        anchor_x.clamp(0, (parent_w - popup_w).max(0))
+    } else {
+        anchor_x
+    };
+    let clamped_y = if parent_h > 0 {
+        anchor_y.clamp(0, (parent_h - popup_h).max(0))
+    } else {
+        anchor_y
+    };
+
+    let bar_size = bar_size as i32;
+    let position = match edge {
+        crate::config::Edge::Top => (clamped_x, bar_size),
+        crate::config::Edge::Bottom => (clamped_x, -popup_h),
+        crate::config::Edge::Left => (bar_size, clamped_y),
+        crate::config::Edge::Right => (-popup_w, clamped_y),
+    };
+
+    IcedNewPopupSettings {
+        size,
+        position,
+        grab: true,
     }
 }
 
@@ -128,6 +164,11 @@ impl App {
                 tree,
                 bar_name,
             } => self.open_menu_popup(service, menu_path, tree, bar_name),
+            MenuEvent::Updated {
+                service,
+                menu_path,
+                tree,
+            } => self.update_menu_popup(service, menu_path, tree),
         }
     }
 
@@ -180,18 +221,9 @@ impl App {
             Task::done(Message::RemoveWindow(id))
         }));
 
-        let settings = iced_layershell::reexport::NewLayerShellSettings {
-            anchor: iced_layershell::reexport::Anchor::Left
-                | iced_layershell::reexport::Anchor::Right
-                | iced_layershell::reexport::Anchor::Top
-                | iced_layershell::reexport::Anchor::Bottom,
-            exclusive_zone: Some(-1),
-            size: Some((0, 0)),
-            layer: iced_layershell::reexport::Layer::Overlay,
-            keyboard_interactivity: KeyboardInteractivity::OnDemand,
-            ..Default::default()
-        };
-        let (popup_id, open_task) = Message::layershell_open(settings);
+        let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
+        let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &tree);
+        let (popup_id, open_task) = Message::popup_open(settings);
         let model = MenuModel {
             service,
             menu_path,
@@ -211,6 +243,25 @@ impl App {
         Task::batch(tasks)
     }
 
+    pub(super) fn update_menu_popup(
+        &mut self,
+        service: String,
+        menu_path: zbus::zvariant::OwnedObjectPath,
+        tree: crate::surface::menu_popup::MenuTree,
+    ) -> Task<Message> {
+        let Some((_, popup)) = self
+            .surfaces
+            .popups
+            .iter_mut()
+            .find(|(_, popup)| popup.service == service && popup.menu_path == menu_path)
+        else {
+            return Task::none();
+        };
+
+        popup.tree = tree;
+        Task::none()
+    }
+
     pub(super) fn handle_menu_layout_changed(
         &mut self,
         service: String,
@@ -221,12 +272,8 @@ impl App {
             .surfaces
             .popup_values()
             .find(|popup| popup.service == service && popup.menu_path == menu_path);
-        let (anchor, screen_size, existing_bar_name) = match existing {
-            Some(popup) => (
-                popup.tree.anchor,
-                popup.tree.screen_size,
-                popup.bar_name.clone(),
-            ),
+        let (anchor, screen_size) = match existing {
+            Some(popup) => (popup.tree.anchor, popup.tree.screen_size),
             None => return Task::none(),
         };
         if let Some(conn) = conn {
@@ -238,11 +285,10 @@ impl App {
                     if let Some(mut tree) = tree_opt {
                         tree.anchor = anchor;
                         tree.screen_size = screen_size;
-                        Message::Menu(super::messages::MenuEvent::Open {
+                        Message::Menu(super::messages::MenuEvent::Updated {
                             service,
                             menu_path,
                             tree,
-                            bar_name: existing_bar_name,
                         })
                     } else {
                         Message::Menu(super::messages::MenuEvent::Closed)
@@ -437,6 +483,19 @@ mod tests {
             popup_wid,
         )));
         let _ = app.update(Message::Menu(messages::MenuEvent::Closed));
+        assert!(app.surfaces.popup(popup_wid).is_none());
+    }
+
+    #[test]
+    fn popup_focus_loss_fires_menu_closed() {
+        let (mut app, _wid) = make_interact_app();
+        let popup_wid = make_popup_wid(&mut app);
+
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusLost(
+            popup_wid,
+        )));
+        let _ = app.update(Message::Menu(messages::MenuEvent::Closed));
+
         assert!(app.surfaces.popup(popup_wid).is_none());
     }
 
@@ -649,5 +708,61 @@ mod tests {
         assert!(app.menu.hovered.is_empty());
         assert!(app.menu.focused.is_empty());
         assert_eq!(tasks.len(), 1);
+    }
+
+    #[test]
+    fn menu_tree_update_replaces_existing_popup_without_reopening() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid = make_popup_wid(&mut app);
+        let menu_path = zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap();
+        let tree = crate::surface::menu_popup::MenuTree {
+            items: vec![crate::surface::menu_popup::MenuItem {
+                id: "2".into(),
+                label: "Updated".into(),
+                enabled: true,
+                visible: true,
+                icon_name: None,
+                children: vec![],
+                is_separator: false,
+            }],
+            anchor: (12, 34),
+            screen_size: (500, 48),
+        };
+
+        let task = app.handle_menu_event(messages::MenuEvent::Updated {
+            service: "org.test".into(),
+            menu_path,
+            tree,
+        });
+
+        let popup = app.surfaces.popup(wid).expect("popup should stay open");
+        assert_eq!(popup.tree.items[0].label, "Updated");
+        assert_eq!(popup.tree.anchor, (12, 34));
+        let _ = task;
+    }
+
+    #[test]
+    fn bottom_edge_menu_popup_opens_above_parent_bar() {
+        let tree = crate::surface::menu_popup::MenuTree {
+            items: vec![crate::surface::menu_popup::MenuItem {
+                id: "1".into(),
+                label: "Open".into(),
+                enabled: true,
+                visible: true,
+                icon_name: None,
+                children: vec![],
+                is_separator: false,
+            }],
+            anchor: (490, 30),
+            screen_size: (500, 48),
+        };
+        let settings = super::menu_popup_window_settings(&crate::config::Edge::Bottom, 48, &tree);
+
+        assert_eq!(settings.size, crate::surface::menu_popup::popup_size(&tree));
+        assert_eq!(settings.position.0, 350);
+        assert_eq!(
+            settings.position.1,
+            -(crate::surface::menu_popup::popup_size(&tree).1 as i32)
+        );
     }
 }

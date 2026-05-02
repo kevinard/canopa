@@ -100,6 +100,9 @@ fn keyboard_handler(
                 size.height as u32,
             ),
         )),
+        Event::Window(window::Event::Closed) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::WindowClosed(window),
+        )),
         Event::Mouse(iced::mouse::Event::CursorMoved { position }) => Some(Message::Surface(
             crate::app::messages::SurfaceEvent::CursorMoved(window, position),
         )),
@@ -210,6 +213,23 @@ mod tests {
             Some(crate::app::Message::Surface(
                 crate::app::messages::SurfaceEvent::CursorMoved(w, p)
             )) if w == wid && p == iced::Point::new(12.0, 34.0)
+        ));
+    }
+
+    #[test]
+    fn window_closed_emits_surface_window_closed_event() {
+        let wid = iced::window::Id::unique();
+        let msg = keyboard_handler(
+            Event::Window(window::Event::Closed),
+            iced::event::Status::Ignored,
+            wid,
+        );
+
+        assert!(matches!(
+            msg,
+            Some(crate::app::Message::Surface(
+                crate::app::messages::SurfaceEvent::WindowClosed(w)
+            )) if w == wid
         ));
     }
 

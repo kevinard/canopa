@@ -221,9 +221,9 @@ impl crate::modules::Module for FocusedWindowModule {
                 12,
                 theme::TEXT,
             ))
-            .width(Length::Fill)
+            .width(Length::Shrink)
             .height(Length::Fill)
-            .align_x(Alignment::Start)
+            .align_x(Alignment::Center)
             .align_y(Alignment::Center)
             .padding([0, 6])
             .into();
@@ -239,9 +239,9 @@ impl crate::modules::Module for FocusedWindowModule {
             theme::TEXT,
             crate::modules::view::fallback_resolved_style(bar_style),
         ))
-        .width(Length::Fill)
+        .width(Length::Shrink)
         .height(Length::Fill)
-        .align_x(Alignment::Start)
+        .align_x(Alignment::Center)
         .align_y(Alignment::Center)
         .padding([0, 6])
         .into()

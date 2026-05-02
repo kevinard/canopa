@@ -290,6 +290,10 @@ impl App {
         self.surfaces.tooltip_popup(window).is_some()
     }
 
+    fn is_menu_popup_window(&self, window: iced::window::Id) -> bool {
+        self.surfaces.has_popup(window)
+    }
+
     pub(super) fn handle_surface_event(
         &mut self,
         event: super::messages::SurfaceEvent,
@@ -318,6 +322,14 @@ impl App {
                 }
                 Task::none()
             }
+            SurfaceEvent::WindowClosed(window) if self.is_menu_popup_window(window) => {
+                Task::done(Message::Menu(super::messages::MenuEvent::Closed))
+            }
+            SurfaceEvent::WindowClosed(window) if self.is_tooltip_popup_window(window) => {
+                self.surfaces.remove_tooltip_popup(window);
+                Task::none()
+            }
+            SurfaceEvent::WindowClosed(_) => Task::none(),
             SurfaceEvent::ModuleHoverEnter(id, window) => {
                 self.handle_module_hover_enter(id, window)
             }
@@ -328,7 +340,10 @@ impl App {
             SurfaceEvent::CloseTooltip { window } => {
                 Task::batch(self.close_tooltip_popup_if_open(window))
             }
-            SurfaceEvent::BarClick(window) if self.is_tooltip_popup_window(window) => Task::none(),
+            // SurfaceEvent::BarClick(window) if self.is_menu_popup_window(window) => {
+            //     Task::done(Message::Menu(super::messages::MenuEvent::Closed))
+            // }
+            // SurfaceEvent::BarClick(window) if self.is_tooltip_popup_window(window) => Task::none(),
             SurfaceEvent::BarClick(window) => self.handle_bar_click(window),
             SurfaceEvent::BarHoverEnter(window) if self.is_tooltip_popup_window(window) => {
                 Task::none()
@@ -345,6 +360,9 @@ impl App {
             SurfaceEvent::BarFocusGained(window) => self.handle_bar_focus_gained(window),
             SurfaceEvent::BarFocusLost(window) if self.is_tooltip_popup_window(window) => {
                 Task::none()
+            }
+            SurfaceEvent::BarFocusLost(window) if self.is_menu_popup_window(window) => {
+                Task::done(Message::Menu(super::messages::MenuEvent::Closed))
             }
             SurfaceEvent::BarFocusLost(window) => self.handle_bar_focus_lost(window),
             SurfaceEvent::EscapePressed(window) if self.is_tooltip_popup_window(window) => {

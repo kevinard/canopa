@@ -29,3 +29,7 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+[patch.crates-io]
+iced_layershell = { path = "vendor/iced_layershell" }
+layershellev = { path = "vendor/layershellev" }

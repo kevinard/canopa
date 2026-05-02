@@ -21,6 +21,7 @@ impl App {
         if self.surfaces.has_any_popup() {
             return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
         }
+        // Task::none()
         let bar = self.bar_for_window(window);
         if !bar.expand || bar.expand_trigger == ExpandTrigger::Hover {
             return Task::none();

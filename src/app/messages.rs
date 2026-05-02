@@ -25,6 +25,7 @@ pub enum SurfaceEvent {
     ToggleExpand,
     CursorMoved(iced::window::Id, Point),
     WindowSized(iced::window::Id, u32, u32),
+    WindowClosed(iced::window::Id),
     /// Fired by the animation tick when a module's tooltip dwell delay
     /// has elapsed. Phase 4 wires the popup-open path on this.
     TooltipDwellElapsed {
@@ -62,6 +63,11 @@ pub enum MenuEvent {
         menu_path: OwnedObjectPath,
         tree: MenuTree,
         bar_name: String,
+    },
+    Updated {
+        service: String,
+        menu_path: OwnedObjectPath,
+        tree: MenuTree,
     },
 }
 

@@ -57,22 +57,9 @@ fn render_popup_model<'a>(
         focused_item,
     );
 
-    // Pin the menu to its computed size so Fill items inside don't expand to
-    // screen width, and so the outer Fill container doesn't collapse it.
-    let menu_sized = iced::widget::container(menu)
-        .width(model.placement.popup_width)
-        .height(model.placement.popup_height);
-
-    iced::widget::mouse_area(
-        iced::widget::container(menu_sized)
-            .width(iced::Length::Fill)
-            .height(iced::Length::Fill)
-            .align_x(model.placement.h_align)
-            .align_y(model.placement.v_align)
-            .padding(model.placement.padding),
-    )
-    .on_press(Message::Menu(super::messages::MenuEvent::Closed))
-    .into()
+    iced::widget::mouse_area(menu)
+        .on_press(Message::Menu(super::messages::MenuEvent::Closed))
+        .into()
 }
 
 fn render_bar_model<'a>(
