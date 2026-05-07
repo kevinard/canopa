@@ -798,6 +798,121 @@ impl Edge {
     }
 }
 
+/// Determines what user action triggers bar expand/collapse.
+///
+/// Hover and click are mutually exclusive: when `Hover` is set, click has no effect.
+/// Default: `Click`.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum ExpandTrigger {
+    #[default]
+    Click,
+    Hover,
+}
+
+impl ExpandTrigger {
+    pub(crate) fn from_str(s: &str) -> anyhow::Result<ExpandTrigger> {
+        match s {
+            "click" => Ok(ExpandTrigger::Click),
+            "hover" => Ok(ExpandTrigger::Hover),
+            other => anyhow::bail!(
+                "bar.expand-trigger: unknown value {other:?}. \
+                 Expected: one of: click, hover."
+            ),
+        }
+    }
+}
+
+/// Return the path to the user config file, following XDG conventions.
+///
+/// Returns an error if neither `XDG_CONFIG_HOME` nor `HOME` is set or non-empty.
+fn config_file_path() -> anyhow::Result<std::path::PathBuf> {
+    let base = std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|_| {
+            let home = std::env::var("HOME")
+                .context("neither XDG_CONFIG_HOME nor HOME environment variable is set")?;
+            anyhow::ensure!(!home.is_empty(), "HOME environment variable is empty");
+            Ok::<_, anyhow::Error>(std::path::PathBuf::from(home).join(".config"))
+        })?;
+    Ok(base.join("niribar").join("config.kdl"))
+}
+
+/// Load configuration from disk or fall back to the embedded default.
+///
+/// Config is fully parsed before returning — no lazy evaluation (AR7).
+pub fn load() -> anyhow::Result<Config> {
+    let path = config_file_path()?;
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => defaults::DEFAULT_CONFIG.to_string(),
+        Err(e) => {
+            anyhow::bail!("failed to read config file {}: {e}", path.display());
+        }
+    };
+    let config = parse::parse(&content)?;
+    validate(&config)?;
+    Ok(config)
+}
+
+/// Validate a fully-parsed config for constraint violations.
+///
+/// Returns an error with a spec-formatted message if any constraint is violated.
+/// Called by `load()` after parsing. Invalid config → process exits with code 1 (via main).
+pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
+    // Duplicate bar name check
+    let mut seen_bar_names = std::collections::HashSet::new();
+    for bar in &config.bars {
+        if !seen_bar_names.insert(bar.name.as_str()) {
+            anyhow::bail!(
+                "bar {:?}: duplicate name. Each bar section must have a unique name.",
+                bar.name
+            );
+        }
+    }
+
+    // Per-bar width constraints
+    for bar in &config.bars {
+        if bar.collapsed_width < 2 {
+            anyhow::bail!(
+                "bar {:?}: collapsed-width: value {} is too small. Expected: 2 or greater \
+                 (minimum 1px content + 1px border).",
+                bar.name,
+                bar.collapsed_width
+            );
+        }
+        if bar.expanded_width < bar.collapsed_width {
+            anyhow::bail!(
+                "bar {:?}: expanded-width: value {} must be >= collapsed-width ({}). \
+                 Expected: a width greater than or equal to the collapsed width.",
+                bar.name,
+                bar.expanded_width,
+                bar.collapsed_width
+            );
+        }
+    }
+
+    for (i, mc) in config.modules.iter().enumerate() {
+        if !is_known_config_module_type(&mc.module_type) {
+            anyhow::bail!(
+                "modules[{i}].type: unknown module type {:?}. \
+                 Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray.",
+                mc.module_type
+            );
+        }
+    }
+    Ok(())
+}
+
+pub mod states {
+    #[cfg(test)]
+    pub const BATTERY: &[&str] = &["charging", "critical", "low", "normal"];
+    #[cfg(test)]
+    pub const VOLUME: &[&str] = &["muted", "unmuted"];
+    pub const NETWORK: &[&str] = &["full", "limited", "none"];
+    pub const WORKSPACES: &[&str] = &["focused", "active", "inactive"];
+    pub const EMPTY: &[&str] = &[];
+}
+
 #[cfg(test)]
 mod icon_rule_tests {
     use super::*;
@@ -1014,111 +1129,6 @@ mod format_template_tests {
         assert_eq!(rendered[1].1.size, Some(13.0));
         assert_eq!(rendered[1].1.weight, Some(Weight::Light));
     }
-}
-
-/// Determines what user action triggers bar expand/collapse.
-///
-/// Hover and click are mutually exclusive: when `Hover` is set, click has no effect.
-/// Default: `Click`.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub enum ExpandTrigger {
-    #[default]
-    Click,
-    Hover,
-}
-
-impl ExpandTrigger {
-    pub(crate) fn from_str(s: &str) -> anyhow::Result<ExpandTrigger> {
-        match s {
-            "click" => Ok(ExpandTrigger::Click),
-            "hover" => Ok(ExpandTrigger::Hover),
-            other => anyhow::bail!(
-                "bar.expand-trigger: unknown value {other:?}. \
-                 Expected: one of: click, hover."
-            ),
-        }
-    }
-}
-
-/// Return the path to the user config file, following XDG conventions.
-///
-/// Returns an error if neither `XDG_CONFIG_HOME` nor `HOME` is set or non-empty.
-fn config_file_path() -> anyhow::Result<std::path::PathBuf> {
-    let base = std::env::var("XDG_CONFIG_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|_| {
-            let home = std::env::var("HOME")
-                .context("neither XDG_CONFIG_HOME nor HOME environment variable is set")?;
-            anyhow::ensure!(!home.is_empty(), "HOME environment variable is empty");
-            Ok::<_, anyhow::Error>(std::path::PathBuf::from(home).join(".config"))
-        })?;
-    Ok(base.join("niribar").join("config.kdl"))
-}
-
-/// Load configuration from disk or fall back to the embedded default.
-///
-/// Config is fully parsed before returning — no lazy evaluation (AR7).
-pub fn load() -> anyhow::Result<Config> {
-    let path = config_file_path()?;
-    let content = match std::fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => defaults::DEFAULT_CONFIG.to_string(),
-        Err(e) => {
-            anyhow::bail!("failed to read config file {}: {e}", path.display());
-        }
-    };
-    let config = parse::parse(&content)?;
-    validate(&config)?;
-    Ok(config)
-}
-
-/// Validate a fully-parsed config for constraint violations.
-///
-/// Returns an error with a spec-formatted message if any constraint is violated.
-/// Called by `load()` after parsing. Invalid config → process exits with code 1 (via main).
-pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
-    // Duplicate bar name check
-    let mut seen_bar_names = std::collections::HashSet::new();
-    for bar in &config.bars {
-        if !seen_bar_names.insert(bar.name.as_str()) {
-            anyhow::bail!(
-                "bar {:?}: duplicate name. Each bar section must have a unique name.",
-                bar.name
-            );
-        }
-    }
-
-    // Per-bar width constraints
-    for bar in &config.bars {
-        if bar.collapsed_width < 2 {
-            anyhow::bail!(
-                "bar {:?}: collapsed-width: value {} is too small. Expected: 2 or greater \
-                 (minimum 1px content + 1px border).",
-                bar.name,
-                bar.collapsed_width
-            );
-        }
-        if bar.expanded_width < bar.collapsed_width {
-            anyhow::bail!(
-                "bar {:?}: expanded-width: value {} must be >= collapsed-width ({}). \
-                 Expected: a width greater than or equal to the collapsed width.",
-                bar.name,
-                bar.expanded_width,
-                bar.collapsed_width
-            );
-        }
-    }
-
-    for (i, mc) in config.modules.iter().enumerate() {
-        if !is_known_config_module_type(&mc.module_type) {
-            anyhow::bail!(
-                "modules[{i}].type: unknown module type {:?}. \
-                 Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray.",
-                mc.module_type
-            );
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1740,14 +1750,4 @@ mod tests {
         assert_eq!(states::WORKSPACES, &["focused", "active", "inactive"]);
         assert!(states::EMPTY.is_empty());
     }
-}
-
-pub mod states {
-    #[cfg(test)]
-    pub const BATTERY: &[&str] = &["charging", "critical", "low", "normal"];
-    #[cfg(test)]
-    pub const VOLUME: &[&str] = &["muted", "unmuted"];
-    pub const NETWORK: &[&str] = &["full", "limited", "none"];
-    pub const WORKSPACES: &[&str] = &["focused", "active", "inactive"];
-    pub const EMPTY: &[&str] = &[];
 }
