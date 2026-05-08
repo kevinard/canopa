@@ -22,6 +22,10 @@ bar "main" {
     // Accepted values: "left" (default), "right", "top", "bottom".
     edge "left"
 
+    // Compositor stacking layer for this bar's surfaces.
+    // Accepted values: "background", "bottom", "top" (default), "overlay".
+    // layer "top"
+
     // Bar width in logical pixels when collapsed. Minimum: 2.
     // The compositor multiplies by the output scale factor for physical rendering.
     collapsed-width 48
@@ -389,8 +393,8 @@ modules {
 // `niri msg outputs` to list connected output names.
 //
 // Each bar must have a unique name. The "output" field defaults to "all"
-// (appears on every connected output). Set it to a specific output name to
-// target that output only.
+// (appears on every connected output). Use exact Output names to include only
+// those Outputs, or prefix every name with "!" to exclude those Outputs.
 //
 // Example: horizontal bar on a secondary monitor only
 // bar "top-strip" {
@@ -403,6 +407,18 @@ modules {
 //         center "focused-window"
 //         end "clock"
 //     }
+// }
+//
+// Example: bar on every Output except the laptop panel
+// bar "external-side" {
+//     output "!eDP-1"
+//     edge "left"
+// }
+//
+// Example: bar on either of two exact Outputs
+// bar "desk-strip" {
+//     output "DP-2" "HDMI-A-1"
+//     edge "top"
 // }
 //
 // Example: two bars on the same output

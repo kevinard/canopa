@@ -67,6 +67,7 @@ fn try_main() -> anyhow::Result<()> {
     // Extract default surface settings from the first bar (used when AllScreens is active).
     // In AllScreens mode there is always exactly one bar targeting "all" outputs.
     let anchor = config.bars[0].edge.anchor();
+    let layer = config.bars[0].layer.layer_shell();
     let collapsed_width = config.bars[0].collapsed_width;
     // All dimensions passed to iced_layershell are in logical pixels (NFR11 / Story 7.2).
     // The compositor multiplies by each output's scale factor for physical rendering.
@@ -78,11 +79,11 @@ fn try_main() -> anyhow::Result<()> {
         Some((collapsed_width, 0)) // logical width for vertical bar
     };
 
-    // Use AllScreens only for the single-bar-"all" case (Story 9.1).
+    // Use AllScreens only for the single-Bar-without-Output-Target case (Story 9.1).
     // This preserves non-Niri compositor compatibility while supporting multi-bar configs.
     // Any other configuration (multiple bars or output-specific targeting) requires manual mode
     // so each (bar, output) pair can be spawned individually.
-    let use_allscreens = config.bars.len() == 1 && config.bars[0].output == "all";
+    let use_allscreens = config.bars.len() == 1 && config.bars[0].targets_all_outputs();
     let (start_mode, allowed_outputs) = if use_allscreens {
         (StartMode::AllScreens, Vec::new())
     } else {
@@ -108,6 +109,7 @@ fn try_main() -> anyhow::Result<()> {
     .settings(Settings {
         layer_settings: LayerShellSettings {
             anchor,
+            layer,
             exclusive_zone,
             size,
             start_mode,

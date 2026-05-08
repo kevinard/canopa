@@ -1526,7 +1526,6 @@ mod tests {
             bars: vec![
                 BarConfig {
                     name: "main".into(),
-                    output: "all".into(),
                     modules: crate::config::BarModules {
                         start: vec!["workspaces".into()],
                         center: vec![],
@@ -1536,7 +1535,7 @@ mod tests {
                 },
                 BarConfig {
                     name: "secondary".into(),
-                    output: "DP-1".into(),
+                    output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
                     modules: crate::config::BarModules {
                         start: vec!["clock".into()],
                         center: vec![],
@@ -1711,7 +1710,7 @@ mod tests {
         let config = Config {
             bars: vec![BarConfig {
                 name: "main".into(),
-                output: "eDP-1".into(), // only targets eDP-1, not HDMI-A-1
+                output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]), // only targets eDP-1, not HDMI-A-1
                 ..BarConfig::default()
             }],
             modules: vec![],
@@ -1750,7 +1749,6 @@ mod tests {
         let config = Config {
             bars: vec![BarConfig {
                 name: "main".into(),
-                output: "all".into(),
                 ..BarConfig::default()
             }],
             modules: vec![],
@@ -1792,12 +1790,10 @@ mod tests {
             bars: vec![
                 BarConfig {
                     name: "main".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "top".into(),
-                    output: "all".into(),
                     edge: crate::config::Edge::Top,
                     ..BarConfig::default()
                 },
@@ -1842,13 +1838,11 @@ mod tests {
             bars: vec![
                 crate::config::BarConfig {
                     name: "right".into(),
-                    output: "all".into(),
                     edge: Edge::Right,
                     ..crate::config::BarConfig::default()
                 },
                 crate::config::BarConfig {
                     name: "bottom".into(),
-                    output: "all".into(),
                     edge: Edge::Bottom,
                     ..crate::config::BarConfig::default()
                 },

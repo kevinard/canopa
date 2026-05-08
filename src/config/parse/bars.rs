@@ -1,6 +1,8 @@
 use ::kdl::{KdlDocument, KdlNode};
 
-use super::super::{AnimationConfig, BarConfig, BarModules, Edge, ExpandTrigger};
+use super::super::{
+    AnimationConfig, BarConfig, BarLayer, BarModules, Edge, ExpandTrigger, OutputTarget,
+};
 use super::animation;
 use super::style::parse_style_props;
 use crate::config::style::Style;
@@ -43,11 +45,28 @@ fn parse_single_bar_node(node: &KdlNode, name: &str) -> anyhow::Result<BarConfig
 
     let defaults = BarConfig::default();
 
-    let output = children
-        .get_arg("output")
-        .and_then(|v| v.as_string())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| defaults.output.clone());
+    let output_target = match children.get("output") {
+        None => defaults.output_target.clone(),
+        Some(output_node) => {
+            let entries: Vec<String> = output_node
+                .entries()
+                .iter()
+                .filter(|entry| entry.name().is_none())
+                .map(|entry| {
+                    entry
+                        .value()
+                        .as_string()
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "{prefix}.output: expected string Output Target entries."
+                            )
+                        })
+                })
+                .collect::<anyhow::Result<_>>()?;
+            OutputTarget::from_entries(entries, &format!("{prefix}.output"))?
+        }
+    };
 
     let edge = match children.get_arg("edge") {
         None => defaults.edge,
@@ -58,6 +77,19 @@ fn parse_single_bar_node(node: &KdlNode, name: &str) -> anyhow::Result<BarConfig
                 )
             })?;
             Edge::from_str(s)?
+        }
+    };
+
+    let layer = match children.get_arg("layer") {
+        None => defaults.layer,
+        Some(v) => {
+            let s = v.as_string().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{prefix}.layer: expected a string value. \
+                     Expected: one of: background, bottom, top, overlay."
+                )
+            })?;
+            BarLayer::from_str(s)?
         }
     };
 
@@ -158,8 +190,9 @@ fn parse_single_bar_node(node: &KdlNode, name: &str) -> anyhow::Result<BarConfig
 
     Ok(BarConfig {
         name: name.to_string(),
-        output,
+        output_target,
         edge,
+        layer,
         collapsed_width,
         expanded_width,
         expand,
@@ -222,7 +255,7 @@ fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Result<BarModul
 #[cfg(test)]
 mod tests {
     use crate::config::parse::parse;
-    use crate::config::{Edge, ExpandTrigger};
+    use crate::config::{BarLayer, Edge, ExpandTrigger, OutputTarget};
 
     #[test]
     fn parse_full_bar_section() {
@@ -344,6 +377,37 @@ bar "main" {
     }
 
     #[test]
+    fn parse_bar_layer_defaults_to_top() {
+        let config = parse(r#"bar "main" {}"#).unwrap();
+        assert_eq!(config.bars[0].layer, BarLayer::Top);
+    }
+
+    #[test]
+    fn parse_bar_layer_accepts_all_layer_values() {
+        for (raw, expected) in [
+            ("background", BarLayer::Background),
+            ("bottom", BarLayer::Bottom),
+            ("top", BarLayer::Top),
+            ("overlay", BarLayer::Overlay),
+        ] {
+            let config = parse(&format!(r#"bar "main" {{ layer "{raw}" }}"#)).unwrap();
+            assert_eq!(config.bars[0].layer, expected);
+        }
+    }
+
+    #[test]
+    fn parse_bar_layer_invalid_value_errors() {
+        let err = parse(r#"bar "main" { layer "middle" }"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(".layer:"), "got: {err}");
+        assert!(
+            err.contains("Expected: one of: background, bottom, top, overlay"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
     fn parse_tooltip_delay_negative_errors() {
         let kdl = r#"bar "main" { tooltip-delay -1 }"#;
         let err = parse(kdl).unwrap_err().to_string();
@@ -426,7 +490,7 @@ bar "main" {
         let config = parse(kdl).unwrap();
         assert_eq!(config.bars.len(), 1);
         assert_eq!(config.bars[0].name, "main");
-        assert_eq!(config.bars[0].output, "all"); // default
+        assert_eq!(config.bars[0].output_target, OutputTarget::All);
         assert!(matches!(config.bars[0].edge, Edge::Right));
     }
 
@@ -435,7 +499,46 @@ bar "main" {
         let kdl = r#"bar "side" { output "DP-1" }"#;
         let config = parse(kdl).unwrap();
         assert_eq!(config.bars[0].name, "side");
-        assert_eq!(config.bars[0].output, "DP-1");
+        assert_eq!(
+            config.bars[0].output_target,
+            OutputTarget::Include(vec!["DP-1".into()])
+        );
+    }
+
+    #[test]
+    fn parse_bar_output_target_accepts_exact_include_list() {
+        let kdl = r#"bar "side" { output "DP-1" "HDMI-A-1" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(
+            config.bars[0].output_target,
+            OutputTarget::Include(vec!["DP-1".into(), "HDMI-A-1".into()])
+        );
+    }
+
+    #[test]
+    fn parse_bar_output_target_accepts_exact_exclude_list() {
+        let kdl = r#"bar "side" { output "!eDP-1" "!HDMI-A-1" }"#;
+        let config = parse(kdl).unwrap();
+        assert_eq!(
+            config.bars[0].output_target,
+            OutputTarget::Exclude(vec!["eDP-1".into(), "HDMI-A-1".into()])
+        );
+    }
+
+    #[test]
+    fn parse_bar_output_target_rejects_mixed_include_and_exclude() {
+        let err = parse(r#"bar "side" { output "DP-1" "!eDP-1" }"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("cannot mix"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_bar_output_target_rejects_duplicate_entries() {
+        let err = parse(r#"bar "side" { output "DP-1" "DP-1" }"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("duplicate Output Target entry"), "got: {err}");
     }
 
     #[test]
@@ -450,9 +553,12 @@ bar "top-strip" {
         let config = parse(kdl).unwrap();
         assert_eq!(config.bars.len(), 2);
         assert_eq!(config.bars[0].name, "main");
-        assert_eq!(config.bars[0].output, "all");
+        assert_eq!(config.bars[0].output_target, OutputTarget::All);
         assert_eq!(config.bars[1].name, "top-strip");
-        assert_eq!(config.bars[1].output, "DP-1");
+        assert_eq!(
+            config.bars[1].output_target,
+            OutputTarget::Include(vec!["DP-1".into()])
+        );
         assert!(matches!(config.bars[1].edge, Edge::Top));
     }
 
@@ -469,10 +575,10 @@ bar "top-strip" {
     }
 
     #[test]
-    fn parse_bar_defaults_output_to_all() {
+    fn parse_bar_defaults_output_target_to_all() {
         let kdl = r#"bar "main" { }"#;
         let config = parse(kdl).unwrap();
-        assert_eq!(config.bars[0].output, "all");
+        assert_eq!(config.bars[0].output_target, OutputTarget::All);
     }
 
     #[test]
@@ -520,7 +626,10 @@ bar "full" {
 "#;
         let config = parse(kdl).unwrap();
         assert_eq!(config.bars[0].name, "full");
-        assert_eq!(config.bars[0].output, "DP-2");
+        assert_eq!(
+            config.bars[0].output_target,
+            OutputTarget::Include(vec!["DP-2".into()])
+        );
         assert!(matches!(config.bars[0].edge, Edge::Right));
         assert_eq!(config.bars[0].collapsed_width, 56);
         assert_eq!(config.bars[0].expanded_width, 240);
@@ -538,7 +647,7 @@ bar "full" {
     fn parse_bar_output_all_explicit() {
         let kdl = r#"bar "main" { output "all" }"#;
         let config = parse(kdl).unwrap();
-        assert_eq!(config.bars[0].output, "all");
+        assert_eq!(config.bars[0].output_target, OutputTarget::All);
     }
 
     #[test]
@@ -546,19 +655,31 @@ bar "full" {
         let config = parse("").unwrap();
         assert_eq!(config.bars.len(), 1);
         assert_eq!(config.bars[0].name, "main");
-        assert_eq!(config.bars[0].output, "all");
+        assert_eq!(config.bars[0].output_target, OutputTarget::All);
     }
 
     #[test]
     fn parse_two_bars_different_outputs() {
         let kdl = r#"
-bar "left" { output "eDP-1" edge "left" }
-bar "right" { output "DP-1" edge "right" }
+bar "left" {
+    output "eDP-1"
+    edge "left"
+}
+bar "right" {
+    output "DP-1"
+    edge "right"
+}
 "#;
         let config = parse(kdl).unwrap();
         assert_eq!(config.bars.len(), 2);
-        assert_eq!(config.bars[0].output, "eDP-1");
-        assert_eq!(config.bars[1].output, "DP-1");
+        assert_eq!(
+            config.bars[0].output_target,
+            OutputTarget::Include(vec!["eDP-1".into()])
+        );
+        assert_eq!(
+            config.bars[1].output_target,
+            OutputTarget::Include(vec!["DP-1".into()])
+        );
     }
 
     #[test]
@@ -573,7 +694,10 @@ bar "main" {
 }
 "#;
         let config = parse(kdl).unwrap();
-        assert_eq!(config.bars[0].output, "eDP-1");
+        assert_eq!(
+            config.bars[0].output_target,
+            OutputTarget::Include(vec!["eDP-1".into()])
+        );
         assert_eq!(config.bars[0].modules.start, vec!["workspaces"]);
         assert_eq!(config.bars[0].modules.end, vec!["clock"]);
     }
@@ -626,24 +750,29 @@ bar "gamma" { }
     fn parse_two_bars_both_target_all() {
         let kdl = r#"
 bar "side" { output "all" }
-bar "top" { output "all" edge "top" }
+bar "top" {
+    output "all"
+    edge "top"
+}
 "#;
         let config = parse(kdl).unwrap();
         assert_eq!(config.bars.len(), 2);
-        assert_eq!(config.bars[0].output, "all");
-        assert_eq!(config.bars[1].output, "all");
-        assert!(matches!(config.bars[1].edge, Edge::Left));
+        assert_eq!(config.bars[0].output_target, OutputTarget::All);
+        assert_eq!(config.bars[1].output_target, OutputTarget::All);
+        assert!(matches!(config.bars[1].edge, Edge::Top));
     }
 
     #[test]
-    fn parse_bar_output_field_round_trip() {
+    fn parse_bar_output_target_field_round_trip() {
         for output in &["all", "eDP-1", "DP-2", "HDMI-A-1"] {
             let kdl = format!(r#"bar "main" {{ output "{output}" }}"#);
             let config = parse(&kdl).unwrap();
-            assert_eq!(
-                &config.bars[0].output, output,
-                "output round-trip failed for {output}"
-            );
+            let expected = if *output == "all" {
+                OutputTarget::All
+            } else {
+                OutputTarget::Include(vec![output.to_string()])
+            };
+            assert_eq!(config.bars[0].output_target, expected);
         }
     }
 }

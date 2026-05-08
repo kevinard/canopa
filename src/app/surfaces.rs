@@ -416,12 +416,10 @@ impl App {
 
     /// Opens a layer-shell window for one (bar, output) pair, records it in `pending` and
     /// `surfaces`, and returns the open task. Shared by `boot` and `open_new_output_windows`.
-    pub(super) fn spawn_bar_on_output(
+    pub(super) fn bar_window_settings(
         bar: &crate::config::BarConfig,
         output_name: &str,
-        pending: &mut HashMap<iced::window::Id, (String, String)>,
-        surfaces: &mut HashMap<iced::window::Id, SurfaceState>,
-    ) -> Task<Message> {
+    ) -> NewLayerShellSettings {
         let anchor = bar.edge.anchor();
         let collapsed = bar.collapsed_width;
         let exclusive_zone = i32::try_from(collapsed).unwrap_or(48);
@@ -430,14 +428,26 @@ impl App {
         } else {
             Some((collapsed, 0))
         };
-        let settings = NewLayerShellSettings {
+        NewLayerShellSettings {
             anchor,
+            layer: bar.layer.layer_shell(),
             exclusive_zone: Some(exclusive_zone),
             size,
             output_option: OutputOption::OutputName(output_name.to_string()),
             namespace: Some(Self::namespace()),
             ..Default::default()
-        };
+        }
+    }
+
+    /// Opens a layer-shell window for one (bar, output) pair, records it in `pending` and
+    /// `surfaces`, and returns the open task. Shared by `boot` and `open_new_output_windows`.
+    pub(super) fn spawn_bar_on_output(
+        bar: &crate::config::BarConfig,
+        output_name: &str,
+        pending: &mut HashMap<iced::window::Id, (String, String)>,
+        surfaces: &mut HashMap<iced::window::Id, SurfaceState>,
+    ) -> Task<Message> {
+        let settings = Self::bar_window_settings(bar, output_name);
         let (id, task) = Message::layershell_open(settings);
         pending.insert(id, (output_name.to_string(), bar.name.clone()));
         surfaces.insert(
@@ -470,7 +480,7 @@ impl App {
                     .bars
                     .iter()
                     .enumerate()
-                    .filter(move |(_, b)| b.output == "all" || b.output == output_name)
+                    .filter(move |(_, b)| b.matches_output(output_name))
                     .filter(|(_, b)| {
                         !known_pairs.contains(&(output_name.to_string(), b.name.clone()))
                     })
@@ -854,7 +864,7 @@ mod tests {
                 },
                 BarConfig {
                     name: "side".into(),
-                    output: "DP-1".into(),
+                    output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
                     ..BarConfig::default()
                 },
             ],
@@ -887,12 +897,10 @@ mod tests {
             bars: vec![
                 BarConfig {
                     name: "main".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "top".into(),
-                    output: "all".into(),
                     edge: Edge::Top,
                     ..BarConfig::default()
                 },
@@ -909,12 +917,22 @@ mod tests {
     }
 
     #[test]
+    fn bar_surface_window_settings_use_configured_bar_layer() {
+        let bar = crate::config::BarConfig {
+            layer: crate::config::BarLayer::Background,
+            ..crate::config::BarConfig::default()
+        };
+        let settings = App::bar_window_settings(&bar, "eDP-1");
+        assert_eq!(settings.layer, iced_layershell::reexport::Layer::Background);
+    }
+
+    #[test]
     fn surface_bar_name_set_from_pending_surface_key() {
         use crate::config::BarConfig;
         let config = crate::config::Config {
             bars: vec![BarConfig {
                 name: "main".into(),
-                output: "eDP-1".into(),
+                output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]),
                 ..BarConfig::default()
             }],
             modules: vec![],
@@ -938,7 +956,7 @@ mod tests {
         let config = crate::config::Config {
             bars: vec![BarConfig {
                 name: "main".into(),
-                output: "eDP-1".into(),
+                output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]),
                 ..BarConfig::default()
             }],
             modules: vec![],
@@ -962,13 +980,11 @@ mod tests {
             bars: vec![
                 crate::config::BarConfig {
                     name: "left".into(),
-                    output: "all".into(),
                     edge: Edge::Left,
                     ..crate::config::BarConfig::default()
                 },
                 crate::config::BarConfig {
                     name: "top".into(),
-                    output: "all".into(),
                     edge: Edge::Top,
                     ..crate::config::BarConfig::default()
                 },

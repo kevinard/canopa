@@ -593,7 +593,7 @@ mod tests {
     }
 
     #[test]
-    fn script_failed_event_retains_previous_state() {
+    fn script_failed_event_marks_module_unavailable_for_that_refresh() {
         use crate::config::{ModuleConfig, ModuleParams, ScriptConfig};
 
         let mut config = Config {
@@ -626,10 +626,10 @@ mod tests {
             ModuleEvent::Script(ScriptEvent::Failed),
         )));
 
-        match app.modules.state(&id) {
-            Some(ModuleState::Script(s)) => assert_eq!(s.output, "prev"),
-            other => panic!("expected Script state, got {:?}", other),
-        }
+        assert!(matches!(
+            app.modules.state(&id),
+            Some(ModuleState::Unavailable)
+        ));
     }
 
     #[test]

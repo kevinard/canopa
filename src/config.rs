@@ -673,16 +673,80 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Return all bar configs that should appear on the given output.
+    /// Return all bar configs that should appear on the given Output.
     ///
-    /// A bar with `output == "all"` appears on every connected output.
-    /// A bar with a specific output name appears only on that output.
-    /// In AllScreens mode (`output_name == ""`), returns all bars with `output == "all"`.
+    /// In AllScreens mode (`output_name == ""`), returns Bars without an Output Target.
     pub fn bars_for_output(&self, output_name: &str) -> Vec<&BarConfig> {
         self.bars
             .iter()
-            .filter(|b| b.output == "all" || b.output == output_name)
+            .filter(|b| b.matches_output(output_name))
             .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OutputTarget {
+    All,
+    Include(Vec<String>),
+    Exclude(Vec<String>),
+}
+
+impl Default for OutputTarget {
+    fn default() -> Self {
+        OutputTarget::All
+    }
+}
+
+impl OutputTarget {
+    pub fn from_entries(entries: Vec<String>, path: &str) -> anyhow::Result<Self> {
+        if entries.is_empty() {
+            anyhow::bail!("{path}: expected at least one Output name.");
+        }
+        if entries.len() == 1 && entries[0] == "all" {
+            return Ok(OutputTarget::All);
+        }
+        if entries.iter().any(|entry| entry == "all") {
+            anyhow::bail!("{path}: `all` cannot be mixed with exact Output Target entries.");
+        }
+
+        let has_positive = entries.iter().any(|entry| !entry.starts_with('!'));
+        let has_negative = entries.iter().any(|entry| entry.starts_with('!'));
+        if has_positive && has_negative {
+            anyhow::bail!(
+                "{path}: cannot mix include and exclude Output Target entries in one list."
+            );
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        let mut normalized = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let name = entry.strip_prefix('!').unwrap_or(entry.as_str());
+            if name.is_empty() {
+                anyhow::bail!("{path}: Output Target entries must not be empty.");
+            }
+            if !seen.insert(name.to_string()) {
+                anyhow::bail!("{path}: duplicate Output Target entry {name:?}.");
+            }
+            normalized.push(name.to_string());
+        }
+
+        if has_negative {
+            Ok(OutputTarget::Exclude(normalized))
+        } else {
+            Ok(OutputTarget::Include(normalized))
+        }
+    }
+
+    pub fn matches(&self, output_name: &str) -> bool {
+        match self {
+            OutputTarget::All => true,
+            OutputTarget::Include(outputs) => outputs.iter().any(|output| output == output_name),
+            OutputTarget::Exclude(outputs) => !outputs.iter().any(|output| output == output_name),
+        }
+    }
+
+    pub fn is_all(&self) -> bool {
+        matches!(self, OutputTarget::All)
     }
 }
 
@@ -717,10 +781,11 @@ impl Default for AnimationConfig {
 pub struct BarConfig {
     /// Instance name — unique identifier for this bar (e.g. "main", "top-strip").
     pub name: String,
-    /// Wayland output name this bar targets, or `"all"` to appear on every output.
-    /// Default: `"all"`.
-    pub output: String,
+    /// Exact Output Target expression controlling which Outputs host this Bar.
+    pub output_target: OutputTarget,
     pub edge: Edge,
+    /// Compositor stacking layer used by this Bar's Bar Surfaces.
+    pub layer: BarLayer,
     /// Collapsed bar width, in **logical pixels**.
     /// The compositor multiplies this by the output scale factor for physical rendering (NFR11).
     pub collapsed_width: u32,
@@ -753,8 +818,9 @@ impl Default for BarConfig {
     fn default() -> Self {
         BarConfig {
             name: "main".to_string(),
-            output: "all".to_string(),
+            output_target: OutputTarget::All,
             edge: Edge::Left,
+            layer: BarLayer::Top,
             collapsed_width: 48,
             expanded_width: 200,
             expand: true,
@@ -765,6 +831,49 @@ impl Default for BarConfig {
             animation: AnimationConfig::default(),
             style: Style::default(),
             modules: BarModules::default(),
+        }
+    }
+}
+
+impl BarConfig {
+    pub fn matches_output(&self, output_name: &str) -> bool {
+        self.output_target.matches(output_name)
+    }
+
+    pub fn targets_all_outputs(&self) -> bool {
+        self.output_target.is_all()
+    }
+}
+
+/// Compositor stacking layer for a Bar Surface.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BarLayer {
+    Background,
+    Bottom,
+    #[default]
+    Top,
+    Overlay,
+}
+
+impl BarLayer {
+    pub(crate) fn from_str(s: &str) -> anyhow::Result<BarLayer> {
+        match s {
+            "background" => Ok(BarLayer::Background),
+            "bottom" => Ok(BarLayer::Bottom),
+            "top" => Ok(BarLayer::Top),
+            "overlay" => Ok(BarLayer::Overlay),
+            other => anyhow::bail!(
+                "bar.layer: unknown value {other:?}. Expected: one of: background, bottom, top, overlay."
+            ),
+        }
+    }
+
+    pub fn layer_shell(self) -> iced_layershell::reexport::Layer {
+        match self {
+            BarLayer::Background => iced_layershell::reexport::Layer::Background,
+            BarLayer::Bottom => iced_layershell::reexport::Layer::Bottom,
+            BarLayer::Top => iced_layershell::reexport::Layer::Top,
+            BarLayer::Overlay => iced_layershell::reexport::Layer::Overlay,
         }
     }
 }
@@ -1520,7 +1629,7 @@ mod tests {
 
     #[test]
     fn bars_for_output_all_matches_any_output() {
-        let config = Config::default(); // single bar "main" with output "all"
+        let config = Config::default();
         let bars = config.bars_for_output("DP-1");
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0].name, "main");
@@ -1532,12 +1641,11 @@ mod tests {
         config.bars = vec![
             BarConfig {
                 name: "main".into(),
-                output: "all".into(),
                 ..BarConfig::default()
             },
             BarConfig {
                 name: "side".into(),
-                output: "DP-1".into(),
+                output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
                 ..BarConfig::default()
             },
         ];
@@ -1552,7 +1660,7 @@ mod tests {
         let mut config = Config::default();
         config.bars = vec![BarConfig {
             name: "side".into(),
-            output: "DP-1".into(),
+            output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
             ..BarConfig::default()
         }];
         let bars = config.bars_for_output("eDP-1");
@@ -1565,7 +1673,7 @@ mod tests {
         let config = Config::default();
         let bars = config.bars_for_output("");
         assert_eq!(bars.len(), 1);
-        assert_eq!(bars[0].output, "all");
+        assert_eq!(bars[0].output_target, OutputTarget::All);
     }
 
     #[test]
@@ -1574,12 +1682,11 @@ mod tests {
             bars: vec![
                 BarConfig {
                     name: "main".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "main".into(),
-                    output: "DP-1".into(),
+                    output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
                     ..BarConfig::default()
                 },
             ],
@@ -1595,7 +1702,6 @@ mod tests {
         let config = Config {
             bars: vec![BarConfig {
                 name: "x".into(),
-                output: "all".into(),
                 collapsed_width: 1,
                 ..BarConfig::default()
             }],
@@ -1735,8 +1841,8 @@ mod tests {
     }
 
     #[test]
-    fn bar_config_default_output_is_all() {
-        assert_eq!(BarConfig::default().output, "all");
+    fn bar_config_default_output_target_is_all() {
+        assert_eq!(BarConfig::default().output_target, OutputTarget::All);
     }
 
     #[test]
@@ -1750,8 +1856,8 @@ mod tests {
     }
 
     #[test]
-    fn config_default_bar_output_is_all() {
-        assert_eq!(Config::default().bars[0].output, "all");
+    fn config_default_bar_output_target_is_all() {
+        assert_eq!(Config::default().bars[0].output_target, OutputTarget::All);
     }
 
     #[test]
@@ -1769,12 +1875,10 @@ mod tests {
             bars: vec![
                 BarConfig {
                     name: "a".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "b".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
             ],
@@ -1791,17 +1895,16 @@ mod tests {
             bars: vec![
                 BarConfig {
                     name: "main".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "extra".into(),
-                    output: "eDP-1".into(),
+                    output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "other".into(),
-                    output: "DP-1".into(),
+                    output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
                     ..BarConfig::default()
                 },
             ],
@@ -1817,22 +1920,53 @@ mod tests {
     }
 
     #[test]
+    fn bars_for_output_include_target_matches_exact_case_sensitive_names() {
+        let config = Config {
+            bars: vec![BarConfig {
+                name: "external".into(),
+                output_target: OutputTarget::Include(vec!["DP-1".into(), "HDMI-A-1".into()]),
+                ..BarConfig::default()
+            }],
+            modules: vec![],
+            command_policy: CommandPolicy::default(),
+        };
+
+        assert_eq!(config.bars_for_output("DP-1").len(), 1);
+        assert_eq!(config.bars_for_output("dp-1").len(), 0);
+        assert_eq!(config.bars_for_output("eDP-1").len(), 0);
+    }
+
+    #[test]
+    fn bars_for_output_exclude_target_matches_exact_case_sensitive_names() {
+        let config = Config {
+            bars: vec![BarConfig {
+                name: "not-laptop".into(),
+                output_target: OutputTarget::Exclude(vec!["eDP-1".into()]),
+                ..BarConfig::default()
+            }],
+            modules: vec![],
+            command_policy: CommandPolicy::default(),
+        };
+
+        assert_eq!(config.bars_for_output("DP-1").len(), 1);
+        assert_eq!(config.bars_for_output("edp-1").len(), 1);
+        assert_eq!(config.bars_for_output("eDP-1").len(), 0);
+    }
+
+    #[test]
     fn bars_for_output_preserves_order() {
         let config = Config {
             bars: vec![
                 BarConfig {
                     name: "first".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "second".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "third".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
             ],
@@ -1851,12 +1985,11 @@ mod tests {
             bars: vec![
                 BarConfig {
                     name: "main".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "side".into(),
-                    output: "DP-1".into(),
+                    output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
                     ..BarConfig::default()
                 },
             ],
@@ -1872,12 +2005,11 @@ mod tests {
             bars: vec![
                 BarConfig {
                     name: "side".into(),
-                    output: "all".into(),
                     ..BarConfig::default()
                 },
                 BarConfig {
                     name: "side".into(),
-                    output: "DP-1".into(),
+                    output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
                     ..BarConfig::default()
                 },
             ],
@@ -1898,7 +2030,7 @@ mod tests {
                 },
                 BarConfig {
                     name: "side".into(),
-                    output: "DP-1".into(),
+                    output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
                     collapsed_width: 100,
                     expanded_width: 50,
                     ..BarConfig::default()
@@ -1920,7 +2052,7 @@ mod tests {
         let config = Config {
             bars: vec![BarConfig {
                 name: "main".into(),
-                output: "dp-1".into(),
+                output_target: crate::config::OutputTarget::Include(vec!["dp-1".into()]),
                 ..BarConfig::default()
             }],
             modules: vec![],

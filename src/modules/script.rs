@@ -9,7 +9,7 @@ pub struct ScriptState {
 pub enum ScriptEvent {
     /// Command exited 0; stdout (trimmed) is the new output.
     Output(String),
-    /// Command exited non-zero or failed to spawn; previous output retained.
+    /// Command exited non-zero or failed to spawn.
     Failed,
 }
 
