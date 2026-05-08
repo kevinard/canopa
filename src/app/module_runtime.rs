@@ -204,7 +204,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.bottom = vec!["battery".into()];
+        config.bars[0].modules.end = vec!["battery".into()];
         App::boot(config, vec![]).0
     }
 
@@ -219,7 +219,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.bottom = vec!["network".into()];
+        config.bars[0].modules.end = vec!["network".into()];
         App::boot(config, vec![]).0
     }
 
@@ -237,7 +237,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.bottom = vec!["volume".into()];
+        config.bars[0].modules.end = vec!["volume".into()];
         App::boot(config, vec![]).0
     }
 
@@ -264,7 +264,7 @@ mod tests {
             }],
             ..Config::default()
         };
-        config.bars[0].modules.bottom = vec!["tray".into()];
+        config.bars[0].modules.end = vec!["tray".into()];
         config.bars[0].edge = Edge::Bottom;
         config
     }
@@ -322,7 +322,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        config.bars[0].modules.bottom = vec!["battery".into(), "battery2".into()];
+        config.bars[0].modules.end = vec!["battery".into(), "battery2".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
         app.push_battery_state(42.0, false);
@@ -339,17 +339,17 @@ mod tests {
     #[test]
     fn undeclared_known_type_in_bar_modules_uses_defaults() {
         let mut config = Config::default();
-        config.bars[0].modules.bottom = vec!["clock".into()];
+        config.bars[0].modules.end = vec!["clock".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
 
     #[test]
-    fn undeclared_unknown_name_in_bar_modules_is_skipped() {
+    fn undeclared_unknown_name_in_bar_modules_is_configuration_error() {
         let mut config = Config::default();
-        config.bars[0].modules.bottom = vec!["my-script".into()];
-        let (app, _) = App::boot(config, vec![]);
-        assert!(app.modules.is_empty());
+        config.bars[0].modules.end = vec!["my-script".into()];
+        let err = crate::config::validate(&config).unwrap_err();
+        assert!(err.to_string().contains("unknown module"), "got: {err}");
     }
 
     #[test]
@@ -364,7 +364,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.bottom = vec!["clock".into()];
+        config.bars[0].modules.end = vec!["clock".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
@@ -386,7 +386,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.bottom = vec!["script".into()];
+        config.bars[0].modules.end = vec!["script".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
@@ -439,7 +439,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.bottom = vec!["volume".into()];
+        config.bars[0].modules.end = vec!["volume".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let id = ModuleId::new("volume");
         let first = ModuleState::Volume(crate::modules::volume::VolumeState {
@@ -476,7 +476,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.bottom = vec!["button".into()];
+        config.bars[0].modules.end = vec!["button".into()];
         let (app, _) = App::boot(config, vec![]);
         assert_eq!(app.modules.len(), 1);
     }
@@ -536,7 +536,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["button".into()];
+        config.bars[0].modules.start = vec!["button".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::ModuleClick(
@@ -577,7 +577,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into()];
+        config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::ModuleRightClick(
@@ -610,7 +610,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.bottom = vec!["script".into()];
+        config.bars[0].modules.end = vec!["script".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
         let id = ModuleId::new("script");
@@ -789,7 +789,7 @@ mod tests {
             ],
             ..Config::default()
         };
-        config.bars[0].modules.top = vec!["workspaces-left".into(), "workspaces-right".into()];
+        config.bars[0].modules.start = vec!["workspaces-left".into(), "workspaces-right".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
         let first = vec![make_workspace(0, true), make_workspace(1, false)];
@@ -826,7 +826,7 @@ mod tests {
 
         let old_item = tray_item("org.old");
         app.modules.push(
-            Zone::Bottom,
+            Zone::End,
             Box::new(crate::modules::tray::TrayIconModule::new(
                 old_item,
                 "tray".into(),
@@ -898,7 +898,7 @@ mod tests {
             }],
             ..Config::default()
         };
-        config.bars[0].modules.top = vec!["workspaces".into()];
+        config.bars[0].modules.start = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
         let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
@@ -937,7 +937,7 @@ mod tests {
             ],
             ..Config::default()
         };
-        config.bars[0].modules.top = vec!["tray-left".into(), "tray-right".into()];
+        config.bars[0].modules.start = vec!["tray-left".into(), "tray-right".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
         let item_a = tray_item("org.a");

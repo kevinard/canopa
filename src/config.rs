@@ -37,6 +37,22 @@ fn is_known_config_module_type(module_type: &str) -> bool {
     crate::modules::ModuleKind::from_config_name(module_type).is_some()
 }
 
+fn module_descriptor_for_config_name(
+    config_name: &str,
+) -> Option<&'static crate::modules::ModuleDescriptor> {
+    crate::modules::MODULE_DESCRIPTORS
+        .iter()
+        .find(|descriptor| descriptor.config_name == config_name)
+}
+
+fn bar_module_placements(bar: &BarConfig) -> [(crate::modules::Zone, &[String]); 3] {
+    [
+        (crate::modules::Zone::Start, &bar.modules.start),
+        (crate::modules::Zone::Center, &bar.modules.center),
+        (crate::modules::Zone::End, &bar.modules.end),
+    ]
+}
+
 /// Format strings for the clock module (AC: #4, #5).
 #[derive(Debug, Clone)]
 pub struct ClockConfig {
@@ -673,9 +689,9 @@ impl Config {
 /// Per-zone ordered list of module names for the bar layout.
 #[derive(Debug, Clone, Default)]
 pub struct BarModules {
-    pub top: Vec<String>,
+    pub start: Vec<String>,
     pub center: Vec<String>,
-    pub bottom: Vec<String>,
+    pub end: Vec<String>,
 }
 
 /// Animation timing for expand/collapse transitions.
@@ -891,6 +907,7 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
         }
     }
 
+    let mut declared_modules = std::collections::HashMap::new();
     for (i, mc) in config.modules.iter().enumerate() {
         if !is_known_config_module_type(&mc.module_type) {
             anyhow::bail!(
@@ -898,6 +915,58 @@ pub(crate) fn validate(config: &Config) -> anyhow::Result<()> {
                  Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray.",
                 mc.module_type
             );
+        }
+        if let Some(previous) = declared_modules.insert(mc.name.as_str(), mc) {
+            anyhow::bail!(
+                "modules[{i}] {:?}: duplicate name. **Module Names** must be globally unique; {:?} was already declared as type {:?}.",
+                mc.name,
+                previous.name,
+                previous.module_type
+            );
+        }
+        if let Some(reserved) = module_descriptor_for_config_name(&mc.name)
+            && reserved.config_name != mc.module_type
+        {
+            anyhow::bail!(
+                "modules[{i}] {:?}: reserved built-in Module Name must keep Module Kind {:?}, got {:?}.",
+                mc.name,
+                reserved.config_name,
+                mc.module_type
+            );
+        }
+    }
+
+    for bar in &config.bars {
+        let mut seen_in_bar = std::collections::HashSet::new();
+        for (zone, names) in bar_module_placements(bar) {
+            for name in names {
+                let resolved_name = if declared_modules.contains_key(name.as_str()) {
+                    name.as_str()
+                } else if let Some(descriptor) = module_descriptor_for_config_name(name) {
+                    if descriptor.synthesized_params_factory.is_none() {
+                        anyhow::bail!(
+                            "bar {:?}.modules.{zone:?}: module {:?} must be declared before it can be placed.",
+                            bar.name,
+                            name
+                        );
+                    }
+                    descriptor.config_name
+                } else {
+                    anyhow::bail!(
+                        "bar {:?}.modules.{zone:?}: unknown module {:?}. Expected a declared Module Name or a synthesizable built-in Module Kind.",
+                        bar.name,
+                        name
+                    );
+                };
+
+                if !seen_in_bar.insert(resolved_name) {
+                    anyhow::bail!(
+                        "bar {:?}: module {:?} is placed more than once in this Bar.",
+                        bar.name,
+                        resolved_name
+                    );
+                }
+            }
         }
     }
     Ok(())
@@ -1163,10 +1232,10 @@ mod tests {
         assert_eq!(config.bars[0].collapsed_width, 48);
         assert_eq!(config.bars[0].expanded_width, 200);
         // UX-DR18: zone assignments
-        assert_eq!(config.bars[0].modules.top, vec!["workspaces"]);
+        assert_eq!(config.bars[0].modules.start, vec!["workspaces"]);
         assert_eq!(config.bars[0].modules.center, vec!["focused-window"]);
         assert_eq!(
-            config.bars[0].modules.bottom,
+            config.bars[0].modules.end,
             vec!["volume", "network", "battery", "clock"]
         );
         // All 6 default modules declared
@@ -1535,6 +1604,127 @@ mod tests {
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("collapsed-width"), "got: {err}");
+    }
+
+    fn clock_module(name: &str) -> ModuleConfig {
+        ModuleConfig {
+            name: name.into(),
+            module_type: "clock".into(),
+            params: ModuleParams::Clock(ClockConfig::default()),
+            actions: ModuleActionsConfig::default(),
+        }
+    }
+
+    fn script_module(name: &str) -> ModuleConfig {
+        ModuleConfig {
+            name: name.into(),
+            module_type: "script".into(),
+            params: ModuleParams::Script(ScriptConfig {
+                command: CommandConfig::Argv {
+                    program: "date".into(),
+                    args: vec![],
+                },
+                interval: 60,
+                format: FormatConfig::default(),
+                tooltip: TooltipSetting::Default,
+            }),
+            actions: ModuleActionsConfig::default(),
+        }
+    }
+
+    #[test]
+    fn validate_duplicate_module_name_errors() {
+        let config = Config {
+            modules: vec![clock_module("local-clock"), script_module("local-clock")],
+            ..Config::default()
+        };
+
+        let err = validate(&config).unwrap_err();
+        assert!(err.to_string().contains("duplicate name"), "got: {err}");
+        assert!(err.to_string().contains("local-clock"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_reserved_module_name_must_match_kind() {
+        let config = Config {
+            modules: vec![script_module("clock")],
+            ..Config::default()
+        };
+
+        let err = validate(&config).unwrap_err();
+        assert!(err.to_string().contains("reserved"), "got: {err}");
+        assert!(err.to_string().contains("clock"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_reserved_module_name_with_matching_kind_passes() {
+        let config = Config {
+            modules: vec![clock_module("clock")],
+            ..Config::default()
+        };
+
+        validate(&config).unwrap();
+    }
+
+    #[test]
+    fn validate_unknown_module_placement_errors() {
+        let mut config = Config::default();
+        config.bars[0].modules.start = vec!["utc".into()];
+
+        let err = validate(&config).unwrap_err();
+        assert!(err.to_string().contains("unknown module"), "got: {err}");
+        assert!(err.to_string().contains("utc"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_non_synthesizable_builtin_placement_errors() {
+        let mut config = Config::default();
+        config.bars[0].modules.start = vec!["script".into()];
+
+        let err = validate(&config).unwrap_err();
+        assert!(err.to_string().contains("must be declared"), "got: {err}");
+        assert!(err.to_string().contains("script"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_duplicate_resolved_module_within_one_bar_errors() {
+        let mut config = Config::default();
+        config.bars[0].modules.start = vec!["clock".into()];
+        config.bars[0].modules.end = vec!["clock".into()];
+
+        let err = validate(&config).unwrap_err();
+        assert!(
+            err.to_string().contains("placed more than once"),
+            "got: {err}"
+        );
+        assert!(err.to_string().contains("clock"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_same_module_across_different_bars_passes() {
+        let config = Config {
+            bars: vec![
+                BarConfig {
+                    name: "left".into(),
+                    modules: BarModules {
+                        start: vec!["clock".into()],
+                        ..BarModules::default()
+                    },
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "right".into(),
+                    modules: BarModules {
+                        end: vec!["clock".into()],
+                        ..BarModules::default()
+                    },
+                    ..BarConfig::default()
+                },
+            ],
+            ..Config::default()
+        };
+
+        validate(&config).unwrap();
     }
 
     // --- Additional Story 9.1 config tests ---

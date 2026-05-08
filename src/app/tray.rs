@@ -346,7 +346,7 @@ mod tests {
             }],
             ..Config::default()
         };
-        config.bars[0].modules.bottom = vec!["tray".into()];
+        config.bars[0].modules.end = vec!["tray".into()];
         config.bars[0].edge = Edge::Bottom;
         config
     }

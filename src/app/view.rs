@@ -68,17 +68,14 @@ fn render_bar_model<'a>(
 ) -> Element<'a, Message> {
     let is_horizontal = model.is_horizontal;
     let content_size = model.content_size;
-    let top: Vec<Element<'_, Message>> = model.top.into_iter().map(|entry| entry.element).collect();
+    let start: Vec<Element<'_, Message>> =
+        model.start.into_iter().map(|entry| entry.element).collect();
     let center: Vec<Element<'_, Message>> = model
         .center
         .into_iter()
         .map(|entry| entry.element)
         .collect();
-    let bottom: Vec<Element<'_, Message>> = model
-        .bottom
-        .into_iter()
-        .map(|entry| entry.element)
-        .collect();
+    let end: Vec<Element<'_, Message>> = model.end.into_iter().map(|entry| entry.element).collect();
 
     let border_style = |_theme: &_| container::Style {
         background: Some(iced::Background::Color(crate::theme::SURFACE1)),
@@ -101,7 +98,7 @@ fn render_bar_model<'a>(
         )
     };
 
-    let content = container(zone_layout(top, center, bottom, is_horizontal))
+    let content = container(zone_layout(start, center, end, is_horizontal))
         .width(content_w)
         .height(content_h);
     let border_strip = container(Space::new())

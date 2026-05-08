@@ -132,13 +132,22 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
             })?
             .to_string();
 
+        let explicit_type = node
+            .children()
+            .and_then(|c| c.get("type"))
+            .and_then(|n| n.entries().first())
+            .and_then(|e| e.value().as_string());
         let module_type = if super::is_known_config_module_type(&name) {
+            if let Some(explicit_type) = explicit_type
+                && explicit_type != name
+            {
+                anyhow::bail!(
+                    "modules[{i}] \"{name}\": reserved built-in Module Name must keep Module Kind {name:?}, got {explicit_type:?}."
+                );
+            }
             name.clone()
         } else {
-            node.children()
-                .and_then(|c| c.get("type"))
-                .and_then(|n| n.entries().first())
-                .and_then(|e| e.value().as_string())
+            explicit_type
                 .ok_or_else(|| {
                     anyhow::anyhow!(
                         "modules[{i}] \"{name}\": name is not a known module type. \

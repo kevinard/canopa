@@ -1024,7 +1024,7 @@ mod tests {
             }],
             ..crate::config::Config::default()
         };
-        config.bars[0].modules.bottom = vec!["tray".into()];
+        config.bars[0].modules.end = vec!["tray".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
         let _ = app.handle_tray_event(crate::dbus::sni::host::TrayEvent::ItemAdded(item));
@@ -1054,7 +1054,7 @@ mod tests {
             }],
             ..crate::config::Config::default()
         };
-        config.bars[0].modules.bottom = vec!["battery".into()];
+        config.bars[0].modules.end = vec!["battery".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let module = ModuleId::new("battery");

@@ -171,9 +171,9 @@ mod tests {
             modules,
             ..Config::default()
         };
-        config.bars[0].modules.top = bar_module_names.into_iter().map(str::to_string).collect();
+        config.bars[0].modules.start = bar_module_names.into_iter().map(str::to_string).collect();
         config.bars[0].modules.center.clear();
-        config.bars[0].modules.bottom.clear();
+        config.bars[0].modules.end.clear();
         App::boot(config, vec![]).0
     }
 

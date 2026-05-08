@@ -25,9 +25,9 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
     let mut seen_names = HashSet::new();
     for bar in &config.bars {
         for (zone, names) in [
-            (Zone::Top, &bar.modules.top),
+            (Zone::Start, &bar.modules.start),
             (Zone::Center, &bar.modules.center),
-            (Zone::Bottom, &bar.modules.bottom),
+            (Zone::End, &bar.modules.end),
         ] {
             for name in names {
                 if seen_names.insert(name.clone()) {
@@ -55,9 +55,9 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
                 })?;
             (module_config, descriptor, constructor)
         } else if let Some(descriptor) = descriptors.get(name.as_str()).copied() {
-            let Some(params) = descriptor.synthesized_params() else {
-                continue;
-            };
+            let params = descriptor
+                .synthesized_params()
+                .with_context(|| format!("module {name:?} must be declared before placement"))?;
             synthesized = ModuleConfig {
                 name: name.clone(),
                 module_type: descriptor.config_name.to_string(),
@@ -66,7 +66,7 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
             };
             (&synthesized, descriptor, descriptor.constructor)
         } else {
-            continue;
+            anyhow::bail!("unknown module placement {name:?}");
         };
 
         let module = constructor(module_config)
@@ -81,13 +81,13 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{Config, Edge};
+    use crate::config::{BarConfig, BarModules, Config};
     use crate::modules::{ModuleKind, Zone};
 
     #[test]
     fn referenced_builtin_is_synthesized() {
         let mut config = Config::default();
-        config.bars[0].modules.bottom = vec!["clock".into()];
+        config.bars[0].modules.end = vec!["clock".into()];
         let graph = super::build_module_graph(&config).unwrap();
         assert!(
             graph
@@ -98,11 +98,28 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_module_name_uses_first_zone() {
-        let mut config = Config::default();
-        config.bars[0].modules.top = vec!["clock".into()];
-        config.bars[0].modules.bottom = vec!["clock".into()];
-        config.bars[0].edge = Edge::Left;
+    fn shared_module_across_bars_uses_first_boot_zone() {
+        let config = Config {
+            bars: vec![
+                BarConfig {
+                    name: "main".into(),
+                    modules: BarModules {
+                        start: vec!["clock".into()],
+                        ..BarModules::default()
+                    },
+                    ..BarConfig::default()
+                },
+                BarConfig {
+                    name: "secondary".into(),
+                    modules: BarModules {
+                        end: vec!["clock".into()],
+                        ..BarModules::default()
+                    },
+                    ..BarConfig::default()
+                },
+            ],
+            ..Config::default()
+        };
 
         let graph = super::build_module_graph(&config).unwrap();
         let clock = graph
@@ -110,6 +127,6 @@ mod tests {
             .iter()
             .find(|(_, module, _)| module.kind() == ModuleKind::Clock)
             .unwrap();
-        assert_eq!(clock.0, Zone::Top);
+        assert_eq!(clock.0, Zone::Start);
     }
 }

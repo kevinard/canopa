@@ -47,7 +47,7 @@ impl App {
         let list = self.effective_nav_list(window);
         let idx = list.iter().position(|(_, id)| id == current)?;
         let current_zone = &list[idx].0;
-        let cycle = [Zone::Top, Zone::Center, Zone::Bottom];
+        let cycle = [Zone::Start, Zone::Center, Zone::End];
         let start = cycle.iter().position(|z| z == current_zone).unwrap_or(0);
         for step in 1..=3 {
             let next_zone = &cycle[(start + step) % 3];
@@ -67,7 +67,7 @@ impl App {
         let list = self.effective_nav_list(window);
         let idx = list.iter().position(|(_, id)| id == current)?;
         let current_zone = &list[idx].0;
-        let cycle = [Zone::Top, Zone::Bottom, Zone::Center];
+        let cycle = [Zone::Start, Zone::End, Zone::Center];
         let start = cycle.iter().position(|z| z == current_zone).unwrap_or(0);
         for step in 1..=3 {
             let prev_zone = &cycle[(start + step) % 3];

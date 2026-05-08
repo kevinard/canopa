@@ -60,6 +60,23 @@ fn parse_named_module_infers_type_from_name() {
 }
 
 #[test]
+fn parse_reserved_module_name_rejects_different_explicit_type() {
+    let kdl = r#"
+modules {
+    module "clock" {
+        type "script"
+        command "date"
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("reserved"), "got: {msg}");
+    assert!(msg.contains("clock"), "got: {msg}");
+    assert!(msg.contains("script"), "got: {msg}");
+}
+
+#[test]
 fn parse_named_module_explicit_type() {
     // When name doesn't match a known type, explicit `type` child is required.
     let kdl = r#"

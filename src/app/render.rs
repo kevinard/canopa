@@ -29,9 +29,9 @@ pub(super) struct BarRenderModel<'a> {
     pub(super) edge: Edge,
     pub(super) content_size: u32,
     pub(super) is_horizontal: bool,
-    pub(super) top: Vec<ModuleRenderEntry<'a>>,
+    pub(super) start: Vec<ModuleRenderEntry<'a>>,
     pub(super) center: Vec<ModuleRenderEntry<'a>>,
-    pub(super) bottom: Vec<ModuleRenderEntry<'a>>,
+    pub(super) end: Vec<ModuleRenderEntry<'a>>,
 }
 
 impl App {
@@ -61,9 +61,9 @@ impl App {
 
         let effective_zone = self.effective_module_zones_for_bar(bar);
         let default_state = ModuleState::default();
-        let mut top = Vec::new();
+        let mut start = Vec::new();
         let mut center = Vec::new();
-        let mut bottom = Vec::new();
+        let mut end = Vec::new();
 
         for (_boot_zone, module) in &self.modules {
             let id = module.id();
@@ -122,9 +122,9 @@ impl App {
             };
 
             match zone {
-                Zone::Top => top.push(entry),
+                Zone::Start => start.push(entry),
                 Zone::Center => center.push(entry),
-                Zone::Bottom => bottom.push(entry),
+                Zone::End => end.push(entry),
             }
         }
 
@@ -132,9 +132,9 @@ impl App {
             edge: bar.edge.clone(),
             content_size,
             is_horizontal,
-            top,
+            start,
             center,
-            bottom,
+            end,
         }
     }
 
@@ -340,7 +340,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["workspaces".into()];
+        config.bars[0].modules.start = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let workspaces = vec![
             make_workspace(10, 1, "eDP-1", true, true, None),
@@ -355,7 +355,7 @@ mod tests {
         let model = app.bar_render_model(wid);
 
         let workspace_states: Vec<_> = model
-            .top
+            .start
             .iter()
             .filter(|entry| entry.id.0.starts_with("workspace:"))
             .map(|entry| &entry.state)
@@ -389,7 +389,7 @@ mod tests {
             }],
             command_policy: crate::config::CommandPolicy::default(),
         };
-        config.bars[0].modules.top = vec!["clock".into()];
+        config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surfaces
@@ -398,9 +398,9 @@ mod tests {
 
         let model = app.bar_render_model(wid);
 
-        assert!(model.top.is_empty());
+        assert!(model.start.is_empty());
         assert!(model.center.is_empty());
-        assert!(model.bottom.is_empty());
+        assert!(model.end.is_empty());
     }
 
     #[test]
@@ -414,7 +414,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into()];
+        config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let mut surface = SurfaceState::new(String::new(), String::new());
@@ -424,8 +424,8 @@ mod tests {
 
         let model = app.bar_render_model(wid);
 
-        assert_eq!(model.top[0].zone, Zone::Top);
-        assert!(model.top[0].hovered);
-        assert!(model.top[0].focused);
+        assert_eq!(model.start[0].zone, Zone::Start);
+        assert!(model.start[0].hovered);
+        assert!(model.start[0].focused);
     }
 }

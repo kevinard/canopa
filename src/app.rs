@@ -276,7 +276,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["workspaces".into()];
+        config.bars[0].modules.start = vec!["workspaces".into()];
         App::boot(config, vec![]).0
     }
 
@@ -394,7 +394,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.modules.push(
-            Zone::Top,
+            Zone::Start,
             Box::new(crate::modules::tray::TrayModule::new(ModuleId::new("tray"))),
         );
         let point = iced::Point::new(10.0, 20.0);
@@ -757,7 +757,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into()];
+        config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
@@ -781,7 +781,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into()];
+        config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
@@ -804,7 +804,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into()];
+        config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
@@ -890,9 +890,9 @@ mod tests {
             ],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into(), "battery".into()];
+        config.bars[0].modules.start = vec!["clock".into(), "battery".into()];
         config.bars[0].modules.center = vec!["network".into()];
-        config.bars[0].modules.bottom = vec!["workspaces".into()];
+        config.bars[0].modules.end = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         app.surface_mut(wid); // pre-initialize surface
@@ -1021,8 +1021,8 @@ mod tests {
             ],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into()];
-        config.bars[0].modules.bottom = vec!["workspaces".into()];
+        config.bars[0].modules.start = vec!["clock".into()];
+        config.bars[0].modules.end = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
@@ -1092,7 +1092,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into(), "volume".into()];
+        config.bars[0].modules.start = vec!["clock".into(), "volume".into()];
         config.bars[0].modules.center = vec!["button".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
@@ -1503,7 +1503,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into()];
+        config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid_a = test_wid();
         let wid_b = test_wid();
@@ -1528,9 +1528,9 @@ mod tests {
                     name: "main".into(),
                     output: "all".into(),
                     modules: crate::config::BarModules {
-                        top: vec!["workspaces".into()],
+                        start: vec!["workspaces".into()],
                         center: vec![],
-                        bottom: vec![],
+                        end: vec![],
                     },
                     ..BarConfig::default()
                 },
@@ -1538,9 +1538,9 @@ mod tests {
                     name: "secondary".into(),
                     output: "DP-1".into(),
                     modules: crate::config::BarModules {
-                        top: vec!["clock".into()],
+                        start: vec!["clock".into()],
                         center: vec![],
-                        bottom: vec![],
+                        end: vec![],
                     },
                     ..BarConfig::default()
                 },
@@ -1568,7 +1568,7 @@ mod tests {
     #[test]
     fn undeclared_known_builtins_still_instantiate() {
         let mut config = Config::default();
-        config.bars[0].modules.top = vec!["clock".into()];
+        config.bars[0].modules.start = vec!["clock".into()];
 
         let (app, _) = App::boot(config, vec![]);
         let module = app
@@ -1583,21 +1583,12 @@ mod tests {
     }
 
     #[test]
-    fn undeclared_mandatory_param_modules_still_skip() {
+    fn undeclared_mandatory_param_modules_are_configuration_errors() {
         let mut config = Config::default();
-        config.bars[0].modules.top = vec!["button".into(), "script".into()];
+        config.bars[0].modules.start = vec!["button".into(), "script".into()];
 
-        let (app, _) = App::boot(config, vec![]);
-        let instantiated: Vec<_> = app
-            .modules
-            .iter()
-            .map(|(_, module)| module.id().0.clone())
-            .collect();
-
-        assert!(
-            instantiated.is_empty(),
-            "expected no modules, got: {instantiated:?}"
-        );
+        let err = crate::config::validate(&config).unwrap_err();
+        assert!(err.to_string().contains("must be declared"), "got: {err}");
     }
 
     #[test]

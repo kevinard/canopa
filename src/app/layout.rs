@@ -10,9 +10,9 @@ impl App {
         let mut layout = Vec::new();
 
         for (zone, names) in [
-            (Zone::Top, &bar.modules.top),
+            (Zone::Start, &bar.modules.start),
             (Zone::Center, &bar.modules.center),
-            (Zone::Bottom, &bar.modules.bottom),
+            (Zone::End, &bar.modules.end),
         ] {
             for name in names {
                 let expanded_ids: Vec<ModuleId> = self

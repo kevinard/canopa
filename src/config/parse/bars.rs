@@ -194,8 +194,7 @@ fn parse_bar_modules(children: &KdlDocument) -> anyhow::Result<BarModules> {
     parse_bar_modules_from_doc(zone_doc)
 }
 
-/// Parse `top`, `center`, `bottom` zone nodes from a `KdlDocument`.
-/// Shared by the global `bar.modules` section and per-output `modules` overrides.
+/// Parse `start`, `center`, `end` zone nodes from a `KdlDocument`.
 fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Result<BarModules> {
     let mut result = BarModules::default();
     for zone_node in zone_doc.nodes() {
@@ -208,12 +207,12 @@ fn parse_bar_modules_from_doc(zone_doc: &KdlDocument) -> anyhow::Result<BarModul
             .map(|s| s.to_string())
             .collect();
         match zone_name {
-            "top" => result.top = names,
+            "start" => result.start = names,
             "center" => result.center = names,
-            "bottom" => result.bottom = names,
+            "end" => result.end = names,
             other => anyhow::bail!(
                 "modules: unknown zone {other:?}. \
-                 Expected: one of: top, center, bottom."
+                 Expected: one of: start, center, end."
             ),
         }
     }
@@ -568,15 +567,33 @@ bar "right" { output "DP-1" edge "right" }
 bar "main" {
     output "eDP-1"
     modules {
-        top "workspaces"
-        bottom "clock"
+        start "workspaces"
+        end "clock"
     }
 }
 "#;
         let config = parse(kdl).unwrap();
         assert_eq!(config.bars[0].output, "eDP-1");
-        assert_eq!(config.bars[0].modules.top, vec!["workspaces"]);
-        assert_eq!(config.bars[0].modules.bottom, vec!["clock"]);
+        assert_eq!(config.bars[0].modules.start, vec!["workspaces"]);
+        assert_eq!(config.bars[0].modules.end, vec!["clock"]);
+    }
+
+    #[test]
+    fn parse_bar_rejects_legacy_physical_zone_names() {
+        let kdl = r#"
+bar "main" {
+    modules {
+        top "clock"
+    }
+}
+"#;
+        let err = parse(kdl).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown zone \"top\""), "got: {msg}");
+        assert!(
+            msg.contains("Expected: one of: start, center, end"),
+            "got: {msg}"
+        );
     }
 
     #[test]

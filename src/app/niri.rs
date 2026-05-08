@@ -374,7 +374,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["workspaces".into()];
+        config.bars[0].modules.start = vec!["workspaces".into()];
         App::boot(config, vec![]).0
     }
 

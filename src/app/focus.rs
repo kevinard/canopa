@@ -10,9 +10,9 @@ impl App {
         let nav = self.effective_nav_list(window);
         let first = nav
             .iter()
-            .find(|(z, _)| *z == Zone::Top)
+            .find(|(z, _)| *z == Zone::Start)
             .or_else(|| nav.iter().find(|(z, _)| *z == Zone::Center))
-            .or_else(|| nav.iter().find(|(z, _)| *z == Zone::Bottom))
+            .or_else(|| nav.iter().find(|(z, _)| *z == Zone::End))
             .map(|(_, id)| id.clone());
         let s = self.surface_mut(window);
         s.focused_module = first;

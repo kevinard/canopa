@@ -10,18 +10,18 @@ pub const MODULE_GAP: f32 = 4.0;
 /// Render three zones in a column (vertical bar) or row (horizontal bar).
 ///
 /// **Vertical** (`horizontal = false`, left/right bars):
-/// - Top zone stacks downward; center fills and centres; bottom stacks upward.
+/// - Start zone stacks downward; center fills and centres; end stacks upward.
 ///
 /// **Horizontal** (`horizontal = true`, top/bottom bars):
-/// - "Top" zone aligns to the start (left); center fills and centres; "bottom" aligns to the end (right).
+/// - Start zone aligns to the left; center fills and centres; end aligns to the right.
 ///
 /// `BAR_PADDING` is applied as padding on all four edges of the outer container.
 /// `MODULE_GAP` separates modules within each zone.
 /// `clip(true)` prevents zones from overlapping on short outputs.
 pub fn zone_layout<'a, Message: Clone + 'a>(
-    top: Vec<Element<'a, Message>>,
+    start: Vec<Element<'a, Message>>,
     center: Vec<Element<'a, Message>>,
-    bottom: Vec<Element<'a, Message>>,
+    end: Vec<Element<'a, Message>>,
     horizontal: bool,
 ) -> Element<'a, Message> {
     let zone = |items: Vec<Element<'a, Message>>| -> Element<'a, Message> {
@@ -47,7 +47,7 @@ pub fn zone_layout<'a, Message: Clone + 'a>(
             .into()
     };
 
-    let parts = vec![zone(top), center_fill, zone(bottom)];
+    let parts = vec![zone(start), center_fill, zone(end)];
     let body: Element<'a, Message> = if horizontal {
         row(parts).width(Length::Fill).height(Length::Fill).into()
     } else {

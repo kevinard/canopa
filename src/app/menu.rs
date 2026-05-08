@@ -364,7 +364,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        config.bars[0].modules.top = vec!["clock".into(), "volume".into()];
+        config.bars[0].modules.start = vec!["clock".into(), "volume".into()];
         config.bars[0].modules.center = vec!["button".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();

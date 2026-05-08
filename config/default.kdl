@@ -64,17 +64,17 @@ bar "main" {
         collapse-ms 200
     }
 
-    // Zone layout — assign module names to top, center, and bottom zones.
+    // Zone layout — assign module names to start, center, and end zones.
     // Names must match the module declarations in the "modules" section below.
     // Multiple modules per zone: list them as separate string arguments on one line.
     modules {
-        // Top zone: stacks from the leading edge of the bar (top for vertical bars).
-        top "workspaces"
-        // Center zone: centered in the remaining space between top and bottom zones.
+        // Start zone: stacks from the leading edge of the bar.
+        start "workspaces"
+        // Center zone: centered in the remaining space between start and end zones.
         center "focused-window"
-        // Bottom zone: stacks from the trailing edge of the bar.
+        // End zone: stacks from the trailing edge of the bar.
         // Multiple modules: list as separate string arguments on the same line.
-        bottom "volume" "network" "battery" "clock"
+        end "volume" "network" "battery" "clock"
     }
 }
 
@@ -399,9 +399,9 @@ modules {
 //     collapsed-width 32
 //     expanded-width 0
 //     modules {
-//         top "workspaces"
+//         start "workspaces"
 //         center "focused-window"
-//         bottom "clock"
+//         end "clock"
 //     }
 // }
 //

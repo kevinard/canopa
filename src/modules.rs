@@ -82,9 +82,9 @@ impl ModuleKind {
 // Used in Story 2.2 when modules are placed into zones from config.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Zone {
-    Top,
+    Start,
     Center,
-    Bottom,
+    End,
 }
 
 /// Per-module runtime state. Variants added per concrete module (Stories 2.3+).
