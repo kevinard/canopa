@@ -1,51 +1,72 @@
 use ::kdl::KdlNode;
 
-use super::super::{actions, error};
+use super::super::actions;
+use super::super::error::ParseCtx;
 use super::formats;
-use crate::config::ScriptConfig;
+use crate::config::{CommandPolicy, ConfigResult, ScriptConfig};
 
-pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> {
-    let command_path = error::field_path(idx, "script", "command");
-    let children = node.children().ok_or_else(|| {
-        anyhow::anyhow!(
-            "{command_path}: missing required parameter. Expected: a string value or argv block."
-        )
-    })?;
+pub(super) fn parse(
+    node: &KdlNode,
+    idx: usize,
+    ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<ScriptConfig> {
+    let Some(children) = node.children() else {
+        return Err(ctx.child("command").node_err(
+            node,
+            "missing required parameter",
+            Some("expected `command \"date\"` or `command { argv \"date\" }`".into()),
+        ));
+    };
+
+    ctx.validate_child_schema(
+        children,
+        &[
+            "type",
+            "command",
+            "interval",
+            "actions",
+            "format",
+            "expanded-format",
+            "horizontal-format",
+            "tooltip",
+        ],
+        &[
+            "type",
+            "command",
+            "interval",
+            "actions",
+            "format",
+            "expanded-format",
+            "horizontal-format",
+            "tooltip",
+        ],
+    )?;
 
     if children.get("command").is_none() {
-        anyhow::bail!(
-            "{command_path}: missing required parameter. Expected: a string value or argv block."
-        );
+        return Err(ctx.child("command").node_err(
+            node,
+            "missing required parameter",
+            Some("expected `command \"date\"` or `command { argv \"date\" }`".into()),
+        ));
     }
-    let command = actions::parse_command_node(
-        children.get("command").expect("checked above"),
-        &command_path,
-    )?;
+    let command_node = children.get("command").expect("checked above");
+    let command =
+        actions::parse_command_node_ctx(command_node, &ctx.child("command"), command_policy)?;
 
     let interval = match children.get("interval") {
         None => 5u64,
-        Some(n) => {
-            let v = n.entries().first().map(|e| e.value());
-            match v.and_then(|v| v.as_integer()) {
-                Some(i) if i >= 1 => i as u64,
-                Some(_) => anyhow::bail!(
-                    "{}: value must be at least 1. Expected: a positive integer.",
-                    error::field_path(idx, "script", "interval")
-                ),
-                None => {
-                    anyhow::bail!(
-                        "{}: expected a positive integer.",
-                        error::field_path(idx, "script", "interval")
-                    )
-                }
-            }
-        }
+        Some(n) => ctx.child("interval").required_u64_node(
+            n,
+            1,
+            "use `interval 5` for a five-second polling interval",
+        )?,
     };
 
-    let module_path = error::module_path(idx, "script");
-    let (format, tooltip) = formats::parse_format_and_tooltip(
+    let _ = idx;
+    let (format, tooltip) = formats::parse_format_and_tooltip_ctx(
         children,
-        &module_path,
+        ctx,
         &["icon", "value", "output"],
         crate::config::states::EMPTY,
     )?;
@@ -59,204 +80,5 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ScriptConfig> 
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::config::ModuleParams;
-    use crate::config::parse::parse;
-
-    fn script_config(kdl: &str) -> crate::config::ScriptConfig {
-        let cfg = parse(kdl).unwrap();
-        let m = cfg
-            .modules
-            .iter()
-            .find(|m| m.name == "script")
-            .expect("script module");
-        match &m.params {
-            ModuleParams::Script(s) => s.clone(),
-            _ => panic!("expected Script params"),
-        }
-    }
-
-    #[test]
-    fn tooltip_string_parsed() {
-        let cfg = script_config(
-            "modules { module \"script\" { command \"date\"; tooltip \"{output}\" } }",
-        );
-        assert!(matches!(
-            cfg.tooltip,
-            crate::config::TooltipSetting::Custom(_)
-        ));
-    }
-
-    #[test]
-    fn tooltip_false_disables() {
-        let cfg =
-            script_config("modules { module \"script\" { command \"date\"; tooltip #false } }");
-        assert!(matches!(
-            cfg.tooltip,
-            crate::config::TooltipSetting::Disabled
-        ));
-    }
-
-    #[test]
-    fn tooltip_true_errors() {
-        let kdl = "modules { module \"script\" { command \"date\"; tooltip #true } }";
-        let err = crate::config::parse::parse(kdl).unwrap_err().to_string();
-        assert!(err.contains("tooltip true"), "got: {err}");
-    }
-
-    #[test]
-    fn tooltip_absent_is_default() {
-        let cfg = script_config(r#"modules { module "script" { command "date" } }"#);
-        assert!(matches!(
-            cfg.tooltip,
-            crate::config::TooltipSetting::Default
-        ));
-    }
-
-    #[test]
-    fn parse_script_with_command_and_interval() {
-        let kdl = r#"
-modules {
-    module "script" {
-        command "date"
-        interval 10
-    }
-}
-"#;
-        let config = parse(kdl).unwrap();
-        assert_eq!(config.modules.len(), 1);
-        match &config.modules[0].params {
-            ModuleParams::Script(cfg) => {
-                assert_eq!(
-                    cfg.command,
-                    crate::config::CommandConfig::Shell("date".into())
-                );
-                assert_eq!(cfg.interval, 10);
-            }
-            _ => panic!("expected ModuleParams::Script"),
-        }
-    }
-
-    #[test]
-    fn parse_script_argv_command() {
-        let kdl = r#"
-modules {
-    module "script" {
-        command {
-            argv "printf" "hello"
-        }
-    }
-}
-"#;
-        let config = parse(kdl).unwrap();
-        match &config.modules[0].params {
-            ModuleParams::Script(cfg) => {
-                assert_eq!(
-                    cfg.command,
-                    crate::config::CommandConfig::Argv {
-                        program: "printf".into(),
-                        args: vec!["hello".into()],
-                    }
-                );
-            }
-            _ => panic!("expected ModuleParams::Script"),
-        }
-    }
-
-    #[test]
-    fn parse_script_defaults_interval_to_5() {
-        let kdl = r#"
-modules {
-    module "script" {
-        command "date"
-    }
-}
-"#;
-        let config = parse(kdl).unwrap();
-        match &config.modules[0].params {
-            ModuleParams::Script(cfg) => {
-                assert_eq!(
-                    cfg.command,
-                    crate::config::CommandConfig::Shell("date".into())
-                );
-                assert_eq!(cfg.interval, 5);
-            }
-            _ => panic!("expected ModuleParams::Script"),
-        }
-    }
-
-    #[test]
-    fn parse_script_missing_command_errors() {
-        let kdl = r#"modules { module "script" }"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("script.command"),
-            "expected 'script.command' in error, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn parse_script_empty_command_errors() {
-        let kdl = r#"
-modules {
-    module "script" {
-        command ""
-    }
-}
-"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("script.command"),
-            "expected 'script.command' in error, got: {msg}"
-        );
-        assert!(
-            msg.contains("must not be empty"),
-            "expected 'must not be empty' in error, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn parse_script_command_without_value_errors() {
-        let kdl = r#"
-modules {
-    module "script" {
-        command
-    }
-}
-"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("script.command"),
-            "expected 'script.command' in error, got: {msg}"
-        );
-        assert!(
-            msg.contains("expected a string value"),
-            "expected 'expected a string value' in error, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn parse_script_zero_interval_errors() {
-        let kdl = r#"
-modules {
-    module "script" {
-        command "date"
-        interval 0
-    }
-}
-"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("script.interval"),
-            "expected 'script.interval' in error, got: {msg}"
-        );
-        assert!(
-            msg.contains("at least 1"),
-            "expected 'at least 1' in error, got: {msg}"
-        );
-    }
-}
+#[path = "script_tests.rs"]
+mod script_tests;

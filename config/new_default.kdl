@@ -1,0 +1,451 @@
+// To start niribar automatically with your Wayland session:
+//
+//   # Copy the service file (if not installed by your package manager)
+//   cp contrib/systemd/niribar.service ~/.config/systemd/user/
+//
+//   # Enable and start the service
+//   systemctl --user enable --now niribar.service
+//
+// The service starts after graphical-session.target and restarts on failure.
+//
+// niribar default configuration
+// Copy to $XDG_CONFIG_HOME/niribar/config.kdl (or ~/.config/niribar/config.kdl) to customise.
+
+// ─── Bar ─────────────────────────────────────────────────────────────────────
+// One or more named bar sections. Each bar has a unique name (first argument).
+// Multiple bars can target different outputs, or all outputs ("all").
+//
+// To add a second bar, duplicate this block with a different name and set the
+// output field (see examples at the bottom).
+bar "main" {
+    // Which screen edge the bar anchors to.
+    // Accepted values: "left" (default), "right", "top", "bottom".
+    edge "left"
+
+    // Which wayland layer the bar is displayed on.
+    // Accepted values: "bottom", "top", "overlay" (default)
+    layer "overlay"
+
+    // Bar width in logical pixels when collapsed. Minimum: 2.
+    // The compositor multiplies by the output scale factor for physical rendering.
+    collapsed-width 48
+
+    // Bar width in logical pixels when expanded. Must be >= collapsed-width.
+    // Set equal to collapsed-width to disable the expand/collapse feature entirely.
+    expanded-width 200
+
+    // Whether expand/collapse is active.
+    // Accepted values: #true (default), #false (permanently collapsed).
+    expand #true
+
+    // What user action expands or collapses the bar.
+    // Accepted values: "click" (default), "hover".
+    expand-trigger "click"
+
+    // Milliseconds of cursor dwell before hover expands the bar.
+    // Only relevant when expand-trigger is "hover". Default: 0 (expand immediately).
+    hover-delay 0
+
+    // Milliseconds of cursor dwell before a module's tooltip appears on hover.
+    // Default: 500. Hide is always immediate on hover-exit.
+    tooltip-delay 500
+
+    // Keyboard shortcut to expand/collapse while the bar has keyboard focus.
+    // Optional. Format: modifier+key, e.g. "Super+e" or "Ctrl+b".
+    // Also documents the compositor keybind to bind to `niribar --toggle-expand`
+    // for global (out-of-focus) toggling.
+    // expand-keybind "Super+e"
+
+    // Optional default style for all module format segments rendered in this bar.
+    // Individual segment styles override these values property by property.
+    // style color="text" size=12 weight="normal"
+
+    // Expand/collapse animation timing.
+    animation {
+        // Duration of the expand animation in milliseconds. Default: 280.
+        expand-ms 280
+        // Duration of the collapse animation in milliseconds. Default: 200.
+        collapse-ms 200
+    }
+
+    // Zone layout — assign module names to top, center, and bottom zones.
+    // Names must match the module declarations in the "modules" section below.
+    // Multiple modules per zone: list them as separate string arguments on one line.
+    modules {
+        // Top zone: stacks from the leading edge of the bar (top for vertical bars).
+        top "workspaces"
+        // Center zone: centered in the remaining space between top and bottom zones.
+        center "focused-window"
+        // Bottom zone: stacks from the trailing edge of the bar.
+        // Multiple modules: list as separate string arguments on the same line.
+        bottom "volume" "network" "battery" "clock"
+    }
+}
+
+// ─── Modules ─────────────────────────────────────────────────────────────────
+// Declare each module referenced in bar.modules above.
+// Module names must match exactly. Type is inferred from the name when the name
+// matches a known type (workspaces, focused-window, battery, clock, network,
+// volume, script, button). For custom names, add a "type" child node.
+//
+// Format templates can be written as quoted string segments:
+//     format "{icon}" "{value}%"
+// or as child `segment` nodes when you want per-segment styling:
+//     format {
+//         segment "{icon}" color="accent" size=18
+//         segment "{value}%" weight="bold"
+//     }
+//
+// Supported style props: color, size, weight.
+// color accepts a theme token or #rrggbb/#rrggbbaa. Theme tokens:
+// accent, text, subtext, base, surface0, surface1, border, overlay0,
+// critical, warning, success.
+// weight accepts: "light", "normal", "bold".
+//
+// Optional actions can be added to any module. They run shell commands and
+// override the built-in behavior for that click type:
+//     actions {
+//         click "my-command"
+//         right-click "my-other-command"
+//     }
+modules {
+    // workspaces: Niri workspace indicators. Click or scroll to switch workspace.
+    // Optional: assign labels and icons to specific workspace numbers (1-based).
+    module "workspaces" {
+        // Optional display templates for workspace items.
+        // Placeholders: {icon}, {value}, {index}, {name}, {label}, {state}.
+        // format "{icon}{label}"
+        // horizontal-format "{icon}"
+        //
+        // Styled workspace example. State values: focused, active, inactive.
+        // format {
+        //     segment "{icon}" {
+        //         style color="text"
+        //         style state="focused" color="base" weight="bold"
+        //         style state="active" color="accent"
+        //     }
+        //     segment "{label}" {
+        //         style color="subtext"
+        //         style state="focused" color="base" weight="bold"
+        //     }
+        // }
+        // horizontal-format {
+        //     segment "{icon}" {
+        //         style color="text"
+        //         style state="focused" color="base" weight="bold"
+        //     }
+        // }
+        // workspace 1 {
+        //     label "main"
+        //     icon  "󰣇"
+        // }
+        // workspace 2 {
+        //     label "web"
+        //     icon  "󰖟"
+        // }
+        //
+        // Tooltip on hover. Same grammar as `format` (string segments or
+        // styled `segment` block). Use `tooltip #false` to disable.
+        // Omit to use the module's built-in default (none for workspaces).
+        // tooltip "{label}"
+    }
+
+    // focused-window: shows the title of the focused window on this output.
+    module "focused-window" {
+        // Optional display templates. Placeholders: {icon}, {value}, {title}.
+        // format "{icon}"
+        // expanded-format "{title}"
+        // horizontal-format "{title}"
+        //
+        // Styled focused-window example.
+        // expanded-format {
+        //     segment "{title}" color="text" weight="bold"
+        // }
+        // horizontal-format {
+        //     segment "{title}" color="text"
+        // }
+        // actions {
+        //     click "niri msg action focus-window-up"
+        //     right-click "niri msg action close-window"
+        // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{title}").
+        // tooltip "{title}"
+    }
+
+    // volume: audio output level indicator. Scroll on the module to adjust volume.
+    module "volume" {
+        // Volume adjustment per scroll event, as a percentage. Range: 1–100. Default: 5.
+        step 5
+        //
+        // Optional `states` block: declare custom volume states. The built-in
+        // numeric state is `unmuted` (threshold 100); `muted` is set when the
+        // sink is muted and short-circuits ahead of the numeric resolution.
+        // states {
+        //     state "quiet" threshold=33
+        //     state "loud"  threshold=100
+        // }
+        // Optional display templates. Placeholders: {icon}, {value}, {percent}, {state}.
+        // format "{icon}"
+        // expanded-format "{icon} {value}%"
+        // horizontal-format "{icon} {value}%"
+        //
+        // Styled volume example. State values: muted, unmuted.
+        // format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="muted" color="overlay0"
+        //     }
+        // }
+        // expanded-format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="muted" color="overlay0"
+        //     }
+        //     segment "{value}%" color="subtext"
+        // }
+        // Optional state/value icons. Thresholds mean "at or above".
+        // icons {
+        //     icon "✕" state="muted"
+        //     icon "░" at=1
+        //     icon "▓" at=33
+        //     icon "◈" at=66
+        // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{value}%").
+        // tooltip "{value}%"
+    }
+
+    // network: network connectivity status (connected/disconnected/interface type).
+    module "network" {
+        // Optional display templates. Placeholders: {icon}, {value}, {label}, {state}.
+        // format "{icon}"
+        // expanded-format "{icon} {label}"
+        // horizontal-format "{icon} {state}"
+        //
+        // Styled network example. State values: full, limited, none.
+        // format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="limited" color="warning"
+        //         style state="none" color="critical"
+        //     }
+        // }
+        // expanded-format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="limited" color="warning"
+        //         style state="none" color="critical"
+        //     }
+        //     segment "{label}" color="subtext"
+        // }
+        // Optional connectivity-state icons.
+        // icons {
+        //     icon "◆" state="full"
+        //     icon "◈" state="limited"
+        //     icon "✕" state="none"
+        // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{label}").
+        // tooltip "{label}"
+    }
+
+    // battery: charge level and charging/discharging state.
+    module "battery" {
+        // Optional `states` block: declare custom states or override built-in
+        // thresholds. Each `state` has a name and an upper-bound `threshold`.
+        // The active state is the one with the smallest threshold ≥ value.
+        // Built-ins: critical (15), low (30), normal (100). User entries with
+        // a built-in name replace it; new names are added.
+        // states {
+        //     state "critical" threshold=10
+        //     state "needs-charge" threshold=60
+        // }
+        // Optional display templates. Placeholders: {icon}, {value}, {percent}, {state}.
+        // format "{icon}"
+        // expanded-format "{icon} {value}%"
+        // horizontal-format "{icon} {value}%"
+        //
+        // Styled battery example. State values: charging, critical, low, normal.
+        // format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="charging" color="success"
+        //         style state="critical" color="critical"
+        //         style state="low" color="warning"
+        //     }
+        // }
+        // expanded-format {
+        //     segment "{icon}" {
+        //         style color="accent"
+        //         style state="charging" color="success"
+        //         style state="critical" color="critical"
+        //         style state="low" color="warning"
+        //     }
+        //     segment "{value}%" color="subtext" weight="bold"
+        // }
+        // Optional state/value icons. State icons take precedence over thresholds.
+        // icons {
+        //     icon "⚡" state="charging"
+        //     icon "▏" at=0
+        //     icon "░" at=16
+        //     icon "▒" at=31
+        //     icon "▓" at=61
+        //     icon "█" at=96
+        // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{value}% {state}").
+        // tooltip "{value}% {state}"
+    }
+
+    // clock: current time and date display.
+    module "clock" {
+        // Time format string using chrono strftime syntax.
+        // Default: "%H:%M" (24-hour, e.g. "14:30"). Use "%I:%M %p" for 12-hour.
+        time-format "%H:%M"
+        // Date format string using chrono strftime syntax.
+        // Default: "%a %d %b" (e.g. "Mon 12 Apr").
+        date-format "%a %d %b"
+        // Optional display templates. Placeholders: {icon}, {value}, {time}, {date}.
+        // format "{icon} {time}"
+        // expanded-format "{icon} {time}\n{date}"
+        // horizontal-format "{icon} {time}"
+        //
+        // Styled clock example.
+        // format {
+        //     segment "{icon}" color="accent"
+        //     segment "{time}" color="text" weight="bold"
+        // }
+        // expanded-format {
+        //     segment "{time}" color="text" weight="bold"
+        //     segment "{date}" color="subtext"
+        // }
+        // actions {
+        //     click "gnome-clocks"
+        //     right-click "notify-send \"$(date)\""
+        // }
+        //
+        // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+        // to disable. Omit to use the built-in default ("{date}").
+        // tooltip "{date}"
+    }
+
+    // script: run a shell command periodically and show stdout.
+    // module "script" {
+    //     command "date"
+    //     interval 5
+    //     // Optional display templates. Placeholders: {icon}, {value}, {output}.
+    //     format "{icon} {value}"
+    //     expanded-format "{icon} {output}"
+    //     horizontal-format "{icon} {output}"
+    //     //
+    //     // Styled script example.
+    //     // format {
+    //     //     segment "{icon}" color="accent"
+    //     //     segment "{output}" color="text"
+    //     // }
+    //     //
+    //     // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+    //     // to disable. Omit for no tooltip (script has no built-in default).
+    //     // tooltip "{output}"
+    // }
+
+    // button: user-defined clickable action.
+    // module "button" {
+    //     label "Launch"
+    //     icon ">"
+    //     // Optional display templates. Placeholders: {icon}, {value}, {label}.
+    //     format "{icon}"
+    //     expanded-format "{icon} {label}"
+    //     horizontal-format "{icon} {label}"
+    //     //
+    //     // Styled button example.
+    //     // format {
+    //     //     segment "{icon}" color="accent" weight="bold"
+    //     // }
+    //     // expanded-format {
+    //     //     segment "{icon}" color="accent"
+    //     //     segment "{label}" color="text" weight="bold"
+    //     // }
+    //     actions {
+    //         click "kitty"
+    //         right-click "notify-send Launch"
+    //     }
+    //     //
+    //     // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
+    //     // to disable. Omit for no tooltip (button has no built-in default).
+    //     // tooltip "{label}"
+    // }
+}
+
+// Default style for every bar and module
+// Can be overriden in bar sections and in each module section
+style {
+    bar {
+        background-color "surface0"
+        text-color "text"
+        text-size 12
+        text-weight "normal"
+        border #true
+        border-color "surface1"
+        border-size 1
+        opacity 1.0
+    }
+    modules {
+        background-color "surface0"
+        text-color "text"
+        text-size 12
+        text-weight "normal"
+        border #false
+        // border-color "surface1"
+        // border-size 1
+        opacity 1.0
+        active {
+          background-color "accent"
+          text-color "surface0"
+        }
+        focused {
+          background-color "surface1"
+        }
+    }
+}
+
+// ─── Multiple bars ───────────────────────────────────────────────────────────
+// Add more "bar" sections to display additional bars on the same or different
+// outputs. The output name must match the Wayland output name — run
+// `niri msg outputs` to list connected output names.
+//
+// Each bar must have a unique name. The "output" field defaults to "all"
+// (appears on every connected output). Set it to a specific output name to
+// target that output only.
+//
+// Example: horizontal bar on a secondary monitor only
+// bar "top-strip" {
+//     output "DP-2"
+//     edge "top"
+//     collapsed-width 32
+//     expanded-width 0
+//     modules {
+//         top "workspaces"
+//         center "focused-window"
+//         bottom "clock"
+//     }
+// }
+//
+// Example: two bars on the same output
+// bar "side" {
+//     output "eDP-1"
+//     edge "left"
+//     collapsed-width 48
+//     expanded-width 200
+// }
+// bar "top" {
+//     output "eDP-1"
+//     edge "top"
+//     collapsed-width 32
+//     expanded-width 0
+/

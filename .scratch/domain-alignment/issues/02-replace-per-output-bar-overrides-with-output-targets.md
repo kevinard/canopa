@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Replace Per-Output Bar Overrides with Output Targets
 

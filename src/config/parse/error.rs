@@ -4,32 +4,197 @@
 //! `modules[{idx}].{module}.{field}`. Funneling that prefix through one helper
 //! lets us change the wording in a single place and keeps error paths uniform.
 
-/// Build an error-path prefix for a module field.
-#[inline]
-pub(super) fn field_path(idx: usize, module: &str, field: &str) -> String {
-    format!("modules[{idx}].{module}.{field}")
+use ::kdl::{KdlDocument, KdlEntry, KdlNode};
+use miette::SourceSpan;
+
+use crate::config::{
+    ConfigDiagnostic, ConfigDiagnosticKind, ConfigError, ConfigResult, ConfigSource,
+};
+
+#[derive(Debug, Clone)]
+pub(super) struct ParseCtx {
+    source: ConfigSource,
+    path: String,
 }
 
-/// Build an error-path prefix for a module itself (no field).
-#[inline]
-pub(super) fn module_path(idx: usize, module: &str) -> String {
-    format!("modules[{idx}].{module}")
-}
+impl ParseCtx {
+    pub(super) fn root(source: ConfigSource) -> Self {
+        Self {
+            source,
+            path: String::new(),
+        }
+    }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    pub(super) fn child(&self, name: impl AsRef<str>) -> Self {
+        let name = name.as_ref();
+        let path = if self.path.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}.{}", self.path, name)
+        };
+        Self {
+            source: self.source.clone(),
+            path,
+        }
+    }
 
-    #[test]
-    fn field_path_formats_correctly() {
-        assert_eq!(
-            field_path(2, "battery", "warning"),
-            "modules[2].battery.warning"
+    pub(super) fn index(&self, idx: usize) -> Self {
+        Self {
+            source: self.source.clone(),
+            path: format!("{}[{idx}]", self.path),
+        }
+    }
+
+    pub(super) fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub(super) fn err(
+        &self,
+        span: Option<SourceSpan>,
+        message: impl Into<String>,
+        help: Option<String>,
+    ) -> ConfigError {
+        let mut diagnostic = ConfigDiagnostic::new(
+            ConfigDiagnosticKind::Parse,
+            self.source.clone(),
+            (!self.path.is_empty()).then(|| self.path.clone()),
+            message,
+            span,
         );
+        if let Some(help) = help {
+            diagnostic = diagnostic.with_help(help);
+        }
+        diagnostic.into()
     }
 
-    #[test]
-    fn module_path_formats_correctly() {
-        assert_eq!(module_path(0, "clock"), "modules[0].clock");
+    pub(super) fn node_err(
+        &self,
+        node: &KdlNode,
+        message: impl Into<String>,
+        help: Option<String>,
+    ) -> ConfigError {
+        self.err(Some(node.span()), message, help)
     }
+
+    pub(super) fn entry_err(
+        &self,
+        entry: &KdlEntry,
+        message: impl Into<String>,
+        help: Option<String>,
+    ) -> ConfigError {
+        self.err(Some(entry.span()), message, help)
+    }
+
+    pub(super) fn required_u64_node(
+        &self,
+        node: &KdlNode,
+        min: u64,
+        help: &str,
+    ) -> ConfigResult<u64> {
+        let Some(entry) = node.entries().first() else {
+            return Err(self.node_err(
+                node,
+                format!("missing value; expected integer {min} or greater"),
+                Some(help.into()),
+            ));
+        };
+        let Some(value) = entry.value().as_integer() else {
+            return Err(self.entry_err(
+                entry,
+                format!("expected integer {min} or greater"),
+                Some(help.into()),
+            ));
+        };
+        let value = u64::try_from(value).map_err(|_| {
+            self.entry_err(
+                entry,
+                format!("value must be at least {min}"),
+                Some(help.into()),
+            )
+        })?;
+        if value < min {
+            return Err(self.entry_err(
+                entry,
+                format!("value must be at least {min}"),
+                Some(help.into()),
+            ));
+        }
+        Ok(value)
+    }
+
+    pub(super) fn required_bool_node(&self, node: &KdlNode, help: &str) -> ConfigResult<bool> {
+        let Some(entry) = node.entries().first() else {
+            return Err(self.node_err(
+                node,
+                "missing value; expected #true or #false",
+                Some(help.into()),
+            ));
+        };
+        entry
+            .value()
+            .as_bool()
+            .ok_or_else(|| self.entry_err(entry, "expected #true or #false", Some(help.into())))
+    }
+
+    pub(super) fn validate_child_schema(
+        &self,
+        children: &KdlDocument,
+        allowed: &[&str],
+        unique: &[&str],
+    ) -> ConfigResult<()> {
+        for node in children.nodes() {
+            let name = node.name().value();
+            if !allowed.contains(&name) {
+                let field_ctx = self.child(name);
+                let help = suggestion(name, allowed)
+                    .map(|suggestion| format!("did you mean `{suggestion}`?"))
+                    .or_else(|| Some(format!("expected one of: {}", allowed.join(", "))));
+                return Err(field_ctx.node_err(node, format!("unknown field `{name}`"), help));
+            }
+        }
+
+        for field in unique {
+            let mut first: Option<&KdlNode> = None;
+            for node in children
+                .nodes()
+                .iter()
+                .filter(|node| node.name().value() == *field)
+            {
+                if first.replace(node).is_some() {
+                    return Err(self.child(field).node_err(
+                        node,
+                        format!("duplicate field `{field}`"),
+                        Some(format!("remove one `{field}` entry")),
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn suggestion<'a>(input: &str, allowed: &'a [&str]) -> Option<&'a str> {
+    allowed
+        .iter()
+        .copied()
+        .map(|candidate| (candidate, edit_distance(input, candidate)))
+        .filter(|(_, distance)| *distance <= 3)
+        .min_by_key(|(_, distance)| *distance)
+        .map(|(candidate, _)| candidate)
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0; b.len() + 1];
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = usize::from(ca != cb);
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b.len()]
 }

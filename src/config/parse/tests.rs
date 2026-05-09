@@ -1,9 +1,23 @@
 use crate::config::parse::parse;
+use crate::config::parse::{ConfigInput, ConfigSourceName, parse_input};
 
 #[test]
 fn parse_modules_section_absent() {
     let config = parse("").unwrap();
     assert!(config.modules.is_empty());
+}
+
+#[test]
+fn syntax_error_preserves_config_source_name() {
+    let err = parse_input(ConfigInput {
+        name: ConfigSourceName::test("bad-test-config.kdl"),
+        text: "modules { module \"script\" { command \"date\" ",
+    })
+    .unwrap_err();
+
+    assert!(err.to_string().contains("KDL"), "got: {err}");
+    assert_eq!(err.source_name(), Some("bad-test-config.kdl"));
+    assert!(err.as_diagnostic().is_some());
 }
 
 #[test]
@@ -671,6 +685,36 @@ fn segment_unknown_state_is_error() {
 }
 
 #[test]
+fn segment_unknown_state_is_structured_diagnostic() {
+    let err = parse(
+        r#"
+        modules {
+            module "battery" {
+                format {
+                    segment "{icon}" {
+                        style state="bogus" color="critical"
+                    }
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap_err();
+    let diagnostic = err.as_diagnostic().expect("config diagnostic");
+    assert_eq!(
+        diagnostic.path(),
+        Some("modules[0].battery.format.segment[0].style[0].state")
+    );
+    assert!(diagnostic.has_span(), "expected source span");
+    assert!(
+        diagnostic
+            .help_text()
+            .is_some_and(|help| help.contains("critical")),
+        "expected state help, got: {diagnostic:?}"
+    );
+}
+
+#[test]
 fn segment_state_on_stateless_module_is_error() {
     let err = parse(
         r#"
@@ -721,6 +765,22 @@ fn bar_style_rejects_state_selector() {
     .unwrap_err();
 
     assert!(format!("{err:#}").contains("state"));
+}
+
+#[test]
+fn bar_style_bad_color_is_structured_diagnostic() {
+    let err = parse(
+        r##"
+        bar "main" {
+            style color="#nope"
+        }
+    "##,
+    )
+    .unwrap_err();
+    let diagnostic = err.as_diagnostic().expect("config diagnostic");
+    assert_eq!(diagnostic.path(), Some("bar[0].style.color"));
+    assert!(diagnostic.has_span(), "expected source span");
+    assert!(diagnostic.to_string().contains("color"));
 }
 
 #[test]

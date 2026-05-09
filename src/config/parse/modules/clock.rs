@@ -1,35 +1,58 @@
 use ::kdl::KdlNode;
 
-use super::super::{error, kdl};
+use super::super::error::ParseCtx;
 use super::formats;
-use crate::config::ClockConfig;
+use crate::config::{ClockConfig, ConfigResult};
 
-pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
+pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<ClockConfig> {
     let Some(children) = node.children() else {
         return Ok(ClockConfig::default());
     };
 
+    ctx.validate_child_schema(
+        children,
+        &[
+            "type",
+            "time-format",
+            "date-format",
+            "actions",
+            "format",
+            "expanded-format",
+            "horizontal-format",
+            "tooltip",
+        ],
+        &[
+            "type",
+            "time-format",
+            "date-format",
+            "actions",
+            "format",
+            "expanded-format",
+            "horizontal-format",
+            "tooltip",
+        ],
+    )?;
+
     let defaults = ClockConfig::default();
 
-    let time_format = kdl::optional_nonempty_string_child(
+    let time_format = optional_nonempty_string_child(
         children,
         "time-format",
         defaults.time_format,
-        &error::field_path(idx, "clock", "time-format"),
+        &ctx.child("time-format"),
         "a chrono format string such as \"%H:%M\"",
     )?;
 
-    let date_format = kdl::optional_nonempty_string_child(
+    let date_format = optional_nonempty_string_child(
         children,
         "date-format",
         defaults.date_format,
-        &error::field_path(idx, "clock", "date-format"),
+        &ctx.child("date-format"),
         "a chrono format string such as \"%a %d %b\"",
     )?;
-    let module_path = error::module_path(idx, "clock");
-    let (format, tooltip) = formats::parse_format_and_tooltip(
+    let (format, tooltip) = formats::parse_format_and_tooltip_ctx(
         children,
-        &module_path,
+        ctx,
         &["icon", "value", "time", "date"],
         crate::config::states::EMPTY,
     )?;
@@ -42,153 +65,38 @@ pub(super) fn parse(node: &KdlNode, idx: usize) -> anyhow::Result<ClockConfig> {
     })
 }
 
+fn optional_nonempty_string_child(
+    children: &::kdl::KdlDocument,
+    name: &str,
+    default: String,
+    ctx: &ParseCtx,
+    expected: &str,
+) -> ConfigResult<String> {
+    let Some(node) = children.get(name) else {
+        return Ok(default);
+    };
+    let Some(entry) = node.entries().first() else {
+        return Err(ctx.node_err(
+            node,
+            "expected a string value",
+            Some(format!("expected {expected}")),
+        ));
+    };
+    match entry.value().as_string() {
+        Some("") => Err(ctx.entry_err(
+            entry,
+            format!("value must not be empty. Expected: {expected}"),
+            None,
+        )),
+        Some(value) => Ok(value.to_string()),
+        None => Err(ctx.entry_err(
+            entry,
+            "expected a string value",
+            Some(format!("expected {expected}")),
+        )),
+    }
+}
+
 #[cfg(test)]
-mod tests {
-    use crate::config::ModuleParams;
-    use crate::config::parse::parse;
-
-    fn clock_config(kdl: &str) -> crate::config::ClockConfig {
-        let cfg = parse(kdl).unwrap();
-        let m = cfg
-            .modules
-            .iter()
-            .find(|m| m.name == "clock")
-            .expect("clock module");
-        match &m.params {
-            ModuleParams::Clock(c) => c.clone(),
-            _ => panic!("expected Clock params"),
-        }
-    }
-
-    #[test]
-    fn tooltip_string_parsed() {
-        let cfg = clock_config(r#"modules { module "clock" { tooltip "{date}" } }"#);
-        assert!(matches!(
-            cfg.tooltip,
-            crate::config::TooltipSetting::Custom(_)
-        ));
-    }
-
-    #[test]
-    fn tooltip_false_disables() {
-        let cfg = clock_config(r#"modules { module "clock" { tooltip #false } }"#);
-        assert!(matches!(
-            cfg.tooltip,
-            crate::config::TooltipSetting::Disabled
-        ));
-    }
-
-    #[test]
-    fn tooltip_true_errors() {
-        let kdl = r#"modules { module "clock" { tooltip #true } }"#;
-        let err = crate::config::parse::parse(kdl).unwrap_err().to_string();
-        assert!(err.contains("tooltip true"), "got: {err}");
-    }
-
-    #[test]
-    fn tooltip_absent_is_default() {
-        let cfg = clock_config(r#"modules { module "clock" {} }"#);
-        assert!(matches!(
-            cfg.tooltip,
-            crate::config::TooltipSetting::Default
-        ));
-    }
-
-    #[test]
-    fn parse_clock_with_custom_formats() {
-        let kdl = r#"
-modules {
-    module "clock" {
-        time-format "%I:%M %p"
-        date-format "%Y-%m-%d"
-    }
-}
-"#;
-        let config = parse(kdl).unwrap();
-        assert_eq!(config.modules.len(), 1);
-        match &config.modules[0].params {
-            ModuleParams::Clock(cfg) => {
-                assert_eq!(cfg.time_format, "%I:%M %p");
-                assert_eq!(cfg.date_format, "%Y-%m-%d");
-            }
-            _ => panic!("expected ModuleParams::Clock"),
-        }
-    }
-
-    #[test]
-    fn parse_clock_uses_defaults_without_children() {
-        let kdl = r#"modules { module "clock" }"#;
-        let config = parse(kdl).unwrap();
-        assert_eq!(config.modules.len(), 1);
-        match &config.modules[0].params {
-            ModuleParams::Clock(cfg) => {
-                assert_eq!(cfg.time_format, "%H:%M");
-                assert_eq!(cfg.date_format, "%a %d %b");
-            }
-            _ => panic!("expected ModuleParams::Clock"),
-        }
-    }
-
-    #[test]
-    fn parse_clock_rejects_empty_time_format() {
-        let kdl = r#"
-modules {
-    module "clock" {
-        time-format ""
-    }
-}
-"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("time-format"),
-            "expected 'time-format' in error, got: {msg}"
-        );
-        assert!(
-            msg.contains("must not be empty"),
-            "expected 'must not be empty' in error, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn parse_clock_rejects_empty_date_format() {
-        let kdl = r#"
-modules {
-    module "clock" {
-        date-format ""
-    }
-}
-"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("date-format"),
-            "expected 'date-format' in error, got: {msg}"
-        );
-        assert!(
-            msg.contains("must not be empty"),
-            "expected 'must not be empty' in error, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn parse_clock_time_format_without_value_errors() {
-        let kdl = r#"
-modules {
-    module "clock" {
-        time-format
-    }
-}
-"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("clock.time-format"),
-            "expected 'clock.time-format' in error, got: {msg}"
-        );
-        assert!(
-            msg.contains("expected a string value"),
-            "expected 'expected a string value' in error, got: {msg}"
-        );
-    }
-}
+#[path = "clock_tests.rs"]
+mod clock_tests;

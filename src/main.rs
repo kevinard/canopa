@@ -19,10 +19,33 @@ fn main() {
         cli::Command::IpcCommand(cmd) => send_ipc_command(&cmd),
         cli::Command::Run => {
             if let Err(e) = try_main() {
-                eprintln!("error: {e}");
+                match e {
+                    AppError::Config(config_error) => {
+                        eprintln!("{:?}", miette::Report::new(config_error));
+                    }
+                    AppError::Other(error) => eprintln!("error: {error}"),
+                }
                 std::process::exit(1);
             }
         }
+    }
+}
+
+#[derive(Debug)]
+enum AppError {
+    Config(config::ConfigError),
+    Other(anyhow::Error),
+}
+
+impl From<config::ConfigError> for AppError {
+    fn from(value: config::ConfigError) -> Self {
+        Self::Config(value)
+    }
+}
+
+impl From<anyhow::Error> for AppError {
+    fn from(value: anyhow::Error) -> Self {
+        Self::Other(value)
     }
 }
 
@@ -60,7 +83,7 @@ fn fetch_niri_outputs() -> Option<Vec<String>> {
     }
 }
 
-fn try_main() -> anyhow::Result<()> {
+fn try_main() -> Result<(), AppError> {
     // Load config fully before any surface is created (AR7).
     let config = config::load()?;
 
@@ -120,7 +143,7 @@ fn try_main() -> anyhow::Result<()> {
     .style(App::style)
     .subscription(App::subscription)
     .run()
-    .map_err(anyhow::Error::from)
+    .map_err(|e| AppError::Other(anyhow::Error::from(e)))
 }
 
 #[cfg(test)]

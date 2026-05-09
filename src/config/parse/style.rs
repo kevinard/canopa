@@ -1,59 +1,75 @@
 use ::kdl::KdlNode;
 
+use super::error::ParseCtx;
+use crate::config::ConfigResult;
 use crate::config::style::{ColorValue, Style, Weight};
 
-/// Parse `color`, `size`, `weight`, and (optionally) `state` named props on a node.
-/// Positional entries are ignored — callers strip or validate them as needed.
-/// `state` is only consumed when `allow_state` is true; otherwise it errors.
-pub(super) fn parse_style_props(
+pub(super) fn parse_style_props_ctx(
     node: &KdlNode,
-    path: &str,
+    ctx: &ParseCtx,
     allow_state: bool,
-) -> anyhow::Result<(Style, Option<String>)> {
+) -> ConfigResult<(Style, Option<String>)> {
     let mut style = Style::default();
     let mut state: Option<String> = None;
     for entry in node.entries() {
         let Some(name) = entry.name() else { continue };
         match name.value() {
             "color" => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.color: expected string."))?;
-                style.color =
-                    Some(ColorValue::parse(raw).map_err(|e| anyhow::anyhow!("{path}.color: {e}"))?);
+                let field_ctx = ctx.child("color");
+                let Some(raw) = entry.value().as_string() else {
+                    return Err(field_ctx.entry_err(entry, "expected string", None));
+                };
+                style.color = Some(
+                    ColorValue::parse(raw)
+                        .map_err(|e| field_ctx.entry_err(entry, e.to_string(), None))?,
+                );
             }
             "size" => {
-                let f = entry
+                let field_ctx = ctx.child("size");
+                let Some(f) = entry
                     .value()
                     .as_float()
                     .or_else(|| entry.value().as_integer().map(|i| i as f64))
-                    .ok_or_else(|| anyhow::anyhow!("{path}.size: expected number."))?;
+                else {
+                    return Err(field_ctx.entry_err(entry, "expected number", None));
+                };
                 if f <= 0.0 {
-                    anyhow::bail!("{path}.size: must be positive, got {f}.");
+                    return Err(field_ctx.entry_err(
+                        entry,
+                        format!("must be positive, got {f}"),
+                        None,
+                    ));
                 }
                 style.size = Some(f as f32);
             }
             "weight" => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.weight: expected string."))?;
-                style.weight =
-                    Some(Weight::parse(raw).map_err(|e| anyhow::anyhow!("{path}.weight: {e}"))?);
+                let field_ctx = ctx.child("weight");
+                let Some(raw) = entry.value().as_string() else {
+                    return Err(field_ctx.entry_err(entry, "expected string", None));
+                };
+                style.weight = Some(
+                    Weight::parse(raw)
+                        .map_err(|e| field_ctx.entry_err(entry, e.to_string(), None))?,
+                );
             }
             "state" if allow_state => {
-                let raw = entry
-                    .value()
-                    .as_string()
-                    .ok_or_else(|| anyhow::anyhow!("{path}.state: expected string."))?;
+                let field_ctx = ctx.child("state");
+                let Some(raw) = entry.value().as_string() else {
+                    return Err(field_ctx.entry_err(entry, "expected string", None));
+                };
                 state = Some(raw.to_string());
             }
             "state" => {
-                anyhow::bail!("{path}: `state` is not valid here.");
+                return Err(ctx
+                    .child("state")
+                    .entry_err(entry, "`state` is not valid here", None));
             }
             other => {
-                anyhow::bail!("{path}: unknown property {other:?}.");
+                return Err(ctx.child(other).entry_err(
+                    entry,
+                    format!("unknown property {other:?}"),
+                    Some("expected one of: color, size, weight".into()),
+                ));
             }
         }
     }

@@ -1,12 +1,13 @@
 use ::kdl::{KdlDocument, KdlNode, KdlValue};
 use std::collections::HashMap;
 
-use crate::config::{IconRulesConfig, IconThreshold};
+use super::super::error::ParseCtx;
+use crate::config::{ConfigResult, IconRulesConfig, IconThreshold};
 
-pub(super) fn parse_optional(
+pub(super) fn parse_optional_ctx(
     children: &KdlDocument,
-    path: &str,
-) -> anyhow::Result<IconRulesConfig> {
+    module_ctx: &ParseCtx,
+) -> ConfigResult<IconRulesConfig> {
     let Some(icons_node) = children.get("icons") else {
         return Ok(IconRulesConfig::default());
     };
@@ -14,11 +15,12 @@ pub(super) fn parse_optional(
         return Ok(IconRulesConfig::default());
     };
 
+    let icons_ctx = module_ctx.child("icons");
     let mut states = HashMap::new();
     let mut thresholds = Vec::new();
 
     for (idx, node) in icon_children.nodes().iter().enumerate() {
-        parse_icon_node(node, idx, path, &mut states, &mut thresholds)?;
+        parse_icon_node_ctx(node, &icons_ctx.index(idx), &mut states, &mut thresholds)?;
     }
 
     thresholds.sort_by(|a: &IconThreshold, b| {
@@ -29,71 +31,85 @@ pub(super) fn parse_optional(
     Ok(IconRulesConfig { states, thresholds })
 }
 
-fn parse_icon_node(
+fn parse_icon_node_ctx(
     node: &KdlNode,
-    idx: usize,
-    path: &str,
+    ctx: &ParseCtx,
     states: &mut HashMap<String, String>,
     thresholds: &mut Vec<IconThreshold>,
-) -> anyhow::Result<()> {
-    let rule_path = format!("{path}.icons[{idx}]");
+) -> ConfigResult<()> {
     let node_name = node.name().value();
     if node_name != "icon" {
-        anyhow::bail!("{rule_path}: expected node name \"icon\", got {node_name:?}.");
+        return Err(ctx.node_err(
+            node,
+            format!("expected node name `icon`, got `{node_name}`"),
+            None,
+        ));
     }
 
-    let positional: Vec<&KdlValue> = node
+    let positional: Vec<_> = node
         .entries()
         .iter()
         .filter(|entry| entry.name().is_none())
-        .map(|entry| entry.value())
         .collect();
-
-    let icon = positional
-        .first()
-        .and_then(|value| value.as_string())
-        .ok_or_else(|| anyhow::anyhow!("{rule_path}: expected a non-empty icon string."))?;
+    let Some(icon_entry) = positional.first() else {
+        return Err(ctx.node_err(
+            node,
+            "expected a non-empty icon string",
+            Some("add an icon string as the first positional value".into()),
+        ));
+    };
+    let Some(icon) = icon_entry.value().as_string() else {
+        return Err(ctx.entry_err(icon_entry, "expected a non-empty icon string", None));
+    };
     if icon.is_empty() {
-        anyhow::bail!("{rule_path}: expected a non-empty icon string.");
+        return Err(ctx.entry_err(icon_entry, "expected a non-empty icon string", None));
     }
 
-    let state = named_value(node, "state").and_then(KdlValue::as_string);
-    let at = named_value(node, "at").and_then(number_value);
+    let state = named_entry(node, "state");
+    let at = named_entry(node, "at");
 
     match (state, at) {
         (Some(_), Some(_)) | (None, None) => {
-            anyhow::bail!("{rule_path}: expected exactly one of `state` or `at`.")
+            Err(ctx.node_err(node, "expected exactly one of `state` or `at`", None))
         }
         (Some(state), None) => {
-            if state.is_empty() {
-                anyhow::bail!("{rule_path}: state must not be empty.");
+            let Some(state_value) = state.value().as_string() else {
+                return Err(ctx.entry_err(state, "`state` must be a string", None));
+            };
+            if state_value.is_empty() {
+                return Err(ctx.entry_err(state, "state must not be empty", None));
             }
-            if states.insert(state.to_string(), icon.to_string()).is_some() {
-                anyhow::bail!("{rule_path}: duplicate state {state:?}.");
+            if states
+                .insert(state_value.to_string(), icon.to_string())
+                .is_some()
+            {
+                return Err(ctx.entry_err(state, format!("duplicate state `{state_value}`"), None));
             }
+            Ok(())
         }
         (None, Some(at)) => {
+            let Some(at_value) = number_value(at.value()) else {
+                return Err(ctx.entry_err(at, "`at` must be a finite number", None));
+            };
             if thresholds
                 .iter()
-                .any(|threshold| (threshold.at - at).abs() < f64::EPSILON)
+                .any(|threshold| (threshold.at - at_value).abs() < f64::EPSILON)
             {
-                anyhow::bail!("{rule_path}: duplicate threshold {at}.");
+                return Err(ctx.entry_err(at, format!("duplicate threshold {at_value}"), None));
             }
             thresholds.push(IconThreshold {
-                at,
+                at: at_value,
                 icon: icon.to_string(),
             });
+            Ok(())
         }
     }
-
-    Ok(())
 }
 
-fn named_value<'a>(node: &'a KdlNode, name: &str) -> Option<&'a KdlValue> {
+fn named_entry<'a>(node: &'a KdlNode, name: &str) -> Option<&'a ::kdl::KdlEntry> {
     node.entries()
         .iter()
         .find(|entry| entry.name().map(|entry_name| entry_name.value()) == Some(name))
-        .map(|entry| entry.value())
 }
 
 fn number_value(value: &KdlValue) -> Option<f64> {

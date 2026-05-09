@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Migrate Bar Zones to Start/Center/End
 

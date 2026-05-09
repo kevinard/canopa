@@ -1,105 +1,98 @@
 use ::kdl::KdlDocument;
 
-use crate::config::{FormatConfig, FormatTemplate};
+use super::super::error::ParseCtx;
+use crate::config::{ConfigResult, FormatConfig, FormatTemplate};
 
-pub(super) fn parse_optional(
+pub(super) fn parse_format_and_tooltip_ctx(
     children: &KdlDocument,
-    path: &str,
+    module_ctx: &ParseCtx,
+    placeholders: &[&str],
+    allowed_states: &[&str],
+) -> ConfigResult<(FormatConfig, TooltipSetting)> {
+    Ok((
+        parse_optional_ctx(children, module_ctx, placeholders, allowed_states)?,
+        parse_tooltip_field_ctx(children, module_ctx, placeholders, allowed_states)?,
+    ))
+}
+
+fn parse_optional_ctx(
+    children: &KdlDocument,
+    module_ctx: &ParseCtx,
     allowed: &[&str],
     allowed_states: &[&str],
-) -> anyhow::Result<FormatConfig> {
+) -> ConfigResult<FormatConfig> {
     Ok(FormatConfig {
-        collapsed: parse_field(
+        collapsed: parse_field_ctx(
             children,
             "format",
-            &format!("{path}.format"),
+            &module_ctx.child("format"),
             allowed,
             allowed_states,
         )?,
-        expanded: parse_field(
+        expanded: parse_field_ctx(
             children,
             "expanded-format",
-            &format!("{path}.expanded-format"),
+            &module_ctx.child("expanded-format"),
             allowed,
             allowed_states,
         )?,
-        horizontal: parse_field(
+        horizontal: parse_field_ctx(
             children,
             "horizontal-format",
-            &format!("{path}.horizontal-format"),
+            &module_ctx.child("horizontal-format"),
             allowed,
             allowed_states,
         )?,
     })
 }
 
-pub(super) fn parse_format_and_tooltip(
-    children: &KdlDocument,
-    module_path: &str,
-    placeholders: &[&str],
-    allowed_states: &[&str],
-) -> anyhow::Result<(FormatConfig, TooltipSetting)> {
-    Ok((
-        parse_optional(children, module_path, placeholders, allowed_states)?,
-        parse_tooltip_field(children, module_path, placeholders, allowed_states)?,
-    ))
-}
-
-/// Error if any of the format fields (`format`, `expanded-format`,
-/// `horizontal-format`) are present. Used by modules that do not render
-/// templated text — e.g. tray, which composes its own per-icon view.
-pub(super) fn reject_format_fields(
+pub(super) fn reject_format_fields_ctx(
     children: Option<&KdlDocument>,
-    path: &str,
+    module_ctx: &ParseCtx,
     module_label: &str,
-) -> anyhow::Result<()> {
+) -> ConfigResult<()> {
     let Some(children) = children else {
         return Ok(());
     };
     for field in ["format", "expanded-format", "horizontal-format"] {
-        if children.get(field).is_some() {
-            anyhow::bail!("{path}.{field}: {module_label} does not support format templates.");
+        if let Some(node) = children.get(field) {
+            return Err(module_ctx.child(field).node_err(
+                node,
+                format!("{module_label} does not support format templates"),
+                Some(format!("remove `{field}` from this module")),
+            ));
         }
     }
     Ok(())
 }
 
-fn parse_field(
+fn parse_field_ctx(
     children: &KdlDocument,
     field: &str,
-    path: &str,
+    ctx: &ParseCtx,
     allowed: &[&str],
     allowed_states: &[&str],
-) -> anyhow::Result<Option<FormatTemplate>> {
+) -> ConfigResult<Option<FormatTemplate>> {
     let Some(node) = children.get(field) else {
         return Ok(None);
     };
-    let segments = super::segment_styles::parse_segments(node, allowed, allowed_states, path)?;
+    let segments = super::segment_styles::parse_segments_ctx(node, allowed, allowed_states, ctx)?;
     Ok(Some(FormatTemplate::from_styled(segments)))
 }
 
 use crate::config::TooltipSetting;
 
-/// Parse the optional `tooltip` field on a module's child block.
-///
-/// Accepts:
-/// - absence => `TooltipSetting::Default`
-/// - `tooltip "..."` (positional string, optionally multiple segments) => `Custom`
-/// - `tooltip { segment ... }` (styled-segment block) => `Custom`
-/// - `tooltip #false` => `Disabled`
-/// - `tooltip #true` => error
-pub(super) fn parse_tooltip_field(
+pub(super) fn parse_tooltip_field_ctx(
     children: &KdlDocument,
-    module_path: &str,
+    module_ctx: &ParseCtx,
     allowed_placeholders: &[&str],
     allowed_states: &[&str],
-) -> anyhow::Result<TooltipSetting> {
+) -> ConfigResult<TooltipSetting> {
     let Some(node) = children.get("tooltip") else {
         return Ok(TooltipSetting::Default);
     };
-    let path = format!("{module_path}.tooltip");
+    let ctx = module_ctx.child("tooltip");
 
-    // Single bool entry (no children, one positional bool) => enabled/disabled flag.
     let positional: Vec<_> = node
         .entries()
         .iter()
@@ -110,78 +103,26 @@ pub(super) fn parse_tooltip_field(
         && let Some(b) = positional[0].value().as_bool()
     {
         if b {
-            anyhow::bail!(
-                "{path}: tooltip true is not allowed; omit the field to use the default."
-            );
+            return Err(ctx.entry_err(
+                positional[0],
+                "tooltip true is not allowed; omit the field to use the default",
+                None,
+            ));
         }
         return Ok(TooltipSetting::Disabled);
     }
 
-    // Otherwise: delegate to the shared styled-segment parser.
-    let segments =
-        super::segment_styles::parse_segments(node, allowed_placeholders, allowed_states, &path)?;
+    let segments = super::segment_styles::parse_segments_ctx(
+        node,
+        allowed_placeholders,
+        allowed_states,
+        &ctx,
+    )?;
     Ok(TooltipSetting::Custom(
         crate::config::FormatTemplate::from_styled(segments),
     ))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ::kdl::KdlDocument;
-
-    fn parse(src: &str) -> KdlDocument {
-        src.parse().expect("kdl parse")
-    }
-
-    fn allowed() -> &'static [&'static str] {
-        &["icon", "value", "state"]
-    }
-
-    #[test]
-    fn tooltip_absent_returns_default_setting() {
-        let doc = parse("");
-        let s = parse_tooltip_field(&doc, "m", allowed(), &[]).unwrap();
-        assert!(matches!(s, crate::config::TooltipSetting::Default));
-    }
-
-    #[test]
-    fn tooltip_string_returns_custom() {
-        let doc = parse(r#"tooltip "{value}%""#);
-        let s = parse_tooltip_field(&doc, "m", allowed(), &[]).unwrap();
-        assert!(matches!(s, crate::config::TooltipSetting::Custom(_)));
-    }
-
-    #[test]
-    fn tooltip_false_returns_disabled() {
-        let doc = parse("tooltip #false");
-        let s = parse_tooltip_field(&doc, "m", allowed(), &[]).unwrap();
-        assert!(matches!(s, crate::config::TooltipSetting::Disabled));
-    }
-
-    #[test]
-    fn tooltip_true_errors() {
-        let doc = parse("tooltip #true");
-        let err = parse_tooltip_field(&doc, "m", allowed(), &[])
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("tooltip true is not allowed"), "got: {err}");
-    }
-
-    #[test]
-    fn tooltip_block_returns_custom() {
-        let doc = parse(
-            r#"tooltip {
-                segment "{icon}"
-                segment "{value}"
-            }"#,
-        );
-        let s = parse_tooltip_field(&doc, "m", allowed(), &[]).unwrap();
-        match s {
-            crate::config::TooltipSetting::Custom(t) => {
-                assert_eq!(t.segments().len(), 2);
-            }
-            _ => panic!("expected Custom"),
-        }
-    }
-}
+#[path = "formats_tests.rs"]
+mod formats_tests;

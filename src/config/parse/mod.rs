@@ -2,29 +2,49 @@ mod actions;
 mod animation;
 mod bars;
 mod error;
-mod kdl;
 mod modules;
 mod style;
 
 use ::kdl::KdlDocument;
 
-use super::{BarConfig, CommandConfig, CommandPolicy, Config, ModuleConfig, ModuleParams};
+use super::{BarConfig, CommandPolicy, Config, ModuleConfig};
+pub(crate) use crate::config::ConfigSourceName;
+use crate::config::{ConfigError, ConfigResult, ConfigSource};
 use crate::modules::ModuleKind;
+use error::ParseCtx;
+
+#[derive(Debug, Clone)]
+pub(crate) struct ConfigInput<'a> {
+    pub(crate) name: ConfigSourceName,
+    pub(crate) text: &'a str,
+}
 
 /// Parse a KDL string into a fully-typed `Config`.
 ///
 /// Missing sections fall back to defaults; constraint validation happens in `validate()`.
-pub(super) fn parse(input: &str) -> anyhow::Result<Config> {
-    let doc: KdlDocument = input.parse().map_err(|e| anyhow::anyhow!("config: {e}"))?;
-    let bars = bars::parse(&doc)?;
+#[cfg(test)]
+pub(super) fn parse(input: &str) -> ConfigResult<Config> {
+    parse_input(ConfigInput {
+        name: ConfigSourceName::test("<test config>"),
+        text: input,
+    })
+}
+
+pub(crate) fn parse_input(input: ConfigInput<'_>) -> ConfigResult<Config> {
+    let source = ConfigSource::new(input.name, input.text);
+    let ctx = ParseCtx::root(source.clone());
+    let doc: KdlDocument = input
+        .text
+        .parse()
+        .map_err(|e| ConfigError::from_kdl(source, e))?;
+    let bars = bars::parse(&doc, &ctx)?;
     let bars = if bars.is_empty() {
         vec![BarConfig::default()]
     } else {
         bars
     };
-    let modules = parse_modules_section(&doc)?;
-    let command_policy = parse_command_policy(&doc)?;
-    reject_disallowed_shell_commands(&modules, &command_policy)?;
+    let command_policy = parse_command_policy(&doc, &ctx.child("command-policy"))?;
+    let modules = parse_modules_section(&doc, &ctx, &command_policy)?;
     Ok(Config {
         bars,
         modules,
@@ -32,7 +52,7 @@ pub(super) fn parse(input: &str) -> anyhow::Result<Config> {
     })
 }
 
-fn parse_command_policy(doc: &KdlDocument) -> anyhow::Result<CommandPolicy> {
+fn parse_command_policy(doc: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<CommandPolicy> {
     let Some(node) = doc.get("command-policy") else {
         return Ok(CommandPolicy::default());
     };
@@ -40,72 +60,33 @@ fn parse_command_policy(doc: &KdlDocument) -> anyhow::Result<CommandPolicy> {
         return Ok(CommandPolicy::default());
     };
 
+    ctx.validate_child_schema(
+        children,
+        &["allow-shell", "action-timeout-ms"],
+        &["allow-shell", "action-timeout-ms"],
+    )?;
     let mut policy = CommandPolicy::default();
-    if let Some(value) = children.get_arg("allow-shell") {
-        policy.allow_shell = value.as_bool().ok_or_else(|| {
-            anyhow::anyhow!("command-policy.allow-shell: expected #true or #false.")
-        })?;
+    if let Some(node) = children.get("allow-shell") {
+        policy.allow_shell = ctx
+            .child("allow-shell")
+            .required_bool_node(node, "use `allow-shell #true` or `allow-shell #false`")?;
     }
-    if let Some(value) = children.get_arg("action-timeout-ms") {
-        let timeout = value.as_integer().ok_or_else(|| {
-            anyhow::anyhow!("command-policy.action-timeout-ms: expected a positive integer.")
-        })?;
-        policy.action_timeout_ms = u64::try_from(timeout).map_err(|_| {
-            anyhow::anyhow!("command-policy.action-timeout-ms: expected a positive integer.")
-        })?;
-        if policy.action_timeout_ms == 0 {
-            anyhow::bail!("command-policy.action-timeout-ms: expected a positive integer.");
-        }
+    if let Some(node) = children.get("action-timeout-ms") {
+        policy.action_timeout_ms = ctx.child("action-timeout-ms").required_u64_node(
+            node,
+            1,
+            "use `action-timeout-ms 3000` for a three-second timeout",
+        )?;
     }
 
     Ok(policy)
 }
 
-fn reject_disallowed_shell_commands(
-    modules: &[ModuleConfig],
-    policy: &CommandPolicy,
-) -> anyhow::Result<()> {
-    if policy.allow_shell {
-        return Ok(());
-    }
-
-    for (idx, module) in modules.iter().enumerate() {
-        if let Some(command) = module.actions.click.as_ref()
-            && matches!(command, CommandConfig::Shell(_))
-        {
-            anyhow::bail!(
-                "modules[{idx}].{}.actions.click: shell commands are disabled by command-policy.allow-shell #false; use an argv block.",
-                module.module_type
-            );
-        }
-        if let Some(command) = module.actions.right_click.as_ref()
-            && matches!(command, CommandConfig::Shell(_))
-        {
-            anyhow::bail!(
-                "modules[{idx}].{}.actions.right-click: shell commands are disabled by command-policy.allow-shell #false; use an argv block.",
-                module.module_type
-            );
-        }
-
-        match &module.params {
-            ModuleParams::Script(config) if matches!(config.command, CommandConfig::Shell(_)) => {
-                anyhow::bail!(
-                    "modules[{idx}].script.command: shell commands are disabled by command-policy.allow-shell #false; use an argv block."
-                );
-            }
-            ModuleParams::Button(config) if matches!(config.on_click, CommandConfig::Shell(_)) => {
-                anyhow::bail!(
-                    "modules[{idx}].button.on-click: shell commands are disabled by command-policy.allow-shell #false; use an argv block."
-                );
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
-}
-
-fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>> {
+fn parse_modules_section(
+    doc: &KdlDocument,
+    root_ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<Vec<ModuleConfig>> {
     let Some(modules_node) = doc.get("modules") else {
         return Ok(vec![]);
     };
@@ -116,8 +97,13 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
     let mut result = Vec::new();
     for (i, node) in children.nodes().iter().enumerate() {
         let node_name = node.name().value();
+        let module_index_ctx = root_ctx.child("modules").index(i);
         if node_name != "module" {
-            anyhow::bail!("modules[{i}]: expected node name \"module\", got {node_name:?}.");
+            return Err(module_index_ctx.node_err(
+                node,
+                format!("expected node name \"module\", got {node_name:?}"),
+                None,
+            ));
         }
         let name = node
             .entries()
@@ -125,9 +111,10 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
             .find(|e| e.name().is_none())
             .and_then(|e| e.value().as_string())
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "modules[{i}]: missing module name. \
-                     Expected: a string argument, e.g. module \"clock\"."
+                module_index_ctx.node_err(
+                    node,
+                    "missing module name",
+                    Some("expected a string argument, e.g. `module \"clock\"`".into()),
                 )
             })?
             .to_string();
@@ -141,31 +128,41 @@ fn parse_modules_section(doc: &KdlDocument) -> anyhow::Result<Vec<ModuleConfig>>
             if let Some(explicit_type) = explicit_type
                 && explicit_type != name
             {
-                anyhow::bail!(
-                    "modules[{i}] \"{name}\": reserved built-in Module Name must keep Module Kind {name:?}, got {explicit_type:?}."
-                );
+                return Err(module_index_ctx.node_err(
+                    node,
+                    format!(
+                        "reserved built-in Module Name must keep Module Kind {name:?}, got {explicit_type:?}"
+                    ),
+                    None,
+                ));
             }
             name.clone()
         } else {
             explicit_type
                 .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "modules[{i}] \"{name}\": name is not a known module type. \
-                         Add a `type \"<module type>\"` child to specify the type. \
-                         Expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray."
+                    module_index_ctx.node_err(
+                        node,
+                        format!("module name {name:?} is not a known module type"),
+                        Some(
+                            "add a `type \"<module type>\"` child; expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray".into(),
+                        ),
                     )
                 })?
                 .to_string()
         };
 
         let kind = ModuleKind::from_config_name(&module_type).ok_or_else(|| {
-            anyhow::anyhow!(
-                "{}: unknown module type {module_type:?}",
-                error::module_path(i, &module_type)
+            module_index_ctx.node_err(
+                node,
+                format!("unknown module type {module_type:?}"),
+                Some(
+                    "expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray".into(),
+                ),
             )
         })?;
-        let actions = actions::parse(node, i, &module_type)?;
-        let params = modules::dispatch(kind, node, i, &actions)?;
+        let module_ctx = module_index_ctx.child(&module_type);
+        let actions = actions::parse(node, i, &module_type, &module_ctx, command_policy)?;
+        let params = modules::dispatch(kind, node, i, &actions, &module_ctx, command_policy)?;
         result.push(ModuleConfig {
             name,
             module_type,
