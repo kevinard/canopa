@@ -2,6 +2,7 @@ use ::kdl::KdlNode;
 
 use super::super::actions;
 use super::super::error::ParseCtx;
+use super::super::fields;
 use super::formats;
 use crate::config::{CommandPolicy, ConfigResult, ScriptConfig};
 
@@ -43,25 +44,18 @@ pub(super) fn parse(
         ],
     )?;
 
-    if children.get("command").is_none() {
-        return Err(ctx.child("command").node_err(
-            node,
-            "missing required parameter",
-            Some("expected `command \"date\"` or `command { argv \"date\" }`".into()),
-        ));
-    }
-    let command_node = children.get("command").expect("checked above");
+    let command_node = fields::field(children, ctx, "command").required_node(
+        "missing required parameter",
+        Some("expected `command \"date\"` or `command { argv \"date\" }`".into()),
+    )?;
     let command =
         actions::parse_command_node_ctx(command_node, &ctx.child("command"), command_policy)?;
 
-    let interval = match children.get("interval") {
-        None => 5u64,
-        Some(n) => ctx.child("interval").required_u64_node(
-            n,
-            1,
-            "use `interval 5` for a five-second polling interval",
-        )?,
-    };
+    let interval = fields::field(children, ctx, "interval")
+        .optional()
+        .help("use `interval 5` for a five-second polling interval")
+        .u64_min(1)
+        .unwrap_or(5)?;
 
     let _ = idx;
     let (format, tooltip) = formats::parse_format_and_tooltip_ctx(

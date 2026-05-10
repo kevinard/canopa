@@ -1,6 +1,7 @@
 use ::kdl::{KdlDocument, KdlNode};
 
 use super::super::error::ParseCtx;
+use super::super::fields;
 use crate::config::{ConfigResult, StatesConfig};
 
 pub(super) fn parse_optional_ctx(
@@ -17,7 +18,7 @@ pub(super) fn parse_optional_with_names_ctx(
     module_ctx: &ParseCtx,
     defaults: StatesConfig,
 ) -> ConfigResult<(StatesConfig, Vec<String>)> {
-    let Some(node) = children.get("states") else {
+    let Some(node) = fields::field(children, module_ctx, "states").optional_node()? else {
         return Ok((defaults, Vec::new()));
     };
     let Some(state_children) = node.children() else {
@@ -71,28 +72,14 @@ fn parse_state_node_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<(String,
         return Err(ctx.entry_err(name_entry, "state name must not be empty", None));
     }
 
-    let Some(threshold_entry) = named_entry(node, "threshold") else {
-        return Err(ctx.node_err(node, "missing `threshold` property", None));
-    };
-    let Some(threshold) = threshold_entry.value().as_integer() else {
-        return Err(ctx.entry_err(threshold_entry, "`threshold` must be an integer", None));
-    };
-    let threshold = u8::try_from(threshold)
-        .ok()
-        .filter(|n| *n <= 100)
-        .ok_or_else(|| {
-            ctx.entry_err(
-                threshold_entry,
-                format!("`threshold` {threshold} out of range. Expected: integer 0-100"),
-                None,
-            )
-        })?;
+    let threshold = fields::property(node, ctx, "threshold")
+        .missing_message("missing `threshold` property")
+        .integer_message("`threshold` must be an integer")
+        .range_message(|value, min, max| {
+            format!("`threshold` {value} out of range. Expected: integer {min}-{max}")
+        })
+        .u8_range(0, 100)
+        .required()?;
 
     Ok((name.to_string(), threshold))
-}
-
-fn named_entry<'a>(node: &'a KdlNode, name: &str) -> Option<&'a ::kdl::KdlEntry> {
-    node.entries()
-        .iter()
-        .find(|entry| entry.name().map(|entry_name| entry_name.value()) == Some(name))
 }

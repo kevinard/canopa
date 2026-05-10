@@ -5,6 +5,7 @@ use super::super::{
 };
 use super::animation;
 use super::error::ParseCtx;
+use super::fields;
 use super::style::parse_style_props_ctx;
 use crate::config::ConfigResult;
 use crate::config::style::Style;
@@ -85,118 +86,103 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
 
     let defaults = BarConfig::default();
 
-    let output_target = match children.get("output") {
-        None => defaults.output_target.clone(),
-        Some(output_node) => {
-            let output_ctx = ctx.child("output");
-            let mut entries = Vec::new();
-            for entry in output_node
-                .entries()
-                .iter()
-                .filter(|entry| entry.name().is_none())
-            {
-                let Some(value) = entry.value().as_string() else {
-                    return Err(output_ctx.entry_err(
-                        entry,
-                        "expected string Output Target entries",
-                        None,
-                    ));
-                };
-                entries.push(value.to_string());
-            }
+    let output_ctx = ctx.child("output");
+    let output_target = match fields::field(children, ctx, "output")
+        .optional()
+        .positional_strings("expected string Output Target entries")
+    {
+        fields::FieldValue::Missing => defaults.output_target.clone(),
+        fields::FieldValue::Present(entries) => {
+            let entries = entries?;
+            let output_node =
+                fields::field(children, ctx, "output").required_node("missing output", None)?;
             OutputTarget::from_entries(entries, output_ctx.path())
                 .map_err(|e| output_ctx.node_err(output_node, e.to_string(), None))?
         }
     };
 
-    let edge = optional_enum_child(
-        children,
-        "edge",
-        defaults.edge,
-        &ctx.child("edge"),
-        "left, right, top, bottom",
-        |value| match value {
+    let edge = fields::field(children, ctx, "edge")
+        .optional()
+        .one_of("left, right, top, bottom", |value| match value {
             "left" => Some(Edge::Left),
             "right" => Some(Edge::Right),
             "top" => Some(Edge::Top),
             "bottom" => Some(Edge::Bottom),
             _ => None,
-        },
-    )?;
+        })
+        .unwrap_or(defaults.edge)?;
 
-    let layer = optional_enum_child(
-        children,
-        "layer",
-        defaults.layer,
-        &ctx.child("layer"),
-        "background, bottom, top, overlay",
-        |value| match value {
+    let layer = fields::field(children, ctx, "layer")
+        .optional()
+        .one_of("background, bottom, top, overlay", |value| match value {
             "background" => Some(BarLayer::Background),
             "bottom" => Some(BarLayer::Bottom),
             "top" => Some(BarLayer::Top),
             "overlay" => Some(BarLayer::Overlay),
             _ => None,
-        },
-    )?;
+        })
+        .unwrap_or(defaults.layer)?;
 
-    let collapsed_width = optional_u32_child(
-        children,
-        "collapsed-width",
-        defaults.collapsed_width,
-        &ctx.child("collapsed-width"),
-        "expected a width in logical pixels, e.g. 48",
-    )?;
+    let collapsed_width = fields::field(children, ctx, "collapsed-width")
+        .optional()
+        .help("expected a width in logical pixels, e.g. 48")
+        .integer_message(
+            "expected a positive integer. Expected: expected a width in logical pixels, e.g. 48",
+        )
+        .u32()
+        .unwrap_or(defaults.collapsed_width)?;
 
-    let expanded_width = optional_u32_child(
-        children,
-        "expanded-width",
-        defaults.expanded_width,
-        &ctx.child("expanded-width"),
-        "expected a width in logical pixels, e.g. 200",
-    )?;
+    let expanded_width = fields::field(children, ctx, "expanded-width")
+        .optional()
+        .help("expected a width in logical pixels, e.g. 200")
+        .integer_message(
+            "expected a positive integer. Expected: expected a width in logical pixels, e.g. 200",
+        )
+        .u32()
+        .unwrap_or(defaults.expanded_width)?;
 
-    let expand_trigger = optional_enum_child(
-        children,
-        "expand-trigger",
-        defaults.expand_trigger,
-        &ctx.child("expand-trigger"),
-        "click, hover",
-        |value| match value {
+    let expand_trigger = fields::field(children, ctx, "expand-trigger")
+        .optional()
+        .one_of("click, hover", |value| match value {
             "click" => Some(ExpandTrigger::Click),
             "hover" => Some(ExpandTrigger::Hover),
             _ => None,
-        },
-    )?;
+        })
+        .unwrap_or(defaults.expand_trigger)?;
 
-    let hover_delay = optional_u64_child(
-        children,
-        "hover-delay",
-        defaults.hover_delay,
-        &ctx.child("hover-delay"),
-        "expected a non-negative integer (milliseconds)",
-    )?;
+    let hover_delay = fields::field(children, ctx, "hover-delay")
+        .optional()
+        .help("expected a non-negative integer (milliseconds)")
+        .u64_min(0)
+        .unwrap_or(defaults.hover_delay)?;
 
-    let tooltip_delay_ms = optional_u32_child(
-        children,
-        "tooltip-delay",
-        defaults.tooltip_delay_ms,
-        &ctx.child("tooltip-delay"),
-        "expected a non-negative integer (milliseconds)",
-    )?;
+    let tooltip_delay_ms = fields::field(children, ctx, "tooltip-delay")
+        .optional()
+        .help("expected a non-negative integer (milliseconds)")
+        .integer_message(
+            "expected a positive integer. Expected: expected a non-negative integer (milliseconds)",
+        )
+        .u32()
+        .unwrap_or(defaults.tooltip_delay_ms)?;
 
-    let expand = optional_bool_child(children, "expand", defaults.expand, &ctx.child("expand"))?;
+    let expand = fields::field(children, ctx, "expand")
+        .optional()
+        .help("expected #true or #false")
+        .bool_message("expected a boolean value. Expected: #true or #false")
+        .bool()
+        .unwrap_or(defaults.expand)?;
 
     let expand_keybind = children
         .get_arg("expand-keybind")
         .and_then(|v| v.as_string())
         .map(|s| s.to_string());
 
-    let anim_config = match children.get("animation") {
+    let anim_config = match fields::field(children, ctx, "animation").optional_node()? {
         None => AnimationConfig::default(),
         Some(anim_node) => animation::parse_node(anim_node, &ctx.child("animation"))?,
     };
 
-    let style = match children.get("style") {
+    let style = match fields::field(children, ctx, "style").optional_node()? {
         None => Style::default(),
         Some(style_node) => {
             let style_ctx = ctx.child("style");
@@ -235,133 +221,8 @@ fn parse_style_node_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Style> {
     Ok(style)
 }
 
-fn optional_enum_child<T: Clone>(
-    children: &KdlDocument,
-    name: &str,
-    default: T,
-    ctx: &ParseCtx,
-    expected: &str,
-    parse: impl FnOnce(&str) -> Option<T>,
-) -> ConfigResult<T> {
-    let Some(node) = children.get(name) else {
-        return Ok(default);
-    };
-    let Some(entry) = node.entries().first() else {
-        return Err(ctx.node_err(
-            node,
-            format!("expected a string value. Expected: one of: {expected}"),
-            Some(format!("expected one of: {expected}")),
-        ));
-    };
-    let Some(raw) = entry.value().as_string() else {
-        return Err(ctx.entry_err(
-            entry,
-            format!("expected a string value. Expected: one of: {expected}"),
-            Some(format!("expected one of: {expected}")),
-        ));
-    };
-    parse(raw).ok_or_else(|| {
-        ctx.entry_err(
-            entry,
-            format!("unknown value {raw:?}. Expected: one of: {expected}"),
-            Some(format!("expected one of: {expected}")),
-        )
-    })
-}
-
-fn optional_u32_child(
-    children: &KdlDocument,
-    name: &str,
-    default: u32,
-    ctx: &ParseCtx,
-    expected: &str,
-) -> ConfigResult<u32> {
-    let Some(node) = children.get(name) else {
-        return Ok(default);
-    };
-    let Some(entry) = node.entries().first() else {
-        return Err(ctx.node_err(
-            node,
-            format!("expected a positive integer. Expected: {expected}"),
-            Some(expected.into()),
-        ));
-    };
-    let Some(value) = entry.value().as_integer() else {
-        return Err(ctx.entry_err(
-            entry,
-            format!("expected a positive integer. Expected: {expected}"),
-            Some(expected.into()),
-        ));
-    };
-    u32::try_from(value).map_err(|_| {
-        ctx.entry_err(
-            entry,
-            format!("expected a positive integer. Expected: {expected}"),
-            Some(expected.into()),
-        )
-    })
-}
-
-fn optional_u64_child(
-    children: &KdlDocument,
-    name: &str,
-    default: u64,
-    ctx: &ParseCtx,
-    expected: &str,
-) -> ConfigResult<u64> {
-    let Some(node) = children.get(name) else {
-        return Ok(default);
-    };
-    let Some(entry) = node.entries().first() else {
-        return Err(ctx.node_err(
-            node,
-            format!("expected a non-negative integer. Expected: {expected}"),
-            Some(expected.into()),
-        ));
-    };
-    let Some(value) = entry.value().as_integer() else {
-        return Err(ctx.entry_err(
-            entry,
-            format!("expected a non-negative integer. Expected: {expected}"),
-            Some(expected.into()),
-        ));
-    };
-    u64::try_from(value).map_err(|_| {
-        ctx.entry_err(
-            entry,
-            format!("expected a non-negative integer. Expected: {expected}"),
-            Some(expected.into()),
-        )
-    })
-}
-
-fn optional_bool_child(
-    children: &KdlDocument,
-    name: &str,
-    default: bool,
-    ctx: &ParseCtx,
-) -> ConfigResult<bool> {
-    let Some(node) = children.get(name) else {
-        return Ok(default);
-    };
-    let Some(entry) = node.entries().first() else {
-        return Err(ctx.node_err(
-            node,
-            "expected a boolean value. Expected: #true or #false",
-            Some("expected #true or #false".into()),
-        ));
-    };
-    entry.value().as_bool().ok_or_else(|| {
-        ctx.entry_err(
-            entry,
-            "expected a boolean value. Expected: #true or #false",
-            Some("expected #true or #false".into()),
-        )
-    })
-}
-
 fn parse_bar_modules(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<BarModules> {
-    let Some(modules_node) = children.get("modules") else {
+    let Some(modules_node) = fields::field(children, ctx, "modules").optional_node()? else {
         return Ok(BarModules::default());
     };
     let Some(zone_doc) = modules_node.children() else {

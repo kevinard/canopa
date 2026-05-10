@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
 use super::super::error::ParseCtx;
+use super::super::fields;
 use super::formats;
 use crate::config::{ConfigResult, WorkspaceLabelConfig, WorkspacesConfig};
 
@@ -95,27 +96,15 @@ fn workspace_label_icon(
     };
     ctx.validate_child_schema(children, &["label", "icon"], &["label", "icon"])?;
     Ok((
-        optional_string_child(children, "label", &ctx.child("label"))?,
-        optional_string_child(children, "icon", &ctx.child("icon"))?,
+        fields::field(children, ctx, "label")
+            .optional()
+            .string()
+            .transpose()?,
+        fields::field(children, ctx, "icon")
+            .optional()
+            .string()
+            .transpose()?,
     ))
-}
-
-fn optional_string_child(
-    children: &::kdl::KdlDocument,
-    name: &str,
-    ctx: &ParseCtx,
-) -> ConfigResult<Option<String>> {
-    let Some(node) = children.get(name) else {
-        return Ok(None);
-    };
-    let Some(entry) = node.entries().first() else {
-        return Err(ctx.node_err(node, "expected a string value", None));
-    };
-    entry
-        .value()
-        .as_string()
-        .map(|value| Some(value.to_string()))
-        .ok_or_else(|| ctx.entry_err(entry, "expected a string value", None))
 }
 
 #[cfg(test)]

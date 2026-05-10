@@ -1,8 +1,8 @@
 use ::kdl::KdlNode;
 
 use super::super::error::ParseCtx;
+use super::super::fields;
 use super::formats;
-use super::helpers;
 use super::icons;
 use super::states;
 use crate::config::{BatteryConfig, ConfigResult, StatesConfig};
@@ -41,18 +41,10 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<BatteryC
     let (mut states_config, user_state_names) =
         states::parse_optional_with_names_ctx(children, ctx, StatesConfig::battery_default())?;
 
-    let critical_override = if children.get("critical-threshold").is_some() {
-        Some(helpers::optional_u8_range_child(
-            children,
-            "critical-threshold",
-            15,
-            0,
-            100,
-            &ctx.child("critical-threshold"),
-        )?)
-    } else {
-        None
-    };
+    let critical_override = fields::field(children, ctx, "critical-threshold")
+        .optional()
+        .u8_range(0, 100)
+        .transpose()?;
 
     if let Some(t) = critical_override
         && !user_state_names.iter().any(|n| n == "critical")

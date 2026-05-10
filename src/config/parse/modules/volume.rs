@@ -1,8 +1,8 @@
 use ::kdl::KdlNode;
 
 use super::super::error::ParseCtx;
+use super::super::fields;
 use super::formats;
-use super::helpers;
 use super::icons;
 use super::states;
 use crate::config::{ConfigResult, StatesConfig, VolumeConfig};
@@ -39,14 +39,10 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<VolumeCo
     )?;
 
     let defaults = VolumeConfig::default();
-    let step = helpers::optional_u8_range_child(
-        children,
-        "step",
-        defaults.step,
-        1,
-        100,
-        &ctx.child("step"),
-    )?;
+    let step = fields::field(children, ctx, "step")
+        .optional()
+        .u8_range(1, 100)
+        .unwrap_or(defaults.step)?;
     let states_config = states::parse_optional_ctx(children, ctx, StatesConfig::volume_default())?;
     let icons = icons::parse_optional_ctx(children, ctx)?;
 

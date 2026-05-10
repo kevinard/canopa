@@ -1,6 +1,7 @@
 use ::kdl::KdlDocument;
 
 use super::super::error::ParseCtx;
+use super::super::fields;
 use crate::config::{ConfigResult, FormatConfig, FormatTemplate};
 
 pub(super) fn parse_format_and_tooltip_ctx(
@@ -22,24 +23,18 @@ fn parse_optional_ctx(
     allowed_states: &[&str],
 ) -> ConfigResult<FormatConfig> {
     Ok(FormatConfig {
-        collapsed: parse_field_ctx(
-            children,
-            "format",
-            &module_ctx.child("format"),
-            allowed,
-            allowed_states,
-        )?,
+        collapsed: parse_field_ctx(children, "format", module_ctx, allowed, allowed_states)?,
         expanded: parse_field_ctx(
             children,
             "expanded-format",
-            &module_ctx.child("expanded-format"),
+            module_ctx,
             allowed,
             allowed_states,
         )?,
         horizontal: parse_field_ctx(
             children,
             "horizontal-format",
-            &module_ctx.child("horizontal-format"),
+            module_ctx,
             allowed,
             allowed_states,
         )?,
@@ -55,7 +50,7 @@ pub(super) fn reject_format_fields_ctx(
         return Ok(());
     };
     for field in ["format", "expanded-format", "horizontal-format"] {
-        if let Some(node) = children.get(field) {
+        if let Some(node) = fields::field(children, module_ctx, field).optional_node()? {
             return Err(module_ctx.child(field).node_err(
                 node,
                 format!("{module_label} does not support format templates"),
@@ -69,14 +64,15 @@ pub(super) fn reject_format_fields_ctx(
 fn parse_field_ctx(
     children: &KdlDocument,
     field: &str,
-    ctx: &ParseCtx,
+    module_ctx: &ParseCtx,
     allowed: &[&str],
     allowed_states: &[&str],
 ) -> ConfigResult<Option<FormatTemplate>> {
-    let Some(node) = children.get(field) else {
+    let Some(node) = fields::field(children, module_ctx, field).optional_node()? else {
         return Ok(None);
     };
-    let segments = super::segment_styles::parse_segments_ctx(node, allowed, allowed_states, ctx)?;
+    let ctx = module_ctx.child(field);
+    let segments = super::segment_styles::parse_segments_ctx(node, allowed, allowed_states, &ctx)?;
     Ok(Some(FormatTemplate::from_styled(segments)))
 }
 
@@ -88,7 +84,7 @@ pub(super) fn parse_tooltip_field_ctx(
     allowed_placeholders: &[&str],
     allowed_states: &[&str],
 ) -> ConfigResult<TooltipSetting> {
-    let Some(node) = children.get("tooltip") else {
+    let Some(node) = fields::field(children, module_ctx, "tooltip").optional_node()? else {
         return Ok(TooltipSetting::Default);
     };
     let ctx = module_ctx.child("tooltip");

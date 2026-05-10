@@ -2,6 +2,7 @@ use ::kdl::KdlNode;
 
 use super::super::actions;
 use super::super::error::ParseCtx;
+use super::super::fields;
 use super::formats;
 use crate::config::{ButtonConfig, CommandPolicy, ConfigResult, ModuleActionsConfig};
 
@@ -45,44 +46,22 @@ pub(super) fn parse_ctx(
         ],
     )?;
 
-    if children.get("label").is_none() {
-        return Err(ctx.child("label").node_err(
-            node,
-            "missing required parameter. Expected: a string value",
-            None,
-        ));
-    }
-    let label = required_string_node(
-        children.get("label").expect("checked above"),
-        &ctx.child("label"),
-    )?;
+    let label = fields::field(children, ctx, "label").required_nonempty_string()?;
 
-    if children.get("icon").is_none() {
-        return Err(ctx.child("icon").node_err(
-            node,
-            "missing required parameter. Expected: a string value",
-            None,
-        ));
-    }
-    let icon = required_string_node(
-        children.get("icon").expect("checked above"),
-        &ctx.child("icon"),
-    )?;
+    let icon = fields::field(children, ctx, "icon").required_nonempty_string()?;
 
-    let on_click = if children.get("on-click").is_some() {
-        actions::parse_command_node_ctx(
-            children.get("on-click").expect("checked above"),
-            &ctx.child("on-click"),
-            command_policy,
-        )?
-    } else if let Some(command) = actions.click.as_ref() {
-        command.clone()
-    } else {
-        return Err(ctx.child("on-click").node_err(
-            node,
-            "missing required parameter. Expected: a string value, argv block, or actions.click",
-            None,
-        ));
+    let on_click = match fields::field(children, ctx, "on-click").optional_node()? {
+        Some(on_click_node) => {
+            actions::parse_command_node_ctx(on_click_node, &ctx.child("on-click"), command_policy)?
+        }
+        None if actions.click.is_some() => actions.click.clone().expect("checked above"),
+        None => {
+            return Err(ctx.child("on-click").node_err(
+                node,
+                "missing required parameter. Expected: a string value, argv block, or actions.click",
+                None,
+            ));
+        }
     };
     let (format, tooltip) = formats::parse_format_and_tooltip_ctx(
         children,
@@ -98,17 +77,6 @@ pub(super) fn parse_ctx(
         format,
         tooltip,
     })
-}
-
-fn required_string_node(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<String> {
-    let Some(entry) = node.entries().first() else {
-        return Err(ctx.node_err(node, "missing value. Expected: a string value", None));
-    };
-    match entry.value().as_string() {
-        Some("") => Err(ctx.entry_err(entry, "value must not be empty", None)),
-        Some(value) => Ok(value.to_string()),
-        None => Err(ctx.entry_err(entry, "expected a string value", None)),
-    }
 }
 
 #[cfg(test)]

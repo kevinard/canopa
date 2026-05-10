@@ -3,6 +3,7 @@ use ::kdl::KdlNode;
 use crate::config::{CommandConfig, CommandPolicy, ConfigResult, ModuleActionsConfig};
 
 use super::error::ParseCtx;
+use super::fields;
 
 /// Parse a module's `actions { click "<cmd>" right-click { argv "cmd" } }` block.
 ///
@@ -15,7 +16,11 @@ pub(super) fn parse(
     module_ctx: &ParseCtx,
     command_policy: &CommandPolicy,
 ) -> ConfigResult<ModuleActionsConfig> {
-    let Some(children) = node.children().and_then(|children| children.get("actions")) else {
+    let Some(module_children) = node.children() else {
+        return Ok(ModuleActionsConfig::default());
+    };
+    let Some(children) = fields::field(module_children, module_ctx, "actions").optional_node()?
+    else {
         return Ok(ModuleActionsConfig::default());
     };
     let Some(action_children) = children.children() else {

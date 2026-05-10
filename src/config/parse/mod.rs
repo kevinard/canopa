@@ -2,6 +2,7 @@ mod actions;
 mod animation;
 mod bars;
 mod error;
+mod fields;
 mod modules;
 mod style;
 
@@ -12,6 +13,7 @@ pub(crate) use crate::config::ConfigSourceName;
 use crate::config::{ConfigError, ConfigResult, ConfigSource};
 use crate::modules::ModuleKind;
 use error::ParseCtx;
+use fields::field;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ConfigInput<'a> {
@@ -65,21 +67,22 @@ fn parse_command_policy(doc: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<Comma
         &["allow-shell", "action-timeout-ms"],
         &["allow-shell", "action-timeout-ms"],
     )?;
-    let mut policy = CommandPolicy::default();
-    if let Some(node) = children.get("allow-shell") {
-        policy.allow_shell = ctx
-            .child("allow-shell")
-            .required_bool_node(node, "use `allow-shell #true` or `allow-shell #false`")?;
-    }
-    if let Some(node) = children.get("action-timeout-ms") {
-        policy.action_timeout_ms = ctx.child("action-timeout-ms").required_u64_node(
-            node,
-            1,
-            "use `action-timeout-ms 3000` for a three-second timeout",
-        )?;
-    }
+    let defaults = CommandPolicy::default();
+    let allow_shell = field(children, ctx, "allow-shell")
+        .optional()
+        .help("use `allow-shell #true` or `allow-shell #false`")
+        .bool()
+        .unwrap_or(defaults.allow_shell)?;
+    let action_timeout_ms = field(children, ctx, "action-timeout-ms")
+        .optional()
+        .help("use `action-timeout-ms 3000` for a three-second timeout")
+        .u64_min(1)
+        .unwrap_or(defaults.action_timeout_ms)?;
 
-    Ok(policy)
+    Ok(CommandPolicy {
+        allow_shell,
+        action_timeout_ms,
+    })
 }
 
 fn parse_modules_section(
@@ -119,14 +122,16 @@ fn parse_modules_section(
             })?
             .to_string();
 
-        let explicit_type = node
-            .children()
-            .and_then(|c| c.get("type"))
-            .and_then(|n| n.entries().first())
-            .and_then(|e| e.value().as_string());
+        let explicit_type = match node.children() {
+            Some(module_children) => field(module_children, &module_index_ctx, "type")
+                .optional()
+                .string()
+                .transpose()?,
+            None => None,
+        };
         let module_type = if super::is_known_config_module_type(&name) {
-            if let Some(explicit_type) = explicit_type
-                && explicit_type != name
+            if let Some(explicit_type) = explicit_type.as_deref()
+                && explicit_type != name.as_str()
             {
                 return Err(module_index_ctx.node_err(
                     node,

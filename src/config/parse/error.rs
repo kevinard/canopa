@@ -86,57 +86,6 @@ impl ParseCtx {
         self.err(Some(entry.span()), message, help)
     }
 
-    pub(super) fn required_u64_node(
-        &self,
-        node: &KdlNode,
-        min: u64,
-        help: &str,
-    ) -> ConfigResult<u64> {
-        let Some(entry) = node.entries().first() else {
-            return Err(self.node_err(
-                node,
-                format!("missing value; expected integer {min} or greater"),
-                Some(help.into()),
-            ));
-        };
-        let Some(value) = entry.value().as_integer() else {
-            return Err(self.entry_err(
-                entry,
-                format!("expected integer {min} or greater"),
-                Some(help.into()),
-            ));
-        };
-        let value = u64::try_from(value).map_err(|_| {
-            self.entry_err(
-                entry,
-                format!("value must be at least {min}"),
-                Some(help.into()),
-            )
-        })?;
-        if value < min {
-            return Err(self.entry_err(
-                entry,
-                format!("value must be at least {min}"),
-                Some(help.into()),
-            ));
-        }
-        Ok(value)
-    }
-
-    pub(super) fn required_bool_node(&self, node: &KdlNode, help: &str) -> ConfigResult<bool> {
-        let Some(entry) = node.entries().first() else {
-            return Err(self.node_err(
-                node,
-                "missing value; expected #true or #false",
-                Some(help.into()),
-            ));
-        };
-        entry
-            .value()
-            .as_bool()
-            .ok_or_else(|| self.entry_err(entry, "expected #true or #false", Some(help.into())))
-    }
-
     pub(super) fn validate_child_schema(
         &self,
         children: &KdlDocument,

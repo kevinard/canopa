@@ -12,7 +12,6 @@ mod button;
 mod clock;
 mod focused_window;
 mod formats;
-mod helpers;
 mod icons;
 mod network;
 mod script;
