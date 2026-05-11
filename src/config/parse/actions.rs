@@ -1,14 +1,14 @@
 use ::kdl::KdlNode;
 
-use crate::config::{CommandConfig, CommandPolicy, ConfigResult, ModuleActionsConfig};
+use crate::config::{
+    ActionBinding, ActionTrigger, CommandConfig, CommandPolicy, ConfigResult, ModuleActionsConfig,
+    PanelAction,
+};
 
 use super::error::ParseCtx;
 use super::fields;
 
-/// Parse a module's `actions { click "<cmd>" right-click { argv "cmd" } }` block.
-///
-/// String commands are executed via `sh -c "<cmd>"` for compatibility.
-/// `argv` blocks keep program and argument boundaries explicit.
+/// Parse a module's `actions { click { command "<cmd>" } Ctrl+E { open-panel } }` block.
 pub(super) fn parse(
     node: &KdlNode,
     _idx: usize,
@@ -31,29 +31,105 @@ pub(super) fn parse(
     for (action_idx, action) in action_children.nodes().iter().enumerate() {
         let action_name = action.name().value();
         let action_ctx = module_ctx.child("actions").child(action_name);
-        let command = parse_command_node_ctx(action, &action_ctx, command_policy)?;
-        match action_name {
-            "click" => {
-                if config.click.replace(command).is_some() {
-                    return Err(action_ctx.node_err(action, "duplicate click action", None));
-                }
-            }
-            "right-click" => {
-                if config.right_click.replace(command).is_some() {
-                    return Err(action_ctx.node_err(action, "duplicate right-click action", None));
-                }
-            }
-            other => {
-                return Err(module_ctx.child("actions").index(action_idx).node_err(
-                    action,
-                    format!("unknown action {other:?}"),
-                    Some("expected `click` or `right-click`".into()),
-                ));
-            }
+        let trigger = parse_trigger(
+            action_name,
+            &module_ctx.child("actions").index(action_idx),
+            action,
+        )?;
+        if config.action_for(&trigger).is_some() {
+            return Err(action_ctx.node_err(
+                action,
+                format!("duplicate {action_name} action"),
+                None,
+            ));
         }
+        let action = parse_panel_action(action, &action_ctx, command_policy)?;
+        config.bindings.push(ActionBinding { trigger, action });
     }
 
     Ok(config)
+}
+
+fn parse_trigger(name: &str, ctx: &ParseCtx, node: &KdlNode) -> ConfigResult<ActionTrigger> {
+    match name {
+        "click" => Ok(ActionTrigger::Click),
+        "right-click" => Ok(ActionTrigger::RightClick),
+        other if crate::surface::input::parse_keybind(other).is_some() => {
+            Ok(ActionTrigger::Key(other.to_string()))
+        }
+        other => Err(ctx.node_err(
+            node,
+            format!("unknown action trigger {other:?}"),
+            Some("expected `click`, `right-click`, or a keybind such as `Ctrl+E`".into()),
+        )),
+    }
+}
+
+fn parse_panel_action(
+    action: &KdlNode,
+    ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<PanelAction> {
+    let Some(children) = action.children() else {
+        return Err(ctx.node_err(
+            action,
+            "expected exactly one action child",
+            Some("expected one child such as `command \"date\"` or `open-panel`".into()),
+        ));
+    };
+    let nodes = children.nodes();
+    if nodes.len() != 1 {
+        return Err(ctx.node_err(action, "expected exactly one action child", None));
+    }
+
+    let operation = &nodes[0];
+    let operation_ctx = ctx.child(operation.name().value());
+    match operation.name().value() {
+        "command" => parse_command_node_ctx(operation, &operation_ctx, command_policy)
+            .map(PanelAction::Command),
+        "open-panel" => {
+            require_no_arguments(operation, &operation_ctx)?;
+            Ok(PanelAction::OpenPanel)
+        }
+        "toggle-panel" => {
+            require_no_arguments(operation, &operation_ctx)?;
+            Ok(PanelAction::TogglePanel)
+        }
+        "close-panel" => {
+            require_no_arguments(operation, &operation_ctx)?;
+            Ok(PanelAction::ClosePanel)
+        }
+        "open-menu" => required_menu_name(operation, &operation_ctx).map(PanelAction::OpenMenu),
+        "toggle-menu" => {
+            required_menu_name(operation, &operation_ctx).map(PanelAction::ToggleMenu)
+        }
+        other => Err(operation_ctx.node_err(
+            operation,
+            format!("unknown action operation {other:?}"),
+            Some(
+                "expected `command`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, or `toggle-menu`"
+                    .into(),
+            ),
+        )),
+    }
+}
+
+fn require_no_arguments(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<()> {
+    if !node.entries().is_empty() || node.children().is_some() {
+        return Err(ctx.node_err(node, "expected exactly one action child", None));
+    }
+    Ok(())
+}
+
+fn required_menu_name(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<String> {
+    if node.entries().len() != 1 {
+        return Err(ctx.node_err(node, "expected one menu name string", None));
+    }
+    match node.entries()[0].value().as_string() {
+        Some("") => Err(ctx.entry_err(&node.entries()[0], "menu name must not be empty", None)),
+        Some(name) => Ok(name.to_string()),
+        None => Err(ctx.entry_err(&node.entries()[0], "expected string", None)),
+    }
 }
 
 pub(super) fn parse_command_node_ctx(

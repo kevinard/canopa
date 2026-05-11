@@ -113,9 +113,15 @@ impl ModuleRuntime {
         event: &crate::modules::InteractionEvent,
     ) -> Option<&crate::config::CommandConfig> {
         let actions = self.actions.get(id)?;
-        match event {
-            crate::modules::InteractionEvent::Clicked => actions.click.as_ref(),
-            crate::modules::InteractionEvent::RightClicked(_) => actions.right_click.as_ref(),
+        let trigger = match event {
+            crate::modules::InteractionEvent::Clicked => crate::config::ActionTrigger::Click,
+            crate::modules::InteractionEvent::RightClicked(_) => {
+                crate::config::ActionTrigger::RightClick
+            }
+            _ => return None,
+        };
+        match actions.action_for(&trigger) {
+            Some(crate::config::PanelAction::Command(command)) => Some(command),
             _ => None,
         }
     }
@@ -528,10 +534,14 @@ mod tests {
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
                 actions: ModuleActionsConfig {
-                    click: Some(crate::config::CommandConfig::Shell(format!(
-                        "printf action >{action_path}"
-                    ))),
-                    right_click: None,
+                    bindings: vec![crate::config::ActionBinding {
+                        trigger: crate::config::ActionTrigger::Click,
+                        action: crate::config::PanelAction::Command(
+                            crate::config::CommandConfig::Shell(format!(
+                                "printf action >{action_path}"
+                            )),
+                        ),
+                    }],
                 },
             }],
             ..Default::default()
@@ -569,10 +579,14 @@ mod tests {
                 module_type: "clock".into(),
                 params: ModuleParams::Clock(ClockConfig::default()),
                 actions: ModuleActionsConfig {
-                    click: None,
-                    right_click: Some(crate::config::CommandConfig::Shell(format!(
-                        "printf right >{action_path}"
-                    ))),
+                    bindings: vec![crate::config::ActionBinding {
+                        trigger: crate::config::ActionTrigger::RightClick,
+                        action: crate::config::PanelAction::Command(
+                            crate::config::CommandConfig::Shell(format!(
+                                "printf right >{action_path}"
+                            )),
+                        ),
+                    }],
                 },
             }],
             ..Default::default()
@@ -860,9 +874,15 @@ mod tests {
     #[test]
     fn tray_icon_inherits_actions_from_tray_placeholder() {
         let mut config = make_tray_config();
-        config.modules[0].actions.right_click = Some(crate::config::CommandConfig::Shell(
-            "notify-send tray".into(),
-        ));
+        config.modules[0]
+            .actions
+            .bindings
+            .push(crate::config::ActionBinding {
+                trigger: crate::config::ActionTrigger::RightClick,
+                action: crate::config::PanelAction::Command(crate::config::CommandConfig::Shell(
+                    "notify-send tray".into(),
+                )),
+            });
         let (mut app, _) = App::boot(config, vec![]);
 
         let _ = app.update(Message::Tray(TrayRuntimeEvent::Host(TrayEvent::Snapshot(
@@ -890,10 +910,12 @@ mod tests {
                 module_type: "workspaces".into(),
                 params: ModuleParams::Workspaces(crate::config::WorkspacesConfig::default()),
                 actions: crate::config::ModuleActionsConfig {
-                    click: Some(crate::config::CommandConfig::Shell(
-                        "notify-send workspace".into(),
-                    )),
-                    right_click: None,
+                    bindings: vec![crate::config::ActionBinding {
+                        trigger: crate::config::ActionTrigger::Click,
+                        action: crate::config::PanelAction::Command(
+                            crate::config::CommandConfig::Shell("notify-send workspace".into()),
+                        ),
+                    }],
                 },
             }],
             ..Config::default()

@@ -311,12 +311,44 @@ pub enum ModuleParams {
     FocusedWindow(FocusedWindowConfig),
 }
 
-/// Shared user-triggered actions available on every config-declared module.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ModuleActionsConfig {
-    pub click: Option<CommandConfig>,
-    pub right_click: Option<CommandConfig>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ActionTrigger {
+    Click,
+    RightClick,
+    Key(String),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PanelAction {
+    Command(CommandConfig),
+    OpenPanel,
+    TogglePanel,
+    ClosePanel,
+    OpenMenu(String),
+    ToggleMenu(String),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ActionsConfig {
+    pub bindings: Vec<ActionBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionBinding {
+    pub trigger: ActionTrigger,
+    pub action: PanelAction,
+}
+
+impl ActionsConfig {
+    pub fn action_for(&self, trigger: &ActionTrigger) -> Option<&PanelAction> {
+        self.bindings
+            .iter()
+            .find(|binding| &binding.trigger == trigger)
+            .map(|binding| &binding.action)
+    }
+}
+
+pub type ModuleActionsConfig = ActionsConfig;
 
 /// A single module entry from the config, specifying name, type, and module params.
 /// Zone placement is determined by `bar.modules`, not by this struct.

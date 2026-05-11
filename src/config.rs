@@ -17,10 +17,10 @@ pub(crate) use error::{
 };
 #[allow(unused_imports)]
 pub use module::{
-    BatteryConfig, ButtonConfig, ClockConfig, CommandConfig, CommandPolicy, FocusedWindowConfig,
-    IconRulesConfig, IconThreshold, ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig,
-    ScriptConfig, StateRule, StatesConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig,
-    WorkspacesConfig,
+    ActionBinding, ActionTrigger, ActionsConfig, BatteryConfig, ButtonConfig, ClockConfig,
+    CommandConfig, CommandPolicy, FocusedWindowConfig, IconRulesConfig, IconThreshold,
+    ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig, PanelAction, ScriptConfig,
+    StateRule, StatesConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 pub use template::{
     FormatConfig, FormatMode, FormatTemplate, StyledSegment, TextTemplate, TooltipSetting,

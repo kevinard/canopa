@@ -4,7 +4,9 @@ use super::super::actions;
 use super::super::error::ParseCtx;
 use super::super::fields;
 use super::formats;
-use crate::config::{ButtonConfig, CommandPolicy, ConfigResult, ModuleActionsConfig};
+use crate::config::{
+    ActionTrigger, ButtonConfig, CommandPolicy, ConfigResult, ModuleActionsConfig, PanelAction,
+};
 
 pub(super) fn parse_ctx(
     node: &KdlNode,
@@ -54,14 +56,16 @@ pub(super) fn parse_ctx(
         Some(on_click_node) => {
             actions::parse_command_node_ctx(on_click_node, &ctx.child("on-click"), command_policy)?
         }
-        None if actions.click.is_some() => actions.click.clone().expect("checked above"),
-        None => {
-            return Err(ctx.child("on-click").node_err(
-                node,
-                "missing required parameter. Expected: a string value, argv block, or actions.click",
-                None,
-            ));
-        }
+        None => match actions.action_for(&ActionTrigger::Click) {
+            Some(PanelAction::Command(command)) => command.clone(),
+            _ => {
+                return Err(ctx.child("on-click").node_err(
+                    node,
+                    "missing required parameter. Expected: a string value, argv block, or actions.click command",
+                    None,
+                ));
+            }
+        },
     };
     let (format, tooltip) = formats::parse_format_and_tooltip_ctx(
         children,

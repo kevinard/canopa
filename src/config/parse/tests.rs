@@ -180,27 +180,28 @@ modules {
 }
 
 #[test]
-fn parse_module_actions_click_and_right_click() {
+fn parse_typed_module_actions_click_command_and_key_panel() {
     let kdl = r#"
-modules {
-    module "clock" {
-        actions {
-            click "gnome-clocks"
-            right-click "notify-send clock"
+        modules {
+            module "clock" {
+                actions {
+                    click { command "gnome-clocks" }
+                    Ctrl+E { open-panel }
+                }
+            }
         }
-    }
-}
-"#;
+    "#;
     let config = parse(kdl).unwrap();
+    let actions = &config.modules[0].actions;
     assert_eq!(
-        config.modules[0].actions.click,
-        Some(crate::config::CommandConfig::Shell("gnome-clocks".into()))
+        actions.action_for(&crate::config::ActionTrigger::Click),
+        Some(&crate::config::PanelAction::Command(
+            crate::config::CommandConfig::Shell("gnome-clocks".into())
+        ))
     );
     assert_eq!(
-        config.modules[0].actions.right_click,
-        Some(crate::config::CommandConfig::Shell(
-            "notify-send clock".into()
-        ))
+        actions.action_for(&crate::config::ActionTrigger::Key("Ctrl+E".into())),
+        Some(&crate::config::PanelAction::OpenPanel)
     );
 }
 
@@ -208,13 +209,12 @@ modules {
 fn parse_module_actions_empty_block_allowed() {
     let kdl = r#"modules { module "clock" { actions { } } }"#;
     let config = parse(kdl).unwrap();
-    assert!(config.modules[0].actions.click.is_none());
-    assert!(config.modules[0].actions.right_click.is_none());
+    assert!(config.modules[0].actions.bindings.is_empty());
 }
 
 #[test]
 fn parse_module_actions_rejects_unknown_action() {
-    let kdl = r#"modules { module "clock" { actions { middle-click "x" } } }"#;
+    let kdl = r#"modules { module "clock" { actions { middle-click { command "x" } } } }"#;
     let err = parse(kdl).unwrap_err();
     let msg = err.to_string();
     assert!(
@@ -229,8 +229,8 @@ fn parse_module_actions_rejects_duplicate_click() {
 modules {
     module "clock" {
         actions {
-            click "one"
-            click "two"
+            click { command "one" }
+            click { command "two" }
         }
     }
 }
@@ -244,7 +244,7 @@ modules {
 
 #[test]
 fn parse_module_actions_rejects_empty_command() {
-    let kdl = r#"modules { module "clock" { actions { click "" } } }"#;
+    let kdl = r#"modules { module "clock" { actions { click { command "" } } } }"#;
     let err = parse(kdl).unwrap_err();
     let msg = err.to_string();
     assert!(
@@ -261,15 +261,19 @@ modules {
         label "Terminal"
         icon ">"
         actions {
-            click "kitty"
+            click { command "kitty" }
         }
     }
 }
 "#;
     let config = parse(kdl).unwrap();
     assert_eq!(
-        config.modules[0].actions.click,
-        Some(crate::config::CommandConfig::Shell("kitty".into()))
+        config.modules[0]
+            .actions
+            .action_for(&crate::config::ActionTrigger::Click),
+        Some(&crate::config::PanelAction::Command(
+            crate::config::CommandConfig::Shell("kitty".into())
+        ))
     );
 }
 
@@ -280,7 +284,9 @@ modules {
     module "clock" {
         actions {
             click {
-                argv "notify-send" "clock"
+                command {
+                    argv "notify-send" "clock"
+                }
             }
         }
     }
@@ -288,12 +294,43 @@ modules {
 "#;
     let config = parse(kdl).unwrap();
     assert_eq!(
-        config.modules[0].actions.click,
-        Some(crate::config::CommandConfig::Argv {
-            program: "notify-send".into(),
-            args: vec!["clock".into()],
-        })
+        config.modules[0]
+            .actions
+            .action_for(&crate::config::ActionTrigger::Click),
+        Some(&crate::config::PanelAction::Command(
+            crate::config::CommandConfig::Argv {
+                program: "notify-send".into(),
+                args: vec!["clock".into()],
+            }
+        ))
     );
+}
+
+#[test]
+fn parse_action_rejects_compact_command_string() {
+    let kdl = r#"modules { module "clock" { actions { click "date" } } }"#;
+    let err = parse(kdl).unwrap_err().to_string();
+    assert!(
+        err.contains("expected exactly one action child"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn parse_action_rejects_multiple_operations() {
+    let kdl = r#"modules { module "clock" { actions { click { open-panel command "date" } } } }"#;
+    let err = parse(kdl).unwrap_err().to_string();
+    assert!(
+        err.contains("expected exactly one action child"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn parse_action_rejects_invalid_trigger() {
+    let kdl = r#"modules { module "clock" { actions { clik { open-panel } } } }"#;
+    let err = parse(kdl).unwrap_err().to_string();
+    assert!(err.contains("unknown action trigger"), "got: {err}");
 }
 
 #[test]
