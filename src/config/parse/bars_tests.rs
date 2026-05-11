@@ -449,6 +449,48 @@ bar "main" {
     }
 
     #[test]
+    fn parse_bar_actions_and_panel_layout() {
+        let kdl = r#"
+bar "main" {
+    actions {
+        click { open-panel }
+        Ctrl+E { toggle-panel }
+    }
+    panel {
+        width 420
+        max-height 720
+        start "workspaces"
+        center "focused-window"
+        end "network" "volume" "battery" "clock"
+        animation { open-ms 180 close-ms 120 }
+    }
+}
+"#;
+        let config = parse(kdl).unwrap();
+        let bar = &config.bars[0];
+        assert_eq!(
+            bar.actions
+                .action_for(&crate::config::ActionTrigger::Click),
+            Some(&crate::config::PanelAction::OpenPanel)
+        );
+        assert_eq!(
+            bar.actions
+                .action_for(&crate::config::ActionTrigger::Key("Ctrl+E".into())),
+            Some(&crate::config::PanelAction::TogglePanel)
+        );
+        assert_eq!(bar.panel.width, 420);
+        assert_eq!(bar.panel.max_height, Some(720));
+        assert_eq!(bar.panel.modules.start, vec!["workspaces"]);
+        assert_eq!(bar.panel.modules.center, vec!["focused-window"]);
+        assert_eq!(
+            bar.panel.modules.end,
+            vec!["network", "volume", "battery", "clock"]
+        );
+        assert_eq!(bar.panel.animation.open_ms, 180.0);
+        assert_eq!(bar.panel.animation.close_ms, 120.0);
+    }
+
+    #[test]
     fn parse_bar_rejects_legacy_physical_zone_names() {
         let kdl = r#"
 bar "main" {

@@ -2,7 +2,9 @@ use ::kdl::{KdlDocument, KdlNode};
 
 use super::super::{
     AnimationConfig, BarConfig, BarLayer, BarModules, Edge, ExpandTrigger, OutputTarget,
+    PanelAnimationConfig, PanelConfig, PanelModules,
 };
+use super::actions;
 use super::animation;
 use super::error::ParseCtx;
 use super::fields;
@@ -66,6 +68,8 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
             "animation",
             "style",
             "modules",
+            "actions",
+            "panel",
         ],
         &[
             "output",
@@ -81,6 +85,8 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
             "animation",
             "style",
             "modules",
+            "actions",
+            "panel",
         ],
     )?;
 
@@ -191,6 +197,8 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
     };
 
     let modules = parse_bar_modules(children, &ctx.child("modules"))?;
+    let actions = actions::parse(node, 0, "bar", ctx, &crate::config::CommandPolicy::default())?;
+    let panel = parse_panel(children, &ctx.child("panel"))?;
 
     Ok(BarConfig {
         name: name.to_string(),
@@ -207,6 +215,8 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
         animation: anim_config,
         style,
         modules,
+        actions,
+        panel,
     })
 }
 
@@ -229,6 +239,81 @@ fn parse_bar_modules(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<Bar
         return Ok(BarModules::default());
     };
     parse_bar_modules_from_doc(zone_doc, ctx)
+}
+
+fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConfig> {
+    let Some(panel_node) = fields::field(children, ctx, "panel").optional_node()? else {
+        return Ok(PanelConfig::default());
+    };
+    let Some(panel_children) = panel_node.children() else {
+        return Ok(PanelConfig::default());
+    };
+
+    ctx.validate_child_schema(
+        panel_children,
+        &[
+            "width",
+            "max-width",
+            "height",
+            "max-height",
+            "start",
+            "center",
+            "end",
+            "animation",
+        ],
+        &[
+            "width",
+            "max-width",
+            "height",
+            "max-height",
+            "start",
+            "center",
+            "end",
+            "animation",
+        ],
+    )?;
+
+    let defaults = PanelConfig::default();
+    let width = fields::field(panel_children, ctx, "width")
+        .optional()
+        .help("expected a width in logical pixels, e.g. 360")
+        .integer_message(
+            "expected a positive integer. Expected: expected a width in logical pixels, e.g. 360",
+        )
+        .u32()
+        .unwrap_or(defaults.width)?;
+    let max_width = fields::field(panel_children, ctx, "max-width")
+        .optional()
+        .help("expected a max width in logical pixels")
+        .u32()
+        .transpose()?
+        .or(defaults.max_width);
+    let height = fields::field(panel_children, ctx, "height")
+        .optional()
+        .help("expected a height in logical pixels")
+        .u32()
+        .transpose()?
+        .or(defaults.height);
+    let max_height = fields::field(panel_children, ctx, "max-height")
+        .optional()
+        .help("expected a max height in logical pixels")
+        .u32()
+        .transpose()?
+        .or(defaults.max_height);
+    let modules = parse_panel_modules_from_doc(panel_children, ctx)?;
+    let animation = match fields::field(panel_children, ctx, "animation").optional_node()? {
+        None => PanelAnimationConfig::default(),
+        Some(animation_node) => parse_panel_animation(animation_node, &ctx.child("animation"))?,
+    };
+
+    Ok(PanelConfig {
+        width,
+        max_width,
+        height,
+        max_height,
+        modules,
+        animation,
+    })
 }
 
 /// Parse `start`, `center`, `end` zone nodes from a `KdlDocument`.
@@ -257,6 +342,65 @@ fn parse_bar_modules_from_doc(zone_doc: &KdlDocument, ctx: &ParseCtx) -> ConfigR
         }
     }
     Ok(result)
+}
+
+fn parse_panel_modules_from_doc(
+    zone_doc: &KdlDocument,
+    ctx: &ParseCtx,
+) -> ConfigResult<PanelModules> {
+    let mut result = PanelModules::default();
+    for zone_node in zone_doc.nodes() {
+        let zone_name = zone_node.name().value();
+        let names: Vec<String> = zone_node
+            .entries()
+            .iter()
+            .filter(|entry| entry.name().is_none())
+            .filter_map(|entry| entry.value().as_string())
+            .map(ToString::to_string)
+            .collect();
+        match zone_name {
+            "start" => result.start = names,
+            "center" => result.center = names,
+            "end" => result.end = names,
+            _ => {}
+        }
+    }
+    Ok(result)
+}
+
+fn parse_panel_animation(
+    animation_node: &KdlNode,
+    ctx: &ParseCtx,
+) -> ConfigResult<PanelAnimationConfig> {
+    let Some(animation_children) = animation_node.children() else {
+        return Ok(PanelAnimationConfig::default());
+    };
+    ctx.validate_child_schema(
+        animation_children,
+        &["open-ms", "close-ms"],
+        &["open-ms", "close-ms"],
+    )?;
+    let defaults = PanelAnimationConfig::default();
+    let open_ms = fields::field(animation_children, ctx, "open-ms")
+        .optional()
+        .help("expected a duration in milliseconds, e.g. 180")
+        .integer_message(
+            "expected a positive integer. Expected: a duration in milliseconds, e.g. 180",
+        )
+        .u32()
+        .map(|value| value as f32)
+        .unwrap_or(defaults.open_ms)?;
+    let close_ms = fields::field(animation_children, ctx, "close-ms")
+        .optional()
+        .help("expected a duration in milliseconds, e.g. 120")
+        .integer_message(
+            "expected a positive integer. Expected: a duration in milliseconds, e.g. 120",
+        )
+        .u32()
+        .map(|value| value as f32)
+        .unwrap_or(defaults.close_ms)?;
+
+    Ok(PanelAnimationConfig { open_ms, close_ms })
 }
 
 #[cfg(test)]

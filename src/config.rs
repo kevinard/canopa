@@ -10,6 +10,7 @@ mod validate;
 
 pub use bar::{
     AnimationConfig, BarConfig, BarLayer, BarModules, Edge, ExpandTrigger, OutputTarget,
+    PanelAnimationConfig, PanelConfig, PanelModules,
 };
 pub(crate) use error::{
     ConfigDiagnostic, ConfigDiagnosticKind, ConfigError, ConfigResult, ConfigSource,

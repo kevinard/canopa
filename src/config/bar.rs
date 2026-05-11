@@ -71,6 +71,51 @@ pub struct BarModules {
     pub end: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PanelModules {
+    pub start: Vec<String>,
+    pub center: Vec<String>,
+    pub end: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PanelAnimationConfig {
+    pub open_ms: f32,
+    pub close_ms: f32,
+}
+
+impl Default for PanelAnimationConfig {
+    fn default() -> Self {
+        Self {
+            open_ms: 180.0,
+            close_ms: 120.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PanelConfig {
+    pub width: u32,
+    pub max_width: Option<u32>,
+    pub height: Option<u32>,
+    pub max_height: Option<u32>,
+    pub modules: PanelModules,
+    pub animation: PanelAnimationConfig,
+}
+
+impl Default for PanelConfig {
+    fn default() -> Self {
+        Self {
+            width: 360,
+            max_width: None,
+            height: None,
+            max_height: Some(600),
+            modules: PanelModules::default(),
+            animation: PanelAnimationConfig::default(),
+        }
+    }
+}
+
 /// Animation timing for expand/collapse transitions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimationConfig {
@@ -125,6 +170,8 @@ pub struct BarConfig {
     pub style: Style,
     /// Ordered module names per zone. Empty lists mean no modules in that zone.
     pub modules: BarModules,
+    pub actions: crate::config::ActionsConfig,
+    pub panel: PanelConfig,
 }
 
 impl Default for BarConfig {
@@ -144,6 +191,8 @@ impl Default for BarConfig {
             animation: AnimationConfig::default(),
             style: Style::default(),
             modules: BarModules::default(),
+            actions: crate::config::ActionsConfig::default(),
+            panel: PanelConfig::default(),
         }
     }
 }
