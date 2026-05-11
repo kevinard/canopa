@@ -18,8 +18,7 @@ pub(super) struct PopupMeta {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct PanelPopup {
-    pub(super) window: iced::window::Id,
+pub(super) struct PanelMeta {
     pub(super) tree: crate::surface::panel::PanelTree,
 }
 
@@ -116,7 +115,7 @@ pub(super) struct SurfaceManager {
     pub(super) manual_outputs: bool,
     pub(super) popups: HashMap<iced::window::Id, PopupMeta>,
     pub(super) tooltip_popups: HashMap<iced::window::Id, TooltipPopup>,
-    pub(super) panel_popup: Option<PanelPopup>,
+    pub(super) panel_popups: HashMap<iced::window::Id, PanelMeta>,
     pub(super) last_cursor: Option<(iced::window::Id, iced::Point)>,
 }
 
@@ -133,7 +132,7 @@ impl SurfaceManager {
             manual_outputs,
             popups: HashMap::new(),
             tooltip_popups: HashMap::new(),
-            panel_popup: None,
+            panel_popups: HashMap::new(),
             last_cursor: None,
         }
     }
@@ -236,26 +235,41 @@ impl SurfaceManager {
     }
 
     pub(super) fn has_any_popup(&self) -> bool {
-        !self.popups.is_empty() || !self.tooltip_popups.is_empty() || self.panel_popup.is_some()
+        !self.popups.is_empty() || !self.tooltip_popups.is_empty() || !self.panel_popups.is_empty()
     }
 
-    pub(super) fn panel_popup(&self) -> Option<&PanelPopup> {
-        self.panel_popup.as_ref()
+    pub(super) fn panel_popup(&self, window: iced::window::Id) -> Option<&PanelMeta> {
+        self.panel_popups.get(&window)
     }
 
-    pub(super) fn insert_panel_popup(&mut self, popup: PanelPopup) {
-        self.panel_popup = Some(popup);
+    pub(super) fn insert_panel_popup(&mut self, window: iced::window::Id, meta: PanelMeta) {
+        self.panel_popups.insert(window, meta);
     }
 
-    pub(super) fn remove_panel_popup(&mut self) -> Option<PanelPopup> {
-        self.panel_popup.take()
+    pub(super) fn remove_panel_popup(&mut self, window: iced::window::Id) -> Option<PanelMeta> {
+        self.panel_popups.remove(&window)
     }
 
-    pub(super) fn is_panel_popup_window(&self, window: iced::window::Id) -> bool {
-        self.panel_popup
-            .as_ref()
-            .map(|popup| popup.window == window)
-            .unwrap_or(false)
+    pub(super) fn panel_popup_ids(&self) -> impl Iterator<Item = iced::window::Id> + '_ {
+        self.panel_popups.keys().copied()
+    }
+
+    pub(super) fn panel_popup_values(&self) -> impl Iterator<Item = &PanelMeta> {
+        self.panel_popups.values()
+    }
+
+    pub(super) fn has_panel_popup(&self, window: iced::window::Id) -> bool {
+        self.panel_popups.contains_key(&window)
+    }
+
+    pub(super) fn active_panel_origin_for(
+        &self,
+        origin_window: iced::window::Id,
+    ) -> Option<&crate::surface::panel::PanelOrigin> {
+        self.panel_popups
+            .values()
+            .find(|meta| meta.tree.origin_window == origin_window)
+            .map(|meta| &meta.tree.origin)
     }
 
     pub(super) fn tooltip_popup(&self, window: iced::window::Id) -> Option<&TooltipPopup> {
@@ -841,25 +855,24 @@ mod tests {
     }
 
     #[test]
-    fn panel_popup_slot_replaces_existing_panel() {
+    fn panel_popup_storage_tracks_popup_by_window() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let origin = test_wid();
-        let first = test_wid();
-        let second = test_wid();
+        let panel = test_wid();
 
-        app.surfaces.insert_panel_popup(PanelPopup {
-            window: first,
-            tree: panel_tree(origin),
-        });
-        app.surfaces.insert_panel_popup(PanelPopup {
-            window: second,
-            tree: panel_tree(origin),
-        });
+        app.surfaces.insert_panel_popup(
+            panel,
+            PanelMeta {
+                tree: panel_tree(origin),
+            },
+        );
 
-        let popup = app.surfaces.panel_popup().expect("panel popup");
-        assert_eq!(popup.window, second);
-        assert!(app.surfaces.is_panel_popup_window(second));
-        assert!(!app.surfaces.is_panel_popup_window(first));
+        assert!(app.surfaces.has_panel_popup(panel));
+        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert_eq!(
+            app.surfaces.active_panel_origin_for(origin),
+            Some(&crate::surface::panel::PanelOrigin::Bar)
+        );
     }
 
     #[test]
@@ -867,15 +880,17 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let origin = test_wid();
         let panel = test_wid();
-        app.surfaces.insert_panel_popup(PanelPopup {
-            window: panel,
-            tree: panel_tree(origin),
-        });
+        app.surfaces.insert_panel_popup(
+            panel,
+            PanelMeta {
+                tree: panel_tree(origin),
+            },
+        );
 
-        let removed = app.surfaces.remove_panel_popup().expect("panel popup");
+        let removed = app.surfaces.remove_panel_popup(panel).expect("panel popup");
 
-        assert_eq!(removed.window, panel);
-        assert!(app.surfaces.panel_popup().is_none());
+        assert_eq!(removed.tree.origin_window, origin);
+        assert!(!app.surfaces.has_panel_popup(panel));
         assert!(!app.surfaces.has_any_popup());
     }
 
