@@ -226,7 +226,7 @@ impl crate::modules::Module for VolumeModule {
         }
     }
 
-    fn view_expanded_with_style(
+    fn view_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,

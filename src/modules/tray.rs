@@ -210,7 +210,7 @@ impl crate::modules::Module for TrayModule {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded_with_style(
+    fn view_panel_with_style(
         &self,
         _state: &ModuleState,
         _bar_style: &crate::config::Style,
@@ -358,7 +358,7 @@ impl crate::modules::Module for TrayIconModule {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded_with_style(
+    fn view_panel_with_style(
         &self,
         _state: &ModuleState,
         _bar_style: &crate::config::Style,

@@ -136,7 +136,7 @@ impl crate::modules::Module for FocusedWindowModule {
         collapsed_icon_with_style("□", theme::TEXT, bar_style)
     }
 
-    fn view_expanded_with_style(
+    fn view_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,

@@ -55,7 +55,7 @@ impl crate::modules::Module for WorkspacesModule {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded_with_style(
+    fn view_panel_with_style(
         &self,
         _state: &crate::modules::ModuleState,
         _bar_style: &crate::config::Style,
@@ -337,7 +337,7 @@ impl crate::modules::Module for WorkspaceItemModule {
         iced::widget::Space::new().into()
     }
 
-    fn view_expanded_with_style(
+    fn view_panel_with_style(
         &self,
         _state: &crate::modules::ModuleState,
         _bar_style: &crate::config::Style,

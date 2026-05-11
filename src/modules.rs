@@ -150,19 +150,19 @@ pub trait Module: Send + Sync {
         state: &ModuleState,
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message>;
-    fn view_expanded_with_style(
+    fn view_panel_with_style(
         &self,
         state: &ModuleState,
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message>;
     /// View for horizontal bars (top/bottom). Single-line, shrink-width content
-    /// suited for a side-by-side row layout. Defaults to `view_expanded_with_style`.
+    /// suited for a side-by-side row layout. Defaults to `view_panel_with_style`.
     fn view_horizontal_with_style(
         &self,
         state: &ModuleState,
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
-        self.view_expanded_with_style(state, bar_style)
+        self.view_panel_with_style(state, bar_style)
     }
     /// View used when rendering this module inside a bar surface.
     ///
@@ -179,7 +179,7 @@ pub trait Module: Send + Sync {
     ) -> iced::Element<'_, crate::app::Message> {
         let _ = window;
         if expanded {
-            self.view_expanded_with_style(state, bar_style)
+            self.view_panel_with_style(state, bar_style)
         } else if horizontal {
             self.view_horizontal_with_style(state, bar_style)
         } else {

@@ -129,7 +129,7 @@ impl crate::modules::Module for ButtonModule {
         }
     }
 
-    // Button keeps custom collapsed/expanded views because its expanded layout
+    // Button keeps custom collapsed/panel views because its panel layout
     // right-aligns the label with a spacer instead of using the shared icon-label row.
     fn view_collapsed_with_style(
         &self,
@@ -169,7 +169,7 @@ impl crate::modules::Module for ButtonModule {
         }
     }
 
-    fn view_expanded_with_style(
+    fn view_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,

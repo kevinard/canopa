@@ -1,4 +1,4 @@
-/// Shared view helpers for collapsed, expanded, and horizontal module layouts.
+/// Shared view helpers for collapsed, panel, and horizontal module layouts.
 ///
 /// These cover the layout patterns that repeat across battery, network, volume,
 /// and focused-window. Keeping them here avoids duplicating widget construction code
