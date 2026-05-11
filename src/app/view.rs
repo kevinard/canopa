@@ -23,6 +23,10 @@ impl App {
             return render_tooltip_popup(&popup.tree);
         }
 
+        if self.surfaces.panel_popup(window).is_some() {
+            return render_panel_popup();
+        }
+
         render_bar_model(self.bar_render_model(window), window)
     }
 
@@ -32,6 +36,13 @@ impl App {
             text_color: crate::theme::TEXT,
         }
     }
+}
+
+fn render_panel_popup<'a>() -> Element<'a, Message> {
+    iced::widget::container(iced::widget::text("panel"))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 fn render_tooltip_popup<'a>(
@@ -185,5 +196,28 @@ mod tests {
         );
 
         let _ = app.view(popup);
+    }
+
+    #[test]
+    fn panel_surface_view_renders_without_panic() {
+        let (mut app, _) = App::boot(Config::default(), vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        app.surfaces.insert_panel_popup(
+            panel,
+            super::super::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::BarPanel,
+                    origin_window: origin,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+            },
+        );
+
+        let _ = app.view(panel);
     }
 }

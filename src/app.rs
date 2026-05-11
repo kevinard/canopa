@@ -11,6 +11,7 @@ mod module_state;
 mod module_store;
 mod navigation;
 mod niri;
+mod panel;
 mod perf;
 mod render;
 mod shared;
@@ -37,6 +38,7 @@ pub(crate) struct App {
     shared: shared::SharedContext,
     surfaces: surfaces::SurfaceManager,
     menu: menu::MenuSystem,
+    panel: panel::PanelSystem,
     modules: module_runtime::ModuleRuntime,
     niri: niri::AppNiriState,
     tray: tray::TrayState,
@@ -176,6 +178,7 @@ impl App {
             shared: shared::SharedContext::new(),
             surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
             menu: menu::MenuSystem::default(),
+            panel: panel::PanelSystem::default(),
             modules: module_runtime::ModuleRuntime::from_modules_with_actions(module_graph.modules),
             niri: niri::AppNiriState::new(),
             tray: tray::TrayState::default(),
@@ -196,7 +199,7 @@ impl App {
         match message {
             Message::Surface(event) => self.handle_surface_event(event),
             Message::Menu(event) => self.handle_menu_event(event),
-            Message::Panel(_) => Task::none(),
+            Message::Panel(event) => self.handle_panel_event(event),
             Message::Modules(event) => self.handle_module_runtime_event(event),
             Message::Niri(event) => self.handle_app_niri_event(event),
             Message::VolumeAdjust { step, up } => self.handle_volume_adjust(step, up),
