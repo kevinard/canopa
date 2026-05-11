@@ -73,6 +73,29 @@ pub enum MenuEvent {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
+pub enum PanelEvent {
+    Open {
+        origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
+        content: crate::surface::panel::PanelContent,
+        anchor: Option<iced::Rectangle>,
+    },
+    Close,
+    Toggle {
+        origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
+        content: crate::surface::panel::PanelContent,
+        anchor: Option<iced::Rectangle>,
+    },
+    SearchChanged(String),
+    FocusMoveNext,
+    FocusMovePrev,
+    Activate,
+    Back,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub enum ModuleRuntimeEvent {
     Module(ModuleId, ModuleEvent),
     ModuleClick(ModuleId, iced::window::Id),

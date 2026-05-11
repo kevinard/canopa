@@ -48,6 +48,7 @@ pub(crate) struct App {
 pub enum Message {
     Surface(messages::SurfaceEvent),
     Menu(messages::MenuEvent),
+    Panel(messages::PanelEvent),
     Modules(messages::ModuleRuntimeEvent),
     Niri(messages::AppNiriEvent),
     Tray(messages::TrayRuntimeEvent),
@@ -72,6 +73,7 @@ impl Message {
             Message::Surface(messages::SurfaceEvent::Tick) => "Surface::Tick",
             Message::Surface(_) => "Surface",
             Message::Menu(_) => "Menu",
+            Message::Panel(_) => "Panel",
             Message::Modules(_) => "Modules",
             Message::Niri(messages::AppNiriEvent::Ipc(crate::niri::NiriEvent::Connected)) => {
                 "Niri::Connected"
@@ -194,6 +196,7 @@ impl App {
         match message {
             Message::Surface(event) => self.handle_surface_event(event),
             Message::Menu(event) => self.handle_menu_event(event),
+            Message::Panel(_) => Task::none(),
             Message::Modules(event) => self.handle_module_runtime_event(event),
             Message::Niri(event) => self.handle_app_niri_event(event),
             Message::VolumeAdjust { step, up } => self.handle_volume_adjust(step, up),
