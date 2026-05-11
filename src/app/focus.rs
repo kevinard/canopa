@@ -78,7 +78,7 @@ impl App {
                 InteractionEvent::ScrollUp
             };
             if let Some(ref id) = s.focused_module.clone() {
-                return self.dispatch_module_interaction(id, interaction);
+                return self.dispatch_module_interaction(id, interaction, window);
             }
             return Task::none();
         }
@@ -146,10 +146,10 @@ impl App {
         if let Some(ref id) = s.focused_module.clone() {
             if self
                 .modules
-                .action_for(id, &InteractionEvent::Clicked)
+                .action_for(id, &crate::config::ActionTrigger::Click)
                 .is_some()
             {
-                return self.dispatch_module_interaction(id, InteractionEvent::Clicked);
+                return self.dispatch_module_interaction(id, InteractionEvent::Clicked, window);
             }
             for (_, module) in &self.modules {
                 if module.id() == *id {
@@ -182,11 +182,11 @@ impl App {
         if let Some(ref id) = s.focused_module.clone() {
             if self
                 .modules
-                .action_for(id, &InteractionEvent::RightClicked(window))
+                .action_for(id, &crate::config::ActionTrigger::RightClick)
                 .is_some()
             {
                 return self
-                    .dispatch_module_interaction(id, InteractionEvent::RightClicked(window));
+                    .dispatch_module_interaction(id, InteractionEvent::RightClicked(window), window);
             }
             for (_, module) in &self.modules {
                 if module.id() == *id {

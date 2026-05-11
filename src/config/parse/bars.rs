@@ -346,7 +346,7 @@ fn parse_bar_modules_from_doc(zone_doc: &KdlDocument, ctx: &ParseCtx) -> ConfigR
 
 fn parse_panel_modules_from_doc(
     zone_doc: &KdlDocument,
-    ctx: &ParseCtx,
+    _ctx: &ParseCtx,
 ) -> ConfigResult<PanelModules> {
     let mut result = PanelModules::default();
     for zone_node in zone_doc.nodes() {

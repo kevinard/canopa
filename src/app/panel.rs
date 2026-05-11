@@ -45,6 +45,57 @@ fn panel_window_settings(
 }
 
 impl App {
+    pub(super) fn dispatch_panel_action(
+        &mut self,
+        origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
+        action: crate::config::PanelAction,
+    ) -> Task<Message> {
+        match action {
+            crate::config::PanelAction::Command(command) => {
+                let _ = crate::command::spawn_config_command_fire_and_forget(&command);
+                Task::none()
+            }
+            crate::config::PanelAction::OpenPanel => {
+                let content = content_for_origin(&origin);
+                self.handle_panel_event(super::messages::PanelEvent::Open {
+                    origin_window,
+                    origin,
+                    content,
+                    anchor: None,
+                })
+            }
+            crate::config::PanelAction::TogglePanel => {
+                let content = content_for_origin(&origin);
+                self.handle_panel_event(super::messages::PanelEvent::Toggle {
+                    origin_window,
+                    origin,
+                    content,
+                    anchor: None,
+                })
+            }
+            crate::config::PanelAction::ClosePanel => {
+                self.handle_panel_event(super::messages::PanelEvent::Close)
+            }
+            crate::config::PanelAction::OpenMenu(name) => {
+                self.handle_panel_event(super::messages::PanelEvent::Open {
+                    origin_window,
+                    origin,
+                    content: crate::surface::panel::PanelContent::Menu(name),
+                    anchor: None,
+                })
+            }
+            crate::config::PanelAction::ToggleMenu(name) => {
+                self.handle_panel_event(super::messages::PanelEvent::Toggle {
+                    origin_window,
+                    origin,
+                    content: crate::surface::panel::PanelContent::Menu(name),
+                    anchor: None,
+                })
+            }
+        }
+    }
+
     pub(super) fn close_all_panels(&mut self) -> Vec<Task<Message>> {
         let ids: Vec<_> = self.surfaces.panel_popup_ids().collect();
         self.panel.clear();
@@ -131,6 +182,17 @@ impl App {
     }
 }
 
+fn content_for_origin(
+    origin: &crate::surface::panel::PanelOrigin,
+) -> crate::surface::panel::PanelContent {
+    match origin {
+        crate::surface::panel::PanelOrigin::Bar => crate::surface::panel::PanelContent::BarPanel,
+        crate::surface::panel::PanelOrigin::Module(id) => {
+            crate::surface::panel::PanelContent::ModulePanel(id.clone())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +236,60 @@ mod tests {
         let _ = app.update(Message::Panel(crate::app::messages::PanelEvent::Close));
 
         assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+    }
+
+    #[test]
+    fn configured_module_click_open_panel_takes_precedence_over_builtin_click() {
+        let legacy_path = format!(
+            "/tmp/niribar-panel-legacy-click-{}",
+            std::process::id()
+        );
+        let _ = std::fs::remove_file(&legacy_path);
+
+        let mut config = crate::config::Config {
+            modules: vec![crate::config::ModuleConfig {
+                name: "button".into(),
+                module_type: "button".into(),
+                params: crate::config::ModuleParams::Button(crate::config::ButtonConfig {
+                    label: "Launch".into(),
+                    icon: ">".into(),
+                    on_click: crate::config::CommandConfig::Shell(format!(
+                        "printf legacy >{legacy_path}"
+                    )),
+                    format: crate::config::FormatConfig::default(),
+                    tooltip: crate::config::TooltipSetting::Default,
+                }),
+                actions: crate::config::ModuleActionsConfig {
+                    bindings: vec![crate::config::ActionBinding {
+                        trigger: crate::config::ActionTrigger::Click,
+                        action: crate::config::PanelAction::OpenPanel,
+                    }],
+                },
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.start = vec!["button".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
+
+        let _ = app.update(Message::Modules(
+            crate::app::messages::ModuleRuntimeEvent::ModuleClick(
+                crate::modules::ModuleId::new("button"),
+                origin,
+            ),
+        ));
+
+        let panel = app.surfaces.panel_popup_values().next().expect("panel");
+        assert_eq!(
+            panel.tree.content,
+            crate::surface::panel::PanelContent::ModulePanel(crate::modules::ModuleId::new(
+                "button"
+            ))
+        );
+        assert!(
+            !std::path::Path::new(&legacy_path).exists(),
+            "legacy button command should not run when open-panel action is configured"
+        );
     }
 }

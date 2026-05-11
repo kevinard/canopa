@@ -27,19 +27,24 @@ impl App {
     ) -> Task<Message> {
         match event {
             ModuleRuntimeEvent::Module(id, event) => self.handle_module_event(id, event),
-            ModuleRuntimeEvent::ModuleClick(id, _) => {
-                self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::Clicked)
-            }
+            ModuleRuntimeEvent::ModuleClick(id, window) => self.dispatch_module_interaction(
+                &id,
+                crate::modules::InteractionEvent::Clicked,
+                window,
+            ),
             ModuleRuntimeEvent::ModuleRightClick(id, window) => self.dispatch_module_interaction(
                 &id,
                 crate::modules::InteractionEvent::RightClicked(window),
+                window,
             ),
-            ModuleRuntimeEvent::ModuleScrollUp(id, _) => {
-                self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::ScrollUp)
+            ModuleRuntimeEvent::ModuleScrollUp(id, window) => {
+                self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::ScrollUp, window)
             }
-            ModuleRuntimeEvent::ModuleScrollDown(id, _) => {
-                self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::ScrollDown)
-            }
+            ModuleRuntimeEvent::ModuleScrollDown(id, window) => self.dispatch_module_interaction(
+                &id,
+                crate::modules::InteractionEvent::ScrollDown,
+                window,
+            ),
             ModuleRuntimeEvent::Battery(event) => self.handle_battery_event(event),
             ModuleRuntimeEvent::Network(event) => self.handle_network_event(event),
             ModuleRuntimeEvent::Volume(event) => self.handle_volume_event(event),
@@ -81,13 +86,22 @@ impl App {
     }
 
     pub(super) fn dispatch_module_interaction(
-        &self,
+        &mut self,
         id: &ModuleId,
         event: InteractionEvent,
+        origin_window: iced::window::Id,
     ) -> Task<Message> {
-        if let Some(command) = self.modules.action_for(id, &event) {
-            let _ = crate::command::spawn_config_command_fire_and_forget(command);
-            return Task::none();
+        let trigger = match &event {
+            InteractionEvent::Clicked => Some(crate::config::ActionTrigger::Click),
+            InteractionEvent::RightClicked(_) => Some(crate::config::ActionTrigger::RightClick),
+            _ => None,
+        };
+        if let Some(action) = trigger.and_then(|trigger| self.modules.action_for(id, &trigger)) {
+            return self.dispatch_panel_action(
+                origin_window,
+                crate::surface::panel::PanelOrigin::Module(id.clone()),
+                action.clone(),
+            );
         }
 
         if let Some(module) = self.modules.get(id)

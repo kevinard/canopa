@@ -110,20 +110,10 @@ impl ModuleRuntime {
     pub(super) fn action_for(
         &self,
         id: &ModuleId,
-        event: &crate::modules::InteractionEvent,
-    ) -> Option<&crate::config::CommandConfig> {
+        trigger: &crate::config::ActionTrigger,
+    ) -> Option<&crate::config::PanelAction> {
         let actions = self.actions.get(id)?;
-        let trigger = match event {
-            crate::modules::InteractionEvent::Clicked => crate::config::ActionTrigger::Click,
-            crate::modules::InteractionEvent::RightClicked(_) => {
-                crate::config::ActionTrigger::RightClick
-            }
-            _ => return None,
-        };
-        match actions.action_for(&trigger) {
-            Some(crate::config::PanelAction::Command(command)) => Some(command),
-            _ => None,
-        }
+        actions.action_for(trigger)
     }
 }
 
@@ -892,10 +882,10 @@ mod tests {
         assert_eq!(
             app.modules.action_for(
                 &ModuleId::new("tray:org.test.App"),
-                &crate::modules::InteractionEvent::RightClicked(iced::window::Id::unique()),
+                &crate::config::ActionTrigger::RightClick,
             ),
-            Some(&crate::config::CommandConfig::Shell(
-                "notify-send tray".into()
+            Some(&crate::config::PanelAction::Command(
+                crate::config::CommandConfig::Shell("notify-send tray".into())
             ))
         );
     }
@@ -932,10 +922,10 @@ mod tests {
         assert_eq!(
             app.modules.action_for(
                 &ModuleId::new("workspace:1"),
-                &crate::modules::InteractionEvent::Clicked,
+                &crate::config::ActionTrigger::Click,
             ),
-            Some(&crate::config::CommandConfig::Shell(
-                "notify-send workspace".into()
+            Some(&crate::config::PanelAction::Command(
+                crate::config::CommandConfig::Shell("notify-send workspace".into())
             ))
         );
     }
