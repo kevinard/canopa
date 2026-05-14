@@ -1,3 +1,10 @@
+pub(crate) fn module_widget_id(
+    window: iced::window::Id,
+    id: &crate::modules::ModuleId,
+) -> iced::widget::Id {
+    iced::widget::Id::from(format!("module:{}:{:?}", id.0, window))
+}
+
 pub(super) struct FindBounds {
     pub(super) target: iced::widget::Id,
     pub(super) result: Option<iced::Rectangle>,

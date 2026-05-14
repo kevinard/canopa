@@ -37,9 +37,11 @@ impl App {
                 crate::modules::InteractionEvent::RightClicked(window),
                 window,
             ),
-            ModuleRuntimeEvent::ModuleScrollUp(id, window) => {
-                self.dispatch_module_interaction(&id, crate::modules::InteractionEvent::ScrollUp, window)
-            }
+            ModuleRuntimeEvent::ModuleScrollUp(id, window) => self.dispatch_module_interaction(
+                &id,
+                crate::modules::InteractionEvent::ScrollUp,
+                window,
+            ),
             ModuleRuntimeEvent::ModuleScrollDown(id, window) => self.dispatch_module_interaction(
                 &id,
                 crate::modules::InteractionEvent::ScrollDown,
@@ -96,12 +98,31 @@ impl App {
             InteractionEvent::RightClicked(_) => Some(crate::config::ActionTrigger::RightClick),
             _ => None,
         };
-        if let Some(action) = trigger.and_then(|trigger| self.modules.action_for(id, &trigger)) {
-            return self.dispatch_panel_action(
-                origin_window,
-                crate::surface::panel::PanelOrigin::Module(id.clone()),
-                action.clone(),
-            );
+        if let Some(action) =
+            trigger.and_then(|trigger| self.modules.action_for(id, &trigger).cloned())
+        {
+            let origin = crate::surface::panel::PanelOrigin::Module(id.clone());
+            if super::panel::panel_action_needs_anchor(&action) {
+                let target = super::widget_ops::module_widget_id(origin_window, id);
+                let op = super::widget_ops::FindBounds {
+                    target,
+                    result: None,
+                };
+                return iced::advanced::widget::operate(op).then(move |bounds| {
+                    let event = super::panel::panel_event_for_action(
+                        origin_window,
+                        origin.clone(),
+                        action.clone(),
+                        bounds,
+                    );
+                    match event {
+                        Some(event) => Task::done(Message::Panel(event)),
+                        None => Task::none(),
+                    }
+                });
+            }
+
+            return self.dispatch_panel_action(origin_window, origin, action);
         }
 
         if let Some(module) = self.modules.get(id)

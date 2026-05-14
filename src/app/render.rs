@@ -1,5 +1,5 @@
 use iced::Element;
-use iced::widget::mouse_area;
+use iced::widget::{container, mouse_area};
 
 use super::{App, Message};
 use crate::config::Edge;
@@ -147,39 +147,40 @@ impl App {
 
             let module_view =
                 module.view_for_bar(&state, window, is_horizontal, shows_expanded, &bar.style);
+            let framed_module = container(module_frame(module_view, hovered || focused || active))
+                .id(super::widget_ops::module_widget_id(window, &id));
             let scroll_id = id.clone();
-            let element: Element<'_, Message> =
-                mouse_area(module_frame(module_view, hovered || focused || active))
-                    .on_enter(Message::Surface(
-                        super::messages::SurfaceEvent::ModuleHoverEnter(id.clone(), window),
-                    ))
-                    .on_exit(Message::Surface(
-                        super::messages::SurfaceEvent::ModuleHoverExit(id.clone(), window),
-                    ))
-                    .on_press(Message::Modules(
-                        super::messages::ModuleRuntimeEvent::ModuleClick(id.clone(), window),
-                    ))
-                    .on_right_press(Message::Modules(
-                        super::messages::ModuleRuntimeEvent::ModuleRightClick(id.clone(), window),
-                    ))
-                    .on_scroll(move |delta| {
-                        let up = match delta {
-                            iced::mouse::ScrollDelta::Lines { y, .. }
-                            | iced::mouse::ScrollDelta::Pixels { y, .. } => y > 0.0,
-                        };
-                        if up {
-                            Message::Modules(super::messages::ModuleRuntimeEvent::ModuleScrollUp(
-                                scroll_id.clone(),
-                                window,
-                            ))
-                        } else {
-                            Message::Modules(super::messages::ModuleRuntimeEvent::ModuleScrollDown(
-                                scroll_id.clone(),
-                                window,
-                            ))
-                        }
-                    })
-                    .into();
+            let element: Element<'_, Message> = mouse_area(framed_module)
+                .on_enter(Message::Surface(
+                    super::messages::SurfaceEvent::ModuleHoverEnter(id.clone(), window),
+                ))
+                .on_exit(Message::Surface(
+                    super::messages::SurfaceEvent::ModuleHoverExit(id.clone(), window),
+                ))
+                .on_press(Message::Modules(
+                    super::messages::ModuleRuntimeEvent::ModuleClick(id.clone(), window),
+                ))
+                .on_right_press(Message::Modules(
+                    super::messages::ModuleRuntimeEvent::ModuleRightClick(id.clone(), window),
+                ))
+                .on_scroll(move |delta| {
+                    let up = match delta {
+                        iced::mouse::ScrollDelta::Lines { y, .. }
+                        | iced::mouse::ScrollDelta::Pixels { y, .. } => y > 0.0,
+                    };
+                    if up {
+                        Message::Modules(super::messages::ModuleRuntimeEvent::ModuleScrollUp(
+                            scroll_id.clone(),
+                            window,
+                        ))
+                    } else {
+                        Message::Modules(super::messages::ModuleRuntimeEvent::ModuleScrollDown(
+                            scroll_id.clone(),
+                            window,
+                        ))
+                    }
+                })
+                .into();
 
             let entry = ModuleRenderEntry {
                 id,
