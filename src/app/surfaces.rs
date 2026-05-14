@@ -443,6 +443,7 @@ impl App {
             }
             SurfaceEvent::BackPressed(_) => Task::none(),
             SurfaceEvent::ToggleExpand => self.handle_toggle_expand(),
+            SurfaceEvent::TogglePanel => self.handle_toggle_panel_ipc(),
         }
     }
 
@@ -457,6 +458,55 @@ impl App {
     // Thin compatibility accessors while App remains the iced root.
     pub(super) fn surface(&self, id: iced::window::Id) -> Option<&SurfaceState> {
         self.surfaces.surface(id)
+    }
+
+    pub(super) fn handle_toggle_panel_ipc(&mut self) -> Task<Message> {
+        if self.surfaces.panel_popup_ids().next().is_some() {
+            return self.handle_panel_event(super::messages::PanelEvent::Close);
+        }
+
+        let focused_output = self.niri.state().focused_output().map(str::to_string);
+        let mut candidates: Vec<_> = self
+            .surfaces
+            .surfaces()
+            .filter(|(_, surface)| {
+                focused_output
+                    .as_deref()
+                    .map(|output| surface.output_name == output)
+                    .unwrap_or(true)
+            })
+            .map(|(window, surface)| {
+                (
+                    surface.output_name.clone(),
+                    surface.bar_name.clone(),
+                    *window,
+                )
+            })
+            .collect();
+        if candidates.is_empty() && focused_output.is_some() {
+            candidates = self
+                .surfaces
+                .surfaces()
+                .map(|(window, surface)| {
+                    (
+                        surface.output_name.clone(),
+                        surface.bar_name.clone(),
+                        *window,
+                    )
+                })
+                .collect();
+        }
+        candidates.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+        let Some((_, _, window)) = candidates.into_iter().next() else {
+            return Task::none();
+        };
+        self.handle_panel_event(super::messages::PanelEvent::Open {
+            origin_window: window,
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::BarPanel,
+            anchor: None,
+        })
     }
 
     /// Opens a layer-shell window for one (bar, output) pair, records it in `pending` and
@@ -896,6 +946,49 @@ mod tests {
         assert_eq!(removed.tree.origin_window, origin);
         assert!(!app.surfaces.has_panel_popup(panel));
         assert!(!app.surfaces.has_any_popup());
+    }
+
+    #[test]
+    fn toggle_panel_ipc_closes_open_panel() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let origin = test_wid();
+        let panel = test_wid();
+        app.surfaces
+            .surfaces
+            .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
+        app.surfaces.insert_panel_popup(
+            panel,
+            PanelMeta {
+                tree: panel_tree(origin),
+            },
+        );
+
+        let _ = app.update(Message::Surface(
+            crate::app::messages::SurfaceEvent::TogglePanel,
+        ));
+
+        assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+    }
+
+    #[test]
+    fn toggle_panel_ipc_opens_one_panel_for_deterministic_surface() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let first = test_wid();
+        let second = test_wid();
+        app.surfaces
+            .surfaces
+            .insert(second, SurfaceState::new("DP-1".into(), "z".into()));
+        app.surfaces
+            .surfaces
+            .insert(first, SurfaceState::new("DP-1".into(), "main".into()));
+
+        let _ = app.update(Message::Surface(
+            crate::app::messages::SurfaceEvent::TogglePanel,
+        ));
+
+        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        let panel = app.surfaces.panel_popup_values().next().unwrap();
+        assert_eq!(panel.tree.origin_window, first);
     }
 
     #[test]

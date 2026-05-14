@@ -24,6 +24,7 @@ pub enum SurfaceEvent {
     KeyboardSecondaryActivate(iced::window::Id),
     BackPressed(iced::window::Id),
     ToggleExpand,
+    TogglePanel,
     CursorMoved(iced::window::Id, Point),
     WindowSized(iced::window::Id, u32, u32),
     WindowClosed(iced::window::Id),

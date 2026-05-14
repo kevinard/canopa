@@ -45,7 +45,7 @@ fn set_owner_only_permissions(path: &std::path::Path) -> std::io::Result<()> {
 
 /// Iced subscription that listens on the Unix socket for IPC commands.
 ///
-/// Emits wrapped `SurfaceEvent::ToggleExpand` when it receives `"toggle-expand"` on any connection.
+/// Emits wrapped `SurfaceEvent::TogglePanel` when it receives `"toggle-panel"` on any connection.
 /// Removes a stale socket file on first startup. Runs indefinitely.
 ///
 /// Pattern mirrors `niri_subscription`: a `tokio::spawn` task handles blocking/async I/O
@@ -86,14 +86,10 @@ pub fn ipc_subscription() -> iced::Subscription<Message> {
                             let mut reader = tokio::io::BufReader::new(stream);
                             let mut line = String::new();
                             if reader.read_line(&mut line).await.is_ok()
-                                && line.trim() == "toggle-expand"
-                                && tx
-                                    .send(Message::Surface(
-                                        crate::app::messages::SurfaceEvent::ToggleExpand,
-                                    ))
-                                    .is_err()
+                                && let Some(message) = ipc_message_for_line(&line)
+                                && tx.send(message).is_err()
                             {
-                                break; // Receiver dropped — app shutting down
+                                break;
                             }
                         }
                     });
@@ -111,6 +107,15 @@ pub fn ipc_subscription() -> iced::Subscription<Message> {
             }
         })
     })
+}
+
+fn ipc_message_for_line(line: &str) -> Option<Message> {
+    match line.trim() {
+        "toggle-panel" => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::TogglePanel,
+        )),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -174,5 +179,15 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
         assert!(path.exists(), "regular files must not be unlinked");
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn toggle_panel_line_emits_surface_toggle_panel() {
+        let message = ipc_message_for_line("toggle-panel\n").expect("message");
+
+        assert!(matches!(
+            message,
+            Message::Surface(crate::app::messages::SurfaceEvent::TogglePanel)
+        ));
     }
 }
