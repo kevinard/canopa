@@ -20,6 +20,7 @@ pub(super) struct ModuleRenderEntry<'a> {
     pub(super) zone: Zone,
     pub(super) hovered: bool,
     pub(super) focused: bool,
+    pub(super) active: bool,
     pub(super) element: Element<'a, Message>,
     #[cfg(test)]
     pub(super) state: ModuleState,
@@ -34,6 +35,12 @@ pub(super) struct BarRenderModel<'a> {
     pub(super) end: Vec<ModuleRenderEntry<'a>>,
 }
 
+pub(super) struct PanelRenderModel<'a> {
+    pub(super) tree: &'a crate::surface::panel::PanelTree,
+    pub(super) entries: Vec<ModuleRenderEntry<'a>>,
+    pub(super) bar_style: &'a crate::config::Style,
+}
+
 impl App {
     pub(super) fn popup_render_model(
         &self,
@@ -45,6 +52,67 @@ impl App {
             service: meta.service.as_str(),
             menu_path: &meta.menu_path,
             tree: &meta.tree,
+        })
+    }
+
+    pub(super) fn panel_render_model(
+        &self,
+        window: iced::window::Id,
+    ) -> Option<PanelRenderModel<'_>> {
+        let meta = self.surfaces.panel_popup(window)?;
+        let tree = &meta.tree;
+        let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
+        let origin_surface = self
+            .surfaces
+            .surface(tree.origin_window)
+            .cloned()
+            .unwrap_or_else(|| {
+                crate::surface::SurfaceState::new(
+                    tree.origin_output_name.clone(),
+                    tree.origin_bar_name.clone(),
+                )
+            });
+        let default_state = ModuleState::default();
+
+        let layout = match &tree.content {
+            crate::surface::panel::PanelContent::BarPanel => {
+                self.effective_panel_module_layout_for_bar(bar)
+            }
+            crate::surface::panel::PanelContent::ModulePanel(id) => {
+                vec![(Zone::Center, id.clone())]
+            }
+            crate::surface::panel::PanelContent::Menu(_) => Vec::new(),
+        };
+
+        let entries = layout
+            .into_iter()
+            .filter_map(|(zone, id)| {
+                let module = self.modules.get(&id)?;
+                let state =
+                    self.module_render_state(module.kind(), &id, &origin_surface, &default_state);
+                let focused = tree.origin == crate::surface::panel::PanelOrigin::Module(id.clone());
+                let element = crate::surface::panel::panel_module_frame(
+                    module.view_panel_with_style(&state, &bar.style),
+                    focused,
+                );
+
+                Some(ModuleRenderEntry {
+                    id,
+                    zone,
+                    hovered: false,
+                    focused,
+                    active: focused,
+                    element,
+                    #[cfg(test)]
+                    state,
+                })
+            })
+            .collect();
+
+        Some(PanelRenderModel {
+            tree,
+            entries,
+            bar_style: &bar.style,
         })
     }
 
@@ -74,12 +142,14 @@ impl App {
             let state = self.module_render_state(module.kind(), &id, &surface, &default_state);
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);
+            let active = self.surfaces.active_panel_origin_for(window)
+                == Some(&crate::surface::panel::PanelOrigin::Module(id.clone()));
 
             let module_view =
                 module.view_for_bar(&state, window, is_horizontal, shows_expanded, &bar.style);
             let scroll_id = id.clone();
             let element: Element<'_, Message> =
-                mouse_area(module_frame(module_view, hovered || focused))
+                mouse_area(module_frame(module_view, hovered || focused || active))
                     .on_enter(Message::Surface(
                         super::messages::SurfaceEvent::ModuleHoverEnter(id.clone(), window),
                     ))
@@ -116,6 +186,7 @@ impl App {
                 zone: zone.clone(),
                 hovered,
                 focused,
+                active,
                 element,
                 #[cfg(test)]
                 state,
@@ -416,6 +487,121 @@ mod tests {
 
         assert_eq!(workspace_items.len(), 2);
         assert!(workspace_items.iter().all(|(zone, _)| zone == &Zone::Start));
+    }
+
+    #[test]
+    fn panel_render_model_uses_bar_panel_layout() {
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "clock".into(),
+                module_type: "clock".into(),
+                params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..Default::default()
+        };
+        config.bars[0].panel.modules.center = vec!["clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = test_wid();
+        let panel = test_wid();
+        app.surfaces.insert_panel_popup(
+            panel,
+            super::super::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::BarPanel,
+                    origin_window: origin,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+            },
+        );
+
+        let model = app.panel_render_model(panel).expect("panel model");
+
+        assert_eq!(model.entries.len(), 1);
+        assert_eq!(model.entries[0].id, ModuleId::new("clock"));
+        assert_eq!(model.entries[0].zone, Zone::Center);
+    }
+
+    #[test]
+    fn panel_render_model_uses_module_panel_content() {
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "clock".into(),
+                module_type: "clock".into(),
+                params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.start = vec!["clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = test_wid();
+        let panel = test_wid();
+        app.surfaces.insert_panel_popup(
+            panel,
+            super::super::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Module(ModuleId::new("clock")),
+                    content: crate::surface::panel::PanelContent::ModulePanel(ModuleId::new(
+                        "clock",
+                    )),
+                    origin_window: origin,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+            },
+        );
+
+        let model = app.panel_render_model(panel).expect("panel model");
+
+        assert_eq!(model.entries.len(), 1);
+        assert_eq!(model.entries[0].id, ModuleId::new("clock"));
+    }
+
+    #[test]
+    fn bar_render_model_marks_module_panel_origin_active() {
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "clock".into(),
+                module_type: "clock".into(),
+                params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.start = vec!["clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = test_wid();
+        let panel = test_wid();
+        app.surfaces
+            .surfaces
+            .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
+        app.surfaces.insert_panel_popup(
+            panel,
+            super::super::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Module(ModuleId::new("clock")),
+                    content: crate::surface::panel::PanelContent::ModulePanel(ModuleId::new(
+                        "clock",
+                    )),
+                    origin_window: origin,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+            },
+        );
+
+        let model = app.bar_render_model(origin);
+
+        assert!(model.start[0].active);
     }
 
     #[test]

@@ -24,6 +24,31 @@ pub struct PanelTree {
     pub screen_size: (u32, u32),
 }
 
+pub fn panel_module_frame<'a>(
+    content: iced::Element<'a, crate::app::Message>,
+    focused: bool,
+) -> iced::Element<'a, crate::app::Message> {
+    use iced::widget::container;
+
+    container(content)
+        .padding([8, 10])
+        .width(iced::Length::Fill)
+        .style(move |_| iced::widget::container::Style {
+            background: if focused {
+                Some(iced::Background::Color(crate::theme::SURFACE0))
+            } else {
+                Some(iced::Background::Color(crate::theme::SURFACE1))
+            },
+            border: iced::Border {
+                color: crate::theme::BORDER,
+                width: 1.0,
+                radius: iced::border::Radius::from(4.0),
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

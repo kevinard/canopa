@@ -1,7 +1,7 @@
-use iced::widget::{Space, column, container, mouse_area, row};
+use iced::widget::{Space, column, container, mouse_area, row, scrollable};
 use iced::{Element, Length};
 
-use super::render::{BarRenderModel, PopupRenderModel};
+use super::render::{BarRenderModel, PanelRenderModel, PopupRenderModel};
 use super::{App, Message};
 use crate::config::Edge;
 use crate::surface::layout::zone_layout;
@@ -23,8 +23,8 @@ impl App {
             return render_tooltip_popup(&popup.tree);
         }
 
-        if self.surfaces.panel_popup(window).is_some() {
-            return render_panel_popup();
+        if let Some(model) = self.panel_render_model(window) {
+            return render_panel_model(model);
         }
 
         render_bar_model(self.bar_render_model(window), window)
@@ -38,10 +38,28 @@ impl App {
     }
 }
 
-fn render_panel_popup<'a>() -> Element<'a, Message> {
-    iced::widget::container(iced::widget::text("panel"))
+fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
+    let _ = model.tree;
+    let text_color = model.bar_style.resolve().color;
+    let entries: Vec<Element<'_, Message>> = model
+        .entries
+        .into_iter()
+        .map(|entry| entry.element)
+        .collect();
+
+    container(scrollable(column(entries).spacing(8).padding(8)))
         .width(Length::Fill)
         .height(Length::Fill)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(crate::theme::BASE)),
+            text_color,
+            border: iced::Border {
+                color: crate::theme::BORDER,
+                width: 1.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
         .into()
 }
 
