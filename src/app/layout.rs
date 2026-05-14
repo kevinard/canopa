@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::App;
 use crate::config::{BarConfig, BarModules, PanelModules};
 use crate::modules::{ModuleId, Zone};
@@ -48,16 +46,6 @@ impl App {
         }
 
         layout
-    }
-
-    pub(super) fn effective_module_zones_for_bar(
-        &self,
-        bar: &BarConfig,
-    ) -> HashMap<ModuleId, Zone> {
-        self.effective_module_layout_for_bar(bar)
-            .into_iter()
-            .map(|(zone, id)| (id, zone))
-            .collect()
     }
 }
 

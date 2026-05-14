@@ -39,6 +39,7 @@ impl App {
 
     fn needs_keyboard_focus_subscription(&self) -> bool {
         self.has_capability(|capabilities| capabilities.needs_keyboard_focus)
+            || self.surfaces.panel_popup_ids().next().is_some()
     }
 
     fn needs_ipc_subscription(&self) -> bool {
@@ -241,6 +242,35 @@ mod tests {
                 ModuleParams::Volume(crate::config::VolumeConfig::default()),
             )],
             vec!["volume"],
+        );
+
+        assert!(app.needs_keyboard_focus_subscription());
+    }
+
+    #[test]
+    fn open_panel_needs_keyboard_focus_subscription_even_without_interactive_modules() {
+        let mut app = app_with_modules(
+            vec![module(
+                "clock",
+                ModuleParams::Clock(crate::config::ClockConfig::default()),
+            )],
+            vec!["clock"],
+        );
+        let panel = iced::window::Id::unique();
+        app.surfaces.insert_panel_popup(
+            panel,
+            crate::app::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+                    origin_window: iced::window::Id::unique(),
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+                search_input_id: crate::app::panel::panel_search_input_id(panel),
+            },
         );
 
         assert!(app.needs_keyboard_focus_subscription());

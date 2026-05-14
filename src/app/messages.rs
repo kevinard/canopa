@@ -98,6 +98,9 @@ pub enum PanelEvent {
     FocusMoveNext,
     FocusMovePrev,
     FocusIndex(usize),
+    FocusSearchInput {
+        retries: u8,
+    },
     Activate,
     ActivateIndex(usize),
     Back,

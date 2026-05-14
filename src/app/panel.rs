@@ -1,13 +1,28 @@
 use iced::Task;
-use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer, NewLayerShellSettings};
+use iced_layershell::reexport::{
+    Anchor, KeyboardInteractivity, Layer, NewLayerShellSettings, OutputOption,
+};
+use std::collections::HashSet;
+use std::time::Duration;
 
 use super::{App, Message};
+
+pub(super) fn panel_search_input_id(window: iced::window::Id) -> iced::widget::Id {
+    iced::widget::Id::from(format!("panel-search-input-{window:?}"))
+}
+
+fn request_panel_search_focus(retries: u8) -> Task<Message> {
+    Task::done(Message::Panel(
+        super::messages::PanelEvent::FocusSearchInput { retries },
+    ))
+}
 
 #[derive(Debug, Default)]
 pub(super) struct PanelSystem {
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
     pub(super) menu_path: Vec<usize>,
+    closing_windows: HashSet<iced::window::Id>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +39,18 @@ impl PanelSystem {
         self.menu_path.clear();
     }
 
+    pub(super) fn mark_closing_window(&mut self, window: iced::window::Id) {
+        self.closing_windows.insert(window);
+    }
+
+    pub(super) fn is_closing_window(&self, window: iced::window::Id) -> bool {
+        self.closing_windows.contains(&window)
+    }
+
+    pub(super) fn forget_closing_window(&mut self, window: iced::window::Id) {
+        self.closing_windows.remove(&window);
+    }
+
     pub(super) fn escape_clears_search(&mut self) -> bool {
         if self.search_query.is_empty() {
             return false;
@@ -37,6 +64,7 @@ impl PanelSystem {
 fn panel_window_settings(
     bar: &crate::config::BarConfig,
     tree: &crate::surface::panel::PanelTree,
+    surface_origin: (i32, i32),
 ) -> NewLayerShellSettings {
     let width = bar.panel.width;
     let height = bar.panel.height.or(bar.panel.max_height).unwrap_or(600);
@@ -52,6 +80,7 @@ fn panel_window_settings(
         (width, height),
         tree.anchor,
         tree.screen_size,
+        surface_origin,
     );
     let margin = panel_margin(&bar.edge, position, (width, height), tree.screen_size);
 
@@ -62,6 +91,11 @@ fn panel_window_settings(
         margin: Some(margin),
         layer: Layer::Overlay,
         keyboard_interactivity: KeyboardInteractivity::Exclusive,
+        output_option: if tree.origin_output_name.is_empty() {
+            OutputOption::None
+        } else {
+            OutputOption::OutputName(tree.origin_output_name.clone())
+        },
         namespace: Some(App::namespace()),
         ..Default::default()
     }
@@ -73,6 +107,7 @@ fn panel_position(
     panel_size: (u32, u32),
     anchor: Option<iced::Rectangle>,
     screen_size: (u32, u32),
+    surface_origin: (i32, i32),
 ) -> (i32, i32) {
     let bar_size = bar_size as i32;
     let (panel_w, panel_h) = (panel_size.0 as i32, panel_size.1 as i32);
@@ -83,25 +118,29 @@ fn panel_position(
         width: 0.0,
         height: 0.0,
     });
-    let anchor_center_x = (anchor.x + anchor.width / 2.0).round() as i32;
-    let anchor_center_y = (anchor.y + anchor.height / 2.0).round() as i32;
+    let anchor_center_x = surface_origin.0 + (anchor.x + anchor.width / 2.0).round() as i32;
+    let anchor_center_y = surface_origin.1 + (anchor.y + anchor.height / 2.0).round() as i32;
+    let min_x = surface_origin.0;
+    let min_y = surface_origin.1;
+    let max_x = (surface_origin.0 + screen_w - panel_w).max(min_x);
+    let max_y = (surface_origin.1 + screen_h - panel_h).max(min_y);
 
     match edge {
         crate::config::Edge::Left => (
             bar_size,
-            (anchor_center_y - panel_h / 2).clamp(0, (screen_h - panel_h).max(0)),
+            (anchor_center_y - panel_h / 2).clamp(min_y, max_y),
         ),
         crate::config::Edge::Right => (
-            (screen_w - bar_size - panel_w).max(0),
-            (anchor_center_y - panel_h / 2).clamp(0, (screen_h - panel_h).max(0)),
+            (screen_w - bar_size - panel_w).min(0),
+            (anchor_center_y - panel_h / 2).clamp(min_y, max_y),
         ),
         crate::config::Edge::Top => (
-            (anchor_center_x - panel_w / 2).clamp(0, (screen_w - panel_w).max(0)),
+            (anchor_center_x - panel_w / 2).clamp(min_x, max_x),
             bar_size,
         ),
         crate::config::Edge::Bottom => (
-            (anchor_center_x - panel_w / 2).clamp(0, (screen_w - panel_w).max(0)),
-            (screen_h - bar_size - panel_h).max(0),
+            (anchor_center_x - panel_w / 2).clamp(min_x, max_x),
+            (screen_h - bar_size - panel_h).min(0),
         ),
     }
 }
@@ -131,11 +170,31 @@ fn panel_position_for_test(
     panel_size: (u32, u32),
     anchor: Option<iced::Rectangle>,
     screen_size: (u32, u32),
+    surface_origin: (i32, i32),
 ) -> (i32, i32) {
-    panel_position(&edge, bar_size, panel_size, anchor, screen_size)
+    panel_position(
+        &edge,
+        bar_size,
+        panel_size,
+        anchor,
+        screen_size,
+        surface_origin,
+    )
 }
 
 impl App {
+    fn suspend_bar_keyboard_interactivity(&mut self) -> Vec<Task<Message>> {
+        let ids: Vec<iced::window::Id> = self.surfaces.keys().copied().collect();
+        ids.into_iter()
+            .map(|id| {
+                Task::done(Message::KeyboardInteractivityChange {
+                    id,
+                    keyboard_interactivity: KeyboardInteractivity::None,
+                })
+            })
+            .collect()
+    }
+
     pub(super) fn dispatch_panel_action(
         &mut self,
         origin_window: iced::window::Id,
@@ -155,14 +214,45 @@ impl App {
     }
 
     pub(super) fn close_all_panels(&mut self) -> Vec<Task<Message>> {
+        self.close_all_panels_with_restore(true)
+    }
+
+    fn close_all_panels_for_replacement(&mut self) -> Vec<Task<Message>> {
+        self.close_all_panels_with_restore(false)
+    }
+
+    fn close_all_panels_with_restore(
+        &mut self,
+        restore_bar_interactivity: bool,
+    ) -> Vec<Task<Message>> {
         let ids: Vec<_> = self.surfaces.panel_popup_ids().collect();
         self.panel.clear();
-        ids.into_iter()
+        let mut tasks: Vec<_> = ids
+            .into_iter()
             .map(|id| {
+                self.panel.mark_closing_window(id);
                 self.surfaces.remove_panel_popup(id);
                 Task::done(Message::RemoveWindow(id))
             })
-            .collect()
+            .collect();
+        if restore_bar_interactivity {
+            tasks.extend(self.restore_bar_keyboard_interactivity());
+        }
+        tasks
+    }
+
+    pub(super) fn handle_panel_focus_gained(&mut self, window: iced::window::Id) -> Task<Message> {
+        let Some(meta) = self.surfaces.panel_popup(window) else {
+            return Task::none();
+        };
+        if matches!(
+            meta.tree.content,
+            crate::surface::panel::PanelContent::Menu(_)
+        ) {
+            self.panel.focused_index.get_or_insert(0);
+            return request_panel_search_focus(2);
+        }
+        Task::none()
     }
 
     pub(super) fn handle_panel_event(
@@ -213,6 +303,7 @@ impl App {
                 self.panel.focused_index = Some(index);
                 Task::none()
             }
+            PanelEvent::FocusSearchInput { retries } => self.focus_panel_search_input(retries),
             PanelEvent::Activate => self.activate_panel_entry(None),
             PanelEvent::ActivateIndex(index) => self.activate_panel_entry(Some(index)),
             PanelEvent::Back => {
@@ -243,19 +334,54 @@ impl App {
             screen_size: origin_surface.screen_size,
         };
         let bar = Self::bar_for_surface_name(&self.config.bars, &origin_surface.bar_name);
-        let settings = panel_window_settings(bar, &tree);
+        let surface_origin = self.inferred_panel_surface_origin(&origin_surface, bar);
+        let settings = panel_window_settings(bar, &tree, surface_origin);
         let (panel_window, open_task) = Message::layershell_open(settings);
 
         let mut tasks = self.close_tooltip_popup_if_open(origin_window);
         tasks.extend(self.close_all_menu_popups());
-        tasks.extend(self.close_all_panels());
-        if matches!(tree.content, crate::surface::panel::PanelContent::Menu(_)) {
+        tasks.extend(self.close_all_panels_for_replacement());
+        tasks.extend(self.suspend_bar_keyboard_interactivity());
+        let is_menu_panel = matches!(tree.content, crate::surface::panel::PanelContent::Menu(_));
+        self.surfaces.insert_panel_popup(
+            panel_window,
+            super::surfaces::PanelMeta {
+                tree,
+                search_input_id: panel_search_input_id(panel_window),
+            },
+        );
+
+        let mut open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
+        if is_menu_panel {
             self.panel.focused_index = Some(0);
+            open_sequence = open_sequence.chain(request_panel_search_focus(2));
         }
-        self.surfaces
-            .insert_panel_popup(panel_window, super::surfaces::PanelMeta { tree });
-        tasks.push(open_task);
+        tasks.push(open_sequence);
         Task::batch(tasks)
+    }
+
+    fn inferred_panel_surface_origin(
+        &self,
+        origin_surface: &crate::surface::SurfaceState,
+        bar: &crate::config::BarConfig,
+    ) -> (i32, i32) {
+        if origin_surface.output_name.is_empty() {
+            return (0, 0);
+        }
+
+        let top_inset = match bar.edge {
+            crate::config::Edge::Left | crate::config::Edge::Right => {
+                self.config
+                    .bars_for_output(&origin_surface.output_name)
+                    .into_iter()
+                    .filter(|candidate| matches!(candidate.edge, crate::config::Edge::Top))
+                    .map(|candidate| candidate.collapsed_width)
+                    .sum::<u32>() as i32
+            }
+            crate::config::Edge::Top | crate::config::Edge::Bottom => 0,
+        };
+
+        (0, top_inset)
     }
 
     pub(super) fn handle_panel_escape_pressed(&mut self) -> Task<Message> {
@@ -326,6 +452,36 @@ impl App {
         self.active_menu_tree_and_entries()
             .map(|(_, entries)| entries)
             .unwrap_or_default()
+    }
+
+    fn focus_panel_search_input(&mut self, retries: u8) -> Task<Message> {
+        let Some(search_input_id) = self.surfaces.panel_popup_values().find_map(|meta| {
+            if matches!(
+                meta.tree.content,
+                crate::surface::panel::PanelContent::Menu(_)
+            ) {
+                Some(meta.search_input_id.clone())
+            } else {
+                None
+            }
+        }) else {
+            return Task::none();
+        };
+        self.panel.focused_index.get_or_insert(0);
+        let mut tasks = vec![iced::widget::operation::focus(search_input_id)];
+        if retries > 0 {
+            tasks.push(Task::perform(
+                async {
+                    tokio::time::sleep(Duration::from_millis(8)).await;
+                },
+                move |_| {
+                    Message::Panel(super::messages::PanelEvent::FocusSearchInput {
+                        retries: retries - 1,
+                    })
+                },
+            ));
+        }
+        Task::batch(tasks)
     }
 
     fn active_menu_tree_and_entries(
@@ -568,6 +724,7 @@ mod tests {
                 height: 32.0,
             }),
             (1920, 1080),
+            (0, 0),
         );
 
         assert_eq!(position.0, 48);
@@ -587,6 +744,7 @@ mod tests {
                 height: 32.0,
             }),
             (1920, 1080),
+            (1872, 0),
         );
 
         assert_eq!(position.0, 1512);
@@ -606,6 +764,7 @@ mod tests {
                 height: 32.0,
             }),
             (1920, 1080),
+            (0, 0),
         );
 
         assert!(position.0 >= 0);
@@ -625,10 +784,48 @@ mod tests {
                 height: 32.0,
             }),
             (1920, 1080),
+            (0, 0),
         );
 
         assert!(position.0 >= 0);
         assert_eq!(position.1, 448);
+    }
+
+    #[test]
+    fn left_edge_bar_panel_starts_at_vertical_bar_top_when_top_bar_reserves_space() {
+        let position = panel_position_for_test(
+            crate::config::Edge::Left,
+            48,
+            (360, 600),
+            None,
+            (48, 1048),
+            (0, 32),
+        );
+
+        assert_eq!(position, (48, 32));
+    }
+
+    #[test]
+    fn side_panel_origin_includes_top_bars_on_same_output() {
+        let mut config = crate::config::Config::default();
+        config.bars[0].name = "top".into();
+        config.bars[0].edge = crate::config::Edge::Top;
+        config.bars[0].collapsed_width = 32;
+        let side = crate::config::BarConfig {
+            name: "side".into(),
+            edge: crate::config::Edge::Left,
+            collapsed_width: 48,
+            ..Default::default()
+        };
+        config.bars.push(side);
+        let (app, _) = App::boot(config, vec!["DP-1".into()]);
+        let origin_surface = crate::surface::SurfaceState::new("DP-1".into(), "side".into());
+        let bar = App::bar_for_surface_name(&app.config.bars, "side");
+
+        assert_eq!(
+            app.inferred_panel_surface_origin(&origin_surface, bar),
+            (0, 32)
+        );
     }
 
     #[test]
@@ -736,6 +933,26 @@ mod tests {
         }
     }
 
+    fn menu_with_two_entries() -> crate::config::MenuConfig {
+        crate::config::MenuConfig {
+            name: "main".into(),
+            items: vec![
+                crate::config::MenuItemConfig {
+                    label: "Terminal".into(),
+                    keywords: vec![],
+                    action: None,
+                    children: vec![],
+                },
+                crate::config::MenuItemConfig {
+                    label: "Browser".into(),
+                    keywords: vec![],
+                    action: None,
+                    children: vec![],
+                },
+            ],
+        }
+    }
+
     #[test]
     fn menu_search_flattens_nested_matches_with_breadcrumb() {
         let menu = menu_with_apps_browser();
@@ -754,6 +971,160 @@ mod tests {
     }
 
     #[test]
+    fn arrow_down_on_panel_window_moves_menu_focus_to_next_entry() {
+        let mut config = crate::config::Config::default();
+        config.menus = vec![menu_with_two_entries()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        app.panel.focused_index = Some(0);
+        app.surfaces.insert_panel_popup(
+            panel,
+            super::super::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+                    origin_window: origin,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+                search_input_id: panel_search_input_id(panel),
+            },
+        );
+
+        let _ =
+            app.handle_surface_event(super::super::messages::SurfaceEvent::FocusMoveNext(panel));
+
+        assert_eq!(app.panel.focused_index, Some(1));
+    }
+
+    #[test]
+    fn focus_gained_on_panel_window_does_not_create_bar_surface_state() {
+        let mut config = crate::config::Config::default();
+        config.menus = vec![menu_with_two_entries()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        app.surfaces.insert_panel_popup(
+            panel,
+            super::super::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+                    origin_window: origin,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+                search_input_id: panel_search_input_id(panel),
+            },
+        );
+
+        let _ =
+            app.handle_surface_event(super::super::messages::SurfaceEvent::BarFocusGained(panel));
+
+        assert!(app.surface(panel).is_none());
+        assert_eq!(app.panel.focused_index, Some(0));
+    }
+
+    #[test]
+    fn focus_search_input_event_initializes_menu_focus_without_bar_surface_state() {
+        let mut config = crate::config::Config::default();
+        config.menus = vec![menu_with_two_entries()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        app.surfaces.insert_panel_popup(
+            panel,
+            super::super::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+                    origin_window: origin,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+                search_input_id: panel_search_input_id(panel),
+            },
+        );
+
+        let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusSearchInput {
+            retries: 0,
+        });
+
+        assert!(app.surface(panel).is_none());
+        assert_eq!(app.panel.focused_index, Some(0));
+    }
+
+    #[test]
+    fn window_sized_on_panel_window_routes_to_panel_focus_without_bar_surface_state() {
+        let mut config = crate::config::Config::default();
+        config.menus = vec![menu_with_two_entries()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        app.surfaces.insert_panel_popup(
+            panel,
+            super::super::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+                    origin_window: origin,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+                search_input_id: panel_search_input_id(panel),
+            },
+        );
+
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::WindowSized(
+            panel, 360, 600,
+        ));
+
+        assert!(app.surface(panel).is_none());
+        assert_eq!(app.panel.focused_index, Some(0));
+    }
+
+    #[test]
+    fn stale_events_from_closing_panel_window_do_not_create_bar_surface_state() {
+        let mut config = crate::config::Config::default();
+        config.menus = vec![menu_with_two_entries()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        app.surfaces.insert_panel_popup(
+            panel,
+            super::super::surfaces::PanelMeta {
+                tree: crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+                    origin_window: origin,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                },
+                search_input_id: panel_search_input_id(panel),
+            },
+        );
+
+        let _ = app.close_all_panels();
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::BarFocusLost(panel));
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::WindowSized(
+            panel, 360, 600,
+        ));
+
+        assert!(app.surface(panel).is_none());
+    }
+
+    #[test]
     fn escape_clears_search_before_closing_panel() {
         let mut panel = PanelSystem {
             search_query: "term".into(),
@@ -762,5 +1133,14 @@ mod tests {
 
         assert!(panel.escape_clears_search());
         assert_eq!(panel.search_query, "");
+    }
+
+    #[test]
+    fn panel_search_input_id_is_stable_for_focus_task() {
+        let first = iced::window::Id::unique();
+        let second = iced::window::Id::unique();
+
+        assert_eq!(panel_search_input_id(first), panel_search_input_id(first));
+        assert_ne!(panel_search_input_id(first), panel_search_input_id(second));
     }
 }

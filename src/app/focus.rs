@@ -67,11 +67,11 @@ impl App {
             return Task::none();
         }
         if self.surfaces.has_panel_popup(window) {
-            return Task::done(Message::Panel(if forward {
+            return self.handle_panel_event(if forward {
                 super::messages::PanelEvent::FocusMoveNext
             } else {
                 super::messages::PanelEvent::FocusMovePrev
-            }));
+            });
         }
 
         let s = self.surface_mut(window);
@@ -134,7 +134,7 @@ impl App {
 
     pub(super) fn handle_keyboard_activate(&mut self, window: iced::window::Id) -> Task<Message> {
         if self.surfaces.has_panel_popup(window) {
-            return Task::done(Message::Panel(super::messages::PanelEvent::Activate));
+            return self.handle_panel_event(super::messages::PanelEvent::Activate);
         }
         if self.surfaces.has_popup(window) {
             let focused = self.menu.focused_item(window).map(str::to_owned);

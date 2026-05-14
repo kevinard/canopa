@@ -20,6 +20,7 @@ pub(super) struct PopupMeta {
 #[derive(Debug, Clone)]
 pub(super) struct PanelMeta {
     pub(super) tree: crate::surface::panel::PanelTree,
+    pub(super) search_input_id: iced::widget::Id,
 }
 
 fn render_to_segments(
@@ -358,9 +359,17 @@ impl App {
             SurfaceEvent::WindowSized(window, w, h) => {
                 if let Some(popup) = self.surfaces.tooltip_popup_mut(window) {
                     popup.tree.screen_size = (w, h);
+                } else if self.surfaces.has_panel_popup(window) {
+                    return self.handle_panel_focus_gained(window);
+                } else if self.panel.is_closing_window(window) {
+                    return Task::none();
                 } else {
                     self.surfaces.surface_mut(window).screen_size = (w, h);
                 }
+                Task::none()
+            }
+            SurfaceEvent::WindowClosed(window) if self.panel.is_closing_window(window) => {
+                self.panel.forget_closing_window(window);
                 Task::none()
             }
             SurfaceEvent::WindowClosed(window) if self.is_menu_popup_window(window) => {
@@ -399,8 +408,20 @@ impl App {
             SurfaceEvent::BarFocusGained(window) if self.is_tooltip_popup_window(window) => {
                 Task::none()
             }
+            SurfaceEvent::BarFocusGained(window) if self.surfaces.has_panel_popup(window) => {
+                self.handle_panel_focus_gained(window)
+            }
+            SurfaceEvent::BarFocusGained(window) if self.panel.is_closing_window(window) => {
+                Task::none()
+            }
             SurfaceEvent::BarFocusGained(window) => self.handle_bar_focus_gained(window),
             SurfaceEvent::BarFocusLost(window) if self.is_tooltip_popup_window(window) => {
+                Task::none()
+            }
+            SurfaceEvent::BarFocusLost(window) if self.surfaces.has_panel_popup(window) => {
+                Task::batch(self.close_all_panels())
+            }
+            SurfaceEvent::BarFocusLost(window) if self.panel.is_closing_window(window) => {
                 Task::none()
             }
             SurfaceEvent::BarFocusLost(window) if self.is_menu_popup_window(window) => {
@@ -445,7 +466,7 @@ impl App {
                 key,
             } => self.handle_bar_action_key(window, modifiers, key),
             SurfaceEvent::BackPressed(window) if self.surfaces.has_panel_popup(window) => {
-                Task::done(Message::Panel(super::messages::PanelEvent::Back))
+                self.handle_panel_event(super::messages::PanelEvent::Back)
             }
             SurfaceEvent::BackPressed(_) => Task::none(),
             SurfaceEvent::TogglePanel => self.handle_toggle_panel_ipc(),
@@ -902,6 +923,7 @@ mod tests {
             panel,
             PanelMeta {
                 tree: panel_tree(origin),
+                search_input_id: crate::app::panel::panel_search_input_id(panel),
             },
         );
 
@@ -922,6 +944,7 @@ mod tests {
             panel,
             PanelMeta {
                 tree: panel_tree(origin),
+                search_input_id: crate::app::panel::panel_search_input_id(panel),
             },
         );
 
@@ -944,6 +967,7 @@ mod tests {
             panel,
             PanelMeta {
                 tree: panel_tree(origin),
+                search_input_id: crate::app::panel::panel_search_input_id(panel),
             },
         );
 

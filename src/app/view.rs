@@ -74,11 +74,12 @@ fn render_panel_menu_model<'a>(
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
     let search = text_input("Search", &model.search_query)
+        .id(model.search_input_id.clone())
         .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
         .padding([8, 10])
         .width(Length::Fill);
 
-    let mut list = column![search].spacing(8).padding(8);
+    let mut list = column![].spacing(8).padding(8);
     for (index, entry) in model.menu_entries.into_iter().enumerate() {
         let focused = model.focused_index == Some(index);
         let suffix = if entry.is_submenu { " >" } else { "" };
@@ -109,7 +110,7 @@ fn render_panel_menu_model<'a>(
         );
     }
 
-    container(scrollable(list))
+    container(column![search, scrollable(list)])
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
@@ -298,6 +299,7 @@ mod tests {
                     anchor: None,
                     screen_size: (1920, 1080),
                 },
+                search_input_id: super::super::panel::panel_search_input_id(panel),
             },
         );
 

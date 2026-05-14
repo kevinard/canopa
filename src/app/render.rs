@@ -37,6 +37,7 @@ pub(super) struct BarRenderModel<'a> {
 
 pub(super) struct PanelRenderModel<'a> {
     pub(super) tree: &'a crate::surface::panel::PanelTree,
+    pub(super) search_input_id: iced::widget::Id,
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
     pub(super) menu_entries: Vec<super::panel::MenuEntryView>,
     pub(super) search_query: String,
@@ -114,6 +115,7 @@ impl App {
 
         Some(PanelRenderModel {
             tree,
+            search_input_id: meta.search_input_id.clone(),
             entries,
             menu_entries: self.active_menu_entries(),
             search_query: self.panel.search_query.clone(),
@@ -131,15 +133,13 @@ impl App {
         let content_size = surface_size.saturating_sub(1);
         let shows_expanded = false;
 
-        let effective_zone = self.effective_module_zones_for_bar(bar);
         let default_state = ModuleState::default();
         let mut start = Vec::new();
         let mut center = Vec::new();
         let mut end = Vec::new();
 
-        for (_boot_zone, module) in &self.modules {
-            let id = module.id();
-            let Some(zone) = effective_zone.get(&id) else {
+        for (zone, id) in self.effective_module_layout_for_bar(bar) {
+            let Some(module) = self.modules.get(&id) else {
                 continue;
             };
 
@@ -521,6 +521,7 @@ mod tests {
                     anchor: None,
                     screen_size: (1920, 1080),
                 },
+                search_input_id: super::super::panel::panel_search_input_id(panel),
             },
         );
 
@@ -560,6 +561,7 @@ mod tests {
                     anchor: None,
                     screen_size: (1920, 1080),
                 },
+                search_input_id: super::super::panel::panel_search_input_id(panel),
             },
         );
 
@@ -601,6 +603,7 @@ mod tests {
                     anchor: None,
                     screen_size: (1920, 1080),
                 },
+                search_input_id: super::super::panel::panel_search_input_id(panel),
             },
         );
 
@@ -643,6 +646,64 @@ mod tests {
         assert!(model.start.is_empty());
         assert!(model.center.is_empty());
         assert!(model.end.is_empty());
+    }
+
+    #[test]
+    fn bar_render_model_uses_surface_bar_order_for_dynamic_tray_icons() {
+        let mut config = Config {
+            bars: vec![
+                BarConfig {
+                    name: "main".into(),
+                    ..Default::default()
+                },
+                BarConfig {
+                    name: "secondary".into(),
+                    ..Default::default()
+                },
+            ],
+            modules: vec![
+                ModuleConfig {
+                    name: "clock".into(),
+                    module_type: "clock".into(),
+                    params: ModuleParams::Clock(ClockConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
+                },
+                ModuleConfig {
+                    name: "tray".into(),
+                    module_type: "tray".into(),
+                    params: ModuleParams::Tray(crate::config::TrayConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
+                },
+            ],
+            menus: vec![],
+            command_policy: crate::config::CommandPolicy::default(),
+        };
+        config.bars[0].modules.end = vec!["clock".into(), "tray".into()];
+        config.bars[1].modules.end = vec!["tray".into(), "clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let wid = test_wid();
+        app.surfaces
+            .surfaces
+            .insert(wid, SurfaceState::new("DP-1".into(), "secondary".into()));
+
+        let item = crate::dbus::sni::host::TrayItem {
+            service: "org.test".into(),
+            object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
+            icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
+            status: crate::dbus::sni::host::ItemStatus::Active,
+            menu_path: None,
+            tooltip: None,
+        };
+        let _ = app.update(crate::app::Message::Tray(
+            crate::app::messages::TrayRuntimeEvent::Host(
+                crate::dbus::sni::host::TrayEvent::Snapshot(vec![item]),
+            ),
+        ));
+
+        let model = app.bar_render_model(wid);
+        let end_ids: Vec<_> = model.end.iter().map(|entry| entry.id.0.as_str()).collect();
+
+        assert_eq!(end_ids, vec!["tray:org.test", "clock"]);
     }
 
     #[test]
