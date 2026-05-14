@@ -556,6 +556,21 @@ mod config_tests {
     }
 
     #[test]
+    fn validate_duplicate_resolved_module_within_one_bar_panel_errors() {
+        let mut config = Config::default();
+        config.bars[0].panel.modules.start = vec!["clock".into()];
+        config.bars[0].panel.modules.end = vec!["clock".into()];
+
+        let err = validate(&config).unwrap_err();
+        assert!(err.to_string().contains("bar.main.panel"), "got: {err}");
+        assert!(
+            err.to_string().contains("placed more than once"),
+            "got: {err}"
+        );
+        assert!(err.to_string().contains("clock"), "got: {err}");
+    }
+
+    #[test]
     fn validate_same_module_across_different_bars_passes() {
         let config = Config {
             bars: vec![

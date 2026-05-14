@@ -91,41 +91,72 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
     }
 
     for bar in &config.bars {
-        let mut seen_in_bar = std::collections::HashSet::new();
-        for (zone, names) in bar_module_placements(bar) {
-            for name in names {
-                let resolved_name = if declared_modules.contains_key(name.as_str()) {
-                    name.as_str()
-                } else if let Some(descriptor) = module_descriptor_for_config_name(name) {
-                    if descriptor.synthesized_params_factory.is_none() {
-                        return Err(validation_error(
-                            source.clone(),
-                            format!(
-                                "bar {:?}.modules.{zone:?}: module {:?} must be declared before it can be placed.",
-                                bar.name, name
-                            ),
-                        ));
-                    }
-                    descriptor.config_name
-                } else {
-                    return Err(validation_error(
-                        source.clone(),
-                        format!(
-                            "bar {:?}.modules.{zone:?}: unknown module {:?}. Expected a declared Module Name or a synthesizable built-in Module Kind.",
-                            bar.name, name
-                        ),
-                    ));
-                };
+        validate_module_layout(
+            source.clone(),
+            &format!("bar.{}.modules", bar.name),
+            bar_module_placements(bar),
+            &declared_modules,
+        )?;
+        validate_module_layout(
+            source.clone(),
+            &format!("bar.{}.panel", bar.name),
+            [
+                (
+                    crate::modules::Zone::Start,
+                    bar.panel.modules.start.as_slice(),
+                ),
+                (
+                    crate::modules::Zone::Center,
+                    bar.panel.modules.center.as_slice(),
+                ),
+                (crate::modules::Zone::End, bar.panel.modules.end.as_slice()),
+            ],
+            &declared_modules,
+        )?;
+    }
+    Ok(())
+}
 
-                if !seen_in_bar.insert(resolved_name) {
+fn validate_module_layout<'a>(
+    source: ConfigSource,
+    path: &str,
+    placements: [(crate::modules::Zone, &'a [String]); 3],
+    declared_modules: &std::collections::HashMap<&str, &'a super::ModuleConfig>,
+) -> ConfigResult<()> {
+    let mut seen_in_layout = std::collections::HashSet::new();
+    for (zone, names) in placements {
+        for name in names {
+            let resolved_name = if declared_modules.contains_key(name.as_str()) {
+                name.as_str()
+            } else if let Some(descriptor) = module_descriptor_for_config_name(name) {
+                if descriptor.synthesized_params_factory.is_none() {
                     return Err(validation_error(
                         source.clone(),
                         format!(
-                            "bar {:?}: module {:?} is placed more than once in this Bar.",
-                            bar.name, resolved_name
+                            "{path}.{zone:?}: module {:?} must be declared before it can be placed.",
+                            name
                         ),
                     ));
                 }
+                descriptor.config_name
+            } else {
+                return Err(validation_error(
+                    source.clone(),
+                    format!(
+                        "{path}.{zone:?}: unknown module {:?}. Expected a declared Module Name or a synthesizable built-in Module Kind.",
+                        name
+                    ),
+                ));
+            };
+
+            if !seen_in_layout.insert(resolved_name) {
+                return Err(validation_error(
+                    source.clone(),
+                    format!(
+                        "{path}: module {:?} is placed more than once in this layout.",
+                        resolved_name
+                    ),
+                ));
             }
         }
     }

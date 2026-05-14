@@ -369,6 +369,56 @@ mod tests {
     }
 
     #[test]
+    fn panel_layout_can_reference_module_absent_from_bar_layout() {
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "clock".into(),
+                module_type: "clock".into(),
+                params: ModuleParams::Clock(ClockConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.start = vec![];
+        config.bars[0].panel.modules.center = vec!["clock".into()];
+        let (app, _) = App::boot(config, vec![]);
+
+        let layout = app.effective_panel_module_layout_for_bar(&app.config.bars[0]);
+
+        assert_eq!(layout, vec![(Zone::Center, ModuleId::new("clock"))]);
+    }
+
+    #[test]
+    fn panel_layout_expands_workspaces_placeholder() {
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "workspaces".into(),
+                module_type: "workspaces".into(),
+                params: ModuleParams::Workspaces(WorkspacesConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.start = vec![];
+        config.bars[0].panel.modules.start = vec!["workspaces".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let workspaces = vec![
+            make_workspace(10, 1, "eDP-1", true, true, None),
+            make_workspace(20, 2, "DP-1", true, false, None),
+        ];
+        app.rebuild_workspace_item_modules(&workspaces);
+
+        let layout = app.effective_panel_module_layout_for_bar(&app.config.bars[0]);
+        let workspace_items: Vec<_> = layout
+            .into_iter()
+            .filter(|(_, id)| id.0.starts_with("workspace:"))
+            .collect();
+
+        assert_eq!(workspace_items.len(), 2);
+        assert!(workspace_items.iter().all(|(zone, _)| zone == &Zone::Start));
+    }
+
+    #[test]
     fn bar_render_model_omits_modules_absent_from_surface_bar_layout() {
         let mut config = Config {
             bars: vec![

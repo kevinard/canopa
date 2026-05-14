@@ -28,6 +28,9 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
             (Zone::Start, &bar.modules.start),
             (Zone::Center, &bar.modules.center),
             (Zone::End, &bar.modules.end),
+            (Zone::Start, &bar.panel.modules.start),
+            (Zone::Center, &bar.panel.modules.center),
+            (Zone::End, &bar.panel.modules.end),
         ] {
             for name in names {
                 if seen_names.insert(name.clone()) {
@@ -128,5 +131,21 @@ mod tests {
             .find(|(_, module, _)| module.kind() == ModuleKind::Clock)
             .unwrap();
         assert_eq!(clock.0, Zone::Start);
+    }
+
+    #[test]
+    fn panel_only_module_is_instantiated() {
+        let mut config = Config::default();
+        config.bars[0].modules.start = vec![];
+        config.bars[0].panel.modules.end = vec!["clock".into()];
+
+        let graph = super::build_module_graph(&config).unwrap();
+
+        assert!(
+            graph
+                .modules
+                .iter()
+                .any(|(zone, module, _)| zone == &Zone::End && module.kind() == ModuleKind::Clock)
+        );
     }
 }
