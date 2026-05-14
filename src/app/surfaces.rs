@@ -386,6 +386,7 @@ impl App {
             // }
             // SurfaceEvent::BarClick(window) if self.is_tooltip_popup_window(window) => Task::none(),
             SurfaceEvent::BarClick(window) => self.handle_bar_click(window),
+            SurfaceEvent::BarRightClick(window) => self.handle_bar_right_click(window),
             SurfaceEvent::BarHoverEnter(window) if self.is_tooltip_popup_window(window) => {
                 Task::none()
             }
@@ -438,6 +439,11 @@ impl App {
             SurfaceEvent::KeyboardSecondaryActivate(window) => {
                 self.handle_keyboard_secondary_activate(window)
             }
+            SurfaceEvent::ActionKeyPressed {
+                window,
+                modifiers,
+                key,
+            } => self.handle_bar_action_key(window, modifiers, key),
             SurfaceEvent::BackPressed(window) if self.surfaces.has_panel_popup(window) => {
                 Task::done(Message::Panel(super::messages::PanelEvent::Back))
             }

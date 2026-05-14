@@ -8,6 +8,7 @@ use zbus::zvariant::OwnedObjectPath;
 #[derive(Debug, Clone)]
 pub enum SurfaceEvent {
     BarClick(iced::window::Id),
+    BarRightClick(iced::window::Id),
     Tick,
     BarHoverEnter(iced::window::Id),
     BarHoverExit(iced::window::Id),
@@ -22,6 +23,11 @@ pub enum SurfaceEvent {
     FocusPrevZone(iced::window::Id),
     KeyboardActivate(iced::window::Id),
     KeyboardSecondaryActivate(iced::window::Id),
+    ActionKeyPressed {
+        window: iced::window::Id,
+        modifiers: iced::keyboard::Modifiers,
+        key: iced::keyboard::Key,
+    },
     BackPressed(iced::window::Id),
     TogglePanel,
     CursorMoved(iced::window::Id, Point),

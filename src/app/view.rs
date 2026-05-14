@@ -228,6 +228,9 @@ fn render_bar_model<'a>(
         .on_press(Message::Surface(super::messages::SurfaceEvent::BarClick(
             window,
         )))
+        .on_right_press(Message::Surface(
+            super::messages::SurfaceEvent::BarRightClick(window),
+        ))
         .on_enter(Message::Surface(
             super::messages::SurfaceEvent::BarHoverEnter(window),
         ))

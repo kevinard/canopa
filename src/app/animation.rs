@@ -16,10 +16,95 @@ impl App {
         if !close_tt.is_empty() {
             return Task::batch(close_tt);
         }
+        if self.bar_has_action(window, &crate::config::ActionTrigger::Click) {
+            return self.dispatch_bar_action(window, crate::config::ActionTrigger::Click);
+        }
         if self.surfaces.has_any_popup() {
             return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
         }
         Task::none()
+    }
+
+    pub(super) fn handle_bar_right_click(&mut self, window: iced::window::Id) -> Task<Message> {
+        let close_tt = self.close_tooltip_popup_if_open(window);
+        if !close_tt.is_empty() {
+            return Task::batch(close_tt);
+        }
+        if self.bar_has_action(window, &crate::config::ActionTrigger::RightClick) {
+            return self.dispatch_bar_action(window, crate::config::ActionTrigger::RightClick);
+        }
+        if self.surfaces.has_any_popup() {
+            return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
+        }
+        Task::none()
+    }
+
+    pub(super) fn handle_bar_action_key(
+        &mut self,
+        window: iced::window::Id,
+        modifiers: iced::keyboard::Modifiers,
+        key: iced::keyboard::Key,
+    ) -> Task<Message> {
+        let Some(trigger) = self.bar_action_key_trigger(window, modifiers, &key) else {
+            return Task::none();
+        };
+        self.dispatch_bar_action(window, trigger)
+    }
+
+    fn dispatch_bar_action(
+        &mut self,
+        window: iced::window::Id,
+        trigger: crate::config::ActionTrigger,
+    ) -> Task<Message> {
+        if let Some(action) = self
+            .bar_for_window(window)
+            .actions
+            .action_for(&trigger)
+            .cloned()
+        {
+            return self.dispatch_panel_action(
+                window,
+                crate::surface::panel::PanelOrigin::Bar,
+                action,
+            );
+        }
+        Task::none()
+    }
+
+    fn bar_has_action(
+        &self,
+        window: iced::window::Id,
+        trigger: &crate::config::ActionTrigger,
+    ) -> bool {
+        self.bar_for_window(window)
+            .actions
+            .action_for(trigger)
+            .is_some()
+    }
+
+    fn bar_action_key_trigger(
+        &self,
+        window: iced::window::Id,
+        modifiers: iced::keyboard::Modifiers,
+        key: &iced::keyboard::Key,
+    ) -> Option<crate::config::ActionTrigger> {
+        self.bar_for_window(window)
+            .actions
+            .bindings
+            .iter()
+            .filter_map(|binding| match &binding.trigger {
+                crate::config::ActionTrigger::Key(keybind) => Some(keybind),
+                _ => None,
+            })
+            .find(|keybind| {
+                crate::surface::input::parse_keybind(keybind)
+                    .map(|(configured_modifiers, configured_key)| {
+                        configured_modifiers == modifiers && action_keys_match(&configured_key, key)
+                    })
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .map(crate::config::ActionTrigger::Key)
     }
 
     pub(super) fn handle_bar_hover_enter(&mut self, window: iced::window::Id) -> Task<Message> {
@@ -60,6 +145,15 @@ impl App {
         }
 
         Task::batch(tasks)
+    }
+}
+
+fn action_keys_match(configured: &iced::keyboard::Key, actual: &iced::keyboard::Key) -> bool {
+    match (configured, actual) {
+        (iced::keyboard::Key::Character(configured), iced::keyboard::Key::Character(actual)) => {
+            configured.eq_ignore_ascii_case(actual)
+        }
+        _ => configured == actual,
     }
 }
 
@@ -124,5 +218,118 @@ mod tooltip_dwell_tests {
             b, wid,
         ));
         assert!(app.surface(wid).unwrap().tooltip_pending.is_none());
+    }
+
+    #[test]
+    fn bar_click_with_configured_open_panel_opens_bar_panel() {
+        let mut config = crate::config::Config::default();
+        config.bars[0]
+            .actions
+            .bindings
+            .push(crate::config::ActionBinding {
+                trigger: crate::config::ActionTrigger::Click,
+                action: crate::config::PanelAction::OpenPanel,
+            });
+        let (mut app, _) = App::boot(config, vec![]);
+        let wid = iced::window::Id::unique();
+        app.surface_mut(wid).bar_name = "main".into();
+
+        let _ = app.handle_bar_click(wid);
+
+        let panel = app
+            .surfaces
+            .panel_popup_values()
+            .next()
+            .expect("panel popup");
+        assert_eq!(panel.tree.origin, crate::surface::panel::PanelOrigin::Bar);
+        assert_eq!(
+            panel.tree.content,
+            crate::surface::panel::PanelContent::BarPanel
+        );
+        assert_eq!(panel.tree.origin_window, wid);
+    }
+
+    #[test]
+    fn bar_click_with_configured_toggle_panel_closes_open_bar_panel() {
+        let mut config = crate::config::Config::default();
+        config.bars[0]
+            .actions
+            .bindings
+            .push(crate::config::ActionBinding {
+                trigger: crate::config::ActionTrigger::Click,
+                action: crate::config::PanelAction::TogglePanel,
+            });
+        let (mut app, _) = App::boot(config, vec![]);
+        let wid = iced::window::Id::unique();
+        app.surface_mut(wid).bar_name = "main".into();
+
+        let _ = app.handle_bar_click(wid);
+        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+
+        let _ = app.handle_bar_click(wid);
+
+        assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+    }
+
+    #[test]
+    fn bar_right_click_with_configured_open_panel_opens_bar_panel() {
+        let mut config = crate::config::Config::default();
+        config.bars[0]
+            .actions
+            .bindings
+            .push(crate::config::ActionBinding {
+                trigger: crate::config::ActionTrigger::RightClick,
+                action: crate::config::PanelAction::OpenPanel,
+            });
+        let (mut app, _) = App::boot(config, vec![]);
+        let wid = iced::window::Id::unique();
+        app.surface_mut(wid).bar_name = "main".into();
+
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::BarRightClick(wid));
+
+        let panel = app
+            .surfaces
+            .panel_popup_values()
+            .next()
+            .expect("panel popup");
+        assert_eq!(panel.tree.origin, crate::surface::panel::PanelOrigin::Bar);
+        assert_eq!(
+            panel.tree.content,
+            crate::surface::panel::PanelContent::BarPanel
+        );
+        assert_eq!(panel.tree.origin_window, wid);
+    }
+
+    #[test]
+    fn bar_keybind_with_configured_open_panel_opens_bar_panel() {
+        let mut config = crate::config::Config::default();
+        config.bars[0]
+            .actions
+            .bindings
+            .push(crate::config::ActionBinding {
+                trigger: crate::config::ActionTrigger::Key("Ctrl+E".into()),
+                action: crate::config::PanelAction::OpenPanel,
+            });
+        let (mut app, _) = App::boot(config, vec![]);
+        let wid = iced::window::Id::unique();
+        app.surface_mut(wid).bar_name = "main".into();
+
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::ActionKeyPressed {
+            window: wid,
+            modifiers: iced::keyboard::Modifiers::CTRL,
+            key: iced::keyboard::Key::Character("e".into()),
+        });
+
+        let panel = app
+            .surfaces
+            .panel_popup_values()
+            .next()
+            .expect("panel popup");
+        assert_eq!(panel.tree.origin, crate::surface::panel::PanelOrigin::Bar);
+        assert_eq!(
+            panel.tree.content,
+            crate::surface::panel::PanelContent::BarPanel
+        );
+        assert_eq!(panel.tree.origin_window, wid);
     }
 }

@@ -54,7 +54,7 @@ pub fn parse_keybind(s: &str) -> Option<(keyboard::Modifiers, keyboard::Key)> {
 /// used with `listen_with`.
 fn keyboard_handler(
     event: Event,
-    _status: iced::event::Status,
+    status: iced::event::Status,
     window: iced::window::Id,
 ) -> Option<Message> {
     match event {
@@ -85,15 +85,23 @@ fn keyboard_handler(
             crate::app::messages::SurfaceEvent::CursorMoved(window, position),
         )),
         Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => match key {
-            keyboard::Key::Named(Named::Escape) => Some(Message::Surface(
-                crate::app::messages::SurfaceEvent::EscapePressed(window),
-            )),
-            keyboard::Key::Named(Named::ArrowDown) => Some(Message::Surface(
-                crate::app::messages::SurfaceEvent::FocusMoveNext(window),
-            )),
-            keyboard::Key::Named(Named::ArrowUp) => Some(Message::Surface(
-                crate::app::messages::SurfaceEvent::FocusMovePrev(window),
-            )),
+            keyboard::Key::Named(Named::Escape) if modifiers == keyboard::Modifiers::default() => {
+                Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::EscapePressed(window),
+                ))
+            }
+            keyboard::Key::Named(Named::ArrowDown)
+                if modifiers == keyboard::Modifiers::default() =>
+            {
+                Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::FocusMoveNext(window),
+                ))
+            }
+            keyboard::Key::Named(Named::ArrowUp) if modifiers == keyboard::Modifiers::default() => {
+                Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::FocusMovePrev(window),
+                ))
+            }
             keyboard::Key::Named(Named::Tab) => {
                 if modifiers.shift() {
                     Some(Message::Surface(
@@ -105,14 +113,29 @@ fn keyboard_handler(
                     ))
                 }
             }
-            keyboard::Key::Named(Named::Enter) => Some(Message::Surface(
-                crate::app::messages::SurfaceEvent::KeyboardActivate(window),
-            )),
-            keyboard::Key::Named(Named::Backspace) => Some(Message::Surface(
-                crate::app::messages::SurfaceEvent::BackPressed(window),
-            )),
-            keyboard::Key::Named(Named::Space) => Some(Message::Surface(
-                crate::app::messages::SurfaceEvent::KeyboardSecondaryActivate(window),
+            keyboard::Key::Named(Named::Enter) if modifiers == keyboard::Modifiers::default() => {
+                Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::KeyboardActivate(window),
+                ))
+            }
+            keyboard::Key::Named(Named::Backspace)
+                if modifiers == keyboard::Modifiers::default() =>
+            {
+                Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::BackPressed(window),
+                ))
+            }
+            keyboard::Key::Named(Named::Space) if modifiers == keyboard::Modifiers::default() => {
+                Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::KeyboardSecondaryActivate(window),
+                ))
+            }
+            _ if status == iced::event::Status::Ignored => Some(Message::Surface(
+                crate::app::messages::SurfaceEvent::ActionKeyPressed {
+                    window,
+                    modifiers,
+                    key,
+                },
             )),
             _ => None,
         },
@@ -170,5 +193,112 @@ mod tests {
                 crate::app::messages::SurfaceEvent::WindowClosed(w)
             )) if w == wid
         ));
+    }
+
+    #[test]
+    fn configured_action_key_emits_surface_action_key_event() {
+        let wid = iced::window::Id::unique();
+        let msg = keyboard_handler(
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Character("e".into()),
+                modified_key: keyboard::Key::Character("e".into()),
+                physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyE),
+                location: keyboard::Location::Standard,
+                modifiers: keyboard::Modifiers::CTRL,
+                text: None,
+                repeat: false,
+            }),
+            iced::event::Status::Ignored,
+            wid,
+        );
+
+        assert!(matches!(
+            msg,
+            Some(crate::app::Message::Surface(
+                crate::app::messages::SurfaceEvent::ActionKeyPressed {
+                    window,
+                    modifiers,
+                    key,
+                }
+            )) if window == wid
+                && modifiers == keyboard::Modifiers::CTRL
+                && key == keyboard::Key::Character("e".into())
+        ));
+    }
+
+    #[test]
+    fn modified_space_emits_surface_action_key_event() {
+        let wid = iced::window::Id::unique();
+        let msg = keyboard_handler(
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(Named::Space),
+                modified_key: keyboard::Key::Named(Named::Space),
+                physical_key: keyboard::key::Physical::Code(keyboard::key::Code::Space),
+                location: keyboard::Location::Standard,
+                modifiers: keyboard::Modifiers::LOGO,
+                text: None,
+                repeat: false,
+            }),
+            iced::event::Status::Ignored,
+            wid,
+        );
+
+        assert!(matches!(
+            msg,
+            Some(crate::app::Message::Surface(
+                crate::app::messages::SurfaceEvent::ActionKeyPressed {
+                    window,
+                    modifiers,
+                    key,
+                }
+            )) if window == wid
+                && modifiers == keyboard::Modifiers::LOGO
+                && key == keyboard::Key::Named(Named::Space)
+        ));
+    }
+
+    #[test]
+    fn plain_space_keeps_keyboard_secondary_activate() {
+        let wid = iced::window::Id::unique();
+        let msg = keyboard_handler(
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(Named::Space),
+                modified_key: keyboard::Key::Named(Named::Space),
+                physical_key: keyboard::key::Physical::Code(keyboard::key::Code::Space),
+                location: keyboard::Location::Standard,
+                modifiers: keyboard::Modifiers::default(),
+                text: None,
+                repeat: false,
+            }),
+            iced::event::Status::Ignored,
+            wid,
+        );
+
+        assert!(matches!(
+            msg,
+            Some(crate::app::Message::Surface(
+                crate::app::messages::SurfaceEvent::KeyboardSecondaryActivate(window)
+            )) if window == wid
+        ));
+    }
+
+    #[test]
+    fn captured_action_key_does_not_emit_surface_action_key_event() {
+        let wid = iced::window::Id::unique();
+        let msg = keyboard_handler(
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Character("e".into()),
+                modified_key: keyboard::Key::Character("e".into()),
+                physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyE),
+                location: keyboard::Location::Standard,
+                modifiers: keyboard::Modifiers::CTRL,
+                text: None,
+                repeat: false,
+            }),
+            iced::event::Status::Captured,
+            wid,
+        );
+
+        assert!(msg.is_none());
     }
 }

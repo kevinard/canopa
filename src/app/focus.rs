@@ -198,8 +198,11 @@ impl App {
                 .action_for(id, &crate::config::ActionTrigger::RightClick)
                 .is_some()
             {
-                return self
-                    .dispatch_module_interaction(id, InteractionEvent::RightClicked(window), window);
+                return self.dispatch_module_interaction(
+                    id,
+                    InteractionEvent::RightClicked(window),
+                    window,
+                );
             }
             for (_, module) in &self.modules {
                 if module.id() == *id {

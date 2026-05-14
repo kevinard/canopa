@@ -129,7 +129,7 @@ impl App {
 
         let surface_size = bar.collapsed_width;
         let content_size = surface_size.saturating_sub(1);
-        let shows_expanded = true;
+        let shows_expanded = false;
 
         let effective_zone = self.effective_module_zones_for_bar(bar);
         let default_state = ModuleState::default();
