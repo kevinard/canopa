@@ -38,6 +38,9 @@ pub(super) struct BarRenderModel<'a> {
 pub(super) struct PanelRenderModel<'a> {
     pub(super) tree: &'a crate::surface::panel::PanelTree,
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
+    pub(super) menu_entries: Vec<super::panel::MenuEntryView>,
+    pub(super) search_query: String,
+    pub(super) focused_index: Option<usize>,
     pub(super) bar_style: &'a crate::config::Style,
 }
 
@@ -112,6 +115,9 @@ impl App {
         Some(PanelRenderModel {
             tree,
             entries,
+            menu_entries: self.active_menu_entries(),
+            search_query: self.panel.search_query.clone(),
+            focused_index: self.panel.focused_index,
             bar_style: &bar.style,
         })
     }

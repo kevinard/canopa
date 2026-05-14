@@ -1,4 +1,4 @@
-use iced::widget::{Space, column, container, mouse_area, row, scrollable};
+use iced::widget::{Space, column, container, mouse_area, row, scrollable, text, text_input};
 use iced::{Element, Length};
 
 use super::render::{BarRenderModel, PanelRenderModel, PopupRenderModel};
@@ -39,8 +39,14 @@ impl App {
 }
 
 fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
-    let _ = model.tree;
     let text_color = model.bar_style.resolve().color;
+    if matches!(
+        model.tree.content,
+        crate::surface::panel::PanelContent::Menu(_)
+    ) {
+        return render_panel_menu_model(model, text_color);
+    }
+
     let entries: Vec<Element<'_, Message>> = model
         .entries
         .into_iter()
@@ -48,6 +54,62 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
         .collect();
 
     container(scrollable(column(entries).spacing(8).padding(8)))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(crate::theme::BASE)),
+            text_color,
+            border: iced::Border {
+                color: crate::theme::BORDER,
+                width: 1.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+fn render_panel_menu_model<'a>(
+    model: PanelRenderModel<'a>,
+    text_color: Option<iced::Color>,
+) -> Element<'a, Message> {
+    let search = text_input("Search", &model.search_query)
+        .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
+        .padding([8, 10])
+        .width(Length::Fill);
+
+    let mut list = column![search].spacing(8).padding(8);
+    for (index, entry) in model.menu_entries.into_iter().enumerate() {
+        let focused = model.focused_index == Some(index);
+        let suffix = if entry.is_submenu { " >" } else { "" };
+        let row = container(text(format!("{}{}", entry.label, suffix)))
+            .padding([8, 10])
+            .width(Length::Fill)
+            .style(move |_| iced::widget::container::Style {
+                background: if focused {
+                    Some(iced::Background::Color(crate::theme::SURFACE0))
+                } else {
+                    Some(iced::Background::Color(crate::theme::SURFACE1))
+                },
+                border: iced::Border {
+                    color: crate::theme::BORDER,
+                    width: 1.0,
+                    radius: iced::border::Radius::from(4.0),
+                },
+                ..Default::default()
+            });
+        list = list.push(
+            mouse_area(row)
+                .on_enter(Message::Panel(super::messages::PanelEvent::FocusIndex(
+                    index,
+                )))
+                .on_press(Message::Panel(super::messages::PanelEvent::ActivateIndex(
+                    index,
+                ))),
+        );
+    }
+
+    container(scrollable(list))
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {

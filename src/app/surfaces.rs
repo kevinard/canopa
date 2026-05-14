@@ -438,6 +438,10 @@ impl App {
             SurfaceEvent::KeyboardSecondaryActivate(window) => {
                 self.handle_keyboard_secondary_activate(window)
             }
+            SurfaceEvent::BackPressed(window) if self.surfaces.has_panel_popup(window) => {
+                Task::done(Message::Panel(super::messages::PanelEvent::Back))
+            }
+            SurfaceEvent::BackPressed(_) => Task::none(),
             SurfaceEvent::ToggleExpand => self.handle_toggle_expand(),
         }
     }

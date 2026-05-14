@@ -143,6 +143,9 @@ fn keyboard_handler(
                 keyboard::Key::Named(Named::Enter) => Some(Message::Surface(
                     crate::app::messages::SurfaceEvent::KeyboardActivate(window),
                 )),
+                keyboard::Key::Named(Named::Backspace) => Some(Message::Surface(
+                    crate::app::messages::SurfaceEvent::BackPressed(window),
+                )),
                 keyboard::Key::Named(Named::Space) => Some(Message::Surface(
                     crate::app::messages::SurfaceEvent::KeyboardSecondaryActivate(window),
                 )),

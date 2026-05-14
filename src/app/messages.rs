@@ -22,6 +22,7 @@ pub enum SurfaceEvent {
     FocusPrevZone(iced::window::Id),
     KeyboardActivate(iced::window::Id),
     KeyboardSecondaryActivate(iced::window::Id),
+    BackPressed(iced::window::Id),
     ToggleExpand,
     CursorMoved(iced::window::Id, Point),
     WindowSized(iced::window::Id, u32, u32),
@@ -90,7 +91,9 @@ pub enum PanelEvent {
     SearchChanged(String),
     FocusMoveNext,
     FocusMovePrev,
+    FocusIndex(usize),
     Activate,
+    ActivateIndex(usize),
     Back,
 }
 

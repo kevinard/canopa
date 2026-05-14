@@ -10,11 +10,27 @@ pub(super) struct PanelSystem {
     pub(super) menu_path: Vec<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct MenuEntryView {
+    pub(super) label: String,
+    pub(super) path: Vec<usize>,
+    pub(super) is_submenu: bool,
+}
+
 impl PanelSystem {
     pub(super) fn clear(&mut self) {
         self.search_query.clear();
         self.focused_index = None;
         self.menu_path.clear();
+    }
+
+    pub(super) fn escape_clears_search(&mut self) -> bool {
+        if self.search_query.is_empty() {
+            return false;
+        }
+        self.search_query.clear();
+        self.focused_index = Some(0);
+        true
     }
 }
 
@@ -182,12 +198,30 @@ impl App {
             PanelEvent::Close => Task::batch(self.close_all_panels()),
             PanelEvent::SearchChanged(query) => {
                 self.panel.search_query = query;
+                self.panel.focused_index = Some(0);
                 Task::none()
             }
-            PanelEvent::FocusMoveNext
-            | PanelEvent::FocusMovePrev
-            | PanelEvent::Activate
-            | PanelEvent::Back => Task::none(),
+            PanelEvent::FocusMoveNext => {
+                self.move_panel_focus(1);
+                Task::none()
+            }
+            PanelEvent::FocusMovePrev => {
+                self.move_panel_focus(-1);
+                Task::none()
+            }
+            PanelEvent::FocusIndex(index) => {
+                self.panel.focused_index = Some(index);
+                Task::none()
+            }
+            PanelEvent::Activate => self.activate_panel_entry(None),
+            PanelEvent::ActivateIndex(index) => self.activate_panel_entry(Some(index)),
+            PanelEvent::Back => {
+                if self.panel.search_query.is_empty() {
+                    self.panel.menu_path.pop();
+                    self.panel.focused_index = Some(0);
+                }
+                Task::none()
+            }
         }
     }
 
@@ -215,10 +249,201 @@ impl App {
         let mut tasks = self.close_tooltip_popup_if_open(origin_window);
         tasks.extend(self.close_all_menu_popups());
         tasks.extend(self.close_all_panels());
+        if matches!(tree.content, crate::surface::panel::PanelContent::Menu(_)) {
+            self.panel.focused_index = Some(0);
+        }
         self.surfaces
             .insert_panel_popup(panel_window, super::surfaces::PanelMeta { tree });
         tasks.push(open_task);
         Task::batch(tasks)
+    }
+
+    pub(super) fn handle_panel_escape_pressed(&mut self) -> Task<Message> {
+        if self.panel.escape_clears_search() {
+            Task::none()
+        } else {
+            self.handle_panel_event(super::messages::PanelEvent::Close)
+        }
+    }
+
+    fn move_panel_focus(&mut self, delta: isize) {
+        let entries = self.active_menu_entries();
+        if entries.is_empty() {
+            self.panel.focused_index = None;
+            return;
+        }
+        let current = self.panel.focused_index.unwrap_or(0).min(entries.len() - 1);
+        let next = if delta > 0 {
+            (current + 1) % entries.len()
+        } else if current == 0 {
+            entries.len() - 1
+        } else {
+            current - 1
+        };
+        self.panel.focused_index = Some(next);
+    }
+
+    fn activate_panel_entry(&mut self, index: Option<usize>) -> Task<Message> {
+        let Some((tree, entries)) = self.active_menu_tree_and_entries() else {
+            return Task::none();
+        };
+        let Some(entry) = index
+            .or(self.panel.focused_index)
+            .and_then(|index| entries.get(index).cloned())
+        else {
+            return Task::none();
+        };
+        let Some(menu_name) = menu_name_for_tree(&tree) else {
+            return Task::none();
+        };
+        let Some(menu) = self.config.menus.iter().find(|menu| menu.name == menu_name) else {
+            return Task::none();
+        };
+
+        if entry.is_submenu {
+            self.panel.menu_path = entry.path;
+            self.panel.search_query.clear();
+            self.panel.focused_index = Some(0);
+            return Task::none();
+        }
+
+        let Some(item) = menu_item_at_path(&menu.items, &entry.path) else {
+            return Task::none();
+        };
+        let Some(action) = item.action.clone() else {
+            return Task::none();
+        };
+        match action {
+            crate::config::PanelAction::Command(command) => {
+                let _ = crate::command::spawn_config_command_fire_and_forget(&command);
+                Task::batch(self.close_all_panels())
+            }
+            action => self.dispatch_panel_action(tree.origin_window, tree.origin, action),
+        }
+    }
+
+    pub(super) fn active_menu_entries(&self) -> Vec<MenuEntryView> {
+        self.active_menu_tree_and_entries()
+            .map(|(_, entries)| entries)
+            .unwrap_or_default()
+    }
+
+    fn active_menu_tree_and_entries(
+        &self,
+    ) -> Option<(crate::surface::panel::PanelTree, Vec<MenuEntryView>)> {
+        let tree = self
+            .surfaces
+            .panel_popup_values()
+            .find(|meta| {
+                matches!(
+                    meta.tree.content,
+                    crate::surface::panel::PanelContent::Menu(_)
+                )
+            })?
+            .tree
+            .clone();
+        let menu_name = menu_name_for_tree(&tree)?;
+        let menu = self
+            .config
+            .menus
+            .iter()
+            .find(|menu| menu.name == menu_name)?;
+        let entries = if self.panel.search_query.is_empty() {
+            current_menu_entries(menu, &self.panel.menu_path)
+        } else {
+            search_menu_entries(menu, &self.panel.search_query)
+        };
+        Some((tree, entries))
+    }
+}
+
+fn menu_name_for_tree(tree: &crate::surface::panel::PanelTree) -> Option<&str> {
+    match &tree.content {
+        crate::surface::panel::PanelContent::Menu(name) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+pub(super) fn current_menu_entries(
+    menu: &crate::config::MenuConfig,
+    path: &[usize],
+) -> Vec<MenuEntryView> {
+    let items = if path.is_empty() {
+        &menu.items
+    } else {
+        menu_item_at_path(&menu.items, path)
+            .map(|item| item.children.as_slice())
+            .unwrap_or(&[])
+    };
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let mut item_path = path.to_vec();
+            item_path.push(index);
+            MenuEntryView {
+                label: item.label.clone(),
+                path: item_path,
+                is_submenu: !item.children.is_empty(),
+            }
+        })
+        .collect()
+}
+
+pub(super) fn search_menu_entries(
+    menu: &crate::config::MenuConfig,
+    query: &str,
+) -> Vec<MenuEntryView> {
+    let query = query.to_ascii_lowercase();
+    let mut results = Vec::new();
+    collect_search_menu_entries(
+        &menu.items,
+        &query,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut results,
+    );
+    results
+}
+
+fn collect_search_menu_entries(
+    items: &[crate::config::MenuItemConfig],
+    query: &str,
+    labels: &mut Vec<String>,
+    path: &mut Vec<usize>,
+    results: &mut Vec<MenuEntryView>,
+) {
+    for (index, item) in items.iter().enumerate() {
+        labels.push(item.label.clone());
+        path.push(index);
+        let label_matches = item.label.to_ascii_lowercase().contains(query);
+        let keyword_matches = item
+            .keywords
+            .iter()
+            .any(|keyword| keyword.to_ascii_lowercase().contains(query));
+        if label_matches || keyword_matches {
+            results.push(MenuEntryView {
+                label: labels.join(" / "),
+                path: path.clone(),
+                is_submenu: !item.children.is_empty(),
+            });
+        }
+        collect_search_menu_entries(&item.children, query, labels, path, results);
+        path.pop();
+        labels.pop();
+    }
+}
+
+fn menu_item_at_path<'a>(
+    items: &'a [crate::config::MenuItemConfig],
+    path: &[usize],
+) -> Option<&'a crate::config::MenuItemConfig> {
+    let (first, rest) = path.split_first()?;
+    let item = items.get(*first)?;
+    if rest.is_empty() {
+        Some(item)
+    } else {
+        menu_item_at_path(&item.children, rest)
     }
 }
 
@@ -490,5 +715,50 @@ mod tests {
             }
             other => panic!("expected open event, got {other:?}"),
         }
+    }
+
+    fn menu_with_apps_browser() -> crate::config::MenuConfig {
+        crate::config::MenuConfig {
+            name: "main".into(),
+            items: vec![crate::config::MenuItemConfig {
+                label: "Apps".into(),
+                keywords: vec![],
+                action: None,
+                children: vec![crate::config::MenuItemConfig {
+                    label: "Browser".into(),
+                    keywords: vec!["web".into()],
+                    action: Some(crate::config::PanelAction::Command(
+                        crate::config::CommandConfig::Shell("firefox".into()),
+                    )),
+                    children: vec![],
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn menu_search_flattens_nested_matches_with_breadcrumb() {
+        let menu = menu_with_apps_browser();
+        let results = search_menu_entries(&menu, "browser");
+
+        assert_eq!(results[0].label, "Apps / Browser");
+        assert_eq!(results[0].path, vec![0, 0]);
+    }
+
+    #[test]
+    fn menu_search_matches_keywords_case_insensitively() {
+        let menu = menu_with_apps_browser();
+        let results = search_menu_entries(&menu, "WEB");
+
+        assert_eq!(results[0].label, "Apps / Browser");
+    }
+
+    #[test]
+    fn escape_clears_search_before_closing_panel() {
+        let mut panel = PanelSystem::default();
+        panel.search_query = "term".into();
+
+        assert!(panel.escape_clears_search());
+        assert_eq!(panel.search_query, "");
     }
 }

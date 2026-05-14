@@ -33,6 +33,9 @@ impl App {
     }
 
     pub(super) fn handle_escape_pressed(&mut self, window: iced::window::Id) -> Task<Message> {
+        if self.surfaces.has_panel_popup(window) {
+            return self.handle_panel_escape_pressed();
+        }
         let close_tt = self.close_tooltip_popup_if_open(window);
         if !close_tt.is_empty() {
             return Task::batch(close_tt);
@@ -62,6 +65,13 @@ impl App {
         if self.surfaces.has_popup(window) {
             self.popup_nav_step(window, forward);
             return Task::none();
+        }
+        if self.surfaces.has_panel_popup(window) {
+            return Task::done(Message::Panel(if forward {
+                super::messages::PanelEvent::FocusMoveNext
+            } else {
+                super::messages::PanelEvent::FocusMovePrev
+            }));
         }
 
         let s = self.surface_mut(window);
@@ -123,6 +133,9 @@ impl App {
     }
 
     pub(super) fn handle_keyboard_activate(&mut self, window: iced::window::Id) -> Task<Message> {
+        if self.surfaces.has_panel_popup(window) {
+            return Task::done(Message::Panel(super::messages::PanelEvent::Activate));
+        }
         if self.surfaces.has_popup(window) {
             let focused = self.menu.focused_item(window).map(str::to_owned);
             if let Some(item_id) = focused {
