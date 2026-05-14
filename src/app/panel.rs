@@ -755,8 +755,10 @@ mod tests {
 
     #[test]
     fn escape_clears_search_before_closing_panel() {
-        let mut panel = PanelSystem::default();
-        panel.search_query = "term".into();
+        let mut panel = PanelSystem {
+            search_query: "term".into(),
+            ..PanelSystem::default()
+        };
 
         assert!(panel.escape_clears_search());
         assert_eq!(panel.search_query, "");

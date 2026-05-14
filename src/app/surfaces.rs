@@ -617,25 +617,6 @@ impl App {
         }
     }
 
-    /// Returns a `SizeChange` task for the named surface's configured bar size.
-    pub(super) fn overlay_size_change_for(&self, window: iced::window::Id) -> Task<Message> {
-        let surface = self.surfaces.surface(window);
-        let bar_name = surface.map(|s| s.bar_name.as_str()).unwrap_or("");
-        let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
-        let size = bar.collapsed_width;
-        if bar.edge.is_horizontal() {
-            Task::done(Message::SizeChange {
-                id: window,
-                size: (0, size),
-            })
-        } else {
-            Task::done(Message::SizeChange {
-                id: window,
-                size: (size, 0),
-            })
-        }
-    }
-
     /// Remove the `tray_icon` module with the given module id from `self.modules`,
     /// and clear any surface hover/focus that pointed at it.
     pub(super) fn remove_tray_icon(&mut self, module_id: &str) {

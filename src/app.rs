@@ -242,12 +242,6 @@ mod tests {
         Config::default()
     }
 
-    fn make_horizontal_config() -> Config {
-        let mut config = make_config();
-        config.bars[0].edge = Edge::Top;
-        config
-    }
-
     /// Returns a consistent unique window ID for use across a single test.
     fn test_wid() -> iced::window::Id {
         iced::window::Id::unique()

@@ -76,11 +76,6 @@ impl<'a> Field<'a> {
         self
     }
 
-    pub(super) fn bool_message(mut self, message: impl Into<String>) -> Self {
-        self.messages.bool_ = Some(message.into());
-        self
-    }
-
     pub(super) fn u64_min(self, min: u64) -> FieldValue<u64> {
         let help = self.messages.help.clone();
         self.parse_optional_node(|node, ctx| {
