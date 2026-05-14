@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::config::parse::parse;
-    use crate::config::{BarLayer, Edge, ExpandTrigger, OutputTarget};
+    use crate::config::{BarLayer, Edge, OutputTarget};
 
     #[test]
     fn parse_full_bar_section() {
@@ -9,13 +9,11 @@ mod tests {
 bar "main" {
     edge "right"
     collapsed-width 56
-    expanded-width 240
 }
 "#;
         let config = parse(kdl).unwrap();
         assert!(matches!(config.bars[0].edge, Edge::Right));
         assert_eq!(config.bars[0].collapsed_width, 56);
-        assert_eq!(config.bars[0].expanded_width, 240);
     }
 
     #[test]
@@ -36,7 +34,6 @@ bar "main" {
         let config = parse("").unwrap();
         assert!(matches!(config.bars[0].edge, Edge::Left));
         assert_eq!(config.bars[0].collapsed_width, 48);
-        assert_eq!(config.bars[0].expanded_width, 200);
     }
 
     #[test]
@@ -74,39 +71,6 @@ bar "main" {
             msg.contains("Expected:"),
             "expected 'Expected:' in message, got: {msg}"
         );
-    }
-
-    #[test]
-    fn parse_expand_trigger_hover() {
-        let kdl = r#"bar "main" { expand-trigger "hover" }"#;
-        let config = parse(kdl).unwrap();
-        assert_eq!(config.bars[0].expand_trigger, ExpandTrigger::Hover);
-    }
-
-    #[test]
-    fn parse_expand_trigger_click() {
-        let kdl = r#"bar "main" { expand-trigger "click" }"#;
-        let config = parse(kdl).unwrap();
-        assert_eq!(config.bars[0].expand_trigger, ExpandTrigger::Click);
-    }
-
-    #[test]
-    fn parse_expand_trigger_defaults_to_click() {
-        let config = parse("").unwrap();
-        assert_eq!(config.bars[0].expand_trigger, ExpandTrigger::Click);
-    }
-
-    #[test]
-    fn parse_hover_delay() {
-        let kdl = r#"bar "main" { hover-delay 200 }"#;
-        let config = parse(kdl).unwrap();
-        assert_eq!(config.bars[0].hover_delay, 200);
-    }
-
-    #[test]
-    fn parse_hover_delay_defaults_to_zero() {
-        let config = parse("").unwrap();
-        assert_eq!(config.bars[0].hover_delay, 0);
     }
 
     #[test]
@@ -158,76 +122,6 @@ bar "main" {
         let kdl = r#"bar "main" { tooltip-delay -1 }"#;
         let err = parse(kdl).unwrap_err().to_string();
         assert!(err.contains("tooltip-delay"), "got: {err}");
-    }
-
-    #[test]
-    fn parse_expand_keybind() {
-        let kdl = r#"bar "main" { expand-keybind "Super+e" }"#;
-        let config = parse(kdl).unwrap();
-        assert_eq!(config.bars[0].expand_keybind, Some("Super+e".to_string()));
-    }
-
-    #[test]
-    fn parse_expand_keybind_defaults_to_none() {
-        let config = parse("").unwrap();
-        assert_eq!(config.bars[0].expand_keybind, None);
-    }
-
-    #[test]
-    fn parse_bar_without_expand_keybind_uses_none() {
-        let kdl = r#"bar "main" { edge "left" }"#;
-        let config = parse(kdl).unwrap();
-        assert!(config.bars[0].expand_keybind.is_none());
-    }
-
-    #[test]
-    fn parse_expand_false_disables_expand() {
-        let kdl = r#"bar "main" { expand #false }"#;
-        let config = parse(kdl).unwrap();
-        assert!(!config.bars[0].expand);
-    }
-
-    #[test]
-    fn parse_expand_true_enables_expand() {
-        let kdl = r#"bar "main" { expand #true }"#;
-        let config = parse(kdl).unwrap();
-        assert!(config.bars[0].expand);
-    }
-
-    #[test]
-    fn parse_expand_defaults_to_true() {
-        let config = parse("").unwrap();
-        assert!(config.bars[0].expand);
-    }
-
-    #[test]
-    fn parse_expand_wrong_type_errors() {
-        let kdl = r#"bar "main" { expand "yes" }"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains(".expand:"),
-            "expected '.expand:' in message, got: {msg}"
-        );
-        assert!(
-            msg.contains("Expected:"),
-            "expected 'Expected:' in message, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn parse_unknown_expand_trigger_errors() {
-        let kdl = r#"bar "main" { expand-trigger "double-click" }"#;
-        let err = parse(kdl).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains(".expand-trigger:"),
-            "expected '.expand-trigger:' in message, got: {msg}"
-        );
-        assert!(
-            msg.contains("Expected:"),
-            "expected 'Expected:' in message, got: {msg}"
-        );
     }
 
     #[test]
@@ -343,31 +237,12 @@ bar "top-strip" {
     }
 
     #[test]
-    fn parse_negative_expanded_width_errors() {
-        let result = parse(r#"bar "main" { expanded-width -10 }"#);
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
-        assert!(
-            msg.contains(".expanded-width"),
-            "error should contain '.expanded-width': {msg}"
-        );
-        assert!(
-            msg.contains("Expected:"),
-            "error should contain 'Expected:': {msg}"
-        );
-    }
-
-    #[test]
     fn parse_bar_with_full_settings() {
         let kdl = r#"
 bar "full" {
     output "DP-2"
     edge "right"
     collapsed-width 56
-    expanded-width 240
-    expand #true
-    expand-trigger "click"
-    hover-delay 0
 }
 "#;
         let config = parse(kdl).unwrap();
@@ -378,8 +253,6 @@ bar "full" {
         );
         assert!(matches!(config.bars[0].edge, Edge::Right));
         assert_eq!(config.bars[0].collapsed_width, 56);
-        assert_eq!(config.bars[0].expanded_width, 240);
-        assert!(config.bars[0].expand);
     }
 
     #[test]
@@ -469,8 +342,7 @@ bar "main" {
         let config = parse(kdl).unwrap();
         let bar = &config.bars[0];
         assert_eq!(
-            bar.actions
-                .action_for(&crate::config::ActionTrigger::Click),
+            bar.actions.action_for(&crate::config::ActionTrigger::Click),
             Some(&crate::config::PanelAction::OpenPanel)
         );
         assert_eq!(

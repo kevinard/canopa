@@ -1,11 +1,10 @@
 use ::kdl::{KdlDocument, KdlNode};
 
 use super::super::{
-    AnimationConfig, BarConfig, BarLayer, BarModules, Edge, ExpandTrigger, OutputTarget,
-    PanelAnimationConfig, PanelConfig, PanelModules,
+    BarConfig, BarLayer, BarModules, Edge, OutputTarget, PanelAnimationConfig, PanelConfig,
+    PanelModules,
 };
 use super::actions;
-use super::animation;
 use super::error::ParseCtx;
 use super::fields;
 use super::style::parse_style_props_ctx;
@@ -59,13 +58,7 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
             "edge",
             "layer",
             "collapsed-width",
-            "expanded-width",
-            "expand-trigger",
-            "hover-delay",
             "tooltip-delay",
-            "expand",
-            "expand-keybind",
-            "animation",
             "style",
             "modules",
             "actions",
@@ -76,13 +69,7 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
             "edge",
             "layer",
             "collapsed-width",
-            "expanded-width",
-            "expand-trigger",
-            "hover-delay",
             "tooltip-delay",
-            "expand",
-            "expand-keybind",
-            "animation",
             "style",
             "modules",
             "actions",
@@ -138,30 +125,6 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
         .u32()
         .unwrap_or(defaults.collapsed_width)?;
 
-    let expanded_width = fields::field(children, ctx, "expanded-width")
-        .optional()
-        .help("expected a width in logical pixels, e.g. 200")
-        .integer_message(
-            "expected a positive integer. Expected: expected a width in logical pixels, e.g. 200",
-        )
-        .u32()
-        .unwrap_or(defaults.expanded_width)?;
-
-    let expand_trigger = fields::field(children, ctx, "expand-trigger")
-        .optional()
-        .one_of("click, hover", |value| match value {
-            "click" => Some(ExpandTrigger::Click),
-            "hover" => Some(ExpandTrigger::Hover),
-            _ => None,
-        })
-        .unwrap_or(defaults.expand_trigger)?;
-
-    let hover_delay = fields::field(children, ctx, "hover-delay")
-        .optional()
-        .help("expected a non-negative integer (milliseconds)")
-        .u64_min(0)
-        .unwrap_or(defaults.hover_delay)?;
-
     let tooltip_delay_ms = fields::field(children, ctx, "tooltip-delay")
         .optional()
         .help("expected a non-negative integer (milliseconds)")
@@ -170,23 +133,6 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
         )
         .u32()
         .unwrap_or(defaults.tooltip_delay_ms)?;
-
-    let expand = fields::field(children, ctx, "expand")
-        .optional()
-        .help("expected #true or #false")
-        .bool_message("expected a boolean value. Expected: #true or #false")
-        .bool()
-        .unwrap_or(defaults.expand)?;
-
-    let expand_keybind = children
-        .get_arg("expand-keybind")
-        .and_then(|v| v.as_string())
-        .map(|s| s.to_string());
-
-    let anim_config = match fields::field(children, ctx, "animation").optional_node()? {
-        None => AnimationConfig::default(),
-        Some(anim_node) => animation::parse_node(anim_node, &ctx.child("animation"))?,
-    };
 
     let style = match fields::field(children, ctx, "style").optional_node()? {
         None => Style::default(),
@@ -197,7 +143,13 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
     };
 
     let modules = parse_bar_modules(children, &ctx.child("modules"))?;
-    let actions = actions::parse(node, 0, "bar", ctx, &crate::config::CommandPolicy::default())?;
+    let actions = actions::parse(
+        node,
+        0,
+        "bar",
+        ctx,
+        &crate::config::CommandPolicy::default(),
+    )?;
     let panel = parse_panel(children, &ctx.child("panel"))?;
 
     Ok(BarConfig {
@@ -206,13 +158,7 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
         edge,
         layer,
         collapsed_width,
-        expanded_width,
-        expand,
-        expand_trigger,
-        hover_delay,
         tooltip_delay_ms,
-        expand_keybind,
-        animation: anim_config,
         style,
         modules,
         actions,

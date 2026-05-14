@@ -38,18 +38,11 @@ impl App {
     }
 
     fn needs_keyboard_focus_subscription(&self) -> bool {
-        self.config
-            .bars
-            .iter()
-            .any(|bar| bar.expand_keybind.is_some())
-            || self.has_capability(|capabilities| capabilities.needs_keyboard_focus)
+        self.has_capability(|capabilities| capabilities.needs_keyboard_focus)
     }
 
     fn needs_ipc_subscription(&self) -> bool {
-        self.config
-            .bars
-            .iter()
-            .any(|bar| bar.expand && bar.expanded_width > bar.collapsed_width)
+        true
     }
 
     pub(crate) fn subscription(&self) -> iced::Subscription<Message> {
@@ -128,9 +121,7 @@ impl App {
             iced::Subscription::none()
         };
 
-        let needs_tick = self.surfaces.values().any(|s| {
-            s.expand.is_animating() || s.hover_pending_ms.is_some() || s.tooltip_pending.is_some()
-        });
+        let needs_tick = self.surfaces.values().any(|s| s.tooltip_pending.is_some());
         let tick_sub = if needs_tick {
             iced::time::every(Duration::from_millis(16))
                 .map(|_| Message::Surface(messages::SurfaceEvent::Tick))
@@ -256,25 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn expand_keybind_needs_keyboard_focus_subscription() {
-        let mut config = Config::default();
-        config.bars[0].expand_keybind = Some("Super+e".into());
-        let (app, _) = App::boot(config, vec![]);
-
-        assert!(app.needs_keyboard_focus_subscription());
-    }
-
-    #[test]
-    fn disabled_expand_does_not_need_ipc_subscription() {
-        let mut config = Config::default();
-        config.bars[0].expand = false;
-        let (app, _) = App::boot(config, vec![]);
-
-        assert!(!app.needs_ipc_subscription());
-    }
-
-    #[test]
-    fn expandable_bar_needs_ipc_subscription() {
+    fn app_needs_ipc_subscription_for_panel_commands() {
         let (app, _) = App::boot(Config::default(), vec![]);
 
         assert!(app.needs_ipc_subscription());

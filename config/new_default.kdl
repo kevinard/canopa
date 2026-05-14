@@ -30,43 +30,13 @@ bar "main" {
     // The compositor multiplies by the output scale factor for physical rendering.
     collapsed-width 48
 
-    // Bar width in logical pixels when expanded. Must be >= collapsed-width.
-    // Set equal to collapsed-width to disable the expand/collapse feature entirely.
-    expanded-width 200
-
-    // Whether expand/collapse is active.
-    // Accepted values: #true (default), #false (permanently collapsed).
-    expand #true
-
-    // What user action expands or collapses the bar.
-    // Accepted values: "click" (default), "hover".
-    expand-trigger "click"
-
-    // Milliseconds of cursor dwell before hover expands the bar.
-    // Only relevant when expand-trigger is "hover". Default: 0 (expand immediately).
-    hover-delay 0
-
     // Milliseconds of cursor dwell before a module's tooltip appears on hover.
     // Default: 500. Hide is always immediate on hover-exit.
     tooltip-delay 500
 
-    // Keyboard shortcut to expand/collapse while the bar has keyboard focus.
-    // Optional. Format: modifier+key, e.g. "Super+e" or "Ctrl+b".
-    // Also documents the compositor keybind to bind to `niribar --toggle-expand`
-    // for global (out-of-focus) toggling.
-    // expand-keybind "Super+e"
-
     // Optional default style for all module format segments rendered in this bar.
     // Individual segment styles override these values property by property.
     // style color="text" size=12 weight="normal"
-
-    // Expand/collapse animation timing.
-    animation {
-        // Duration of the expand animation in milliseconds. Default: 280.
-        expand-ms 280
-        // Duration of the collapse animation in milliseconds. Default: 200.
-        collapse-ms 200
-    }
 
     // Zone layout — assign module names to top, center, and bottom zones.
     // Names must match the module declarations in the "modules" section below.
@@ -428,7 +398,6 @@ style {
 //     output "DP-2"
 //     edge "top"
 //     collapsed-width 32
-//     expanded-width 0
 //     modules {
 //         top "workspaces"
 //         center "focused-window"
@@ -441,11 +410,9 @@ style {
 //     output "eDP-1"
 //     edge "left"
 //     collapsed-width 48
-//     expanded-width 200
 // }
 // bar "top" {
 //     output "eDP-1"
 //     edge "top"
 //     collapsed-width 32
-//     expanded-width 0
 /

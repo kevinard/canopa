@@ -44,16 +44,6 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
                 ),
             ));
         }
-        if bar.expanded_width < bar.collapsed_width {
-            return Err(validation_error(
-                source.clone(),
-                format!(
-                    "bar {:?}: expanded-width: value {} must be >= collapsed-width ({}). \
-                 Expected: a width greater than or equal to the collapsed width.",
-                    bar.name, bar.expanded_width, bar.collapsed_width
-                ),
-            ));
-        }
     }
 
     let mut declared_modules = std::collections::HashMap::new();

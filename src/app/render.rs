@@ -127,11 +127,9 @@ impl App {
         let bar = Self::bar_for_surface_name(&self.config.bars, &surface.bar_name);
         let is_horizontal = bar.edge.is_horizontal();
 
-        let surface_size = surface
-            .expand
-            .current_width(bar.collapsed_width, bar.expanded_width);
+        let surface_size = bar.collapsed_width;
         let content_size = surface_size.saturating_sub(1);
-        let shows_expanded = surface.expand.shows_expanded_content();
+        let shows_expanded = true;
 
         let effective_zone = self.effective_module_zones_for_bar(bar);
         let default_state = ModuleState::default();

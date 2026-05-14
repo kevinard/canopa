@@ -442,7 +442,6 @@ impl App {
                 Task::done(Message::Panel(super::messages::PanelEvent::Back))
             }
             SurfaceEvent::BackPressed(_) => Task::none(),
-            SurfaceEvent::ToggleExpand => self.handle_toggle_expand(),
             SurfaceEvent::TogglePanel => self.handle_toggle_panel_ipc(),
         }
     }
@@ -618,13 +617,12 @@ impl App {
         }
     }
 
-    /// Returns a `SizeChange` task for the named surface's current expand state in overlay mode.
+    /// Returns a `SizeChange` task for the named surface's configured bar size.
     pub(super) fn overlay_size_change_for(&self, window: iced::window::Id) -> Task<Message> {
         let surface = self.surfaces.surface(window);
-        let expand = surface.map(|s| s.expand).unwrap_or_default();
         let bar_name = surface.map(|s| s.bar_name.as_str()).unwrap_or("");
         let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
-        let size = expand.current_width(bar.collapsed_width, bar.expanded_width);
+        let size = bar.collapsed_width;
         if bar.edge.is_horizontal() {
             Task::done(Message::SizeChange {
                 id: window,
@@ -861,7 +859,6 @@ mod tests {
     use super::*;
     use crate::config::Edge;
     use crate::modules::ModuleId;
-    use crate::surface::expand::ExpandState;
 
     fn make_config() -> crate::config::Config {
         crate::config::Config::default()
@@ -905,7 +902,7 @@ mod tests {
         let wid = test_wid();
         assert!(!app.surfaces.contains_key(&wid));
         let s = app.surface_mut(wid);
-        assert_eq!(s.expand, ExpandState::Collapsed);
+        assert!(s.focused_module.is_none());
     }
 
     #[test]
@@ -989,20 +986,6 @@ mod tests {
         assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
         let panel = app.surfaces.panel_popup_values().next().unwrap();
         assert_eq!(panel.tree.origin_window, first);
-    }
-
-    #[test]
-    fn two_surfaces_have_independent_expand_state() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid_a = test_wid();
-        let wid_b = test_wid();
-        app.surface_mut(wid_a).expand = ExpandState::Expanded;
-        let b_state = app.surfaces.surface(wid_b);
-        assert!(
-            b_state
-                .map(|s| s.expand == ExpandState::Collapsed)
-                .unwrap_or(true)
-        );
     }
 
     #[test]

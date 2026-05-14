@@ -116,25 +116,7 @@ impl Default for PanelConfig {
     }
 }
 
-/// Animation timing for expand/collapse transitions.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AnimationConfig {
-    /// Duration of the expand animation in milliseconds. Default: 280.0.
-    pub expand_ms: f32,
-    /// Duration of the collapse animation in milliseconds. Default: 200.0.
-    pub collapse_ms: f32,
-}
-
-impl Default for AnimationConfig {
-    fn default() -> Self {
-        AnimationConfig {
-            expand_ms: 280.0,
-            collapse_ms: 200.0,
-        }
-    }
-}
-
-/// Bar-level configuration: placement edge, width targets, and expand trigger.
+/// Bar-level configuration: placement edge, size, layer, modules, and panel behavior.
 #[derive(Debug, Clone)]
 pub struct BarConfig {
     /// Instance name — unique identifier for this bar (e.g. "main", "top-strip").
@@ -147,25 +129,9 @@ pub struct BarConfig {
     /// Collapsed bar width, in **logical pixels**.
     /// The compositor multiplies this by the output scale factor for physical rendering (NFR11).
     pub collapsed_width: u32,
-    /// Expanded bar width, in **logical pixels**.
-    /// The compositor multiplies this by the output scale factor for physical rendering (NFR11).
-    pub expanded_width: u32,
-    /// Whether the expand/collapse overlay feature is enabled. Default: true.
-    /// When false, the bar is permanently collapsed and all expand actions are ignored.
-    pub expand: bool,
-    /// What user action triggers expand/collapse. Default: Click.
-    pub expand_trigger: ExpandTrigger,
-    /// Dwell delay (ms) before hover expands the bar. Only used when expand_trigger = Hover.
-    pub hover_delay: u64,
     /// Dwell delay (ms) before a module's tooltip appears on hover.
     /// Default 500. Hide is always immediate on hover-exit.
     pub tooltip_delay_ms: u32,
-    /// Keybind for in-bar expand/collapse while the bar has keyboard focus.
-    /// Also documents the compositor keybind the user should bind to `niribar --toggle-expand`
-    /// for global (unfocused) toggling.
-    pub expand_keybind: Option<String>,
-    /// Animation timing for expand/collapse transitions.
-    pub animation: AnimationConfig,
     /// Default text segment style for modules rendered in this bar.
     pub style: Style,
     /// Ordered module names per zone. Empty lists mean no modules in that zone.
@@ -182,13 +148,7 @@ impl Default for BarConfig {
             edge: Edge::Left,
             layer: BarLayer::Top,
             collapsed_width: 48,
-            expanded_width: 200,
-            expand: true,
-            expand_trigger: ExpandTrigger::Click,
-            hover_delay: 0,
             tooltip_delay_ms: 500,
-            expand_keybind: None,
-            animation: AnimationConfig::default(),
             style: Style::default(),
             modules: BarModules::default(),
             actions: crate::config::ActionsConfig::default(),
@@ -272,15 +232,4 @@ impl Edge {
             Edge::Bottom => Anchor::Bottom | Anchor::Left | Anchor::Right,
         }
     }
-}
-
-/// Determines what user action triggers bar expand/collapse.
-///
-/// Hover and click are mutually exclusive: when `Hover` is set, click has no effect.
-/// Default: `Click`.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub enum ExpandTrigger {
-    #[default]
-    Click,
-    Hover,
 }

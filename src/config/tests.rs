@@ -88,7 +88,6 @@ mod config_tests {
         let config = parse::parse(defaults::DEFAULT_CONFIG).unwrap();
         assert_eq!(config.bars.len(), 1);
         assert_eq!(config.bars[0].collapsed_width, 48);
-        assert_eq!(config.bars[0].expanded_width, 200);
         // UX-DR18: zone assignments
         assert_eq!(config.bars[0].modules.start, vec!["workspaces"]);
         assert_eq!(config.bars[0].modules.center, vec!["focused-window"]);
@@ -112,7 +111,6 @@ mod config_tests {
         // Empty input falls back to a single default bar.
         let config = parse::parse("").unwrap();
         assert_eq!(config.bars[0].collapsed_width, 48);
-        assert_eq!(config.bars[0].expanded_width, 200);
     }
 
     #[test]
@@ -254,31 +252,6 @@ mod config_tests {
     }
 
     #[test]
-    fn validate_rejects_expanded_width_less_than_collapsed() {
-        let mut config = Config::default();
-        config.bars[0].collapsed_width = 100;
-        config.bars[0].expanded_width = 50; // less than collapsed
-        let err = validate(&config).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("expanded-width:"),
-            "expected 'expanded-width:' in message, got: {msg}"
-        );
-        assert!(
-            msg.contains("Expected:"),
-            "expected 'Expected:' in message, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn validate_accepts_expanded_width_equal_to_collapsed() {
-        let mut config = Config::default();
-        config.bars[0].collapsed_width = 48;
-        config.bars[0].expanded_width = 48; // equal is OK
-        assert!(validate(&config).is_ok());
-    }
-
-    #[test]
     fn clock_config_default_formats() {
         let cfg = ClockConfig::default();
         assert_eq!(cfg.time_format, "%H:%M");
@@ -362,16 +335,6 @@ mod config_tests {
             }
             _ => panic!("expected ModuleParams::Button"),
         }
-    }
-
-    #[test]
-    fn bar_config_default_expand_keybind_is_none() {
-        assert!(BarConfig::default().expand_keybind.is_none());
-    }
-
-    #[test]
-    fn bar_config_default_expand_is_true() {
-        assert!(BarConfig::default().expand);
     }
 
     // --- Story 9.1: Named bar sections with output targeting ---
@@ -834,34 +797,6 @@ mod config_tests {
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("side"), "got: {err}");
-    }
-
-    #[test]
-    fn validate_second_bar_expanded_less_than_collapsed_errors() {
-        let config = Config {
-            bars: vec![
-                BarConfig {
-                    name: "main".into(),
-                    ..BarConfig::default()
-                },
-                BarConfig {
-                    name: "side".into(),
-                    output_target: crate::config::OutputTarget::Include(vec!["DP-1".into()]),
-                    collapsed_width: 100,
-                    expanded_width: 50,
-                    ..BarConfig::default()
-                },
-            ],
-            modules: vec![],
-            menus: vec![],
-            command_policy: CommandPolicy::default(),
-        };
-        let err = validate(&config).unwrap_err();
-        assert!(
-            err.to_string().contains("side"),
-            "error should name the offending bar: {err}"
-        );
-        assert!(err.to_string().contains("expanded-width"), "got: {err}");
     }
 
     #[test]

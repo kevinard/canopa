@@ -1,5 +1,4 @@
 mod actions;
-mod animation;
 mod bars;
 mod error;
 mod fields;

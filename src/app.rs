@@ -31,7 +31,6 @@ use crate::dbus::DbusConnections;
 #[cfg(test)]
 use crate::modules::ModuleId;
 use crate::surface::SurfaceState;
-use crate::surface::input::init_expand_keybind;
 
 pub(crate) struct App {
     config: Config,
@@ -141,9 +140,6 @@ impl App {
     /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
     /// Empty means `StartMode::AllScreens` handles window creation (single "all" bar case).
     pub(crate) fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
-        // Initialize the in-bar keybind for expand/collapse once at startup.
-        // Subsequent calls are silently ignored (OnceLock semantics).
-        init_expand_keybind(config.bars[0].expand_keybind.as_deref());
         let _command_policy = &config.command_policy;
 
         let module_graph = module_graph::build_module_graph(&config)
@@ -157,7 +153,7 @@ impl App {
             for output_name in &allowed_outputs {
                 // Horizontal bars (top/bottom) must be spawned before side bars (left/right) so
                 // their exclusive zones are registered first.  The compositor then automatically
-                // constrains side bars to the remaining work area, preventing overlap on expand.
+                // constrains side bars to the remaining work area, preventing overlap.
                 let mut bars_for_output = config.bars_for_output(output_name);
                 bars_for_output.sort_by_key(|b| b.edge.is_horizontal() as u8 ^ 1);
                 for bar in &bars_for_output {
@@ -238,26 +234,12 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Edge, ExpandTrigger};
+    use crate::config::Edge;
     use crate::modules::{MODULE_DESCRIPTORS, ModuleKind, Zone};
     use crate::niri::NiriEvent;
-    use crate::surface::expand::ExpandState;
 
     fn make_config() -> Config {
         Config::default()
-    }
-
-    fn make_hover_config() -> Config {
-        let mut config = make_config();
-        config.bars[0].expand_trigger = ExpandTrigger::Hover;
-        config.bars[0].hover_delay = 0;
-        config
-    }
-
-    fn make_expand_disabled_config() -> Config {
-        let mut config = make_config();
-        config.bars[0].expand = false;
-        config
     }
 
     fn make_horizontal_config() -> Config {
@@ -323,20 +305,6 @@ mod tests {
     fn perf_tracker_labels_surface_wrapped_event() {
         let event = Message::Surface(messages::SurfaceEvent::Tick);
         assert_eq!(event.perf_label(), "Surface::Tick");
-    }
-
-    #[test]
-    fn app_update_routes_wrapped_tick_to_surface_owner() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanding(0.0);
-
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-
-        assert!(matches!(
-            app.surface(wid).unwrap().expand,
-            ExpandState::Expanding(progress) if progress > 0.0
-        ));
     }
 
     #[test]
@@ -487,234 +455,6 @@ mod tests {
 
         let snapshot = app.perf.as_ref().unwrap().snapshot_and_reset();
         assert!(snapshot.updates.is_empty());
-    }
-
-    // --- Story 3.1 tests ---
-
-    #[test]
-    fn bar_click_starts_expanding_from_collapsed() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarClick(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
-    }
-
-    #[test]
-    fn bar_click_starts_collapsing_from_expanded() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanded;
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarClick(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsing(0.0));
-    }
-
-    // --- Story 3.2 tests ---
-
-    #[test]
-    fn tick_advances_expand_progress() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanding(0.0);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-        let expected_progress = 16.0_f32 / 280.0;
-        assert!(
-            matches!(app.surfaces[&wid].expand, ExpandState::Expanding(p) if (p - expected_progress).abs() < 1e-5),
-            "expected Expanding(~{expected_progress:.4}), got {:?}",
-            app.surfaces[&wid].expand
-        );
-    }
-
-    #[test]
-    fn tick_completes_expand_animation() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanding(0.999);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanded);
-    }
-
-    #[test]
-    fn tick_advances_collapse_progress() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Collapsing(0.0);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-        let expected_progress = 16.0_f32 / 200.0;
-        assert!(
-            matches!(app.surfaces[&wid].expand, ExpandState::Collapsing(p) if (p - expected_progress).abs() < 1e-5),
-            "expected Collapsing(~{expected_progress:.4}), got {:?}",
-            app.surfaces[&wid].expand
-        );
-    }
-
-    #[test]
-    fn tick_completes_collapse_animation() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Collapsing(0.999);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-    }
-
-    #[test]
-    fn tick_no_op_when_collapsed() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Collapsed;
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-    }
-
-    #[test]
-    fn tick_no_op_when_expanded() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanded;
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanded);
-    }
-
-    // --- Story 3.4 tests ---
-
-    #[test]
-    fn tick_uses_custom_expand_duration() {
-        let mut config = make_config();
-        config.bars[0].animation.expand_ms = 100.0;
-        let (mut app, _) = App::boot(config, vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanding(0.0);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-        let expected_progress = 16.0_f32 / 100.0;
-        assert!(
-            matches!(app.surfaces[&wid].expand, ExpandState::Expanding(p) if (p - expected_progress).abs() < 1e-5),
-            "expected Expanding(~{expected_progress:.4}), got {:?}",
-            app.surfaces[&wid].expand
-        );
-    }
-
-    #[test]
-    fn tick_uses_custom_collapse_duration() {
-        let mut config = make_config();
-        config.bars[0].animation.collapse_ms = 50.0;
-        let (mut app, _) = App::boot(config, vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Collapsing(0.0);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-        let expected_progress = 16.0_f32 / 50.0;
-        assert!(
-            matches!(app.surfaces[&wid].expand, ExpandState::Collapsing(p) if (p - expected_progress).abs() < 1e-5),
-            "expected Collapsing(~{expected_progress:.4}), got {:?}",
-            app.surfaces[&wid].expand
-        );
-    }
-
-    // --- Story 3.3 tests ---
-
-    #[test]
-    fn app_starts_with_bar_hovered_false() {
-        let (app, _) = App::boot(make_config(), vec![]);
-        // No surfaces yet, so bar_hovered is not tracked — passes trivially.
-        assert!(app.surfaces.values().all(|s| !s.bar_hovered));
-    }
-
-    #[test]
-    fn hover_enter_click_trigger_does_nothing() {
-        let (mut app, _) = App::boot(make_config(), vec![]); // expand_trigger = Click
-        let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverEnter(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-        assert!(app.surfaces[&wid].bar_hovered);
-    }
-
-    #[test]
-    fn hover_exit_click_trigger_does_nothing() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanded;
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverExit(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanded);
-    }
-
-    #[test]
-    fn hover_enter_hover_trigger_zero_delay_starts_expanding() {
-        let (mut app, _) = App::boot(make_hover_config(), vec![]);
-        let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverEnter(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
-    }
-
-    #[test]
-    fn hover_exit_when_expanded_starts_collapsing() {
-        let (mut app, _) = App::boot(make_hover_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanded;
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverExit(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsing(0.0));
-    }
-
-    #[test]
-    fn hover_exit_when_expanding_reverses() {
-        let (mut app, _) = App::boot(make_hover_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanding(0.3);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverExit(wid)));
-        assert!(
-            matches!(app.surfaces[&wid].expand, ExpandState::Collapsing(p) if (p - 0.7).abs() < 1e-5),
-            "expected Collapsing(~0.7), got {:?}",
-            app.surfaces[&wid].expand
-        );
-    }
-
-    #[test]
-    fn hover_exit_when_collapsed_does_nothing() {
-        let (mut app, _) = App::boot(make_hover_config(), vec![]);
-        let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverExit(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-    }
-
-    #[test]
-    fn hover_enter_with_delay_sets_pending() {
-        let mut config = make_hover_config();
-        config.bars[0].hover_delay = 100;
-        let (mut app, _) = App::boot(config, vec![]);
-        let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverEnter(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-        assert_eq!(app.surfaces[&wid].hover_pending_ms, Some(0.0));
-    }
-
-    #[test]
-    fn hover_exit_cancels_pending() {
-        let mut config = make_hover_config();
-        config.bars[0].hover_delay = 100;
-        let (mut app, _) = App::boot(config, vec![]);
-        let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverEnter(wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverExit(wid)));
-        assert_eq!(app.surfaces[&wid].hover_pending_ms, None);
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-    }
-
-    #[test]
-    fn tick_triggers_expand_when_delay_elapsed() {
-        let mut config = make_hover_config();
-        config.bars[0].hover_delay = 100;
-        let (mut app, _) = App::boot(config, vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).hover_pending_ms = Some(90.0);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::Tick));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
-        assert_eq!(app.surfaces[&wid].hover_pending_ms, None);
-    }
-
-    #[test]
-    fn bar_click_noop_when_hover_trigger() {
-        let (mut app, _) = App::boot(make_hover_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid); // initialize so surface exists before early-return
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarClick(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
     }
 
     // Story 5.1 tests
@@ -1299,202 +1039,12 @@ mod tests {
         // We verify no panic.
     }
 
-    // --- Story 6.4 tests ---
-
-    #[test]
-    fn toggle_expand_from_collapsed_starts_expanding() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid); // initialize surface so ToggleExpand can find it
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ToggleExpand));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
-    }
-
-    #[test]
-    fn toggle_expand_from_expanded_starts_collapsing() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanded;
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ToggleExpand));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsing(0.0));
-    }
-
-    #[test]
-    fn toggle_expand_reverses_expanding_mid_animation() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanding(0.4);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ToggleExpand));
-        assert!(
-            matches!(app.surfaces[&wid].expand, ExpandState::Collapsing(p) if (p - 0.6).abs() < 1e-5),
-            "expected Collapsing(~0.6), got {:?}",
-            app.surfaces[&wid].expand
-        );
-    }
-
-    #[test]
-    fn toggle_expand_reverses_collapsing_mid_animation() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Collapsing(0.3);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ToggleExpand));
-        assert!(
-            matches!(app.surfaces[&wid].expand, ExpandState::Expanding(p) if (p - 0.7).abs() < 1e-5),
-            "expected Expanding(~0.7), got {:?}",
-            app.surfaces[&wid].expand
-        );
-    }
-
-    #[test]
-    fn toggle_expand_works_with_hover_trigger() {
-        let (mut app, _) = App::boot(make_hover_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid); // initialize
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ToggleExpand));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
-    }
-
-    #[test]
-    fn toggle_expand_double_toggle_collapses() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid); // initialize
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ToggleExpand)); // → Expanding(0.0)
-        app.surface_mut(wid).expand = ExpandState::Expanded;
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ToggleExpand)); // → Collapsing(0.0)
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsing(0.0));
-    }
-
-    // --- Expand disabled tests ---
-
-    #[test]
-    fn bar_click_noop_when_expand_disabled() {
-        let (mut app, _) = App::boot(make_expand_disabled_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid); // initialize so surface exists before early-return
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarClick(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-    }
-
-    #[test]
-    fn toggle_expand_noop_when_expand_disabled() {
-        let (mut app, _) = App::boot(make_expand_disabled_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid); // initialize
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ToggleExpand));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-    }
-
-    #[test]
-    fn hover_enter_noop_when_expand_disabled() {
-        let mut config = make_expand_disabled_config();
-        config.bars[0].expand_trigger = ExpandTrigger::Hover;
-        config.bars[0].hover_delay = 0;
-        let (mut app, _) = App::boot(config, vec![]);
-        let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverEnter(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Collapsed);
-        assert!(app.surfaces[&wid].bar_hovered);
-    }
-
-    #[test]
-    fn hover_exit_noop_when_expand_disabled() {
-        let mut config = make_expand_disabled_config();
-        config.bars[0].expand_trigger = ExpandTrigger::Hover;
-        let (mut app, _) = App::boot(config, vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanded;
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverExit(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanded);
-    }
-
-    // --- Overlay mode tests ---
-
-    #[test]
-    fn bar_click_horizontal_bar_starts_expanding() {
-        let (mut app, _) = App::boot(make_horizontal_config(), vec![]);
-        let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarClick(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
-    }
-
-    #[test]
-    fn toggle_expand_horizontal_bar_starts_expanding() {
-        let (mut app, _) = App::boot(make_horizontal_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid); // initialize
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::ToggleExpand));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
-    }
-
-    #[test]
-    fn hover_enter_horizontal_bar_hover_trigger_starts_expanding() {
-        let mut config = make_horizontal_config();
-        config.bars[0].expand_trigger = ExpandTrigger::Hover;
-        config.bars[0].hover_delay = 0;
-        let (mut app, _) = App::boot(config, vec![]);
-        let wid = test_wid();
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarHoverEnter(wid)));
-        assert_eq!(app.surfaces[&wid].expand, ExpandState::Expanding(0.0));
-    }
-
-    #[test]
-    fn overlay_size_change_vertical_bar_uses_width() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.config.bars[0].collapsed_width = 48;
-        app.config.bars[0].expanded_width = 200;
-        app.surface_mut(wid).expand = ExpandState::Expanded;
-        assert!(!app.config.bars[0].edge.is_horizontal());
-        let _ = app.overlay_size_change_for(wid);
-    }
-
-    #[test]
-    fn overlay_size_change_horizontal_bar_uses_height() {
-        let (mut app, _) = App::boot(make_horizontal_config(), vec![]);
-        let wid = test_wid();
-        app.config.bars[0].collapsed_width = 48;
-        app.config.bars[0].expanded_width = 200;
-        app.surface_mut(wid).expand = ExpandState::Expanded;
-        assert!(app.config.bars[0].edge.is_horizontal());
-        let _ = app.overlay_size_change_for(wid);
-    }
-
     // --- Story 7.1 tests ---
 
     #[test]
     fn boot_returns_app_and_task() {
         let (app, _task) = App::boot(make_config(), vec![]);
         assert!(app.surfaces.is_empty()); // no surfaces before first view/event
-    }
-
-    #[test]
-    fn tick_not_needed_when_no_surfaces() {
-        let (app, _) = App::boot(make_config(), vec![]);
-        let needs_tick = app.surfaces.values().any(|s| s.expand.is_animating());
-        assert!(!needs_tick);
-    }
-
-    #[test]
-    fn tick_needed_when_any_surface_animating() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.surface_mut(wid).expand = ExpandState::Expanding(0.5);
-        let needs_tick = app.surfaces.values().any(|s| s.expand.is_animating());
-        assert!(needs_tick);
-    }
-
-    #[test]
-    fn bar_click_only_affects_clicked_surface() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid_a = test_wid();
-        let wid_b = test_wid();
-        app.surface_mut(wid_b); // initialize surface B in Collapsed
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarClick(wid_a)));
-        // Surface A: Expanding
-        assert_eq!(app.surfaces[&wid_a].expand, ExpandState::Expanding(0.0));
-        // Surface B: still Collapsed
-        assert_eq!(app.surfaces[&wid_b].expand, ExpandState::Collapsed);
     }
 
     #[test]

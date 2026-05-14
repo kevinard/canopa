@@ -1,4 +1,3 @@
-pub mod expand;
 pub mod frame;
 pub mod input;
 pub mod layout;
@@ -7,9 +6,8 @@ pub mod panel;
 pub mod tooltip_popup;
 
 use crate::modules::ModuleId;
-use crate::surface::expand::ExpandState;
 
-/// Per-surface render state. Tracks surface-specific data (expand/collapse, focus, hover).
+/// Per-surface render state. Tracks surface-specific data (focus, hover, popup anchors).
 /// Shared module data lives in shared app state (established in Story 2.1), never here.
 /// Keyed by iced::window::Id in App::surfaces (Story 7.1).
 ///
@@ -24,12 +22,9 @@ pub struct SurfaceState {
     /// Name of the bar section this surface renders (Story 9.1).
     /// Matches `BarConfig::name`. Empty (`""`) in AllScreens mode (falls back to first bar).
     pub bar_name: String,
-    pub expand: ExpandState,
     pub focused_module: Option<ModuleId>,
     pub hovered_module: Option<ModuleId>,
     pub module_activated: bool,
-    pub bar_hovered: bool,
-    pub hover_pending_ms: Option<f32>,
     /// Module currently being dwelled on for tooltip purposes plus the
     /// elapsed milliseconds since hover-enter. None means no pending dwell.
     pub tooltip_pending: Option<(crate::modules::ModuleId, f32)>,
@@ -46,12 +41,9 @@ impl SurfaceState {
         SurfaceState {
             output_name,
             bar_name,
-            expand: ExpandState::default(), // starts Collapsed
             focused_module: None,
             hovered_module: None,
             module_activated: false,
-            bar_hovered: false,
-            hover_pending_ms: None,
             tooltip_pending: None,
             last_pointer_position: (0, 0),
             screen_size: (0, 0),
@@ -76,44 +68,17 @@ mod tests {
     }
 
     #[test]
-    fn surface_state_new_starts_collapsed() {
-        let state = SurfaceState::new("HDMI-1".into(), "main".into());
-        assert_eq!(state.expand, ExpandState::Collapsed);
-    }
-
-    #[test]
-    fn surface_state_expand_field_is_set() {
-        let state = SurfaceState {
-            output_name: "DP-1".into(),
-            bar_name: "main".into(),
-            expand: ExpandState::Expanded,
-            focused_module: None,
-            hovered_module: None,
-            module_activated: false,
-            bar_hovered: false,
-            hover_pending_ms: None,
-            tooltip_pending: None,
-            last_pointer_position: (0, 0),
-            screen_size: (0, 0),
-        };
-        assert_eq!(state.expand, ExpandState::Expanded);
-    }
-
-    #[test]
     fn surface_state_focused_module_starts_none() {
         let state = SurfaceState::new("DP-1".into(), String::new());
         assert!(state.focused_module.is_none());
     }
 
     #[test]
-    fn surface_state_default_starts_collapsed_and_unfocused() {
+    fn surface_state_default_starts_unfocused() {
         let s = SurfaceState::default();
-        assert_eq!(s.expand, ExpandState::Collapsed);
         assert!(s.focused_module.is_none());
         assert!(s.hovered_module.is_none());
         assert!(!s.module_activated);
-        assert!(!s.bar_hovered);
-        assert!(s.hover_pending_ms.is_none());
         assert!(s.tooltip_pending.is_none());
     }
 
@@ -175,13 +140,5 @@ mod tests {
         let scale: f64 = 1.5;
         let physical = f64::from(logical_collapsed) * scale;
         assert_eq!(physical, 72.0);
-    }
-
-    #[test]
-    fn logical_expanded_width_times_2x_scale_gives_physical_width() {
-        let logical_expanded: u32 = 200;
-        let scale: f64 = 2.0;
-        let physical = f64::from(logical_expanded) * scale;
-        assert_eq!(physical, 400.0);
     }
 }

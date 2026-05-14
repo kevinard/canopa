@@ -2,7 +2,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClockState {
     pub time: String,
-    // Used in view_expanded (collapsed view shows time only)
+    // Used when rendering detailed clock text.
     pub date: String,
 }
 
