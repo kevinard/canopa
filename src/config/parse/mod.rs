@@ -6,9 +6,9 @@ mod fields;
 mod modules;
 mod style;
 
-use ::kdl::KdlDocument;
+use ::kdl::{KdlDocument, KdlNode};
 
-use super::{BarConfig, CommandPolicy, Config, ModuleConfig};
+use super::{BarConfig, CommandPolicy, Config, MenuConfig, MenuItemConfig, ModuleConfig};
 pub(crate) use crate::config::ConfigSourceName;
 use crate::config::{ConfigError, ConfigResult, ConfigSource};
 use crate::modules::ModuleKind;
@@ -47,9 +47,11 @@ pub(crate) fn parse_input(input: ConfigInput<'_>) -> ConfigResult<Config> {
     };
     let command_policy = parse_command_policy(&doc, &ctx.child("command-policy"))?;
     let modules = parse_modules_section(&doc, &ctx, &command_policy)?;
+    let menus = parse_menus_section(&doc, &ctx, &command_policy)?;
     Ok(Config {
         bars,
         modules,
+        menus,
         command_policy,
     })
 }
@@ -176,6 +178,191 @@ fn parse_modules_section(
         });
     }
     Ok(result)
+}
+
+fn parse_menus_section(
+    doc: &KdlDocument,
+    root_ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<Vec<MenuConfig>> {
+    let Some(menus_node) = doc.get("menus") else {
+        return Ok(vec![]);
+    };
+    let Some(children) = menus_node.children() else {
+        return Ok(vec![]);
+    };
+
+    let mut menus = Vec::new();
+    for (menu_idx, node) in children.nodes().iter().enumerate() {
+        let menu_ctx = root_ctx.child("menus").index(menu_idx);
+        if node.name().value() != "menu" {
+            return Err(menu_ctx.node_err(
+                node,
+                format!("expected node name \"menu\", got {:?}", node.name().value()),
+                None,
+            ));
+        }
+
+        let name = required_string_argument(node, &menu_ctx, "menu name")?;
+        let items = match node.children() {
+            Some(menu_children) => parse_menu_items(menu_children, &menu_ctx, command_policy)?,
+            None => Vec::new(),
+        };
+        menus.push(MenuConfig { name, items });
+    }
+    Ok(menus)
+}
+
+fn parse_menu_items(
+    children: &KdlDocument,
+    ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<Vec<MenuItemConfig>> {
+    let mut items = Vec::new();
+    for (item_idx, node) in children.nodes().iter().enumerate() {
+        let item_ctx = ctx.child("item").index(item_idx);
+        if node.name().value() != "item" {
+            return Err(item_ctx.node_err(
+                node,
+                format!("expected node name \"item\", got {:?}", node.name().value()),
+                None,
+            ));
+        }
+        items.push(parse_menu_item(node, &item_ctx, command_policy)?);
+    }
+    Ok(items)
+}
+
+fn parse_menu_item(
+    node: &KdlNode,
+    ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<MenuItemConfig> {
+    let label = required_string_argument(node, ctx, "item label")?;
+    let Some(children) = node.children() else {
+        return Ok(MenuItemConfig {
+            label,
+            keywords: Vec::new(),
+            action: None,
+            children: Vec::new(),
+        });
+    };
+
+    let mut keywords = Vec::new();
+    let mut action = None;
+    let mut item_nodes = Vec::new();
+    for child in children.nodes() {
+        match child.name().value() {
+            "keywords" => keywords = parse_keywords(child, &ctx.child("keywords"))?,
+            "item" => item_nodes.push(child),
+            operation => {
+                if action.is_some() {
+                    return Err(ctx.node_err(node, "expected exactly one action operation", None));
+                }
+                action = Some(parse_menu_action_operation(
+                    child,
+                    &ctx.child(operation),
+                    command_policy,
+                )?);
+            }
+        }
+    }
+
+    if action.is_some() && !item_nodes.is_empty() {
+        return Err(ctx.node_err(
+            node,
+            "menu item cannot mix an action operation and child item nodes",
+            None,
+        ));
+    }
+
+    let mut children_items = Vec::new();
+    for (idx, child) in item_nodes.into_iter().enumerate() {
+        children_items.push(parse_menu_item(
+            child,
+            &ctx.child("item").index(idx),
+            command_policy,
+        )?);
+    }
+
+    Ok(MenuItemConfig {
+        label,
+        keywords,
+        action,
+        children: children_items,
+    })
+}
+
+fn parse_menu_action_operation(
+    node: &KdlNode,
+    ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<super::PanelAction> {
+    match node.name().value() {
+        "command" => {
+            actions::parse_command_node_ctx(node, ctx, command_policy).map(super::PanelAction::Command)
+        }
+        "open-panel" => {
+            require_no_arguments(node, ctx)?;
+            Ok(super::PanelAction::OpenPanel)
+        }
+        "toggle-panel" => {
+            require_no_arguments(node, ctx)?;
+            Ok(super::PanelAction::TogglePanel)
+        }
+        "close-panel" => {
+            require_no_arguments(node, ctx)?;
+            Ok(super::PanelAction::ClosePanel)
+        }
+        "open-menu" => required_menu_name(node, ctx).map(super::PanelAction::OpenMenu),
+        "toggle-menu" => required_menu_name(node, ctx).map(super::PanelAction::ToggleMenu),
+        other => Err(ctx.node_err(
+            node,
+            format!("unknown menu item operation {other:?}"),
+            Some(
+                "expected `command`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, or `toggle-menu`"
+                    .into(),
+            ),
+        )),
+    }
+}
+
+fn require_no_arguments(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<()> {
+    if !node.entries().is_empty() || node.children().is_some() {
+        return Err(ctx.node_err(node, "expected no arguments", None));
+    }
+    Ok(())
+}
+
+fn required_menu_name(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<String> {
+    let value = required_string_argument(node, ctx, "menu name")?;
+    Ok(value)
+}
+
+fn parse_keywords(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Vec<String>> {
+    let mut values = Vec::new();
+    for entry in node.entries() {
+        let Some(value) = entry.value().as_string() else {
+            return Err(ctx.entry_err(entry, "expected string keyword", None));
+        };
+        values.push(value.to_string());
+    }
+    Ok(values)
+}
+
+fn required_string_argument(node: &KdlNode, ctx: &ParseCtx, label: &str) -> ConfigResult<String> {
+    if node.entries().len() != 1 {
+        return Err(ctx.node_err(node, format!("expected one {label} string"), None));
+    }
+    match node.entries()[0].value().as_string() {
+        Some("") => Err(ctx.entry_err(
+            &node.entries()[0],
+            format!("{label} must not be empty"),
+            None,
+        )),
+        Some(value) => Ok(value.to_string()),
+        None => Err(ctx.entry_err(&node.entries()[0], "expected string", None)),
+    }
 }
 
 #[cfg(test)]

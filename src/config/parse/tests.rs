@@ -334,6 +334,60 @@ fn parse_action_rejects_invalid_trigger() {
 }
 
 #[test]
+fn parse_menu_with_command_item() {
+    let kdl = r#"
+menus {
+    menu "main" {
+        item "Terminal" {
+            command "kitty"
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+
+    assert_eq!(config.menus.len(), 1);
+    assert_eq!(config.menus[0].name, "main");
+    assert_eq!(config.menus[0].items.len(), 1);
+    assert_eq!(config.menus[0].items[0].label, "Terminal");
+    assert_eq!(
+        config.menus[0].items[0].action,
+        Some(crate::config::PanelAction::Command(
+            crate::config::CommandConfig::Shell("kitty".into())
+        ))
+    );
+}
+
+#[test]
+fn parse_nested_menu_items() {
+    let kdl = r#"
+menus {
+    menu "main" {
+        item "Apps" {
+            item "Browser" {
+                keywords "web" "internet"
+                command "firefox"
+            }
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+
+    let apps = &config.menus[0].items[0];
+    assert_eq!(apps.label, "Apps");
+    assert_eq!(apps.children.len(), 1);
+    assert_eq!(apps.children[0].label, "Browser");
+    assert_eq!(apps.children[0].keywords, vec!["web", "internet"]);
+    assert_eq!(
+        apps.children[0].action,
+        Some(crate::config::PanelAction::Command(
+            crate::config::CommandConfig::Shell("firefox".into())
+        ))
+    );
+}
+
+#[test]
 fn parse_command_policy_rejects_shell_commands_when_disabled() {
     let kdl = r#"
 command-policy {

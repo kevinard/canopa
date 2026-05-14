@@ -440,6 +440,7 @@ mod config_tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
@@ -455,6 +456,7 @@ mod config_tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
@@ -571,6 +573,49 @@ mod config_tests {
     }
 
     #[test]
+    fn validate_duplicate_menu_name_errors() {
+        let config = Config {
+            menus: vec![
+                MenuConfig {
+                    name: "main".into(),
+                    items: vec![],
+                },
+                MenuConfig {
+                    name: "main".into(),
+                    items: vec![],
+                },
+            ],
+            ..Config::default()
+        };
+
+        let err = validate(&config).unwrap_err();
+        assert!(err.to_string().contains("duplicate menu"), "got: {err}");
+        assert!(err.to_string().contains("main"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_open_menu_missing_errors() {
+        let config = Config {
+            modules: vec![ModuleConfig {
+                name: "clock".into(),
+                module_type: "clock".into(),
+                params: ModuleParams::Clock(ClockConfig::default()),
+                actions: ModuleActionsConfig {
+                    bindings: vec![ActionBinding {
+                        trigger: ActionTrigger::Click,
+                        action: PanelAction::OpenMenu("missing".into()),
+                    }],
+                },
+            }],
+            ..Config::default()
+        };
+
+        let err = validate(&config).unwrap_err();
+        assert!(err.to_string().contains("missing"), "got: {err}");
+        assert!(err.to_string().contains("menu"), "got: {err}");
+    }
+
+    #[test]
     fn validate_same_module_across_different_bars_passes() {
         let config = Config {
             bars: vec![
@@ -647,6 +692,7 @@ mod config_tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
         let bars = config.bars_for_output("eDP-1");
@@ -673,6 +719,7 @@ mod config_tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
         let bars = config.bars_for_output("eDP-1");
@@ -692,6 +739,7 @@ mod config_tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
 
@@ -709,6 +757,7 @@ mod config_tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
 
@@ -735,6 +784,7 @@ mod config_tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
         let bars = config.bars_for_output("DP-1");
@@ -758,6 +808,7 @@ mod config_tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
         assert!(validate(&config).is_ok());
@@ -778,6 +829,7 @@ mod config_tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
@@ -801,6 +853,7 @@ mod config_tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
@@ -820,6 +873,7 @@ mod config_tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         };
         // "DP-1" (uppercase) does not match "dp-1" (lowercase)

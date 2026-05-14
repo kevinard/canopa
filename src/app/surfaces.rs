@@ -962,6 +962,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let bar = App::bar_for_surface_name(&config.bars, "side");
@@ -977,6 +978,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let bar = App::bar_for_surface_name(&config.bars, "nonexistent");
@@ -999,6 +1001,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
@@ -1029,6 +1032,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
@@ -1053,6 +1057,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
@@ -1083,6 +1088,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);

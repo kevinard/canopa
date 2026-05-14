@@ -90,6 +90,16 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
         }
     }
 
+    let mut declared_menus = std::collections::HashSet::new();
+    for menu in &config.menus {
+        if !declared_menus.insert(menu.name.as_str()) {
+            return Err(validation_error(
+                source.clone(),
+                format!("menu {:?}: duplicate menu name.", menu.name),
+            ));
+        }
+    }
+
     for bar in &config.bars {
         validate_module_layout(
             source.clone(),
@@ -112,6 +122,28 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
                 (crate::modules::Zone::End, bar.panel.modules.end.as_slice()),
             ],
             &declared_modules,
+        )?;
+        validate_actions_reference_declared_menus(
+            source.clone(),
+            &format!("bar.{}.actions", bar.name),
+            &bar.actions,
+            &declared_menus,
+        )?;
+    }
+    for module in &config.modules {
+        validate_actions_reference_declared_menus(
+            source.clone(),
+            &format!("module.{}.actions", module.name),
+            &module.actions,
+            &declared_menus,
+        )?;
+    }
+    for menu in &config.menus {
+        validate_menu_items_reference_declared_menus(
+            source.clone(),
+            &format!("menu.{}", menu.name),
+            &menu.items,
+            &declared_menus,
         )?;
     }
     Ok(())
@@ -159,6 +191,68 @@ fn validate_module_layout<'a>(
                 ));
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_actions_reference_declared_menus(
+    source: ConfigSource,
+    path: &str,
+    actions: &super::ActionsConfig,
+    declared_menus: &std::collections::HashSet<&str>,
+) -> ConfigResult<()> {
+    for binding in &actions.bindings {
+        validate_action_references_declared_menu(
+            source.clone(),
+            path,
+            &binding.action,
+            declared_menus,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_menu_items_reference_declared_menus(
+    source: ConfigSource,
+    path: &str,
+    items: &[super::MenuItemConfig],
+    declared_menus: &std::collections::HashSet<&str>,
+) -> ConfigResult<()> {
+    for item in items {
+        let item_path = format!("{path}.item({:?})", item.label);
+        if let Some(action) = &item.action {
+            validate_action_references_declared_menu(
+                source.clone(),
+                &item_path,
+                action,
+                declared_menus,
+            )?;
+        }
+        validate_menu_items_reference_declared_menus(
+            source.clone(),
+            &item_path,
+            &item.children,
+            declared_menus,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_action_references_declared_menu(
+    source: ConfigSource,
+    path: &str,
+    action: &super::PanelAction,
+    declared_menus: &std::collections::HashSet<&str>,
+) -> ConfigResult<()> {
+    let menu_name = match action {
+        super::PanelAction::OpenMenu(name) | super::PanelAction::ToggleMenu(name) => name,
+        _ => return Ok(()),
+    };
+    if !declared_menus.contains(menu_name.as_str()) {
+        return Err(validation_error(
+            source,
+            format!("{path}: menu {:?} is not declared.", menu_name),
+        ));
     }
     Ok(())
 }

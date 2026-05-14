@@ -1556,6 +1556,7 @@ mod tests {
                 params: ModuleParams::Clock(ClockConfig::default()),
                 actions: crate::config::ModuleActionsConfig::default(),
             }],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec![]);
@@ -1720,6 +1721,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         // Boot without "HDMI-A-1" in allowed (bar does not target it).
@@ -1758,6 +1760,7 @@ mod tests {
                 ..BarConfig::default()
             }],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
@@ -1805,6 +1808,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
@@ -1854,6 +1858,7 @@ mod tests {
                 },
             ],
             modules: vec![],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         let (mut app, _) = App::boot(config, vec![]);

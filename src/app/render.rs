@@ -624,6 +624,7 @@ mod tests {
                 params: ModuleParams::Clock(ClockConfig::default()),
                 actions: crate::config::ModuleActionsConfig::default(),
             }],
+            menus: vec![],
             command_policy: crate::config::CommandPolicy::default(),
         };
         config.bars[0].modules.start = vec!["clock".into()];

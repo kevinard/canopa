@@ -19,9 +19,10 @@ pub(crate) use error::{
 #[allow(unused_imports)]
 pub use module::{
     ActionBinding, ActionTrigger, ActionsConfig, BatteryConfig, ButtonConfig, ClockConfig,
-    CommandConfig, CommandPolicy, FocusedWindowConfig, IconRulesConfig, IconThreshold,
-    ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig, PanelAction, ScriptConfig,
-    StateRule, StatesConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    CommandConfig, CommandPolicy, FocusedWindowConfig, IconRulesConfig, IconThreshold, MenuConfig,
+    MenuItemConfig, ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig, PanelAction,
+    ScriptConfig, StateRule, StatesConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig,
+    WorkspacesConfig,
 };
 pub use template::{
     FormatConfig, FormatMode, FormatTemplate, StyledSegment, TextTemplate, TooltipSetting,
@@ -63,6 +64,7 @@ pub struct Config {
     /// no `bar` sections appear in the config file).
     pub bars: Vec<BarConfig>,
     pub modules: Vec<ModuleConfig>,
+    pub menus: Vec<MenuConfig>,
     pub command_policy: CommandPolicy,
 }
 
@@ -71,6 +73,7 @@ impl Default for Config {
         Config {
             bars: vec![BarConfig::default()],
             modules: vec![],
+            menus: vec![],
             command_policy: CommandPolicy::default(),
         }
     }

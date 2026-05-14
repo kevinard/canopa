@@ -350,6 +350,20 @@ impl ActionsConfig {
 
 pub type ModuleActionsConfig = ActionsConfig;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuConfig {
+    pub name: String,
+    pub items: Vec<MenuItemConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuItemConfig {
+    pub label: String,
+    pub keywords: Vec<String>,
+    pub action: Option<PanelAction>,
+    pub children: Vec<MenuItemConfig>,
+}
+
 /// A single module entry from the config, specifying name, type, and module params.
 /// Zone placement is determined by `bar.modules`, not by this struct.
 #[derive(Debug, Clone)]
