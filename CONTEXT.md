@@ -5,7 +5,7 @@ Niribar is a status bar application for the Niri Wayland compositor. It renders 
 ## Language
 
 **Bar**:
-A named configuration that defines layout, output targeting, size, expansion behavior, style, and module placement.
+A named configuration that defines layout, output targeting, size, panel behavior, style, and module placement.
 _Avoid_: Surface, window
 
 **Bar Name**:
@@ -88,7 +88,7 @@ _Avoid_: Unavailable module, runtime failure
 
 **Module Action**:
 An intentional user-triggered effect caused by interacting with a **Module**.
-_Avoid_: Event, subscription, refresh
+_Avoid_: Event, subscription, refresh, panel action when the action is not module-scoped
 
 **Tooltip**:
 Supplemental information shown for a **Module** on a **Bar Surface**.
@@ -96,7 +96,24 @@ _Avoid_: Popup action, module display
 
 **Menu**:
 An interactive popup exposed by a **Module** or child **Module Instance**.
-_Avoid_: Tooltip, action
+_Avoid_: Tooltip, action, launcher
+
+**Panel**:
+A transient overlay surface opened from a **Bar Surface**. A **Panel** is anchored to its originating **Bar Surface** or **Module** and can render module detail content, a **Bar**'s configured panel module layout, or named **Panel Menu** content.
+_Avoid_: Popup when referring to Niribar's generic panel
+
+**Panel Origin**:
+The **Bar Surface** or **Module** that triggered the current **Panel**.
+_Avoid_: Active module when referring specifically to panel source
+
+**Panel Action**:
+A typed configured operation triggered by pointer input, focused keyboard input, **Panel Menu** item activation, or IPC.
+Examples: `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, `command`.
+_Avoid_: Shell action when the action is not a command
+
+**Panel Menu**:
+An app-owned, named launcher/menu list rendered inside a **Panel**.
+_Avoid_: Menu when referring to SNI or other module-owned context menus
 
 **Keyboard Focus**:
 The current **Module** or child **Module Instance** target selected for keyboard interaction on a **Bar Surface**.
@@ -122,21 +139,13 @@ _Avoid_: Active window
 The compositor-reported window active on a specific **Output**.
 _Avoid_: Focused window
 
-**Expansion**:
-The user-visible state where a **Bar Surface** presents its expanded layout instead of its collapsed layout.
-_Avoid_: Open, active
-
-**Expansion Trigger**:
-The configured **Bar Surface Interaction** that changes **Expansion**: click or hover.
-_Avoid_: Global toggle, keybind
-
 **Bar Surface Interaction**:
 A user interaction with a **Bar Surface** that is not targeted at a **Module**.
 _Avoid_: Module action
 
-**Global Toggle**:
-An IPC-triggered request to change **Expansion** without direct **Bar Surface** interaction context.
-_Avoid_: Toggle all, keybind toggle
+**Global Panel Toggle**:
+An IPC-triggered request to toggle the default **Panel** without direct **Bar Surface** interaction context.
+_Avoid_: Toggle all, expansion toggle
 
 **Global Defaults**:
 Configuration values used by **Bars** or **Modules** when they do not provide their own values.
@@ -202,23 +211,56 @@ _Avoid_: Default config, fallback surface
 - A **Module** may expose zero or more **Module Actions**.
 - A failed **Module Action** does not change the normal **Module** display by default.
 - Output-sensitive **Module Actions** use the originating **Bar Surface** context.
-- A **Module Action** may change **Expansion**.
+- A **Module Action** may run a **Panel Action** when configured.
 - A **Module** may expose a **Tooltip**.
 - A **Module** may expose a **Menu**.
 - A **Dynamic Module** owns the placement and configuration for its runtime child **Module Instances**.
 - Child **Module Instances** produced by a **Dynamic Module** are individually navigable and actionable when they represent distinct user targets.
 - The visible **Module** or child **Module Instance** target owns the **Tooltip** shown for that target.
 - A **Tooltip** closes when its originating visible target disappears.
-- A **Tooltip** closes when its owning **Bar Surface** changes **Expansion** state.
+- A **Tooltip** closes when a **Panel** opens.
 - A **Bar Surface** shows at most one **Tooltip** at a time.
 - Opening a **Menu** closes open **Tooltips** on the same **Bar Surface**.
 - Niribar shows at most one **Menu** at a time.
 - A **Menu** closes when its originating visible target disappears.
-- A **Menu** closes when its owning **Bar Surface** changes **Expansion** state.
-- An open **Menu** pins passive **Expansion** changes for its owning **Bar Surface** until the **Menu** closes.
-- An explicit **Global Toggle** or **Module Action** closes any affected open **Menu** before changing **Expansion**.
+- Opening a **Panel** closes any open **Menu**.
+- Opening a **Menu** closes any open **Panel**.
 - **Keyboard Focus** enters a **Menu** while it is open and returns to the originating target when the **Menu** closes, if that target still exists.
 - **Menus** and **Tooltips** do not inherit the **Layer** of their **Bar Surface**.
+- Niribar shows at most one **Panel** at a time.
+- A **Panel** belongs to exactly one originating **Bar Surface**.
+- A **Panel** has exactly one **Panel Origin**.
+- A **Panel Origin** may be the **Bar Surface** itself or a **Module** on that **Bar Surface**.
+- A **Panel** does not change the size, **Edge Span**, or normal module rendering of its originating **Bar Surface**.
+- A **Panel** renders as an overlay and does not reserve exclusive screen space.
+- A **Panel** opens beside the **Edge** of its originating **Bar Surface**.
+- A module-originated **Panel** aligns to the originating **Module** when its bounds are available and falls back to the **Bar Surface** otherwise.
+- The **Panel Origin** remains visually marked while the **Panel** is open.
+- A **Panel** closes when its originating **Bar Surface** disappears.
+- A **Panel** closes when keyboard focus leaves the **Panel** for another application or window.
+- A **Panel** may remain open when focus moves from the originating **Bar Surface** into the **Panel**.
+- Escape closes a **Panel** unless the active **Panel** content has a more specific first-Escape behavior.
+- A **Bar** may configure a default **Panel** module layout using **Start**, **Center**, and **End** groups.
+- A **Bar**'s default **Panel** layout is independent from the **Bar**'s normal module layout.
+- A **Bar**'s default **Panel** layout renders as ordered sections, not as stretched bar zones.
+- A **Panel** module layout may reference **Modules** that are not present in the **Bar**'s normal module layout.
+- Placing the same **Module** more than once within one **Panel** module layout is a **Configuration Error**.
+- **Dynamic Modules** expand in **Panel** module layouts the same way they expand in **Bar** module layouts.
+- **Panel Actions** are typed operations, not shell commands by default.
+- A **Panel Action** trigger may be a pointer trigger such as `click` or `right-click`, or a focused keybind such as `Ctrl+E`.
+- **Module** keybind **Panel Actions** fire only while that **Module** is the **Keyboard Focus** target.
+- **Bar** keybind **Panel Actions** fire while that **Bar Surface** or its **Panel** has keyboard focus.
+- If both a focused **Module** and its **Bar** define the same keybind, the **Module** binding takes precedence.
+- A **Bar Surface Interaction** may trigger a **Panel Action** when configured by the **Bar**.
+- A **Bar Surface Interaction** on empty bar background is distinct from interacting with a **Module**.
+- A **Panel Menu** is global named configuration and can be opened from any **Panel Action**.
+- A **Panel Menu** item runs exactly one **Panel Action**.
+- A **Panel Menu** may contain nested items, but the **Panel** displays one active menu level at a time unless search is active.
+- **Panel Menu** search matches nested items and displays matching results with breadcrumb context.
+- Activating a command item in a **Panel Menu** closes the **Panel** by default.
+- Activating a command from module panel content does not close the **Panel** by default.
+- A **Global Panel Toggle** closes the currently open **Panel**, or opens the default **Panel** for the focused **Output** when no **Panel** is open.
+- If no focused **Output** is known, a **Global Panel Toggle** opens one deterministic **Bar Surface** default **Panel**, not one **Panel** per **Bar Surface**.
 - **Keyboard Focus** belongs to a **Bar Surface**.
 - **Keyboard Focus** navigation includes visible targets that are actionable or inspectable.
 - A target with a hover **Tooltip** is inspectable and therefore participates in **Keyboard Focus** navigation.
@@ -246,12 +288,6 @@ _Avoid_: Default config, fallback surface
 - A valid **Module** with a missing runtime dependency becomes an **Unavailable Module**, not a **Configuration Error**.
 - Referencing a built-in **Module** with meaningful, safe **Global Defaults** is valid even when that **Module** is not explicitly declared.
 - **Modules** that require user-provided commands or labels must be explicitly configured.
-- **Expansion** capability is configured by the **Bar**, but current **Expansion** state belongs to each **Bar Surface**.
-- A **Bar** may configure click or hover as its **Expansion Trigger**.
-- A **Global Toggle** targets **Bar Surfaces** on the currently focused **Output** when known, and falls back to all **Bar Surfaces** when the focused **Output** is unknown.
-- A **Global Toggle** ignores **Bar Surfaces** whose **Bar** has **Expansion** disabled.
-- **Expansion** changes **Bar Surface** thickness, not **Edge Span**.
-- A **Bar Surface Interaction** may trigger **Expansion** when configured by the **Bar**.
 
 ## Example dialogue
 
@@ -366,17 +402,35 @@ _Avoid_: Default config, fallback surface
 > **Dev:** "Can pointer hover show a **Tooltip** for a target that keyboard navigation cannot reach?"
 > **Domain expert:** "No — hover tooltips and keyboard inspectability use the same target model."
 >
-> **Dev:** "If the user expands the **Bar Surface** on `DP-1`, should the matching surface on `eDP-1` expand too?"
-> **Domain expert:** "No — **Expansion** state belongs to the individual **Bar Surface**."
+> **Dev:** "If the user opens a **Panel** from the **Bar Surface** on `DP-1`, should the matching surface on `eDP-1` open a panel too?"
+> **Domain expert:** "No — **Panel** state belongs to the originating **Bar Surface**."
 >
 > **Dev:** "Is clicking the bar background a **Module Action**?"
-> **Domain expert:** "No — it is a **Bar Surface Interaction** and may trigger **Expansion** when configured."
+> **Domain expert:** "No — it is a **Bar Surface Interaction** and may trigger a **Panel Action** when configured."
 >
-> **Dev:** "Is `niribar --toggle-expand` an **Expansion Trigger**?"
-> **Domain expert:** "No — an **Expansion Trigger** is the configured direct **Bar Surface Interaction**; IPC uses **Global Toggle**."
+> **Dev:** "Is `niribar --toggle-panel` a configured **Panel Action** trigger?"
+> **Domain expert:** "No — it is a **Global Panel Toggle** routed through IPC, not a direct pointer or focused-key trigger."
 >
-> **Dev:** "What should `niribar --toggle-expand` affect?"
-> **Domain expert:** "It should affect **Bar Surfaces** on the focused **Output** when known, and all **Bar Surfaces** only when no focused **Output** is known."
+> **Dev:** "What should `niribar --toggle-panel` affect?"
+> **Domain expert:** "It should close the current **Panel** when one is open. Otherwise it should open one default **Panel** on the focused **Output** when known, or one deterministic default **Panel** if no focused **Output** is known."
+>
+> **Dev:** "Can two **Bar Surfaces** have **Panels** open at the same time?"
+> **Domain expert:** "No — Niribar shows at most one **Panel** at a time."
+>
+> **Dev:** "Does opening a **Panel** make the **Bar Surface** wider or taller?"
+> **Domain expert:** "No — the **Bar Surface** keeps its normal form; the **Panel** is a separate overlay surface."
+>
+> **Dev:** "If a **Module** opens a **Panel**, should the source still be visible on the **Bar Surface**?"
+> **Domain expert:** "Yes — the **Panel Origin** remains visually marked while the **Panel** is open."
+>
+> **Dev:** "Can a **Bar**'s default **Panel** show modules that are not in the normal **Bar** layout?"
+> **Domain expert:** "Yes — a **Panel** module layout is independent from the normal **Bar** module layout."
+>
+> **Dev:** "Can a **Panel Menu** reuse the same **Panel Action** language as a **Module**?"
+> **Domain expert:** "Yes — **Panel Actions** are shared across bar triggers, module triggers, and panel menu items."
+>
+> **Dev:** "Should hover open a **Panel**?"
+> **Domain expert:** "No — opening a **Panel** is an explicit configured action, not a hover-triggered state."
 >
 > **Dev:** "Should Niribar reject two **Bar Surfaces** on the top **Edge** of `DP-1`?"
 > **Domain expert:** "No — it is valid, but the configuration is responsible for avoiding unusable overlap."
@@ -396,7 +450,7 @@ _Avoid_: Default config, fallback surface
 > **Dev:** "Should the public config keep `top` and `bottom` zone names?"
 > **Domain expert:** "No — Niribar is not released yet, so public config should use `start`, `center`, and `end` without deprecated aliases."
 >
-> **Dev:** "Does every named **Bar** need to repeat style and expansion settings?"
+> **Dev:** "Does every named **Bar** need to repeat style and panel settings?"
 > **Domain expert:** "No — **Global Defaults** keep named **Bars** lightweight, and each **Bar** can override only what differs."
 >
 > **Dev:** "If the config declares `bar \"main\"`, should Niribar also create the **Implicit Bar**?"

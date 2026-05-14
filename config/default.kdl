@@ -11,6 +11,15 @@
 // niribar default configuration
 // Copy to $XDG_CONFIG_HOME/niribar/config.kdl (or ~/.config/niribar/config.kdl) to customise.
 
+// ─── Menus ───────────────────────────────────────────────────────────────────
+// Named panel menus can be opened from bar or module actions.
+menus {
+    menu "main" {
+        item "Terminal" { command "kitty" }
+        item "Browser" { command "firefox" }
+    }
+}
+
 // ─── Bar ─────────────────────────────────────────────────────────────────────
 // One or more named bar sections. Each bar has a unique name (first argument).
 // Multiple bars can target different outputs, or all outputs ("all").
@@ -38,6 +47,12 @@ bar "main" {
     // Individual segment styles override these values property by property.
     // style color="text" size=12 weight="normal"
 
+    // Actions on empty bar background.
+    actions {
+        click { open-panel }
+        Super+Space { toggle-menu "main" }
+    }
+
     // Zone layout — assign module names to start, center, and end zones.
     // Names must match the module declarations in the "modules" section below.
     // Multiple modules per zone: list them as separate string arguments on one line.
@@ -48,6 +63,15 @@ bar "main" {
         center "focused-window"
         // End zone: stacks from the trailing edge of the bar.
         // Multiple modules: list as separate string arguments on the same line.
+        end "volume" "network" "battery" "clock"
+    }
+
+    // Default panel content for this bar.
+    panel {
+        width 360
+        max-height 600
+        start "workspaces"
+        center "focused-window"
         end "volume" "network" "battery" "clock"
     }
 }
@@ -75,8 +99,8 @@ bar "main" {
 // Optional actions can be added to any module. They run shell commands and
 // override the built-in behavior for that click type:
 //     actions {
-//         click "my-command"
-//         right-click "my-other-command"
+//         click { command "my-command" }
+//         right-click { command "my-other-command" }
 //     }
 modules {
     // workspaces: Niri workspace indicators. Click or scroll to switch workspace.
