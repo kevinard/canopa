@@ -25,6 +25,8 @@ pub(super) struct PanelSystem {
     pub(super) installed_apps_snapshot: Vec<crate::desktop_apps::DesktopApplication>,
     #[cfg(test)]
     pub(super) installed_apps_for_test: Option<Vec<crate::desktop_apps::DesktopApplication>>,
+    #[cfg(test)]
+    pub(super) launched_installed_app_ids_for_test: Vec<String>,
     closing_windows: HashSet<iced::window::Id>,
 }
 
@@ -459,25 +461,52 @@ impl App {
             return Task::none();
         };
 
-        if entry.is_submenu {
-            self.panel.menu_path = entry.path;
-            self.panel.search_query.clear();
-            self.panel.focused_index = Some(0);
-            return Task::none();
-        }
-
-        let Some(item) = menu_item_at_path(&menu.items, &entry.path) else {
-            return Task::none();
-        };
-        let Some(action) = item.action.clone() else {
-            return Task::none();
-        };
-        match action {
-            crate::config::PanelAction::Command(command) => {
-                let _ = crate::command::spawn_config_command_fire_and_forget(&command);
-                Task::batch(self.close_all_panels())
+        match entry.target {
+            MenuEntryTarget::InstalledApp(app_id) => {
+                let Some(app) = self
+                    .panel
+                    .installed_apps_snapshot
+                    .iter()
+                    .find(|app| app.id == app_id)
+                    .cloned()
+                else {
+                    return Task::none();
+                };
+                #[cfg(test)]
+                {
+                    self.panel
+                        .launched_installed_app_ids_for_test
+                        .push(app.id.clone());
+                    Task::batch(self.close_all_panels())
+                }
+                #[cfg(not(test))]
+                {
+                    let _ = crate::command::spawn_desktop_application_fire_and_forget(&app);
+                    Task::batch(self.close_all_panels())
+                }
             }
-            action => self.dispatch_panel_action(tree.origin_window, tree.origin, action),
+            MenuEntryTarget::StaticPath(path) => {
+                if entry.is_submenu {
+                    self.panel.menu_path = path;
+                    self.panel.search_query.clear();
+                    self.panel.focused_index = Some(0);
+                    return Task::none();
+                }
+
+                let Some(item) = menu_item_at_path(&menu.items, &path) else {
+                    return Task::none();
+                };
+                let Some(action) = item.action.clone() else {
+                    return Task::none();
+                };
+                match action {
+                    crate::config::PanelAction::Command(command) => {
+                        let _ = crate::command::spawn_config_command_fire_and_forget(&command);
+                        Task::batch(self.close_all_panels())
+                    }
+                    action => self.dispatch_panel_action(tree.origin_window, tree.origin, action),
+                }
+            }
         }
     }
 
@@ -1123,6 +1152,20 @@ mod tests {
         let entries = app.active_menu_entries();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].label, "Browser");
+    }
+
+    #[test]
+    fn activating_installed_app_closes_panel() {
+        let mut app = app_with_installed_apps_menu(vec![installed_app("Alpha", "alpha.desktop")]);
+        open_apps_menu_panel(&mut app);
+        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+
+        let _ = app.update(Message::Panel(
+            crate::app::messages::PanelEvent::ActivateIndex(0),
+        ));
+
+        assert_eq!(app.panel.launched_installed_app_ids_for_test, vec!["alpha.desktop"]);
+        assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
     }
 
     #[test]
