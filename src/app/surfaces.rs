@@ -41,35 +41,46 @@ fn tooltip_margin(
     size: (u32, u32),
     gap: i32,
 ) -> (i32, i32, i32, i32) {
-    let (w, h) = (size.0 as i32, size.1 as i32);
-    let (bar_w, bar_h) = (tree.bar_size.0 as i32, tree.bar_size.1 as i32);
-    let (ax, ay) = tree.anchor;
-    match tree.bar_edge {
-        crate::config::Edge::Top => {
-            let left = (ax - w / 2).clamp(0, (bar_w - w).max(0));
-            (bar_h + gap, 0, 0, left)
-        }
-        crate::config::Edge::Bottom => {
-            let left = (ax - w / 2).clamp(0, (bar_w - w).max(0));
-            (0, 0, bar_h + gap, left)
-        }
-        crate::config::Edge::Left => {
-            let top = (ay - h / 2).clamp(0, (bar_h - h).max(0));
-            (top, 0, 0, bar_w + gap)
-        }
-        crate::config::Edge::Right => {
-            let top = (ay - h / 2).clamp(0, (bar_h - h).max(0));
-            (top, bar_w + gap, 0, 0)
-        }
-    }
+    let placement = crate::surface::placement::edge_adjacent_position(
+        tree.bar_edge.clone(),
+        crate::surface::placement::Point {
+            x: tree.anchor.0,
+            y: tree.anchor.1,
+        },
+        crate::surface::placement::Size {
+            width: size.0,
+            height: size.1,
+        },
+        crate::surface::placement::Size {
+            width: tree.bar_size.0,
+            height: tree.bar_size.1,
+        },
+        match tree.bar_edge {
+            crate::config::Edge::Top | crate::config::Edge::Bottom => tree.bar_size.1,
+            crate::config::Edge::Left | crate::config::Edge::Right => tree.bar_size.0,
+        },
+        gap,
+        crate::surface::placement::CrossAxisAnchor::Center,
+    );
+    placement.layer_margin(
+        tree.bar_edge.clone(),
+        crate::surface::placement::Size {
+            width: size.0,
+            height: size.1,
+        },
+        crate::surface::placement::Size {
+            width: tree.bar_size.0,
+            height: tree.bar_size.1,
+        },
+    )
 }
 
 fn tooltip_anchor(tree: &crate::surface::tooltip_popup::TooltipTree) -> Anchor {
-    match tree.bar_edge {
-        crate::config::Edge::Top => Anchor::Left | Anchor::Top,
-        crate::config::Edge::Bottom => Anchor::Left | Anchor::Bottom,
-        crate::config::Edge::Left => Anchor::Left | Anchor::Top,
-        crate::config::Edge::Right => Anchor::Right | Anchor::Top,
+    match crate::surface::placement::layer_anchor(tree.bar_edge.clone()) {
+        crate::surface::placement::LayerAnchor::TopLeft => Anchor::Left | Anchor::Top,
+        crate::surface::placement::LayerAnchor::BottomLeft => Anchor::Left | Anchor::Bottom,
+        crate::surface::placement::LayerAnchor::LeftTop => Anchor::Left | Anchor::Top,
+        crate::surface::placement::LayerAnchor::RightTop => Anchor::Right | Anchor::Top,
     }
 }
 
@@ -1307,6 +1318,28 @@ mod tests {
                 .screen_size,
             (1920, 1080)
         );
+    }
+
+    #[test]
+    fn tooltip_anchor_for_uses_screen_size_as_current_bar_size_input() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let wid = test_wid();
+        app.surfaces.surfaces.insert(
+            wid,
+            crate::surface::SurfaceState {
+                output_name: "DP-1".into(),
+                bar_name: "main".into(),
+                screen_size: (1920, 1080),
+                last_pointer_position: (500, 24),
+                ..Default::default()
+            },
+        );
+
+        let placement = app.tooltip_anchor_for(wid);
+
+        assert_eq!(placement.bar_size, (1920, 1080));
+        assert_eq!(placement.screen_size, (1920, 1080));
+        assert_eq!(placement.anchor, (500, 24));
     }
 
     #[test]

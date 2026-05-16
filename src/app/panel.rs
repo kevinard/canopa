@@ -122,40 +122,30 @@ fn panel_position(
     screen_size: (u32, u32),
     surface_origin: (i32, i32),
 ) -> (i32, i32) {
-    let bar_size = bar_size as i32;
-    let (panel_w, panel_h) = (panel_size.0 as i32, panel_size.1 as i32);
-    let (screen_w, screen_h) = (screen_size.0 as i32, screen_size.1 as i32);
-    let anchor = anchor.unwrap_or(iced::Rectangle {
-        x: 0.0,
-        y: 0.0,
-        width: 0.0,
-        height: 0.0,
+    let anchor = anchor.map(|rect| crate::surface::placement::Rect {
+        x: (rect.x + rect.width / 2.0).round() as i32,
+        y: (rect.y + rect.height / 2.0).round() as i32,
+        width: 0,
+        height: 0,
     });
-    let anchor_center_x = surface_origin.0 + (anchor.x + anchor.width / 2.0).round() as i32;
-    let anchor_center_y = surface_origin.1 + (anchor.y + anchor.height / 2.0).round() as i32;
-    let min_x = surface_origin.0;
-    let min_y = surface_origin.1;
-    let max_x = (surface_origin.0 + screen_w - panel_w).max(min_x);
-    let max_y = (surface_origin.1 + screen_h - panel_h).max(min_y);
-
-    match edge {
-        crate::config::Edge::Left => (
-            bar_size,
-            (anchor_center_y - panel_h / 2).clamp(min_y, max_y),
-        ),
-        crate::config::Edge::Right => (
-            (screen_w - bar_size - panel_w).max(0),
-            (anchor_center_y - panel_h / 2).clamp(min_y, max_y),
-        ),
-        crate::config::Edge::Top => (
-            (anchor_center_x - panel_w / 2).clamp(min_x, max_x),
-            bar_size,
-        ),
-        crate::config::Edge::Bottom => (
-            (anchor_center_x - panel_w / 2).clamp(min_x, max_x),
-            (screen_h - bar_size - panel_h).max(0),
-        ),
-    }
+    let placement = crate::surface::placement::centered_panel_position(
+        edge.clone(),
+        anchor,
+        crate::surface::placement::Size {
+            width: panel_size.0,
+            height: panel_size.1,
+        },
+        crate::surface::placement::Size {
+            width: screen_size.0,
+            height: screen_size.1,
+        },
+        bar_size,
+        crate::surface::placement::Point {
+            x: surface_origin.0,
+            y: surface_origin.1,
+        },
+    );
+    (placement.position.x, placement.position.y)
 }
 
 fn panel_margin(
@@ -164,16 +154,23 @@ fn panel_margin(
     panel_size: (u32, u32),
     screen_size: (u32, u32),
 ) -> (i32, i32, i32, i32) {
-    let (x, y) = position;
-    let (panel_w, panel_h) = (panel_size.0 as i32, panel_size.1 as i32);
-    let (screen_w, screen_h) = (screen_size.0 as i32, screen_size.1 as i32);
-
-    match edge {
-        crate::config::Edge::Top => (y, 0, 0, x),
-        crate::config::Edge::Bottom => (0, 0, (screen_h - y - panel_h).max(0), x),
-        crate::config::Edge::Left => (y, 0, 0, x),
-        crate::config::Edge::Right => (y, (screen_w - x - panel_w).max(0), 0, 0),
+    crate::surface::placement::Placement {
+        position: crate::surface::placement::Point {
+            x: position.0,
+            y: position.1,
+        },
     }
+    .layer_margin(
+        edge.clone(),
+        crate::surface::placement::Size {
+            width: panel_size.0,
+            height: panel_size.1,
+        },
+        crate::surface::placement::Size {
+            width: screen_size.0,
+            height: screen_size.1,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -920,6 +917,25 @@ mod tests {
     }
 
     #[test]
+    fn panel_position_top_centers_on_anchor_and_clamps() {
+        let position = super::panel_position_for_test(
+            crate::config::Edge::Top,
+            48,
+            (300, 600),
+            Some(iced::Rectangle {
+                x: 480.0,
+                y: 4.0,
+                width: 40.0,
+                height: 40.0,
+            }),
+            (1920, 1080),
+            (0, 0),
+        );
+
+        assert_eq!(position, (350, 48));
+    }
+
+    #[test]
     fn left_edge_bar_panel_starts_at_vertical_bar_top_when_top_bar_reserves_space() {
         let position = panel_position_for_test(
             crate::config::Edge::Left,
@@ -1083,6 +1099,13 @@ mod tests {
         }
     }
 
+    fn config_with_menu(menu: crate::config::MenuConfig) -> crate::config::Config {
+        crate::config::Config {
+            menus: vec![menu],
+            ..crate::config::Config::default()
+        }
+    }
+
     #[test]
     fn menu_search_flattens_nested_matches_with_breadcrumb() {
         let menu = menu_with_apps_browser();
@@ -1113,14 +1136,13 @@ mod tests {
     }
 
     fn app_with_installed_apps_menu(apps: Vec<crate::desktop_apps::DesktopApplication>) -> App {
-        let mut config = crate::config::Config::default();
-        config.menus = vec![crate::config::MenuConfig {
+        let config = config_with_menu(crate::config::MenuConfig {
             name: "apps".into(),
             source: Some(crate::config::MenuSourceConfig {
                 kind: crate::config::MenuSourceKind::InstalledApps,
             }),
             items: vec![],
-        }];
+        });
         let (mut app, _) = App::boot(config, vec![]);
         app.panel.installed_apps_for_test = Some(apps);
         app
@@ -1216,8 +1238,7 @@ mod tests {
 
     #[test]
     fn arrow_down_on_panel_window_moves_menu_focus_to_next_entry() {
-        let mut config = crate::config::Config::default();
-        config.menus = vec![menu_with_two_entries()];
+        let config = config_with_menu(menu_with_two_entries());
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
@@ -1246,8 +1267,7 @@ mod tests {
 
     #[test]
     fn focus_gained_on_panel_window_does_not_create_bar_surface_state() {
-        let mut config = crate::config::Config::default();
-        config.menus = vec![menu_with_two_entries()];
+        let config = config_with_menu(menu_with_two_entries());
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
@@ -1276,8 +1296,7 @@ mod tests {
 
     #[test]
     fn focus_search_input_event_initializes_menu_focus_without_bar_surface_state() {
-        let mut config = crate::config::Config::default();
-        config.menus = vec![menu_with_two_entries()];
+        let config = config_with_menu(menu_with_two_entries());
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
@@ -1307,8 +1326,7 @@ mod tests {
 
     #[test]
     fn window_sized_on_panel_window_routes_to_panel_focus_without_bar_surface_state() {
-        let mut config = crate::config::Config::default();
-        config.menus = vec![menu_with_two_entries()];
+        let config = config_with_menu(menu_with_two_entries());
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
@@ -1338,8 +1356,7 @@ mod tests {
 
     #[test]
     fn stale_events_from_closing_panel_window_do_not_create_bar_surface_state() {
-        let mut config = crate::config::Config::default();
-        config.menus = vec![menu_with_two_entries()];
+        let config = config_with_menu(menu_with_two_entries());
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();

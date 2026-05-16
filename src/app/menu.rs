@@ -70,31 +70,28 @@ fn menu_popup_window_settings(
     tree: &crate::surface::menu_popup::MenuTree,
 ) -> IcedNewPopupSettings {
     let size = crate::surface::menu_popup::popup_size(tree);
-    let (popup_w, popup_h) = (size.0 as i32, size.1 as i32);
-    let (parent_w, parent_h) = (tree.screen_size.0 as i32, tree.screen_size.1 as i32);
-    let (anchor_x, anchor_y) = tree.anchor;
-    let clamped_x = if parent_w > 0 {
-        anchor_x.clamp(0, (parent_w - popup_w).max(0))
-    } else {
-        anchor_x
-    };
-    let clamped_y = if parent_h > 0 {
-        anchor_y.clamp(0, (parent_h - popup_h).max(0))
-    } else {
-        anchor_y
-    };
-
-    let bar_size = bar_size as i32;
-    let position = match edge {
-        crate::config::Edge::Top => (clamped_x, bar_size),
-        crate::config::Edge::Bottom => (clamped_x, -popup_h),
-        crate::config::Edge::Left => (bar_size, clamped_y),
-        crate::config::Edge::Right => (-popup_w, clamped_y),
-    };
+    let placement = crate::surface::placement::edge_adjacent_position(
+        edge.clone(),
+        crate::surface::placement::Point {
+            x: tree.anchor.0,
+            y: tree.anchor.1,
+        },
+        crate::surface::placement::Size {
+            width: size.0,
+            height: size.1,
+        },
+        crate::surface::placement::Size {
+            width: tree.screen_size.0,
+            height: tree.screen_size.1,
+        },
+        bar_size,
+        0,
+        crate::surface::placement::CrossAxisAnchor::Start,
+    );
 
     IcedNewPopupSettings {
         size,
-        position,
+        position: (placement.position.x, placement.position.y),
         grab: true,
     }
 }
@@ -764,5 +761,26 @@ mod tests {
             settings.position.1,
             -(crate::surface::menu_popup::popup_size(&tree).1 as i32)
         );
+    }
+
+    #[test]
+    fn top_edge_menu_popup_uses_shared_placement_clamping() {
+        let tree = crate::surface::menu_popup::MenuTree {
+            items: vec![crate::surface::menu_popup::MenuItem {
+                id: "1".into(),
+                label: "Open".into(),
+                enabled: true,
+                visible: true,
+                icon_name: None,
+                children: vec![],
+                is_separator: false,
+            }],
+            anchor: (490, 30),
+            screen_size: (500, 48),
+        };
+        let settings = super::menu_popup_window_settings(&crate::config::Edge::Top, 48, &tree);
+
+        assert_eq!(settings.size, crate::surface::menu_popup::popup_size(&tree));
+        assert_eq!(settings.position, (350, 48));
     }
 }

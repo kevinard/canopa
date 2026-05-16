@@ -14,6 +14,17 @@ pub(crate) struct TrayState {
     items: BTreeMap<String, TrayItem>,
 }
 
+fn tray_menu_anchor_for_bounds(edge: crate::config::Edge, bounds: iced::Rectangle) -> (i32, i32) {
+    match edge {
+        crate::config::Edge::Top | crate::config::Edge::Bottom => {
+            (bounds.x as i32, (bounds.y + bounds.height) as i32)
+        }
+        crate::config::Edge::Left | crate::config::Edge::Right => {
+            ((bounds.x + bounds.width) as i32, bounds.y as i32)
+        }
+    }
+}
+
 impl TrayState {
     pub(crate) fn apply_host_event(&mut self, event: &TrayEvent) -> Vec<TrayItem> {
         match event {
@@ -278,11 +289,15 @@ impl App {
             let menu_path_clone = menu_path.clone();
             let (anchor_x, anchor_y) = match bounds {
                 Some(r) => {
-                    if screen_size.0 > screen_size.1 {
-                        (r.x as i32, (r.y + r.height) as i32)
-                    } else {
-                        ((r.x + r.width) as i32, r.y as i32)
-                    }
+                    let edge = source_window
+                        .and_then(|w| self.surfaces.surface(w))
+                        .map(|surface| {
+                            Self::bar_for_surface_name(&self.config.bars, &surface.bar_name)
+                                .edge
+                                .clone()
+                        })
+                        .unwrap_or_else(|| self.config.bars[0].edge.clone());
+                    tray_menu_anchor_for_bounds(edge, r)
                 }
                 None => {
                     let p = self
@@ -360,6 +375,36 @@ mod tests {
             menu_path: None,
             tooltip: None,
         }
+    }
+
+    #[test]
+    fn tray_menu_anchor_for_top_edge_uses_icon_bottom_left() {
+        let bounds = iced::Rectangle {
+            x: 10.0,
+            y: 4.0,
+            width: 22.0,
+            height: 18.0,
+        };
+
+        assert_eq!(
+            super::tray_menu_anchor_for_bounds(crate::config::Edge::Top, bounds),
+            (10, 22)
+        );
+    }
+
+    #[test]
+    fn tray_menu_anchor_for_left_edge_uses_icon_top_right() {
+        let bounds = iced::Rectangle {
+            x: 10.0,
+            y: 4.0,
+            width: 22.0,
+            height: 18.0,
+        };
+
+        assert_eq!(
+            super::tray_menu_anchor_for_bounds(crate::config::Edge::Left, bounds),
+            (32, 4)
+        );
     }
 
     #[test]
