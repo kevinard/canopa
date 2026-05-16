@@ -3,6 +3,7 @@ mod cli;
 mod command;
 mod config;
 mod dbus;
+mod desktop_apps;
 mod ipc;
 mod modules;
 mod niri;
