@@ -115,6 +115,18 @@ _Avoid_: Shell action when the action is not a command
 An app-owned, named launcher/menu list rendered inside a **Panel**.
 _Avoid_: Menu when referring to SNI or other module-owned context menus
 
+**Panel Menu Source**:
+The configured origin of **Panel Menu** entries, either explicit user configuration or a dynamic runtime source such as installed desktop applications.
+_Avoid_: Generated config, launcher backend
+
+**Installed Desktop Application**:
+A user-launchable GUI application discovered from the desktop environment's application metadata.
+_Avoid_: Desktop file, command, package
+
+**Desktop Application ID**:
+The stable identifier Niribar uses to distinguish one **Installed Desktop Application** from another.
+_Avoid_: Application name, label
+
 **Keyboard Focus**:
 The current **Module** or child **Module Instance** target selected for keyboard interaction on a **Bar Surface**.
 _Avoid_: Global focus, compositor focus
@@ -254,7 +266,25 @@ _Avoid_: Default config, fallback surface
 - A **Bar Surface Interaction** may trigger a **Panel Action** when configured by the **Bar**.
 - A **Bar Surface Interaction** on empty bar background is distinct from interacting with a **Module**.
 - A **Panel Menu** is global named configuration and can be opened from any **Panel Action**.
+- A **Panel Menu** has exactly one **Panel Menu Source**.
+- A **Panel Menu Source** may be declared by explicit `item` configuration or by a `source` declaration.
+- A dynamic **Panel Menu Source** declaration starts with a source kind and may gain source-specific options later.
+- A **Panel Menu** cannot mix explicit `item` configuration with a dynamic `source` declaration.
 - A **Panel Menu** item runs exactly one **Panel Action**.
+- A dynamic **Panel Menu Source** supplies current **Panel Menu** entries at runtime without rewriting user configuration.
+- A dynamic **Panel Menu Source** with no current entries is a valid empty **Panel Menu**, not a **Configuration Error**.
+- An installed-applications **Panel Menu Source** includes **Installed Desktop Applications**, not hidden, terminal-only, or system desktop entries.
+- Desktop-environment-specific application metadata is honored when deciding whether an **Installed Desktop Application** belongs in the current environment.
+- Activating an **Installed Desktop Application** from a **Panel Menu** launches the application and closes the **Panel**.
+- Launching an **Installed Desktop Application** from a **Panel Menu** is source-owned behavior, not a separate public **Panel Action** type.
+- Launching **Installed Desktop Applications** follows Niribar's centralized process-launch boundary.
+- A failed launch of an **Installed Desktop Application** is a failed **Panel Action** and does not change the normal **Panel Menu** entry by default.
+- A **Desktop Application ID** identifies an **Installed Desktop Application** even when multiple applications share the same display name.
+- A **Panel Menu** may use secondary metadata to disambiguate **Installed Desktop Applications** with the same display name.
+- **Installed Desktop Applications** may show best-effort icons, but missing icons do not prevent display or launch.
+- An installed-applications **Panel Menu Source** presents **Installed Desktop Applications** as a flat list by default.
+- **Panel Menu** search for **Installed Desktop Applications** matches application names, descriptions, generic names, and keywords.
+- A dynamic **Panel Menu Source** is refreshed when its **Panel Menu** opens and remains stable while that **Panel** is open.
 - A **Panel Menu** may contain nested items, but the **Panel** displays one active menu level at a time unless search is active.
 - **Panel Menu** search matches nested items and displays matching results with breadcrumb context.
 - Activating a command item in a **Panel Menu** closes the **Panel** by default.
