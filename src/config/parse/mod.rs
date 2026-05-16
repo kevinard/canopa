@@ -8,8 +8,8 @@ mod style;
 use ::kdl::{KdlDocument, KdlNode};
 
 use super::{
-    BarConfig, CommandPolicy, Config, MenuConfig, MenuItemConfig, MenuSourceConfig,
-    MenuSourceKind, ModuleConfig,
+    BarConfig, CommandPolicy, Config, MenuConfig, MenuItemConfig, MenuSourceConfig, MenuSourceKind,
+    ModuleConfig,
 };
 pub(crate) use crate::config::ConfigSourceName;
 use crate::config::{ConfigError, ConfigResult, ConfigSource};

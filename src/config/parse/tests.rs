@@ -393,7 +393,10 @@ menus {
 }
 "#;
     let err = parse(kdl).unwrap_err().to_string();
-    assert!(err.contains("menu cannot mix source and item"), "got: {err}");
+    assert!(
+        err.contains("menu cannot mix source and item"),
+        "got: {err}"
+    );
 }
 
 #[test]

@@ -230,6 +230,7 @@ pub fn desktop_exec_to_argv(exec: &str) -> std::io::Result<DesktopLaunchArgv> {
     })
 }
 
+#[cfg_attr(test, allow(dead_code))]
 pub fn spawn_desktop_application_fire_and_forget(
     app: &crate::desktop_apps::DesktopApplication,
 ) -> std::io::Result<SpawnResult> {

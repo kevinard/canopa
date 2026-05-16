@@ -149,16 +149,24 @@ fn application_from_entry(
     if fields.get("Type").map(String::as_str) != Some("Application") {
         return None;
     }
-    if bool_field(&fields, "Hidden") || bool_field(&fields, "NoDisplay") || bool_field(&fields, "Terminal") {
+    if bool_field(&fields, "Hidden")
+        || bool_field(&fields, "NoDisplay")
+        || bool_field(&fields, "Terminal")
+    {
         return None;
     }
     if let Some(only_show_in) = fields.get("OnlyShowIn")
-        && (!env.known || !semicolon_list(only_show_in).iter().any(|name| env.contains(name)))
+        && (!env.known
+            || !semicolon_list(only_show_in)
+                .iter()
+                .any(|name| env.contains(name)))
     {
         return None;
     }
     if let Some(not_show_in) = fields.get("NotShowIn")
-        && semicolon_list(not_show_in).iter().any(|name| env.contains(name))
+        && semicolon_list(not_show_in)
+            .iter()
+            .any(|name| env.contains(name))
     {
         return None;
     }

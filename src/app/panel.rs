@@ -144,7 +144,7 @@ fn panel_position(
             (anchor_center_y - panel_h / 2).clamp(min_y, max_y),
         ),
         crate::config::Edge::Right => (
-            (screen_w - bar_size - panel_w).min(0),
+            (screen_w - bar_size - panel_w).max(0),
             (anchor_center_y - panel_h / 2).clamp(min_y, max_y),
         ),
         crate::config::Edge::Top => (
@@ -153,7 +153,7 @@ fn panel_position(
         ),
         crate::config::Edge::Bottom => (
             (anchor_center_x - panel_w / 2).clamp(min_x, max_x),
-            (screen_h - bar_size - panel_h).min(0),
+            (screen_h - bar_size - panel_h).max(0),
         ),
     }
 }
@@ -1161,10 +1161,8 @@ mod tests {
         let mut browser = installed_app("Browser", "browser.desktop");
         browser.comment = Some("Browse the web".into());
         browser.keywords = vec!["internet".into()];
-        let mut app = app_with_installed_apps_menu(vec![
-            browser,
-            installed_app("Editor", "editor.desktop"),
-        ]);
+        let mut app =
+            app_with_installed_apps_menu(vec![browser, installed_app("Editor", "editor.desktop")]);
         open_apps_menu_panel(&mut app);
 
         app.panel.search_query = "internet".into();
@@ -1184,7 +1182,10 @@ mod tests {
             crate::app::messages::PanelEvent::ActivateIndex(0),
         ));
 
-        assert_eq!(app.panel.launched_installed_app_ids_for_test, vec!["alpha.desktop"]);
+        assert_eq!(
+            app.panel.launched_installed_app_ids_for_test,
+            vec!["alpha.desktop"]
+        );
         assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
     }
 
