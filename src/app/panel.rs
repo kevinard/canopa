@@ -678,15 +678,35 @@ fn installed_app_entries(
     apps: &[crate::desktop_apps::DesktopApplication],
     query: &str,
 ) -> Vec<MenuEntryView> {
+    let mut counts = std::collections::HashMap::<String, usize>::new();
+    for app in apps {
+        *counts.entry(app.name.to_ascii_lowercase()).or_default() += 1;
+    }
     let query = query.to_ascii_lowercase();
     apps.iter()
         .filter(|app| query.is_empty() || installed_app_matches(app, &query))
         .enumerate()
-        .map(|(index, app)| MenuEntryView {
-            label: app.name.clone(),
-            path: vec![index],
-            target: MenuEntryTarget::InstalledApp(app.id.clone()),
-            is_submenu: false,
+        .map(|(index, app)| {
+            let label = if counts
+                .get(&app.name.to_ascii_lowercase())
+                .copied()
+                .unwrap_or(0)
+                > 1
+            {
+                app.generic_name
+                    .as_ref()
+                    .filter(|value| !value.is_empty())
+                    .map(|generic| format!("{} ({generic})", app.name))
+                    .unwrap_or_else(|| format!("{} ({})", app.name, app.id))
+            } else {
+                app.name.clone()
+            };
+            MenuEntryView {
+                label,
+                path: vec![index],
+                target: MenuEntryTarget::InstalledApp(app.id.clone()),
+                is_submenu: false,
+            }
         })
         .collect()
 }
@@ -1166,6 +1186,22 @@ mod tests {
 
         assert_eq!(app.panel.launched_installed_app_ids_for_test, vec!["alpha.desktop"]);
         assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+    }
+
+    #[test]
+    fn duplicate_installed_app_names_are_disambiguated() {
+        let mut app = app_with_installed_apps_menu(vec![
+            installed_app("Terminal", "org.gnome.Terminal.desktop"),
+            installed_app("Terminal", "com.raggesilver.BlackBox.desktop"),
+        ]);
+        open_apps_menu_panel(&mut app);
+
+        let entries = app.active_menu_entries();
+
+        assert_eq!(entries.len(), 2);
+        assert!(entries[0].label.contains("Terminal"));
+        assert!(entries[1].label.contains("Terminal"));
+        assert_ne!(entries[0].label, entries[1].label);
     }
 
     #[test]
