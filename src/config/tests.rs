@@ -581,6 +581,24 @@ mod config_tests {
     }
 
     #[test]
+    fn validate_open_menu_accepts_source_menu() {
+        let mut config = Config::default();
+        config.menus = vec![MenuConfig {
+            name: "apps".into(),
+            source: Some(MenuSourceConfig {
+                kind: MenuSourceKind::InstalledApps,
+            }),
+            items: vec![],
+        }];
+        config.bars[0].actions.bindings.push(ActionBinding {
+            trigger: ActionTrigger::Click,
+            action: PanelAction::OpenMenu("apps".into()),
+        });
+
+        validate(&config).unwrap();
+    }
+
+    #[test]
     fn validate_same_module_across_different_bars_passes() {
         let config = Config {
             bars: vec![

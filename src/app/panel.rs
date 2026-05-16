@@ -1205,6 +1205,15 @@ mod tests {
     }
 
     #[test]
+    fn installed_apps_menu_can_be_empty() {
+        let mut app = app_with_installed_apps_menu(vec![]);
+        open_apps_menu_panel(&mut app);
+
+        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert!(app.active_menu_entries().is_empty());
+    }
+
+    #[test]
     fn arrow_down_on_panel_window_moves_menu_focus_to_next_entry() {
         let mut config = crate::config::Config::default();
         config.menus = vec![menu_with_two_entries()];
