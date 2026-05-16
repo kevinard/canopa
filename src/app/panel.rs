@@ -22,13 +22,23 @@ pub(super) struct PanelSystem {
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
     pub(super) menu_path: Vec<usize>,
+    pub(super) installed_apps_snapshot: Vec<crate::desktop_apps::DesktopApplication>,
+    #[cfg(test)]
+    pub(super) installed_apps_for_test: Option<Vec<crate::desktop_apps::DesktopApplication>>,
     closing_windows: HashSet<iced::window::Id>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum MenuEntryTarget {
+    StaticPath(Vec<usize>),
+    InstalledApp(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct MenuEntryView {
     pub(super) label: String,
     pub(super) path: Vec<usize>,
+    pub(super) target: MenuEntryTarget,
     pub(super) is_submenu: bool,
 }
 
@@ -37,6 +47,7 @@ impl PanelSystem {
         self.search_query.clear();
         self.focused_index = None;
         self.menu_path.clear();
+        self.installed_apps_snapshot.clear();
     }
 
     pub(super) fn mark_closing_window(&mut self, window: iced::window::Id) {
@@ -343,6 +354,20 @@ impl App {
         tasks.extend(self.close_all_panels_for_replacement());
         tasks.extend(self.suspend_bar_keyboard_interactivity());
         let is_menu_panel = matches!(tree.content, crate::surface::panel::PanelContent::Menu(_));
+        let is_installed_apps_menu = match &tree.content {
+            crate::surface::panel::PanelContent::Menu(name) => self
+                .config
+                .menus
+                .iter()
+                .find(|menu| menu.name == *name)
+                .and_then(|menu| menu.source.as_ref())
+                .map(|source| matches!(source.kind, crate::config::MenuSourceKind::InstalledApps))
+                .unwrap_or(false),
+            _ => false,
+        };
+        if is_installed_apps_menu {
+            self.panel.installed_apps_snapshot = self.load_installed_apps_for_panel();
+        }
         self.surfaces.insert_panel_popup(
             panel_window,
             super::surfaces::PanelMeta {
@@ -358,6 +383,14 @@ impl App {
         }
         tasks.push(open_sequence);
         Task::batch(tasks)
+    }
+
+    fn load_installed_apps_for_panel(&self) -> Vec<crate::desktop_apps::DesktopApplication> {
+        #[cfg(test)]
+        if let Some(apps) = &self.panel.installed_apps_for_test {
+            return apps.clone();
+        }
+        crate::desktop_apps::discover_installed_applications().unwrap_or_default()
     }
 
     fn inferred_panel_surface_origin(
@@ -504,10 +537,17 @@ impl App {
             .menus
             .iter()
             .find(|menu| menu.name == menu_name)?;
-        let entries = if self.panel.search_query.is_empty() {
-            current_menu_entries(menu, &self.panel.menu_path)
-        } else {
-            search_menu_entries(menu, &self.panel.search_query)
+        let entries = match &menu.source {
+            Some(source) if matches!(source.kind, crate::config::MenuSourceKind::InstalledApps) => {
+                installed_app_entries(
+                    &self.panel.installed_apps_snapshot,
+                    &self.panel.search_query,
+                )
+            }
+            _ if self.panel.search_query.is_empty() => {
+                current_menu_entries(menu, &self.panel.menu_path)
+            }
+            _ => search_menu_entries(menu, &self.panel.search_query),
         };
         Some((tree, entries))
     }
@@ -539,6 +579,7 @@ pub(super) fn current_menu_entries(
             item_path.push(index);
             MenuEntryView {
                 label: item.label.clone(),
+                target: MenuEntryTarget::StaticPath(item_path.clone()),
                 path: item_path,
                 is_submenu: !item.children.is_empty(),
             }
@@ -581,6 +622,7 @@ fn collect_search_menu_entries(
             results.push(MenuEntryView {
                 label: labels.join(" / "),
                 path: path.clone(),
+                target: MenuEntryTarget::StaticPath(path.clone()),
                 is_submenu: !item.children.is_empty(),
             });
         }
@@ -601,6 +643,43 @@ fn menu_item_at_path<'a>(
     } else {
         menu_item_at_path(&item.children, rest)
     }
+}
+
+fn installed_app_entries(
+    apps: &[crate::desktop_apps::DesktopApplication],
+    query: &str,
+) -> Vec<MenuEntryView> {
+    let query = query.to_ascii_lowercase();
+    apps.iter()
+        .filter(|app| query.is_empty() || installed_app_matches(app, &query))
+        .enumerate()
+        .map(|(index, app)| MenuEntryView {
+            label: app.name.clone(),
+            path: vec![index],
+            target: MenuEntryTarget::InstalledApp(app.id.clone()),
+            is_submenu: false,
+        })
+        .collect()
+}
+
+fn installed_app_matches(app: &crate::desktop_apps::DesktopApplication, query: &str) -> bool {
+    app.name.to_ascii_lowercase().contains(query)
+        || app
+            .generic_name
+            .as_deref()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .contains(query)
+        || app
+            .comment
+            .as_deref()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .contains(query)
+        || app
+            .keywords
+            .iter()
+            .any(|keyword| keyword.to_ascii_lowercase().contains(query))
 }
 
 fn content_for_origin(
@@ -970,6 +1049,80 @@ mod tests {
         let results = search_menu_entries(&menu, "WEB");
 
         assert_eq!(results[0].label, "Apps / Browser");
+    }
+
+    fn installed_app(name: &str, id: &str) -> crate::desktop_apps::DesktopApplication {
+        crate::desktop_apps::DesktopApplication {
+            id: id.into(),
+            name: name.into(),
+            generic_name: None,
+            comment: None,
+            keywords: vec![],
+            icon: None,
+            exec: name.to_ascii_lowercase(),
+        }
+    }
+
+    fn app_with_installed_apps_menu(apps: Vec<crate::desktop_apps::DesktopApplication>) -> App {
+        let mut config = crate::config::Config::default();
+        config.menus = vec![crate::config::MenuConfig {
+            name: "apps".into(),
+            source: Some(crate::config::MenuSourceConfig {
+                kind: crate::config::MenuSourceKind::InstalledApps,
+            }),
+            items: vec![],
+        }];
+        let (mut app, _) = App::boot(config, vec![]);
+        app.panel.installed_apps_for_test = Some(apps);
+        app
+    }
+
+    fn open_apps_menu_panel(app: &mut App) {
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
+        let _ = app.update(Message::Panel(crate::app::messages::PanelEvent::Open {
+            origin_window: origin,
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::Menu("apps".into()),
+            anchor: None,
+        }));
+    }
+
+    #[test]
+    fn installed_apps_menu_entries_use_open_snapshot() {
+        let mut app = app_with_installed_apps_menu(vec![
+            installed_app("Alpha", "alpha.desktop"),
+            installed_app("Zed", "zed.desktop"),
+        ]);
+
+        open_apps_menu_panel(&mut app);
+
+        let entries = app.active_menu_entries();
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Alpha", "Zed"]
+        );
+    }
+
+    #[test]
+    fn installed_apps_search_matches_keywords_and_comment() {
+        let mut browser = installed_app("Browser", "browser.desktop");
+        browser.comment = Some("Browse the web".into());
+        browser.keywords = vec!["internet".into()];
+        let mut app = app_with_installed_apps_menu(vec![
+            browser,
+            installed_app("Editor", "editor.desktop"),
+        ]);
+        open_apps_menu_panel(&mut app);
+
+        app.panel.search_query = "internet".into();
+
+        let entries = app.active_menu_entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "Browser");
     }
 
     #[test]
