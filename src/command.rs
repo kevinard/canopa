@@ -31,6 +31,12 @@ pub enum CommandSpec<'a> {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesktopLaunchArgv {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
 pub fn sanitize_stdout(stdout: &[u8], max_bytes: usize) -> String {
     let text = String::from_utf8_lossy(stdout);
     let trimmed = text.trim();
@@ -203,6 +209,38 @@ pub fn spawn_command_fire_and_forget(spec: CommandSpec<'_>) -> std::io::Result<S
     Ok(SpawnResult::Spawned)
 }
 
+pub fn desktop_exec_to_argv(exec: &str) -> std::io::Result<DesktopLaunchArgv> {
+    let tokens = split_desktop_exec(exec)?;
+    let mut cleaned = Vec::new();
+    for token in tokens {
+        let token = strip_desktop_field_codes(&token);
+        if !token.is_empty() {
+            cleaned.push(token);
+        }
+    }
+    let Some(program) = cleaned.first().cloned() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "desktop Exec produced no program",
+        ));
+    };
+    Ok(DesktopLaunchArgv {
+        program,
+        args: cleaned.into_iter().skip(1).collect(),
+    })
+}
+
+pub fn spawn_desktop_application_fire_and_forget(
+    app: &crate::desktop_apps::DesktopApplication,
+) -> std::io::Result<SpawnResult> {
+    let argv = desktop_exec_to_argv(&app.exec)?;
+    let borrowed: Vec<&str> = argv.args.iter().map(String::as_str).collect();
+    spawn_command_fire_and_forget(CommandSpec::Argv {
+        program: &argv.program,
+        args: &borrowed,
+    })
+}
+
 pub fn spawn_config_command_fire_and_forget(
     config: &crate::config::CommandConfig,
 ) -> std::io::Result<SpawnResult> {
@@ -218,6 +256,60 @@ pub fn spawn_config_command_fire_and_forget(
             })
         }
     }
+}
+
+fn split_desktop_exec(exec: &str) -> std::io::Result<Vec<String>> {
+    let mut tokens = Vec::new();
+    let mut token = String::new();
+    let mut chars = exec.chars().peekable();
+    let mut quote = None;
+
+    while let Some(ch) = chars.next() {
+        match (quote, ch) {
+            (None, ch) if ch.is_whitespace() => {
+                if !token.is_empty() {
+                    tokens.push(std::mem::take(&mut token));
+                }
+            }
+            (None, '\'' | '"') => quote = Some(ch),
+            (Some(active), ch) if ch == active => quote = None,
+            (_, '\\') => {
+                if let Some(next) = chars.next() {
+                    token.push(next);
+                }
+            }
+            _ => token.push(ch),
+        }
+    }
+
+    if quote.is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "desktop Exec contains unterminated quote",
+        ));
+    }
+    if !token.is_empty() {
+        tokens.push(token);
+    }
+    Ok(tokens)
+}
+
+fn strip_desktop_field_codes(token: &str) -> String {
+    let mut cleaned = String::new();
+    let mut chars = token.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            cleaned.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('%') => cleaned.push('%'),
+            Some('f' | 'F' | 'u' | 'U' | 'i' | 'c' | 'k') => {}
+            Some(_) => {}
+            None => cleaned.push('%'),
+        }
+    }
+    cleaned
 }
 
 async fn run_command_status(spec: CommandSpec<'_>) -> std::io::Result<std::process::ExitStatus> {
@@ -350,6 +442,34 @@ mod tests {
             .unwrap(),
             SpawnResult::Spawned
         );
+    }
+
+    #[test]
+    fn desktop_exec_removes_file_field_codes_for_plain_launch() {
+        let argv = desktop_exec_to_argv("firefox %U --new-window").unwrap();
+        assert_eq!(argv.program, "firefox");
+        assert_eq!(argv.args, vec!["--new-window"]);
+    }
+
+    #[test]
+    fn desktop_exec_unescapes_literal_percent() {
+        let argv = desktop_exec_to_argv("app --label 100%%").unwrap();
+        assert_eq!(argv.program, "app");
+        assert_eq!(argv.args, vec!["--label", "100%"]);
+    }
+
+    #[test]
+    fn desktop_exec_removes_metadata_field_codes() {
+        let argv = desktop_exec_to_argv("app %i %c %k").unwrap();
+        assert_eq!(argv.program, "app");
+        assert!(argv.args.is_empty());
+    }
+
+    #[test]
+    fn desktop_exec_preserves_quoted_arguments() {
+        let argv = desktop_exec_to_argv("app --name \"Two Words\"").unwrap();
+        assert_eq!(argv.program, "app");
+        assert_eq!(argv.args, vec!["--name", "Two Words"]);
     }
 
     #[test]
