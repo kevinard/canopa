@@ -541,10 +541,12 @@ mod config_tests {
             menus: vec![
                 MenuConfig {
                     name: "main".into(),
+                    source: None,
                     items: vec![],
                 },
                 MenuConfig {
                     name: "main".into(),
+                    source: None,
                     items: vec![],
                 },
             ],

@@ -7,7 +7,10 @@ mod style;
 
 use ::kdl::{KdlDocument, KdlNode};
 
-use super::{BarConfig, CommandPolicy, Config, MenuConfig, MenuItemConfig, ModuleConfig};
+use super::{
+    BarConfig, CommandPolicy, Config, MenuConfig, MenuItemConfig, MenuSourceConfig,
+    MenuSourceKind, ModuleConfig,
+};
 pub(crate) use crate::config::ConfigSourceName;
 use crate::config::{ConfigError, ConfigResult, ConfigSource};
 use crate::modules::ModuleKind;
@@ -203,22 +206,76 @@ fn parse_menus_section(
         }
 
         let name = required_string_argument(node, &menu_ctx, "menu name")?;
-        let items = match node.children() {
-            Some(menu_children) => parse_menu_items(menu_children, &menu_ctx, command_policy)?,
-            None => Vec::new(),
-        };
-        menus.push(MenuConfig { name, items });
+        let mut source = None;
+        let mut item_nodes = Vec::new();
+        if let Some(menu_children) = node.children() {
+            for child in menu_children.nodes() {
+                match child.name().value() {
+                    "source" => {
+                        if source.is_some() {
+                            return Err(menu_ctx.node_err(
+                                node,
+                                "menu can declare only one source",
+                                None,
+                            ));
+                        }
+                        source = Some(parse_menu_source(child, &menu_ctx.child("source"))?);
+                    }
+                    "item" => item_nodes.push(child),
+                    other => {
+                        return Err(menu_ctx.node_err(
+                            child,
+                            format!("expected node name \"item\" or \"source\", got {other:?}"),
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
+
+        if source.is_some() && !item_nodes.is_empty() {
+            return Err(menu_ctx.node_err(node, "menu cannot mix source and item nodes", None));
+        }
+
+        let items = parse_menu_items_from_nodes(item_nodes, &menu_ctx, command_policy)?;
+        menus.push(MenuConfig {
+            name,
+            source,
+            items,
+        });
     }
     Ok(menus)
 }
 
-fn parse_menu_items(
-    children: &KdlDocument,
+fn parse_menu_source(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<MenuSourceConfig> {
+    if node.children().is_some() || node.entries().iter().any(|entry| entry.name().is_some()) {
+        return Err(ctx.node_err(node, "source options are not supported yet", None));
+    }
+    if node.entries().len() != 1 {
+        return Err(ctx.node_err(node, "expected one menu source string", None));
+    }
+    let Some(kind) = node.entries()[0].value().as_string() else {
+        return Err(ctx.entry_err(&node.entries()[0], "expected menu source string", None));
+    };
+    match kind {
+        "installed-apps" => Ok(MenuSourceConfig {
+            kind: MenuSourceKind::InstalledApps,
+        }),
+        other => Err(ctx.entry_err(
+            &node.entries()[0],
+            format!("unknown menu source {other:?}"),
+            Some("expected `installed-apps`".into()),
+        )),
+    }
+}
+
+fn parse_menu_items_from_nodes(
+    nodes: Vec<&KdlNode>,
     ctx: &ParseCtx,
     command_policy: &CommandPolicy,
 ) -> ConfigResult<Vec<MenuItemConfig>> {
     let mut items = Vec::new();
-    for (item_idx, node) in children.nodes().iter().enumerate() {
+    for (item_idx, node) in nodes.into_iter().enumerate() {
         let item_ctx = ctx.child("item").index(item_idx);
         if node.name().value() != "item" {
             return Err(item_ctx.node_err(

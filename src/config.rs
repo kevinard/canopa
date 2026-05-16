@@ -20,9 +20,9 @@ pub(crate) use error::{
 pub use module::{
     ActionBinding, ActionTrigger, ActionsConfig, BatteryConfig, ButtonConfig, ClockConfig,
     CommandConfig, CommandPolicy, FocusedWindowConfig, IconRulesConfig, IconThreshold, MenuConfig,
-    MenuItemConfig, ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig, PanelAction,
-    ScriptConfig, StateRule, StatesConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig,
-    WorkspacesConfig,
+    MenuItemConfig, MenuSourceConfig, MenuSourceKind, ModuleActionsConfig, ModuleConfig,
+    ModuleParams, NetworkConfig, PanelAction, ScriptConfig, StateRule, StatesConfig, TrayConfig,
+    VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 pub use template::{
     FormatConfig, FormatMode, FormatTemplate, StyledSegment, TextTemplate, TooltipSetting,

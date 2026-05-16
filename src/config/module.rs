@@ -353,7 +353,18 @@ pub type ModuleActionsConfig = ActionsConfig;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuConfig {
     pub name: String,
+    pub source: Option<MenuSourceConfig>,
     pub items: Vec<MenuItemConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MenuSourceKind {
+    InstalledApps,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuSourceConfig {
+    pub kind: MenuSourceKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

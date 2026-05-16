@@ -359,6 +359,73 @@ menus {
 }
 
 #[test]
+fn parse_menu_with_installed_apps_source() {
+    let kdl = r#"
+menus {
+    menu "apps" {
+        source "installed-apps"
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+
+    assert_eq!(config.menus.len(), 1);
+    assert_eq!(config.menus[0].name, "apps");
+    assert_eq!(
+        config.menus[0].source,
+        Some(crate::config::MenuSourceConfig {
+            kind: crate::config::MenuSourceKind::InstalledApps,
+        })
+    );
+    assert!(config.menus[0].items.is_empty());
+}
+
+#[test]
+fn parse_menu_rejects_source_and_items() {
+    let kdl = r#"
+menus {
+    menu "apps" {
+        source "installed-apps"
+        item "Terminal" {
+            command "kitty"
+        }
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err().to_string();
+    assert!(err.contains("menu cannot mix source and item"), "got: {err}");
+}
+
+#[test]
+fn parse_menu_rejects_unknown_source() {
+    let kdl = r#"
+menus {
+    menu "apps" {
+        source "packages"
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err().to_string();
+    assert!(err.contains("unknown menu source"), "got: {err}");
+}
+
+#[test]
+fn parse_menu_rejects_source_options_for_now() {
+    let kdl = r#"
+menus {
+    menu "apps" {
+        source "installed-apps" show-icons=#true
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err().to_string();
+    assert!(
+        err.contains("source options are not supported"),
+        "got: {err}"
+    );
+}
+
+#[test]
 fn parse_nested_menu_items() {
     let kdl = r#"
 menus {

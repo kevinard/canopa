@@ -917,6 +917,7 @@ mod tests {
     fn menu_with_apps_browser() -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "main".into(),
+            source: None,
             items: vec![crate::config::MenuItemConfig {
                 label: "Apps".into(),
                 keywords: vec![],
@@ -936,6 +937,7 @@ mod tests {
     fn menu_with_two_entries() -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "main".into(),
+            source: None,
             items: vec![
                 crate::config::MenuItemConfig {
                     label: "Terminal".into(),
