@@ -2,9 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Index, IndexMut};
 
 use iced::Task;
-use iced_layershell::reexport::{
-    Anchor, KeyboardInteractivity, NewLayerShellSettings, OutputOption,
-};
+use iced_layershell::reexport::{KeyboardInteractivity, NewLayerShellSettings, OutputOption};
 
 use super::{App, Message};
 use crate::modules::ModuleKind;
@@ -41,12 +39,14 @@ fn tooltip_margin(
     size: (u32, u32),
     gap: i32,
 ) -> (i32, i32, i32, i32) {
-    let placement = crate::surface::placement::edge_adjacent_position(
-        tree.bar_edge.clone(),
-        crate::surface::placement::Point {
-            x: tree.anchor.0,
-            y: tree.anchor.1,
-        },
+    let placement = crate::surface::placement::centered_position(
+        &tree.bar_edge,
+        Some(iced::Rectangle {
+            x: tree.anchor.0 as f32,
+            y: tree.anchor.1 as f32,
+            width: 0.0,
+            height: 0.0,
+        }),
         crate::surface::placement::Size {
             width: size.0,
             height: size.1,
@@ -55,33 +55,14 @@ fn tooltip_margin(
             width: tree.bar_size.0,
             height: tree.bar_size.1,
         },
+        crate::surface::placement::Point::default(),
         match tree.bar_edge {
             crate::config::Edge::Top | crate::config::Edge::Bottom => tree.bar_size.1,
             crate::config::Edge::Left | crate::config::Edge::Right => tree.bar_size.0,
         },
         gap,
-        crate::surface::placement::CrossAxisAnchor::Center,
     );
-    placement.layer_margin(
-        tree.bar_edge.clone(),
-        crate::surface::placement::Size {
-            width: size.0,
-            height: size.1,
-        },
-        crate::surface::placement::Size {
-            width: tree.bar_size.0,
-            height: tree.bar_size.1,
-        },
-    )
-}
-
-fn tooltip_anchor(tree: &crate::surface::tooltip_popup::TooltipTree) -> Anchor {
-    match crate::surface::placement::layer_anchor(tree.bar_edge.clone()) {
-        crate::surface::placement::LayerAnchor::TopLeft => Anchor::Left | Anchor::Top,
-        crate::surface::placement::LayerAnchor::BottomLeft => Anchor::Left | Anchor::Bottom,
-        crate::surface::placement::LayerAnchor::LeftTop => Anchor::Left | Anchor::Top,
-        crate::surface::placement::LayerAnchor::RightTop => Anchor::Right | Anchor::Top,
-    }
+    placement.layer_margin()
 }
 
 fn tooltip_popup_window_settings(
@@ -89,7 +70,7 @@ fn tooltip_popup_window_settings(
 ) -> NewLayerShellSettings {
     let size = crate::surface::tooltip_popup::popup_size(tree);
     NewLayerShellSettings {
-        anchor: tooltip_anchor(tree),
+        anchor: crate::surface::placement::layer_anchor(&tree.bar_edge),
         exclusive_zone: Some(-1),
         size: Some(size),
         margin: Some(tooltip_margin(tree, size, 4)),
@@ -878,6 +859,7 @@ mod tests {
     use super::*;
     use crate::config::Edge;
     use crate::modules::ModuleId;
+    use iced_layershell::reexport::Anchor;
 
     fn make_config() -> crate::config::Config {
         crate::config::Config::default()

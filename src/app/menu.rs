@@ -71,7 +71,7 @@ fn menu_popup_window_settings(
 ) -> IcedNewPopupSettings {
     let size = crate::surface::menu_popup::popup_size(tree);
     let placement = crate::surface::placement::edge_adjacent_position(
-        edge.clone(),
+        edge,
         crate::surface::placement::Point {
             x: tree.anchor.0,
             y: tree.anchor.1,
@@ -84,9 +84,9 @@ fn menu_popup_window_settings(
             width: tree.screen_size.0,
             height: tree.screen_size.1,
         },
+        crate::surface::placement::Point::default(),
         bar_size,
         0,
-        crate::surface::placement::CrossAxisAnchor::Start,
     );
 
     IcedNewPopupSettings {

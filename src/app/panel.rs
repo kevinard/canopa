@@ -1,6 +1,6 @@
 use iced::Task;
 use iced_layershell::reexport::{
-    Anchor, KeyboardInteractivity, Layer, NewLayerShellSettings, OutputOption,
+    KeyboardInteractivity, Layer, NewLayerShellSettings, OutputOption,
 };
 use std::collections::HashSet;
 use std::time::Duration;
@@ -81,21 +81,23 @@ fn panel_window_settings(
 ) -> NewLayerShellSettings {
     let width = bar.panel.width;
     let height = bar.panel.height.or(bar.panel.max_height).unwrap_or(600);
-    let anchor = match bar.edge {
-        crate::config::Edge::Top => Anchor::Top | Anchor::Left,
-        crate::config::Edge::Bottom => Anchor::Bottom | Anchor::Left,
-        crate::config::Edge::Left => Anchor::Left | Anchor::Top,
-        crate::config::Edge::Right => Anchor::Right | Anchor::Top,
-    };
-    let position = panel_position(
+    let anchor = crate::surface::placement::layer_anchor(&bar.edge);
+    let position = crate::surface::placement::centered_position(
         &bar.edge,
-        bar.collapsed_width,
-        (width, height),
         tree.anchor,
-        tree.screen_size,
-        surface_origin,
+        crate::surface::placement::Size { width, height },
+        crate::surface::placement::Size {
+            width: tree.screen_size.0,
+            height: tree.screen_size.1,
+        },
+        crate::surface::placement::Point {
+            x: surface_origin.0,
+            y: surface_origin.1,
+        },
+        bar.collapsed_width,
+        0,
     );
-    let margin = panel_margin(&bar.edge, position, (width, height), tree.screen_size);
+    let margin = position.layer_margin();
 
     NewLayerShellSettings {
         anchor,
@@ -114,65 +116,6 @@ fn panel_window_settings(
     }
 }
 
-fn panel_position(
-    edge: &crate::config::Edge,
-    bar_size: u32,
-    panel_size: (u32, u32),
-    anchor: Option<iced::Rectangle>,
-    screen_size: (u32, u32),
-    surface_origin: (i32, i32),
-) -> (i32, i32) {
-    let anchor = anchor.map(|rect| crate::surface::placement::Rect {
-        x: (rect.x + rect.width / 2.0).round() as i32,
-        y: (rect.y + rect.height / 2.0).round() as i32,
-        width: 0,
-        height: 0,
-    });
-    let placement = crate::surface::placement::centered_panel_position(
-        edge.clone(),
-        anchor,
-        crate::surface::placement::Size {
-            width: panel_size.0,
-            height: panel_size.1,
-        },
-        crate::surface::placement::Size {
-            width: screen_size.0,
-            height: screen_size.1,
-        },
-        bar_size,
-        crate::surface::placement::Point {
-            x: surface_origin.0,
-            y: surface_origin.1,
-        },
-    );
-    (placement.position.x, placement.position.y)
-}
-
-fn panel_margin(
-    edge: &crate::config::Edge,
-    position: (i32, i32),
-    panel_size: (u32, u32),
-    screen_size: (u32, u32),
-) -> (i32, i32, i32, i32) {
-    crate::surface::placement::Placement {
-        position: crate::surface::placement::Point {
-            x: position.0,
-            y: position.1,
-        },
-    }
-    .layer_margin(
-        edge.clone(),
-        crate::surface::placement::Size {
-            width: panel_size.0,
-            height: panel_size.1,
-        },
-        crate::surface::placement::Size {
-            width: screen_size.0,
-            height: screen_size.1,
-        },
-    )
-}
-
 #[cfg(test)]
 fn panel_position_for_test(
     edge: crate::config::Edge,
@@ -182,14 +125,25 @@ fn panel_position_for_test(
     screen_size: (u32, u32),
     surface_origin: (i32, i32),
 ) -> (i32, i32) {
-    panel_position(
+    let placement = crate::surface::placement::centered_position(
         &edge,
-        bar_size,
-        panel_size,
         anchor,
-        screen_size,
-        surface_origin,
-    )
+        crate::surface::placement::Size {
+            width: panel_size.0,
+            height: panel_size.1,
+        },
+        crate::surface::placement::Size {
+            width: screen_size.0,
+            height: screen_size.1,
+        },
+        crate::surface::placement::Point {
+            x: surface_origin.0,
+            y: surface_origin.1,
+        },
+        bar_size,
+        0,
+    );
+    (placement.position.x, placement.position.y)
 }
 
 impl App {
