@@ -108,14 +108,21 @@ impl App {
     }
 
     pub(super) fn close_all_menu_popups(&mut self) -> Vec<Task<Message>> {
-        let ids: Vec<iced::window::Id> = self.surfaces.popup_ids().collect();
-        ids.into_iter()
-            .map(|id| {
-                self.surfaces.remove_popup(id);
-                self.menu.clear_window(id);
-                Task::done(Message::RemoveWindow(id))
-            })
-            .collect()
+        let effects = self.overlays.close_all_menus();
+        let mut tasks = self.apply_overlay_effects(effects, false);
+
+        let ids: Vec<iced::window::Id> = self
+            .surfaces
+            .popup_ids()
+            .filter(|id| self.overlays.menu(*id).is_none())
+            .collect();
+        tasks.extend(ids.into_iter().map(|id| {
+            self.overlays.forget_menu(id);
+            self.surfaces.remove_popup(id);
+            self.menu.clear_window(id);
+            Task::done(Message::RemoveWindow(id))
+        }));
+        tasks
     }
 
     pub(super) fn restore_bar_keyboard_interactivity(&mut self) -> Vec<Task<Message>> {
@@ -201,33 +208,18 @@ impl App {
         tree: crate::surface::menu_popup::MenuTree,
         bar_name: String,
     ) -> Task<Message> {
-        let close_tt: Vec<Task<Message>> = self
-            .surfaces
-            .surfaces()
-            .map(|(wid, _)| *wid)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flat_map(|wid| self.close_tooltip_popup_if_open(wid))
-            .collect();
-
-        let existing_ids: Vec<iced::window::Id> = self.surfaces.popup_ids().collect();
-        let mut tasks: Vec<Task<Message>> = close_tt;
-        tasks.extend(existing_ids.into_iter().map(|id| {
-            self.surfaces.remove_popup(id);
-            self.menu.clear_window(id);
-            Task::done(Message::RemoveWindow(id))
-        }));
-
         let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
         let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &tree);
         let (popup_id, open_task) = Message::popup_open(settings);
+        let effects = self.overlays.open_menu(popup_id);
+        let mut tasks = self.apply_overlay_effects(effects, false);
         let model = MenuModel {
             service,
             menu_path,
             tree,
             bar_name,
         };
-        self.surfaces.insert_popup(
+        self.register_menu_popup(
             popup_id,
             super::surfaces::PopupMeta {
                 service: model.service,
@@ -386,7 +378,7 @@ mod tests {
             screen_size: (0, 0),
         };
         let path = zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap();
-        app.surfaces.insert_popup(
+        app.register_menu_popup(
             wid,
             surfaces::PopupMeta {
                 service: "org.test".into(),
@@ -467,7 +459,7 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.surfaces.insert_popup(
+        app.register_menu_popup(
             popup_wid,
             surfaces::PopupMeta {
                 service: "svc".into(),
@@ -526,7 +518,7 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.surfaces.insert_popup(
+        app.register_menu_popup(
             popup_wid,
             surfaces::PopupMeta {
                 service: "svc".into(),
@@ -579,7 +571,7 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.surfaces.insert_popup(
+        app.register_menu_popup(
             popup_wid,
             surfaces::PopupMeta {
                 service: "svc".into(),
@@ -642,7 +634,7 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.surfaces.insert_popup(
+        app.register_menu_popup(
             popup_wid,
             surfaces::PopupMeta {
                 service: "svc".into(),
@@ -676,7 +668,7 @@ mod tests {
             screen_size: (0, 0),
         };
         let popup_wid = iced::window::Id::unique();
-        app.surfaces.insert_popup(
+        app.register_menu_popup(
             popup_wid,
             surfaces::PopupMeta {
                 service: "svc".into(),

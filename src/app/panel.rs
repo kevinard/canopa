@@ -147,7 +147,7 @@ fn panel_position_for_test(
 }
 
 impl App {
-    fn suspend_bar_keyboard_interactivity(&mut self) -> Vec<Task<Message>> {
+    pub(super) fn suspend_bar_keyboard_interactivity(&mut self) -> Vec<Task<Message>> {
         let ids: Vec<iced::window::Id> = self.surfaces.keys().copied().collect();
         ids.into_iter()
             .map(|id| {
@@ -178,22 +178,31 @@ impl App {
     }
 
     pub(super) fn close_all_panels(&mut self) -> Vec<Task<Message>> {
-        self.close_all_panels_with_restore(true)
+        let effects = self.overlays.close_all_panels();
+        let mut tasks = if effects.is_empty() {
+            Vec::new()
+        } else {
+            self.panel.clear();
+            self.apply_overlay_effects(effects, true)
+        };
+        tasks.extend(self.close_all_untracked_panels_with_restore(true));
+        tasks
     }
 
-    fn close_all_panels_for_replacement(&mut self) -> Vec<Task<Message>> {
-        self.close_all_panels_with_restore(false)
-    }
-
-    fn close_all_panels_with_restore(
+    fn close_all_untracked_panels_with_restore(
         &mut self,
         restore_bar_interactivity: bool,
     ) -> Vec<Task<Message>> {
-        let ids: Vec<_> = self.surfaces.panel_popup_ids().collect();
+        let ids: Vec<_> = self
+            .surfaces
+            .panel_popup_ids()
+            .filter(|id| self.overlays.panel(*id).is_none())
+            .collect();
         self.panel.clear();
         let mut tasks: Vec<_> = ids
             .into_iter()
             .map(|id| {
+                self.overlays.forget_panel(id);
                 self.panel.mark_closing_window(id);
                 self.surfaces.remove_panel_popup(id);
                 Task::done(Message::RemoveWindow(id))
@@ -302,10 +311,8 @@ impl App {
         let settings = panel_window_settings(bar, &tree, surface_origin);
         let (panel_window, open_task) = Message::layershell_open(settings);
 
-        let mut tasks = self.close_tooltip_popup_if_open(origin_window);
-        tasks.extend(self.close_all_menu_popups());
-        tasks.extend(self.close_all_panels_for_replacement());
-        tasks.extend(self.suspend_bar_keyboard_interactivity());
+        let effects = self.overlays.open_panel(origin_window, panel_window);
+        let mut tasks = self.apply_overlay_effects(effects, false);
         let is_menu_panel = matches!(tree.content, crate::surface::panel::PanelContent::Menu(_));
         let is_installed_apps_menu = match &tree.content {
             crate::surface::panel::PanelContent::Menu(name) => self
@@ -321,13 +328,7 @@ impl App {
         if is_installed_apps_menu {
             self.panel.installed_apps_snapshot = self.load_installed_apps_for_panel();
         }
-        self.surfaces.insert_panel_popup(
-            panel_window,
-            super::surfaces::PanelMeta {
-                tree,
-                search_input_id: panel_search_input_id(panel_window),
-            },
-        );
+        self.register_panel_popup(panel_window, origin_window, tree);
 
         let mut open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
         if is_menu_panel {
@@ -1060,6 +1061,22 @@ mod tests {
         }
     }
 
+    fn register_menu_panel(app: &mut App, panel: iced::window::Id, origin: iced::window::Id) {
+        app.register_panel_popup(
+            panel,
+            origin,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::Menu("main".into()),
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
+            },
+        );
+    }
+
     #[test]
     fn menu_search_flattens_nested_matches_with_breadcrumb() {
         let menu = menu_with_apps_browser();
@@ -1197,21 +1214,7 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         app.panel.focused_index = Some(0);
-        app.surfaces.insert_panel_popup(
-            panel,
-            super::super::surfaces::PanelMeta {
-                tree: crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::Menu("main".into()),
-                    origin_window: origin,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                },
-                search_input_id: panel_search_input_id(panel),
-            },
-        );
+        register_menu_panel(&mut app, panel, origin);
 
         let _ =
             app.handle_surface_event(super::super::messages::SurfaceEvent::FocusMoveNext(panel));
@@ -1225,21 +1228,7 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
-        app.surfaces.insert_panel_popup(
-            panel,
-            super::super::surfaces::PanelMeta {
-                tree: crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::Menu("main".into()),
-                    origin_window: origin,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                },
-                search_input_id: panel_search_input_id(panel),
-            },
-        );
+        register_menu_panel(&mut app, panel, origin);
 
         let _ =
             app.handle_surface_event(super::super::messages::SurfaceEvent::BarFocusGained(panel));
@@ -1254,21 +1243,7 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
-        app.surfaces.insert_panel_popup(
-            panel,
-            super::super::surfaces::PanelMeta {
-                tree: crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::Menu("main".into()),
-                    origin_window: origin,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                },
-                search_input_id: panel_search_input_id(panel),
-            },
-        );
+        register_menu_panel(&mut app, panel, origin);
 
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusSearchInput {
             retries: 0,
@@ -1284,21 +1259,7 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
-        app.surfaces.insert_panel_popup(
-            panel,
-            super::super::surfaces::PanelMeta {
-                tree: crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::Menu("main".into()),
-                    origin_window: origin,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                },
-                search_input_id: panel_search_input_id(panel),
-            },
-        );
+        register_menu_panel(&mut app, panel, origin);
 
         let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::WindowSized(
             panel, 360, 600,
@@ -1309,26 +1270,52 @@ mod tests {
     }
 
     #[test]
+    fn close_all_panels_closes_tracked_and_untracked_panel_popups() {
+        let config = config_with_menu(menu_with_two_entries());
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let tracked_panel = iced::window::Id::unique();
+        let untracked_panel = iced::window::Id::unique();
+        let tree = crate::surface::panel::PanelTree {
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::Menu("main".into()),
+            origin_window: origin,
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            anchor: None,
+            screen_size: (1920, 1080),
+        };
+        app.overlays.panel_opened(tracked_panel, origin);
+        app.surfaces.insert_panel_popup(
+            tracked_panel,
+            super::super::surfaces::PanelMeta {
+                tree: tree.clone(),
+                search_input_id: panel_search_input_id(tracked_panel),
+            },
+        );
+        app.surfaces.insert_panel_popup(
+            untracked_panel,
+            super::super::surfaces::PanelMeta {
+                tree,
+                search_input_id: panel_search_input_id(untracked_panel),
+            },
+        );
+
+        let tasks = app.close_all_panels();
+
+        assert!(tasks.len() >= 2);
+        assert!(app.surfaces.panel_popup(tracked_panel).is_none());
+        assert!(app.surfaces.panel_popup(untracked_panel).is_none());
+        assert!(app.overlays.panel(tracked_panel).is_none());
+    }
+
+    #[test]
     fn stale_events_from_closing_panel_window_do_not_create_bar_surface_state() {
         let config = config_with_menu(menu_with_two_entries());
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
-        app.surfaces.insert_panel_popup(
-            panel,
-            super::super::surfaces::PanelMeta {
-                tree: crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::Menu("main".into()),
-                    origin_window: origin,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                },
-                search_input_id: panel_search_input_id(panel),
-            },
-        );
+        register_menu_panel(&mut app, panel, origin);
 
         let _ = app.close_all_panels();
         let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::BarFocusLost(panel));

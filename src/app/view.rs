@@ -257,7 +257,7 @@ mod tests {
     fn popup_surface_view_renders_without_panic() {
         let (mut app, _) = App::boot(Config::default(), vec![]);
         let popup = iced::window::Id::unique();
-        app.surfaces.insert_popup(
+        app.register_menu_popup(
             popup,
             super::super::surfaces::PopupMeta {
                 service: "org.test".into(),
@@ -287,19 +287,17 @@ mod tests {
         let (mut app, _) = App::boot(Config::default(), vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
-        app.surfaces.insert_panel_popup(
+        app.register_panel_popup(
             panel,
-            super::super::surfaces::PanelMeta {
-                tree: crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::BarPanel,
-                    origin_window: origin,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                },
-                search_input_id: super::super::panel::panel_search_input_id(panel),
+            origin,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::BarPanel,
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
             },
         );
 

@@ -361,17 +361,31 @@ impl App {
                 Task::none()
             }
             SurfaceEvent::WindowClosed(window) if self.panel.is_closing_window(window) => {
+                self.overlays.window_closed(window);
                 self.panel.forget_closing_window(window);
                 Task::none()
             }
-            SurfaceEvent::WindowClosed(window) if self.is_menu_popup_window(window) => {
-                Task::done(Message::Menu(super::messages::MenuEvent::Closed))
-            }
-            SurfaceEvent::WindowClosed(window) if self.is_tooltip_popup_window(window) => {
-                self.surfaces.remove_tooltip_popup(window);
-                Task::none()
-            }
-            SurfaceEvent::WindowClosed(_) => Task::none(),
+            SurfaceEvent::WindowClosed(window) => match self.overlays.window_closed(window) {
+                Some(super::overlay_lifecycle::ClosedOverlay::Panel) => {
+                    self.surfaces.remove_panel_popup(window);
+                    Task::none()
+                }
+                Some(super::overlay_lifecycle::ClosedOverlay::Menu) => {
+                    Task::done(Message::Menu(super::messages::MenuEvent::Closed))
+                }
+                Some(super::overlay_lifecycle::ClosedOverlay::Tooltip) => {
+                    self.surfaces.remove_tooltip_popup(window);
+                    Task::none()
+                }
+                None if self.is_menu_popup_window(window) => {
+                    Task::done(Message::Menu(super::messages::MenuEvent::Closed))
+                }
+                None if self.is_tooltip_popup_window(window) => {
+                    self.surfaces.remove_tooltip_popup(window);
+                    Task::none()
+                }
+                None => Task::none(),
+            },
             SurfaceEvent::ModuleHoverEnter(id, window) => {
                 self.handle_module_hover_enter(id, window)
             }
@@ -751,15 +765,15 @@ impl App {
         };
 
         let (popup_wid, open_task) = spawn_tooltip_popup_window(&tree);
+        let effects = self
+            .overlays
+            .open_tooltip(popup_wid, target_window, module.clone());
+        let mut tasks = self.apply_overlay_effects(effects, false);
 
-        self.surfaces.insert_tooltip_popup(TooltipPopup {
-            window: popup_wid,
-            target_window,
-            target_module: module,
-            tree,
-        });
+        self.register_tooltip_popup(popup_wid, target_window, module, tree);
 
-        open_task
+        tasks.push(open_task);
+        Task::batch(tasks)
     }
 
     fn tooltip_values_for(
@@ -825,15 +839,19 @@ impl App {
         &mut self,
         target_window: iced::window::Id,
     ) -> Vec<Task<Message>> {
+        let effects = self.overlays.close_tooltip_for_surface(target_window);
+        let mut tasks = self.apply_overlay_effects(effects, false);
         let popup_wid = self
             .surfaces
             .tooltip_popup_for_target(target_window)
+            .filter(|p| self.overlays.tooltip(p.window).is_none())
             .map(|p| p.window);
         if let Some(wid) = popup_wid {
+            self.overlays.forget_tooltip(wid);
             self.surfaces.remove_tooltip_popup(wid);
-            return vec![Task::done(Message::RemoveWindow(wid))];
+            tasks.push(Task::done(Message::RemoveWindow(wid)));
         }
-        Vec::new()
+        tasks
     }
 
     pub(super) fn close_tooltip_popup_if_open_for(
@@ -841,16 +859,22 @@ impl App {
         target_window: iced::window::Id,
         module: &crate::modules::ModuleId,
     ) -> Vec<Task<Message>> {
+        let effects = self
+            .overlays
+            .close_tooltip_for_target(target_window, module);
+        let mut tasks = self.apply_overlay_effects(effects, false);
         let popup_wid = self
             .surfaces
             .tooltip_popup_for_target(target_window)
             .filter(|p| &p.target_module == module)
+            .filter(|p| self.overlays.tooltip(p.window).is_none())
             .map(|p| p.window);
         if let Some(wid) = popup_wid {
+            self.overlays.forget_tooltip(wid);
             self.surfaces.remove_tooltip_popup(wid);
-            return vec![Task::done(Message::RemoveWindow(wid))];
+            tasks.push(Task::done(Message::RemoveWindow(wid)));
         }
-        Vec::new()
+        tasks
     }
 }
 
@@ -956,13 +980,7 @@ mod tests {
         app.surfaces
             .surfaces
             .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
-        app.surfaces.insert_panel_popup(
-            panel,
-            PanelMeta {
-                tree: panel_tree(origin),
-                search_input_id: crate::app::panel::panel_search_input_id(panel),
-            },
-        );
+        app.register_panel_popup(panel, origin, panel_tree(origin));
 
         let _ = app.update(Message::Surface(
             crate::app::messages::SurfaceEvent::TogglePanel,
@@ -1275,18 +1293,18 @@ mod tests {
     fn tooltip_popup_window_size_updates_popup_tree_screen_size() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let popup = test_wid();
-        app.surfaces.insert_tooltip_popup(TooltipPopup {
-            window: popup,
-            target_window: test_wid(),
-            target_module: ModuleId::new("clock"),
-            tree: crate::surface::tooltip_popup::TooltipTree {
+        app.register_tooltip_popup(
+            popup,
+            test_wid(),
+            ModuleId::new("clock"),
+            crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
                 anchor: (0, 0),
                 bar_size: (48, 1080),
                 screen_size: (48, 1080),
                 bar_edge: crate::config::Edge::Left,
             },
-        });
+        );
 
         let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::WindowSized(
             popup, 1920, 1080,
@@ -1356,18 +1374,18 @@ mod tests {
     fn tooltip_popup_focus_events_do_not_create_bar_surface() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let popup = test_wid();
-        app.surfaces.insert_tooltip_popup(TooltipPopup {
-            window: popup,
-            target_window: test_wid(),
-            target_module: ModuleId::new("clock"),
-            tree: crate::surface::tooltip_popup::TooltipTree {
+        app.register_tooltip_popup(
+            popup,
+            test_wid(),
+            ModuleId::new("clock"),
+            crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
                 anchor: (0, 0),
                 bar_size: (48, 1080),
                 screen_size: (1920, 1080),
                 bar_edge: crate::config::Edge::Left,
             },
-        });
+        );
 
         let _ =
             app.handle_surface_event(super::super::messages::SurfaceEvent::BarFocusGained(popup));
@@ -1379,18 +1397,18 @@ mod tests {
     fn tooltip_popup_cursor_events_do_not_create_bar_surface() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let popup = test_wid();
-        app.surfaces.insert_tooltip_popup(TooltipPopup {
-            window: popup,
-            target_window: test_wid(),
-            target_module: ModuleId::new("clock"),
-            tree: crate::surface::tooltip_popup::TooltipTree {
+        app.register_tooltip_popup(
+            popup,
+            test_wid(),
+            ModuleId::new("clock"),
+            crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
                 anchor: (0, 0),
                 bar_size: (48, 1080),
                 screen_size: (1920, 1080),
                 bar_edge: crate::config::Edge::Left,
             },
-        });
+        );
 
         let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::CursorMoved(
             popup,

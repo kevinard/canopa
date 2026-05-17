@@ -509,19 +509,17 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin = test_wid();
         let panel = test_wid();
-        app.surfaces.insert_panel_popup(
+        app.register_panel_popup(
             panel,
-            super::super::surfaces::PanelMeta {
-                tree: crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::BarPanel,
-                    origin_window: origin,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                },
-                search_input_id: super::super::panel::panel_search_input_id(panel),
+            origin,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::BarPanel,
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
             },
         );
 
@@ -547,21 +545,17 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin = test_wid();
         let panel = test_wid();
-        app.surfaces.insert_panel_popup(
+        app.register_panel_popup(
             panel,
-            super::super::surfaces::PanelMeta {
-                tree: crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Module(ModuleId::new("clock")),
-                    content: crate::surface::panel::PanelContent::ModulePanel(ModuleId::new(
-                        "clock",
-                    )),
-                    origin_window: origin,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                },
-                search_input_id: super::super::panel::panel_search_input_id(panel),
+            origin,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Module(ModuleId::new("clock")),
+                content: crate::surface::panel::PanelContent::ModulePanel(ModuleId::new("clock")),
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
             },
         );
 
@@ -589,21 +583,17 @@ mod tests {
         app.surfaces
             .surfaces
             .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
-        app.surfaces.insert_panel_popup(
+        app.register_panel_popup(
             panel,
-            super::super::surfaces::PanelMeta {
-                tree: crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Module(ModuleId::new("clock")),
-                    content: crate::surface::panel::PanelContent::ModulePanel(ModuleId::new(
-                        "clock",
-                    )),
-                    origin_window: origin,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                },
-                search_input_id: super::super::panel::panel_search_input_id(panel),
+            origin,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Module(ModuleId::new("clock")),
+                content: crate::surface::panel::PanelContent::ModulePanel(ModuleId::new("clock")),
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
             },
         );
 
