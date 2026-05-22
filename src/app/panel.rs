@@ -816,18 +816,28 @@ pub(super) fn dmenu_entry_views(
             .entries
             .iter()
             .enumerate()
-            .filter(|(_, entry)| {
-                query.is_empty() || entry.display_label().to_ascii_lowercase().contains(&query)
-            })
+            .filter(|(_, entry)| dmenu_entry_matches(entry, &query))
             .map(|(index, entry)| MenuEntryView {
                 label: entry.display_label().to_string(),
-                icon: None,
+                icon: entry.icon.clone(),
                 path: vec![index],
                 target: MenuEntryTarget::DmenuValue(entry.selected_value().to_string()),
                 is_submenu: false,
             }),
     );
     entries
+}
+
+fn dmenu_entry_matches(entry: &crate::ipc::protocol::DmenuEntry, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let label = entry.display_label().to_ascii_lowercase();
+    label.contains(query)
+        || entry
+            .keywords
+            .iter()
+            .any(|keyword| keyword.to_ascii_lowercase().contains(query))
 }
 
 pub(super) fn current_menu_entries(
@@ -1104,6 +1114,80 @@ mod tests {
         let entries = dmenu_entry_views(&request, "kitty");
 
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn dmenu_rich_entries_use_label_icon_keywords_and_value() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: Some("Run".into()),
+            entries: vec![
+                crate::ipc::protocol::DmenuEntry {
+                    label: Some("Firefox".into()),
+                    value: Some("org.mozilla.firefox".into()),
+                    icon: Some("firefox".into()),
+                    keywords: vec!["browser".into(), "web".into()],
+                },
+                crate::ipc::protocol::DmenuEntry {
+                    label: Some("Kitty".into()),
+                    value: Some("kitty".into()),
+                    icon: None,
+                    keywords: Vec::new(),
+                },
+            ],
+            allow_custom: true,
+        };
+
+        let entries = dmenu_entry_views(&request, "browser");
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].label, "browser");
+        assert!(matches!(
+            entries[0].target,
+            MenuEntryTarget::DmenuCustomValue(_)
+        ));
+        assert_eq!(entries[1].label, "Firefox");
+        assert_eq!(entries[1].icon.as_deref(), Some("firefox"));
+        assert_eq!(
+            entries[1].target,
+            MenuEntryTarget::DmenuValue("org.mozilla.firefox".into())
+        );
+    }
+
+    #[test]
+    fn dmenu_rich_search_does_not_match_opaque_value_when_label_exists() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec![crate::ipc::protocol::DmenuEntry {
+                label: Some("Firefox".into()),
+                value: Some("org.mozilla.firefox".into()),
+                icon: None,
+                keywords: Vec::new(),
+            }],
+            allow_custom: false,
+        };
+
+        let entries = dmenu_entry_views(&request, "mozilla");
+
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn dmenu_value_only_rich_entry_matches_and_displays_value() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec![crate::ipc::protocol::DmenuEntry {
+                label: None,
+                value: Some("org.mozilla.firefox".into()),
+                icon: None,
+                keywords: Vec::new(),
+            }],
+            allow_custom: false,
+        };
+
+        let entries = dmenu_entry_views(&request, "mozilla");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "org.mozilla.firefox");
     }
 
     #[test]
