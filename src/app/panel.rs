@@ -840,6 +840,10 @@ fn dmenu_entry_matches(entry: &crate::ipc::protocol::DmenuEntry, query: &str) ->
             .any(|keyword| keyword.to_ascii_lowercase().contains(query))
 }
 
+pub(super) fn dmenu_request_show_icons(request: &crate::ipc::protocol::DmenuRequest) -> bool {
+    request.entries.iter().any(|entry| entry.icon.is_some())
+}
+
 pub(super) fn current_menu_entries(
     menu: &crate::config::MenuConfig,
     path: &[usize],

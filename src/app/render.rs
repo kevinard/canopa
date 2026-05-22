@@ -127,6 +127,12 @@ impl App {
                 .find(|menu| menu.name == *name)
                 .map(|menu| menu.show_icons)
                 .unwrap_or(false),
+            crate::surface::panel::PanelContent::DmenuRequest => self
+                .panel
+                .dmenu_request
+                .as_ref()
+                .map(super::panel::dmenu_request_show_icons)
+                .unwrap_or(false),
             _ => false,
         };
         let menu_prompt = match &tree.content {
@@ -642,6 +648,41 @@ mod tests {
             model.menu_entries[0].icon,
             Some("utilities-terminal".into())
         );
+    }
+
+    #[test]
+    fn dmenu_request_with_entry_icon_enables_menu_icons() {
+        let (mut app, _) = App::boot(Config::default(), Vec::new());
+        app.panel.dmenu_request = Some(crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec![crate::ipc::protocol::DmenuEntry {
+                label: Some("Firefox".into()),
+                value: Some("firefox".into()),
+                icon: Some("firefox".into()),
+                keywords: Vec::new(),
+            }],
+            allow_custom: true,
+        });
+        let origin = test_wid();
+        let panel = test_wid();
+        app.register_panel_popup(
+            panel,
+            origin,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::DmenuRequest,
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
+            },
+        );
+
+        let model = app.panel_render_model(panel).expect("panel model");
+
+        assert!(model.show_icons);
+        assert_eq!(model.menu_entries[0].icon, Some("firefox".into()));
     }
 
     #[test]
