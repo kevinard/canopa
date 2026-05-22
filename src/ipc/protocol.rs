@@ -41,8 +41,47 @@ pub enum IpcRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct DmenuRequest {
     pub prompt: Option<String>,
-    pub entries: Vec<String>,
+    pub entries: Vec<DmenuEntry>,
     pub allow_custom: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DmenuEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub keywords: Vec<String>,
+}
+
+impl DmenuEntry {
+    pub(crate) fn plain(value: impl Into<String>) -> Self {
+        let value = value.into();
+        Self {
+            label: Some(value.clone()),
+            value: Some(value),
+            icon: None,
+            keywords: Vec::new(),
+        }
+    }
+
+    pub(crate) fn display_label(&self) -> &str {
+        self.label
+            .as_deref()
+            .or(self.value.as_deref())
+            .unwrap_or("")
+    }
+
+    pub(crate) fn selected_value(&self) -> &str {
+        self.value
+            .as_deref()
+            .or(self.label.as_deref())
+            .unwrap_or("")
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -92,6 +131,18 @@ pub(crate) fn split_entries(input: &str, delimiter: &str) -> Result<Vec<String>,
         .collect())
 }
 
+pub(crate) fn split_dmenu_entries_plain(
+    input: &str,
+    delimiter: &str,
+) -> Result<Vec<DmenuEntry>, ProtocolError> {
+    split_entries(input, delimiter).map(|entries| {
+        entries
+            .into_iter()
+            .map(DmenuEntry::plain)
+            .collect::<Vec<_>>()
+    })
+}
+
 pub(crate) fn validate_dmenu_request(request: &DmenuRequest) -> Result<(), ProtocolError> {
     if request.entries.len() > MAX_DMENU_ENTRIES {
         return Err(ProtocolError::TooManyEntries);
@@ -99,7 +150,7 @@ pub(crate) fn validate_dmenu_request(request: &DmenuRequest) -> Result<(), Proto
     if request
         .entries
         .iter()
-        .any(|entry| entry.len() > MAX_DMENU_ENTRY_BYTES)
+        .any(|entry| entry.display_label().len() > MAX_DMENU_ENTRY_BYTES)
     {
         return Err(ProtocolError::EntryTooLarge);
     }
@@ -164,6 +215,20 @@ mod tests {
     }
 
     #[test]
+    fn split_plain_entries_converts_to_dmenu_entries() {
+        let entries = split_dmenu_entries_plain("firefox\nkitty\nfirefox", "\n").unwrap();
+
+        assert_eq!(
+            entries,
+            vec![
+                DmenuEntry::plain("firefox"),
+                DmenuEntry::plain("kitty"),
+                DmenuEntry::plain("firefox"),
+            ]
+        );
+    }
+
+    #[test]
     fn split_entries_rejects_empty_delimiter() {
         let err = split_entries("abc", "").unwrap_err();
         assert_eq!(err, ProtocolError::EmptyDelimiter);
@@ -173,7 +238,7 @@ mod tests {
     fn validate_request_rejects_too_many_entries() {
         let req = DmenuRequest {
             prompt: None,
-            entries: vec!["x".to_string(); MAX_DMENU_ENTRIES + 1],
+            entries: vec![DmenuEntry::plain("x"); MAX_DMENU_ENTRIES + 1],
             allow_custom: true,
         };
         assert_eq!(
@@ -186,11 +251,36 @@ mod tests {
     fn frame_roundtrip_preserves_dmenu_request() {
         let request = IpcRequest::DmenuSelection(DmenuRequest {
             prompt: Some("Run".to_string()),
-            entries: vec!["firefox".to_string(), "kitty".to_string()],
+            entries: vec![DmenuEntry::plain("firefox"), DmenuEntry::plain("kitty")],
             allow_custom: false,
         });
         let frame = encode_frame(&request).unwrap();
         assert!(frame.starts_with(FRAMED_MAGIC.as_bytes()));
+        assert_eq!(decode_frame_payload(&frame).unwrap(), request);
+    }
+
+    #[test]
+    fn frame_roundtrip_preserves_rich_dmenu_entries() {
+        let request = IpcRequest::DmenuSelection(DmenuRequest {
+            prompt: Some("Run".to_string()),
+            entries: vec![
+                DmenuEntry {
+                    label: Some("Firefox".to_string()),
+                    value: Some("org.mozilla.firefox".to_string()),
+                    icon: Some("firefox".to_string()),
+                    keywords: vec!["browser".to_string(), "web".to_string()],
+                },
+                DmenuEntry {
+                    label: None,
+                    value: Some("kitty".to_string()),
+                    icon: None,
+                    keywords: Vec::new(),
+                },
+            ],
+            allow_custom: false,
+        });
+
+        let frame = encode_frame(&request).unwrap();
         assert_eq!(decode_frame_payload(&frame).unwrap(), request);
     }
 }

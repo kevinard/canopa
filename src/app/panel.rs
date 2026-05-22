@@ -796,7 +796,10 @@ pub(super) fn dmenu_entry_views(
     query: &str,
 ) -> Vec<MenuEntryView> {
     let mut entries = Vec::new();
-    let exact_match = request.entries.iter().any(|entry| entry == query);
+    let exact_match = request
+        .entries
+        .iter()
+        .any(|entry| entry.display_label() == query || entry.selected_value() == query);
     if request.allow_custom && !query.is_empty() && !exact_match {
         entries.push(MenuEntryView {
             label: query.to_string(),
@@ -813,12 +816,14 @@ pub(super) fn dmenu_entry_views(
             .entries
             .iter()
             .enumerate()
-            .filter(|(_, value)| query.is_empty() || value.to_ascii_lowercase().contains(&query))
-            .map(|(index, value)| MenuEntryView {
-                label: value.clone(),
+            .filter(|(_, entry)| {
+                query.is_empty() || entry.display_label().to_ascii_lowercase().contains(&query)
+            })
+            .map(|(index, entry)| MenuEntryView {
+                label: entry.display_label().to_string(),
                 icon: None,
                 path: vec![index],
-                target: MenuEntryTarget::DmenuValue(value.clone()),
+                target: MenuEntryTarget::DmenuValue(entry.selected_value().to_string()),
                 is_submenu: false,
             }),
     );
@@ -1046,7 +1051,7 @@ mod tests {
     fn dmenu_entries_use_input_as_label_and_value() {
         let request = crate::ipc::protocol::DmenuRequest {
             prompt: Some("Run".into()),
-            entries: vec!["firefox".into(), "kitty".into(), "firefox".into()],
+            entries: vec![crate::ipc::protocol::DmenuEntry::plain("firefox"), crate::ipc::protocol::DmenuEntry::plain("kitty"), crate::ipc::protocol::DmenuEntry::plain("firefox")],
             allow_custom: true,
         };
         let entries = dmenu_entry_views(&request, "");
@@ -1065,7 +1070,7 @@ mod tests {
     fn dmenu_search_filters_entries_case_insensitively() {
         let request = crate::ipc::protocol::DmenuRequest {
             prompt: None,
-            entries: vec!["Firefox".into(), "Kitty".into()],
+            entries: vec![crate::ipc::protocol::DmenuEntry::plain("Firefox"), crate::ipc::protocol::DmenuEntry::plain("Kitty")],
             allow_custom: true,
         };
         let entries = dmenu_entry_views(&request, "fire");
@@ -1077,7 +1082,7 @@ mod tests {
     fn dmenu_custom_value_entry_appears_when_query_has_no_exact_match() {
         let request = crate::ipc::protocol::DmenuRequest {
             prompt: None,
-            entries: vec!["firefox".into()],
+            entries: vec![crate::ipc::protocol::DmenuEntry::plain("firefox")],
             allow_custom: true,
         };
         let entries = dmenu_entry_views(&request, "kitty");
@@ -1093,7 +1098,7 @@ mod tests {
     fn dmenu_no_custom_does_not_create_custom_entry() {
         let request = crate::ipc::protocol::DmenuRequest {
             prompt: None,
-            entries: vec!["firefox".into()],
+            entries: vec![crate::ipc::protocol::DmenuEntry::plain("firefox")],
             allow_custom: false,
         };
         let entries = dmenu_entry_views(&request, "kitty");
@@ -1114,7 +1119,7 @@ mod tests {
         let _ = app.handle_ipc_event(crate::app::messages::IpcEvent::DmenuSelection {
             request: crate::ipc::protocol::DmenuRequest {
                 prompt: None,
-                entries: vec!["x".into()],
+                entries: vec![crate::ipc::protocol::DmenuEntry::plain("x")],
                 allow_custom: true,
             },
             responder: crate::app::messages::ipc_responder(tx),
@@ -1133,7 +1138,7 @@ mod tests {
         let (tx, mut rx) = tokio::sync::oneshot::channel();
         app.panel.dmenu_request = Some(crate::ipc::protocol::DmenuRequest {
             prompt: None,
-            entries: vec!["firefox".into()],
+            entries: vec![crate::ipc::protocol::DmenuEntry::plain("firefox")],
             allow_custom: true,
         });
         app.panel.dmenu_responder = Some(crate::app::messages::ipc_responder(tx));

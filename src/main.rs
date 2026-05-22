@@ -76,7 +76,7 @@ fn run_dmenu_cli(options: cli::DmenuOptions) -> i32 {
         return DMENU_USAGE_EXIT;
     }
 
-    let entries = match ipc::protocol::split_entries(&input, &options.delimiter) {
+    let entries = match ipc::protocol::split_dmenu_entries_plain(&input, &options.delimiter) {
         Ok(entries) => entries,
         Err(err) => {
             eprintln!("niribar: {err}");

@@ -268,7 +268,7 @@ mod tests {
     fn framed_dmenu_request_decodes_to_ipc_message() {
         let request = protocol::IpcRequest::DmenuSelection(protocol::DmenuRequest {
             prompt: Some("Run".into()),
-            entries: vec!["firefox".into()],
+            entries: vec![crate::ipc::protocol::DmenuEntry::plain("firefox")],
             allow_custom: true,
         });
         let frame = protocol::encode_frame(&request).unwrap();
