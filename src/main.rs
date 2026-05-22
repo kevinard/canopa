@@ -67,6 +67,18 @@ fn exit_code_for_dmenu_response(response: &ipc::protocol::IpcResponse) -> i32 {
     }
 }
 
+fn parse_dmenu_stdin(
+    input: &str,
+    options: &cli::DmenuOptions,
+) -> Result<Vec<ipc::protocol::DmenuEntry>, ipc::protocol::ProtocolError> {
+    match options.entry_format {
+        cli::DmenuEntryFormat::Plain => {
+            ipc::protocol::split_dmenu_entries_plain(input, &options.delimiter)
+        }
+        cli::DmenuEntryFormat::JsonLines => ipc::protocol::parse_dmenu_entries_jsonl(input),
+    }
+}
+
 fn run_dmenu_cli(options: cli::DmenuOptions) -> i32 {
     use std::io::{Read, Write};
 
@@ -76,7 +88,7 @@ fn run_dmenu_cli(options: cli::DmenuOptions) -> i32 {
         return DMENU_USAGE_EXIT;
     }
 
-    let entries = match ipc::protocol::split_dmenu_entries_plain(&input, &options.delimiter) {
+    let entries = match parse_dmenu_stdin(&input, &options) {
         Ok(entries) => entries,
         Err(err) => {
             eprintln!("niribar: {err}");
@@ -228,6 +240,35 @@ fn try_main() -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parse_dmenu_stdin_uses_plain_format_by_default() {
+        let options = crate::cli::DmenuOptions::default();
+        let entries = super::parse_dmenu_stdin("firefox\nkitty\n", &options).unwrap();
+
+        assert_eq!(
+            entries,
+            vec![
+                crate::ipc::protocol::DmenuEntry::plain("firefox"),
+                crate::ipc::protocol::DmenuEntry::plain("kitty"),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_dmenu_stdin_uses_json_lines_format() {
+        let mut options = crate::cli::DmenuOptions::default();
+        options.entry_format = crate::cli::DmenuEntryFormat::JsonLines;
+
+        let entries = super::parse_dmenu_stdin(
+            r#"{"label":"Firefox","value":"org.mozilla.firefox","icon":"firefox"}"#,
+            &options,
+        )
+        .unwrap();
+
+        assert_eq!(entries[0].display_label(), "Firefox");
+        assert_eq!(entries[0].selected_value(), "org.mozilla.firefox");
+    }
+
     #[test]
     fn binary_entry_point_compiles() {
         // Smoke test: if this test runs, the binary entry point compiled
