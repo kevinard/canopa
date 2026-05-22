@@ -9,6 +9,8 @@ pub(crate) enum ProtocolError {
     UnknownEscape(char),
     TooManyEntries,
     EntryTooLarge,
+    EmptyDmenuEntry,
+    InvalidDmenuIcon,
     FrameTooLarge,
     FrameTooShort,
     MissingMagic,
@@ -22,6 +24,8 @@ impl std::fmt::Display for ProtocolError {
             Self::UnknownEscape(ch) => write!(f, "unknown delimiter escape \\{ch}"),
             Self::TooManyEntries => write!(f, "too many dmenu entries"),
             Self::EntryTooLarge => write!(f, "dmenu entry is too large"),
+            Self::EmptyDmenuEntry => write!(f, "rich dmenu entry must include label or value"),
+            Self::InvalidDmenuIcon => write!(f, "rich dmenu entry icon must be an XDG icon name"),
             Self::FrameTooLarge => write!(f, "IPC frame is too large"),
             Self::FrameTooShort => write!(f, "IPC frame is incomplete"),
             Self::MissingMagic => write!(f, "missing IPC frame magic"),
@@ -143,16 +147,39 @@ pub(crate) fn split_dmenu_entries_plain(
     })
 }
 
+pub(crate) fn parse_dmenu_entries_jsonl(input: &str) -> Result<Vec<DmenuEntry>, ProtocolError> {
+    input
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            serde_json::from_str::<DmenuEntry>(line)
+                .map_err(|err| ProtocolError::Json(err.to_string()))
+        })
+        .collect()
+}
+
 pub(crate) fn validate_dmenu_request(request: &DmenuRequest) -> Result<(), ProtocolError> {
     if request.entries.len() > MAX_DMENU_ENTRIES {
         return Err(ProtocolError::TooManyEntries);
     }
-    if request
-        .entries
-        .iter()
-        .any(|entry| entry.display_label().len() > MAX_DMENU_ENTRY_BYTES)
-    {
-        return Err(ProtocolError::EntryTooLarge);
+    for entry in &request.entries {
+        if entry.display_label().is_empty() && entry.selected_value().is_empty() {
+            return Err(ProtocolError::EmptyDmenuEntry);
+        }
+        if entry.display_label().len() > MAX_DMENU_ENTRY_BYTES
+            || entry.selected_value().len() > MAX_DMENU_ENTRY_BYTES
+            || entry
+                .keywords
+                .iter()
+                .any(|keyword| keyword.len() > MAX_DMENU_ENTRY_BYTES)
+        {
+            return Err(ProtocolError::EntryTooLarge);
+        }
+        if let Some(icon) = &entry.icon {
+            if !crate::icon_theme::is_valid_icon_name(icon) {
+                return Err(ProtocolError::InvalidDmenuIcon);
+            }
+        }
     }
     Ok(())
 }
@@ -232,6 +259,69 @@ mod tests {
     fn split_entries_rejects_empty_delimiter() {
         let err = split_entries("abc", "").unwrap_err();
         assert_eq!(err, ProtocolError::EmptyDelimiter);
+    }
+
+    #[test]
+    fn parse_rich_dmenu_entries_from_json_lines() {
+        let input = concat!(
+            r#"{"label":"Firefox","value":"org.mozilla.firefox","icon":"firefox","keywords":["browser","web"]}"#,
+            "\n",
+            r#"{"value":"kitty"}"#,
+            "\n"
+        );
+
+        let entries = parse_dmenu_entries_jsonl(input).unwrap();
+
+        assert_eq!(entries[0].display_label(), "Firefox");
+        assert_eq!(entries[0].selected_value(), "org.mozilla.firefox");
+        assert_eq!(entries[0].icon.as_deref(), Some("firefox"));
+        assert_eq!(entries[0].keywords, vec!["browser", "web"]);
+        assert_eq!(entries[1].display_label(), "kitty");
+        assert_eq!(entries[1].selected_value(), "kitty");
+    }
+
+    #[test]
+    fn parse_rich_dmenu_entries_rejects_unknown_fields() {
+        let err = parse_dmenu_entries_jsonl(r#"{"label":"Firefox","extra":true}"#).unwrap_err();
+        assert!(matches!(err, ProtocolError::Json(_)));
+    }
+
+    #[test]
+    fn validate_request_rejects_rich_entry_without_label_or_value() {
+        let req = DmenuRequest {
+            prompt: None,
+            entries: vec![DmenuEntry {
+                label: None,
+                value: None,
+                icon: None,
+                keywords: Vec::new(),
+            }],
+            allow_custom: true,
+        };
+
+        assert_eq!(
+            validate_dmenu_request(&req).unwrap_err(),
+            ProtocolError::EmptyDmenuEntry
+        );
+    }
+
+    #[test]
+    fn validate_request_rejects_invalid_rich_icon_names() {
+        let req = DmenuRequest {
+            prompt: None,
+            entries: vec![DmenuEntry {
+                label: Some("Firefox".to_string()),
+                value: Some("firefox".to_string()),
+                icon: Some("/usr/share/icons/firefox.png".to_string()),
+                keywords: Vec::new(),
+            }],
+            allow_custom: true,
+        };
+
+        assert_eq!(
+            validate_dmenu_request(&req).unwrap_err(),
+            ProtocolError::InvalidDmenuIcon
+        );
     }
 
     #[test]
