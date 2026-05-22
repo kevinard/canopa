@@ -44,6 +44,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) show_icons: bool,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
+    pub(super) menu_scroll_id: iced::widget::Id,
     pub(super) menu_scroll_y: f32,
     pub(super) bar_style: &'a crate::config::Style,
 }
@@ -135,6 +136,7 @@ impl App {
             show_icons,
             search_query: self.panel.search_query.clone(),
             focused_index: self.panel.focused_index,
+            menu_scroll_id: super::panel::panel_menu_scroll_id(window),
             menu_scroll_y: self.panel.menu_scroll_y,
             bar_style: &bar.style,
         })

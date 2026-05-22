@@ -12,6 +12,12 @@ pub(super) fn panel_search_input_id(window: iced::window::Id) -> iced::widget::I
     iced::widget::Id::from(format!("panel-search-input-{window:?}"))
 }
 
+pub(super) fn panel_menu_scroll_id(window: iced::window::Id) -> iced::widget::Id {
+    iced::widget::Id::from(format!("panel-menu-scroll-{window:?}"))
+}
+
+pub(super) const MENU_ROW_EXTENT: f32 = 45.0;
+const DEFAULT_MENU_VIEWPORT_HEIGHT: f32 = MENU_ROW_EXTENT * 12.0;
 const PANEL_SEARCH_FOCUS_RETRIES: u8 = 8;
 const PANEL_SEARCH_FOCUS_RETRY_DELAY: Duration = Duration::from_millis(25);
 
@@ -28,6 +34,7 @@ pub(super) struct PanelSystem {
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
     pub(super) menu_scroll_y: f32,
+    menu_viewport_height: f32,
     search_focus_pending: bool,
     pub(super) menu_path: Vec<usize>,
     pub(super) installed_apps_snapshot: Vec<crate::desktop_apps::DesktopApplication>,
@@ -65,6 +72,7 @@ impl PanelSystem {
         self.search_query.clear();
         self.focused_index = None;
         self.menu_scroll_y = 0.0;
+        self.menu_viewport_height = 0.0;
         self.search_focus_pending = false;
         self.menu_path.clear();
         self.installed_apps_snapshot.clear();
@@ -287,17 +295,18 @@ impl App {
                 self.refresh_installed_apps_entry_cache();
                 Task::none()
             }
-            PanelEvent::MenuScrolled(y) => {
+            PanelEvent::MenuScrolled { y, viewport_height } => {
                 self.panel.menu_scroll_y = y.max(0.0);
+                self.panel.menu_viewport_height = viewport_height.max(0.0);
                 Task::none()
             }
             PanelEvent::FocusMoveNext => {
                 self.move_panel_focus(1);
-                Task::none()
+                self.scroll_panel_menu_to_focus()
             }
             PanelEvent::FocusMovePrev => {
                 self.move_panel_focus(-1);
-                Task::none()
+                self.scroll_panel_menu_to_focus()
             }
             PanelEvent::FocusIndex(index) => {
                 self.panel.focused_index = Some(index);
@@ -414,6 +423,7 @@ impl App {
         let entries = self.active_menu_entries();
         if entries.is_empty() {
             self.panel.focused_index = None;
+            self.panel.menu_scroll_y = 0.0;
             return;
         }
         let current = self.panel.focused_index.unwrap_or(0).min(entries.len() - 1);
@@ -425,6 +435,44 @@ impl App {
             current - 1
         };
         self.panel.focused_index = Some(next);
+    }
+
+    fn scroll_panel_menu_to_focus(&mut self) -> Task<Message> {
+        let Some(index) = self.panel.focused_index else {
+            return Task::none();
+        };
+        let Some(scroll_id) = self
+            .surfaces
+            .panel_popup_ids()
+            .next()
+            .map(panel_menu_scroll_id)
+        else {
+            return Task::none();
+        };
+        let current_top = self.panel.menu_scroll_y.max(0.0);
+        let viewport_height = if self.panel.menu_viewport_height > 0.0 {
+            self.panel.menu_viewport_height
+        } else {
+            DEFAULT_MENU_VIEWPORT_HEIGHT
+        };
+        let current_bottom = current_top + viewport_height;
+        let row_top = index as f32 * MENU_ROW_EXTENT;
+        let row_bottom = row_top + MENU_ROW_EXTENT;
+        let y = if row_top < current_top {
+            row_top
+        } else if row_bottom > current_bottom {
+            row_bottom - viewport_height
+        } else {
+            return Task::none();
+        };
+        self.panel.menu_scroll_y = y.max(0.0);
+        iced::widget::operation::scroll_to(
+            scroll_id,
+            iced::widget::operation::AbsoluteOffset {
+                x: None,
+                y: Some(self.panel.menu_scroll_y),
+            },
+        )
     }
 
     fn activate_panel_entry(&mut self, index: Option<usize>) -> Task<Message> {
@@ -1168,6 +1216,23 @@ mod tests {
         }
     }
 
+    fn menu_with_entries(count: usize) -> crate::config::MenuConfig {
+        crate::config::MenuConfig {
+            name: "main".into(),
+            show_icons: false,
+            source: None,
+            items: (0..count)
+                .map(|index| crate::config::MenuItemConfig {
+                    label: format!("Entry {index}"),
+                    icon: None,
+                    keywords: vec![],
+                    action: None,
+                    children: vec![],
+                })
+                .collect(),
+        }
+    }
+
     fn config_with_menu(menu: crate::config::MenuConfig) -> crate::config::Config {
         crate::config::Config {
             menus: vec![menu],
@@ -1378,6 +1443,61 @@ mod tests {
             app.handle_surface_event(super::super::messages::SurfaceEvent::FocusMoveNext(panel));
 
         assert_eq!(app.panel.focused_index, Some(1));
+    }
+
+    #[test]
+    fn arrow_down_on_panel_window_does_not_scroll_when_focused_entry_is_visible() {
+        let config = config_with_menu(menu_with_entries(100));
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        app.panel.focused_index = Some(0);
+        app.panel.menu_scroll_y = 0.0;
+        register_menu_panel(&mut app, panel, origin);
+
+        let _ =
+            app.handle_surface_event(super::super::messages::SurfaceEvent::FocusMoveNext(panel));
+
+        assert_eq!(app.panel.focused_index, Some(1));
+        assert_eq!(app.panel.menu_scroll_y, 0.0);
+    }
+
+    #[test]
+    fn arrow_down_on_panel_window_scrolls_only_enough_to_reveal_focused_entry() {
+        let config = config_with_menu(menu_with_entries(100));
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        app.panel.focused_index = Some(40);
+        app.panel.menu_scroll_y = 0.0;
+        register_menu_panel(&mut app, panel, origin);
+
+        let _ =
+            app.handle_surface_event(super::super::messages::SurfaceEvent::FocusMoveNext(panel));
+
+        assert_eq!(app.panel.focused_index, Some(41));
+        assert_eq!(
+            app.panel.menu_scroll_y,
+            42.0 * MENU_ROW_EXTENT - DEFAULT_MENU_VIEWPORT_HEIGHT
+        );
+    }
+
+    #[test]
+    fn arrow_up_on_panel_window_scrolls_only_when_focused_entry_is_above_view() {
+        let config = config_with_menu(menu_with_entries(100));
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        app.panel.focused_index = Some(10);
+        app.panel.menu_scroll_y = 10.0 * MENU_ROW_EXTENT;
+        app.panel.menu_viewport_height = DEFAULT_MENU_VIEWPORT_HEIGHT;
+        register_menu_panel(&mut app, panel, origin);
+
+        let _ =
+            app.handle_surface_event(super::super::messages::SurfaceEvent::FocusMovePrev(panel));
+
+        assert_eq!(app.panel.focused_index, Some(9));
+        assert_eq!(app.panel.menu_scroll_y, 9.0 * MENU_ROW_EXTENT);
     }
 
     #[test]

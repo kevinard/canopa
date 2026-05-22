@@ -76,7 +76,6 @@ fn render_panel_menu_model<'a>(
     model: PanelRenderModel<'a>,
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
-    const MENU_ROW_EXTENT: f32 = 45.0;
     const MENU_RENDERED_ROWS: usize = 40;
     const MENU_ROW_BUFFER: usize = 8;
 
@@ -88,11 +87,13 @@ fn render_panel_menu_model<'a>(
 
     let mut list = column![].spacing(8).padding(8);
     let entry_count = model.menu_entries.len();
-    let first_visible = (model.menu_scroll_y / MENU_ROW_EXTENT).floor().max(0.0) as usize;
+    let first_visible = (model.menu_scroll_y / super::panel::MENU_ROW_EXTENT)
+        .floor()
+        .max(0.0) as usize;
     let start = first_visible.saturating_sub(MENU_ROW_BUFFER);
     let end = (start + MENU_RENDERED_ROWS).min(entry_count);
-    let top_spacer = start as f32 * MENU_ROW_EXTENT;
-    let bottom_spacer = entry_count.saturating_sub(end) as f32 * MENU_ROW_EXTENT;
+    let top_spacer = start as f32 * super::panel::MENU_ROW_EXTENT;
+    let bottom_spacer = entry_count.saturating_sub(end) as f32 * super::panel::MENU_ROW_EXTENT;
 
     if top_spacer > 0.0 {
         list = list.push(Space::new().width(Length::Fill).height(top_spacer));
@@ -145,11 +146,14 @@ fn render_panel_menu_model<'a>(
         list = list.push(Space::new().width(Length::Fill).height(bottom_spacer));
     }
 
-    let menu_scroll = scrollable(list).on_scroll(|viewport| {
-        Message::Panel(super::messages::PanelEvent::MenuScrolled(
-            viewport.absolute_offset().y,
-        ))
-    });
+    let menu_scroll = scrollable(list)
+        .id(model.menu_scroll_id)
+        .on_scroll(|viewport| {
+            Message::Panel(super::messages::PanelEvent::MenuScrolled {
+                y: viewport.absolute_offset().y,
+                viewport_height: viewport.bounds().height,
+            })
+        });
 
     container(column![search, menu_scroll])
         .width(Length::Fill)
