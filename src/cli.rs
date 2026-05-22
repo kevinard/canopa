@@ -12,6 +12,13 @@ pub struct DmenuOptions {
     pub prompt: Option<String>,
     pub delimiter: String,
     pub allow_custom: bool,
+    pub entry_format: DmenuEntryFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DmenuEntryFormat {
+    Plain,
+    JsonLines,
 }
 
 impl Default for DmenuOptions {
@@ -20,6 +27,7 @@ impl Default for DmenuOptions {
             prompt: None,
             delimiter: "\n".into(),
             allow_custom: true,
+            entry_format: DmenuEntryFormat::Plain,
         }
     }
 }
@@ -32,6 +40,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
     let mut args = args.into_iter();
     let mut dmenu = false;
     let mut dmenu_options = DmenuOptions::default();
+    let mut custom_delimiter = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -49,8 +58,24 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     return Command::UsageError(format!("{arg} requires a value"));
                 };
                 match crate::ipc::protocol::decode_delimiter(&value) {
-                    Ok(delimiter) => dmenu_options.delimiter = delimiter,
+                    Ok(delimiter) => {
+                        dmenu_options.delimiter = delimiter;
+                        custom_delimiter = true;
+                    }
                     Err(err) => return Command::UsageError(err.to_string()),
+                }
+            }
+            "--json" => dmenu_options.entry_format = DmenuEntryFormat::JsonLines,
+            "--entry-format" => {
+                let Some(value) = args.next() else {
+                    return Command::UsageError(format!("{arg} requires a value"));
+                };
+                match value.as_str() {
+                    "plain" => dmenu_options.entry_format = DmenuEntryFormat::Plain,
+                    "jsonl" | "json-lines" => {
+                        dmenu_options.entry_format = DmenuEntryFormat::JsonLines
+                    }
+                    _ => return Command::UsageError(format!("unknown dmenu entry format {value:?}")),
                 }
             }
             "--no-custom" => dmenu_options.allow_custom = false,
@@ -58,6 +83,11 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
         }
     }
     if dmenu {
+        if custom_delimiter && matches!(dmenu_options.entry_format, DmenuEntryFormat::JsonLines) {
+            return Command::UsageError(
+                "dmenu delimiter options cannot be combined with JSONL entry format".into(),
+            );
+        }
         Command::Dmenu(dmenu_options)
     } else {
         Command::Run
@@ -85,6 +115,60 @@ mod tests {
                 assert!(options.allow_custom);
             }
             _ => panic!("expected dmenu command"),
+        }
+    }
+
+    #[test]
+    fn dmenu_defaults_to_plain_entry_format() {
+        match parse_args(["--dmenu".to_string()]) {
+            Command::Dmenu(options) => assert_eq!(options.entry_format, DmenuEntryFormat::Plain),
+            _ => panic!("expected dmenu command"),
+        }
+    }
+
+    #[test]
+    fn dmenu_accepts_json_entry_format_aliases() {
+        match parse_args(["--dmenu".to_string(), "--json".to_string()]) {
+            Command::Dmenu(options) => {
+                assert_eq!(options.entry_format, DmenuEntryFormat::JsonLines)
+            }
+            _ => panic!("expected dmenu command"),
+        }
+
+        match parse_args([
+            "--dmenu".to_string(),
+            "--entry-format".to_string(),
+            "jsonl".to_string(),
+        ]) {
+            Command::Dmenu(options) => {
+                assert_eq!(options.entry_format, DmenuEntryFormat::JsonLines)
+            }
+            _ => panic!("expected dmenu command"),
+        }
+    }
+
+    #[test]
+    fn dmenu_accepts_plain_entry_format() {
+        match parse_args([
+            "--dmenu".to_string(),
+            "--entry-format".to_string(),
+            "plain".to_string(),
+        ]) {
+            Command::Dmenu(options) => assert_eq!(options.entry_format, DmenuEntryFormat::Plain),
+            _ => panic!("expected dmenu command"),
+        }
+    }
+
+    #[test]
+    fn dmenu_rejects_json_entry_format_with_custom_delimiter() {
+        match parse_args([
+            "--dmenu".to_string(),
+            "--json".to_string(),
+            "--delimiter".to_string(),
+            ",".to_string(),
+        ]) {
+            Command::UsageError(message) => assert!(message.contains("delimiter")),
+            _ => panic!("expected usage error"),
         }
     }
 
