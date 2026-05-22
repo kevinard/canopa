@@ -1065,7 +1065,11 @@ mod tests {
     fn dmenu_entries_use_input_as_label_and_value() {
         let request = crate::ipc::protocol::DmenuRequest {
             prompt: Some("Run".into()),
-            entries: vec![crate::ipc::protocol::DmenuEntry::plain("firefox"), crate::ipc::protocol::DmenuEntry::plain("kitty"), crate::ipc::protocol::DmenuEntry::plain("firefox")],
+            entries: vec![
+                crate::ipc::protocol::DmenuEntry::plain("firefox"),
+                crate::ipc::protocol::DmenuEntry::plain("kitty"),
+                crate::ipc::protocol::DmenuEntry::plain("firefox"),
+            ],
             allow_custom: true,
         };
         let entries = dmenu_entry_views(&request, "");
@@ -1084,7 +1088,10 @@ mod tests {
     fn dmenu_search_filters_entries_case_insensitively() {
         let request = crate::ipc::protocol::DmenuRequest {
             prompt: None,
-            entries: vec![crate::ipc::protocol::DmenuEntry::plain("Firefox"), crate::ipc::protocol::DmenuEntry::plain("Kitty")],
+            entries: vec![
+                crate::ipc::protocol::DmenuEntry::plain("Firefox"),
+                crate::ipc::protocol::DmenuEntry::plain("Kitty"),
+            ],
             allow_custom: true,
         };
         let entries = dmenu_entry_views(&request, "fire");
