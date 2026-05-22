@@ -179,6 +179,14 @@ _Avoid_: Panel action, IPC command, configured menu
 A request-owned **Panel Menu Source** whose entries come from a **Dmenu Selection Request**.
 _Avoid_: Installed applications source, configured source
 
+**Dmenu Entry Stream**:
+A line-oriented standard-input format that supplies one candidate entry per record to **Dmenu Selection Mode**.
+_Avoid_: Menu config, bulk menu payload
+
+**Rich Dmenu Entry**:
+A structured **Dmenu Entry Stream** record that can provide separate selection value and panel-menu metadata such as label, icon, and keywords.
+_Avoid_: Configured menu item, installed application
+
 **Global Defaults**:
 Configuration values used by **Bars** or **Modules** when they do not provide their own values.
 _Avoid_: Base bar, inherited config
@@ -333,10 +341,12 @@ _Avoid_: Default config, fallback surface
 - **Dmenu Selection Mode** accepts prompt text with `-p` or `--prompt`.
 - **Dmenu Selection Mode** uses newline as the default input delimiter.
 - **Dmenu Selection Mode** delimiter options interpret common escapes such as `\n`, `\t`, `\0`, and `\\`.
+- **Dmenu Selection Mode** delimiter options apply only to plain **Dmenu Entry Streams**; combining a custom delimiter with rich JSONL input is a usage error.
 - The **Dmenu Selection Mode** prompt becomes a **Panel Menu Prompt** for the request-owned **Panel Menu**.
 - **Dmenu Selection Mode** treats the custom delimiter as input parsing only; successful output is always the selected entry followed by a newline.
 - Empty input is valid in **Dmenu Selection Mode**.
 - **Dmenu Selection Mode** preserves duplicate input entries in display order.
+- **Dmenu Selection Mode** preserves duplicate **Rich Dmenu Entries** in display order, regardless of shared labels or values.
 - **Dmenu Selection Mode** allows the user to submit arbitrary typed text by default.
 - **Dmenu Selection Mode** can be explicitly restricted to provided entries with `--no-custom`.
 - Empty input with `--no-custom` offers no selectable entries and can only be cancelled.
@@ -355,7 +365,17 @@ _Avoid_: Default config, fallback surface
 - A **Dmenu Selection Request** is displayed as a **Panel Menu** with a **Dmenu Panel Menu Source**.
 - A **Dmenu Panel Menu Source** returns its activated value to the requesting CLI process instead of running a configured **Panel Action**.
 - A **Dmenu Panel Menu Source** initially treats each input entry as both the visible label and returned value.
-- A **Dmenu Panel Menu Source** may later accept richer entry metadata such as icons and keywords.
+- Plain **Dmenu Entry Streams** treat each record as both the visible label and returned value.
+- Rich **Dmenu Entries** keep the candidate record boundary line-oriented while allowing the visible label and returned value to differ.
+- A value-only **Rich Dmenu Entry** uses its returned value as its visible label.
+- Selecting a **Rich Dmenu Entry** returns its value to the caller; if no separate value is present, it returns the visible label.
+- A custom typed value in **Dmenu Selection Mode** is returned as typed and is not a **Rich Dmenu Entry**.
+- **Dmenu Selection Mode** search matches rich entry labels and keywords; it does not match opaque returned values unless no label is provided.
+- Rich **Dmenu Entries** are selectable leaf candidates, not configured **Panel Menu** items; they do not define **Panel Actions** or child entries.
+- Rich **Dmenu Entry** icons use the same XDG icon-theme-name constraint as other **Panel Menu Entry Icons**.
+- A malformed **Rich Dmenu Entry** is a **Dmenu Selection Mode** input error, not a missing icon or empty entry.
+- A valid **Rich Dmenu Entry** icon that cannot be resolved in the current icon theme is treated as a missing **Panel Menu Entry Icon**.
+- A **Dmenu Selection Request** with at least one rich entry icon renders **Panel Menu Entry Icons** for that request.
 - **Keyboard Focus** belongs to a **Bar Surface**.
 - **Keyboard Focus** navigation includes visible targets that are actionable or inspectable.
 - A target with a hover **Tooltip** is inspectable and therefore participates in **Keyboard Focus** navigation.
