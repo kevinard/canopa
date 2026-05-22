@@ -796,12 +796,65 @@ pub(super) fn dmenu_entry_views(
     request: &crate::ipc::protocol::DmenuRequest,
     query: &str,
 ) -> Vec<MenuEntryView> {
-    let mut entries = Vec::new();
     let exact_match = request
         .entries
         .iter()
         .any(|entry| entry.display_label() == query || entry.selected_value() == query);
-    if request.allow_custom && !query.is_empty() && !exact_match {
+
+    let mut matches = Vec::new();
+    for (index, entry) in request.entries.iter().enumerate() {
+        let view = MenuEntryView {
+            label: entry.display_label().to_string(),
+            icon: entry.icon.clone(),
+            path: vec![index],
+            target: MenuEntryTarget::DmenuValue(entry.selected_value().to_string()),
+            is_submenu: false,
+        };
+
+        if panel_search::is_blank_query(query) {
+            matches.push(SearchMatch {
+                item: view,
+                score: panel_search::best_match(
+                    &[SearchText {
+                        field: SearchField::Label,
+                        text: entry.display_label(),
+                    }],
+                    "",
+                )
+                .expect("blank query matches"),
+                source_index: index,
+            });
+            continue;
+        }
+
+        let keywords = entry.keywords.join(" ");
+        let fields = [
+            SearchText {
+                field: SearchField::Label,
+                text: entry.display_label(),
+            },
+            SearchText {
+                field: SearchField::Secondary,
+                text: keywords.as_str(),
+            },
+        ];
+
+        if let Some(score) = panel_search::best_match(&fields, query) {
+            matches.push(SearchMatch {
+                item: view,
+                score,
+                source_index: index,
+            });
+        }
+    }
+
+    let mut entries = if panel_search::is_blank_query(query) {
+        matches.into_iter().map(|matched| matched.item).collect()
+    } else {
+        panel_search::rank_matches(matches)
+    };
+
+    if request.allow_custom && !panel_search::is_blank_query(query) && !exact_match {
         entries.push(MenuEntryView {
             label: query.to_string(),
             icon: None,
@@ -811,34 +864,7 @@ pub(super) fn dmenu_entry_views(
         });
     }
 
-    let query = query.to_ascii_lowercase();
-    entries.extend(
-        request
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| dmenu_entry_matches(entry, &query))
-            .map(|(index, entry)| MenuEntryView {
-                label: entry.display_label().to_string(),
-                icon: entry.icon.clone(),
-                path: vec![index],
-                target: MenuEntryTarget::DmenuValue(entry.selected_value().to_string()),
-                is_submenu: false,
-            }),
-    );
     entries
-}
-
-fn dmenu_entry_matches(entry: &crate::ipc::protocol::DmenuEntry, query: &str) -> bool {
-    if query.is_empty() {
-        return true;
-    }
-    let label = entry.display_label().to_ascii_lowercase();
-    label.contains(query)
-        || entry
-            .keywords
-            .iter()
-            .any(|keyword| keyword.to_ascii_lowercase().contains(query))
 }
 
 pub(super) fn dmenu_request_show_icons(request: &crate::ipc::protocol::DmenuRequest) -> bool {
@@ -1165,7 +1191,8 @@ mod tests {
         };
         let entries = dmenu_entry_views(&request, "fire");
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[1].label, "Firefox");
+        assert_eq!(entries[0].label, "Firefox");
+        assert_eq!(entries[1].label, "fire");
     }
 
     #[test]
@@ -1220,16 +1247,79 @@ mod tests {
         let entries = dmenu_entry_views(&request, "browser");
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].label, "browser");
-        assert!(matches!(
+        assert_eq!(entries[0].label, "Firefox");
+        assert_eq!(entries[0].icon.as_deref(), Some("firefox"));
+        assert_eq!(
             entries[0].target,
+            MenuEntryTarget::DmenuValue("org.mozilla.firefox".into())
+        );
+        assert_eq!(entries[1].label, "browser");
+        assert!(matches!(
+            entries[1].target,
             MenuEntryTarget::DmenuCustomValue(_)
         ));
-        assert_eq!(entries[1].label, "Firefox");
-        assert_eq!(entries[1].icon.as_deref(), Some("firefox"));
+    }
+
+    #[test]
+    fn dmenu_search_uses_fuzzy_ranking() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec![
+                crate::ipc::protocol::DmenuEntry::plain("Telemetry Renderer Module"),
+                crate::ipc::protocol::DmenuEntry::plain("Terminal"),
+            ],
+            allow_custom: false,
+        };
+
+        let entries = dmenu_entry_views(&request, "term");
+
         assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Terminal", "Telemetry Renderer Module"]
+        );
+    }
+
+    #[test]
+    fn dmenu_custom_value_appears_after_fuzzy_matches() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec![crate::ipc::protocol::DmenuEntry::plain("Firefox")],
+            allow_custom: true,
+        };
+
+        let entries = dmenu_entry_views(&request, "firfox");
+
+        assert_eq!(entries[0].label, "Firefox");
+        assert_eq!(entries[1].label, "firfox");
+        assert!(matches!(
             entries[1].target,
-            MenuEntryTarget::DmenuValue("org.mozilla.firefox".into())
+            MenuEntryTarget::DmenuCustomValue(_)
+        ));
+    }
+
+    #[test]
+    fn dmenu_blank_query_preserves_duplicate_source_order() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec![
+                crate::ipc::protocol::DmenuEntry::plain("firefox"),
+                crate::ipc::protocol::DmenuEntry::plain("kitty"),
+                crate::ipc::protocol::DmenuEntry::plain("firefox"),
+            ],
+            allow_custom: true,
+        };
+
+        let entries = dmenu_entry_views(&request, " ");
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["firefox", "kitty", "firefox"]
         );
     }
 
