@@ -7,8 +7,8 @@ pub(super) enum SearchField {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SearchScore {
-    field: SearchField,
-    score: i32,
+    pub(super) field: SearchField,
+    pub(super) score: i32,
 }
 
 #[derive(Debug, Clone, Copy)]

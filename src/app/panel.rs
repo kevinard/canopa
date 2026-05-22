@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use super::{App, Message};
+use super::panel_search::{self, SearchField, SearchMatch, SearchText};
 
 pub(super) fn panel_search_input_id(window: iced::window::Id) -> iced::widget::Id {
     iced::widget::Id::from(format!("panel-search-input-{window:?}"))
@@ -876,16 +877,20 @@ pub(super) fn search_menu_entries(
     menu: &crate::config::MenuConfig,
     query: &str,
 ) -> Vec<MenuEntryView> {
-    let query = query.to_ascii_lowercase();
+    if panel_search::is_blank_query(query) {
+        return current_menu_entries(menu, &[]);
+    }
+
     let mut results = Vec::new();
     collect_search_menu_entries(
         &menu.items,
-        &query,
+        query,
         &mut Vec::new(),
         &mut Vec::new(),
+        &mut 0,
         &mut results,
     );
-    results
+    panel_search::rank_matches(results)
 }
 
 fn collect_search_menu_entries(
@@ -893,26 +898,62 @@ fn collect_search_menu_entries(
     query: &str,
     labels: &mut Vec<String>,
     path: &mut Vec<usize>,
-    results: &mut Vec<MenuEntryView>,
+    source_index: &mut usize,
+    results: &mut Vec<SearchMatch<MenuEntryView>>,
 ) {
     for (index, item) in items.iter().enumerate() {
         labels.push(item.label.clone());
         path.push(index);
-        let label_matches = item.label.to_ascii_lowercase().contains(query);
-        let keyword_matches = item
-            .keywords
+        let current_source_index = *source_index;
+        *source_index += 1;
+
+        let breadcrumb = labels
             .iter()
-            .any(|keyword| keyword.to_ascii_lowercase().contains(query));
-        if label_matches || keyword_matches {
-            results.push(MenuEntryView {
-                label: labels.join(" / "),
-                icon: item.icon.clone(),
-                path: path.clone(),
-                target: MenuEntryTarget::StaticPath(path.clone()),
-                is_submenu: !item.children.is_empty(),
+            .take(labels.len().saturating_sub(1))
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(" / ");
+        let keyword_text = item.keywords.join(" ");
+        let fields = [
+            SearchText {
+                field: SearchField::Label,
+                text: item.label.as_str(),
+            },
+            SearchText {
+                field: SearchField::Secondary,
+                text: keyword_text.as_str(),
+            },
+            SearchText {
+                field: SearchField::Breadcrumb,
+                text: breadcrumb.as_str(),
+            },
+        ];
+
+        if let Some(mut score) = panel_search::best_match(&fields, query) {
+            if !item.children.is_empty() {
+                score.score -= 1;
+            }
+            results.push(SearchMatch {
+                item: MenuEntryView {
+                    label: labels.join(" / "),
+                    icon: item.icon.clone(),
+                    path: path.clone(),
+                    target: MenuEntryTarget::StaticPath(path.clone()),
+                    is_submenu: !item.children.is_empty(),
+                },
+                score,
+                source_index: current_source_index,
             });
         }
-        collect_search_menu_entries(&item.children, query, labels, path, results);
+
+        collect_search_menu_entries(
+            &item.children,
+            query,
+            labels,
+            path,
+            source_index,
+            results,
+        );
         path.pop();
         labels.pop();
     }
@@ -1639,6 +1680,90 @@ mod tests {
         let results = search_menu_entries(&menu, "WEB");
 
         assert_eq!(results[0].label, "Apps / Browser");
+    }
+
+    #[test]
+    fn menu_search_ranks_label_matches_before_keyword_matches() {
+        let mut menu = menu_with_apps_browser();
+        menu.items.push(crate::config::MenuItemConfig {
+            label: "Settings".into(),
+            icon: None,
+            keywords: vec!["browser".into()],
+            action: Some(crate::config::PanelAction::Command(
+                crate::config::CommandConfig::Shell("settings".into()),
+            )),
+            children: vec![],
+        });
+
+        let results = search_menu_entries(&menu, "browser");
+
+        assert_eq!(results[0].label, "Apps / Browser");
+        assert_eq!(results[1].label, "Settings");
+    }
+
+    #[test]
+    fn menu_search_uses_ordered_fuzzy_matching() {
+        let menu = menu_with_apps_browser();
+
+        let results = search_menu_entries(&menu, "brsr");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].label, "Apps / Browser");
+        assert!(search_menu_entries(&menu, "rb").is_empty());
+    }
+
+    #[test]
+    fn menu_search_matches_breadcrumb_as_lowest_priority() {
+        let menu = crate::config::MenuConfig {
+            name: "main".into(),
+            show_icons: false,
+            prompt: None,
+            source: None,
+            items: vec![
+                crate::config::MenuItemConfig {
+                    label: "Apps".into(),
+                    icon: None,
+                    keywords: vec![],
+                    action: None,
+                    children: vec![crate::config::MenuItemConfig {
+                        label: "Firefox".into(),
+                        icon: None,
+                        keywords: vec![],
+                        action: Some(crate::config::PanelAction::Command(
+                            crate::config::CommandConfig::Shell("firefox".into()),
+                        )),
+                        children: vec![],
+                    }],
+                },
+                crate::config::MenuItemConfig {
+                    label: "App Settings".into(),
+                    icon: None,
+                    keywords: vec![],
+                    action: Some(crate::config::PanelAction::Command(
+                        crate::config::CommandConfig::Shell("settings".into()),
+                    )),
+                    children: vec![],
+                },
+            ],
+        };
+
+        let results = search_menu_entries(&menu, "app");
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["App Settings", "Apps", "Apps / Firefox"]
+        );
+    }
+
+    #[test]
+    fn menu_search_requires_every_query_token() {
+        let menu = menu_with_apps_browser();
+
+        assert_eq!(search_menu_entries(&menu, "apps browser").len(), 1);
+        assert!(search_menu_entries(&menu, "apps terminal").is_empty());
     }
 
     fn installed_app(name: &str, id: &str) -> crate::desktop_apps::DesktopApplication {
