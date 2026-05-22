@@ -46,6 +46,7 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
     if matches!(
         model.tree.content,
         crate::surface::panel::PanelContent::Menu(_)
+            | crate::surface::panel::PanelContent::DmenuRequest
     ) {
         return render_panel_menu_model(model, text_color);
     }
@@ -79,7 +80,8 @@ fn render_panel_menu_model<'a>(
     const MENU_RENDERED_ROWS: usize = 40;
     const MENU_ROW_BUFFER: usize = 8;
 
-    let search = text_input("Search", &model.search_query)
+    let placeholder = model.menu_prompt.as_deref().unwrap_or("Search");
+    let search = text_input(placeholder, &model.search_query)
         .id(model.search_input_id.clone())
         .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
         .padding([8, 10])
@@ -413,6 +415,7 @@ mod tests {
             menus: vec![MenuConfig {
                 name: "apps".into(),
                 show_icons: false,
+                prompt: None,
                 source: Some(MenuSourceConfig {
                     kind: MenuSourceKind::InstalledApps,
                 }),

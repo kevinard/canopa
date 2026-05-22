@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
 use iced::futures::stream;
-use tokio::io::AsyncBufReadExt;
 use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 
 use crate::app::Message;
+
+pub(crate) mod protocol;
 
 #[derive(Hash)]
 struct IpcSubscriptionKey;
@@ -83,10 +84,42 @@ pub fn ipc_subscription() -> iced::Subscription<Message> {
                             let Ok((stream, _)) = listener.accept().await else {
                                 continue;
                             };
-                            let mut reader = tokio::io::BufReader::new(stream);
-                            let mut line = String::new();
-                            if reader.read_line(&mut line).await.is_ok()
-                                && let Some(message) = ipc_message_for_line(&line)
+                            let mut stream = stream;
+                            let mut bytes = Vec::new();
+                            if tokio::io::AsyncReadExt::read_to_end(&mut stream, &mut bytes)
+                                .await
+                                .is_err()
+                            {
+                                continue;
+                            }
+                            if bytes.starts_with(protocol::FRAMED_MAGIC.as_bytes()) {
+                                if let Ok(protocol::IpcRequest::DmenuSelection(request)) =
+                                    protocol::decode_frame_payload(&bytes)
+                                {
+                                    let (responder, response_rx) = tokio::sync::oneshot::channel();
+                                    if tx
+                                        .send(Message::Ipc(
+                                            crate::app::messages::IpcEvent::DmenuSelection {
+                                                request,
+                                                responder: crate::app::messages::ipc_responder(
+                                                    responder,
+                                                ),
+                                            },
+                                        ))
+                                        .is_ok()
+                                        && let Ok(response) = response_rx.await
+                                        && let Ok(frame) = protocol::encode_frame(&response)
+                                    {
+                                        let _ = tokio::io::AsyncWriteExt::write_all(
+                                            &mut stream,
+                                            &frame,
+                                        )
+                                        .await;
+                                    }
+                                }
+                                continue;
+                            }
+                            if let Some(message) = ipc_message_for_bytes(&bytes)
                                 && tx.send(message).is_err()
                             {
                                 break;
@@ -107,6 +140,46 @@ pub fn ipc_subscription() -> iced::Subscription<Message> {
             }
         })
     })
+}
+
+pub(crate) fn decode_response_frame(frame: &[u8]) -> anyhow::Result<protocol::IpcResponse> {
+    if !frame.starts_with(protocol::FRAMED_MAGIC.as_bytes()) {
+        anyhow::bail!("missing response frame magic");
+    }
+    let len_start = protocol::FRAMED_MAGIC.len();
+    let len_end = len_start + 8;
+    if frame.len() < len_end {
+        anyhow::bail!("response frame is incomplete");
+    }
+    let mut len_bytes = [0_u8; 8];
+    len_bytes.copy_from_slice(&frame[len_start..len_end]);
+    let payload_len = u64::from_be_bytes(len_bytes) as usize;
+    let payload_end = len_end + payload_len;
+    if payload_len > protocol::MAX_FRAME_BYTES || frame.len() < payload_end {
+        anyhow::bail!("invalid response frame length");
+    }
+    Ok(serde_json::from_slice(&frame[len_end..payload_end])?)
+}
+
+fn ipc_message_for_bytes(bytes: &[u8]) -> Option<Message> {
+    if bytes.starts_with(protocol::FRAMED_MAGIC.as_bytes()) {
+        let request = protocol::decode_frame_payload(bytes).ok()?;
+        return Some(ipc_message_for_request(request));
+    }
+    let line = std::str::from_utf8(bytes).ok()?;
+    ipc_message_for_line(line)
+}
+
+fn ipc_message_for_request(request: protocol::IpcRequest) -> Message {
+    match request {
+        protocol::IpcRequest::DmenuSelection(request) => {
+            let (responder, _rx) = tokio::sync::oneshot::channel();
+            Message::Ipc(crate::app::messages::IpcEvent::DmenuSelection {
+                request,
+                responder: crate::app::messages::ipc_responder(responder),
+            })
+        }
+    }
 }
 
 fn ipc_message_for_line(line: &str) -> Option<Message> {
@@ -187,6 +260,31 @@ mod tests {
 
         assert!(matches!(
             message,
+            Message::Surface(crate::app::messages::SurfaceEvent::TogglePanel)
+        ));
+    }
+
+    #[test]
+    fn framed_dmenu_request_decodes_to_ipc_message() {
+        let request = protocol::IpcRequest::DmenuSelection(protocol::DmenuRequest {
+            prompt: Some("Run".into()),
+            entries: vec!["firefox".into()],
+            allow_custom: true,
+        });
+        let frame = protocol::encode_frame(&request).unwrap();
+        let decoded = ipc_message_for_bytes(&frame).expect("message");
+
+        assert!(matches!(
+            decoded,
+            Message::Ipc(crate::app::messages::IpcEvent::DmenuSelection { .. })
+        ));
+    }
+
+    #[test]
+    fn legacy_toggle_panel_bytes_still_work() {
+        let decoded = ipc_message_for_bytes(b"toggle-panel\n").expect("message");
+        assert!(matches!(
+            decoded,
             Message::Surface(crate::app::messages::SurfaceEvent::TogglePanel)
         ));
     }

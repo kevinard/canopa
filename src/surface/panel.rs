@@ -11,6 +11,7 @@ pub enum PanelContent {
     BarPanel,
     ModulePanel(ModuleId),
     Menu(String),
+    DmenuRequest,
 }
 
 #[derive(Debug, Clone)]

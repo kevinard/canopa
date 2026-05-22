@@ -2,7 +2,26 @@ use crate::dbus::sni::host::TrayEvent;
 use crate::modules::{ModuleEvent, ModuleId};
 use crate::surface::menu_popup::MenuTree;
 use iced::{Point, Rectangle};
+use std::sync::{Arc, Mutex};
 use zbus::zvariant::OwnedObjectPath;
+
+pub type IpcResponder =
+    Arc<Mutex<Option<tokio::sync::oneshot::Sender<crate::ipc::protocol::IpcResponse>>>>;
+
+pub fn ipc_responder(
+    sender: tokio::sync::oneshot::Sender<crate::ipc::protocol::IpcResponse>,
+) -> IpcResponder {
+    Arc::new(Mutex::new(Some(sender)))
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum IpcEvent {
+    DmenuSelection {
+        request: crate::ipc::protocol::DmenuRequest,
+        responder: IpcResponder,
+    },
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]

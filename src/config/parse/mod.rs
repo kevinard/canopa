@@ -207,6 +207,7 @@ fn parse_menus_section(
 
         let name = required_menu_name(node, &menu_ctx)?;
         let show_icons = parse_menu_show_icons(node, &menu_ctx)?;
+        let prompt = parse_menu_prompt(node, &menu_ctx)?;
         let mut source = None;
         let mut item_nodes = Vec::new();
         if let Some(menu_children) = node.children() {
@@ -242,11 +243,27 @@ fn parse_menus_section(
         menus.push(MenuConfig {
             name,
             show_icons,
+            prompt,
             source,
             items,
         });
     }
     Ok(menus)
+}
+
+fn parse_menu_prompt(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Option<String>> {
+    let mut prompt = None;
+    for entry in node.entries().iter().filter(|entry| entry.name().is_some()) {
+        if entry.name().map(|name| name.value()) != Some("prompt") {
+            continue;
+        }
+        let value = entry
+            .value()
+            .as_string()
+            .ok_or_else(|| ctx.entry_err(entry, "expected prompt string", None))?;
+        prompt = Some(value.to_string());
+    }
+    Ok(prompt.filter(|value| !value.is_empty()))
 }
 
 fn parse_menu_source(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<MenuSourceConfig> {
@@ -428,6 +445,7 @@ fn parse_menu_show_icons(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<bool> {
                     .as_bool()
                     .ok_or_else(|| ctx.entry_err(entry, "expected #true or #false", None))?;
             }
+            Some("prompt") => {}
             Some(name) => {
                 return Err(ctx.entry_err(entry, format!("unknown menu property {name:?}"), None));
             }

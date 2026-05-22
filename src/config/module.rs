@@ -354,6 +354,7 @@ pub type ModuleActionsConfig = ActionsConfig;
 pub struct MenuConfig {
     pub name: String,
     pub show_icons: bool,
+    pub prompt: Option<String>,
     pub source: Option<MenuSourceConfig>,
     pub items: Vec<MenuItemConfig>,
 }

@@ -38,6 +38,8 @@ pub(super) struct PanelSystem {
     search_focus_pending: bool,
     pub(super) menu_path: Vec<usize>,
     pub(super) installed_apps_snapshot: Vec<crate::desktop_apps::DesktopApplication>,
+    pub(super) dmenu_request: Option<crate::ipc::protocol::DmenuRequest>,
+    pub(super) dmenu_responder: Option<super::messages::IpcResponder>,
     installed_apps_entry_cache: InstalledAppsEntryCache,
     #[cfg(test)]
     pub(super) installed_apps_for_test: Option<Vec<crate::desktop_apps::DesktopApplication>>,
@@ -56,6 +58,8 @@ struct InstalledAppsEntryCache {
 pub(super) enum MenuEntryTarget {
     StaticPath(Vec<usize>),
     InstalledApp(String),
+    DmenuValue(String),
+    DmenuCustomValue(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +80,8 @@ impl PanelSystem {
         self.search_focus_pending = false;
         self.menu_path.clear();
         self.installed_apps_snapshot.clear();
+        self.dmenu_request = None;
+        self.dmenu_responder = None;
         self.installed_apps_entry_cache = InstalledAppsEntryCache::default();
     }
 
@@ -205,6 +211,9 @@ impl App {
     }
 
     pub(super) fn close_all_panels(&mut self) -> Vec<Task<Message>> {
+        if self.panel.dmenu_request.is_some() {
+            self.complete_dmenu_request(crate::ipc::protocol::IpcResponse::Cancelled);
+        }
         let effects = self.overlays.close_all_panels();
         let mut tasks = if effects.is_empty() {
             Vec::new()
@@ -225,6 +234,9 @@ impl App {
             .panel_popup_ids()
             .filter(|id| self.overlays.panel(*id).is_none())
             .collect();
+        if self.panel.dmenu_request.is_some() {
+            self.complete_dmenu_request(crate::ipc::protocol::IpcResponse::Cancelled);
+        }
         self.panel.clear();
         let mut tasks: Vec<_> = ids
             .into_iter()
@@ -248,6 +260,7 @@ impl App {
         if matches!(
             meta.tree.content,
             crate::surface::panel::PanelContent::Menu(_)
+                | crate::surface::panel::PanelContent::DmenuRequest
         ) {
             self.panel.focused_index.get_or_insert(0);
             self.panel.search_focus_pending = true;
@@ -351,7 +364,11 @@ impl App {
 
         let effects = self.overlays.open_panel(origin_window, panel_window);
         let mut tasks = self.apply_overlay_effects(effects, false);
-        let is_menu_panel = matches!(tree.content, crate::surface::panel::PanelContent::Menu(_));
+        let is_menu_panel = matches!(
+            tree.content,
+            crate::surface::panel::PanelContent::Menu(_)
+                | crate::surface::panel::PanelContent::DmenuRequest
+        );
         let is_installed_apps_menu = match &tree.content {
             crate::surface::panel::PanelContent::Menu(name) => self
                 .config
@@ -485,6 +502,15 @@ impl App {
         else {
             return Task::none();
         };
+        match &entry.target {
+            MenuEntryTarget::DmenuValue(value) | MenuEntryTarget::DmenuCustomValue(value) => {
+                self.complete_dmenu_request(crate::ipc::protocol::IpcResponse::Selected {
+                    value: value.clone(),
+                });
+                return Task::batch(self.close_all_panels());
+            }
+            _ => {}
+        }
         let Some(menu_name) = menu_name_for_tree(&tree) else {
             return Task::none();
         };
@@ -538,6 +564,7 @@ impl App {
                     action => self.dispatch_panel_action(tree.origin_window, tree.origin, action),
                 }
             }
+            MenuEntryTarget::DmenuValue(_) | MenuEntryTarget::DmenuCustomValue(_) => Task::none(),
         }
     }
 
@@ -548,6 +575,9 @@ impl App {
     }
 
     pub(super) fn active_menu_entries_for_render(&self) -> Cow<'_, [MenuEntryView]> {
+        if let Some(request) = &self.panel.dmenu_request {
+            return Cow::Owned(dmenu_entry_views(request, &self.panel.search_query));
+        }
         let Some((tree, menu)) = self.active_menu_tree_and_menu() else {
             return Cow::Borrowed(&[]);
         };
@@ -577,6 +607,7 @@ impl App {
             if matches!(
                 meta.tree.content,
                 crate::surface::panel::PanelContent::Menu(_)
+                    | crate::surface::panel::PanelContent::DmenuRequest
             ) {
                 Some(meta.search_input_id.clone())
             } else {
@@ -608,6 +639,25 @@ impl App {
     fn active_menu_tree_and_entries(
         &self,
     ) -> Option<(crate::surface::panel::PanelTree, Vec<MenuEntryView>)> {
+        if let Some(tree) = self
+            .surfaces
+            .panel_popup_values()
+            .find(|meta| {
+                matches!(
+                    meta.tree.content,
+                    crate::surface::panel::PanelContent::DmenuRequest
+                )
+            })
+            .map(|meta| meta.tree.clone())
+        {
+            let entries = self
+                .panel
+                .dmenu_request
+                .as_ref()
+                .map(|request| dmenu_entry_views(request, &self.panel.search_query))
+                .unwrap_or_default();
+            return Some((tree, entries));
+        }
         let (tree, menu) = self.active_menu_tree_and_menu()?;
         let entries = self.menu_entries_for_tree_and_menu(&tree, menu);
         Some((tree, entries))
@@ -656,6 +706,77 @@ impl App {
     }
 }
 
+impl App {
+    pub(super) fn handle_dmenu_selection_request(
+        &mut self,
+        request: crate::ipc::protocol::DmenuRequest,
+        responder: super::messages::IpcResponder,
+    ) -> Task<Message> {
+        if self.panel.dmenu_request.is_some() {
+            send_ipc_response(
+                responder,
+                crate::ipc::protocol::IpcResponse::Rejected {
+                    reason: "another dmenu request is already active".into(),
+                },
+            );
+            return Task::none();
+        }
+
+        let Some(origin_window) = self.default_panel_origin_window() else {
+            send_ipc_response(
+                responder,
+                crate::ipc::protocol::IpcResponse::Rejected {
+                    reason: "no bar surface is available".into(),
+                },
+            );
+            return Task::none();
+        };
+
+        let tasks = self.close_all_panels();
+        self.panel.clear();
+        self.panel.dmenu_request = Some(request);
+        self.panel.dmenu_responder = Some(responder);
+        self.panel.focused_index = Some(0);
+
+        Task::batch(
+            tasks
+                .into_iter()
+                .chain(std::iter::once(self.handle_panel_event(
+                    super::messages::PanelEvent::Open {
+                        origin_window,
+                        origin: crate::surface::panel::PanelOrigin::Bar,
+                        content: crate::surface::panel::PanelContent::DmenuRequest,
+                        anchor: None,
+                    },
+                ))),
+        )
+    }
+
+    pub(super) fn complete_dmenu_request(&mut self, response: crate::ipc::protocol::IpcResponse) {
+        if let Some(responder) = self.panel.dmenu_responder.take() {
+            send_ipc_response(responder, response);
+        }
+        self.panel.dmenu_request = None;
+    }
+
+    fn default_panel_origin_window(&self) -> Option<iced::window::Id> {
+        self.surfaces.keys().copied().next()
+    }
+}
+
+fn send_ipc_response(
+    responder: super::messages::IpcResponder,
+    response: crate::ipc::protocol::IpcResponse,
+) {
+    if let Some(sender) = responder
+        .lock()
+        .expect("IPC responder mutex poisoned")
+        .take()
+    {
+        let _ = sender.send(response);
+    }
+}
+
 fn menu_is_installed_apps(menu: &crate::config::MenuConfig) -> bool {
     menu.source
         .as_ref()
@@ -668,6 +789,40 @@ fn menu_name_for_tree(tree: &crate::surface::panel::PanelTree) -> Option<&str> {
         crate::surface::panel::PanelContent::Menu(name) => Some(name.as_str()),
         _ => None,
     }
+}
+
+pub(super) fn dmenu_entry_views(
+    request: &crate::ipc::protocol::DmenuRequest,
+    query: &str,
+) -> Vec<MenuEntryView> {
+    let mut entries = Vec::new();
+    let exact_match = request.entries.iter().any(|entry| entry == query);
+    if request.allow_custom && !query.is_empty() && !exact_match {
+        entries.push(MenuEntryView {
+            label: query.to_string(),
+            icon: None,
+            path: Vec::new(),
+            target: MenuEntryTarget::DmenuCustomValue(query.to_string()),
+            is_submenu: false,
+        });
+    }
+
+    let query = query.to_ascii_lowercase();
+    entries.extend(
+        request
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| query.is_empty() || value.to_ascii_lowercase().contains(&query))
+            .map(|(index, value)| MenuEntryView {
+                label: value.clone(),
+                icon: None,
+                path: vec![index],
+                target: MenuEntryTarget::DmenuValue(value.clone()),
+                is_submenu: false,
+            }),
+    );
+    entries
 }
 
 pub(super) fn current_menu_entries(
@@ -886,6 +1041,115 @@ pub(super) fn panel_event_for_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dmenu_entries_use_input_as_label_and_value() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: Some("Run".into()),
+            entries: vec!["firefox".into(), "kitty".into(), "firefox".into()],
+            allow_custom: true,
+        };
+        let entries = dmenu_entry_views(&request, "");
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["firefox", "kitty", "firefox"]
+        );
+        assert!(matches!(entries[0].target, MenuEntryTarget::DmenuValue(_)));
+    }
+
+    #[test]
+    fn dmenu_search_filters_entries_case_insensitively() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec!["Firefox".into(), "Kitty".into()],
+            allow_custom: true,
+        };
+        let entries = dmenu_entry_views(&request, "fire");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[1].label, "Firefox");
+    }
+
+    #[test]
+    fn dmenu_custom_value_entry_appears_when_query_has_no_exact_match() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec!["firefox".into()],
+            allow_custom: true,
+        };
+        let entries = dmenu_entry_views(&request, "kitty");
+
+        assert_eq!(entries[0].label, "kitty");
+        assert!(matches!(
+            entries[0].target,
+            MenuEntryTarget::DmenuCustomValue(_)
+        ));
+    }
+
+    #[test]
+    fn dmenu_no_custom_does_not_create_custom_entry() {
+        let request = crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec!["firefox".into()],
+            allow_custom: false,
+        };
+        let entries = dmenu_entry_views(&request, "kitty");
+
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn dmenu_request_rejects_when_another_request_is_pending() {
+        let (mut app, _task) = crate::app::App::boot(crate::config::Config::default(), Vec::new());
+        app.panel.dmenu_request = Some(crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec![],
+            allow_custom: true,
+        });
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+
+        let _ = app.handle_ipc_event(crate::app::messages::IpcEvent::DmenuSelection {
+            request: crate::ipc::protocol::DmenuRequest {
+                prompt: None,
+                entries: vec!["x".into()],
+                allow_custom: true,
+            },
+            responder: crate::app::messages::ipc_responder(tx),
+        });
+
+        let response = rx.try_recv().unwrap();
+        assert!(matches!(
+            response,
+            crate::ipc::protocol::IpcResponse::Rejected { .. }
+        ));
+    }
+
+    #[test]
+    fn completing_dmenu_selection_sends_selected_response() {
+        let (mut app, _task) = crate::app::App::boot(crate::config::Config::default(), Vec::new());
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        app.panel.dmenu_request = Some(crate::ipc::protocol::DmenuRequest {
+            prompt: None,
+            entries: vec!["firefox".into()],
+            allow_custom: true,
+        });
+        app.panel.dmenu_responder = Some(crate::app::messages::ipc_responder(tx));
+
+        app.complete_dmenu_request(crate::ipc::protocol::IpcResponse::Selected {
+            value: "firefox".into(),
+        });
+
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            crate::ipc::protocol::IpcResponse::Selected {
+                value: "firefox".into()
+            }
+        );
+        assert!(app.panel.dmenu_request.is_none());
+    }
 
     #[test]
     fn opening_panel_closes_existing_panel() {
@@ -1173,6 +1437,7 @@ mod tests {
         crate::config::MenuConfig {
             name: "main".into(),
             show_icons: false,
+            prompt: None,
             source: None,
             items: vec![crate::config::MenuItemConfig {
                 label: "Apps".into(),
@@ -1196,6 +1461,7 @@ mod tests {
         crate::config::MenuConfig {
             name: "main".into(),
             show_icons: false,
+            prompt: None,
             source: None,
             items: vec![
                 crate::config::MenuItemConfig {
@@ -1220,6 +1486,7 @@ mod tests {
         crate::config::MenuConfig {
             name: "main".into(),
             show_icons: false,
+            prompt: None,
             source: None,
             items: (0..count)
                 .map(|index| crate::config::MenuItemConfig {
@@ -1290,6 +1557,7 @@ mod tests {
         let config = config_with_menu(crate::config::MenuConfig {
             name: "apps".into(),
             show_icons: false,
+            prompt: None,
             source: Some(crate::config::MenuSourceConfig {
                 kind: crate::config::MenuSourceKind::InstalledApps,
             }),

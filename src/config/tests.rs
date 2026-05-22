@@ -542,12 +542,14 @@ mod config_tests {
                 MenuConfig {
                     name: "main".into(),
                     show_icons: false,
+                    prompt: None,
                     source: None,
                     items: vec![],
                 },
                 MenuConfig {
                     name: "main".into(),
                     show_icons: false,
+                    prompt: None,
                     source: None,
                     items: vec![],
                 },
@@ -588,6 +590,7 @@ mod config_tests {
         config.menus = vec![MenuConfig {
             name: "apps".into(),
             show_icons: false,
+            prompt: None,
             source: Some(MenuSourceConfig {
                 kind: MenuSourceKind::InstalledApps,
             }),

@@ -50,6 +50,7 @@ pub(crate) struct App {
 #[to_layer_message(multi)]
 #[derive(Debug, Clone)]
 pub enum Message {
+    Ipc(messages::IpcEvent),
     Surface(messages::SurfaceEvent),
     Menu(messages::MenuEvent),
     Panel(messages::PanelEvent),
@@ -75,6 +76,7 @@ impl Message {
     fn perf_label(&self) -> &'static str {
         match self {
             Message::Surface(messages::SurfaceEvent::Tick) => "Surface::Tick",
+            Message::Ipc(_) => "Ipc",
             Message::Surface(_) => "Surface",
             Message::Menu(_) => "Menu",
             Message::Panel(_) => "Panel",
@@ -140,6 +142,14 @@ impl Message {
 }
 
 impl App {
+    pub(super) fn handle_ipc_event(&mut self, event: messages::IpcEvent) -> Task<Message> {
+        match event {
+            messages::IpcEvent::DmenuSelection { request, responder } => {
+                self.handle_dmenu_selection_request(request, responder)
+            }
+        }
+    }
+
     /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
     /// Empty means `StartMode::AllScreens` handles window creation (single "all" bar case).
     pub(crate) fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
@@ -198,6 +208,7 @@ impl App {
 
         match message {
             Message::Surface(event) => self.handle_surface_event(event),
+            Message::Ipc(event) => self.handle_ipc_event(event),
             Message::Menu(event) => self.handle_menu_event(event),
             Message::Panel(event) => self.handle_panel_event(event),
             Message::Modules(event) => self.handle_module_runtime_event(event),

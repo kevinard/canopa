@@ -2,6 +2,19 @@ use crate::config::parse::parse;
 use crate::config::parse::{ConfigInput, ConfigSourceName, parse_input};
 
 #[test]
+fn parse_menu_with_prompt_metadata() {
+    let kdl = r#"
+menus {
+    menu "apps" prompt="Launch" {
+        source "installed-apps"
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+    assert_eq!(config.menus[0].prompt.as_deref(), Some("Launch"));
+}
+
+#[test]
 fn parse_modules_section_absent() {
     let config = parse("").unwrap();
     assert!(config.modules.is_empty());

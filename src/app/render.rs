@@ -42,6 +42,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
     pub(super) menu_entries: Cow<'a, [super::panel::MenuEntryView]>,
     pub(super) show_icons: bool,
+    pub(super) menu_prompt: Option<String>,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
     pub(super) menu_scroll_id: iced::widget::Id,
@@ -89,7 +90,8 @@ impl App {
             crate::surface::panel::PanelContent::ModulePanel(id) => {
                 vec![(Zone::Center, id.clone())]
             }
-            crate::surface::panel::PanelContent::Menu(_) => Vec::new(),
+            crate::surface::panel::PanelContent::Menu(_)
+            | crate::surface::panel::PanelContent::DmenuRequest => Vec::new(),
         };
 
         let entries = layout
@@ -127,6 +129,20 @@ impl App {
                 .unwrap_or(false),
             _ => false,
         };
+        let menu_prompt = match &tree.content {
+            crate::surface::panel::PanelContent::Menu(name) => self
+                .config
+                .menus
+                .iter()
+                .find(|menu| menu.name == *name)
+                .and_then(|menu| menu.prompt.clone()),
+            crate::surface::panel::PanelContent::DmenuRequest => self
+                .panel
+                .dmenu_request
+                .as_ref()
+                .and_then(|request| request.prompt.clone()),
+            _ => None,
+        };
 
         Some(PanelRenderModel {
             tree,
@@ -134,6 +150,7 @@ impl App {
             entries,
             menu_entries: self.active_menu_entries_for_render(),
             show_icons,
+            menu_prompt,
             search_query: self.panel.search_query.clone(),
             focused_index: self.panel.focused_index,
             menu_scroll_id: super::panel::panel_menu_scroll_id(window),
@@ -589,6 +606,7 @@ mod tests {
             menus: vec![MenuConfig {
                 name: "main".into(),
                 show_icons: true,
+                prompt: None,
                 source: None,
                 items: vec![MenuItemConfig {
                     label: "Terminal".into(),
