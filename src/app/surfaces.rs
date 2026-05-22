@@ -735,6 +735,15 @@ impl App {
         module: crate::modules::ModuleId,
     ) -> Task<Message> {
         if self
+            .surfaces
+            .active_panel_origin_for(target_window)
+            .is_some()
+        {
+            self.surface_mut(target_window).tooltip_pending = None;
+            return Task::none();
+        }
+
+        if self
             .surface(target_window)
             .and_then(|s| s.hovered_module.as_ref())
             != Some(&module)
@@ -1287,6 +1296,53 @@ mod tests {
         let _ = app.handle_tooltip_dwell_elapsed(wid, module);
 
         assert!(app.surfaces.tooltip_popups.is_empty());
+    }
+
+    #[test]
+    fn tooltip_dwell_does_not_open_while_panel_active_for_origin() {
+        let mut config = crate::config::Config {
+            modules: vec![crate::config::ModuleConfig {
+                name: "battery".into(),
+                module_type: "battery".into(),
+                params: crate::config::ModuleParams::Battery(
+                    crate::config::BatteryConfig::default(),
+                ),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..crate::config::Config::default()
+        };
+        config.bars[0].modules.end = vec!["battery".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = test_wid();
+        let panel = test_wid();
+        let module = ModuleId::new("battery");
+        app.modules.set_state(
+            module.clone(),
+            crate::modules::ModuleState::Battery(crate::modules::battery::BatteryState {
+                percentage: 74.0,
+                is_charging: false,
+            }),
+        );
+        app.surface_mut(origin).hovered_module = Some(module.clone());
+        app.surface_mut(origin).tooltip_pending = Some((module.clone(), 32.0));
+        app.register_panel_popup(
+            panel,
+            origin,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Module(module.clone()),
+                content: crate::surface::panel::PanelContent::Menu("main".into()),
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: String::new(),
+                anchor: None,
+                screen_size: (1920, 1080),
+            },
+        );
+
+        let _ = app.handle_tooltip_dwell_elapsed(origin, module);
+
+        assert!(app.surfaces.tooltip_popups.is_empty());
+        assert!(app.surface(origin).unwrap().tooltip_pending.is_none());
     }
 
     #[test]

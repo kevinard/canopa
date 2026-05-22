@@ -11,9 +11,14 @@ pub(super) fn panel_search_input_id(window: iced::window::Id) -> iced::widget::I
     iced::widget::Id::from(format!("panel-search-input-{window:?}"))
 }
 
-fn request_panel_search_focus(retries: u8) -> Task<Message> {
+const PANEL_SEARCH_FOCUS_RETRIES: u8 = 8;
+const PANEL_SEARCH_FOCUS_RETRY_DELAY: Duration = Duration::from_millis(25);
+
+fn request_panel_search_focus() -> Task<Message> {
     Task::done(Message::Panel(
-        super::messages::PanelEvent::FocusSearchInput { retries },
+        super::messages::PanelEvent::FocusSearchInput {
+            retries: PANEL_SEARCH_FOCUS_RETRIES,
+        },
     ))
 }
 
@@ -223,7 +228,7 @@ impl App {
             crate::surface::panel::PanelContent::Menu(_)
         ) {
             self.panel.focused_index.get_or_insert(0);
-            return request_panel_search_focus(2);
+            return request_panel_search_focus();
         }
         Task::none()
     }
@@ -310,6 +315,7 @@ impl App {
         let surface_origin = self.inferred_panel_surface_origin(&origin_surface, bar);
         let settings = panel_window_settings(bar, &tree, surface_origin);
         let (panel_window, open_task) = Message::layershell_open(settings);
+        self.surface_mut(origin_window).tooltip_pending = None;
 
         let effects = self.overlays.open_panel(origin_window, panel_window);
         let mut tasks = self.apply_overlay_effects(effects, false);
@@ -333,7 +339,7 @@ impl App {
         let mut open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
         if is_menu_panel {
             self.panel.focused_index = Some(0);
-            open_sequence = open_sequence.chain(request_panel_search_focus(2));
+            open_sequence = open_sequence.chain(request_panel_search_focus());
         }
         tasks.push(open_sequence);
         Task::batch(tasks)
@@ -486,7 +492,7 @@ impl App {
         if retries > 0 {
             tasks.push(Task::perform(
                 async {
-                    tokio::time::sleep(Duration::from_millis(8)).await;
+                    tokio::time::sleep(PANEL_SEARCH_FOCUS_RETRY_DELAY).await;
                 },
                 move |_| {
                     Message::Panel(super::messages::PanelEvent::FocusSearchInput {
@@ -771,6 +777,25 @@ mod tests {
             anchor: None,
         }));
         assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+    }
+
+    #[test]
+    fn opening_panel_clears_origin_tooltip_pending() {
+        let (mut app, _) = App::boot(crate::config::Config::default(), vec![]);
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin).tooltip_pending =
+            Some((crate::modules::ModuleId::new("clock"), 0.0));
+
+        let _ = app.update(Message::Panel(crate::app::messages::PanelEvent::Open {
+            origin_window: origin,
+            origin: crate::surface::panel::PanelOrigin::Module(crate::modules::ModuleId::new(
+                "clock",
+            )),
+            content: crate::surface::panel::PanelContent::Menu("main".into()),
+            anchor: None,
+        }));
+
+        assert!(app.surface(origin).unwrap().tooltip_pending.is_none());
     }
 
     #[test]
