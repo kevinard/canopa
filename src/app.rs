@@ -14,6 +14,7 @@ mod niri;
 mod overlay_adapter;
 mod overlay_lifecycle;
 mod panel;
+mod panel_search;
 mod perf;
 mod render;
 mod shared;
