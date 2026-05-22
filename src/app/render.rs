@@ -1,5 +1,6 @@
 use iced::Element;
 use iced::widget::{container, mouse_area};
+use std::borrow::Cow;
 
 use super::{App, Message};
 use crate::config::Edge;
@@ -39,10 +40,11 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) tree: &'a crate::surface::panel::PanelTree,
     pub(super) search_input_id: iced::widget::Id,
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
-    pub(super) menu_entries: Vec<super::panel::MenuEntryView>,
+    pub(super) menu_entries: Cow<'a, [super::panel::MenuEntryView]>,
     pub(super) show_icons: bool,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
+    pub(super) menu_scroll_y: f32,
     pub(super) bar_style: &'a crate::config::Style,
 }
 
@@ -129,10 +131,11 @@ impl App {
             tree,
             search_input_id: meta.search_input_id.clone(),
             entries,
-            menu_entries: self.active_menu_entries(),
+            menu_entries: self.active_menu_entries_for_render(),
             show_icons,
             search_query: self.panel.search_query.clone(),
             focused_index: self.panel.focused_index,
+            menu_scroll_y: self.panel.menu_scroll_y,
             bar_style: &bar.style,
         })
     }

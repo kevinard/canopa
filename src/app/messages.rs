@@ -95,6 +95,7 @@ pub enum PanelEvent {
         anchor: Option<iced::Rectangle>,
     },
     SearchChanged(String),
+    MenuScrolled(f32),
     FocusMoveNext,
     FocusMovePrev,
     FocusIndex(usize),

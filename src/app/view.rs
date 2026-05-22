@@ -1,5 +1,8 @@
 use iced::widget::{Space, column, container, mouse_area, row, scrollable, text, text_input};
 use iced::{Element, Length};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
 use super::render::{BarRenderModel, PanelRenderModel, PopupRenderModel};
 use super::{App, Message};
@@ -73,6 +76,10 @@ fn render_panel_menu_model<'a>(
     model: PanelRenderModel<'a>,
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
+    const MENU_ROW_EXTENT: f32 = 45.0;
+    const MENU_RENDERED_ROWS: usize = 40;
+    const MENU_ROW_BUFFER: usize = 8;
+
     let search = text_input("Search", &model.search_query)
         .id(model.search_input_id.clone())
         .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
@@ -80,13 +87,30 @@ fn render_panel_menu_model<'a>(
         .width(Length::Fill);
 
     let mut list = column![].spacing(8).padding(8);
-    for (index, entry) in model.menu_entries.into_iter().enumerate() {
+    let entry_count = model.menu_entries.len();
+    let first_visible = (model.menu_scroll_y / MENU_ROW_EXTENT).floor().max(0.0) as usize;
+    let start = first_visible.saturating_sub(MENU_ROW_BUFFER);
+    let end = (start + MENU_RENDERED_ROWS).min(entry_count);
+    let top_spacer = start as f32 * MENU_ROW_EXTENT;
+    let bottom_spacer = entry_count.saturating_sub(end) as f32 * MENU_ROW_EXTENT;
+
+    if top_spacer > 0.0 {
+        list = list.push(Space::new().width(Length::Fill).height(top_spacer));
+    }
+
+    for (index, entry) in model
+        .menu_entries
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(end.saturating_sub(start))
+    {
         let focused = model.focused_index == Some(index);
         let mut row_content = row![].spacing(8).width(Length::Fill);
         if model.show_icons {
             row_content = row_content.push(panel_menu_icon_element(entry.icon.as_deref()));
         }
-        row_content = row_content.push(text(entry.label).width(Length::Fill));
+        row_content = row_content.push(text(entry.label.clone()).width(Length::Fill));
         if entry.is_submenu {
             row_content = row_content.push(text(">"));
         }
@@ -117,7 +141,17 @@ fn render_panel_menu_model<'a>(
         );
     }
 
-    container(column![search, scrollable(list)])
+    if bottom_spacer > 0.0 {
+        list = list.push(Space::new().width(Length::Fill).height(bottom_spacer));
+    }
+
+    let menu_scroll = scrollable(list).on_scroll(|viewport| {
+        Message::Panel(super::messages::PanelEvent::MenuScrolled(
+            viewport.absolute_offset().y,
+        ))
+    });
+
+    container(column![search, menu_scroll])
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
@@ -136,23 +170,58 @@ fn render_panel_menu_model<'a>(
 fn panel_menu_icon_element<'a>(icon: Option<&str>) -> Element<'a, Message> {
     const ICON_SIZE: u16 = 18;
 
-    let Some(path) = icon.and_then(crate::icon_theme::resolve_icon_path) else {
+    let Some(handle) = icon.and_then(cached_panel_menu_icon_handle) else {
         return Space::new()
             .width(ICON_SIZE as u32)
             .height(ICON_SIZE as u32)
             .into();
     };
+
+    match handle {
+        PanelMenuIconHandle::Svg(handle) => iced::widget::svg(handle)
+            .width(ICON_SIZE as u32)
+            .height(ICON_SIZE as u32)
+            .into(),
+        PanelMenuIconHandle::Image(handle) => iced::widget::image(handle)
+            .width(ICON_SIZE as u32)
+            .height(ICON_SIZE as u32)
+            .into(),
+    }
+}
+
+#[derive(Clone)]
+enum PanelMenuIconHandle {
+    Svg(iced::widget::svg::Handle),
+    Image(iced::widget::image::Handle),
+}
+
+fn cached_panel_menu_icon_handle(icon: &str) -> Option<PanelMenuIconHandle> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<PanelMenuIconHandle>>>> = OnceLock::new();
+
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(handle) = cache
+        .lock()
+        .expect("panel menu icon cache poisoned")
+        .get(icon)
+        .cloned()
+    {
+        return handle;
+    }
+
+    let handle = crate::icon_theme::resolve_icon_path(icon).map(panel_menu_icon_handle_from_path);
+    cache
+        .lock()
+        .expect("panel menu icon cache poisoned")
+        .insert(icon.to_string(), handle.clone());
+    handle
+}
+
+fn panel_menu_icon_handle_from_path(path: PathBuf) -> PanelMenuIconHandle {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     if ext == "svg" {
-        iced::widget::svg(iced::widget::svg::Handle::from_path(&path))
-            .width(ICON_SIZE as u32)
-            .height(ICON_SIZE as u32)
-            .into()
+        PanelMenuIconHandle::Svg(iced::widget::svg::Handle::from_path(path))
     } else {
-        iced::widget::image(iced::widget::image::Handle::from_path(&path))
-            .width(ICON_SIZE as u32)
-            .height(ICON_SIZE as u32)
-            .into()
+        PanelMenuIconHandle::Image(iced::widget::image::Handle::from_path(path))
     }
 }
 
@@ -274,7 +343,7 @@ fn render_bar_model<'a>(
 #[cfg(test)]
 mod tests {
     use super::App;
-    use crate::config::Config;
+    use crate::config::{Config, MenuConfig, MenuSourceConfig, MenuSourceKind};
     use crate::surface::menu_popup::{MenuItem, MenuTree};
 
     #[test]
@@ -332,5 +401,62 @@ mod tests {
         );
 
         let _ = app.view(panel);
+    }
+
+    #[test]
+    fn installed_apps_hover_view_path_does_not_rebuild_every_entry_widget() {
+        let mut config = Config {
+            menus: vec![MenuConfig {
+                name: "apps".into(),
+                show_icons: false,
+                source: Some(MenuSourceConfig {
+                    kind: MenuSourceKind::InstalledApps,
+                }),
+                items: vec![],
+            }],
+            ..Default::default()
+        };
+        config.bars[0].actions.bindings.clear();
+
+        let (mut app, _) = App::boot(config, vec![]);
+        app.panel.installed_apps_for_test = Some(
+            (0..5_000)
+                .map(|index| crate::desktop_apps::DesktopApplication {
+                    id: format!("app-{index}.desktop"),
+                    name: format!("App {index:04}"),
+                    generic_name: None,
+                    comment: None,
+                    keywords: vec![],
+                    icon: None,
+                    exec: format!("app-{index}"),
+                })
+                .collect(),
+        );
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
+        let _ = app.update(crate::app::Message::Panel(
+            crate::app::messages::PanelEvent::Open {
+                origin_window: origin,
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::Menu("apps".into()),
+                anchor: None,
+            },
+        ));
+        let panel = app.surfaces.panel_popup_ids().next().expect("panel");
+        let _ = app.view(panel);
+
+        let started = std::time::Instant::now();
+        for index in 0..100 {
+            let _ = app.update(crate::app::Message::Panel(
+                crate::app::messages::PanelEvent::FocusIndex(index),
+            ));
+            let _ = app.view(panel);
+        }
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(50),
+            "hover view path rebuilt too much installed-app widget state: {:?}",
+            started.elapsed()
+        );
     }
 }

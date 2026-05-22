@@ -2,6 +2,7 @@ use iced::Task;
 use iced_layershell::reexport::{
     KeyboardInteractivity, Layer, NewLayerShellSettings, OutputOption,
 };
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::time::Duration;
 
@@ -26,13 +27,22 @@ fn request_panel_search_focus() -> Task<Message> {
 pub(super) struct PanelSystem {
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
+    pub(super) menu_scroll_y: f32,
+    search_focus_pending: bool,
     pub(super) menu_path: Vec<usize>,
     pub(super) installed_apps_snapshot: Vec<crate::desktop_apps::DesktopApplication>,
+    installed_apps_entry_cache: InstalledAppsEntryCache,
     #[cfg(test)]
     pub(super) installed_apps_for_test: Option<Vec<crate::desktop_apps::DesktopApplication>>,
     #[cfg(test)]
     pub(super) launched_installed_app_ids_for_test: Vec<String>,
     closing_windows: HashSet<iced::window::Id>,
+}
+
+#[derive(Debug, Default)]
+struct InstalledAppsEntryCache {
+    query: String,
+    entries: Vec<MenuEntryView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,8 +64,11 @@ impl PanelSystem {
     pub(super) fn clear(&mut self) {
         self.search_query.clear();
         self.focused_index = None;
+        self.menu_scroll_y = 0.0;
+        self.search_focus_pending = false;
         self.menu_path.clear();
         self.installed_apps_snapshot.clear();
+        self.installed_apps_entry_cache = InstalledAppsEntryCache::default();
     }
 
     pub(super) fn mark_closing_window(&mut self, window: iced::window::Id) {
@@ -229,6 +242,7 @@ impl App {
             crate::surface::panel::PanelContent::Menu(_)
         ) {
             self.panel.focused_index.get_or_insert(0);
+            self.panel.search_focus_pending = true;
             return request_panel_search_focus();
         }
         Task::none()
@@ -268,6 +282,13 @@ impl App {
             PanelEvent::SearchChanged(query) => {
                 self.panel.search_query = query;
                 self.panel.focused_index = Some(0);
+                self.panel.search_focus_pending = false;
+                self.panel.menu_scroll_y = 0.0;
+                self.refresh_installed_apps_entry_cache();
+                Task::none()
+            }
+            PanelEvent::MenuScrolled(y) => {
+                self.panel.menu_scroll_y = y.max(0.0);
                 Task::none()
             }
             PanelEvent::FocusMoveNext => {
@@ -280,6 +301,7 @@ impl App {
             }
             PanelEvent::FocusIndex(index) => {
                 self.panel.focused_index = Some(index);
+                self.panel.search_focus_pending = false;
                 Task::none()
             }
             PanelEvent::FocusSearchInput { retries } => self.focus_panel_search_input(retries),
@@ -334,12 +356,14 @@ impl App {
         };
         if is_installed_apps_menu {
             self.panel.installed_apps_snapshot = self.load_installed_apps_for_panel();
+            self.refresh_installed_apps_entry_cache();
         }
         self.register_panel_popup(panel_window, origin_window, tree);
 
         let mut open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
         if is_menu_panel {
             self.panel.focused_index = Some(0);
+            self.panel.search_focus_pending = true;
             open_sequence = open_sequence.chain(request_panel_search_focus());
         }
         tasks.push(open_sequence);
@@ -475,7 +499,32 @@ impl App {
             .unwrap_or_default()
     }
 
+    pub(super) fn active_menu_entries_for_render(&self) -> Cow<'_, [MenuEntryView]> {
+        let Some((tree, menu)) = self.active_menu_tree_and_menu() else {
+            return Cow::Borrowed(&[]);
+        };
+        if menu_is_installed_apps(menu)
+            && self.panel.installed_apps_entry_cache.query == self.panel.search_query
+        {
+            return Cow::Borrowed(&self.panel.installed_apps_entry_cache.entries);
+        }
+        Cow::Owned(self.menu_entries_for_tree_and_menu(&tree, menu))
+    }
+
+    fn refresh_installed_apps_entry_cache(&mut self) {
+        self.panel.installed_apps_entry_cache = InstalledAppsEntryCache {
+            query: self.panel.search_query.clone(),
+            entries: installed_app_entries(
+                &self.panel.installed_apps_snapshot,
+                &self.panel.search_query,
+            ),
+        };
+    }
+
     fn focus_panel_search_input(&mut self, retries: u8) -> Task<Message> {
+        if !self.panel.search_focus_pending {
+            return Task::none();
+        }
         let Some(search_input_id) = self.surfaces.panel_popup_values().find_map(|meta| {
             if matches!(
                 meta.tree.content,
@@ -486,6 +535,7 @@ impl App {
                 None
             }
         }) else {
+            self.panel.search_focus_pending = false;
             return Task::none();
         };
         self.panel.focused_index.get_or_insert(0);
@@ -501,6 +551,8 @@ impl App {
                     })
                 },
             ));
+        } else {
+            self.panel.search_focus_pending = false;
         }
         Task::batch(tasks)
     }
@@ -508,6 +560,14 @@ impl App {
     fn active_menu_tree_and_entries(
         &self,
     ) -> Option<(crate::surface::panel::PanelTree, Vec<MenuEntryView>)> {
+        let (tree, menu) = self.active_menu_tree_and_menu()?;
+        let entries = self.menu_entries_for_tree_and_menu(&tree, menu);
+        Some((tree, entries))
+    }
+
+    fn active_menu_tree_and_menu(
+        &self,
+    ) -> Option<(crate::surface::panel::PanelTree, &crate::config::MenuConfig)> {
         let tree = self
             .surfaces
             .panel_popup_values()
@@ -525,7 +585,15 @@ impl App {
             .menus
             .iter()
             .find(|menu| menu.name == menu_name)?;
-        let entries = match &menu.source {
+        Some((tree, menu))
+    }
+
+    fn menu_entries_for_tree_and_menu(
+        &self,
+        _tree: &crate::surface::panel::PanelTree,
+        menu: &crate::config::MenuConfig,
+    ) -> Vec<MenuEntryView> {
+        match &menu.source {
             Some(source) if matches!(source.kind, crate::config::MenuSourceKind::InstalledApps) => {
                 installed_app_entries(
                     &self.panel.installed_apps_snapshot,
@@ -536,9 +604,15 @@ impl App {
                 current_menu_entries(menu, &self.panel.menu_path)
             }
             _ => search_menu_entries(menu, &self.panel.search_query),
-        };
-        Some((tree, entries))
+        }
     }
+}
+
+fn menu_is_installed_apps(menu: &crate::config::MenuConfig) -> bool {
+    menu.source
+        .as_ref()
+        .map(|source| matches!(source.kind, crate::config::MenuSourceKind::InstalledApps))
+        .unwrap_or(false)
 }
 
 fn menu_name_for_tree(tree: &crate::surface::panel::PanelTree) -> Option<&str> {
@@ -1161,6 +1235,34 @@ mod tests {
         app
     }
 
+    #[test]
+    fn installed_apps_hover_render_path_does_not_rebuild_large_entry_list() {
+        let apps = (0..5_000)
+            .map(|index| installed_app(&format!("App {index:04}"), &format!("app-{index}.desktop")))
+            .collect::<Vec<_>>();
+        let mut app = app_with_installed_apps_menu(apps);
+        open_apps_menu_panel(&mut app);
+        let panel_window = app.surfaces.panel_popup_ids().next().expect("panel window");
+
+        let started = std::time::Instant::now();
+        for index in 0..100 {
+            let _ = app.update(Message::Panel(
+                crate::app::messages::PanelEvent::FocusIndex(index),
+            ));
+            let model = app
+                .panel_render_model(panel_window)
+                .expect("panel render model");
+            assert_eq!(model.menu_entries.len(), 5_000);
+            assert_eq!(model.focused_index, Some(index));
+        }
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(25),
+            "hover render path rebuilt too much installed-app menu state: {:?}",
+            started.elapsed()
+        );
+    }
+
     fn open_apps_menu_panel(app: &mut App) {
         let origin = iced::window::Id::unique();
         app.surface_mut(origin);
@@ -1300,6 +1402,7 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         register_menu_panel(&mut app, panel, origin);
+        app.panel.search_focus_pending = true;
 
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusSearchInput {
             retries: 0,
@@ -1307,6 +1410,22 @@ mod tests {
 
         assert!(app.surface(panel).is_none());
         assert_eq!(app.panel.focused_index, Some(0));
+        assert!(!app.panel.search_focus_pending);
+    }
+
+    #[test]
+    fn hover_focus_cancels_pending_search_focus_retries() {
+        let config = config_with_menu(menu_with_two_entries());
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        register_menu_panel(&mut app, panel, origin);
+        app.panel.search_focus_pending = true;
+
+        let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusIndex(1));
+
+        assert_eq!(app.panel.focused_index, Some(1));
+        assert!(!app.panel.search_focus_pending);
     }
 
     #[test]
