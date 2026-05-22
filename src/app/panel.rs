@@ -980,59 +980,87 @@ fn installed_app_entries(
     for app in apps {
         *counts.entry(app.name.to_ascii_lowercase()).or_default() += 1;
     }
-    let query = query.to_ascii_lowercase();
-    apps.iter()
-        .filter(|app| query.is_empty() || installed_app_matches(app, &query))
-        .enumerate()
-        .map(|(index, app)| {
-            let label = if counts
-                .get(&app.name.to_ascii_lowercase())
-                .copied()
-                .unwrap_or(0)
-                > 1
-            {
-                app.generic_name
-                    .as_ref()
-                    .filter(|value| !value.is_empty())
-                    .map(|generic| format!("{} ({generic})", app.name))
-                    .unwrap_or_else(|| format!("{} ({})", app.name, app.id))
-            } else {
-                app.name.clone()
-            };
-            let icon = app
-                .icon
-                .as_ref()
-                .filter(|icon| crate::icon_theme::is_valid_icon_name(icon))
-                .cloned();
-            MenuEntryView {
-                label,
-                icon,
-                path: vec![index],
-                target: MenuEntryTarget::InstalledApp(app.id.clone()),
-                is_submenu: false,
-            }
-        })
-        .collect()
-}
 
-fn installed_app_matches(app: &crate::desktop_apps::DesktopApplication, query: &str) -> bool {
-    app.name.to_ascii_lowercase().contains(query)
-        || app
-            .generic_name
-            .as_deref()
-            .unwrap_or("")
-            .to_ascii_lowercase()
-            .contains(query)
-        || app
-            .comment
-            .as_deref()
-            .unwrap_or("")
-            .to_ascii_lowercase()
-            .contains(query)
-        || app
-            .keywords
-            .iter()
-            .any(|keyword| keyword.to_ascii_lowercase().contains(query))
+    let mut entries = Vec::new();
+    for (index, app) in apps.iter().enumerate() {
+        let label = if counts
+            .get(&app.name.to_ascii_lowercase())
+            .copied()
+            .unwrap_or(0)
+            > 1
+        {
+            app.generic_name
+                .as_ref()
+                .filter(|value| !value.is_empty())
+                .map(|generic| format!("{} ({generic})", app.name))
+                .unwrap_or_else(|| format!("{} ({})", app.name, app.id))
+        } else {
+            app.name.clone()
+        };
+        let icon = app
+            .icon
+            .as_ref()
+            .filter(|icon| crate::icon_theme::is_valid_icon_name(icon))
+            .cloned();
+        let view = MenuEntryView {
+            label,
+            icon,
+            path: vec![index],
+            target: MenuEntryTarget::InstalledApp(app.id.clone()),
+            is_submenu: false,
+        };
+
+        if panel_search::is_blank_query(query) {
+            entries.push(SearchMatch {
+                item: view,
+                score: panel_search::best_match(
+                    &[SearchText {
+                        field: SearchField::Label,
+                        text: app.name.as_str(),
+                    }],
+                    "",
+                )
+                .expect("blank query matches"),
+                source_index: index,
+            });
+            continue;
+        }
+
+        let generic_name = app.generic_name.as_deref().unwrap_or("");
+        let comment = app.comment.as_deref().unwrap_or("");
+        let keywords = app.keywords.join(" ");
+        let fields = [
+            SearchText {
+                field: SearchField::Label,
+                text: app.name.as_str(),
+            },
+            SearchText {
+                field: SearchField::Secondary,
+                text: generic_name,
+            },
+            SearchText {
+                field: SearchField::Secondary,
+                text: comment,
+            },
+            SearchText {
+                field: SearchField::Secondary,
+                text: keywords.as_str(),
+            },
+        ];
+
+        if let Some(score) = panel_search::best_match(&fields, query) {
+            entries.push(SearchMatch {
+                item: view,
+                score,
+                source_index: index,
+            });
+        }
+    }
+
+    if panel_search::is_blank_query(query) {
+        return entries.into_iter().map(|matched| matched.item).collect();
+    }
+    panel_search::rank_matches(entries)
 }
 
 fn content_for_origin(
@@ -1865,6 +1893,61 @@ mod tests {
         let entries = app.active_menu_entries();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].label, "Browser");
+    }
+
+    #[test]
+    fn installed_apps_search_ranks_visible_label_before_metadata() {
+        let mut settings = installed_app("Settings", "settings.desktop");
+        settings.keywords = vec!["network".into()];
+        let mut network = installed_app("Network Connections", "network.desktop");
+        network.comment = Some("Configure links".into());
+        let mut app = app_with_installed_apps_menu(vec![settings, network]);
+        open_apps_menu_panel(&mut app);
+
+        app.panel.search_query = "net".into();
+
+        let entries = app.active_menu_entries();
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Network Connections", "Settings"]
+        );
+    }
+
+    #[test]
+    fn installed_apps_search_matches_tokens_across_fields() {
+        let mut code = installed_app("Visual Studio Code", "code.desktop");
+        code.keywords = vec!["editor".into()];
+        let mut app = app_with_installed_apps_menu(vec![code]);
+        open_apps_menu_panel(&mut app);
+
+        app.panel.search_query = "code editor".into();
+
+        let entries = app.active_menu_entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "Visual Studio Code");
+    }
+
+    #[test]
+    fn installed_apps_search_preserves_source_order_for_blank_query() {
+        let mut app = app_with_installed_apps_menu(vec![
+            installed_app("Zed", "zed.desktop"),
+            installed_app("Alpha", "alpha.desktop"),
+        ]);
+        open_apps_menu_panel(&mut app);
+
+        app.panel.search_query = "   ".into();
+
+        let entries = app.active_menu_entries();
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Zed", "Alpha"]
+        );
     }
 
     #[test]
