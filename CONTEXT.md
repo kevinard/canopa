@@ -127,6 +127,10 @@ _Avoid_: Generated config, launcher backend
 Optional text that gives user-facing context for a **Panel Menu** search or selection.
 _Avoid_: Menu item, title when the text is not just a heading
 
+**Panel Menu Search**:
+The user-facing matching behavior that filters or ranks **Panel Menu** entries from typed input.
+_Avoid_: Filter when referring to ranked matching behavior
+
 **Installed Desktop Application**:
 A user-launchable GUI application discovered from the desktop environment's application metadata.
 _Avoid_: Desktop file, command, package
@@ -323,10 +327,22 @@ _Avoid_: Default config, fallback surface
 - **Installed Desktop Applications** may supply best-effort **Panel Menu Entry Icons**, but missing icons do not prevent display or launch.
 - Invalid **Panel Menu Entry Icons** from installed application metadata are treated as missing icons, not **Configuration Errors**.
 - An installed-applications **Panel Menu Source** presents **Installed Desktop Applications** as a flat list by default.
-- **Panel Menu** search for **Installed Desktop Applications** matches application names, descriptions, generic names, and keywords.
+- **Panel Menu Search** uses fuzzy matching for configured **Panel Menus**, installed-applications **Panel Menu Sources**, and **Dmenu Panel Menu Sources**.
+- **Panel Menu Search** uses fuzzy matching as the default behavior rather than offering a substring-search mode.
+- **Panel Menu Search** fuzzy matching requires query characters to appear in order.
+- **Panel Menu Search** is ASCII case-insensitive.
+- **Panel Menu Search** splits search text on whitespace and requires every query token to match.
+- **Panel Menu Search** ranks matching entries by match quality and uses source order as the tie-breaker.
+- **Panel Menu Search** ranks substring matches ahead of non-contiguous fuzzy matches when other priority rules are equal.
+- **Panel Menu Search** preserves source order when the search text has no non-whitespace tokens.
+- **Panel Menu Search** returns all matching entries rather than applying a hidden result cap.
+- **Panel Menu Search** ranks visible leaf labels ahead of secondary metadata, and secondary metadata ahead of breadcrumb-only ancestor matches.
+- **Panel Menu Search** can match breadcrumb ancestor labels for nested configured **Panel Menu** entries as lowest-priority text.
+- **Panel Menu Search** uses Niribar-owned matching behavior rather than exposing a third-party matcher as domain behavior.
+- **Panel Menu Search** for **Installed Desktop Applications** matches application names, descriptions, generic names, and keywords.
 - A dynamic **Panel Menu Source** is refreshed when its **Panel Menu** opens and remains stable while that **Panel** is open.
 - A **Panel Menu** may contain nested items, but the **Panel** displays one active menu level at a time unless search is active.
-- **Panel Menu** search matches nested items and displays matching results with breadcrumb context.
+- **Panel Menu Search** matches nested items and displays matching results with breadcrumb context.
 - A searched **Panel Menu** entry keeps its own **Panel Menu Entry Icon**; breadcrumb ancestors do not provide the result icon.
 - Activating a command item in a **Panel Menu** closes the **Panel** by default.
 - Activating a command from module panel content does not close the **Panel** by default.
@@ -352,6 +368,7 @@ _Avoid_: Default config, fallback surface
 - Empty input with `--no-custom` offers no selectable entries and can only be cancelled.
 - When **Dmenu Selection Mode** has a focused matching entry, normal activation returns that focused entry.
 - Submitting arbitrary typed text uses a distinct custom-value affordance.
+- In **Dmenu Selection Mode**, a custom typed value appears after fuzzy-matched entries, or first when there are no matching entries.
 - **Dmenu Selection Mode** writes the selected entry and does not run configured **Panel Actions**.
 - **Dmenu Selection Mode** exits successfully only when the user selects or submits a value.
 - Cancelling **Dmenu Selection Mode** exits distinctly from CLI usage errors and IPC/request failures.
@@ -370,6 +387,7 @@ _Avoid_: Default config, fallback surface
 - A value-only **Rich Dmenu Entry** uses its returned value as its visible label.
 - Selecting a **Rich Dmenu Entry** returns its value to the caller; if no separate value is present, it returns the visible label.
 - A custom typed value in **Dmenu Selection Mode** is returned as typed and is not a **Rich Dmenu Entry**.
+- **Dmenu Selection Mode** keeps its selection-value semantics when using **Panel Menu Search**.
 - **Dmenu Selection Mode** search matches rich entry labels and keywords; it does not match opaque returned values unless no label is provided.
 - Rich **Dmenu Entries** are selectable leaf candidates, not configured **Panel Menu** items; they do not define **Panel Actions** or child entries.
 - Rich **Dmenu Entry** icons use the same XDG icon-theme-name constraint as other **Panel Menu Entry Icons**.

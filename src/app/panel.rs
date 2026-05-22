@@ -6,8 +6,8 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use super::{App, Message};
 use super::panel_search::{self, SearchField, SearchMatch, SearchText};
+use super::{App, Message};
 
 pub(super) fn panel_search_input_id(window: iced::window::Id) -> iced::widget::Id {
     iced::widget::Id::from(format!("panel-search-input-{window:?}"))
@@ -972,14 +972,7 @@ fn collect_search_menu_entries(
             });
         }
 
-        collect_search_menu_entries(
-            &item.children,
-            query,
-            labels,
-            path,
-            source_index,
-            results,
-        );
+        collect_search_menu_entries(&item.children, query, labels, path, source_index, results);
         path.pop();
         labels.pop();
     }

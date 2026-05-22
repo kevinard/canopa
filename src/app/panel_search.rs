@@ -56,9 +56,9 @@ pub(super) fn best_match(fields: &[SearchText<'_>], query: &str) -> Option<Searc
         .into_iter()
         .filter_map(|field| {
             let best_score = fields
-            .iter()
-            .filter(|candidate| candidate.field == field)
-            .map(|candidate| candidate.text)
+                .iter()
+                .filter(|candidate| candidate.field == field)
+                .map(|candidate| candidate.text)
                 .filter_map(|text| fuzzy_score(text, token))
                 .max()?;
             Some(SearchScore {
