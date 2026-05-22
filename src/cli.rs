@@ -76,7 +76,9 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                         dmenu_options.entry_format = DmenuEntryFormat::JsonLines
                     }
                     _ => {
-                        return Command::UsageError(format!("unknown dmenu entry format {value:?}"));
+                        return Command::UsageError(format!(
+                            "unknown dmenu entry format {value:?}"
+                        ));
                     }
                 }
             }

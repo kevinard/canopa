@@ -115,6 +115,10 @@ _Avoid_: Shell action when the action is not a command
 An app-owned, named launcher/menu list rendered inside a **Panel**.
 _Avoid_: Menu when referring to SNI or other module-owned context menus
 
+**Panel Menu Session**:
+The live runtime interaction for one opened **Panel Menu**, including its **Panel Menu Source**, active menu level, **Panel Menu Search** text, focused entry, and activation/completion state.
+_Avoid_: Panel state when referring only to menu selection behavior
+
 **Panel Menu Entry Icon**:
 An optional XDG icon-theme name attached to a **Panel Menu** entry.
 _Avoid_: Installed app icon when referring to the general menu entry capability
