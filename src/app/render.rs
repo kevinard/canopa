@@ -40,6 +40,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) search_input_id: iced::widget::Id,
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
     pub(super) menu_entries: Vec<super::panel::MenuEntryView>,
+    pub(super) show_icons: bool,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
     pub(super) bar_style: &'a crate::config::Style,
@@ -113,11 +114,23 @@ impl App {
             })
             .collect();
 
+        let show_icons = match &tree.content {
+            crate::surface::panel::PanelContent::Menu(name) => self
+                .config
+                .menus
+                .iter()
+                .find(|menu| menu.name == *name)
+                .map(|menu| menu.show_icons)
+                .unwrap_or(false),
+            _ => false,
+        };
+
         Some(PanelRenderModel {
             tree,
             search_input_id: meta.search_input_id.clone(),
             entries,
             menu_entries: self.active_menu_entries(),
+            show_icons,
             search_query: self.panel.search_query.clone(),
             focused_index: self.panel.focused_index,
             bar_style: &bar.style,
@@ -259,8 +272,8 @@ impl App {
 mod tests {
     use super::App;
     use crate::config::{
-        BarConfig, ClockConfig, Config, FocusedWindowConfig, ModuleConfig, ModuleParams,
-        WorkspacesConfig,
+        BarConfig, ClockConfig, Config, FocusedWindowConfig, MenuConfig, MenuItemConfig,
+        ModuleConfig, ModuleParams, WorkspacesConfig,
     };
     use crate::modules::focused_window::FocusedWindowState;
     use crate::modules::{ModuleId, ModuleState, Zone};
@@ -563,6 +576,49 @@ mod tests {
 
         assert_eq!(model.entries.len(), 1);
         assert_eq!(model.entries[0].id, ModuleId::new("clock"));
+    }
+
+    #[test]
+    fn panel_render_model_exposes_menu_icon_rendering() {
+        let config = Config {
+            menus: vec![MenuConfig {
+                name: "main".into(),
+                show_icons: true,
+                source: None,
+                items: vec![MenuItemConfig {
+                    label: "Terminal".into(),
+                    icon: Some("utilities-terminal".into()),
+                    keywords: vec![],
+                    action: None,
+                    children: vec![],
+                }],
+            }],
+            ..Default::default()
+        };
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = test_wid();
+        let panel = test_wid();
+        app.register_panel_popup(
+            panel,
+            origin,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::Menu("main".into()),
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
+            },
+        );
+
+        let model = app.panel_render_model(panel).expect("panel model");
+
+        assert!(model.show_icons);
+        assert_eq!(
+            model.menu_entries[0].icon,
+            Some("utilities-terminal".into())
+        );
     }
 
     #[test]

@@ -44,6 +44,7 @@ pub(super) enum MenuEntryTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct MenuEntryView {
     pub(super) label: String,
+    pub(super) icon: Option<String>,
     pub(super) path: Vec<usize>,
     pub(super) target: MenuEntryTarget,
     pub(super) is_submenu: bool,
@@ -566,6 +567,7 @@ pub(super) fn current_menu_entries(
             item_path.push(index);
             MenuEntryView {
                 label: item.label.clone(),
+                icon: item.icon.clone(),
                 target: MenuEntryTarget::StaticPath(item_path.clone()),
                 path: item_path,
                 is_submenu: !item.children.is_empty(),
@@ -608,6 +610,7 @@ fn collect_search_menu_entries(
         if label_matches || keyword_matches {
             results.push(MenuEntryView {
                 label: labels.join(" / "),
+                icon: item.icon.clone(),
                 path: path.clone(),
                 target: MenuEntryTarget::StaticPath(path.clone()),
                 is_submenu: !item.children.is_empty(),
@@ -659,8 +662,14 @@ fn installed_app_entries(
             } else {
                 app.name.clone()
             };
+            let icon = app
+                .icon
+                .as_ref()
+                .filter(|icon| crate::icon_theme::is_valid_icon_name(icon))
+                .cloned();
             MenuEntryView {
                 label,
+                icon,
                 path: vec![index],
                 target: MenuEntryTarget::InstalledApp(app.id.clone()),
                 is_submenu: false,
@@ -1041,13 +1050,16 @@ mod tests {
     fn menu_with_apps_browser() -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "main".into(),
+            show_icons: false,
             source: None,
             items: vec![crate::config::MenuItemConfig {
                 label: "Apps".into(),
+                icon: Some("applications-other".into()),
                 keywords: vec![],
                 action: None,
                 children: vec![crate::config::MenuItemConfig {
                     label: "Browser".into(),
+                    icon: Some("firefox".into()),
                     keywords: vec!["web".into()],
                     action: Some(crate::config::PanelAction::Command(
                         crate::config::CommandConfig::Shell("firefox".into()),
@@ -1061,16 +1073,19 @@ mod tests {
     fn menu_with_two_entries() -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "main".into(),
+            show_icons: false,
             source: None,
             items: vec![
                 crate::config::MenuItemConfig {
                     label: "Terminal".into(),
+                    icon: None,
                     keywords: vec![],
                     action: None,
                     children: vec![],
                 },
                 crate::config::MenuItemConfig {
                     label: "Browser".into(),
+                    icon: None,
                     keywords: vec![],
                     action: None,
                     children: vec![],
@@ -1109,6 +1124,7 @@ mod tests {
 
         assert_eq!(results[0].label, "Apps / Browser");
         assert_eq!(results[0].path, vec![0, 0]);
+        assert_eq!(results[0].icon, Some("firefox".into()));
     }
 
     #[test]
@@ -1134,6 +1150,7 @@ mod tests {
     fn app_with_installed_apps_menu(apps: Vec<crate::desktop_apps::DesktopApplication>) -> App {
         let config = config_with_menu(crate::config::MenuConfig {
             name: "apps".into(),
+            show_icons: false,
             source: Some(crate::config::MenuSourceConfig {
                 kind: crate::config::MenuSourceKind::InstalledApps,
             }),
@@ -1188,6 +1205,20 @@ mod tests {
         let entries = app.active_menu_entries();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].label, "Browser");
+    }
+
+    #[test]
+    fn installed_apps_entries_carry_valid_icons_only() {
+        let mut alpha = installed_app("Alpha", "alpha.desktop");
+        alpha.icon = Some("alpha-icon".into());
+        let mut beta = installed_app("Beta", "beta.desktop");
+        beta.icon = Some("/usr/share/icons/beta.png".into());
+        let mut app = app_with_installed_apps_menu(vec![alpha, beta]);
+        open_apps_menu_panel(&mut app);
+
+        let entries = app.active_menu_entries();
+        assert_eq!(entries[0].icon, Some("alpha-icon".into()));
+        assert_eq!(entries[1].icon, None);
     }
 
     #[test]

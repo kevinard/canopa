@@ -353,6 +353,7 @@ pub type ModuleActionsConfig = ActionsConfig;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuConfig {
     pub name: String,
+    pub show_icons: bool,
     pub source: Option<MenuSourceConfig>,
     pub items: Vec<MenuItemConfig>,
 }
@@ -370,6 +371,7 @@ pub struct MenuSourceConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuItemConfig {
     pub label: String,
+    pub icon: Option<String>,
     pub keywords: Vec<String>,
     pub action: Option<PanelAction>,
     pub children: Vec<MenuItemConfig>,

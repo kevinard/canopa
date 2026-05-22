@@ -82,8 +82,15 @@ fn render_panel_menu_model<'a>(
     let mut list = column![].spacing(8).padding(8);
     for (index, entry) in model.menu_entries.into_iter().enumerate() {
         let focused = model.focused_index == Some(index);
-        let suffix = if entry.is_submenu { " >" } else { "" };
-        let row = container(text(format!("{}{}", entry.label, suffix)))
+        let mut row_content = row![].spacing(8).width(Length::Fill);
+        if model.show_icons {
+            row_content = row_content.push(panel_menu_icon_element(entry.icon.as_deref()));
+        }
+        row_content = row_content.push(text(entry.label).width(Length::Fill));
+        if entry.is_submenu {
+            row_content = row_content.push(text(">"));
+        }
+        let row = container(row_content)
             .padding([8, 10])
             .width(Length::Fill)
             .style(move |_| iced::widget::container::Style {
@@ -124,6 +131,29 @@ fn render_panel_menu_model<'a>(
             ..Default::default()
         })
         .into()
+}
+
+fn panel_menu_icon_element<'a>(icon: Option<&str>) -> Element<'a, Message> {
+    const ICON_SIZE: u16 = 18;
+
+    let Some(path) = icon.and_then(crate::icon_theme::resolve_icon_path) else {
+        return Space::new()
+            .width(ICON_SIZE as u32)
+            .height(ICON_SIZE as u32)
+            .into();
+    };
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if ext == "svg" {
+        iced::widget::svg(iced::widget::svg::Handle::from_path(&path))
+            .width(ICON_SIZE as u32)
+            .height(ICON_SIZE as u32)
+            .into()
+    } else {
+        iced::widget::image(iced::widget::image::Handle::from_path(&path))
+            .width(ICON_SIZE as u32)
+            .height(ICON_SIZE as u32)
+            .into()
+    }
 }
 
 fn render_tooltip_popup<'a>(

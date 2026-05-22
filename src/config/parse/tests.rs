@@ -359,6 +359,66 @@ menus {
 }
 
 #[test]
+fn parse_menu_with_entry_icons_enabled() {
+    let kdl = r#"
+menus {
+    menu "main" show-icons=#true {
+        item "Terminal" {
+            icon "utilities-terminal"
+            command "kitty"
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+
+    assert!(config.menus[0].show_icons);
+    assert_eq!(
+        config.menus[0].items[0].icon,
+        Some("utilities-terminal".into())
+    );
+}
+
+#[test]
+fn parse_menu_rejects_duplicate_item_icons() {
+    let kdl = r#"
+menus {
+    menu "main" {
+        item "Terminal" {
+            icon "utilities-terminal"
+            icon "kitty"
+            command "kitty"
+        }
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err().to_string();
+    assert!(
+        err.contains("menu item can declare only one icon"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn parse_menu_rejects_path_like_item_icons() {
+    let kdl = r#"
+menus {
+    menu "main" {
+        item "Terminal" {
+            icon "../terminal"
+            command "kitty"
+        }
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err().to_string();
+    assert!(
+        err.contains("icon name must be an XDG icon name"),
+        "got: {err}"
+    );
+}
+
+#[test]
 fn parse_menu_with_installed_apps_source() {
     let kdl = r#"
 menus {

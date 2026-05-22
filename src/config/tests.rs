@@ -541,11 +541,13 @@ mod config_tests {
             menus: vec![
                 MenuConfig {
                     name: "main".into(),
+                    show_icons: false,
                     source: None,
                     items: vec![],
                 },
                 MenuConfig {
                     name: "main".into(),
+                    show_icons: false,
                     source: None,
                     items: vec![],
                 },
@@ -585,6 +587,7 @@ mod config_tests {
         let mut config = Config::default();
         config.menus = vec![MenuConfig {
             name: "apps".into(),
+            show_icons: false,
             source: Some(MenuSourceConfig {
                 kind: MenuSourceKind::InstalledApps,
             }),

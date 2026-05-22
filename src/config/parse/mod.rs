@@ -205,7 +205,8 @@ fn parse_menus_section(
             ));
         }
 
-        let name = required_string_argument(node, &menu_ctx, "menu name")?;
+        let name = required_menu_name(node, &menu_ctx)?;
+        let show_icons = parse_menu_show_icons(node, &menu_ctx)?;
         let mut source = None;
         let mut item_nodes = Vec::new();
         if let Some(menu_children) = node.children() {
@@ -240,6 +241,7 @@ fn parse_menus_section(
         let items = parse_menu_items_from_nodes(item_nodes, &menu_ctx, command_policy)?;
         menus.push(MenuConfig {
             name,
+            show_icons,
             source,
             items,
         });
@@ -298,17 +300,33 @@ fn parse_menu_item(
     let Some(children) = node.children() else {
         return Ok(MenuItemConfig {
             label,
+            icon: None,
             keywords: Vec::new(),
             action: None,
             children: Vec::new(),
         });
     };
 
+    let mut icon = None;
     let mut keywords = Vec::new();
     let mut action = None;
     let mut item_nodes = Vec::new();
     for child in children.nodes() {
         match child.name().value() {
+            "icon" => {
+                if icon.is_some() {
+                    return Err(ctx.node_err(child, "menu item can declare only one icon", None));
+                }
+                let icon_name = required_string_argument(child, &ctx.child("icon"), "icon name")?;
+                if !crate::icon_theme::is_valid_icon_name(&icon_name) {
+                    return Err(ctx.node_err(
+                        child,
+                        "icon name must be an XDG icon name, not a path",
+                        None,
+                    ));
+                }
+                icon = Some(icon_name);
+            }
             "keywords" => keywords = parse_keywords(child, &ctx.child("keywords"))?,
             "item" => item_nodes.push(child),
             operation => {
@@ -343,6 +361,7 @@ fn parse_menu_item(
 
     Ok(MenuItemConfig {
         label,
+        icon,
         keywords,
         action,
         children: children_items,
@@ -370,8 +389,12 @@ fn parse_menu_action_operation(
             require_no_arguments(node, ctx)?;
             Ok(super::PanelAction::ClosePanel)
         }
-        "open-menu" => required_menu_name(node, ctx).map(super::PanelAction::OpenMenu),
-        "toggle-menu" => required_menu_name(node, ctx).map(super::PanelAction::ToggleMenu),
+        "open-menu" => {
+            required_menu_name(node, ctx).map(super::PanelAction::OpenMenu)
+        }
+        "toggle-menu" => {
+            required_menu_name(node, ctx).map(super::PanelAction::ToggleMenu)
+        }
         other => Err(ctx.node_err(
             node,
             format!("unknown menu item operation {other:?}"),
@@ -395,6 +418,25 @@ fn required_menu_name(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<String> {
     Ok(value)
 }
 
+fn parse_menu_show_icons(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<bool> {
+    let mut show_icons = false;
+    for entry in node.entries().iter().filter(|entry| entry.name().is_some()) {
+        match entry.name().map(|name| name.value()) {
+            Some("show-icons") => {
+                show_icons = entry
+                    .value()
+                    .as_bool()
+                    .ok_or_else(|| ctx.entry_err(entry, "expected #true or #false", None))?;
+            }
+            Some(name) => {
+                return Err(ctx.entry_err(entry, format!("unknown menu property {name:?}"), None));
+            }
+            None => {}
+        }
+    }
+    Ok(show_icons)
+}
+
 fn parse_keywords(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Vec<String>> {
     let mut values = Vec::new();
     for entry in node.entries() {
@@ -407,10 +449,15 @@ fn parse_keywords(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Vec<String>> {
 }
 
 fn required_string_argument(node: &KdlNode, ctx: &ParseCtx, label: &str) -> ConfigResult<String> {
-    if node.entries().len() != 1 {
+    let positional = node
+        .entries()
+        .iter()
+        .filter(|entry| entry.name().is_none())
+        .collect::<Vec<_>>();
+    if positional.len() != 1 {
         return Err(ctx.node_err(node, format!("expected one {label} string"), None));
     }
-    match node.entries()[0].value().as_string() {
+    match positional[0].value().as_string() {
         Some("") => Err(ctx.entry_err(
             &node.entries()[0],
             format!("{label} must not be empty"),

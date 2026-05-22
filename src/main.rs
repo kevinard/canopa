@@ -4,6 +4,7 @@ mod command;
 mod config;
 mod dbus;
 mod desktop_apps;
+mod icon_theme;
 mod ipc;
 mod modules;
 mod niri;
