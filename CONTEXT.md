@@ -123,6 +123,10 @@ _Avoid_: Installed app icon when referring to the general menu entry capability
 The configured origin of **Panel Menu** entries, either explicit user configuration or a dynamic runtime source such as installed desktop applications.
 _Avoid_: Generated config, launcher backend
 
+**Panel Menu Prompt**:
+Optional text that gives user-facing context for a **Panel Menu** search or selection.
+_Avoid_: Menu item, title when the text is not just a heading
+
 **Installed Desktop Application**:
 A user-launchable GUI application discovered from the desktop environment's application metadata.
 _Avoid_: Desktop file, command, package
@@ -162,6 +166,18 @@ _Avoid_: Module action
 **Global Panel Toggle**:
 An IPC-triggered request to toggle the default **Panel** without direct **Bar Surface** interaction context.
 _Avoid_: Toggle all, expansion toggle
+
+**Dmenu Selection Mode**:
+A one-shot Niribar invocation that reads candidate entries from standard input, shows a searchable selector, writes the selected entry to standard output, and exits.
+_Avoid_: Dmenu compatibility mode, launcher mode, panel menu mode
+
+**Dmenu Selection Request**:
+A single request sent from a standalone **Dmenu Selection Mode** CLI process to the running Niribar instance for interactive selection.
+_Avoid_: Panel action, IPC command, configured menu
+
+**Dmenu Panel Menu Source**:
+A request-owned **Panel Menu Source** whose entries come from a **Dmenu Selection Request**.
+_Avoid_: Installed applications source, configured source
 
 **Global Defaults**:
 Configuration values used by **Bars** or **Modules** when they do not provide their own values.
@@ -275,6 +291,9 @@ _Avoid_: Default config, fallback surface
 - A **Panel Menu** does not render **Panel Menu Entry Icons** unless icon rendering is explicitly enabled.
 - A **Panel Menu** applies icon rendering consistently across its menu levels and search results.
 - A **Panel Menu** declares icon rendering as menu metadata, not as a menu entry or source declaration.
+- A **Panel Menu Prompt** is menu metadata, not a selectable menu entry.
+- A **Panel Menu Prompt** may appear as a search input placeholder, panel header, or both.
+- **Panel Menu Prompt** rendering is a general **Panel Menu** capability, even when the first public caller is **Dmenu Selection Mode**.
 - A **Panel Menu** that renders **Panel Menu Entry Icons** preserves row label alignment when an entry has no icon or its icon cannot be resolved.
 - A **Panel Menu Source** may be declared by explicit `item` configuration or by a `source` declaration.
 - A dynamic **Panel Menu Source** declaration starts with a source kind and may gain source-specific options later.
@@ -305,6 +324,38 @@ _Avoid_: Default config, fallback surface
 - Activating a command from module panel content does not close the **Panel** by default.
 - A **Global Panel Toggle** closes the currently open **Panel**, or opens the default **Panel** for the focused **Output** when no **Panel** is open.
 - If no focused **Output** is known, a **Global Panel Toggle** opens one deterministic **Bar Surface** default **Panel**, not one **Panel** per **Bar Surface**.
+- **Dmenu Selection Mode** is a standalone CLI lifecycle from the caller's perspective, but the running Niribar instance owns the visible selector surface.
+- **Dmenu Selection Mode** sends a **Dmenu Selection Request** to the running Niribar instance.
+- **Dmenu Selection Mode** fails without opening a fallback UI when no running Niribar instance is available to handle the **Dmenu Selection Request**.
+- **Dmenu Selection Mode** reads its standard input completely before sending one bounded **Dmenu Selection Request**.
+- **Dmenu Selection Mode** aims for dmenu-style selection behavior, not full dmenu flag compatibility.
+- **Dmenu Selection Mode** accepts a prompt and custom input delimiter as public CLI options.
+- **Dmenu Selection Mode** accepts prompt text with `-p` or `--prompt`.
+- **Dmenu Selection Mode** uses newline as the default input delimiter.
+- **Dmenu Selection Mode** delimiter options interpret common escapes such as `\n`, `\t`, `\0`, and `\\`.
+- The **Dmenu Selection Mode** prompt becomes a **Panel Menu Prompt** for the request-owned **Panel Menu**.
+- **Dmenu Selection Mode** treats the custom delimiter as input parsing only; successful output is always the selected entry followed by a newline.
+- Empty input is valid in **Dmenu Selection Mode**.
+- **Dmenu Selection Mode** preserves duplicate input entries in display order.
+- **Dmenu Selection Mode** allows the user to submit arbitrary typed text by default.
+- **Dmenu Selection Mode** can be explicitly restricted to provided entries with `--no-custom`.
+- Empty input with `--no-custom` offers no selectable entries and can only be cancelled.
+- When **Dmenu Selection Mode** has a focused matching entry, normal activation returns that focused entry.
+- Submitting arbitrary typed text uses a distinct custom-value affordance.
+- **Dmenu Selection Mode** writes the selected entry and does not run configured **Panel Actions**.
+- **Dmenu Selection Mode** exits successfully only when the user selects or submits a value.
+- Cancelling **Dmenu Selection Mode** exits distinctly from CLI usage errors and IPC/request failures.
+- **Dmenu Selection Mode** has no default timeout while waiting for user selection.
+- If the running Niribar instance disconnects before completing a **Dmenu Selection Request**, the CLI treats it as an IPC/request failure.
+- A **Dmenu Selection Request** opens on the focused **Output** when known, or on one deterministic **Bar Surface** when no focused **Output** is known.
+- Opening a **Dmenu Selection Request** closes any existing **Panel** or **Menu**.
+- A running **Dmenu Selection Request** rejects additional **Dmenu Selection Requests** until it completes.
+- A **Dmenu Selection Request** cancels when its **Panel** loses focus, consistent with other **Panels**.
+- A **Dmenu Selection Request** is not a configured **Panel Action**.
+- A **Dmenu Selection Request** is displayed as a **Panel Menu** with a **Dmenu Panel Menu Source**.
+- A **Dmenu Panel Menu Source** returns its activated value to the requesting CLI process instead of running a configured **Panel Action**.
+- A **Dmenu Panel Menu Source** initially treats each input entry as both the visible label and returned value.
+- A **Dmenu Panel Menu Source** may later accept richer entry metadata such as icons and keywords.
 - **Keyboard Focus** belongs to a **Bar Surface**.
 - **Keyboard Focus** navigation includes visible targets that are actionable or inspectable.
 - A target with a hover **Tooltip** is inspectable and therefore participates in **Keyboard Focus** navigation.
@@ -457,6 +508,9 @@ _Avoid_: Default config, fallback surface
 >
 > **Dev:** "What should `niribar --toggle-panel` affect?"
 > **Domain expert:** "It should close the current **Panel** when one is open. Otherwise it should open one default **Panel** on the focused **Output** when known, or one deterministic default **Panel** if no focused **Output** is known."
+>
+> **Dev:** "Is `niribar --dmenu` another way to open a configured **Panel Menu**?"
+> **Domain expert:** "No — **Dmenu Selection Mode** is a one-shot selector that returns the chosen input entry to its caller."
 >
 > **Dev:** "Can two **Bar Surfaces** have **Panels** open at the same time?"
 > **Domain expert:** "No — Niribar shows at most one **Panel** at a time."
