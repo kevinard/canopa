@@ -102,6 +102,10 @@ _Avoid_: Tooltip, action, launcher
 A transient overlay surface opened from a **Bar Surface**. A **Panel** is anchored to its originating **Bar Surface** or **Module** and can render module detail content, a **Bar**'s configured panel module layout, or named **Panel Menu** content.
 _Avoid_: Popup when referring to Niribar's generic panel
 
+**Panel Runtime**:
+The live state machine for the currently active **Panel**, including its **Panel Menu Session** when present, pending search focus, menu scroll position, and any active **Dmenu Selection Request** responder.
+_Avoid_: Panel state when referring to the full open/search/activation/cancel lifecycle
+
 **Panel Origin**:
 The **Bar Surface** or **Module** that triggered the current **Panel**.
 _Avoid_: Active module when referring specifically to panel source

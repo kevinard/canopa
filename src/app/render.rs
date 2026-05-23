@@ -148,7 +148,7 @@ impl App {
             search_query,
             focused_index,
             menu_scroll_id: super::panel::panel_menu_scroll_id(window),
-            menu_scroll_y: self.panel.menu_scroll_y,
+            menu_scroll_y: self.panel.menu_scroll_y(),
             bar_style: &bar.style,
         })
     }
@@ -613,11 +613,10 @@ mod tests {
             ..Default::default()
         };
         let (mut app, _) = App::boot(config, vec![]);
-        app.panel.session = Some(crate::app::panel_menu_session::PanelMenuSession::open(
-            crate::app::panel_menu_session::PanelMenuSource::Configured(
+        app.panel
+            .open_session(crate::app::panel_menu_session::PanelMenuSource::Configured(
                 app.config.menus[0].clone(),
-            ),
-        ));
+            ));
         let origin = test_wid();
         let panel = test_wid();
         app.register_panel_popup(
@@ -646,8 +645,8 @@ mod tests {
     #[test]
     fn dmenu_request_with_entry_icon_enables_menu_icons() {
         let (mut app, _) = App::boot(Config::default(), Vec::new());
-        app.panel.session = Some(crate::app::panel_menu_session::PanelMenuSession::open(
-            crate::app::panel_menu_session::PanelMenuSource::Dmenu(
+        app.panel
+            .open_session(crate::app::panel_menu_session::PanelMenuSource::Dmenu(
                 crate::ipc::protocol::DmenuRequest {
                     prompt: None,
                     entries: vec![crate::ipc::protocol::DmenuEntry {
@@ -658,8 +657,7 @@ mod tests {
                     }],
                     allow_custom: true,
                 },
-            ),
-        ));
+            ));
         let origin = test_wid();
         let panel = test_wid();
         app.register_panel_popup(
