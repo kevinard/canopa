@@ -141,43 +141,11 @@ impl App {
         if let Some(responder) = self.panel.cancel_dmenu_if_active() {
             send_ipc_response(responder, crate::ipc::protocol::IpcResponse::Cancelled);
         }
-        let effects = self.overlays.close_all_panels();
-        let mut tasks = if effects.is_empty() {
-            Vec::new()
-        } else {
+        let effects = self.surfaces.close_panel_overlays();
+        if !effects.is_empty() {
             self.panel.clear();
-            self.apply_overlay_effects(effects, true)
-        };
-        tasks.extend(self.close_all_untracked_panels_with_restore(true));
-        tasks
-    }
-
-    fn close_all_untracked_panels_with_restore(
-        &mut self,
-        restore_bar_interactivity: bool,
-    ) -> Vec<Task<Message>> {
-        let ids: Vec<_> = self
-            .surfaces
-            .panel_popup_ids()
-            .filter(|id| self.overlays.panel(*id).is_none())
-            .collect();
-        if let Some(responder) = self.panel.cancel_dmenu_if_active() {
-            send_ipc_response(responder, crate::ipc::protocol::IpcResponse::Cancelled);
         }
-        self.panel.clear();
-        let mut tasks: Vec<_> = ids
-            .into_iter()
-            .map(|id| {
-                self.overlays.forget_panel(id);
-                self.panel.mark_closing_window(id);
-                self.surfaces.remove_panel_popup(id);
-                Task::done(Message::RemoveWindow(id))
-            })
-            .collect();
-        if restore_bar_interactivity {
-            tasks.extend(self.restore_bar_keyboard_interactivity());
-        }
-        tasks
+        self.apply_registry_effects(effects)
     }
 
     pub(super) fn handle_panel_focus_gained(&mut self, window: iced::window::Id) -> Task<Message> {
@@ -298,27 +266,28 @@ impl App {
         let (panel_window, open_task) = Message::layershell_open(settings);
         self.surface_mut(request.origin_window).tooltip_pending = None;
 
-        let effects = self
-            .overlays
-            .open_panel(request.origin_window, panel_window);
-        let mut tasks = self.apply_overlay_effects(effects, false);
-        if let crate::surface::panel::PanelContent::Menu(name) = &tree.content {
-            if let Some(menu) = self
+        let panel_meta = super::surfaces::PanelMeta {
+            tree: tree.clone(),
+            search_input_id: panel_search_input_id(panel_window),
+        };
+        let effects =
+            self.surfaces
+                .open_panel_overlay(request.origin_window, panel_window, panel_meta);
+        let mut tasks = self.apply_registry_effects(effects);
+        if let crate::surface::panel::PanelContent::Menu(name) = &tree.content
+            && let Some(menu) = self
                 .config
                 .menus
                 .iter()
                 .find(|menu| menu.name == *name)
                 .cloned()
-            {
-                if menu.source.is_none() {
-                    self.panel
-                        .open_session(super::panel_menu_session::PanelMenuSource::Configured(menu));
-                }
-            }
+            && menu.source.is_none()
+        {
+            self.panel
+                .open_session(super::panel_menu_session::PanelMenuSource::Configured(menu));
         }
         self.panel
             .panel_window_opened(panel_window, request.origin_window, tree.content.clone());
-        self.register_panel_popup(panel_window, request.origin_window, tree);
 
         let open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
         tasks.push(open_sequence);
@@ -336,7 +305,6 @@ impl App {
                     tasks.push(self.open_panel_window(request));
                 }
                 super::panel_runtime::PanelRuntimeEffect::ClosePanelWindow(window) => {
-                    self.overlays.forget_panel(window);
                     self.panel.mark_closing_window(window);
                     self.surfaces.remove_panel_popup(window);
                     tasks.push(Task::done(Message::RemoveWindow(window)));
@@ -480,6 +448,7 @@ impl App {
         self.panel.panel_menu_snapshot()
     }
 
+    #[cfg(test)]
     pub(super) fn active_panel_menu_entries(
         &self,
     ) -> Vec<super::panel_menu_session::PanelMenuEntry> {
@@ -2036,7 +2005,6 @@ mod tests {
             anchor: None,
             screen_size: (1920, 1080),
         };
-        app.overlays.panel_opened(tracked_panel, origin);
         app.surfaces.insert_panel_popup(
             tracked_panel,
             super::super::surfaces::PanelMeta {
@@ -2057,7 +2025,6 @@ mod tests {
         assert!(tasks.len() >= 2);
         assert!(app.surfaces.panel_popup(tracked_panel).is_none());
         assert!(app.surfaces.panel_popup(untracked_panel).is_none());
-        assert!(app.overlays.panel(tracked_panel).is_none());
     }
 
     #[test]

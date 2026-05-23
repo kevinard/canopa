@@ -175,10 +175,10 @@ pub(crate) fn validate_dmenu_request(request: &DmenuRequest) -> Result<(), Proto
         {
             return Err(ProtocolError::EntryTooLarge);
         }
-        if let Some(icon) = &entry.icon {
-            if !crate::icon_theme::is_valid_icon_name(icon) {
-                return Err(ProtocolError::InvalidDmenuIcon);
-            }
+        if let Some(icon) = &entry.icon
+            && !crate::icon_theme::is_valid_icon_name(icon)
+        {
+            return Err(ProtocolError::InvalidDmenuIcon);
         }
     }
     Ok(())

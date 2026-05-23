@@ -209,6 +209,7 @@ impl PanelRuntime {
         self.menu_viewport_height = viewport_height.max(0.0);
     }
 
+    #[cfg(test)]
     pub(super) fn reset_menu_scroll(&mut self) {
         self.menu_scroll_y = 0.0;
     }
@@ -221,10 +222,12 @@ impl PanelRuntime {
         self.search_focus_pending = pending;
     }
 
+    #[cfg(test)]
     pub(super) fn has_dmenu_responder(&self) -> bool {
         self.dmenu_responder.is_some()
     }
 
+    #[cfg(test)]
     pub(super) fn begin_dmenu_request(
         &mut self,
         responder: super::messages::IpcResponder,

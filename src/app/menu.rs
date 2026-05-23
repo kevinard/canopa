@@ -108,21 +108,8 @@ impl App {
     }
 
     pub(super) fn close_all_menu_popups(&mut self) -> Vec<Task<Message>> {
-        let effects = self.overlays.close_all_menus();
-        let mut tasks = self.apply_overlay_effects(effects, false);
-
-        let ids: Vec<iced::window::Id> = self
-            .surfaces
-            .popup_ids()
-            .filter(|id| self.overlays.menu(*id).is_none())
-            .collect();
-        tasks.extend(ids.into_iter().map(|id| {
-            self.overlays.forget_menu(id);
-            self.surfaces.remove_popup(id);
-            self.menu.clear_window(id);
-            Task::done(Message::RemoveWindow(id))
-        }));
-        tasks
+        let effects = self.surfaces.close_menu_overlays();
+        self.apply_registry_effects(effects)
     }
 
     pub(super) fn restore_bar_keyboard_interactivity(&mut self) -> Vec<Task<Message>> {
@@ -211,15 +198,13 @@ impl App {
         let bar = Self::bar_for_surface_name(&self.config.bars, &bar_name);
         let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &tree);
         let (popup_id, open_task) = Message::popup_open(settings);
-        let effects = self.overlays.open_menu(popup_id);
-        let mut tasks = self.apply_overlay_effects(effects, false);
         let model = MenuModel {
             service,
             menu_path,
             tree,
             bar_name,
         };
-        self.register_menu_popup(
+        let effects = self.surfaces.open_menu_overlay(
             popup_id,
             super::surfaces::PopupMeta {
                 service: model.service,
@@ -228,6 +213,7 @@ impl App {
                 bar_name: model.bar_name,
             },
         );
+        let mut tasks = self.apply_registry_effects(effects);
         tasks.push(open_task);
         Task::batch(tasks)
     }

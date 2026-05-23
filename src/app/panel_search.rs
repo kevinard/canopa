@@ -48,7 +48,7 @@ pub(super) fn best_match(fields: &[SearchText<'_>], query: &str) -> Option<Searc
     let mut total = 0;
     let mut lowest_priority_field = SearchField::Label;
     for token in &tokens {
-        let Some(token_score) = [
+        let token_score = [
             SearchField::Label,
             SearchField::Secondary,
             SearchField::Breadcrumb,
@@ -70,9 +70,7 @@ pub(super) fn best_match(fields: &[SearchText<'_>], query: &str) -> Option<Searc
             left.field
                 .cmp(&right.field)
                 .then_with(|| right.score.cmp(&left.score))
-        }) else {
-            return None;
-        };
+        })?;
         lowest_priority_field = lowest_priority_field.max(token_score.field);
         total += token_score.score;
     }

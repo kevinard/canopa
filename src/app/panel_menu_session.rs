@@ -173,10 +173,10 @@ impl PanelMenuSession {
 
     fn entries(&self) -> Arc<[PanelMenuEntry]> {
         let cache_key = format!("{}:{:?}", self.search_query, self.menu_path);
-        if let Some((cached_key, entries)) = self.entries_cache.borrow().as_ref() {
-            if cached_key == &cache_key {
-                return entries.clone();
-            }
+        if let Some((cached_key, entries)) = self.entries_cache.borrow().as_ref()
+            && cached_key == &cache_key
+        {
+            return entries.clone();
         }
         let entries: Arc<[PanelMenuEntry]> = match &self.source {
             PanelMenuSource::Configured(menu) if self.search_query.is_empty() => {

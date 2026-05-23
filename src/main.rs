@@ -256,8 +256,10 @@ mod tests {
 
     #[test]
     fn parse_dmenu_stdin_uses_json_lines_format() {
-        let mut options = crate::cli::DmenuOptions::default();
-        options.entry_format = crate::cli::DmenuEntryFormat::JsonLines;
+        let options = crate::cli::DmenuOptions {
+            entry_format: crate::cli::DmenuEntryFormat::JsonLines,
+            ..Default::default()
+        };
 
         let entries = super::parse_dmenu_stdin(
             r#"{"label":"Firefox","value":"org.mozilla.firefox","icon":"firefox"}"#,

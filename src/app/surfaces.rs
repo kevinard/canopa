@@ -21,6 +21,20 @@ pub(super) struct PanelMeta {
     pub(super) search_input_id: iced::widget::Id,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum RegistryEffect {
+    RemoveWindow(iced::window::Id),
+    SuspendBarKeyboardInteractivity,
+    RestoreBarKeyboardInteractivity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ClosedRegisteredWindow {
+    Panel,
+    Menu,
+    Tooltip,
+}
+
 fn render_to_segments(
     template: &crate::config::FormatTemplate,
     values: &[(&str, String)],
@@ -295,6 +309,135 @@ impl SurfaceManager {
             .values()
             .find(|p| p.target_window == target_window)
     }
+
+    pub(super) fn open_panel_overlay(
+        &mut self,
+        origin_surface: iced::window::Id,
+        panel_window: iced::window::Id,
+        meta: PanelMeta,
+    ) -> Vec<RegistryEffect> {
+        let mut effects = self.close_tooltips_for_surface(origin_surface);
+        effects.extend(self.close_menu_overlays());
+        effects.extend(self.close_panel_overlays());
+        self.panel_popups.insert(panel_window, meta);
+        effects.push(RegistryEffect::SuspendBarKeyboardInteractivity);
+        effects
+    }
+
+    pub(super) fn open_menu_overlay(
+        &mut self,
+        menu_window: iced::window::Id,
+        meta: PopupMeta,
+    ) -> Vec<RegistryEffect> {
+        let mut effects = self.close_tooltip_overlays();
+        effects.extend(self.close_panel_overlays_without_restore());
+        effects.extend(self.close_menu_overlays());
+        self.popups.insert(menu_window, meta);
+        effects
+    }
+
+    pub(super) fn open_tooltip_overlay(
+        &mut self,
+        popup: TooltipPopup,
+    ) -> Vec<RegistryEffect> {
+        let effects = self.close_tooltips_for_surface(popup.target_window);
+        self.tooltip_popups.insert(popup.window, popup);
+        effects
+    }
+
+    pub(super) fn close_panel_overlays(&mut self) -> Vec<RegistryEffect> {
+        let mut effects = self.close_panel_overlays_without_restore();
+        if !effects.is_empty() {
+            effects.push(RegistryEffect::RestoreBarKeyboardInteractivity);
+        }
+        effects
+    }
+
+    fn close_panel_overlays_without_restore(&mut self) -> Vec<RegistryEffect> {
+        self.panel_popups
+            .drain()
+            .map(|(window, _)| RegistryEffect::RemoveWindow(window))
+            .collect()
+    }
+
+    pub(super) fn close_menu_overlays(&mut self) -> Vec<RegistryEffect> {
+        self.popups
+            .drain()
+            .map(|(window, _)| RegistryEffect::RemoveWindow(window))
+            .collect()
+    }
+
+    pub(super) fn close_tooltip_for_surface(
+        &mut self,
+        target_surface: iced::window::Id,
+    ) -> Vec<RegistryEffect> {
+        self.close_tooltips_for_surface(target_surface)
+    }
+
+    pub(super) fn close_tooltip_for_target(
+        &mut self,
+        target_surface: iced::window::Id,
+        target_module: &crate::modules::ModuleId,
+    ) -> Vec<RegistryEffect> {
+        let closing: Vec<_> = self
+            .tooltip_popups
+            .iter()
+            .filter_map(|(window, popup)| {
+                (popup.target_window == target_surface && &popup.target_module == target_module)
+                    .then_some(*window)
+            })
+            .collect();
+        for window in &closing {
+            self.tooltip_popups.remove(window);
+        }
+        closing
+            .into_iter()
+            .map(RegistryEffect::RemoveWindow)
+            .collect()
+    }
+
+    pub(super) fn window_closed(
+        &mut self,
+        window: iced::window::Id,
+    ) -> Option<ClosedRegisteredWindow> {
+        if self.panel_popups.remove(&window).is_some() {
+            return Some(ClosedRegisteredWindow::Panel);
+        }
+        if self.popups.remove(&window).is_some() {
+            return Some(ClosedRegisteredWindow::Menu);
+        }
+        if self.tooltip_popups.remove(&window).is_some() {
+            return Some(ClosedRegisteredWindow::Tooltip);
+        }
+        None
+    }
+
+    fn close_tooltip_overlays(&mut self) -> Vec<RegistryEffect> {
+        self.tooltip_popups
+            .drain()
+            .map(|(window, _)| RegistryEffect::RemoveWindow(window))
+            .collect()
+    }
+
+    fn close_tooltips_for_surface(
+        &mut self,
+        target_surface: iced::window::Id,
+    ) -> Vec<RegistryEffect> {
+        let closing: Vec<_> = self
+            .tooltip_popups
+            .iter()
+            .filter_map(|(window, popup)| {
+                (popup.target_window == target_surface).then_some(*window)
+            })
+            .collect();
+        for window in &closing {
+            self.tooltip_popups.remove(window);
+        }
+        closing
+            .into_iter()
+            .map(RegistryEffect::RemoveWindow)
+            .collect()
+    }
 }
 
 impl Index<iced::window::Id> for SurfaceManager {
@@ -361,22 +504,16 @@ impl App {
                 Task::none()
             }
             SurfaceEvent::WindowClosed(window) if self.panel.is_closing_window(window) => {
-                self.overlays.window_closed(window);
+                self.surfaces.window_closed(window);
                 self.panel.forget_closing_window(window);
                 Task::none()
             }
-            SurfaceEvent::WindowClosed(window) => match self.overlays.window_closed(window) {
-                Some(super::overlay_lifecycle::ClosedOverlay::Panel) => {
-                    self.surfaces.remove_panel_popup(window);
-                    Task::none()
-                }
-                Some(super::overlay_lifecycle::ClosedOverlay::Menu) => {
+            SurfaceEvent::WindowClosed(window) => match self.surfaces.window_closed(window) {
+                Some(ClosedRegisteredWindow::Panel) => Task::none(),
+                Some(ClosedRegisteredWindow::Menu) => {
                     Task::done(Message::Menu(super::messages::MenuEvent::Closed))
                 }
-                Some(super::overlay_lifecycle::ClosedOverlay::Tooltip) => {
-                    self.surfaces.remove_tooltip_popup(window);
-                    Task::none()
-                }
+                Some(ClosedRegisteredWindow::Tooltip) => Task::none(),
                 None if self.is_menu_popup_window(window) => {
                     Task::done(Message::Menu(super::messages::MenuEvent::Closed))
                 }
@@ -774,12 +911,13 @@ impl App {
         };
 
         let (popup_wid, open_task) = spawn_tooltip_popup_window(&tree);
-        let effects = self
-            .overlays
-            .open_tooltip(popup_wid, target_window, module.clone());
-        let mut tasks = self.apply_overlay_effects(effects, false);
-
-        self.register_tooltip_popup(popup_wid, target_window, module, tree);
+        let effects = self.surfaces.open_tooltip_overlay(TooltipPopup {
+            window: popup_wid,
+            target_window,
+            target_module: module,
+            tree,
+        });
+        let mut tasks = self.apply_registry_effects(effects);
 
         tasks.push(open_task);
         Task::batch(tasks)
@@ -848,19 +986,8 @@ impl App {
         &mut self,
         target_window: iced::window::Id,
     ) -> Vec<Task<Message>> {
-        let effects = self.overlays.close_tooltip_for_surface(target_window);
-        let mut tasks = self.apply_overlay_effects(effects, false);
-        let popup_wid = self
-            .surfaces
-            .tooltip_popup_for_target(target_window)
-            .filter(|p| self.overlays.tooltip(p.window).is_none())
-            .map(|p| p.window);
-        if let Some(wid) = popup_wid {
-            self.overlays.forget_tooltip(wid);
-            self.surfaces.remove_tooltip_popup(wid);
-            tasks.push(Task::done(Message::RemoveWindow(wid)));
-        }
-        tasks
+        let effects = self.surfaces.close_tooltip_for_surface(target_window);
+        self.apply_registry_effects(effects)
     }
 
     pub(super) fn close_tooltip_popup_if_open_for(
@@ -868,22 +995,8 @@ impl App {
         target_window: iced::window::Id,
         module: &crate::modules::ModuleId,
     ) -> Vec<Task<Message>> {
-        let effects = self
-            .overlays
-            .close_tooltip_for_target(target_window, module);
-        let mut tasks = self.apply_overlay_effects(effects, false);
-        let popup_wid = self
-            .surfaces
-            .tooltip_popup_for_target(target_window)
-            .filter(|p| &p.target_module == module)
-            .filter(|p| self.overlays.tooltip(p.window).is_none())
-            .map(|p| p.window);
-        if let Some(wid) = popup_wid {
-            self.overlays.forget_tooltip(wid);
-            self.surfaces.remove_tooltip_popup(wid);
-            tasks.push(Task::done(Message::RemoveWindow(wid)));
-        }
-        tasks
+        let effects = self.surfaces.close_tooltip_for_target(target_window, module);
+        self.apply_registry_effects(effects)
     }
 }
 
@@ -959,6 +1072,58 @@ mod tests {
             app.surfaces.active_panel_origin_for(origin),
             Some(&crate::surface::panel::PanelOrigin::Bar)
         );
+    }
+
+    #[test]
+    fn registry_opening_panel_replaces_existing_overlays() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let origin = test_wid();
+        let menu = test_wid();
+        let tooltip = test_wid();
+        let panel = test_wid();
+        app.surfaces
+            .surfaces
+            .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
+        app.register_menu_popup(
+            menu,
+            PopupMeta {
+                service: "org.test".into(),
+                menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
+                tree: crate::surface::menu_popup::MenuTree {
+                    items: Vec::new(),
+                    anchor: (0, 0),
+                    screen_size: (1920, 1080),
+                },
+                bar_name: "main".into(),
+            },
+        );
+        app.register_tooltip_popup(
+            tooltip,
+            origin,
+            ModuleId::new("clock"),
+            tooltip_tree(crate::config::Edge::Top),
+        );
+
+        let effects = app.surfaces.open_panel_overlay(
+            origin,
+            panel,
+            PanelMeta {
+                tree: panel_tree(origin),
+                search_input_id: crate::app::panel::panel_search_input_id(panel),
+            },
+        );
+
+        assert_eq!(
+            effects,
+            vec![
+                super::RegistryEffect::RemoveWindow(tooltip),
+                super::RegistryEffect::RemoveWindow(menu),
+                super::RegistryEffect::SuspendBarKeyboardInteractivity,
+            ]
+        );
+        assert!(app.surfaces.panel_popup(panel).is_some());
+        assert!(app.surfaces.popup(menu).is_none());
+        assert!(app.surfaces.tooltip_popup(tooltip).is_none());
     }
 
     #[test]

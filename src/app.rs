@@ -12,7 +12,6 @@ mod module_store;
 mod navigation;
 mod niri;
 mod overlay_adapter;
-mod overlay_lifecycle;
 mod panel;
 mod panel_menu_session;
 mod panel_runtime;
@@ -44,7 +43,6 @@ pub(crate) struct App {
     menu: menu::MenuSystem,
     panel: panel_runtime::PanelRuntime,
     modules: module_runtime::ModuleRuntime,
-    overlays: overlay_lifecycle::OverlayLifecycle,
     niri: niri::AppNiriState,
     tray: tray::TrayState,
     perf: Option<perf::PerfTracker>,
@@ -192,7 +190,6 @@ impl App {
             menu: menu::MenuSystem::default(),
             panel: panel_runtime::PanelRuntime::default(),
             modules: module_runtime::ModuleRuntime::from_modules_with_actions(module_graph.modules),
-            overlays: overlay_lifecycle::OverlayLifecycle::default(),
             niri: niri::AppNiriState::new(),
             tray: tray::TrayState::default(),
             perf: perf::PerfTracker::from_env(),
