@@ -214,7 +214,7 @@ impl App {
                 content,
                 anchor,
             } => {
-                let request = super::panel_coordinator::PanelOpenRequest {
+                let request = super::panel_runtime::PanelOpenRequest {
                     origin_window,
                     origin,
                     content,
@@ -223,7 +223,7 @@ impl App {
                 let effects = self
                     .panel
                     .toggle_panel_with_menus(request, self.config.menus.as_slice());
-                self.apply_panel_coordinator_effects(effects)
+                self.apply_panel_runtime_effects(effects)
             }
             PanelEvent::Close => Task::batch(self.close_all_panels()),
             PanelEvent::SearchChanged(query) => {
@@ -263,7 +263,7 @@ impl App {
         content: crate::surface::panel::PanelContent,
         anchor: Option<iced::Rectangle>,
     ) -> Task<Message> {
-        let request = super::panel_coordinator::PanelOpenRequest {
+        let request = super::panel_runtime::PanelOpenRequest {
             origin_window,
             origin,
             content,
@@ -272,12 +272,12 @@ impl App {
         let effects = self
             .panel
             .open_panel_with_menus(request, self.config.menus.as_slice());
-        self.apply_panel_coordinator_effects(effects)
+        self.apply_panel_runtime_effects(effects)
     }
 
     fn open_panel_window(
         &mut self,
-        request: super::panel_coordinator::PanelOpenRequest,
+        request: super::panel_runtime::PanelOpenRequest,
     ) -> Task<Message> {
         let origin_surface = self
             .surface(request.origin_window)
@@ -325,34 +325,55 @@ impl App {
         Task::batch(tasks)
     }
 
-    fn apply_panel_coordinator_effects(
+    fn apply_panel_runtime_effects(
         &mut self,
-        effects: Vec<super::panel_coordinator::PanelEffect>,
+        effects: Vec<super::panel_runtime::PanelRuntimeEffect>,
     ) -> Task<Message> {
         let mut tasks = Vec::new();
         for effect in effects {
             match effect {
-                super::panel_coordinator::PanelEffect::OpenPanelWindow(request) => {
+                super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(request) => {
                     tasks.push(self.open_panel_window(request));
                 }
-                super::panel_coordinator::PanelEffect::ClosePanelWindow(window) => {
+                super::panel_runtime::PanelRuntimeEffect::ClosePanelWindow(window) => {
                     self.overlays.forget_panel(window);
                     self.panel.mark_closing_window(window);
                     self.surfaces.remove_panel_popup(window);
                     tasks.push(Task::done(Message::RemoveWindow(window)));
                 }
-                super::panel_coordinator::PanelEffect::RequestSearchFocus => {
+                super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus => {
                     self.panel.set_search_focus_pending(true);
                     tasks.push(request_panel_search_focus());
                 }
-                super::panel_coordinator::PanelEffect::LoadInstalledAppsThenOpenPanel(pending) => {
+                super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenOpenPanel(
+                    pending,
+                ) => {
                     let apps = self.load_installed_apps_for_panel();
                     let effects = self.panel.open_panel_after_installed_apps_loaded(
                         pending,
                         apps,
                         self.config.menus.as_slice(),
                     );
-                    tasks.push(self.apply_panel_coordinator_effects(effects));
+                    tasks.push(self.apply_panel_runtime_effects(effects));
+                }
+                super::panel_runtime::PanelRuntimeEffect::RunPanelAction(action) => {
+                    let task = self.dispatch_panel_action_from_active_panel(action);
+                    tasks.push(task);
+                    tasks.extend(self.close_all_panels());
+                }
+                super::panel_runtime::PanelRuntimeEffect::LaunchInstalledApp(id) => {
+                    self.launch_installed_app_by_id(&id);
+                    tasks.extend(self.close_all_panels());
+                }
+                super::panel_runtime::PanelRuntimeEffect::CompleteDmenu(response) => {
+                    self.complete_dmenu_request(response);
+                    tasks.extend(self.close_all_panels());
+                }
+                super::panel_runtime::PanelRuntimeEffect::SendDmenuResponse {
+                    responder,
+                    response,
+                } => {
+                    send_ipc_response(responder, response);
                 }
             }
         }
@@ -501,34 +522,6 @@ impl App {
         Task::batch(tasks)
     }
 
-    fn apply_panel_runtime_effects(
-        &mut self,
-        effects: Vec<super::panel_runtime::PanelRuntimeEffect>,
-    ) -> Task<Message> {
-        let mut tasks = Vec::new();
-        for effect in effects {
-            match effect {
-                super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus => {
-                    tasks.push(request_panel_search_focus());
-                }
-                super::panel_runtime::PanelRuntimeEffect::RunPanelAction(action) => {
-                    let task = self.dispatch_panel_action_from_active_panel(action);
-                    tasks.push(task);
-                    tasks.extend(self.close_all_panels());
-                }
-                super::panel_runtime::PanelRuntimeEffect::LaunchInstalledApp(id) => {
-                    self.launch_installed_app_by_id(&id);
-                    tasks.extend(self.close_all_panels());
-                }
-                super::panel_runtime::PanelRuntimeEffect::CompleteDmenu(response) => {
-                    self.complete_dmenu_request(response);
-                    tasks.extend(self.close_all_panels());
-                }
-            }
-        }
-        Task::batch(tasks)
-    }
-
     fn dispatch_panel_action_from_active_panel(
         &mut self,
         action: crate::config::PanelAction,
@@ -572,45 +565,12 @@ impl App {
         request: crate::ipc::protocol::DmenuRequest,
         responder: super::messages::IpcResponder,
     ) -> Task<Message> {
-        if let Err(responder) = self.panel.begin_dmenu_request(responder) {
-            send_ipc_response(
-                responder,
-                crate::ipc::protocol::IpcResponse::Rejected {
-                    reason: "another dmenu request is already active".into(),
-                },
-            );
-            return Task::none();
-        }
-
-        let Some(origin_window) = self.default_panel_origin_window() else {
-            if let Some(responder) = self.panel.take_dmenu_responder() {
-                send_ipc_response(
-                    responder,
-                    crate::ipc::protocol::IpcResponse::Rejected {
-                        reason: "no bar surface is available".into(),
-                    },
-                );
-            }
-            return Task::none();
-        };
-
-        let responder = self
-            .panel
-            .take_dmenu_responder()
-            .expect("accepted dmenu responder should be stored");
-        let tasks = self.close_all_panels();
-        self.panel.clear();
-        let open_task = self.handle_panel_event(super::messages::PanelEvent::Open {
-            origin_window,
-            origin: crate::surface::panel::PanelOrigin::Bar,
-            content: crate::surface::panel::PanelContent::DmenuRequest,
-            anchor: None,
-        });
-        self.panel
-            .open_session(super::panel_menu_session::PanelMenuSource::Dmenu(request));
-        let _ = self.panel.begin_dmenu_request(responder);
-
-        Task::batch(tasks.into_iter().chain(std::iter::once(open_task)))
+        let effects = self.panel.begin_dmenu_selection(
+            request,
+            responder,
+            self.default_panel_origin_window(),
+        );
+        self.apply_panel_runtime_effects(effects)
     }
 
     pub(super) fn complete_dmenu_request(&mut self, response: crate::ipc::protocol::IpcResponse) {

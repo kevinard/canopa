@@ -14,7 +14,6 @@ mod niri;
 mod overlay_adapter;
 mod overlay_lifecycle;
 mod panel;
-mod panel_coordinator;
 mod panel_menu_session;
 mod panel_runtime;
 mod panel_search;
@@ -43,7 +42,7 @@ pub(crate) struct App {
     shared: shared::SharedContext,
     surfaces: surfaces::SurfaceManager,
     menu: menu::MenuSystem,
-    panel: panel_coordinator::PanelCoordinator,
+    panel: panel_runtime::PanelRuntime,
     modules: module_runtime::ModuleRuntime,
     overlays: overlay_lifecycle::OverlayLifecycle,
     niri: niri::AppNiriState,
@@ -191,7 +190,7 @@ impl App {
             shared: shared::SharedContext::new(),
             surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
             menu: menu::MenuSystem::default(),
-            panel: panel_coordinator::PanelCoordinator::default(),
+            panel: panel_runtime::PanelRuntime::default(),
             modules: module_runtime::ModuleRuntime::from_modules_with_actions(module_graph.modules),
             overlays: overlay_lifecycle::OverlayLifecycle::default(),
             niri: niri::AppNiriState::new(),

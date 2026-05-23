@@ -1,58 +1,398 @@
 # Panel Runtime Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deepen the Panel Runtime module so Panel lifecycle, search/focus state, menu activation, and Dmenu Selection Request responder state live behind one focused interface.
+**Goal:** Deepen the **Panel Runtime** module so it owns Panel logical lifecycle, search/focus state, Panel Menu Session activation, and Dmenu Selection Request responder state behind one focused interface.
 
-**Architecture:** Add `src/app/panel_runtime.rs` as the state module for the active **Panel Runtime**. `App` remains the adapter for iced tasks, layer-shell windows, overlay effects, config/menu source lookup, process launch, and physical IPC response sending. `PanelMenuSession` remains the module for **Panel Menu Session** search, focus, submenu navigation, and activation calculation.
+**Architecture:** Delete the shallow `PanelCoordinator` module and fold its active Panel tracking, `PanelOpenRequest`, pending Installed Desktop Application menu opens, and lifecycle effects into `PanelRuntime`. `App` remains the adapter for iced `Task`s, layer-shell windows, overlay effects, config/menu lookup inputs, Installed Desktop Application discovery, process launch, and physical IPC response sending. `PanelMenuSession` remains the module for menu search, focus, submenu navigation, and activation calculation.
 
-**Tech Stack:** Rust, iced `Task`, iced layer-shell, existing `cargo test` unit tests.
+**Tech Stack:** Rust, iced, iced layer-shell, existing unit tests through `cargo test`.
 
 ---
 
 ## File Structure
 
-- Create: `src/app/panel_runtime.rs`
-  - Owns active Panel Runtime state copied from `PanelSystem`.
-  - Provides methods for search, menu scroll, focus movement, back, escape, activation, Dmenu responder storage, and closing-window bookkeeping.
-  - Returns `PanelRuntimeEffect` values for outside-world work.
+- Modify: `src/app/panel_runtime.rs`
+  - Owns `PanelRuntime`, `PanelRuntimeEffect`, `PanelOpenRequest`, `PendingPanelOpen`, and active Panel tracking.
+  - Provides logical lifecycle methods: `open_panel_with_menus`, `toggle_panel_with_menus`, `open_panel_after_installed_apps_loaded`, `panel_window_opened`, `begin_dmenu_selection`, and existing interaction methods.
+  - Returns effects for `App` to adapt into iced/window/IPC/process work.
+- Delete: `src/app/panel_coordinator.rs`
+  - Its current interface is mostly forwarding and active Panel bookkeeping. The deletion test says its complexity should move into `PanelRuntime`.
 - Modify: `src/app.rs`
-  - Add `mod panel_runtime;`.
-  - Change `App.panel` from `panel::PanelSystem` to `panel_runtime::PanelRuntime`.
+  - Remove `mod panel_coordinator;`.
+  - Store `panel: panel_runtime::PanelRuntime`.
 - Modify: `src/app/panel.rs`
-  - Remove `PanelSystem`.
-  - Convert panel event handling to call `PanelRuntime` methods.
-  - Adapt `PanelRuntimeEffect` values into existing `Task<Message>` behavior.
-  - Keep layer-shell settings, `PanelTree` creation, overlay effects, source resolution, process launch, and IPC response sending here.
+  - Replace all `panel_coordinator` references with `panel_runtime`.
+  - Adapt the expanded `PanelRuntimeEffect` enum into existing iced tasks and IPC responses.
+  - Keep layer-shell settings, `PanelTree` construction, overlay cleanup, menu source lookup inputs, Installed Desktop Application discovery, launch, and physical IPC response sending here.
 - Modify: `src/app/surfaces.rs`
-  - Update references to `self.panel.is_closing_window`, `mark_closing_window`, and `forget_closing_window` if method names change.
+  - Keep calls to closing-window bookkeeping on `self.panel`; the implementation now lives directly in `PanelRuntime`.
+- Modify: `src/app/render.rs`
+  - Keep read-only Panel Menu Snapshot access through `PanelRuntime`.
 - Modify: `CONTEXT.md`
-  - Already updated with **Panel Runtime**. Do not rename the term without updating the glossary.
+  - No glossary change is expected because **Panel Runtime** already exists. Only edit if implementation introduces a new domain term.
 
 ---
 
-## Task 1: Add Panel Runtime Skeleton
+## Task 1: Move Panel Lifecycle Types Into Panel Runtime
 
 **Files:**
+- Modify: `src/app/panel_runtime.rs`
+- Modify: `src/app/panel_coordinator.rs`
 
-- Create: `src/app/panel_runtime.rs`
+- [ ] **Step 1: Add failing lifecycle tests to `src/app/panel_runtime.rs`**
+
+Append these tests inside the existing `#[cfg(test)] mod tests` in `src/app/panel_runtime.rs`:
+
+```rust
+fn wid() -> iced::window::Id {
+    iced::window::Id::unique()
+}
+
+fn open_request(window: iced::window::Id, content: crate::surface::panel::PanelContent) -> super::PanelOpenRequest {
+    super::PanelOpenRequest {
+        origin_window: window,
+        origin: crate::surface::panel::PanelOrigin::Bar,
+        content,
+        anchor: None,
+    }
+}
+
+#[test]
+fn opening_a_panel_replaces_the_active_panel() {
+    let origin = wid();
+    let first_panel = wid();
+    let second_panel = wid();
+    let mut runtime = PanelRuntime::default();
+
+    let first = runtime.open_panel_with_menus(
+        open_request(origin, crate::surface::panel::PanelContent::BarPanel),
+        &[],
+    );
+    assert_eq!(
+        first,
+        vec![PanelRuntimeEffect::OpenPanelWindow(open_request(
+            origin,
+            crate::surface::panel::PanelContent::BarPanel
+        ))]
+    );
+    runtime.panel_window_opened(
+        first_panel,
+        origin,
+        crate::surface::panel::PanelContent::BarPanel,
+    );
+
+    let second = runtime.open_panel_with_menus(
+        open_request(origin, crate::surface::panel::PanelContent::Menu("main".into())),
+        &[],
+    );
+
+    assert_eq!(
+        second,
+        vec![
+            PanelRuntimeEffect::ClosePanelWindow(first_panel),
+            PanelRuntimeEffect::OpenPanelWindow(open_request(
+                origin,
+                crate::surface::panel::PanelContent::Menu("main".into())
+            )),
+            PanelRuntimeEffect::RequestSearchFocus,
+        ]
+    );
+    runtime.panel_window_opened(
+        second_panel,
+        origin,
+        crate::surface::panel::PanelContent::Menu("main".into()),
+    );
+    assert_eq!(runtime.active_panel_window(), Some(second_panel));
+}
+
+#[test]
+fn toggling_the_same_panel_closes_it() {
+    let origin = wid();
+    let panel = wid();
+    let mut runtime = PanelRuntime::default();
+    runtime.panel_window_opened(
+        panel,
+        origin,
+        crate::surface::panel::PanelContent::BarPanel,
+    );
+
+    let effects = runtime.toggle_panel_with_menus(
+        open_request(origin, crate::surface::panel::PanelContent::BarPanel),
+        &[],
+    );
+
+    assert_eq!(effects, vec![PanelRuntimeEffect::ClosePanelWindow(panel)]);
+    assert_eq!(runtime.active_panel_window(), None);
+}
+
+#[test]
+fn installed_apps_menu_returns_load_effect_before_opening_panel() {
+    let origin = wid();
+    let mut runtime = PanelRuntime::default();
+    let menus = vec![crate::config::MenuConfig {
+        name: "apps".into(),
+        prompt: Some("Run".into()),
+        show_icons: true,
+        source: Some(crate::config::MenuSourceConfig {
+            kind: crate::config::MenuSourceKind::InstalledApps,
+        }),
+        items: Vec::new(),
+    }];
+
+    let effects = runtime.open_panel_with_menus(
+        open_request(origin, crate::surface::panel::PanelContent::Menu("apps".into())),
+        &menus,
+    );
+
+    assert_eq!(
+        effects,
+        vec![PanelRuntimeEffect::LoadInstalledAppsThenOpenPanel(
+            super::PendingPanelOpen {
+                request: open_request(origin, crate::surface::panel::PanelContent::Menu("apps".into())),
+                menu_name: "apps".into(),
+            }
+        )]
+    );
+    assert_eq!(runtime.active_panel_window(), None);
+}
+```
+
+- [ ] **Step 2: Run the focused tests and verify they fail**
+
+Run:
+
+```bash
+cargo test app::panel_runtime::tests::opening_a_panel_replaces_the_active_panel app::panel_runtime::tests::toggling_the_same_panel_closes_it app::panel_runtime::tests::installed_apps_menu_returns_load_effect_before_opening_panel -- --nocapture
+```
+
+Expected: FAIL with missing `PanelOpenRequest`, `PendingPanelOpen`, lifecycle `PanelRuntimeEffect` variants, and lifecycle methods in `PanelRuntime`.
+
+- [ ] **Step 3: Copy lifecycle types into `src/app/panel_runtime.rs`**
+
+Add this above `PanelRuntimeEffect`:
+
+```rust
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct PanelOpenRequest {
+    pub(super) origin_window: iced::window::Id,
+    pub(super) origin: crate::surface::panel::PanelOrigin,
+    pub(super) content: crate::surface::panel::PanelContent,
+    pub(super) anchor: Option<iced::Rectangle>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct PendingPanelOpen {
+    pub(super) request: PanelOpenRequest,
+    pub(super) menu_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ActivePanel {
+    window: iced::window::Id,
+    origin_window: iced::window::Id,
+    content: crate::surface::panel::PanelContent,
+}
+```
+
+Change `PanelRuntimeEffect` to:
+
+```rust
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum PanelRuntimeEffect {
+    OpenPanelWindow(PanelOpenRequest),
+    ClosePanelWindow(iced::window::Id),
+    RequestSearchFocus,
+    LoadInstalledAppsThenOpenPanel(PendingPanelOpen),
+    RunPanelAction(crate::config::PanelAction),
+    LaunchInstalledApp(String),
+    CompleteDmenu(crate::ipc::protocol::IpcResponse),
+}
+```
+
+Add this field to `PanelRuntime`:
+
+```rust
+active_panel: Option<ActivePanel>,
+```
+
+Update `clear` so it clears active Panel state too:
+
+```rust
+pub(super) fn clear(&mut self) {
+    self.active_panel = None;
+    self.session = None;
+    self.menu_scroll_y = 0.0;
+    self.menu_viewport_height = 0.0;
+    self.search_focus_pending = false;
+    self.dmenu_responder = None;
+}
+```
+
+- [ ] **Step 4: Add lifecycle methods to `PanelRuntime`**
+
+Add these methods to `impl PanelRuntime`:
+
+```rust
+pub(super) fn active_panel_window(&self) -> Option<iced::window::Id> {
+    self.active_panel.as_ref().map(|panel| panel.window)
+}
+
+pub(super) fn panel_window_opened(
+    &mut self,
+    window: iced::window::Id,
+    origin_window: iced::window::Id,
+    content: crate::surface::panel::PanelContent,
+) {
+    self.active_panel = Some(ActivePanel {
+        window,
+        origin_window,
+        content,
+    });
+}
+
+pub(super) fn open_panel_with_menus(
+    &mut self,
+    request: PanelOpenRequest,
+    menus: &[crate::config::MenuConfig],
+) -> Vec<PanelRuntimeEffect> {
+    if let crate::surface::panel::PanelContent::Menu(name) = &request.content
+        && menus
+            .iter()
+            .find(|menu| menu.name == *name)
+            .and_then(|menu| menu.source.as_ref())
+            .is_some_and(|source| {
+                matches!(source.kind, crate::config::MenuSourceKind::InstalledApps)
+            })
+    {
+        return vec![PanelRuntimeEffect::LoadInstalledAppsThenOpenPanel(
+            PendingPanelOpen {
+                request,
+                menu_name: name.clone(),
+            },
+        )];
+    }
+    self.open_panel_after_source_ready(request)
+}
+
+pub(super) fn toggle_panel_with_menus(
+    &mut self,
+    request: PanelOpenRequest,
+    menus: &[crate::config::MenuConfig],
+) -> Vec<PanelRuntimeEffect> {
+    if self.active_panel.as_ref().is_some_and(|panel| {
+        panel.origin_window == request.origin_window && panel.content == request.content
+    }) {
+        if let Some(window) = self.active_panel_window() {
+            self.active_panel = None;
+            self.session = None;
+            self.menu_scroll_y = 0.0;
+            self.menu_viewport_height = 0.0;
+            self.search_focus_pending = false;
+            return vec![PanelRuntimeEffect::ClosePanelWindow(window)];
+        }
+    }
+    self.open_panel_with_menus(request, menus)
+}
+
+pub(super) fn open_panel_after_installed_apps_loaded(
+    &mut self,
+    pending: PendingPanelOpen,
+    apps: Vec<crate::desktop_apps::DesktopApplication>,
+    menus: &[crate::config::MenuConfig],
+) -> Vec<PanelRuntimeEffect> {
+    let effects = self.open_panel_after_source_ready(pending.request);
+    if let Some(menu) = menus.iter().find(|menu| menu.name == pending.menu_name) {
+        self.open_session(super::panel_menu_session::PanelMenuSource::InstalledApps {
+            prompt: menu.prompt.clone(),
+            show_icons: menu.show_icons,
+            apps,
+        });
+    }
+    effects
+}
+
+fn open_panel_after_source_ready(
+    &mut self,
+    request: PanelOpenRequest,
+) -> Vec<PanelRuntimeEffect> {
+    let mut effects = Vec::new();
+    if let Some(window) = self.active_panel_window() {
+        effects.push(PanelRuntimeEffect::ClosePanelWindow(window));
+    }
+    self.active_panel = None;
+    self.session = None;
+    self.menu_scroll_y = 0.0;
+    self.menu_viewport_height = 0.0;
+    self.search_focus_pending = false;
+    effects.push(PanelRuntimeEffect::OpenPanelWindow(request.clone()));
+    if matches!(
+        request.content,
+        crate::surface::panel::PanelContent::Menu(_)
+            | crate::surface::panel::PanelContent::DmenuRequest
+    ) {
+        effects.push(PanelRuntimeEffect::RequestSearchFocus);
+    }
+    effects
+}
+```
+
+- [ ] **Step 5: Run focused tests and verify they pass**
+
+Run:
+
+```bash
+cargo test app::panel_runtime::tests::opening_a_panel_replaces_the_active_panel app::panel_runtime::tests::toggling_the_same_panel_closes_it app::panel_runtime::tests::installed_apps_menu_returns_load_effect_before_opening_panel -- --nocapture
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Remove duplicated lifecycle tests from `src/app/panel_coordinator.rs`**
+
+Delete the `#[cfg(test)] mod tests` block from `src/app/panel_coordinator.rs`. The lifecycle behavior is now covered by `PanelRuntime` tests.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/app/panel_runtime.rs src/app/panel_coordinator.rs
+git commit -m "refactor: move panel lifecycle into panel runtime"
+```
+
+---
+
+## Task 2: Wire App To PanelRuntime Lifecycle Effects
+
+**Files:**
 - Modify: `src/app.rs`
+- Modify: `src/app/panel.rs`
 
-- [ ] **Step 1: Write the failing compile target**
+- [ ] **Step 1: Change `App` to store `PanelRuntime`**
 
-Modify `src/app.rs` near the existing module declarations:
+In `src/app.rs`, remove:
+
+```rust
+mod panel_coordinator;
+```
+
+Ensure this module is present:
 
 ```rust
 mod panel_runtime;
 ```
 
-Modify the `App` struct field:
+Change the `App` field:
 
 ```rust
 panel: panel_runtime::PanelRuntime,
 ```
 
-- [ ] **Step 2: Run compile check to verify it fails**
+Change `App::boot` initialization:
+
+```rust
+panel: panel_runtime::PanelRuntime::default(),
+```
+
+- [ ] **Step 2: Run compile check and verify it fails at old `panel_coordinator` references**
 
 Run:
 
@@ -60,686 +400,488 @@ Run:
 cargo test --no-run
 ```
 
-Expected: FAIL because `src/app/panel_runtime.rs` does not exist or `PanelRuntime` is not defined.
+Expected: FAIL with references to `super::panel_coordinator` in `src/app/panel.rs`.
 
-- [ ] **Step 3: Add minimal Panel Runtime module**
+- [ ] **Step 3: Replace `PanelOpenRequest` construction in `src/app/panel.rs`**
 
-Create `src/app/panel_runtime.rs`:
-
-```rust
-use std::collections::HashSet;
-
-#[derive(Debug, Default)]
-pub(super) struct PanelRuntime {
-    session: Option<super::panel_menu_session::PanelMenuSession>,
-    menu_scroll_y: f32,
-    menu_viewport_height: f32,
-    search_focus_pending: bool,
-    dmenu_responder: Option<super::messages::IpcResponder>,
-    closing_windows: HashSet<iced::window::Id>,
-}
-
-impl PanelRuntime {
-    pub(super) fn clear(&mut self) {
-        self.session = None;
-        self.menu_scroll_y = 0.0;
-        self.menu_viewport_height = 0.0;
-        self.search_focus_pending = false;
-        self.dmenu_responder = None;
-    }
-
-    pub(super) fn mark_closing_window(&mut self, window: iced::window::Id) {
-        self.closing_windows.insert(window);
-    }
-
-    pub(super) fn is_closing_window(&self, window: iced::window::Id) -> bool {
-        self.closing_windows.contains(&window)
-    }
-
-    pub(super) fn forget_closing_window(&mut self, window: iced::window::Id) {
-        self.closing_windows.remove(&window);
-    }
-}
-```
-
-- [ ] **Step 4: Update old direct field references temporarily**
-
-In `src/app/panel.rs`, replace `PanelSystem` with imports from `panel_runtime` only after Task 2. For this task, keep the compile failure focused on `App.panel` type usage. If compile errors show private field access from `panel.rs`, stop and continue with Task 2.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/app.rs src/app/panel_runtime.rs
-git commit -m "refactor: introduce panel runtime module"
-```
-
----
-
-## Task 2: Move PanelSystem State Behind Accessors
-
-**Files:**
-
-- Modify: `src/app/panel_runtime.rs`
-- Modify: `src/app/panel.rs`
-
-- [ ] **Step 1: Add failing tests for state access**
-
-Add this test module to the bottom of `src/app/panel_runtime.rs`:
+Replace both old constructions:
 
 ```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn clear_resets_session_scroll_focus_and_dmenu_state() {
-        let mut runtime = PanelRuntime::default();
-        runtime.set_menu_scrolled(120.0, 300.0);
-        runtime.set_search_focus_pending(true);
-        runtime.clear();
-
-        assert_eq!(runtime.menu_scroll_y(), 0.0);
-        assert_eq!(runtime.menu_viewport_height(), 0.0);
-        assert!(!runtime.search_focus_pending());
-        assert!(!runtime.has_dmenu_responder());
-    }
-
-    #[test]
-    fn closing_windows_are_tracked_by_window_id() {
-        let window = iced::window::Id::unique();
-        let mut runtime = PanelRuntime::default();
-
-        runtime.mark_closing_window(window);
-        assert!(runtime.is_closing_window(window));
-
-        runtime.forget_closing_window(window);
-        assert!(!runtime.is_closing_window(window));
-    }
-}
-```
-
-- [ ] **Step 2: Run the focused test to verify it fails**
-
-Run:
-
-```bash
-cargo test app::panel_runtime::tests -- --nocapture
-```
-
-Expected: FAIL because the accessor methods do not exist.
-
-- [ ] **Step 3: Add accessors and scroll/focus setters**
-
-Extend `impl PanelRuntime`:
-
-```rust
-impl PanelRuntime {
-    pub(super) fn menu_scroll_y(&self) -> f32 {
-        self.menu_scroll_y
-    }
-
-    pub(super) fn menu_viewport_height(&self) -> f32 {
-        self.menu_viewport_height
-    }
-
-    pub(super) fn set_menu_scrolled(&mut self, y: f32, viewport_height: f32) {
-        self.menu_scroll_y = y.max(0.0);
-        self.menu_viewport_height = viewport_height.max(0.0);
-    }
-
-    pub(super) fn reset_menu_scroll(&mut self) {
-        self.menu_scroll_y = 0.0;
-    }
-
-    pub(super) fn search_focus_pending(&self) -> bool {
-        self.search_focus_pending
-    }
-
-    pub(super) fn set_search_focus_pending(&mut self, pending: bool) {
-        self.search_focus_pending = pending;
-    }
-
-    pub(super) fn has_dmenu_responder(&self) -> bool {
-        self.dmenu_responder.is_some()
-    }
-}
-```
-
-- [ ] **Step 4: Replace direct field access in `panel.rs`**
-
-Replace these patterns in `src/app/panel.rs`:
-
-```rust
-self.panel.menu_scroll_y = y.max(0.0);
-self.panel.menu_viewport_height = viewport_height.max(0.0);
+let request = super::panel_coordinator::PanelOpenRequest {
+    origin_window,
+    origin,
+    content,
+    anchor,
+};
 ```
 
 with:
 
 ```rust
-self.panel.set_menu_scrolled(y, viewport_height);
+let request = super::panel_runtime::PanelOpenRequest {
+    origin_window,
+    origin,
+    content,
+    anchor,
+};
 ```
 
-Replace:
+Change the `open_panel_window` argument type from:
 
 ```rust
-self.panel.menu_scroll_y = 0.0;
+request: super::panel_coordinator::PanelOpenRequest,
 ```
 
-with:
+to:
 
 ```rust
-self.panel.reset_menu_scroll();
+request: super::panel_runtime::PanelOpenRequest,
 ```
 
-Replace reads of:
+- [ ] **Step 4: Rename the coordinator effect adapter**
+
+Rename:
 
 ```rust
-self.panel.menu_scroll_y
-self.panel.menu_viewport_height
-self.panel.search_focus_pending
-```
-
-with:
-
-```rust
-self.panel.menu_scroll_y()
-self.panel.menu_viewport_height()
-self.panel.search_focus_pending()
-```
-
-Replace writes of:
-
-```rust
-self.panel.search_focus_pending = true;
-self.panel.search_focus_pending = false;
-```
-
-with:
-
-```rust
-self.panel.set_search_focus_pending(true);
-self.panel.set_search_focus_pending(false);
-```
-
-- [ ] **Step 5: Run focused tests**
-
-Run:
-
-```bash
-cargo test app::panel_runtime::tests app::panel::tests::escape_clears_search_before_closing_panel -- --nocapture
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/app/panel_runtime.rs src/app/panel.rs
-git commit -m "refactor: encapsulate panel runtime state"
-```
-
----
-
-## Task 3: Move Panel Menu Session Operations Into PanelRuntime
-
-**Files:**
-
-- Modify: `src/app/panel_runtime.rs`
-- Modify: `src/app/panel.rs`
-- Modify: `src/app/render.rs`
-- Modify: `src/app/view.rs` only if compiler reveals direct session access there
-
-- [ ] **Step 1: Add failing tests for session behavior**
-
-Add to `src/app/panel_runtime.rs` tests:
-
-```rust
-fn menu_with_two_entries() -> crate::config::MenuConfig {
-    crate::config::MenuConfig {
-        name: "apps".into(),
-        prompt: Some("Run".into()),
-        show_icons: false,
-        source: None,
-        items: vec![
-            crate::config::MenuItemConfig {
-                label: "Terminal".into(),
-                icon: None,
-                keywords: vec!["shell".into()],
-                action: Some(crate::config::PanelAction::Command(
-                    crate::config::CommandConfig::Shell("kitty".into()),
-                )),
-                children: vec![],
-            },
-            crate::config::MenuItemConfig {
-                label: "Browser".into(),
-                icon: None,
-                keywords: vec!["web".into()],
-                action: Some(crate::config::PanelAction::Command(
-                    crate::config::CommandConfig::Shell("firefox".into()),
-                )),
-                children: vec![],
-            },
-        ],
-    }
-}
-
-#[test]
-fn search_changed_updates_session_and_resets_scroll() {
-    let mut runtime = PanelRuntime::default();
-    runtime.open_session(super::super::panel_menu_session::PanelMenuSource::Configured(
-        menu_with_two_entries(),
-    ));
-    runtime.set_menu_scrolled(90.0, 200.0);
-
-    runtime.search_changed("term".into());
-
-    let snapshot = runtime.panel_menu_snapshot().expect("snapshot");
-    assert_eq!(snapshot.search_query, "term");
-    assert_eq!(runtime.menu_scroll_y(), 0.0);
-}
-
-#[test]
-fn activate_focused_returns_panel_action_effect() {
-    let mut runtime = PanelRuntime::default();
-    runtime.open_session(super::super::panel_menu_session::PanelMenuSource::Configured(
-        menu_with_two_entries(),
-    ));
-
-    let effects = runtime.activate(None);
-
-    assert!(matches!(
-        effects.as_slice(),
-        [PanelRuntimeEffect::RunPanelAction(crate::config::PanelAction::Command(_))]
-    ));
-}
-```
-
-- [ ] **Step 2: Run tests to verify failure**
-
-Run:
-
-```bash
-cargo test app::panel_runtime::tests -- --nocapture
-```
-
-Expected: FAIL because `PanelRuntimeEffect`, `open_session`, `search_changed`, `panel_menu_snapshot`, and `activate` do not exist.
-
-- [ ] **Step 3: Add session methods and effects**
-
-Add near the top of `src/app/panel_runtime.rs`:
-
-```rust
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum PanelRuntimeEffect {
-    RequestSearchFocus,
-    RunPanelAction(crate::config::PanelAction),
-    LaunchInstalledApp(String),
-    CompleteDmenu(crate::ipc::protocol::IpcResponse),
-    None,
-}
-```
-
-Add to `impl PanelRuntime`:
-
-```rust
-pub(super) fn open_session(&mut self, source: super::panel_menu_session::PanelMenuSource) {
-    let session = super::panel_menu_session::PanelMenuSession::open(source);
-    let _ = session.snapshot();
-    self.session = Some(session);
-}
-
-pub(super) fn clear_session(&mut self) {
-    self.session = None;
-}
-
-pub(super) fn search_changed(&mut self, query: String) {
-    if let Some(session) = self.session.as_mut() {
-        session.set_search_query(query);
-    }
-    self.search_focus_pending = false;
-    self.menu_scroll_y = 0.0;
-}
-
-pub(super) fn focus_index(&mut self, index: usize) {
-    if let Some(session) = self.session.as_mut() {
-        session.focus_index(index);
-    }
-    self.search_focus_pending = false;
-}
-
-pub(super) fn move_focus(&mut self, delta: isize) -> Option<usize> {
-    if self.active_panel_menu_entries().is_empty() {
-        self.menu_scroll_y = 0.0;
-        return None;
-    }
-    let session = self.session.as_mut()?;
-    session.move_focus(delta);
-    session.focused_index()
-}
-
-pub(super) fn back(&mut self) {
-    if let Some(session) = self.session.as_mut() {
-        session.back();
-    }
-}
-
-pub(super) fn escape(&mut self) -> Vec<PanelRuntimeEffect> {
-    let cleared_search = self
-        .session
-        .as_mut()
-        .map(super::panel_menu_session::PanelMenuSession::clear_search)
-        .unwrap_or(false);
-    if cleared_search {
-        self.search_focus_pending = true;
-        vec![PanelRuntimeEffect::RequestSearchFocus]
-    } else {
-        Vec::new()
-    }
-}
-
-pub(super) fn panel_menu_snapshot(
-    &self,
-) -> Option<super::panel_menu_session::PanelMenuSnapshot> {
-    self.session.as_ref().map(|session| session.snapshot())
-}
-
-pub(super) fn active_panel_menu_entries(
-    &self,
-) -> Vec<super::panel_menu_session::PanelMenuEntry> {
-    self.panel_menu_snapshot()
-        .map(|snapshot| snapshot.entries.to_vec())
-        .unwrap_or_default()
-}
-
-pub(super) fn activate(&mut self, index: Option<usize>) -> Vec<PanelRuntimeEffect> {
-    let activation = match (self.session.as_mut(), index) {
-        (Some(session), Some(index)) => session.activate_index(index),
-        (Some(session), None) => session.activate_focused(),
-        (None, _) => super::panel_menu_session::PanelMenuActivation::None,
-    };
-    match activation {
-        super::panel_menu_session::PanelMenuActivation::RunPanelAction(action) => {
-            vec![PanelRuntimeEffect::RunPanelAction(action)]
-        }
-        super::panel_menu_session::PanelMenuActivation::LaunchInstalledApp(id) => {
-            vec![PanelRuntimeEffect::LaunchInstalledApp(id)]
-        }
-        super::panel_menu_session::PanelMenuActivation::CompleteDmenu(response) => {
-            vec![PanelRuntimeEffect::CompleteDmenu(response)]
-        }
-        super::panel_menu_session::PanelMenuActivation::None => Vec::new(),
-    }
-}
-```
-
-- [ ] **Step 4: Adapt `panel.rs` to use session methods**
-
-In `src/app/panel.rs`, replace direct session access:
-
-```rust
-self.panel.session = Some(session);
-self.panel.session.as_mut()
-self.panel.session.as_ref()
-```
-
-with `PanelRuntime` calls:
-
-```rust
-self.panel.open_session(source);
-self.panel.search_changed(query);
-self.panel.focus_index(index);
-self.panel.back();
-self.panel.panel_menu_snapshot();
-self.panel.active_panel_menu_entries();
-self.panel.activate(index);
-```
-
-Keep `request_panel_search_focus`, `scroll_panel_menu_to_focus`, and `apply_panel_menu_activation` in `panel.rs` for now. Change `apply_panel_menu_activation` to take `PanelRuntimeEffect` values instead of `PanelMenuActivation`.
-
-- [ ] **Step 5: Run focused panel tests**
-
-Run:
-
-```bash
-cargo test app::panel_runtime::tests app::panel::tests -- --nocapture
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/app/panel_runtime.rs src/app/panel.rs src/app/render.rs src/app/view.rs
-git commit -m "refactor: move panel menu session control into runtime"
-```
-
----
-
-## Task 4: Move Dmenu Responder Lifecycle Into PanelRuntime
-
-**Files:**
-
-- Modify: `src/app/panel_runtime.rs`
-- Modify: `src/app/panel.rs`
-
-- [ ] **Step 1: Add failing tests for Dmenu lifecycle**
-
-Add to `src/app/panel_runtime.rs` tests:
-
-```rust
-#[test]
-fn dmenu_responder_rejects_second_active_request() {
-    let (sender, _receiver) = tokio::sync::oneshot::channel();
-    let responder = super::super::messages::ipc_responder(sender);
-    let mut runtime = PanelRuntime::default();
-
-    assert!(runtime.begin_dmenu_request(responder).is_ok());
-
-    let (sender2, _receiver2) = tokio::sync::oneshot::channel();
-    let responder2 = super::super::messages::ipc_responder(sender2);
-    assert!(runtime.begin_dmenu_request(responder2).is_err());
-}
-
-#[test]
-fn complete_dmenu_request_takes_responder_once() {
-    let (sender, _receiver) = tokio::sync::oneshot::channel();
-    let responder = super::super::messages::ipc_responder(sender);
-    let mut runtime = PanelRuntime::default();
-
-    runtime.begin_dmenu_request(responder).expect("stored");
-    let first = runtime.take_dmenu_responder();
-    let second = runtime.take_dmenu_responder();
-
-    assert!(first.is_some());
-    assert!(second.is_none());
-}
-```
-
-- [ ] **Step 2: Run tests to verify failure**
-
-Run:
-
-```bash
-cargo test app::panel_runtime::tests::dmenu -- --nocapture
-```
-
-Expected: FAIL because Dmenu methods do not exist.
-
-- [ ] **Step 3: Add Dmenu responder methods**
-
-Add to `impl PanelRuntime`:
-
-```rust
-pub(super) fn begin_dmenu_request(
+fn apply_panel_coordinator_effects(
     &mut self,
-    responder: super::messages::IpcResponder,
-) -> Result<(), super::messages::IpcResponder> {
-    if self.dmenu_responder.is_some() {
-        return Err(responder);
-    }
-    self.dmenu_responder = Some(responder);
-    Ok(())
-}
-
-pub(super) fn take_dmenu_responder(&mut self) -> Option<super::messages::IpcResponder> {
-    self.dmenu_responder.take()
-}
-
-pub(super) fn cancel_dmenu_if_active(&mut self) -> Option<super::messages::IpcResponder> {
-    self.dmenu_responder.take()
-}
+    effects: Vec<super::panel_coordinator::PanelEffect>,
+) -> Task<Message>
 ```
 
-- [ ] **Step 4: Adapt `panel.rs` Dmenu flow**
-
-In `handle_dmenu_selection_request`, replace direct `self.panel.dmenu_responder` checks and assignment with:
-
-```rust
-if let Err(responder) = self.panel.begin_dmenu_request(responder) {
-    send_ipc_response(
-        responder,
-        crate::ipc::protocol::IpcResponse::Rejected {
-            reason: "another dmenu request is already active".into(),
-        },
-    );
-    return Task::none();
-}
-```
-
-After the default origin window check fails, take the responder back and reject:
-
-```rust
-if let Some(responder) = self.panel.take_dmenu_responder() {
-    send_ipc_response(
-        responder,
-        crate::ipc::protocol::IpcResponse::Rejected {
-            reason: "no bar surface is available".into(),
-        },
-    );
-}
-return Task::none();
-```
-
-In `complete_dmenu_request`, use:
-
-```rust
-if let Some(responder) = self.panel.take_dmenu_responder() {
-    send_ipc_response(responder, response);
-}
-```
-
-In `close_all_panels` and `close_all_untracked_panels_with_restore`, replace direct checks with:
-
-```rust
-if let Some(responder) = self.panel.cancel_dmenu_if_active() {
-    send_ipc_response(responder, crate::ipc::protocol::IpcResponse::Cancelled);
-}
-```
-
-- [ ] **Step 5: Run Dmenu and panel tests**
-
-Run:
-
-```bash
-cargo test app::panel_runtime::tests::dmenu app::panel::tests::dmenu app::panel::tests::close_all_panels -- --nocapture
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/app/panel_runtime.rs src/app/panel.rs
-git commit -m "refactor: move dmenu responder lifecycle into panel runtime"
-```
-
----
-
-## Task 5: Adapt Runtime Effects In App
-
-**Files:**
-
-- Modify: `src/app/panel.rs`
-- Modify: `src/app/panel_runtime.rs`
-
-- [ ] **Step 1: Add focused test for Escape effect adaptation**
-
-Use existing test `escape_that_clears_search_requests_search_refocus` in `src/app/panel.rs` as the behavior lock. If it does not fail during this task, add this assertion to that test:
-
-```rust
-assert!(app.panel.search_focus_pending());
-```
-
-- [ ] **Step 2: Add an effect adapter in `panel.rs`**
-
-Add this helper in `impl App` near `apply_panel_menu_activation`:
+to:
 
 ```rust
 fn apply_panel_runtime_effects(
     &mut self,
     effects: Vec<super::panel_runtime::PanelRuntimeEffect>,
-) -> Task<Message> {
-    let mut tasks = Vec::new();
-    for effect in effects {
-        match effect {
-            super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus => {
-                tasks.push(request_panel_search_focus());
-            }
-            super::panel_runtime::PanelRuntimeEffect::RunPanelAction(action) => {
-                let task = self.dispatch_panel_action_from_active_panel(action);
-                tasks.push(task);
-                tasks.extend(self.close_all_panels());
-            }
-            super::panel_runtime::PanelRuntimeEffect::LaunchInstalledApp(id) => {
-                self.launch_installed_app_by_id(&id);
-                tasks.extend(self.close_all_panels());
-            }
-            super::panel_runtime::PanelRuntimeEffect::CompleteDmenu(response) => {
-                self.complete_dmenu_request(response);
-                tasks.extend(self.close_all_panels());
-            }
-            super::panel_runtime::PanelRuntimeEffect::None => {}
-        }
-    }
-    Task::batch(tasks)
-}
+) -> Task<Message>
 ```
 
-- [ ] **Step 3: Simplify activation and escape call sites**
-
-Change `activate_panel_entry` to:
+In the match, replace old variants:
 
 ```rust
-fn activate_panel_entry(&mut self, index: Option<usize>) -> Task<Message> {
-    let effects = self.panel.activate(index);
-    self.apply_panel_runtime_effects(effects)
-}
+super::panel_coordinator::PanelEffect::OpenPanelWindow(request)
+super::panel_coordinator::PanelEffect::ClosePanelWindow(window)
+super::panel_coordinator::PanelEffect::RequestSearchFocus
+super::panel_coordinator::PanelEffect::LoadInstalledAppsThenOpenPanel(pending)
 ```
 
-Change `handle_panel_escape_pressed` to:
+with:
 
 ```rust
-pub(super) fn handle_panel_escape_pressed(&mut self) -> Task<Message> {
-    let effects = self.panel.escape();
-    if effects.is_empty() {
-        self.handle_panel_event(super::messages::PanelEvent::Close)
-    } else {
-        self.apply_panel_runtime_effects(effects)
-    }
+super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(request)
+super::panel_runtime::PanelRuntimeEffect::ClosePanelWindow(window)
+super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus
+super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenOpenPanel(pending)
+```
+
+In the recursive branch, replace:
+
+```rust
+tasks.push(self.apply_panel_coordinator_effects(effects));
+```
+
+with:
+
+```rust
+tasks.push(self.apply_panel_runtime_effects(effects));
+```
+
+- [ ] **Step 5: Merge activation effect handling into the same adapter**
+
+In `apply_panel_runtime_effects`, include these existing activation arms:
+
+```rust
+super::panel_runtime::PanelRuntimeEffect::RunPanelAction(action) => {
+    let task = self.dispatch_panel_action_from_active_panel(action);
+    tasks.push(task);
+    tasks.extend(self.close_all_panels());
+}
+super::panel_runtime::PanelRuntimeEffect::LaunchInstalledApp(id) => {
+    self.launch_installed_app_by_id(&id);
+    tasks.extend(self.close_all_panels());
+}
+super::panel_runtime::PanelRuntimeEffect::CompleteDmenu(response) => {
+    self.complete_dmenu_request(response);
+    tasks.extend(self.close_all_panels());
 }
 ```
 
-- [ ] **Step 4: Remove obsolete activation helper**
+Delete the second older `fn apply_panel_runtime_effects` if it remains below `activate_panel_entry`.
 
-Delete `apply_panel_menu_activation` once no call sites remain.
+- [ ] **Step 6: Update call sites in `src/app/panel.rs`**
 
-- [ ] **Step 5: Run panel tests**
+Replace:
+
+```rust
+self.apply_panel_coordinator_effects(effects)
+```
+
+with:
+
+```rust
+self.apply_panel_runtime_effects(effects)
+```
+
+Do this for `PanelEvent::Toggle`, `open_panel`, and the Installed Desktop Application continuation branch.
+
+- [ ] **Step 7: Run compile check**
 
 Run:
 
 ```bash
-cargo test app::panel::tests app::panel_runtime::tests -- --nocapture
+cargo test --no-run
+```
+
+Expected: PASS compile, or FAIL only because `src/app/panel_coordinator.rs` is now unused but still present. No `super::panel_coordinator` references should remain.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/app.rs src/app/panel.rs
+git commit -m "refactor: adapt app to panel runtime lifecycle effects"
+```
+
+---
+
+## Task 3: Move Dmenu Selection Request Lifecycle Behind PanelRuntime
+
+**Files:**
+- Modify: `src/app/panel_runtime.rs`
+- Modify: `src/app/panel.rs`
+
+- [ ] **Step 1: Add failing Dmenu lifecycle tests to `src/app/panel_runtime.rs`**
+
+Append these tests inside the existing `#[cfg(test)] mod tests`:
+
+```rust
+fn dmenu_request() -> crate::ipc::protocol::DmenuRequest {
+    crate::ipc::protocol::DmenuRequest {
+        prompt: Some("Run".into()),
+        entries: vec![crate::ipc::protocol::DmenuEntry::plain("firefox")],
+        allow_custom: true,
+    }
+}
+
+fn ipc_responder_for_test() -> super::super::messages::IpcResponder {
+    let (sender, _receiver) = tokio::sync::oneshot::channel();
+    super::super::messages::ipc_responder(sender)
+}
+
+#[test]
+fn dmenu_selection_rejects_when_another_request_is_active() {
+    let mut runtime = PanelRuntime::default();
+    let first = ipc_responder_for_test();
+    let second = ipc_responder_for_test();
+    assert!(runtime.begin_dmenu_request(first).is_ok());
+
+    let effects = runtime.begin_dmenu_selection(dmenu_request(), second, Some(wid()));
+
+    assert_eq!(effects.len(), 1);
+    match &effects[0] {
+        PanelRuntimeEffect::SendDmenuResponse {
+            response: crate::ipc::protocol::IpcResponse::Rejected { reason },
+            ..
+        } => assert_eq!(reason, "another dmenu request is already active"),
+        other => panic!("unexpected effect: {other:?}"),
+    }
+}
+
+#[test]
+fn dmenu_selection_rejects_when_no_bar_surface_exists() {
+    let mut runtime = PanelRuntime::default();
+
+    let effects = runtime.begin_dmenu_selection(dmenu_request(), ipc_responder_for_test(), None);
+
+    assert_eq!(effects.len(), 1);
+    match &effects[0] {
+        PanelRuntimeEffect::SendDmenuResponse {
+            response: crate::ipc::protocol::IpcResponse::Rejected { reason },
+            ..
+        } => assert_eq!(reason, "no bar surface is available"),
+        other => panic!("unexpected effect: {other:?}"),
+    }
+    assert!(!runtime.has_dmenu_responder());
+}
+
+#[test]
+fn dmenu_selection_opens_dmenu_panel_and_requests_search_focus() {
+    let origin = wid();
+    let mut runtime = PanelRuntime::default();
+
+    let effects =
+        runtime.begin_dmenu_selection(dmenu_request(), ipc_responder_for_test(), Some(origin));
+
+    assert!(runtime.has_dmenu_responder());
+    assert_eq!(
+        effects,
+        vec![
+            PanelRuntimeEffect::OpenPanelWindow(super::PanelOpenRequest {
+                origin_window: origin,
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::DmenuRequest,
+                anchor: None,
+            }),
+            PanelRuntimeEffect::RequestSearchFocus,
+        ]
+    );
+    assert!(runtime.panel_menu_snapshot().is_some());
+}
+```
+
+- [ ] **Step 2: Run focused tests and verify they fail**
+
+Run:
+
+```bash
+cargo test app::panel_runtime::tests::dmenu_selection_rejects_when_another_request_is_active app::panel_runtime::tests::dmenu_selection_rejects_when_no_bar_surface_exists app::panel_runtime::tests::dmenu_selection_opens_dmenu_panel_and_requests_search_focus -- --nocapture
+```
+
+Expected: FAIL because `SendDmenuResponse` and `begin_dmenu_selection` are not defined.
+
+- [ ] **Step 3: Extend `PanelRuntimeEffect`**
+
+Add these variants to `PanelRuntimeEffect`:
+
+```rust
+SendDmenuResponse {
+    responder: super::messages::IpcResponder,
+    response: crate::ipc::protocol::IpcResponse,
+},
+```
+
+Because `IpcResponder` does not implement `PartialEq`, replace the derived `PartialEq` for `PanelRuntimeEffect` with this manual implementation:
+
+```rust
+#[derive(Debug, Clone)]
+pub(super) enum PanelRuntimeEffect {
+    OpenPanelWindow(PanelOpenRequest),
+    ClosePanelWindow(iced::window::Id),
+    RequestSearchFocus,
+    LoadInstalledAppsThenOpenPanel(PendingPanelOpen),
+    RunPanelAction(crate::config::PanelAction),
+    LaunchInstalledApp(String),
+    CompleteDmenu(crate::ipc::protocol::IpcResponse),
+    SendDmenuResponse {
+        responder: super::messages::IpcResponder,
+        response: crate::ipc::protocol::IpcResponse,
+    },
+}
+
+impl PartialEq for PanelRuntimeEffect {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::OpenPanelWindow(left),
+                Self::OpenPanelWindow(right),
+            ) => left == right,
+            (
+                Self::ClosePanelWindow(left),
+                Self::ClosePanelWindow(right),
+            ) => left == right,
+            (Self::RequestSearchFocus, Self::RequestSearchFocus) => true,
+            (
+                Self::LoadInstalledAppsThenOpenPanel(left),
+                Self::LoadInstalledAppsThenOpenPanel(right),
+            ) => left == right,
+            (
+                Self::RunPanelAction(left),
+                Self::RunPanelAction(right),
+            ) => left == right,
+            (
+                Self::LaunchInstalledApp(left),
+                Self::LaunchInstalledApp(right),
+            ) => left == right,
+            (
+                Self::CompleteDmenu(left),
+                Self::CompleteDmenu(right),
+            ) => left == right,
+            (
+                Self::SendDmenuResponse { response: left, .. },
+                Self::SendDmenuResponse { response: right, .. },
+            ) => left == right,
+            _ => false,
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Add `begin_dmenu_selection`**
+
+Add this method to `impl PanelRuntime`:
+
+```rust
+pub(super) fn begin_dmenu_selection(
+    &mut self,
+    request: crate::ipc::protocol::DmenuRequest,
+    responder: super::messages::IpcResponder,
+    origin_window: Option<iced::window::Id>,
+) -> Vec<PanelRuntimeEffect> {
+    if self.dmenu_responder.is_some() {
+        return vec![PanelRuntimeEffect::SendDmenuResponse {
+            responder,
+            response: crate::ipc::protocol::IpcResponse::Rejected {
+                reason: "another dmenu request is already active".into(),
+            },
+        }];
+    }
+
+    let Some(origin_window) = origin_window else {
+        return vec![PanelRuntimeEffect::SendDmenuResponse {
+            responder,
+            response: crate::ipc::protocol::IpcResponse::Rejected {
+                reason: "no bar surface is available".into(),
+            },
+        }];
+    };
+
+    let mut effects = Vec::new();
+    if let Some(window) = self.active_panel_window() {
+        effects.push(PanelRuntimeEffect::ClosePanelWindow(window));
+    }
+    self.active_panel = None;
+    self.session = None;
+    self.menu_scroll_y = 0.0;
+    self.menu_viewport_height = 0.0;
+    self.search_focus_pending = false;
+    self.open_session(super::panel_menu_session::PanelMenuSource::Dmenu(request));
+    self.dmenu_responder = Some(responder);
+
+    let open_request = PanelOpenRequest {
+        origin_window,
+        origin: crate::surface::panel::PanelOrigin::Bar,
+        content: crate::surface::panel::PanelContent::DmenuRequest,
+        anchor: None,
+    };
+
+    effects.push(PanelRuntimeEffect::OpenPanelWindow(open_request));
+    effects.push(PanelRuntimeEffect::RequestSearchFocus);
+    effects
+}
+```
+
+- [ ] **Step 5: Run focused tests and verify they pass**
+
+Run:
+
+```bash
+cargo test app::panel_runtime::tests::dmenu_selection_rejects_when_another_request_is_active app::panel_runtime::tests::dmenu_selection_rejects_when_no_bar_surface_exists app::panel_runtime::tests::dmenu_selection_opens_dmenu_panel_and_requests_search_focus -- --nocapture
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Replace `App::handle_dmenu_selection_request`**
+
+Replace the body of `handle_dmenu_selection_request` in `src/app/panel.rs` with:
+
+```rust
+let effects =
+    self.panel
+        .begin_dmenu_selection(request, responder, self.default_panel_origin_window());
+self.apply_panel_runtime_effects(effects)
+```
+
+- [ ] **Step 7: Adapt new effects in `src/app/panel.rs`**
+
+Add these match arms to `apply_panel_runtime_effects`:
+
+```rust
+super::panel_runtime::PanelRuntimeEffect::SendDmenuResponse { responder, response } => {
+    send_ipc_response(responder, response);
+}
+```
+
+- [ ] **Step 8: Run Dmenu-related tests**
+
+Run:
+
+```bash
+cargo test app::panel::tests::dmenu app::panel_runtime::tests::dmenu -- --nocapture
+```
+
+Expected: PASS. If the exact filter finds zero tests, run:
+
+```bash
+cargo test dmenu -- --nocapture
+```
+
+Expected: PASS.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/app/panel_runtime.rs src/app/panel.rs
+git commit -m "refactor: move dmenu panel lifecycle into panel runtime"
+```
+
+---
+
+## Task 4: Delete PanelCoordinator
+
+**Files:**
+- Delete: `src/app/panel_coordinator.rs`
+- Modify: `src/app.rs`
+- Modify: `src/app/panel.rs`
+
+- [ ] **Step 1: Search for remaining coordinator references**
+
+Run:
+
+```bash
+rg "panel_coordinator|PanelCoordinator|PanelEffect" src
+```
+
+Expected before deletion: matches only in `src/app/panel_coordinator.rs` or stale references that must be replaced.
+
+- [ ] **Step 2: Replace any stale references**
+
+If `rg` reports `super::panel_coordinator::PanelOpenRequest`, replace it with:
+
+```rust
+super::panel_runtime::PanelOpenRequest
+```
+
+If `rg` reports `super::panel_coordinator::PanelEffect`, replace it with:
+
+```rust
+super::panel_runtime::PanelRuntimeEffect
+```
+
+If `src/app.rs` still contains:
+
+```rust
+mod panel_coordinator;
+```
+
+delete that line.
+
+- [ ] **Step 3: Delete the coordinator file**
+
+Use:
+
+```bash
+git rm src/app/panel_coordinator.rs
+```
+
+Expected: `rm 'src/app/panel_coordinator.rs'`.
+
+- [ ] **Step 4: Verify the coordinator is gone**
+
+Run:
+
+```bash
+rg "panel_coordinator|PanelCoordinator|PanelEffect" src
+```
+
+Expected: no matches.
+
+- [ ] **Step 5: Run compile check**
+
+Run:
+
+```bash
+cargo test --no-run
 ```
 
 Expected: PASS.
@@ -747,41 +889,57 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/app/panel.rs src/app/panel_runtime.rs
-git commit -m "refactor: adapt panel runtime effects in app"
+git add src/app.rs src/app/panel.rs src/app/panel_runtime.rs
+git commit -m "refactor: delete panel coordinator"
 ```
 
 ---
 
-## Task 6: Final Cleanup And Verification
+## Task 5: Tighten Panel Runtime Interface And Tests
 
 **Files:**
-
-- Modify: `src/app/panel.rs`
 - Modify: `src/app/panel_runtime.rs`
-- Modify: any compiler-identified direct imports
+- Modify: `src/app/panel.rs`
+- Modify: `src/app/render.rs`
 
-- [ ] **Step 1: Search for leaked runtime fields**
-
-Run:
-
-```bash
-rg "panel\\.(session|menu_scroll_y|menu_viewport_height|search_focus_pending|dmenu_responder)" src/app
-```
-
-Expected: no matches. If matches remain, replace them with `PanelRuntime` methods.
-
-- [ ] **Step 2: Search for old type**
+- [ ] **Step 1: Search for leaked runtime internals**
 
 Run:
 
 ```bash
-rg "PanelSystem" src
+rg "panel\\.(session|active_panel|menu_scroll_y|menu_viewport_height|search_focus_pending|dmenu_responder)" src/app
 ```
 
-Expected: no matches.
+Expected: no matches. If matches appear in non-test code, use existing `PanelRuntime` methods instead.
 
-- [ ] **Step 3: Run formatting**
+- [ ] **Step 2: Search for direct lifecycle orchestration outside `PanelRuntime`**
+
+Run:
+
+```bash
+rg "panel_window_opened|open_panel_with_menus|toggle_panel_with_menus|open_panel_after_installed_apps_loaded|begin_dmenu_selection|OpenPanelWindow|ClosePanelWindow" src/app
+```
+
+Expected:
+
+```text
+src/app/panel_runtime.rs
+src/app/panel.rs
+```
+
+Only `panel_runtime.rs` should decide lifecycle effects. `panel.rs` may adapt those effects.
+
+- [ ] **Step 3: Run focused Panel tests**
+
+Run:
+
+```bash
+cargo test app::panel_runtime::tests app::panel::tests app::render::tests app::surfaces::tests -- --nocapture
+```
+
+Expected: PASS.
+
+- [ ] **Step 4: Run formatting**
 
 Run:
 
@@ -791,17 +949,7 @@ cargo fmt
 
 Expected: completes with no output.
 
-- [ ] **Step 4: Run focused tests**
-
-Run:
-
-```bash
-cargo test app::panel::tests app::panel_runtime::tests app::render::tests app::surfaces::tests -- --nocapture
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Run full tests**
+- [ ] **Step 5: Run full test suite**
 
 Run:
 
@@ -814,8 +962,8 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/app.rs src/app/panel.rs src/app/panel_runtime.rs src/app/render.rs src/app/view.rs src/app/surfaces.rs CONTEXT.md
-git commit -m "refactor: deepen panel runtime lifecycle"
+git add src/app/panel_runtime.rs src/app/panel.rs src/app/render.rs src/app/surfaces.rs
+git commit -m "refactor: tighten panel runtime interface"
 ```
 
 ---
@@ -824,18 +972,20 @@ git commit -m "refactor: deepen panel runtime lifecycle"
 
 Spec coverage:
 
-- **Panel Runtime owns active state:** Tasks 1-3 move `PanelSystem` fields and session operations behind `PanelRuntime`.
-- **Dmenu responder lifecycle lives in Panel Runtime:** Task 4 implements begin/take/cancel responder methods.
-- **App remains adapter:** Tasks 3-5 keep layer-shell, overlays, IPC sending, process launch, and source resolution in `panel.rs`.
-- **All Panel content is represented by the runtime:** Task 1 introduces a runtime used by `App.panel`; Task 5 adapts all activation and escape effects through runtime methods.
-- **Panel Menu Source resolution stays in App:** Task 3 explicitly leaves `PanelMenuSource` construction in `panel.rs`.
+- **Panel Runtime owns full logical lifecycle:** Tasks 1-3 move active Panel tracking, open/toggle/close, Installed Desktop Application menu continuation, search focus, Panel Menu Session activation, and Dmenu Selection Request handling into `PanelRuntime`.
+- **PanelCoordinator disappears:** Task 4 deletes `src/app/panel_coordinator.rs` and verifies no `PanelCoordinator` references remain.
+- **`PanelOpenRequest` name stays:** Task 1 moves the type into `panel_runtime.rs` without renaming it.
+- **App remains adapter:** Tasks 2-3 keep iced `Task`, layer-shell windows, overlay effects, Installed Desktop Application discovery, process launch, and physical IPC response sending in `panel.rs`.
+- **Tests improve at the interface:** Tasks 1 and 3 add lifecycle tests directly against `PanelRuntime`; Task 5 runs focused and full suites.
 
 Placeholder scan:
 
-- No `TBD`, `TODO`, or “implement later” placeholders are used.
-- Code snippets define concrete method names and exact files.
+- The plan contains no `TBD`, `TODO`, or “implement later” placeholders.
+- Every code-changing step includes exact code or exact replacement text.
+- Every verification step includes exact commands and expected outcomes.
 
 Type consistency:
 
-- `PanelRuntime`, `PanelRuntimeEffect`, and method names are consistent across tasks.
-- The plan intentionally keeps `PanelMenuSession`, `PanelMenuSource`, and `PanelMenuActivation` names from existing code.
+- `PanelOpenRequest`, `PendingPanelOpen`, `ActivePanel`, `PanelRuntime`, and `PanelRuntimeEffect` are defined in `src/app/panel_runtime.rs`.
+- Later tasks use `PanelRuntimeEffect` consistently for lifecycle, menu activation, and Dmenu effects.
+- `App` stores `panel_runtime::PanelRuntime` throughout the final state.
