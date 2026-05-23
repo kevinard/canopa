@@ -214,16 +214,16 @@ impl App {
                 content,
                 anchor,
             } => {
-                let same_panel_open = self.surfaces.panel_popup_values().any(|meta| {
-                    meta.tree.origin_window == origin_window
-                        && meta.tree.origin == origin
-                        && meta.tree.content == content
-                });
-                if same_panel_open {
-                    Task::batch(self.close_all_panels())
-                } else {
-                    self.open_panel(origin_window, origin, content, anchor)
-                }
+                let request = super::panel_coordinator::PanelOpenRequest {
+                    origin_window,
+                    origin,
+                    content,
+                    anchor,
+                };
+                let effects = self
+                    .panel
+                    .toggle_panel_with_menus(request, self.config.menus.as_slice());
+                self.apply_panel_coordinator_effects(effects)
             }
             PanelEvent::Close => Task::batch(self.close_all_panels()),
             PanelEvent::SearchChanged(query) => {
@@ -263,40 +263,45 @@ impl App {
         content: crate::surface::panel::PanelContent,
         anchor: Option<iced::Rectangle>,
     ) -> Task<Message> {
-        let origin_surface = self.surface(origin_window).cloned().unwrap_or_default();
-        let tree = crate::surface::panel::PanelTree {
+        let request = super::panel_coordinator::PanelOpenRequest {
+            origin_window,
             origin,
             content,
-            origin_window,
+            anchor,
+        };
+        let effects = self
+            .panel
+            .open_panel_with_menus(request, self.config.menus.as_slice());
+        self.apply_panel_coordinator_effects(effects)
+    }
+
+    fn open_panel_window(
+        &mut self,
+        request: super::panel_coordinator::PanelOpenRequest,
+    ) -> Task<Message> {
+        let origin_surface = self
+            .surface(request.origin_window)
+            .cloned()
+            .unwrap_or_default();
+        let tree = crate::surface::panel::PanelTree {
+            origin: request.origin.clone(),
+            content: request.content.clone(),
+            origin_window: request.origin_window,
             origin_bar_name: origin_surface.bar_name.clone(),
             origin_output_name: origin_surface.output_name.clone(),
-            anchor,
+            anchor: request.anchor,
             screen_size: origin_surface.screen_size,
         };
         let bar = Self::bar_for_surface_name(&self.config.bars, &origin_surface.bar_name);
         let surface_origin = self.inferred_panel_surface_origin(&origin_surface, bar);
         let settings = panel_window_settings(bar, &tree, surface_origin);
         let (panel_window, open_task) = Message::layershell_open(settings);
-        self.surface_mut(origin_window).tooltip_pending = None;
+        self.surface_mut(request.origin_window).tooltip_pending = None;
 
-        let effects = self.overlays.open_panel(origin_window, panel_window);
+        let effects = self
+            .overlays
+            .open_panel(request.origin_window, panel_window);
         let mut tasks = self.apply_overlay_effects(effects, false);
-        let is_menu_panel = matches!(
-            tree.content,
-            crate::surface::panel::PanelContent::Menu(_)
-                | crate::surface::panel::PanelContent::DmenuRequest
-        );
-        let is_installed_apps_menu = match &tree.content {
-            crate::surface::panel::PanelContent::Menu(name) => self
-                .config
-                .menus
-                .iter()
-                .find(|menu| menu.name == *name)
-                .and_then(|menu| menu.source.as_ref())
-                .map(|source| matches!(source.kind, crate::config::MenuSourceKind::InstalledApps))
-                .unwrap_or(false),
-            _ => false,
-        };
         if let crate::surface::panel::PanelContent::Menu(name) = &tree.content {
             if let Some(menu) = self
                 .config
@@ -305,26 +310,52 @@ impl App {
                 .find(|menu| menu.name == *name)
                 .cloned()
             {
-                let source = if is_installed_apps_menu {
-                    super::panel_menu_session::PanelMenuSource::InstalledApps {
-                        prompt: menu.prompt.clone(),
-                        show_icons: menu.show_icons,
-                        apps: self.load_installed_apps_for_panel(),
-                    }
-                } else {
-                    super::panel_menu_session::PanelMenuSource::Configured(menu)
-                };
-                self.panel.open_session(source);
+                if menu.source.is_none() {
+                    self.panel
+                        .open_session(super::panel_menu_session::PanelMenuSource::Configured(menu));
+                }
             }
         }
-        self.register_panel_popup(panel_window, origin_window, tree);
+        self.panel
+            .panel_window_opened(panel_window, request.origin_window, tree.content.clone());
+        self.register_panel_popup(panel_window, request.origin_window, tree);
 
-        let mut open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
-        if is_menu_panel {
-            self.panel.set_search_focus_pending(true);
-            open_sequence = open_sequence.chain(request_panel_search_focus());
-        }
+        let open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
         tasks.push(open_sequence);
+        Task::batch(tasks)
+    }
+
+    fn apply_panel_coordinator_effects(
+        &mut self,
+        effects: Vec<super::panel_coordinator::PanelEffect>,
+    ) -> Task<Message> {
+        let mut tasks = Vec::new();
+        for effect in effects {
+            match effect {
+                super::panel_coordinator::PanelEffect::OpenPanelWindow(request) => {
+                    tasks.push(self.open_panel_window(request));
+                }
+                super::panel_coordinator::PanelEffect::ClosePanelWindow(window) => {
+                    self.overlays.forget_panel(window);
+                    self.panel.mark_closing_window(window);
+                    self.surfaces.remove_panel_popup(window);
+                    tasks.push(Task::done(Message::RemoveWindow(window)));
+                }
+                super::panel_coordinator::PanelEffect::RequestSearchFocus => {
+                    self.panel.set_search_focus_pending(true);
+                    tasks.push(request_panel_search_focus());
+                }
+                super::panel_coordinator::PanelEffect::LoadInstalledAppsThenOpenPanel(pending) => {
+                    let apps = self.load_installed_apps_for_panel();
+                    let effects = self.panel.open_panel_after_installed_apps_loaded(
+                        pending,
+                        apps,
+                        self.config.menus.as_slice(),
+                    );
+                    tasks.push(self.apply_panel_coordinator_effects(effects));
+                }
+            }
+        }
         Task::batch(tasks)
     }
 
@@ -493,7 +524,6 @@ impl App {
                     self.complete_dmenu_request(response);
                     tasks.extend(self.close_all_panels());
                 }
-                super::panel_runtime::PanelRuntimeEffect::None => {}
             }
         }
         Task::batch(tasks)
@@ -570,22 +600,17 @@ impl App {
             .expect("accepted dmenu responder should be stored");
         let tasks = self.close_all_panels();
         self.panel.clear();
+        let open_task = self.handle_panel_event(super::messages::PanelEvent::Open {
+            origin_window,
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::DmenuRequest,
+            anchor: None,
+        });
         self.panel
             .open_session(super::panel_menu_session::PanelMenuSource::Dmenu(request));
         let _ = self.panel.begin_dmenu_request(responder);
 
-        Task::batch(
-            tasks
-                .into_iter()
-                .chain(std::iter::once(self.handle_panel_event(
-                    super::messages::PanelEvent::Open {
-                        origin_window,
-                        origin: crate::surface::panel::PanelOrigin::Bar,
-                        content: crate::surface::panel::PanelContent::DmenuRequest,
-                        anchor: None,
-                    },
-                ))),
-        )
+        Task::batch(tasks.into_iter().chain(std::iter::once(open_task)))
     }
 
     pub(super) fn complete_dmenu_request(&mut self, response: crate::ipc::protocol::IpcResponse) {
@@ -1731,6 +1756,28 @@ mod tests {
             content: crate::surface::panel::PanelContent::Menu("apps".into()),
             anchor: None,
         }));
+    }
+
+    #[test]
+    fn toggle_installed_apps_menu_loads_entries() {
+        let mut app = app_with_installed_apps_menu(vec![installed_app("Alpha", "alpha.desktop")]);
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
+
+        let _ = app.update(Message::Panel(crate::app::messages::PanelEvent::Toggle {
+            origin_window: origin,
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::Menu("apps".into()),
+            anchor: None,
+        }));
+
+        assert_eq!(
+            app.active_menu_entries()
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Alpha"]
+        );
     }
 
     #[test]

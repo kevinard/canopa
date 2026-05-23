@@ -6,7 +6,6 @@ pub(super) enum PanelRuntimeEffect {
     RunPanelAction(crate::config::PanelAction),
     LaunchInstalledApp(String),
     CompleteDmenu(crate::ipc::protocol::IpcResponse),
-    None,
 }
 
 #[derive(Debug, Default)]
@@ -16,10 +15,6 @@ pub(super) struct PanelRuntime {
     menu_viewport_height: f32,
     search_focus_pending: bool,
     dmenu_responder: Option<super::messages::IpcResponder>,
-    #[cfg(test)]
-    pub(super) installed_apps_for_test: Option<Vec<crate::desktop_apps::DesktopApplication>>,
-    #[cfg(test)]
-    pub(super) launched_installed_app_ids_for_test: Vec<String>,
     closing_windows: HashSet<iced::window::Id>,
 }
 
@@ -96,10 +91,6 @@ impl PanelRuntime {
         let session = super::panel_menu_session::PanelMenuSession::open(source);
         let _ = session.snapshot();
         self.session = Some(session);
-    }
-
-    pub(super) fn clear_session(&mut self) {
-        self.session = None;
     }
 
     pub(super) fn search_changed(&mut self, query: String) {
