@@ -66,6 +66,7 @@ pub(super) struct PanelRuntime {
     session: Option<super::panel_menu_session::PanelMenuSession>,
     menu_scroll_y: f32,
     menu_viewport_height: f32,
+    clock_month_offset: i32,
     search_focus_pending: bool,
     dmenu_responder: Option<super::messages::IpcResponder>,
     closing_windows: HashSet<iced::window::Id>,
@@ -81,12 +82,23 @@ impl PanelRuntime {
         self.session = None;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
+        self.clock_month_offset = 0;
         self.search_focus_pending = false;
         self.dmenu_responder = None;
     }
 
     pub(super) fn active_panel_window(&self) -> Option<iced::window::Id> {
         self.active_panel.as_ref().map(|panel| panel.window)
+    }
+
+    pub(super) fn is_clock_module_panel_open(&self) -> bool {
+        self.active_panel.as_ref().is_some_and(|panel| {
+            matches!(
+                &panel.content,
+                crate::surface::panel::PanelContent::ModulePanel(id)
+                    if id.0 == "clock"
+            )
+        })
     }
 
     pub(super) fn panel_window_opened(
@@ -137,6 +149,7 @@ impl PanelRuntime {
             self.session = None;
             self.menu_scroll_y = 0.0;
             self.menu_viewport_height = 0.0;
+            self.clock_month_offset = 0;
             self.search_focus_pending = false;
             return vec![PanelRuntimeEffect::ClosePanelWindow(window)];
         }
@@ -172,6 +185,7 @@ impl PanelRuntime {
         self.session = None;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
+        self.clock_month_offset = 0;
         self.search_focus_pending = false;
         effects.push(PanelRuntimeEffect::OpenPanelWindow(request.clone()));
         if matches!(
@@ -207,6 +221,22 @@ impl PanelRuntime {
     pub(super) fn set_menu_scrolled(&mut self, y: f32, viewport_height: f32) {
         self.menu_scroll_y = y.max(0.0);
         self.menu_viewport_height = viewport_height.max(0.0);
+    }
+
+    pub(super) fn clock_month_offset(&self) -> i32 {
+        self.clock_month_offset
+    }
+
+    pub(super) fn browse_clock_month(&mut self, delta: i32) {
+        if self.is_clock_module_panel_open() {
+            self.clock_month_offset = self.clock_month_offset.saturating_add(delta);
+        }
+    }
+
+    pub(super) fn reset_clock_month(&mut self) {
+        if self.is_clock_module_panel_open() {
+            self.clock_month_offset = 0;
+        }
     }
 
     #[cfg(test)]
@@ -271,6 +301,7 @@ impl PanelRuntime {
         self.session = None;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
+        self.clock_month_offset = 0;
         self.search_focus_pending = false;
         self.open_session(super::panel_menu_session::PanelMenuSource::Dmenu(request));
         self.dmenu_responder = Some(responder);
@@ -635,6 +666,51 @@ mod tests {
 
         runtime.forget_closing_window(window);
         assert!(!runtime.is_closing_window(window));
+    }
+
+    #[test]
+    fn clock_month_browsing_resets_when_clock_module_panel_opens() {
+        let origin = wid();
+        let mut runtime = PanelRuntime::default();
+        runtime.browse_clock_month(2);
+
+        runtime.open_panel_with_menus(
+            super::PanelOpenRequest {
+                origin_window: origin,
+                origin: crate::surface::panel::PanelOrigin::Module(crate::modules::ModuleId::new(
+                    "clock",
+                )),
+                content: crate::surface::panel::PanelContent::ModulePanel(
+                    crate::modules::ModuleId::new("clock"),
+                ),
+                anchor: None,
+            },
+            &[],
+        );
+
+        assert_eq!(runtime.clock_month_offset(), 0);
+    }
+
+    #[test]
+    fn clock_month_browsing_moves_and_returns_to_current_month() {
+        let mut runtime = PanelRuntime::default();
+        runtime.panel_window_opened(
+            wid(),
+            wid(),
+            crate::surface::panel::PanelContent::ModulePanel(crate::modules::ModuleId::new(
+                "clock",
+            )),
+        );
+
+        runtime.browse_clock_month(1);
+        runtime.browse_clock_month(1);
+        assert_eq!(runtime.clock_month_offset(), 2);
+
+        runtime.browse_clock_month(-1);
+        assert_eq!(runtime.clock_month_offset(), 1);
+
+        runtime.reset_clock_month();
+        assert_eq!(runtime.clock_month_offset(), 0);
     }
 
     #[test]

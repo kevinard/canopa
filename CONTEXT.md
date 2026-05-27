@@ -114,6 +114,10 @@ _Avoid_: Panel state when referring to the full open/search/activation/cancel li
 The **Bar Surface** or **Module** that triggered the current **Panel**.
 _Avoid_: Active module when referring specifically to panel source
 
+**Module Detail Content**:
+Module-owned content rendered when a **Panel** is opened from a specific **Module**.
+_Avoid_: Panel menu, popup, separate module when the content belongs to the originating module
+
 **Panel Action**:
 A typed configured operation triggered by pointer input, focused keyboard input, **Panel Menu** item activation, or IPC.
 Examples: `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, `command`.
@@ -298,6 +302,15 @@ _Avoid_: Default config, fallback surface
 - A **Panel** closes when keyboard focus leaves the **Panel** for another application or window.
 - A **Panel** may remain open when focus moves from the originating **Bar Surface** into the **Panel**.
 - Escape closes a **Panel** unless the active **Panel** content has a more specific first-Escape behavior.
+- A **Module** may provide default **Module Detail Content** for its own module-originated **Panel**.
+- Clock **Module Detail Content** shows the current local month by default and may let the user browse other months while that **Panel** remains open.
+- Clock month browsing resets to the current local month each time the clock **Module Detail Content** opens.
+- Clock month browsing is available through pointer controls and keyboard controls while the clock **Module Detail Content** is focused.
+- Clock month browsing provides a way to return directly to the current local month.
+- Clock **Module Detail Content** marks today when today is visible and does not select individual days.
+- Clock **Module Detail Content** displays calendar weeks starting on Monday.
+- Clock **Module Detail Content** leaves calendar cells outside the displayed month blank.
+- Clock calendar detail behavior is not user-configurable unless a later requirement introduces a real user choice.
 - A **Bar** may configure a default **Panel** module layout using **Start**, **Center**, and **End** groups.
 - A **Bar**'s default **Panel** layout is independent from the **Bar**'s normal module layout.
 - A **Bar**'s default **Panel** layout renders as ordered sections, not as stretched bar zones.

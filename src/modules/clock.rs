@@ -88,6 +88,59 @@ fn duration_until_next_minute(now: chrono::DateTime<chrono::Local>) -> std::time
     std::time::Duration::from_nanos(remaining_ns)
 }
 
+#[cfg_attr(test, derive(Debug, PartialEq))]
+#[derive(Clone)]
+pub(super) struct CalendarMonth {
+    pub(super) year: i32,
+    pub(super) month: u32,
+    pub(super) weeks: Vec<[Option<u32>; 7]>,
+    pub(super) today: Option<u32>,
+}
+
+pub(super) fn calendar_month_for(today: chrono::NaiveDate, month_offset: i32) -> CalendarMonth {
+    use chrono::{Datelike, NaiveDate};
+
+    let month_index = today.year() * 12 + today.month0() as i32 + month_offset;
+    let year = month_index.div_euclid(12);
+    let month0 = month_index.rem_euclid(12) as u32;
+    let month = month0 + 1;
+    let first = NaiveDate::from_ymd_opt(year, month, 1).expect("computed month is valid");
+    let next_month_index = month_index + 1;
+    let next_year = next_month_index.div_euclid(12);
+    let next_month = next_month_index.rem_euclid(12) as u32 + 1;
+    let next_first =
+        NaiveDate::from_ymd_opt(next_year, next_month, 1).expect("computed next month is valid");
+    let days_in_month = (next_first - chrono::Duration::days(1)).day();
+    let leading_blanks = first.weekday().num_days_from_monday() as usize;
+
+    let mut weeks = Vec::new();
+    let mut day = 1;
+    while day <= days_in_month {
+        let mut week = [None; 7];
+        for (weekday, cell) in week.iter_mut().enumerate() {
+            if weeks.is_empty() && weekday < leading_blanks {
+                continue;
+            }
+            if day <= days_in_month {
+                *cell = Some(day);
+                day += 1;
+            }
+        }
+        weeks.push(week);
+    }
+
+    CalendarMonth {
+        year,
+        month,
+        weeks,
+        today: if year == today.year() && month == today.month() {
+            Some(today.day())
+        } else {
+            None
+        },
+    }
+}
+
 fn build_clock_message(
     id: crate::modules::ModuleId,
     time_fmt: &str,
@@ -363,6 +416,94 @@ impl crate::modules::Module for ClockModule {
         }
     }
 
+    fn view_module_detail_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+        clock_month_offset: i32,
+    ) -> iced::Element<'_, crate::app::Message> {
+        use iced::widget::{button, column, container, row, text};
+        use iced::{Alignment, Length};
+
+        let crate::modules::ModuleState::Clock(_) = state else {
+            return iced::widget::Space::new().into();
+        };
+
+        let summary = self.view_panel_with_style(state, bar_style);
+        let today = chrono::Local::now().date_naive();
+        let month = calendar_month_for(today, clock_month_offset);
+        let first = chrono::NaiveDate::from_ymd_opt(month.year, month.month, 1)
+            .expect("calendar month is valid");
+        let title = first.format("%B %Y").to_string();
+
+        let controls = row![
+            button(text("<")).on_press(crate::app::Message::Panel(
+                crate::app::messages::PanelEvent::ClockMonthPrevious
+            )),
+            text(title).width(Length::Fill),
+            button(text("Today")).on_press(crate::app::Message::Panel(
+                crate::app::messages::PanelEvent::ClockMonthToday
+            )),
+            button(text(">")).on_press(crate::app::Message::Panel(
+                crate::app::messages::PanelEvent::ClockMonthNext
+            )),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .width(Length::Fill);
+
+        let mut calendar = column![controls].spacing(6).width(Length::Fill);
+        let mut weekdays = row![].spacing(4).width(Length::Fill);
+        for label in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] {
+            weekdays = weekdays.push(
+                container(text(label).size(10))
+                    .width(Length::FillPortion(1))
+                    .center_x(Length::Fill),
+            );
+        }
+        calendar = calendar.push(weekdays);
+
+        for week in month.weeks {
+            let mut row = row![].spacing(4).width(Length::Fill);
+            for day in week {
+                let is_today = day == month.today;
+                let label = day.map(|day| day.to_string()).unwrap_or_default();
+                let cell = container(text(label).size(11))
+                    .width(Length::FillPortion(1))
+                    .center_x(Length::Fill);
+                let cell = cell.padding([3, 0]).style(move |_| {
+                    if is_today {
+                        iced::widget::container::Style {
+                            background: Some(iced::Background::Color(crate::theme::SURFACE0)),
+                            border: iced::Border {
+                                color: crate::theme::ACCENT,
+                                width: 1.0,
+                                radius: iced::border::Radius::from(4.0),
+                            },
+                            ..Default::default()
+                        }
+                    } else {
+                        iced::widget::container::Style {
+                            border: iced::Border {
+                                color: iced::Color::TRANSPARENT,
+                                width: 1.0,
+                                radius: iced::border::Radius::from(4.0),
+                            },
+                            ..Default::default()
+                        }
+                    }
+                });
+                row = row.push(cell);
+            }
+            calendar = calendar.push(row);
+        }
+
+        column![summary, calendar]
+            .spacing(12)
+            .width(Length::Fill)
+            .into()
+    }
+
     fn view_horizontal_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -523,6 +664,48 @@ mod tests {
         assert_eq!(
             duration_until_next_minute(now),
             std::time::Duration::from_millis(3_500)
+        );
+    }
+
+    #[test]
+    fn calendar_month_uses_monday_first_blank_outside_cells_and_marks_today() {
+        use chrono::NaiveDate;
+
+        let month = calendar_month_for(NaiveDate::from_ymd_opt(2026, 5, 23).unwrap(), 0);
+
+        assert_eq!(month.year, 2026);
+        assert_eq!(month.month, 5);
+        assert_eq!(month.today, Some(23));
+        assert_eq!(
+            month.weeks[0],
+            [None, None, None, None, Some(1), Some(2), Some(3)]
+        );
+        assert_eq!(
+            *month.weeks.last().unwrap(),
+            [
+                Some(25),
+                Some(26),
+                Some(27),
+                Some(28),
+                Some(29),
+                Some(30),
+                Some(31)
+            ]
+        );
+    }
+
+    #[test]
+    fn calendar_month_offset_browses_without_marking_today_in_other_months() {
+        use chrono::NaiveDate;
+
+        let month = calendar_month_for(NaiveDate::from_ymd_opt(2026, 5, 23).unwrap(), -1);
+
+        assert_eq!(month.year, 2026);
+        assert_eq!(month.month, 4);
+        assert_eq!(month.today, None);
+        assert_eq!(
+            month.weeks[0],
+            [None, None, Some(1), Some(2), Some(3), Some(4), Some(5)]
         );
     }
 }

@@ -110,6 +110,20 @@ fn keyboard_handler(
                         crate::app::messages::SurfaceEvent::FocusMovePrev(window),
                     ))
                 }
+                keyboard::Key::Named(Named::ArrowLeft)
+                    if modifiers == keyboard::Modifiers::default() =>
+                {
+                    Some(Message::Panel(
+                        crate::app::messages::PanelEvent::ClockMonthPrevious,
+                    ))
+                }
+                keyboard::Key::Named(Named::ArrowRight)
+                    if modifiers == keyboard::Modifiers::default() =>
+                {
+                    Some(Message::Panel(
+                        crate::app::messages::PanelEvent::ClockMonthNext,
+                    ))
+                }
                 keyboard::Key::Named(Named::Tab) => {
                     if modifiers.shift() {
                         Some(Message::Surface(

@@ -155,6 +155,14 @@ pub trait Module: Send + Sync {
         state: &ModuleState,
         bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message>;
+    fn view_module_detail_with_style(
+        &self,
+        state: &ModuleState,
+        bar_style: &crate::config::Style,
+        _clock_month_offset: i32,
+    ) -> iced::Element<'_, crate::app::Message> {
+        self.view_panel_with_style(state, bar_style)
+    }
     /// View for horizontal bars (top/bottom). Single-line, shrink-width content
     /// suited for a side-by-side row layout. Defaults to `view_panel_with_style`.
     fn view_horizontal_with_style(
