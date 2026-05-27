@@ -1,6 +1,5 @@
 use iced::Element;
 use iced::widget::{container, mouse_area};
-use std::sync::Arc;
 
 use super::{App, Message};
 use crate::config::Edge;
@@ -40,7 +39,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) tree: &'a crate::surface::panel::PanelTree,
     pub(super) search_input_id: iced::widget::Id,
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
-    pub(super) menu_entries: Arc<[super::panel_menu_session::PanelMenuEntry]>,
+    pub(super) menu_entries: std::sync::Arc<[super::panel_menu_session::PanelMenuEntry]>,
     pub(super) show_icons: bool,
     pub(super) menu_prompt: Option<String>,
     pub(super) search_query: String,
@@ -121,36 +120,19 @@ impl App {
             })
             .collect();
 
-        let menu_snapshot = self.panel_menu_snapshot();
-        let show_icons = menu_snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.show_icons)
-            .unwrap_or(false);
-        let menu_prompt = menu_snapshot
-            .as_ref()
-            .and_then(|snapshot| snapshot.prompt.clone());
-        let search_query = menu_snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.search_query.clone())
-            .unwrap_or_default();
-        let focused_index = menu_snapshot
-            .as_ref()
-            .and_then(|snapshot| snapshot.focused_index);
-        let menu_entries = menu_snapshot
-            .map(|snapshot| snapshot.entries)
-            .unwrap_or_else(|| Arc::from([]));
+        let menu = self.panel.panel_menu_render_state();
 
         Some(PanelRenderModel {
             tree,
             search_input_id: meta.search_input_id.clone(),
             entries,
-            menu_entries,
-            show_icons,
-            menu_prompt,
-            search_query,
-            focused_index,
+            menu_entries: menu.entries,
+            show_icons: menu.show_icons,
+            menu_prompt: menu.prompt,
+            search_query: menu.search_query,
+            focused_index: menu.focused_index,
             menu_scroll_id: super::panel::panel_menu_scroll_id(window),
-            menu_scroll_y: self.panel.menu_scroll_y(),
+            menu_scroll_y: menu.scroll_y,
             bar_style: &bar.style,
         })
     }
@@ -615,10 +597,6 @@ mod tests {
             ..Default::default()
         };
         let (mut app, _) = App::boot(config, vec![]);
-        app.panel
-            .open_session(crate::app::panel_menu_session::PanelMenuSource::Configured(
-                app.config.menus[0].clone(),
-            ));
         let origin = test_wid();
         let panel = test_wid();
         app.register_panel_popup(
@@ -634,6 +612,16 @@ mod tests {
                 screen_size: (1920, 1080),
             },
         );
+        app.panel.handle(
+            crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                window: panel,
+                origin_window: origin,
+                content: crate::surface::panel::PanelContent::Menu("main".into()),
+                catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
+                    app.config.menus.as_slice(),
+                ),
+            },
+        );
 
         let model = app.panel_render_model(panel).expect("panel model");
 
@@ -647,9 +635,12 @@ mod tests {
     #[test]
     fn dmenu_request_with_entry_icon_enables_menu_icons() {
         let (mut app, _) = App::boot(Config::default(), Vec::new());
-        app.panel
-            .open_session(crate::app::panel_menu_session::PanelMenuSource::Dmenu(
-                crate::ipc::protocol::DmenuRequest {
+        let (sender, _receiver) = tokio::sync::oneshot::channel();
+        let origin = test_wid();
+        let panel = test_wid();
+        app.panel.handle(
+            crate::app::panel_runtime::PanelRuntimeIntent::BeginDmenuSelection {
+                request: crate::ipc::protocol::DmenuRequest {
                     prompt: None,
                     entries: vec![crate::ipc::protocol::DmenuEntry {
                         label: Some("Firefox".into()),
@@ -659,9 +650,10 @@ mod tests {
                     }],
                     allow_custom: true,
                 },
-            ));
-        let origin = test_wid();
-        let panel = test_wid();
+                responder: crate::app::messages::ipc_responder(sender),
+                origin_window: Some(origin),
+            },
+        );
         app.register_panel_popup(
             panel,
             origin,

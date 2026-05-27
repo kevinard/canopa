@@ -138,14 +138,19 @@ impl App {
     }
 
     pub(super) fn close_all_panels(&mut self) -> Vec<Task<Message>> {
-        if let Some(responder) = self.panel.cancel_dmenu_if_active() {
-            send_ipc_response(responder, crate::ipc::protocol::IpcResponse::Cancelled);
+        let mut tasks = Vec::new();
+        let effects = self
+            .panel
+            .handle(super::panel_runtime::PanelRuntimeIntent::CancelDmenu);
+        if !effects.is_empty() {
+            tasks.push(self.apply_panel_runtime_effects(effects));
         }
         let effects = self.surfaces.close_panel_overlays();
         if !effects.is_empty() {
             self.panel.clear();
         }
-        self.apply_registry_effects(effects)
+        tasks.extend(self.apply_registry_effects(effects));
+        tasks
     }
 
     pub(super) fn handle_panel_focus_gained(&mut self, window: iced::window::Id) -> Task<Message> {
@@ -157,8 +162,10 @@ impl App {
             crate::surface::panel::PanelContent::Menu(_)
                 | crate::surface::panel::PanelContent::DmenuRequest
         ) {
-            self.panel.set_search_focus_pending(true);
-            return request_panel_search_focus();
+            let effects = self
+                .panel
+                .handle(super::panel_runtime::PanelRuntimeIntent::RequestSearchFocus);
+            return self.apply_panel_runtime_effects(effects);
         }
         Task::none()
     }
@@ -188,18 +195,27 @@ impl App {
                     content,
                     anchor,
                 };
+                let catalog =
+                    super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
                 let effects = self
                     .panel
-                    .toggle_panel_with_menus(request, self.config.menus.as_slice());
+                    .handle(super::panel_runtime::PanelRuntimeIntent::Toggle { request, catalog });
                 self.apply_panel_runtime_effects(effects)
             }
             PanelEvent::Close => Task::batch(self.close_all_panels()),
             PanelEvent::SearchChanged(query) => {
-                self.panel.search_changed(query);
+                self.panel
+                    .handle(super::panel_runtime::PanelRuntimeIntent::SearchChanged(
+                        query,
+                    ));
                 Task::none()
             }
             PanelEvent::MenuScrolled { y, viewport_height } => {
-                self.panel.set_menu_scrolled(y, viewport_height);
+                self.panel
+                    .handle(super::panel_runtime::PanelRuntimeIntent::MenuScrolled {
+                        y,
+                        viewport_height,
+                    });
                 Task::none()
             }
             PanelEvent::FocusMoveNext => {
@@ -211,26 +227,35 @@ impl App {
                 self.scroll_panel_menu_to_focus()
             }
             PanelEvent::FocusIndex(index) => {
-                self.panel.focus_index(index);
+                self.panel
+                    .handle(super::panel_runtime::PanelRuntimeIntent::FocusIndex(index));
                 Task::none()
             }
             PanelEvent::FocusSearchInput { retries } => self.focus_panel_search_input(retries),
             PanelEvent::Activate => self.activate_panel_entry(None),
             PanelEvent::ActivateIndex(index) => self.activate_panel_entry(Some(index)),
             PanelEvent::ClockMonthPrevious => {
-                self.panel.browse_clock_month(-1);
+                self.panel
+                    .handle(super::panel_runtime::PanelRuntimeIntent::BrowseClockMonth(
+                        -1,
+                    ));
                 Task::none()
             }
             PanelEvent::ClockMonthNext => {
-                self.panel.browse_clock_month(1);
+                self.panel
+                    .handle(super::panel_runtime::PanelRuntimeIntent::BrowseClockMonth(
+                        1,
+                    ));
                 Task::none()
             }
             PanelEvent::ClockMonthToday => {
-                self.panel.reset_clock_month();
+                self.panel
+                    .handle(super::panel_runtime::PanelRuntimeIntent::ResetClockMonth);
                 Task::none()
             }
             PanelEvent::Back => {
-                self.panel.back();
+                self.panel
+                    .handle(super::panel_runtime::PanelRuntimeIntent::Back);
                 Task::none()
             }
         }
@@ -249,9 +274,10 @@ impl App {
             content,
             anchor,
         };
+        let catalog = super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
         let effects = self
             .panel
-            .open_panel_with_menus(request, self.config.menus.as_slice());
+            .handle(super::panel_runtime::PanelRuntimeIntent::Open { request, catalog });
         self.apply_panel_runtime_effects(effects)
     }
 
@@ -286,20 +312,15 @@ impl App {
             self.surfaces
                 .open_panel_overlay(request.origin_window, panel_window, panel_meta);
         let mut tasks = self.apply_registry_effects(effects);
-        if let crate::surface::panel::PanelContent::Menu(name) = &tree.content
-            && let Some(menu) = self
-                .config
-                .menus
-                .iter()
-                .find(|menu| menu.name == *name)
-                .cloned()
-            && menu.source.is_none()
-        {
-            self.panel
-                .open_session(super::panel_menu_session::PanelMenuSource::Configured(menu));
-        }
-        self.panel
-            .panel_window_opened(panel_window, request.origin_window, tree.content.clone());
+        let catalog = super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
+        self.panel.handle(
+            super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                window: panel_window,
+                origin_window: request.origin_window,
+                content: tree.content.clone(),
+                catalog,
+            },
+        );
 
         let open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
         tasks.push(open_sequence);
@@ -322,17 +343,20 @@ impl App {
                     tasks.push(Task::done(Message::RemoveWindow(window)));
                 }
                 super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus => {
-                    self.panel.set_search_focus_pending(true);
                     tasks.push(request_panel_search_focus());
                 }
                 super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenOpenPanel(
                     pending,
                 ) => {
                     let apps = self.load_installed_apps_for_panel();
-                    let effects = self.panel.open_panel_after_installed_apps_loaded(
-                        pending,
-                        apps,
-                        self.config.menus.as_slice(),
+                    let catalog =
+                        super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
+                    let effects = self.panel.handle(
+                        super::panel_runtime::PanelRuntimeIntent::InstalledAppsLoaded {
+                            pending,
+                            apps,
+                            catalog,
+                        },
                     );
                     tasks.push(self.apply_panel_runtime_effects(effects));
                 }
@@ -343,10 +367,6 @@ impl App {
                 }
                 super::panel_runtime::PanelRuntimeEffect::LaunchInstalledApp(id) => {
                     self.launch_installed_app_by_id(&id);
-                    tasks.extend(self.close_all_panels());
-                }
-                super::panel_runtime::PanelRuntimeEffect::CompleteDmenu(response) => {
-                    self.complete_dmenu_request(response);
                     tasks.extend(self.close_all_panels());
                 }
                 super::panel_runtime::PanelRuntimeEffect::SendDmenuResponse {
@@ -393,7 +413,9 @@ impl App {
     }
 
     pub(super) fn handle_panel_escape_pressed(&mut self) -> Task<Message> {
-        let effects = self.panel.escape();
+        let effects = self
+            .panel
+            .handle(super::panel_runtime::PanelRuntimeIntent::Escape);
         if effects.is_empty() {
             self.handle_panel_event(super::messages::PanelEvent::Close)
         } else {
@@ -402,13 +424,11 @@ impl App {
     }
 
     fn move_panel_focus(&mut self, delta: isize) {
-        self.panel.move_focus(delta);
+        self.panel
+            .handle(super::panel_runtime::PanelRuntimeIntent::FocusMove(delta));
     }
 
     fn scroll_panel_menu_to_focus(&mut self) -> Task<Message> {
-        let Some(index) = self.panel.focused_index() else {
-            return Task::none();
-        };
         let Some(scroll_id) = self
             .surfaces
             .panel_popup_ids()
@@ -417,35 +437,25 @@ impl App {
         else {
             return Task::none();
         };
-        let current_top = self.panel.menu_scroll_y().max(0.0);
-        let viewport_height = if self.panel.menu_viewport_height() > 0.0 {
-            self.panel.menu_viewport_height()
-        } else {
-            DEFAULT_MENU_VIEWPORT_HEIGHT
-        };
-        let current_bottom = current_top + viewport_height;
-        let row_top = index as f32 * MENU_ROW_EXTENT;
-        let row_bottom = row_top + MENU_ROW_EXTENT;
-        let y = if row_top < current_top {
-            row_top
-        } else if row_bottom > current_bottom {
-            row_bottom - viewport_height
-        } else {
+        let Some(y) = self
+            .panel
+            .scroll_focused_menu_into_view(MENU_ROW_EXTENT, DEFAULT_MENU_VIEWPORT_HEIGHT)
+        else {
             return Task::none();
         };
-        self.panel
-            .set_menu_scrolled(y, self.panel.menu_viewport_height());
         iced::widget::operation::scroll_to(
             scroll_id,
             iced::widget::operation::AbsoluteOffset {
                 x: None,
-                y: Some(self.panel.menu_scroll_y()),
+                y: Some(y),
             },
         )
     }
 
     fn activate_panel_entry(&mut self, index: Option<usize>) -> Task<Message> {
-        let effects = self.panel.activate(index);
+        let effects = self
+            .panel
+            .handle(super::panel_runtime::PanelRuntimeIntent::Activate(index));
         self.apply_panel_runtime_effects(effects)
     }
 
@@ -454,17 +464,11 @@ impl App {
         self.active_panel_menu_entries()
     }
 
-    pub(super) fn panel_menu_snapshot(
-        &self,
-    ) -> Option<super::panel_menu_session::PanelMenuSnapshot> {
-        self.panel.panel_menu_snapshot()
-    }
-
     #[cfg(test)]
     pub(super) fn active_panel_menu_entries(
         &self,
     ) -> Vec<super::panel_menu_session::PanelMenuEntry> {
-        self.panel.active_panel_menu_entries()
+        self.panel.active_panel_menu_entries_for_test()
     }
 
     fn focus_panel_search_input(&mut self, retries: u8) -> Task<Message> {
@@ -482,7 +486,8 @@ impl App {
                 None
             }
         }) else {
-            self.panel.set_search_focus_pending(false);
+            self.panel
+                .handle(super::panel_runtime::PanelRuntimeIntent::SearchFocusSettled);
             return Task::none();
         };
         let mut tasks = vec![iced::widget::operation::focus(search_input_id)];
@@ -498,7 +503,8 @@ impl App {
                 },
             ));
         } else {
-            self.panel.set_search_focus_pending(false);
+            self.panel
+                .handle(super::panel_runtime::PanelRuntimeIntent::SearchFocusSettled);
         }
         Task::batch(tasks)
     }
@@ -546,18 +552,23 @@ impl App {
         request: crate::ipc::protocol::DmenuRequest,
         responder: super::messages::IpcResponder,
     ) -> Task<Message> {
-        let effects = self.panel.begin_dmenu_selection(
-            request,
-            responder,
-            self.default_panel_origin_window(),
+        let effects = self.panel.handle(
+            super::panel_runtime::PanelRuntimeIntent::BeginDmenuSelection {
+                request,
+                responder,
+                origin_window: self.default_panel_origin_window(),
+            },
         );
         self.apply_panel_runtime_effects(effects)
     }
 
     pub(super) fn complete_dmenu_request(&mut self, response: crate::ipc::protocol::IpcResponse) {
-        if let Some(responder) = self.panel.take_dmenu_responder() {
-            send_ipc_response(responder, response);
-        }
+        let effects = self
+            .panel
+            .handle(super::panel_runtime::PanelRuntimeIntent::CompleteDmenu(
+                response,
+            ));
+        let _ = self.apply_panel_runtime_effects(effects);
     }
 
     fn default_panel_origin_window(&self) -> Option<iced::window::Id> {
@@ -1046,14 +1057,6 @@ mod tests {
     #[test]
     fn dmenu_request_rejects_when_another_request_is_pending() {
         let (mut app, _task) = crate::app::App::boot(crate::config::Config::default(), Vec::new());
-        app.panel
-            .open_session(super::super::panel_menu_session::PanelMenuSource::Dmenu(
-                crate::ipc::protocol::DmenuRequest {
-                    prompt: None,
-                    entries: vec![],
-                    allow_custom: true,
-                },
-            ));
         let (active_tx, _active_rx) = tokio::sync::oneshot::channel();
         app.panel
             .begin_dmenu_request(crate::app::messages::ipc_responder(active_tx))
@@ -1100,14 +1103,6 @@ mod tests {
     fn completing_dmenu_selection_sends_selected_response() {
         let (mut app, _task) = crate::app::App::boot(crate::config::Config::default(), Vec::new());
         let (tx, mut rx) = tokio::sync::oneshot::channel();
-        app.panel
-            .open_session(super::super::panel_menu_session::PanelMenuSource::Dmenu(
-                crate::ipc::protocol::DmenuRequest {
-                    prompt: None,
-                    entries: vec![crate::ipc::protocol::DmenuEntry::plain("firefox")],
-                    allow_custom: true,
-                },
-            ));
         app.panel
             .begin_dmenu_request(crate::app::messages::ipc_responder(tx))
             .expect("stored");
@@ -1482,17 +1477,6 @@ mod tests {
     }
 
     fn register_menu_panel(app: &mut App, panel: iced::window::Id, origin: iced::window::Id) {
-        if app.panel.panel_menu_snapshot().is_none() {
-            let menu = app
-                .config
-                .menus
-                .iter()
-                .find(|menu| menu.name == "main")
-                .cloned()
-                .unwrap_or_else(menu_with_two_entries);
-            app.panel
-                .open_session(super::super::panel_menu_session::PanelMenuSource::Configured(menu));
-        }
         app.register_panel_popup(
             panel,
             origin,
@@ -1506,29 +1490,46 @@ mod tests {
                 screen_size: (1920, 1080),
             },
         );
+        if app.panel.panel_menu_snapshot_for_test().is_none() {
+            app.panel.handle(
+                super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                    window: panel,
+                    origin_window: origin,
+                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+                    catalog: super::super::panel_runtime::PanelMenuCatalog::new(
+                        app.config.menus.as_slice(),
+                    ),
+                },
+            );
+        }
     }
 
     fn set_panel_search(app: &mut App, query: &str) {
-        app.panel.search_changed(query.into());
+        app.panel
+            .handle(super::super::panel_runtime::PanelRuntimeIntent::SearchChanged(query.into()));
     }
 
     fn set_panel_focus(app: &mut App, index: usize) {
-        if app.panel.panel_menu_snapshot().is_none() {
-            let menu = app
-                .config
-                .menus
-                .iter()
-                .find(|menu| menu.name == "main")
-                .cloned()
-                .unwrap_or_else(menu_with_two_entries);
-            app.panel
-                .open_session(super::super::panel_menu_session::PanelMenuSource::Configured(menu));
+        if app.panel.panel_menu_snapshot_for_test().is_none() {
+            app.panel.handle(
+                super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                    window: iced::window::Id::unique(),
+                    origin_window: iced::window::Id::unique(),
+                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+                    catalog: super::super::panel_runtime::PanelMenuCatalog::new(
+                        app.config.menus.as_slice(),
+                    ),
+                },
+            );
         }
-        app.panel.focus_index(index);
+        app.panel
+            .handle(super::super::panel_runtime::PanelRuntimeIntent::FocusIndex(
+                index,
+            ));
     }
 
     fn panel_focus(app: &App) -> Option<usize> {
-        app.panel.focused_index()
+        app.panel.focused_index_for_test()
     }
 
     #[test]
@@ -1926,8 +1927,12 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         set_panel_focus(&mut app, 10);
-        app.panel
-            .set_menu_scrolled(10.0 * MENU_ROW_EXTENT, DEFAULT_MENU_VIEWPORT_HEIGHT);
+        app.panel.handle(
+            super::super::panel_runtime::PanelRuntimeIntent::MenuScrolled {
+                y: 10.0 * MENU_ROW_EXTENT,
+                viewport_height: DEFAULT_MENU_VIEWPORT_HEIGHT,
+            },
+        );
         register_menu_panel(&mut app, panel, origin);
 
         let _ =
@@ -1959,7 +1964,8 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         register_menu_panel(&mut app, panel, origin);
-        app.panel.set_search_focus_pending(true);
+        app.panel
+            .handle(super::super::panel_runtime::PanelRuntimeIntent::RequestSearchFocus);
 
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusSearchInput {
             retries: 0,
@@ -1977,7 +1983,8 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         register_menu_panel(&mut app, panel, origin);
-        app.panel.set_search_focus_pending(true);
+        app.panel
+            .handle(super::super::panel_runtime::PanelRuntimeIntent::RequestSearchFocus);
 
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusIndex(1));
 
@@ -2059,16 +2066,27 @@ mod tests {
     #[test]
     fn escape_clears_search_before_closing_panel() {
         let mut panel = super::super::panel_runtime::PanelRuntime::default();
-        panel.open_session(
-            super::super::panel_menu_session::PanelMenuSource::Configured(menu_with_two_entries()),
+        let menus = [menu_with_two_entries()];
+        panel.handle(
+            super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                window: iced::window::Id::unique(),
+                origin_window: iced::window::Id::unique(),
+                content: crate::surface::panel::PanelContent::Menu("main".into()),
+                catalog: super::super::panel_runtime::PanelMenuCatalog::new(&menus),
+            },
         );
-        panel.search_changed("term".into());
+        panel.handle(super::super::panel_runtime::PanelRuntimeIntent::SearchChanged("term".into()));
 
         assert!(matches!(
-            panel.escape().as_slice(),
+            panel
+                .handle(super::super::panel_runtime::PanelRuntimeIntent::Escape)
+                .as_slice(),
             [super::super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus]
         ));
-        assert_eq!(panel.panel_menu_snapshot().unwrap().search_query, "");
+        assert_eq!(
+            panel.panel_menu_snapshot_for_test().unwrap().search_query,
+            ""
+        );
     }
 
     #[test]
@@ -2080,11 +2098,18 @@ mod tests {
         app.surface_mut(origin);
         register_menu_panel(&mut app, panel, origin);
         set_panel_search(&mut app, "term");
-        app.panel.set_search_focus_pending(false);
+        app.panel
+            .handle(super::super::panel_runtime::PanelRuntimeIntent::SearchFocusSettled);
 
         let _ = app.handle_panel_escape_pressed();
 
-        assert_eq!(app.panel.panel_menu_snapshot().unwrap().search_query, "");
+        assert_eq!(
+            app.panel
+                .panel_menu_snapshot_for_test()
+                .unwrap()
+                .search_query,
+            ""
+        );
         assert!(app.panel.search_focus_pending());
         assert!(app.surfaces.has_panel_popup(panel));
     }
