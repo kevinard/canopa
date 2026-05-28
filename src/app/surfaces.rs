@@ -637,156 +637,131 @@ impl IndexMut<iced::window::Id> for SurfaceManager {
 }
 
 impl App {
-    fn is_tooltip_popup_window(&self, window: iced::window::Id) -> bool {
-        self.surfaces.tooltip_popup(window).is_some()
-    }
+    fn window_role_for_surface_input(
+        &self,
+        window: Option<iced::window::Id>,
+    ) -> super::surface_input_router::WindowRole {
+        let Some(window) = window else {
+            return super::surface_input_router::classify_window(None);
+        };
 
-    fn is_menu_popup_window(&self, window: iced::window::Id) -> bool {
-        self.surfaces.has_popup(window)
+        super::surface_input_router::classify_window(Some(
+            super::surface_input_router::WindowRoleSnapshot {
+                is_closing_panel: self.panel.is_closing_window(window),
+                is_tooltip: self.surfaces.tooltip_popup(window).is_some(),
+                is_panel: self.surfaces.has_panel_popup(window),
+                is_menu: self.surfaces.has_popup(window),
+            },
+        ))
     }
 
     pub(super) fn handle_surface_event(
         &mut self,
         event: super::messages::SurfaceEvent,
     ) -> Task<Message> {
-        use super::messages::SurfaceEvent;
+        let effect = super::surface_input_router::route_for_role(
+            |window| self.window_role_for_surface_input(window),
+            &event,
+        );
+        self.apply_surface_input_effect(effect)
+    }
 
-        match event {
-            SurfaceEvent::CursorMoved(window, pos) => {
-                if self.is_tooltip_popup_window(window) {
-                    return Task::none();
-                }
+    fn apply_surface_input_effect(
+        &mut self,
+        effect: super::surface_input_router::SurfaceInputEffect,
+    ) -> Task<Message> {
+        use super::surface_input_router::SurfaceInputEffect;
+
+        match effect {
+            SurfaceInputEffect::TrackCursor { window, position } => {
                 let has_tray = self.modules.iter().any(|(_, module)| {
                     matches!(module.kind(), ModuleKind::Tray | ModuleKind::TrayIcon)
                 });
-                if has_tray && self.surfaces.last_cursor() != Some((window, pos)) {
-                    self.surfaces.set_last_cursor(Some((window, pos)));
+                if has_tray && self.surfaces.last_cursor() != Some((window, position)) {
+                    self.surfaces.set_last_cursor(Some((window, position)));
                 }
-                self.surface_mut(window).last_pointer_position = (pos.x as i32, pos.y as i32);
+                self.surface_mut(window).last_pointer_position =
+                    (position.x as i32, position.y as i32);
                 Task::none()
             }
-            SurfaceEvent::WindowSized(window, w, h) => {
+            SurfaceInputEffect::TooltipResized {
+                window,
+                width,
+                height,
+            } => {
                 if let Some(popup) = self.surfaces.tooltip_popup_mut(window) {
-                    popup.tree.screen_size = (w, h);
-                } else if self.surfaces.has_panel_popup(window) {
-                    return self.handle_panel_focus_gained(window);
-                } else if self.panel.is_closing_window(window) {
-                    return Task::none();
-                } else {
-                    self.surfaces.surface_mut(window).screen_size = (w, h);
+                    popup.tree.screen_size = (width, height);
                 }
                 Task::none()
             }
-            SurfaceEvent::WindowClosed(window) if self.panel.is_closing_window(window) => {
+            SurfaceInputEffect::BarResized {
+                window,
+                width,
+                height,
+            } => {
+                self.surfaces.surface_mut(window).screen_size = (width, height);
+                Task::none()
+            }
+            SurfaceInputEffect::WindowClosed(window) => {
+                self.surfaces.window_closed(window);
+                Task::none()
+            }
+            SurfaceInputEffect::ClosingPanelWindowClosed(window) => {
                 self.surfaces.window_closed(window);
                 self.panel.forget_closing_window(window);
                 Task::none()
             }
-            SurfaceEvent::WindowClosed(window) => match self.surfaces.window_closed(window) {
-                Some(ClosedRegisteredWindow::Panel) => Task::none(),
-                Some(ClosedRegisteredWindow::Menu) => {
-                    Task::done(Message::Menu(super::messages::MenuEvent::Closed))
-                }
-                Some(ClosedRegisteredWindow::Tooltip) => Task::none(),
-                None if self.is_menu_popup_window(window) => {
-                    Task::done(Message::Menu(super::messages::MenuEvent::Closed))
-                }
-                None if self.is_tooltip_popup_window(window) => {
-                    self.surfaces.remove_tooltip_popup(window);
-                    Task::none()
-                }
-                None => Task::none(),
-            },
-            SurfaceEvent::ModuleHoverEnter(id, window) => {
-                self.handle_module_hover_enter(id, window)
-            }
-            SurfaceEvent::ModuleHoverExit(id, window) => self.handle_module_hover_exit(id, window),
-            SurfaceEvent::TooltipDwellElapsed { window, module } => {
-                self.handle_tooltip_dwell_elapsed(window, module)
-            }
-            SurfaceEvent::CloseTooltip { window } => {
-                Task::batch(self.close_tooltip_popup_if_open(window))
-            }
-            // SurfaceEvent::BarClick(window) if self.is_menu_popup_window(window) => {
-            //     Task::done(Message::Menu(super::messages::MenuEvent::Closed))
-            // }
-            // SurfaceEvent::BarClick(window) if self.is_tooltip_popup_window(window) => Task::none(),
-            SurfaceEvent::BarClick(window) => self.handle_bar_click(window),
-            SurfaceEvent::BarRightClick(window) => self.handle_bar_right_click(window),
-            SurfaceEvent::BarHoverEnter(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
-            }
-            SurfaceEvent::BarHoverEnter(window) => self.handle_bar_hover_enter(window),
-            SurfaceEvent::BarHoverExit(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
-            }
-            SurfaceEvent::BarHoverExit(window) => self.handle_bar_hover_exit(window),
-            SurfaceEvent::Tick => self.handle_tick(),
-            SurfaceEvent::BarFocusGained(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
-            }
-            SurfaceEvent::BarFocusGained(window) if self.surfaces.has_panel_popup(window) => {
-                self.handle_panel_focus_gained(window)
-            }
-            SurfaceEvent::BarFocusGained(window) if self.panel.is_closing_window(window) => {
-                Task::none()
-            }
-            SurfaceEvent::BarFocusGained(window) => self.handle_bar_focus_gained(window),
-            SurfaceEvent::BarFocusLost(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
-            }
-            SurfaceEvent::BarFocusLost(window) if self.surfaces.has_panel_popup(window) => {
-                Task::batch(self.close_all_panels())
-            }
-            SurfaceEvent::BarFocusLost(window) if self.panel.is_closing_window(window) => {
-                Task::none()
-            }
-            SurfaceEvent::BarFocusLost(window) if self.is_menu_popup_window(window) => {
+            SurfaceInputEffect::MenuWindowClosed(window) => {
+                self.surfaces.window_closed(window);
                 Task::done(Message::Menu(super::messages::MenuEvent::Closed))
             }
-            SurfaceEvent::BarFocusLost(window) => self.handle_bar_focus_lost(window),
-            SurfaceEvent::EscapePressed(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
+            SurfaceInputEffect::ModuleHoverEnter(id, window) => {
+                self.handle_module_hover_enter(id, window)
             }
-            SurfaceEvent::EscapePressed(window) => self.handle_escape_pressed(window),
-            SurfaceEvent::FocusMoveNext(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
+            SurfaceInputEffect::ModuleHoverExit(id, window) => {
+                self.handle_module_hover_exit(id, window)
             }
-            SurfaceEvent::FocusMoveNext(window) => self.handle_focus_move(window, true),
-            SurfaceEvent::FocusMovePrev(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
+            SurfaceInputEffect::TooltipDwellElapsed { window, module } => {
+                self.handle_tooltip_dwell_elapsed(window, module)
             }
-            SurfaceEvent::FocusMovePrev(window) => self.handle_focus_move(window, false),
-            SurfaceEvent::FocusNextZone(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
+            SurfaceInputEffect::CloseTooltip(window) => {
+                Task::batch(self.close_tooltip_popup_if_open(window))
             }
-            SurfaceEvent::FocusNextZone(window) => self.handle_focus_zone(window, true),
-            SurfaceEvent::FocusPrevZone(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
+            SurfaceInputEffect::BarClick(window) => self.handle_bar_click(window),
+            SurfaceInputEffect::BarRightClick(window) => self.handle_bar_right_click(window),
+            SurfaceInputEffect::BarHoverEnter(window) => self.handle_bar_hover_enter(window),
+            SurfaceInputEffect::BarHoverExit(window) => self.handle_bar_hover_exit(window),
+            SurfaceInputEffect::Tick => self.handle_tick(),
+            SurfaceInputEffect::PanelFocusGained(window) => self.handle_panel_focus_gained(window),
+            SurfaceInputEffect::BarFocusGained(window) => self.handle_bar_focus_gained(window),
+            SurfaceInputEffect::ClosePanels => Task::batch(self.close_all_panels()),
+            SurfaceInputEffect::CloseMenu => {
+                Task::done(Message::Menu(super::messages::MenuEvent::Closed))
             }
-            SurfaceEvent::FocusPrevZone(window) => self.handle_focus_zone(window, false),
-            SurfaceEvent::KeyboardActivate(window) if self.is_tooltip_popup_window(window) => {
-                Task::none()
+            SurfaceInputEffect::BarFocusLost(window) => self.handle_bar_focus_lost(window),
+            SurfaceInputEffect::Escape { window } => self.handle_escape_pressed(window),
+            SurfaceInputEffect::MoveFocus { window, forward } => {
+                self.handle_focus_move(window, forward)
             }
-            SurfaceEvent::KeyboardActivate(window) => self.handle_keyboard_activate(window),
-            SurfaceEvent::KeyboardSecondaryActivate(window)
-                if self.is_tooltip_popup_window(window) =>
-            {
-                Task::none()
+            SurfaceInputEffect::BarFocusZone { window, forward } => {
+                self.handle_focus_zone(window, forward)
             }
-            SurfaceEvent::KeyboardSecondaryActivate(window) => {
+            SurfaceInputEffect::KeyboardActivate { window } => {
+                self.handle_keyboard_activate(window)
+            }
+            SurfaceInputEffect::KeyboardSecondaryActivate { window } => {
                 self.handle_keyboard_secondary_activate(window)
             }
-            SurfaceEvent::ActionKeyPressed {
+            SurfaceInputEffect::BarActionKey {
                 window,
                 modifiers,
                 key,
             } => self.handle_bar_action_key(window, modifiers, key),
-            SurfaceEvent::BackPressed(window) if self.surfaces.has_panel_popup(window) => {
+            SurfaceInputEffect::PanelBack => {
                 self.handle_panel_event(super::messages::PanelEvent::Back)
             }
-            SurfaceEvent::BackPressed(_) => Task::none(),
-            SurfaceEvent::TogglePanel => self.handle_toggle_panel_ipc(),
+            SurfaceInputEffect::TogglePanel => self.handle_toggle_panel_ipc(),
+            SurfaceInputEffect::Ignore => Task::none(),
         }
     }
 

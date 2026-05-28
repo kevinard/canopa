@@ -20,6 +20,7 @@ mod perf;
 mod render;
 mod shared;
 mod subscriptions;
+mod surface_input_router;
 mod surfaces;
 mod tray;
 mod view;
