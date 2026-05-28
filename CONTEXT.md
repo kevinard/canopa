@@ -16,6 +16,10 @@ _Avoid_: Surface name, output name
 A live Wayland layer-shell surface created for a specific **Bar** on a specific **Output**.
 _Avoid_: Bar, window
 
+**Bar Surface Identity**:
+The stable runtime identity of a **Bar Surface**, consisting of the **Bar Name** and the optional **Output** it targets.
+_Avoid_: Output/bar tuple, window ID
+
 **Bar Surface Registry**:
 The runtime owner of live **Bar Surface** records and overlay surface metadata, including **Panel**, **Menu**, and **Tooltip** windows associated with **Bar Surfaces**.
 _Avoid_: Overlay lifecycle, surface manager
@@ -225,6 +229,8 @@ _Avoid_: Default config, fallback surface
 - The **Implicit Bar** uses `main` as its diagnostic **Bar Name**, but `main` is not reserved for declared **Bars**.
 - An **Implicit Bar** uses **Global Defaults** and applies to all **Eligible Outputs**.
 - A **Bar Surface** belongs to exactly one **Bar** and exactly one **Output**.
+- A **Bar Surface Identity** identifies one desired or live **Bar Surface** independently of its layer-shell window ID.
+- In AllScreens mode, a **Bar Surface Identity** uses the **Implicit Bar** diagnostic **Bar Name** `main` and no specific **Output**.
 - The **Bar Surface Registry** is the source of truth for which live windows are **Bar Surfaces** and which live windows are overlays associated with **Bar Surfaces**.
 - The **Bar Surface Registry** does not own **Panel Runtime** interaction state.
 - A **Bar Surface** uses the available **Edge Span** by default.

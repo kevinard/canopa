@@ -8,6 +8,50 @@ use super::{App, Message};
 use crate::modules::ModuleKind;
 use crate::surface::SurfaceState;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(super) struct BarSurfaceIdentity {
+    pub(super) bar_name: String,
+    pub(super) output_name: Option<String>,
+}
+
+impl BarSurfaceIdentity {
+    pub(super) fn new(bar_name: impl Into<String>, output_name: Option<String>) -> Self {
+        let bar_name = bar_name.into();
+        Self {
+            bar_name: if bar_name.is_empty() {
+                "main".into()
+            } else {
+                bar_name
+            },
+            output_name: output_name.filter(|output| !output.is_empty()),
+        }
+    }
+
+    pub(super) fn all_screens() -> Self {
+        Self::new("main", None)
+    }
+
+    pub(super) fn from_surface_state(surface: &SurfaceState) -> Self {
+        Self::new(surface.bar_name.clone(), Some(surface.output_name.clone()))
+    }
+
+    pub(super) fn output_name_for_surface_state(&self) -> String {
+        self.output_name.clone().unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DesiredBarSurface {
+    pub(super) identity: BarSurfaceIdentity,
+    pub(super) bar_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum BarSurfaceLifecycleEffect {
+    Open(DesiredBarSurface),
+    RemoveWindow(iced::window::Id),
+}
+
 pub(super) struct PopupMeta {
     pub(super) service: String,
     pub(super) menu_path: zbus::zvariant::OwnedObjectPath,
@@ -213,6 +257,139 @@ impl SurfaceManager {
         self.manual_outputs = value;
     }
 
+    pub(super) fn desired_bar_surfaces(
+        bars: &[crate::config::BarConfig],
+        eligible_outputs: &[String],
+    ) -> Vec<DesiredBarSurface> {
+        let mut desired = Vec::new();
+        for output_name in eligible_outputs {
+            let mut matches: Vec<_> = bars
+                .iter()
+                .enumerate()
+                .filter(|(_, bar)| bar.matches_output(output_name))
+                .collect();
+            matches.sort_by_key(|(_, bar)| !bar.edge.is_horizontal());
+            desired.extend(
+                matches
+                    .into_iter()
+                    .map(|(bar_index, bar)| DesiredBarSurface {
+                        identity: BarSurfaceIdentity::new(
+                            bar.name.clone(),
+                            Some(output_name.clone()),
+                        ),
+                        bar_index,
+                    }),
+            );
+        }
+        desired
+    }
+
+    pub(super) fn reconcile_bar_surfaces(
+        &mut self,
+        desired: Vec<DesiredBarSurface>,
+    ) -> Vec<BarSurfaceLifecycleEffect> {
+        let live: HashMap<BarSurfaceIdentity, iced::window::Id> = self
+            .surfaces
+            .iter()
+            .map(|(window, surface)| (BarSurfaceIdentity::from_surface_state(surface), *window))
+            .collect();
+        let desired_identities: HashSet<_> = desired
+            .iter()
+            .map(|surface| surface.identity.clone())
+            .collect();
+
+        let mut effects = Vec::new();
+        effects.extend(
+            desired
+                .into_iter()
+                .filter(|surface| !live.contains_key(&surface.identity))
+                .map(BarSurfaceLifecycleEffect::Open),
+        );
+
+        let mut stale: Vec<_> = live
+            .into_iter()
+            .filter(|(identity, _)| !desired_identities.contains(identity))
+            .map(|(identity, window)| (identity, window))
+            .collect();
+        stale.sort_by_key(|(_, window)| format!("{window:?}"));
+        for (identity, window) in stale {
+            self.surfaces.remove(&window);
+            effects.extend(
+                self.close_overlays_for_bar_surface(window, &identity)
+                    .into_iter()
+                    .filter_map(|effect| match effect {
+                        RegistryEffect::RemoveWindow(window) => {
+                            Some(BarSurfaceLifecycleEffect::RemoveWindow(window))
+                        }
+                        RegistryEffect::SuspendBarKeyboardInteractivity
+                        | RegistryEffect::RestoreBarKeyboardInteractivity => None,
+                    }),
+            );
+            effects.push(BarSurfaceLifecycleEffect::RemoveWindow(window));
+        }
+        effects
+    }
+
+    pub(super) fn select_global_panel_toggle_surface(
+        &self,
+        focused_output: Option<&str>,
+    ) -> Option<iced::window::Id> {
+        let mut candidates: Vec<_> = self
+            .surfaces
+            .iter()
+            .filter(|(_, surface)| {
+                focused_output
+                    .map(|output| surface.output_name == output)
+                    .unwrap_or(true)
+            })
+            .map(|(window, surface)| (BarSurfaceIdentity::from_surface_state(surface), *window))
+            .collect();
+        if candidates.is_empty() && focused_output.is_some() {
+            candidates = self
+                .surfaces
+                .iter()
+                .map(|(window, surface)| (BarSurfaceIdentity::from_surface_state(surface), *window))
+                .collect();
+        }
+        candidates.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| format!("{:?}", a.1).cmp(&format!("{:?}", b.1)))
+        });
+        candidates.into_iter().map(|(_, window)| window).next()
+    }
+
+    fn close_overlays_for_bar_surface(
+        &mut self,
+        target_surface: iced::window::Id,
+        identity: &BarSurfaceIdentity,
+    ) -> Vec<RegistryEffect> {
+        let mut effects = self.close_tooltips_for_surface(target_surface);
+        let closing_panels: Vec<_> = self
+            .panel_popups
+            .iter()
+            .filter_map(|(window, meta)| {
+                (meta.tree.origin_window == target_surface).then_some(*window)
+            })
+            .collect();
+        for window in &closing_panels {
+            self.panel_popups.remove(window);
+        }
+        if !closing_panels.is_empty() {
+            effects.extend(closing_panels.into_iter().map(RegistryEffect::RemoveWindow));
+            effects.push(RegistryEffect::RestoreBarKeyboardInteractivity);
+        }
+        let closing_menus: Vec<_> = self
+            .popups
+            .iter()
+            .filter_map(|(window, meta)| (meta.bar_name == identity.bar_name).then_some(*window))
+            .collect();
+        for window in &closing_menus {
+            self.popups.remove(window);
+        }
+        effects.extend(closing_menus.into_iter().map(RegistryEffect::RemoveWindow));
+        effects
+    }
+
     pub(super) fn popup(&self, id: iced::window::Id) -> Option<&PopupMeta> {
         self.popups.get(&id)
     }
@@ -336,10 +513,7 @@ impl SurfaceManager {
         effects
     }
 
-    pub(super) fn open_tooltip_overlay(
-        &mut self,
-        popup: TooltipPopup,
-    ) -> Vec<RegistryEffect> {
+    pub(super) fn open_tooltip_overlay(&mut self, popup: TooltipPopup) -> Vec<RegistryEffect> {
         let effects = self.close_tooltips_for_surface(popup.target_window);
         self.tooltip_popups.insert(popup.window, popup);
         effects
@@ -634,40 +808,11 @@ impl App {
             return self.handle_panel_event(super::messages::PanelEvent::Close);
         }
 
-        let focused_output = self.niri.state().focused_output().map(str::to_string);
-        let mut candidates: Vec<_> = self
+        let focused_output = self.niri.state().focused_output();
+        let Some(window) = self
             .surfaces
-            .surfaces()
-            .filter(|(_, surface)| {
-                focused_output
-                    .as_deref()
-                    .map(|output| surface.output_name == output)
-                    .unwrap_or(true)
-            })
-            .map(|(window, surface)| {
-                (
-                    surface.output_name.clone(),
-                    surface.bar_name.clone(),
-                    *window,
-                )
-            })
-            .collect();
-        if candidates.is_empty() && focused_output.is_some() {
-            candidates = self
-                .surfaces
-                .surfaces()
-                .map(|(window, surface)| {
-                    (
-                        surface.output_name.clone(),
-                        surface.bar_name.clone(),
-                        *window,
-                    )
-                })
-                .collect();
-        }
-        candidates.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-
-        let Some((_, _, window)) = candidates.into_iter().next() else {
+            .select_global_panel_toggle_surface(focused_output)
+        else {
             return Task::none();
         };
         self.handle_panel_event(super::messages::PanelEvent::Open {
@@ -676,6 +821,62 @@ impl App {
             content: crate::surface::panel::PanelContent::BarPanel,
             anchor: None,
         })
+    }
+
+    pub(super) fn lifecycle_effects_to_tasks(
+        config: &crate::config::Config,
+        surfaces: &mut SurfaceManager,
+        effects: Vec<BarSurfaceLifecycleEffect>,
+    ) -> Vec<Task<Message>> {
+        let mut tasks = Vec::new();
+        for effect in effects {
+            match effect {
+                BarSurfaceLifecycleEffect::Open(desired) => {
+                    let bar = &config.bars[desired.bar_index];
+                    let output_name = desired.identity.output_name_for_surface_state();
+                    tasks.push(Self::spawn_bar_on_output(
+                        bar,
+                        &output_name,
+                        &mut surfaces.pending_surface_keys,
+                        &mut surfaces.surfaces,
+                    ));
+                }
+                BarSurfaceLifecycleEffect::RemoveWindow(window) => {
+                    tasks.push(Task::done(Message::RemoveWindow(window)));
+                }
+            }
+        }
+        tasks
+    }
+
+    fn apply_bar_surface_lifecycle_effects(
+        &mut self,
+        effects: Vec<BarSurfaceLifecycleEffect>,
+    ) -> Vec<Task<Message>> {
+        let mut tasks = Vec::new();
+        for effect in effects {
+            match effect {
+                BarSurfaceLifecycleEffect::Open(desired) => {
+                    let bar = &self.config.bars[desired.bar_index];
+                    let output_name = desired.identity.output_name_for_surface_state();
+                    tasks.push(Self::spawn_bar_on_output(
+                        bar,
+                        &output_name,
+                        &mut self.surfaces.pending_surface_keys,
+                        &mut self.surfaces.surfaces,
+                    ));
+                }
+                BarSurfaceLifecycleEffect::RemoveWindow(window) => {
+                    self.panel.mark_closing_window(window);
+                    self.surfaces.remove_panel_popup(window);
+                    self.surfaces.remove_popup(window);
+                    self.surfaces.remove_tooltip_popup(window);
+                    self.menu.clear_window(window);
+                    tasks.push(Task::done(Message::RemoveWindow(window)));
+                }
+            }
+        }
+        tasks
     }
 
     /// Opens a layer-shell window for one (bar, output) pair, records it in `pending` and
@@ -727,49 +928,18 @@ impl App {
         &mut self,
         workspaces: &[niri_ipc::Workspace],
     ) -> Vec<Task<Message>> {
-        let known_pairs: HashSet<(String, String)> = self
-            .surfaces
-            .surfaces()
-            .map(|(_, s)| s)
-            .filter(|s| !s.output_name.is_empty())
-            .map(|s| (s.output_name.clone(), s.bar_name.clone()))
-            .collect();
-
-        let mut to_spawn: Vec<(usize, String)> = workspaces
+        let mut eligible_outputs: Vec<String> = workspaces
             .iter()
             .filter_map(|ws| ws.output.as_deref())
             .filter(|n| !n.is_empty())
-            .flat_map(|output_name| {
-                self.config
-                    .bars
-                    .iter()
-                    .enumerate()
-                    .filter(move |(_, b)| b.matches_output(output_name))
-                    .filter(|(_, b)| {
-                        !known_pairs.contains(&(output_name.to_string(), b.name.clone()))
-                    })
-                    .map(move |(i, _)| (i, output_name.to_string()))
-            })
+            .map(str::to_string)
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
-
-        to_spawn.sort_by_key(|(idx, out)| {
-            let is_side = !self.config.bars[*idx].edge.is_horizontal();
-            (out.clone(), is_side)
-        });
-
-        let mut tasks = Vec::with_capacity(to_spawn.len());
-        for (bar_idx, output_name) in to_spawn {
-            let task = Self::spawn_bar_on_output(
-                &self.config.bars[bar_idx],
-                &output_name,
-                &mut self.surfaces.pending_surface_keys,
-                &mut self.surfaces.surfaces,
-            );
-            tasks.push(task);
-        }
-        tasks
+        eligible_outputs.sort();
+        let desired = SurfaceManager::desired_bar_surfaces(&self.config.bars, &eligible_outputs);
+        let effects = self.surfaces.reconcile_bar_surfaces(desired);
+        self.apply_bar_surface_lifecycle_effects(effects)
     }
 
     /// Look up the `BarConfig` for a surface by its `bar_name`.
@@ -995,7 +1165,9 @@ impl App {
         target_window: iced::window::Id,
         module: &crate::modules::ModuleId,
     ) -> Vec<Task<Message>> {
-        let effects = self.surfaces.close_tooltip_for_target(target_window, module);
+        let effects = self
+            .surfaces
+            .close_tooltip_for_target(target_window, module);
         self.apply_registry_effects(effects)
     }
 }
@@ -1203,6 +1375,15 @@ mod tests {
     }
 
     #[test]
+    fn bar_surface_identity_uses_implicit_bar_name_for_allscreens() {
+        let identity = BarSurfaceIdentity::from_surface_state(&SurfaceState::default());
+
+        assert_eq!(identity, BarSurfaceIdentity::all_screens());
+        assert_eq!(identity.bar_name, "main");
+        assert_eq!(identity.output_name, None);
+    }
+
+    #[test]
     fn boot_manual_outputs_false_when_no_allowed_outputs() {
         let (app, _) = App::boot(make_config(), vec![]);
         assert!(!app.surfaces.manual_outputs());
@@ -1285,6 +1466,150 @@ mod tests {
             app.surfaces.len(),
             2,
             "two bars on one output -> two surfaces"
+        );
+    }
+
+    #[test]
+    fn registry_calculates_desired_bar_surfaces_with_horizontal_first_ordering() {
+        let bars = vec![
+            crate::config::BarConfig {
+                name: "left".into(),
+                edge: Edge::Left,
+                ..crate::config::BarConfig::default()
+            },
+            crate::config::BarConfig {
+                name: "top".into(),
+                edge: Edge::Top,
+                ..crate::config::BarConfig::default()
+            },
+        ];
+
+        let desired = SurfaceManager::desired_bar_surfaces(&bars, &["DP-1".into()]);
+        let identities: Vec<_> = desired.into_iter().map(|d| d.identity).collect();
+
+        assert_eq!(
+            identities,
+            vec![
+                BarSurfaceIdentity::new("top", Some("DP-1".into())),
+                BarSurfaceIdentity::new("left", Some("DP-1".into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn registry_reconciliation_keeps_live_surface_and_opens_missing_surface() {
+        let existing = test_wid();
+        let mut registry = SurfaceManager::new(
+            HashMap::from([(existing, SurfaceState::new("DP-1".into(), "main".into()))]),
+            HashMap::new(),
+            true,
+        );
+        let desired = vec![
+            DesiredBarSurface {
+                identity: BarSurfaceIdentity::new("main", Some("DP-1".into())),
+                bar_index: 0,
+            },
+            DesiredBarSurface {
+                identity: BarSurfaceIdentity::new("side", Some("DP-1".into())),
+                bar_index: 1,
+            },
+        ];
+
+        let effects = registry.reconcile_bar_surfaces(desired);
+
+        assert_eq!(
+            effects,
+            vec![BarSurfaceLifecycleEffect::Open(DesiredBarSurface {
+                identity: BarSurfaceIdentity::new("side", Some("DP-1".into())),
+                bar_index: 1,
+            })]
+        );
+        assert!(registry.surface(existing).is_some());
+    }
+
+    #[test]
+    fn registry_reconciliation_closes_stale_surface_and_associated_overlays() {
+        let stale = test_wid();
+        let tooltip = test_wid();
+        let panel = test_wid();
+        let menu = test_wid();
+        let mut registry = SurfaceManager::new(
+            HashMap::from([(stale, SurfaceState::new("DP-1".into(), "main".into()))]),
+            HashMap::new(),
+            true,
+        );
+        registry.insert_tooltip_popup(TooltipPopup {
+            window: tooltip,
+            target_window: stale,
+            target_module: ModuleId::new("clock"),
+            tree: tooltip_tree(crate::config::Edge::Top),
+        });
+        registry.insert_panel_popup(
+            panel,
+            PanelMeta {
+                tree: panel_tree(stale),
+                search_input_id: crate::app::panel::panel_search_input_id(panel),
+            },
+        );
+        registry.insert_popup(
+            menu,
+            PopupMeta {
+                service: "org.test".into(),
+                menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
+                tree: crate::surface::menu_popup::MenuTree {
+                    items: Vec::new(),
+                    anchor: (0, 0),
+                    screen_size: (1920, 1080),
+                },
+                bar_name: "main".into(),
+            },
+        );
+
+        let effects = registry.reconcile_bar_surfaces(Vec::new());
+
+        assert_eq!(
+            effects,
+            vec![
+                BarSurfaceLifecycleEffect::RemoveWindow(tooltip),
+                BarSurfaceLifecycleEffect::RemoveWindow(panel),
+                BarSurfaceLifecycleEffect::RemoveWindow(menu),
+                BarSurfaceLifecycleEffect::RemoveWindow(stale),
+            ]
+        );
+        assert!(registry.surface(stale).is_none());
+        assert!(registry.tooltip_popup(tooltip).is_none());
+        assert!(registry.panel_popup(panel).is_none());
+        assert!(registry.popup(menu).is_none());
+    }
+
+    #[test]
+    fn registry_global_panel_toggle_prefers_focused_output_then_identity_order() {
+        let first = test_wid();
+        let focused_main = test_wid();
+        let focused_side = test_wid();
+        let registry = SurfaceManager::new(
+            HashMap::from([
+                (first, SurfaceState::new("DP-1".into(), "main".into())),
+                (
+                    focused_side,
+                    SurfaceState::new("eDP-1".into(), "side".into()),
+                ),
+                (
+                    focused_main,
+                    SurfaceState::new("eDP-1".into(), "main".into()),
+                ),
+            ]),
+            HashMap::new(),
+            true,
+        );
+
+        assert_eq!(
+            registry.select_global_panel_toggle_surface(Some("eDP-1")),
+            Some(focused_main)
+        );
+        assert_eq!(
+            registry.select_global_panel_toggle_surface(Some("missing")),
+            Some(first)
         );
     }
 

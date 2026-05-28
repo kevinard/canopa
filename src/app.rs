@@ -25,8 +25,6 @@ mod tray;
 mod view;
 mod widget_ops;
 
-use std::collections::HashMap;
-
 use iced::Task;
 use iced_layershell::to_layer_message;
 
@@ -34,7 +32,6 @@ use crate::config::Config;
 use crate::dbus::DbusConnections;
 #[cfg(test)]
 use crate::modules::ModuleId;
-use crate::surface::SurfaceState;
 
 pub(crate) struct App {
     config: Config,
@@ -158,35 +155,20 @@ impl App {
 
         let module_graph = module_graph::build_module_graph(&config)
             .expect("validated config should build a module graph");
-        // Create one surface per (output_name, bar_name) pair when in manual mode.
-        // When allowed_outputs is empty, StartMode::AllScreens handles window creation.
-        let mut pending_surface_keys: HashMap<iced::window::Id, (String, String)> = HashMap::new();
-        let mut surfaces: HashMap<iced::window::Id, SurfaceState> = HashMap::new();
-        let window_tasks: Vec<Task<Message>> = {
-            let mut tasks = vec![];
-            for output_name in &allowed_outputs {
-                // Horizontal bars (top/bottom) must be spawned before side bars (left/right) so
-                // their exclusive zones are registered first.  The compositor then automatically
-                // constrains side bars to the remaining work area, preventing overlap.
-                let mut bars_for_output = config.bars_for_output(output_name);
-                bars_for_output.sort_by_key(|b| b.edge.is_horizontal() as u8 ^ 1);
-                for bar in &bars_for_output {
-                    tasks.push(Self::spawn_bar_on_output(
-                        bar,
-                        output_name,
-                        &mut pending_surface_keys,
-                        &mut surfaces,
-                    ));
-                }
-            }
-            tasks
-        };
-
         let manual_outputs = !allowed_outputs.is_empty();
+        let mut surfaces = surfaces::SurfaceManager::new(
+            std::collections::HashMap::new(),
+            std::collections::HashMap::new(),
+            manual_outputs,
+        );
+        let desired =
+            surfaces::SurfaceManager::desired_bar_surfaces(&config.bars, &allowed_outputs);
+        let effects = surfaces.reconcile_bar_surfaces(desired);
+        let window_tasks = Self::lifecycle_effects_to_tasks(&config, &mut surfaces, effects);
         let app = App {
             config,
             shared: shared::SharedContext::new(),
-            surfaces: surfaces::SurfaceManager::new(surfaces, pending_surface_keys, manual_outputs),
+            surfaces,
             menu: menu::MenuSystem::default(),
             panel: panel_runtime::PanelRuntime::default(),
             modules: module_runtime::ModuleRuntime::from_modules_with_actions(module_graph.modules),
@@ -1288,16 +1270,28 @@ mod tests {
         let before = app.surfaces.len();
         let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
             NiriEvent::Event(Event::WorkspacesChanged {
-                workspaces: vec![niri_ipc::Workspace {
-                    id: 99,
-                    idx: 0,
-                    name: None,
-                    output: Some("HDMI-A-1".to_string()),
-                    is_urgent: false,
-                    is_active: true,
-                    is_focused: false,
-                    active_window_id: None,
-                }],
+                workspaces: vec![
+                    niri_ipc::Workspace {
+                        id: 99,
+                        idx: 0,
+                        name: None,
+                        output: Some("eDP-1".to_string()),
+                        is_urgent: false,
+                        is_active: false,
+                        is_focused: false,
+                        active_window_id: None,
+                    },
+                    niri_ipc::Workspace {
+                        id: 100,
+                        idx: 1,
+                        name: None,
+                        output: Some("HDMI-A-1".to_string()),
+                        is_urgent: false,
+                        is_active: true,
+                        is_focused: false,
+                        active_window_id: None,
+                    },
+                ],
             }),
         )));
         assert_eq!(
@@ -1326,16 +1320,28 @@ mod tests {
         app.surfaces.manual_outputs = true; // simulate manual mode
         let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
             NiriEvent::Event(Event::WorkspacesChanged {
-                workspaces: vec![niri_ipc::Workspace {
-                    id: 5,
-                    idx: 0,
-                    name: None,
-                    output: Some("DP-1".to_string()),
-                    is_urgent: false,
-                    is_active: true,
-                    is_focused: false,
-                    active_window_id: None,
-                }],
+                workspaces: vec![
+                    niri_ipc::Workspace {
+                        id: 5,
+                        idx: 0,
+                        name: None,
+                        output: Some("eDP-1".to_string()),
+                        is_urgent: false,
+                        is_active: false,
+                        is_focused: false,
+                        active_window_id: None,
+                    },
+                    niri_ipc::Workspace {
+                        id: 6,
+                        idx: 1,
+                        name: None,
+                        output: Some("DP-1".to_string()),
+                        is_urgent: false,
+                        is_active: true,
+                        is_focused: false,
+                        active_window_id: None,
+                    },
+                ],
             }),
         )));
         let output_names: Vec<&str> = app
@@ -1375,16 +1381,28 @@ mod tests {
         app.surfaces.manual_outputs = true;
         let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
             NiriEvent::Event(Event::WorkspacesChanged {
-                workspaces: vec![niri_ipc::Workspace {
-                    id: 5,
-                    idx: 0,
-                    name: None,
-                    output: Some("DP-1".to_string()),
-                    is_urgent: false,
-                    is_active: true,
-                    is_focused: false,
-                    active_window_id: None,
-                }],
+                workspaces: vec![
+                    niri_ipc::Workspace {
+                        id: 5,
+                        idx: 0,
+                        name: None,
+                        output: Some("eDP-1".to_string()),
+                        is_urgent: false,
+                        is_active: false,
+                        is_focused: false,
+                        active_window_id: None,
+                    },
+                    niri_ipc::Workspace {
+                        id: 6,
+                        idx: 1,
+                        name: None,
+                        output: Some("DP-1".to_string()),
+                        is_urgent: false,
+                        is_active: true,
+                        is_focused: false,
+                        active_window_id: None,
+                    },
+                ],
             }),
         )));
         // After hotplug: should have 2 more surfaces for DP-1 (both bars target "all")
