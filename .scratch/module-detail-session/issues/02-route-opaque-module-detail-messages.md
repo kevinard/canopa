@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Route Opaque Module Detail Messages
 
@@ -14,11 +14,11 @@ This slice should introduce the effect contract needed by module-owned detail be
 
 ## Acceptance criteria
 
-- [ ] Detail messages are opaque at the app seam and are routed back to the active originating **Module**.
-- [ ] Detail messages whose target is not the active **Panel Origin** are ignored.
-- [ ] Detail messages after panel close or replacement do not mutate stale **Module Detail Sessions**.
-- [ ] The detail update result can distinguish app-owned effects from module-owned effects.
-- [ ] Tests cover successful routing, stale message dropping, and returned effect classification without introducing module-specific app-level detail enums.
+- [x] Detail messages are opaque at the app seam and are routed back to the active originating **Module**.
+- [x] Detail messages whose target is not the active **Panel Origin** are ignored.
+- [x] Detail messages after panel close or replacement do not mutate stale **Module Detail Sessions**.
+- [x] The detail update result can distinguish app-owned effects from module-owned effects.
+- [x] Tests cover successful routing, stale message dropping, and returned effect classification without introducing module-specific app-level detail enums.
 
 ## Blocked by
 

@@ -18,6 +18,7 @@ pub(super) struct PendingPanelOpen {
 struct ActivePanel {
     window: iced::window::Id,
     origin_window: iced::window::Id,
+    origin: crate::surface::panel::PanelOrigin,
     content: crate::surface::panel::PanelContent,
 }
 
@@ -111,6 +112,7 @@ pub(super) enum PanelRuntimeIntent<'a> {
     PanelWindowOpened {
         window: iced::window::Id,
         origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
         content: crate::surface::panel::PanelContent,
         catalog: PanelMenuCatalog<'a>,
     },
@@ -198,10 +200,11 @@ impl PanelRuntime {
             PanelRuntimeIntent::PanelWindowOpened {
                 window,
                 origin_window,
+                origin,
                 content,
                 catalog,
             } => {
-                self.panel_window_opened(window, origin_window, content, catalog);
+                self.panel_window_opened(window, origin_window, origin, content, catalog);
                 Vec::new()
             }
             PanelRuntimeIntent::InstalledAppsLoaded {
@@ -291,6 +294,7 @@ impl PanelRuntime {
         &mut self,
         window: iced::window::Id,
         origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
         content: crate::surface::panel::PanelContent,
         catalog: PanelMenuCatalog<'_>,
     ) {
@@ -302,6 +306,7 @@ impl PanelRuntime {
         self.active_panel = Some(ActivePanel {
             window,
             origin_window,
+            origin,
             content,
         });
     }
@@ -583,6 +588,25 @@ impl PanelRuntime {
         self.module_detail_session.as_ref()
     }
 
+    pub(super) fn module_detail_session_mut(
+        &mut self,
+    ) -> Option<&mut crate::modules::ModuleDetailSession> {
+        self.module_detail_session.as_mut()
+    }
+
+    pub(super) fn active_module_detail_target(&self) -> Option<crate::modules::ModuleId> {
+        match self.active_panel.as_ref() {
+            Some(ActivePanel {
+                origin: crate::surface::panel::PanelOrigin::Module(origin_id),
+                content: crate::surface::panel::PanelContent::ModulePanel(content_id),
+                ..
+            }) if origin_id == content_id && self.module_detail_session.is_some() => {
+                Some(origin_id.clone())
+            }
+            _ => None,
+        }
+    }
+
     #[cfg(test)]
     fn module_detail_session_value<T: 'static>(&self) -> Option<&T> {
         self.module_detail_session
@@ -801,6 +825,7 @@ mod tests {
         runtime.handle(PanelRuntimeIntent::PanelWindowOpened {
             window,
             origin_window,
+            origin: crate::surface::panel::PanelOrigin::Bar,
             content,
             catalog: empty_catalog(),
         });

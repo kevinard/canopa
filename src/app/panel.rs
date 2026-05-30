@@ -341,6 +341,7 @@ impl App {
             super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
                 window: panel_window,
                 origin_window: request.origin_window,
+                origin: tree.origin.clone(),
                 content: tree.content.clone(),
                 catalog,
             },
@@ -533,7 +534,7 @@ impl App {
         Task::batch(tasks)
     }
 
-    fn dispatch_panel_action_from_active_panel(
+    pub(super) fn dispatch_panel_action_from_active_panel(
         &mut self,
         action: crate::config::PanelAction,
     ) -> Task<Message> {
@@ -1598,6 +1599,7 @@ mod tests {
                 super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
                     window: panel,
                     origin_window: origin,
+                    origin: crate::surface::panel::PanelOrigin::Bar,
                     content: crate::surface::panel::PanelContent::Menu("main".into()),
                     catalog: super::super::panel_runtime::PanelMenuCatalog::new(
                         app.config.menus.as_slice(),
@@ -1618,6 +1620,7 @@ mod tests {
                 super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
                     window: iced::window::Id::unique(),
                     origin_window: iced::window::Id::unique(),
+                    origin: crate::surface::panel::PanelOrigin::Bar,
                     content: crate::surface::panel::PanelContent::Menu("main".into()),
                     catalog: super::super::panel_runtime::PanelMenuCatalog::new(
                         app.config.menus.as_slice(),
@@ -2174,6 +2177,7 @@ mod tests {
             super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
                 window: iced::window::Id::unique(),
                 origin_window: iced::window::Id::unique(),
+                origin: crate::surface::panel::PanelOrigin::Bar,
                 content: crate::surface::panel::PanelContent::Menu("main".into()),
                 catalog: super::super::panel_runtime::PanelMenuCatalog::new(&menus),
             },

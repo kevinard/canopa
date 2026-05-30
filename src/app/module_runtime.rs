@@ -103,6 +103,10 @@ impl ModuleRuntime {
         self.store.get(id)
     }
 
+    pub(super) fn get_mut(&mut self, id: &ModuleId) -> Option<&mut (dyn Module + '_)> {
+        self.store.get_mut(id)
+    }
+
     pub(super) fn config_name_for(&self, id: &ModuleId) -> Option<&str> {
         self.get(id).and_then(Module::config_name)
     }

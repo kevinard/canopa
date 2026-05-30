@@ -136,6 +136,10 @@ pub enum PanelEvent {
 #[derive(Debug, Clone)]
 pub enum ModuleRuntimeEvent {
     Module(ModuleId, ModuleEvent),
+    Detail {
+        target: ModuleId,
+        message: crate::modules::ModuleDetailMessage,
+    },
     ModuleClick(ModuleId, iced::window::Id),
     ModuleRightClick(ModuleId, iced::window::Id),
     ModuleScrollUp(ModuleId, iced::window::Id),

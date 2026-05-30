@@ -44,6 +44,12 @@ impl ModuleStore {
             .map(|(_, module)| module.as_ref())
     }
 
+    pub fn get_mut(&mut self, id: &ModuleId) -> Option<&mut (dyn Module + '_)> {
+        let idx = *self.by_id.get(id)?;
+        let (_, module) = self.ordered.get_mut(idx)?;
+        Some(module.as_mut())
+    }
+
     pub fn ids_by_kind(&self, kind: ModuleKind) -> &[ModuleId] {
         self.by_kind.get(&kind).map(Vec::as_slice).unwrap_or(&[])
     }

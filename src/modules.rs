@@ -9,7 +9,7 @@ pub mod view;
 pub mod volume;
 pub mod workspaces;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::config::{
     BatteryConfig, ClockConfig, ModuleParams, NetworkConfig, TrayConfig, VolumeConfig,
@@ -17,6 +17,42 @@ use crate::config::{
 };
 
 pub type ModuleDetailSession = Box<dyn std::any::Any + Send>;
+
+#[derive(Clone)]
+pub struct ModuleDetailMessage(Arc<dyn std::any::Any + Send + Sync>);
+
+impl ModuleDetailMessage {
+    pub fn new<T: Send + Sync + 'static>(message: T) -> Self {
+        Self(Arc::new(message))
+    }
+
+    pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
+        self.0.downcast_ref::<T>()
+    }
+}
+
+impl std::fmt::Debug for ModuleDetailMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModuleDetailMessage").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ModuleDetailAppEffect {
+    PanelAction(crate::config::PanelAction),
+    ClosePanel,
+}
+
+#[derive(Debug, Clone)]
+pub enum ModuleDetailEffect {
+    App(ModuleDetailAppEffect),
+    Module(ModuleDetailMessage),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ModuleDetailUpdate {
+    pub effects: Vec<ModuleDetailEffect>,
+}
 
 /// Unique identifier for a module instance.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -176,6 +212,13 @@ pub trait Module: Send + Sync {
         _session: Option<&ModuleDetailSession>,
     ) -> iced::Element<'_, crate::app::Message> {
         self.view_module_detail_with_style(state, bar_style, clock_month_offset)
+    }
+    fn update_module_detail_session(
+        &mut self,
+        _session: &mut ModuleDetailSession,
+        _message: ModuleDetailMessage,
+    ) -> ModuleDetailUpdate {
+        ModuleDetailUpdate::default()
     }
     /// View for horizontal bars (top/bottom). Single-line, shrink-width content
     /// suited for a side-by-side row layout. Defaults to `view_panel_with_style`.

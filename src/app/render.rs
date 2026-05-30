@@ -617,6 +617,7 @@ mod tests {
             crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
                 window: panel,
                 origin_window: origin,
+                origin: crate::surface::panel::PanelOrigin::Bar,
                 content: crate::surface::panel::PanelContent::Menu("main".into()),
                 catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
                     app.config.menus.as_slice(),
