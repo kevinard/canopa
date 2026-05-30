@@ -303,6 +303,7 @@ impl App {
         let settings = panel_window_settings(bar, &tree, surface_origin);
         let (panel_window, open_task) = Message::layershell_open(settings);
         self.surface_mut(request.origin_window).tooltip_pending = None;
+        self.surfaces.clear_pending_menu_popup();
 
         let panel_meta = super::surfaces::PanelMeta {
             tree: tree.clone(),

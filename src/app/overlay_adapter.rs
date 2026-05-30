@@ -54,7 +54,9 @@ impl super::App {
         for effect in effects {
             match effect {
                 RegistryEffect::RemoveWindow(window) => {
-                    self.panel.mark_closing_window(window);
+                    if !self.surfaces.has_popup(window) {
+                        self.panel.mark_closing_window(window);
+                    }
                     self.surfaces.remove_panel_popup(window);
                     self.surfaces.remove_popup(window);
                     self.surfaces.remove_tooltip_popup(window);

@@ -52,6 +52,7 @@ pub(super) enum BarSurfaceLifecycleEffect {
     RemoveWindow(iced::window::Id),
 }
 
+#[derive(Debug, Clone)]
 pub(super) struct PopupMeta {
     pub(super) service: String,
     pub(super) menu_path: zbus::zvariant::OwnedObjectPath,
@@ -165,6 +166,8 @@ pub(super) struct SurfaceManager {
     pub(super) pending_surface_keys: HashMap<iced::window::Id, (String, String)>,
     pub(super) manual_outputs: bool,
     pub(super) popups: HashMap<iced::window::Id, PopupMeta>,
+    pub(super) closing_menu_popups: HashSet<iced::window::Id>,
+    pub(super) pending_menu_popup: Option<PopupMeta>,
     pub(super) tooltip_popups: HashMap<iced::window::Id, TooltipPopup>,
     pub(super) panel_popups: HashMap<iced::window::Id, PanelMeta>,
     pub(super) last_cursor: Option<(iced::window::Id, iced::Point)>,
@@ -182,6 +185,8 @@ impl SurfaceManager {
             pending_surface_keys,
             manual_outputs,
             popups: HashMap::new(),
+            closing_menu_popups: HashSet::new(),
+            pending_menu_popup: None,
             tooltip_popups: HashMap::new(),
             panel_popups: HashMap::new(),
             last_cursor: None,
@@ -385,6 +390,7 @@ impl SurfaceManager {
             .collect();
         for window in &closing_menus {
             self.popups.remove(window);
+            self.closing_menu_popups.insert(*window);
         }
         effects.extend(closing_menus.into_iter().map(RegistryEffect::RemoveWindow));
         effects
@@ -415,11 +421,18 @@ impl SurfaceManager {
     }
 
     pub(super) fn has_popup(&self, id: iced::window::Id) -> bool {
-        self.popups.contains_key(&id)
+        self.popups.contains_key(&id) || self.closing_menu_popups.contains(&id)
     }
 
     pub(super) fn has_any_popup(&self) -> bool {
-        !self.popups.is_empty() || !self.tooltip_popups.is_empty() || !self.panel_popups.is_empty()
+        !self.popups.is_empty()
+            || !self.closing_menu_popups.is_empty()
+            || !self.tooltip_popups.is_empty()
+            || !self.panel_popups.is_empty()
+    }
+
+    pub(super) fn has_any_menu_popup(&self) -> bool {
+        !self.popups.is_empty() || !self.closing_menu_popups.is_empty()
     }
 
     pub(super) fn panel_popup(&self, window: iced::window::Id) -> Option<&PanelMeta> {
@@ -508,9 +521,33 @@ impl SurfaceManager {
     ) -> Vec<RegistryEffect> {
         let mut effects = self.close_tooltip_overlays();
         effects.extend(self.close_panel_overlays_without_restore());
-        effects.extend(self.close_menu_overlays());
+        if self.has_any_menu_popup() {
+            self.pending_menu_popup = Some(meta);
+            effects.extend(self.close_menu_overlays());
+            return effects;
+        }
+
         self.popups.insert(menu_window, meta);
         effects
+    }
+
+    pub(super) fn clear_pending_menu_popup(&mut self) {
+        self.pending_menu_popup = None;
+    }
+
+    pub(super) fn take_ready_pending_menu_popup(&mut self) -> Option<PopupMeta> {
+        if self.has_any_menu_popup() {
+            return None;
+        }
+        self.pending_menu_popup.take()
+    }
+
+    pub(super) fn register_ready_menu_overlay(
+        &mut self,
+        menu_window: iced::window::Id,
+        meta: PopupMeta,
+    ) {
+        self.popups.insert(menu_window, meta);
     }
 
     pub(super) fn open_tooltip_overlay(&mut self, popup: TooltipPopup) -> Vec<RegistryEffect> {
@@ -537,7 +574,10 @@ impl SurfaceManager {
     pub(super) fn close_menu_overlays(&mut self) -> Vec<RegistryEffect> {
         self.popups
             .drain()
-            .map(|(window, _)| RegistryEffect::RemoveWindow(window))
+            .map(|(window, _)| {
+                self.closing_menu_popups.insert(window);
+                RegistryEffect::RemoveWindow(window)
+            })
             .collect()
     }
 
@@ -578,6 +618,9 @@ impl SurfaceManager {
             return Some(ClosedRegisteredWindow::Panel);
         }
         if self.popups.remove(&window).is_some() {
+            return Some(ClosedRegisteredWindow::Menu);
+        }
+        if self.closing_menu_popups.remove(&window) {
             return Some(ClosedRegisteredWindow::Menu);
         }
         if self.tooltip_popups.remove(&window).is_some() {
@@ -713,7 +756,7 @@ impl App {
             }
             SurfaceInputEffect::MenuWindowClosed(window) => {
                 self.surfaces.window_closed(window);
-                Task::done(Message::Menu(super::messages::MenuEvent::Closed))
+                self.open_ready_pending_menu_popup()
             }
             SurfaceInputEffect::ModuleHoverEnter(id, window) => {
                 self.handle_module_hover_enter(id, window)
