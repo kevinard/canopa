@@ -263,12 +263,12 @@ impl PanelRuntime {
         self.active_panel.as_ref().map(|panel| panel.window)
     }
 
-    fn is_clock_module_panel_open(&self) -> bool {
+    fn accepts_clock_detail_events(&self) -> bool {
         self.active_panel.as_ref().is_some_and(|panel| {
             matches!(
                 &panel.content,
-                crate::surface::panel::PanelContent::ModulePanel(id)
-                    if id.0 == "clock"
+                crate::surface::panel::PanelContent::BarPanel
+                    | crate::surface::panel::PanelContent::ModulePanel(_)
             )
         })
     }
@@ -431,13 +431,13 @@ impl PanelRuntime {
     }
 
     fn browse_clock_month(&mut self, delta: i32) {
-        if self.is_clock_module_panel_open() {
+        if self.accepts_clock_detail_events() {
             self.clock_month_offset = self.clock_month_offset.saturating_add(delta);
         }
     }
 
     fn reset_clock_month(&mut self) {
-        if self.is_clock_module_panel_open() {
+        if self.accepts_clock_detail_events() {
             self.clock_month_offset = 0;
         }
     }
@@ -1012,6 +1012,23 @@ mod tests {
         assert_eq!(runtime.clock_month_offset(), 2);
 
         runtime.browse_clock_month(-1);
+        assert_eq!(runtime.clock_month_offset(), 1);
+
+        runtime.reset_clock_month();
+        assert_eq!(runtime.clock_month_offset(), 0);
+    }
+
+    #[test]
+    fn clock_month_browsing_works_in_bar_panel() {
+        let mut runtime = PanelRuntime::default();
+        record_panel_window_opened(
+            &mut runtime,
+            wid(),
+            wid(),
+            crate::surface::panel::PanelContent::BarPanel,
+        );
+
+        runtime.browse_clock_month(1);
         assert_eq!(runtime.clock_month_offset(), 1);
 
         runtime.reset_clock_month();
