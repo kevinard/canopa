@@ -122,6 +122,10 @@ _Avoid_: Active module when referring specifically to panel source
 Module-owned content rendered when a **Panel** is opened from a specific **Module**.
 _Avoid_: Panel menu, popup, separate module when the content belongs to the originating module
 
+**Module Detail Session**:
+The transient module-owned state and interaction lifecycle for **Module Detail Content** while its **Panel** is open. It is created fresh when the **Panel** opens and discarded when that **Panel** closes or is replaced.
+_Avoid_: Panel runtime state, global module state, persisted detail view
+
 **Panel Action**:
 A typed configured operation triggered by pointer input, focused keyboard input, **Panel Menu** item activation, or IPC.
 Examples: `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, `command`.
@@ -309,6 +313,10 @@ _Avoid_: Default config, fallback surface
 - A **Panel** may remain open when focus moves from the originating **Bar Surface** into the **Panel**.
 - Escape closes a **Panel** unless the active **Panel** content has a more specific first-Escape behavior.
 - A **Module** may provide default **Module Detail Content** for its own module-originated **Panel**.
+- A **Module Detail Session** belongs to the **Module Detail Content** of one open **Panel**.
+- A **Module Detail Session** is module-owned; generic **Panel Runtime** does not interpret module-specific detail events or detail state.
+- A **Module Detail Session** resets each time module-originated **Module Detail Content** opens.
+- A **Module Detail Session** may request app-owned effects for shared app infrastructure rather than reimplementing those effects inside the **Module**.
 - Clock **Module Detail Content** shows the current local month by default and may let the user browse other months while that **Panel** remains open.
 - Clock month browsing resets to the current local month each time the clock **Module Detail Content** opens.
 - Clock month browsing is available through pointer controls and keyboard controls while the clock **Module Detail Content** is focused.
