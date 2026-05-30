@@ -101,10 +101,12 @@ pub(super) enum PanelRuntimeIntent<'a> {
     Open {
         request: PanelOpenRequest,
         catalog: PanelMenuCatalog<'a>,
+        module_detail_session: Option<crate::modules::ModuleDetailSession>,
     },
     Toggle {
         request: PanelOpenRequest,
         catalog: PanelMenuCatalog<'a>,
+        module_detail_session: Option<crate::modules::ModuleDetailSession>,
     },
     PanelWindowOpened {
         window: iced::window::Id,
@@ -163,10 +165,11 @@ impl PartialEq for PanelRuntimeEffect {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(super) struct PanelRuntime {
     active_panel: Option<ActivePanel>,
     session: Option<super::panel_menu_session::PanelMenuSession>,
+    module_detail_session: Option<crate::modules::ModuleDetailSession>,
     menu_scroll_y: f32,
     menu_viewport_height: f32,
     clock_month_offset: i32,
@@ -182,12 +185,16 @@ pub(super) struct PanelRuntime {
 impl PanelRuntime {
     pub(super) fn handle(&mut self, intent: PanelRuntimeIntent<'_>) -> Vec<PanelRuntimeEffect> {
         match intent {
-            PanelRuntimeIntent::Open { request, catalog } => {
-                self.open_panel_with_catalog(request, catalog)
-            }
-            PanelRuntimeIntent::Toggle { request, catalog } => {
-                self.toggle_panel_with_catalog(request, catalog)
-            }
+            PanelRuntimeIntent::Open {
+                request,
+                catalog,
+                module_detail_session,
+            } => self.open_panel_with_catalog(request, catalog, module_detail_session),
+            PanelRuntimeIntent::Toggle {
+                request,
+                catalog,
+                module_detail_session,
+            } => self.toggle_panel_with_catalog(request, catalog, module_detail_session),
             PanelRuntimeIntent::PanelWindowOpened {
                 window,
                 origin_window,
@@ -252,6 +259,7 @@ impl PanelRuntime {
     pub(super) fn clear(&mut self) {
         self.active_panel = None;
         self.session = None;
+        self.module_detail_session = None;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
         self.clock_month_offset = 0;
@@ -261,6 +269,12 @@ impl PanelRuntime {
 
     fn active_panel_window(&self) -> Option<iced::window::Id> {
         self.active_panel.as_ref().map(|panel| panel.window)
+    }
+
+    pub(super) fn would_toggle_close(&self, request: &PanelOpenRequest) -> bool {
+        self.active_panel.as_ref().is_some_and(|panel| {
+            panel.origin_window == request.origin_window && panel.content == request.content
+        }) && self.active_panel_window().is_some()
     }
 
     fn accepts_clock_detail_events(&self) -> bool {
@@ -296,6 +310,7 @@ impl PanelRuntime {
         &mut self,
         request: PanelOpenRequest,
         catalog: PanelMenuCatalog<'_>,
+        module_detail_session: Option<crate::modules::ModuleDetailSession>,
     ) -> Vec<PanelRuntimeEffect> {
         if let crate::surface::panel::PanelContent::Menu(name) = &request.content
             && catalog.is_installed_apps_menu(name)
@@ -305,27 +320,28 @@ impl PanelRuntime {
                 PendingPanelOpen { request, menu_name },
             )];
         }
-        self.open_panel_after_source_ready(request)
+        self.open_panel_after_source_ready(request, module_detail_session)
     }
 
     fn toggle_panel_with_catalog(
         &mut self,
         request: PanelOpenRequest,
         catalog: PanelMenuCatalog<'_>,
+        module_detail_session: Option<crate::modules::ModuleDetailSession>,
     ) -> Vec<PanelRuntimeEffect> {
-        if self.active_panel.as_ref().is_some_and(|panel| {
-            panel.origin_window == request.origin_window && panel.content == request.content
-        }) && let Some(window) = self.active_panel_window()
+        if self.would_toggle_close(&request)
+            && let Some(window) = self.active_panel_window()
         {
             self.active_panel = None;
             self.session = None;
+            self.module_detail_session = None;
             self.menu_scroll_y = 0.0;
             self.menu_viewport_height = 0.0;
             self.clock_month_offset = 0;
             self.search_focus_pending = false;
             return vec![PanelRuntimeEffect::ClosePanelWindow(window)];
         }
-        self.open_panel_with_catalog(request, catalog)
+        self.open_panel_with_catalog(request, catalog, module_detail_session)
     }
 
     fn open_panel_after_installed_apps_loaded(
@@ -334,7 +350,7 @@ impl PanelRuntime {
         apps: Vec<crate::desktop_apps::DesktopApplication>,
         catalog: PanelMenuCatalog<'_>,
     ) -> Vec<PanelRuntimeEffect> {
-        let effects = self.open_panel_after_source_ready(pending.request);
+        let effects = self.open_panel_after_source_ready(pending.request, None);
         if let Some(source) = catalog.installed_apps_source(&pending.menu_name, apps) {
             self.open_session(source);
         }
@@ -344,6 +360,7 @@ impl PanelRuntime {
     fn open_panel_after_source_ready(
         &mut self,
         request: PanelOpenRequest,
+        module_detail_session: Option<crate::modules::ModuleDetailSession>,
     ) -> Vec<PanelRuntimeEffect> {
         let mut effects = Vec::new();
         if let Some(window) = self.active_panel_window() {
@@ -351,6 +368,7 @@ impl PanelRuntime {
         }
         self.active_panel = None;
         self.session = None;
+        self.module_detail_session = module_detail_session;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
         self.clock_month_offset = 0;
@@ -503,6 +521,7 @@ impl PanelRuntime {
         }
         self.active_panel = None;
         self.session = None;
+        self.module_detail_session = None;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
         self.clock_month_offset = 0;
@@ -558,6 +577,17 @@ impl PanelRuntime {
         let session = super::panel_menu_session::PanelMenuSession::open(source);
         let _ = session.snapshot();
         self.session = Some(session);
+    }
+
+    pub(super) fn module_detail_session(&self) -> Option<&crate::modules::ModuleDetailSession> {
+        self.module_detail_session.as_ref()
+    }
+
+    #[cfg(test)]
+    fn module_detail_session_value<T: 'static>(&self) -> Option<&T> {
+        self.module_detail_session
+            .as_ref()
+            .and_then(|session| session.downcast_ref::<T>())
     }
 
     fn search_changed(&mut self, query: String) {
@@ -758,6 +788,7 @@ mod tests {
         runtime.handle(PanelRuntimeIntent::Open {
             request,
             catalog: empty_catalog(),
+            module_detail_session: None,
         })
     }
 
@@ -773,6 +804,136 @@ mod tests {
             content,
             catalog: empty_catalog(),
         });
+    }
+
+    fn module_panel_request(origin: iced::window::Id, name: &str) -> PanelOpenRequest {
+        let id = crate::modules::ModuleId::new(name);
+        PanelOpenRequest {
+            origin_window: origin,
+            origin: crate::surface::panel::PanelOrigin::Module(id.clone()),
+            content: crate::surface::panel::PanelContent::ModulePanel(id),
+            anchor: None,
+        }
+    }
+
+    #[test]
+    fn opening_module_detail_content_stores_module_detail_session() {
+        let origin = wid();
+        let mut runtime = PanelRuntime::default();
+
+        let effects = runtime.handle(PanelRuntimeIntent::Open {
+            request: module_panel_request(origin, "custom"),
+            catalog: empty_catalog(),
+            module_detail_session: Some(Box::new(11_u32)),
+        });
+
+        assert_eq!(
+            effects,
+            vec![PanelRuntimeEffect::OpenPanelWindow(module_panel_request(
+                origin, "custom"
+            ))]
+        );
+        assert_eq!(runtime.module_detail_session_value::<u32>(), Some(&11));
+    }
+
+    #[test]
+    fn replacing_panel_replaces_module_detail_session() {
+        let origin = wid();
+        let first_panel = wid();
+        let mut runtime = PanelRuntime::default();
+        open_panel(&mut runtime, module_panel_request(origin, "first"));
+        record_panel_window_opened(
+            &mut runtime,
+            first_panel,
+            origin,
+            crate::surface::panel::PanelContent::ModulePanel(crate::modules::ModuleId::new(
+                "first",
+            )),
+        );
+
+        let effects = runtime.handle(PanelRuntimeIntent::Open {
+            request: module_panel_request(origin, "second"),
+            catalog: empty_catalog(),
+            module_detail_session: Some(Box::new(22_u32)),
+        });
+
+        assert_eq!(
+            effects,
+            vec![
+                PanelRuntimeEffect::ClosePanelWindow(first_panel),
+                PanelRuntimeEffect::OpenPanelWindow(module_panel_request(origin, "second")),
+            ]
+        );
+        assert_eq!(runtime.module_detail_session_value::<u32>(), Some(&22));
+    }
+
+    #[test]
+    fn toggling_open_module_detail_content_discards_module_detail_session() {
+        let origin = wid();
+        let panel = wid();
+        let mut runtime = PanelRuntime::default();
+        runtime.handle(PanelRuntimeIntent::Open {
+            request: module_panel_request(origin, "custom"),
+            catalog: empty_catalog(),
+            module_detail_session: Some(Box::new(33_u32)),
+        });
+        record_panel_window_opened(
+            &mut runtime,
+            panel,
+            origin,
+            crate::surface::panel::PanelContent::ModulePanel(crate::modules::ModuleId::new(
+                "custom",
+            )),
+        );
+
+        let effects = runtime.handle(PanelRuntimeIntent::Toggle {
+            request: module_panel_request(origin, "custom"),
+            catalog: empty_catalog(),
+            module_detail_session: Some(Box::new(44_u32)),
+        });
+
+        assert_eq!(effects, vec![PanelRuntimeEffect::ClosePanelWindow(panel)]);
+        assert!(runtime.module_detail_session().is_none());
+    }
+
+    #[test]
+    fn reopening_same_module_detail_content_uses_fresh_module_detail_session() {
+        let origin = wid();
+        let mut runtime = PanelRuntime::default();
+        runtime.handle(PanelRuntimeIntent::Open {
+            request: module_panel_request(origin, "custom"),
+            catalog: empty_catalog(),
+            module_detail_session: Some(Box::new(55_u32)),
+        });
+        runtime.clear();
+
+        runtime.handle(PanelRuntimeIntent::Open {
+            request: module_panel_request(origin, "custom"),
+            catalog: empty_catalog(),
+            module_detail_session: Some(Box::new(66_u32)),
+        });
+
+        assert_eq!(runtime.module_detail_session_value::<u32>(), Some(&66));
+    }
+
+    #[test]
+    fn modules_without_custom_detail_session_open_with_existing_fallback() {
+        let origin = wid();
+        let mut runtime = PanelRuntime::default();
+
+        let effects = runtime.handle(PanelRuntimeIntent::Open {
+            request: module_panel_request(origin, "simple"),
+            catalog: empty_catalog(),
+            module_detail_session: None,
+        });
+
+        assert_eq!(
+            effects,
+            vec![PanelRuntimeEffect::OpenPanelWindow(module_panel_request(
+                origin, "simple"
+            ))]
+        );
+        assert!(runtime.module_detail_session().is_none());
     }
 
     #[test]
@@ -843,6 +1004,7 @@ mod tests {
         let effects = runtime.handle(PanelRuntimeIntent::Toggle {
             request: open_request(origin, crate::surface::panel::PanelContent::BarPanel),
             catalog: empty_catalog(),
+            module_detail_session: None,
         });
 
         assert_eq!(effects, vec![PanelRuntimeEffect::ClosePanelWindow(panel)]);
@@ -869,6 +1031,7 @@ mod tests {
                 crate::surface::panel::PanelContent::Menu("apps".into()),
             ),
             catalog: PanelMenuCatalog::new(&menus),
+            module_detail_session: None,
         });
 
         assert_eq!(

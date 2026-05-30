@@ -16,6 +16,8 @@ use crate::config::{
     WorkspacesConfig,
 };
 
+pub type ModuleDetailSession = Box<dyn std::any::Any + Send>;
+
 /// Unique identifier for a module instance.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ModuleId(pub String);
@@ -162,6 +164,18 @@ pub trait Module: Send + Sync {
         _clock_month_offset: i32,
     ) -> iced::Element<'_, crate::app::Message> {
         self.view_panel_with_style(state, bar_style)
+    }
+    fn create_module_detail_session(&self, _state: &ModuleState) -> Option<ModuleDetailSession> {
+        None
+    }
+    fn view_module_detail_session_with_style(
+        &self,
+        state: &ModuleState,
+        bar_style: &crate::config::Style,
+        clock_month_offset: i32,
+        _session: Option<&ModuleDetailSession>,
+    ) -> iced::Element<'_, crate::app::Message> {
+        self.view_module_detail_with_style(state, bar_style, clock_month_offset)
     }
     /// View for horizontal bars (top/bottom). Single-line, shrink-width content
     /// suited for a side-by-side row layout. Defaults to `view_panel_with_style`.

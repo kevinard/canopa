@@ -100,10 +100,11 @@ impl App {
                 let state =
                     self.module_render_state(module.kind(), &id, &origin_surface, &default_state);
                 let focused = tree.origin == crate::surface::panel::PanelOrigin::Module(id.clone());
-                let module_view = module.view_module_detail_with_style(
+                let module_view = module.view_module_detail_session_with_style(
                     &state,
                     &bar.style,
                     self.panel.clock_month_offset(),
+                    self.panel.module_detail_session(),
                 );
                 let element = crate::surface::panel::panel_module_frame(module_view, focused);
 

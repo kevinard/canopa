@@ -197,9 +197,16 @@ impl App {
                 };
                 let catalog =
                     super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
+                let module_detail_session = (!self.panel.would_toggle_close(&request))
+                    .then(|| self.module_detail_session_for(&request.content))
+                    .flatten();
                 let effects = self
                     .panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::Toggle { request, catalog });
+                    .handle(super::panel_runtime::PanelRuntimeIntent::Toggle {
+                        module_detail_session,
+                        request,
+                        catalog,
+                    });
                 self.apply_panel_runtime_effects(effects)
             }
             PanelEvent::Close => Task::batch(self.close_all_panels()),
@@ -277,8 +284,24 @@ impl App {
         let catalog = super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
         let effects = self
             .panel
-            .handle(super::panel_runtime::PanelRuntimeIntent::Open { request, catalog });
+            .handle(super::panel_runtime::PanelRuntimeIntent::Open {
+                module_detail_session: self.module_detail_session_for(&request.content),
+                request,
+                catalog,
+            });
         self.apply_panel_runtime_effects(effects)
+    }
+
+    fn module_detail_session_for(
+        &self,
+        content: &crate::surface::panel::PanelContent,
+    ) -> Option<crate::modules::ModuleDetailSession> {
+        let crate::surface::panel::PanelContent::ModulePanel(id) = content else {
+            return None;
+        };
+        let module = self.modules.get(id)?;
+        let state = self.modules.state(id).cloned().unwrap_or_default();
+        module.create_module_detail_session(&state)
     }
 
     fn open_panel_window(
