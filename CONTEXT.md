@@ -305,7 +305,7 @@ _Avoid_: Default config, fallback surface
 - A module-originated **Panel** aligns to the originating **Module** when its bounds are available and falls back to the **Bar Surface** otherwise.
 - The **Panel Origin** remains visually marked while the **Panel** is open.
 - A **Panel** closes when its originating **Bar Surface** disappears.
-- A **Panel** closes when keyboard focus leaves the **Panel** for another application or window.
+- A **Panel** closes when Escape or an explicit close action closes it, or when its originating **Bar Surface** disappears.
 - A **Panel** may remain open when focus moves from the originating **Bar Surface** into the **Panel**.
 - Escape closes a **Panel** unless the active **Panel** content has a more specific first-Escape behavior.
 - A **Module** may provide default **Module Detail Content** for its own module-originated **Panel**.

@@ -745,10 +745,13 @@ impl App {
                 self.surfaces.surface_mut(window).screen_size = (width, height);
                 Task::none()
             }
-            SurfaceInputEffect::WindowClosed(window) => {
-                self.surfaces.window_closed(window);
-                Task::none()
-            }
+            SurfaceInputEffect::WindowClosed(window) => match self.surfaces.window_closed(window) {
+                Some(ClosedRegisteredWindow::Panel) => {
+                    self.panel.clear();
+                    Task::batch(self.restore_bar_keyboard_interactivity())
+                }
+                _ => Task::none(),
+            },
             SurfaceInputEffect::ClosingPanelWindowClosed(window) => {
                 self.surfaces.window_closed(window);
                 self.panel.forget_closing_window(window);
@@ -777,7 +780,6 @@ impl App {
             SurfaceInputEffect::Tick => self.handle_tick(),
             SurfaceInputEffect::PanelFocusGained(window) => self.handle_panel_focus_gained(window),
             SurfaceInputEffect::BarFocusGained(window) => self.handle_bar_focus_gained(window),
-            SurfaceInputEffect::ClosePanels => Task::batch(self.close_all_panels()),
             SurfaceInputEffect::CloseMenu => {
                 Task::done(Message::Menu(super::messages::MenuEvent::Closed))
             }
@@ -1334,6 +1336,29 @@ mod tests {
         assert_eq!(removed.tree.origin_window, origin);
         assert!(!app.surfaces.has_panel_popup(panel));
         assert!(!app.surfaces.has_any_popup());
+    }
+
+    #[test]
+    fn live_panel_window_closed_restores_bar_keyboard_interactivity_state() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let origin = test_wid();
+        let panel = test_wid();
+        app.surfaces
+            .surfaces
+            .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
+        app.surface_mut(origin).focused_module = Some(ModuleId::new("clock"));
+        app.surfaces.insert_panel_popup(
+            panel,
+            PanelMeta {
+                tree: panel_tree(origin),
+                search_input_id: crate::app::panel::panel_search_input_id(panel),
+            },
+        );
+
+        let _ = app.handle_surface_event(crate::app::messages::SurfaceEvent::WindowClosed(panel));
+
+        assert!(app.surfaces.panel_popup(panel).is_none());
+        assert!(app.surface(origin).unwrap().focused_module.is_none());
     }
 
     #[test]

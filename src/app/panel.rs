@@ -65,7 +65,7 @@ fn panel_window_settings(
         size: Some((width, height)),
         margin: Some(margin),
         layer: Layer::Overlay,
-        keyboard_interactivity: KeyboardInteractivity::Exclusive,
+        keyboard_interactivity: KeyboardInteractivity::OnDemand,
         output_option: if tree.origin_output_name.is_empty() {
             OutputOption::None
         } else {
@@ -1219,6 +1219,85 @@ mod tests {
 
         assert_eq!(position.0, 1512);
         assert!(position.1 >= 0);
+    }
+
+    #[test]
+    fn panel_window_uses_on_demand_keyboard_interactivity() {
+        let bar = crate::config::BarConfig {
+            edge: crate::config::Edge::Top,
+            ..crate::config::BarConfig::default()
+        };
+        let tree = crate::surface::panel::PanelTree {
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::BarPanel,
+            origin_window: iced::window::Id::unique(),
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            anchor: Some(iced::Rectangle {
+                x: 100.0,
+                y: 0.0,
+                width: 48.0,
+                height: 32.0,
+            }),
+            screen_size: (1920, 48),
+        };
+
+        assert_eq!(
+            panel_window_settings(&bar, &tree, (0, 0)).keyboard_interactivity,
+            KeyboardInteractivity::OnDemand
+        );
+    }
+
+    #[test]
+    fn panel_window_settings_keep_layer_shell_focusable_for_search_input() {
+        let bar = crate::config::BarConfig {
+            edge: crate::config::Edge::Top,
+            ..crate::config::BarConfig::default()
+        };
+        let tree = crate::surface::panel::PanelTree {
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::Menu("main".into()),
+            origin_window: iced::window::Id::unique(),
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            anchor: None,
+            screen_size: (1920, 48),
+        };
+
+        let settings = panel_window_settings(&bar, &tree, (0, 0));
+
+        assert_eq!(settings.size, Some((bar.panel.width, 600)));
+        assert_eq!(
+            settings.keyboard_interactivity,
+            KeyboardInteractivity::OnDemand
+        );
+    }
+
+    #[test]
+    fn bottom_panel_window_uses_layer_margin_above_bar() {
+        let bar = crate::config::BarConfig {
+            edge: crate::config::Edge::Bottom,
+            ..crate::config::BarConfig::default()
+        };
+        let tree = crate::surface::panel::PanelTree {
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::BarPanel,
+            origin_window: iced::window::Id::unique(),
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            anchor: Some(iced::Rectangle {
+                x: 100.0,
+                y: 0.0,
+                width: 48.0,
+                height: 48.0,
+            }),
+            screen_size: (1920, 48),
+        };
+
+        let settings = panel_window_settings(&bar, &tree, (0, 0));
+
+        assert_eq!(settings.size, Some((bar.panel.width, 600)));
+        assert_eq!(settings.margin, Some((0, 0, 48, 0)));
     }
 
     #[test]

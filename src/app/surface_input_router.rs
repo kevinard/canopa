@@ -65,7 +65,6 @@ pub(super) enum SurfaceInputEffect {
     BarRightClick(iced::window::Id),
     CloseMenu,
     CloseTooltip(iced::window::Id),
-    ClosePanels,
     Ignore,
     ModuleHoverEnter(crate::modules::ModuleId, iced::window::Id),
     ModuleHoverExit(crate::modules::ModuleId, iced::window::Id),
@@ -171,7 +170,7 @@ fn route_panel_input(event: &super::messages::SurfaceEvent) -> SurfaceInputEffec
             SurfaceInputEffect::PanelFocusGained(*window)
         }
         SurfaceEvent::WindowClosed(window) => SurfaceInputEffect::WindowClosed(*window),
-        SurfaceEvent::BarFocusLost(_) => SurfaceInputEffect::ClosePanels,
+        SurfaceEvent::BarFocusLost(_) => SurfaceInputEffect::Ignore,
         SurfaceEvent::BackPressed(_) => SurfaceInputEffect::PanelBack,
         SurfaceEvent::EscapePressed(window) => SurfaceInputEffect::Escape { window: *window },
         SurfaceEvent::FocusMoveNext(window) => SurfaceInputEffect::MoveFocus {
@@ -406,7 +405,6 @@ impl PartialEq for SurfaceInputEffect {
                 },
             ) => lw == rw && lwidth == rwidth && lheight == rheight,
             (CloseMenu, CloseMenu)
-            | (ClosePanels, ClosePanels)
             | (Ignore, Ignore)
             | (PanelBack, PanelBack)
             | (Tick, Tick)
@@ -425,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn panel_focus_lost_closes_panels() {
+    fn panel_focus_lost_is_ignored_for_click_outside_dismissal() {
         let window = wid();
 
         assert_eq!(
@@ -433,7 +431,7 @@ mod tests {
                 WindowRole::Panel,
                 &super::super::messages::SurfaceEvent::BarFocusLost(window),
             ),
-            SurfaceInputEffect::ClosePanels
+            SurfaceInputEffect::Ignore
         );
     }
 
