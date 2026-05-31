@@ -150,8 +150,8 @@ impl App {
                 service,
                 menu_path,
                 tree,
-                bar_name,
-            } => self.open_menu_popup(service, menu_path, tree, bar_name),
+                origin_window,
+            } => self.open_menu_popup(service, menu_path, tree, origin_window),
             MenuEvent::Updated {
                 service,
                 menu_path,
@@ -190,23 +190,21 @@ impl App {
         service: String,
         menu_path: zbus::zvariant::OwnedObjectPath,
         tree: crate::surface::menu_popup::MenuTree,
-        bar_name: String,
+        origin_window: iced::window::Id,
     ) -> Task<Message> {
-        let replacing_open_menu = self.surfaces.has_any_menu_popup();
-        if replacing_open_menu {
-            self.send_menu_closed_events();
-        }
-
         self.spawn_menu_popup(super::surfaces::PopupMeta {
             service,
             menu_path,
             tree,
-            bar_name,
+            origin: self
+                .surfaces
+                .bar_surface_identity_for_window(origin_window)
+                .unwrap_or_else(super::surfaces::BarSurfaceIdentity::all_screens),
         })
     }
 
     fn spawn_menu_popup(&mut self, meta: super::surfaces::PopupMeta) -> Task<Message> {
-        let bar = Self::bar_for_surface_name(&self.config.bars, &meta.bar_name);
+        let bar = Self::bar_for_surface_identity(&self.config.bars, &meta.origin);
         let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &meta.tree);
         let (popup_id, open_task) = Message::popup_open(settings);
         let effects = self.surfaces.open_menu_overlay(popup_id, meta);
@@ -218,31 +216,15 @@ impl App {
         Task::batch(tasks)
     }
 
-    pub(super) fn open_ready_pending_menu_popup(&mut self) -> Task<Message> {
-        let Some(meta) = self.surfaces.take_ready_pending_menu_popup() else {
-            return Task::none();
-        };
-        let bar = Self::bar_for_surface_name(&self.config.bars, &meta.bar_name);
+    pub(super) fn open_ready_menu_popup(
+        &mut self,
+        meta: super::surfaces::PopupMeta,
+    ) -> Task<Message> {
+        let bar = Self::bar_for_surface_identity(&self.config.bars, &meta.origin);
         let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &meta.tree);
         let (popup_id, open_task) = Message::popup_open(settings);
         self.surfaces.register_ready_menu_overlay(popup_id, meta);
         open_task
-    }
-
-    fn send_menu_closed_events(&self) {
-        let conn = self.shared.dbus.session.clone();
-        for meta in self.surfaces.popup_values() {
-            if let Some(conn) = conn.clone() {
-                let service = meta.service.clone();
-                let menu_path = meta.menu_path.clone();
-                tokio::task::spawn(async move {
-                    let _ = crate::dbus::sni::host::send_menu_event(
-                        &conn, &service, &menu_path, 0, "closed",
-                    )
-                    .await;
-                });
-            }
-        }
     }
 
     pub(super) fn update_menu_popup(
@@ -302,7 +284,6 @@ impl App {
     }
 
     pub(super) fn handle_menu_closed(&mut self) -> Task<Message> {
-        self.send_menu_closed_events();
         let mut tasks = self.close_all_menu_popups();
         tasks.extend(self.restore_bar_keyboard_interactivity());
         Task::batch(tasks)
@@ -384,7 +365,7 @@ mod tests {
                 service: "org.test".into(),
                 menu_path: path,
                 tree,
-                bar_name: String::new(),
+                origin: surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
         wid
@@ -481,7 +462,7 @@ mod tests {
                 service: "svc".into(),
                 menu_path,
                 tree,
-                bar_name: String::new(),
+                origin: surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(
@@ -540,7 +521,7 @@ mod tests {
                 service: "svc".into(),
                 menu_path,
                 tree,
-                bar_name: String::new(),
+                origin: surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
@@ -593,7 +574,7 @@ mod tests {
                 service: "svc".into(),
                 menu_path,
                 tree,
-                bar_name: String::new(),
+                origin: surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMovePrev(
@@ -656,7 +637,7 @@ mod tests {
                 service: "svc".into(),
                 menu_path,
                 tree,
-                bar_name: String::new(),
+                origin: surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
@@ -690,7 +671,7 @@ mod tests {
                 service: "svc".into(),
                 menu_path,
                 tree,
-                bar_name: String::new(),
+                origin: surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
         app.menu.focus(popup_wid, "1".into());
@@ -721,16 +702,11 @@ mod tests {
         let old_wid = make_popup_wid(&mut app);
         let new_path = zbus::zvariant::OwnedObjectPath::try_from("/new_menu").unwrap();
 
-        let _ = app.open_menu_popup(
-            "org.next".into(),
-            new_path,
-            menu_tree((24, 12)),
-            String::new(),
-        );
+        let _ = app.open_menu_popup("org.next".into(), new_path, menu_tree((24, 12)), test_wid());
 
         assert!(app.surfaces.popup(old_wid).is_none());
-        assert!(app.surfaces.closing_menu_popups.contains(&old_wid));
-        assert!(app.surfaces.pending_menu_popup.is_some());
+        assert!(app.surfaces.has_popup(old_wid));
+        assert!(app.surfaces.has_pending_menu_for_test());
         assert!(app.surfaces.popups.is_empty());
     }
 
@@ -744,14 +720,14 @@ mod tests {
             "org.next".into(),
             new_path.clone(),
             menu_tree((24, 12)),
-            String::new(),
+            test_wid(),
         );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::WindowClosed(
             old_wid,
         )));
 
         assert!(app.surfaces.closing_menu_popups.is_empty());
-        assert!(app.surfaces.pending_menu_popup.is_none());
+        assert!(!app.surfaces.has_pending_menu_for_test());
         let popup = app
             .surfaces
             .popup_values()

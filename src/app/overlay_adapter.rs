@@ -53,15 +53,23 @@ impl super::App {
         let mut tasks = Vec::new();
         for effect in effects {
             match effect {
-                RegistryEffect::RemoveWindow(window) => {
-                    if !self.surfaces.has_popup(window) {
-                        self.panel.mark_closing_window(window);
-                    }
+                RegistryEffect::PanelClosed { window } => {
+                    self.panel.clear();
                     self.surfaces.remove_panel_popup(window);
-                    self.surfaces.remove_popup(window);
-                    self.surfaces.remove_tooltip_popup(window);
-                    self.menu.clear_window(window);
                     tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
+                }
+                RegistryEffect::MenuClosed { window, meta } => {
+                    self.surfaces.remove_popup(window);
+                    self.menu.clear_window(window);
+                    send_menu_closed_event(self.shared.dbus.session.clone(), meta);
+                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
+                }
+                RegistryEffect::TooltipClosed { window } => {
+                    self.surfaces.remove_tooltip_popup(window);
+                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
+                }
+                RegistryEffect::PendingMenuReady(meta) => {
+                    tasks.push(self.open_ready_menu_popup(meta));
                 }
                 RegistryEffect::SuspendBarKeyboardInteractivity => {
                     tasks.extend(self.suspend_bar_keyboard_interactivity());
@@ -72,6 +80,21 @@ impl super::App {
             }
         }
         tasks
+    }
+}
+
+fn send_menu_closed_event(conn: Option<zbus::Connection>, meta: super::surfaces::PopupMeta) {
+    if let Some(conn) = conn {
+        tokio::task::spawn(async move {
+            let _ = crate::dbus::sni::host::send_menu_event(
+                &conn,
+                &meta.service,
+                &meta.menu_path,
+                0,
+                "closed",
+            )
+            .await;
+        });
     }
 }
 
@@ -119,7 +142,7 @@ mod tests {
                 service: "org.test".into(),
                 menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
                 tree,
-                bar_name: "main".into(),
+                origin: super::super::surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
 

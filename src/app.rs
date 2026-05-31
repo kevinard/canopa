@@ -359,6 +359,7 @@ mod tests {
     fn cursor_moved_is_recorded_when_tray_module_exists() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         app.modules.push(
             Zone::Start,
             Box::new(crate::modules::tray::TrayModule::new(ModuleId::new("tray"))),
@@ -498,6 +499,7 @@ mod tests {
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
             wid,
         )));
@@ -522,6 +524,7 @@ mod tests {
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
             wid,
         )));
@@ -545,6 +548,7 @@ mod tests {
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
             wid,
         )));
@@ -557,6 +561,7 @@ mod tests {
     fn escape_pressed_when_not_focused_is_noop() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(wid)));
         assert!(app.surfaces[&wid].focused_module.is_none());
     }
@@ -576,6 +581,7 @@ mod tests {
         config.bars[0].modules.center = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
             wid,
         )));
@@ -589,6 +595,7 @@ mod tests {
     fn bar_focus_gained_with_no_modules_is_noop() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
             wid,
         )));
@@ -763,6 +770,7 @@ mod tests {
         config.bars[0].modules.end = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
             wid,
         )));
@@ -1055,6 +1063,7 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let wid_a = test_wid();
         let wid_b = test_wid();
+        app.surface_mut(wid_a);
         app.surface_mut(wid_b); // initialize surface B without focus
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
             wid_a,

@@ -360,7 +360,6 @@ impl App {
         let settings = panel_window_settings(bar, &tree, surface_origin);
         let (panel_window, open_task) = Message::layershell_open(settings);
         self.surface_mut(request.origin_window).tooltip_pending = None;
-        self.surfaces.clear_pending_menu_popup();
 
         let panel_meta = super::surfaces::PanelMeta {
             tree: tree.clone(),
@@ -391,15 +390,25 @@ impl App {
         effects: Vec<super::panel_runtime::PanelRuntimeEffect>,
     ) -> Task<Message> {
         let mut tasks = Vec::new();
+        let will_open_panel = effects.iter().any(|effect| {
+            matches!(
+                effect,
+                super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(_)
+                    | super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenOpenPanel(_)
+            )
+        });
         for effect in effects {
             match effect {
                 super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(request) => {
                     tasks.push(self.open_panel_window(request));
                 }
                 super::panel_runtime::PanelRuntimeEffect::ClosePanelWindow(window) => {
-                    self.panel.mark_closing_window(window);
-                    self.surfaces.remove_panel_popup(window);
-                    tasks.push(Task::done(Message::RemoveWindow(window)));
+                    if self.surfaces.close_panel_popup_window(window) {
+                        tasks.push(Task::done(Message::RemoveWindow(window)));
+                        if !will_open_panel {
+                            tasks.extend(self.restore_bar_keyboard_interactivity());
+                        }
+                    }
                 }
                 super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus => {
                     tasks.push(request_panel_search_focus());

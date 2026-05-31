@@ -88,7 +88,7 @@ pub enum MenuEvent {
         service: String,
         menu_path: OwnedObjectPath,
         tree: MenuTree,
-        bar_name: String,
+        origin_window: iced::window::Id,
     },
     Updated {
         service: String,

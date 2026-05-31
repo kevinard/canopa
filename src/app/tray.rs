@@ -281,6 +281,11 @@ impl App {
         screen_size: (u32, u32),
         source_window: Option<iced::window::Id>,
     ) -> Task<Message> {
+        let Some(origin_window) =
+            source_window.or_else(|| self.surfaces.last_cursor().map(|(w, _)| w))
+        else {
+            return Task::none();
+        };
         let conn = self.shared.dbus.session.clone();
         if let (Some(conn), Some((dbus_service, menu_path))) =
             (conn, self.tray_menu_target(&service, menu_path))
@@ -289,8 +294,9 @@ impl App {
             let menu_path_clone = menu_path.clone();
             let (anchor_x, anchor_y) = match bounds {
                 Some(r) => {
-                    let edge = source_window
-                        .and_then(|w| self.surfaces.surface(w))
+                    let edge = self
+                        .surfaces
+                        .surface(origin_window)
                         .map(|surface| {
                             Self::bar_for_surface_name(&self.config.bars, &surface.bar_name)
                                 .edge
@@ -308,15 +314,11 @@ impl App {
                     (p.x as i32, p.y as i32)
                 }
             };
-            let bar_name = source_window
-                .and_then(|w| self.surfaces.surface(w))
-                .or_else(|| {
-                    self.surfaces
-                        .last_cursor()
-                        .and_then(|(w, _)| self.surfaces.surface(w))
-                })
-                .map(|s| s.bar_name.clone())
-                .unwrap_or_default();
+            let screen_size = self
+                .surfaces
+                .surface(origin_window)
+                .map(|s| s.screen_size)
+                .unwrap_or(screen_size);
             return Task::perform(
                 async move {
                     crate::dbus::sni::host::fetch_menu(&conn, &service_clone, &menu_path_clone)
@@ -330,7 +332,7 @@ impl App {
                             service: service.clone(),
                             menu_path: menu_path.clone(),
                             tree,
-                            bar_name: bar_name.clone(),
+                            origin_window,
                         })
                     } else {
                         Message::Tray(messages::TrayRuntimeEvent::Activate {

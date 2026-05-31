@@ -1,6 +1,6 @@
 /// A generic menu tree, passed from shared app state to a popup SurfaceState.
 /// No knowledge of SNI, DBusMenu, or any module internals.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MenuTree {
     pub items: Vec<MenuItem>,
     /// Screen position (x, y) adjacent to which the popup should appear.
@@ -12,7 +12,7 @@ pub struct MenuTree {
 
 #[allow(dead_code)]
 /// One item in a `MenuTree`. Children are ignored for MVP (no nested submenus).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MenuItem {
     /// Opaque string ID; the caller interprets it on selection.
     pub id: String,

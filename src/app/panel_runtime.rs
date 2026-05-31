@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PanelOpenRequest {
@@ -179,7 +176,6 @@ pub(super) struct PanelRuntime {
     menu_viewport_height: f32,
     search_focus_pending: bool,
     dmenu_responder: Option<super::messages::IpcResponder>,
-    closing_windows: HashSet<iced::window::Id>,
     #[cfg(test)]
     pub(super) installed_apps_for_test: Option<Vec<crate::desktop_apps::DesktopApplication>>,
     #[cfg(test)]
@@ -377,18 +373,6 @@ impl PanelRuntime {
             effects.push(self.request_search_focus());
         }
         effects
-    }
-
-    pub(super) fn mark_closing_window(&mut self, window: iced::window::Id) {
-        self.closing_windows.insert(window);
-    }
-
-    pub(super) fn is_closing_window(&self, window: iced::window::Id) -> bool {
-        self.closing_windows.contains(&window)
-    }
-
-    pub(super) fn forget_closing_window(&mut self, window: iced::window::Id) {
-        self.closing_windows.remove(&window);
     }
 
     #[cfg(test)]
@@ -1153,18 +1137,6 @@ mod tests {
         assert_eq!(runtime.menu_viewport_height(), 0.0);
         assert!(!runtime.search_focus_pending());
         assert!(!runtime.has_dmenu_responder());
-    }
-
-    #[test]
-    fn closing_windows_are_tracked_by_window_id() {
-        let window = iced::window::Id::unique();
-        let mut runtime = PanelRuntime::default();
-
-        runtime.mark_closing_window(window);
-        assert!(runtime.is_closing_window(window));
-
-        runtime.forget_closing_window(window);
-        assert!(!runtime.is_closing_window(window));
     }
 
     #[test]

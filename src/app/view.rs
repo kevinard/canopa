@@ -380,7 +380,7 @@ mod tests {
                     anchor: (0, 0),
                     screen_size: (0, 0),
                 },
-                bar_name: String::new(),
+                origin: super::super::surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
 
