@@ -78,7 +78,10 @@ mod tests {
             iced::widget::text("").into()
         }
 
-        fn create_module_detail_session(&self, _state: &ModuleState) -> Option<ModuleDetailSession> {
+        fn create_module_detail_session(
+            &self,
+            _state: &ModuleState,
+        ) -> Option<ModuleDetailSession> {
             Some(Box::new(0_u32))
         }
 

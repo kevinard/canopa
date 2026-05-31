@@ -14,11 +14,11 @@ The user-facing clock calendar behavior should remain unchanged: opening clock *
 
 ## Acceptance criteria
 
-- [ ] Clock calendar month browsing state is owned by the clock **Module Detail Session**.
-- [ ] Opening clock **Module Detail Content** always starts from the current local month.
-- [ ] Previous, next, and Today interactions update the clock-owned detail session through opaque detail messages.
-- [ ] Existing clock calendar rendering behavior is preserved.
-- [ ] Tests cover session initialization, previous-month browsing, next-month browsing, Today reset, and reset-on-reopen behavior.
+- [x] Clock calendar month browsing state is owned by the clock **Module Detail Session**.
+- [x] Opening clock **Module Detail Content** always starts from the current local month.
+- [x] Previous, next, and Today interactions update the clock-owned detail session through opaque detail messages.
+- [x] Existing clock calendar rendering behavior is preserved.
+- [x] Tests cover session initialization, previous-month browsing, next-month browsing, Today reset, and reset-on-reopen behavior.
 
 ## Blocked by
 

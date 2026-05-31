@@ -12,6 +12,18 @@ pub enum ClockEvent {
     Tick { time: String, date: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClockDetailSession {
+    month_offset: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClockDetailMessage {
+    PreviousMonth,
+    NextMonth,
+    Today,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ClockUpdateCadence {
     Minute,
@@ -437,15 +449,28 @@ impl crate::modules::Module for ClockModule {
         let title = first.format("%B %Y").to_string();
 
         let controls = row![
-            button(text("<")).on_press(crate::app::Message::Panel(
-                crate::app::messages::PanelEvent::ClockMonthPrevious
+            button(text("<")).on_press(crate::app::Message::Modules(
+                crate::app::messages::ModuleRuntimeEvent::Detail {
+                    target: self.id.clone(),
+                    message: crate::modules::ModuleDetailMessage::new(
+                        ClockDetailMessage::PreviousMonth,
+                    ),
+                }
             )),
             text(title).width(Length::Fill),
-            button(text("Today")).on_press(crate::app::Message::Panel(
-                crate::app::messages::PanelEvent::ClockMonthToday
+            button(text("Today")).on_press(crate::app::Message::Modules(
+                crate::app::messages::ModuleRuntimeEvent::Detail {
+                    target: self.id.clone(),
+                    message: crate::modules::ModuleDetailMessage::new(ClockDetailMessage::Today),
+                }
             )),
-            button(text(">")).on_press(crate::app::Message::Panel(
-                crate::app::messages::PanelEvent::ClockMonthNext
+            button(text(">")).on_press(crate::app::Message::Modules(
+                crate::app::messages::ModuleRuntimeEvent::Detail {
+                    target: self.id.clone(),
+                    message: crate::modules::ModuleDetailMessage::new(
+                        ClockDetailMessage::NextMonth
+                    ),
+                }
             )),
         ]
         .spacing(8)
@@ -502,6 +527,56 @@ impl crate::modules::Module for ClockModule {
             .spacing(12)
             .width(Length::Fill)
             .into()
+    }
+
+    fn create_module_detail_session(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> Option<crate::modules::ModuleDetailSession> {
+        matches!(state, crate::modules::ModuleState::Clock(_))
+            .then(|| Box::new(ClockDetailSession { month_offset: 0 }) as _)
+    }
+
+    fn view_module_detail_session_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+        _clock_month_offset: i32,
+        session: Option<&crate::modules::ModuleDetailSession>,
+    ) -> iced::Element<'_, crate::app::Message> {
+        let clock_month_offset = session
+            .and_then(|session| session.downcast_ref::<ClockDetailSession>())
+            .map(|session| session.month_offset)
+            .unwrap_or_default();
+
+        self.view_module_detail_with_style(state, bar_style, clock_month_offset)
+    }
+
+    fn update_module_detail_session(
+        &mut self,
+        session: &mut crate::modules::ModuleDetailSession,
+        message: crate::modules::ModuleDetailMessage,
+    ) -> crate::modules::ModuleDetailUpdate {
+        let Some(session) = session.downcast_mut::<ClockDetailSession>() else {
+            return crate::modules::ModuleDetailUpdate::default();
+        };
+        let Some(message) = message.downcast_ref::<ClockDetailMessage>() else {
+            return crate::modules::ModuleDetailUpdate::default();
+        };
+
+        match message {
+            ClockDetailMessage::PreviousMonth => {
+                session.month_offset = session.month_offset.saturating_sub(1);
+            }
+            ClockDetailMessage::NextMonth => {
+                session.month_offset = session.month_offset.saturating_add(1);
+            }
+            ClockDetailMessage::Today => {
+                session.month_offset = 0;
+            }
+        }
+
+        crate::modules::ModuleDetailUpdate::default()
     }
 
     fn view_horizontal_with_style(
@@ -706,6 +781,121 @@ mod tests {
         assert_eq!(
             month.weeks[0],
             [None, None, Some(1), Some(2), Some(3), Some(4), Some(5)]
+        );
+    }
+
+    #[test]
+    fn clock_detail_session_initializes_current_month() {
+        let module = ClockModule::new(
+            crate::modules::ModuleId::new("clock"),
+            "%H:%M".into(),
+            "%a %d %b".into(),
+            crate::config::FormatConfig::default(),
+        );
+        let state = crate::modules::ModuleState::Clock(ClockState {
+            time: "12:34".into(),
+            date: "Sat 23 May".into(),
+        });
+
+        let session = module
+            .create_module_detail_session(&state)
+            .expect("clock opens a Module Detail Session");
+        let session = session
+            .downcast_ref::<ClockDetailSession>()
+            .expect("clock owns the detail session type");
+
+        assert_eq!(session.month_offset, 0);
+    }
+
+    #[test]
+    fn clock_detail_session_browses_months_from_opaque_messages() {
+        let mut module = ClockModule::new(
+            crate::modules::ModuleId::new("clock"),
+            "%H:%M".into(),
+            "%a %d %b".into(),
+            crate::config::FormatConfig::default(),
+        );
+        let mut session: crate::modules::ModuleDetailSession =
+            Box::new(ClockDetailSession { month_offset: 0 });
+
+        module.update_module_detail_session(
+            &mut session,
+            crate::modules::ModuleDetailMessage::new(ClockDetailMessage::PreviousMonth),
+        );
+        assert_eq!(
+            session
+                .downcast_ref::<ClockDetailSession>()
+                .expect("clock session")
+                .month_offset,
+            -1
+        );
+
+        module.update_module_detail_session(
+            &mut session,
+            crate::modules::ModuleDetailMessage::new(ClockDetailMessage::NextMonth),
+        );
+        module.update_module_detail_session(
+            &mut session,
+            crate::modules::ModuleDetailMessage::new(ClockDetailMessage::NextMonth),
+        );
+        assert_eq!(
+            session
+                .downcast_ref::<ClockDetailSession>()
+                .expect("clock session")
+                .month_offset,
+            1
+        );
+
+        module.update_module_detail_session(
+            &mut session,
+            crate::modules::ModuleDetailMessage::new(ClockDetailMessage::Today),
+        );
+        assert_eq!(
+            session
+                .downcast_ref::<ClockDetailSession>()
+                .expect("clock session")
+                .month_offset,
+            0
+        );
+    }
+
+    #[test]
+    fn clock_detail_session_resets_when_reopened() {
+        let mut module = ClockModule::new(
+            crate::modules::ModuleId::new("clock"),
+            "%H:%M".into(),
+            "%a %d %b".into(),
+            crate::config::FormatConfig::default(),
+        );
+        let state = crate::modules::ModuleState::Clock(ClockState {
+            time: "12:34".into(),
+            date: "Sat 23 May".into(),
+        });
+        let mut first_session = module
+            .create_module_detail_session(&state)
+            .expect("clock opens a Module Detail Session");
+
+        module.update_module_detail_session(
+            &mut first_session,
+            crate::modules::ModuleDetailMessage::new(ClockDetailMessage::NextMonth),
+        );
+        assert_eq!(
+            first_session
+                .downcast_ref::<ClockDetailSession>()
+                .expect("clock session")
+                .month_offset,
+            1
+        );
+
+        let reopened_session = module
+            .create_module_detail_session(&state)
+            .expect("clock reopens a fresh Module Detail Session");
+        assert_eq!(
+            reopened_session
+                .downcast_ref::<ClockDetailSession>()
+                .expect("clock session")
+                .month_offset,
+            0
         );
     }
 }
