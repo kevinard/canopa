@@ -82,37 +82,29 @@ impl App {
             });
         let default_state = ModuleState::default();
 
-        let layout = match &tree.content {
-            crate::surface::panel::PanelContent::BarPanel => {
-                self.effective_panel_module_layout_for_bar(bar)
-            }
-            crate::surface::panel::PanelContent::ModulePanel(id) => {
-                vec![(Zone::Center, id.clone())]
-            }
-            crate::surface::panel::PanelContent::Menu(_)
-            | crate::surface::panel::PanelContent::DmenuRequest => Vec::new(),
-        };
+        let layout =
+            self.panel_module_layout_for_content(tree.origin_window, &tree.origin, &tree.content);
 
         let entries = layout
             .into_iter()
-            .filter_map(|(zone, id)| {
+            .filter_map(|entry| {
+                let id = entry.id;
                 let module = self.modules.get(&id)?;
                 let state =
                     self.module_render_state(module.kind(), &id, &origin_surface, &default_state);
-                let focused = tree.origin == crate::surface::panel::PanelOrigin::Module(id.clone());
                 let module_view = module.view_module_detail_session_with_style(
                     &state,
                     &bar.style,
-                    self.panel.module_detail_session(),
+                    self.panel.module_detail_session_for(&id),
                 );
-                let element = crate::surface::panel::panel_module_frame(module_view, focused);
+                let element = crate::surface::panel::panel_module_frame(module_view, entry.focused);
 
                 Some(ModuleRenderEntry {
                     id,
-                    zone,
+                    zone: entry.zone,
                     hovered: false,
-                    focused,
-                    active: focused,
+                    focused: entry.focused,
+                    active: entry.focused,
                     element,
                     #[cfg(test)]
                     state,

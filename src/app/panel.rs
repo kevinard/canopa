@@ -197,13 +197,13 @@ impl App {
                 };
                 let catalog =
                     super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
-                let module_detail_session = (!self.panel.would_toggle_close(&request))
-                    .then(|| self.module_detail_session_for_request(&request))
-                    .flatten();
+                let module_detail_sessions = (!self.panel.would_toggle_close(&request))
+                    .then(|| self.module_detail_sessions_for_request(&request))
+                    .unwrap_or_default();
                 let effects = self
                     .panel
                     .handle(super::panel_runtime::PanelRuntimeIntent::Toggle {
-                        module_detail_session,
+                        module_detail_sessions,
                         request,
                         catalog,
                     });
@@ -266,28 +266,25 @@ impl App {
         let effects = self
             .panel
             .handle(super::panel_runtime::PanelRuntimeIntent::Open {
-                module_detail_session: self.module_detail_session_for_request(&request),
+                module_detail_sessions: self.module_detail_sessions_for_request(&request),
                 request,
                 catalog,
             });
         self.apply_panel_runtime_effects(effects)
     }
 
-    fn module_detail_session_for_request(
+    fn module_detail_sessions_for_request(
         &self,
         request: &super::panel_runtime::PanelOpenRequest,
-    ) -> Option<crate::modules::ModuleDetailSession> {
-        match &request.content {
-            crate::surface::panel::PanelContent::ModulePanel(id) => {
-                self.module_detail_session_for(id)
-            }
-            crate::surface::panel::PanelContent::BarPanel => self
-                .panel_module_ids_for_origin_window(request.origin_window)
-                .into_iter()
-                .find_map(|id| self.module_detail_session_for(&id)),
-            crate::surface::panel::PanelContent::Menu(_)
-            | crate::surface::panel::PanelContent::DmenuRequest => None,
-        }
+    ) -> std::collections::HashMap<crate::modules::ModuleId, crate::modules::ModuleDetailSession>
+    {
+        self.panel_module_layout_for_request(request)
+            .into_iter()
+            .filter_map(|entry| {
+                self.module_detail_session_for(&entry.id)
+                    .map(|session| (entry.id, session))
+            })
+            .collect()
     }
 
     fn module_detail_session_for(
@@ -299,16 +296,46 @@ impl App {
         module.create_module_detail_session(&state)
     }
 
-    pub(super) fn panel_module_ids_for_origin_window(
+    pub(super) fn panel_module_layout_for_request(
+        &self,
+        request: &super::panel_runtime::PanelOpenRequest,
+    ) -> Vec<crate::surface::panel::PanelModuleEntry> {
+        self.panel_module_layout_for_content(
+            request.origin_window,
+            &request.origin,
+            &request.content,
+        )
+    }
+
+    pub(super) fn panel_module_layout_for_content(
         &self,
         origin_window: iced::window::Id,
-    ) -> Vec<crate::modules::ModuleId> {
-        let origin_surface = self.surface(origin_window).cloned().unwrap_or_default();
-        let bar = Self::bar_for_surface_name(&self.config.bars, &origin_surface.bar_name);
-        self.effective_panel_module_layout_for_bar(bar)
-            .into_iter()
-            .map(|(_, id)| id)
-            .collect()
+        origin: &crate::surface::panel::PanelOrigin,
+        content: &crate::surface::panel::PanelContent,
+    ) -> Vec<crate::surface::panel::PanelModuleEntry> {
+        match content {
+            crate::surface::panel::PanelContent::BarPanel => {
+                let origin_surface = self.surface(origin_window).cloned().unwrap_or_default();
+                let bar = Self::bar_for_surface_name(&self.config.bars, &origin_surface.bar_name);
+                self.effective_panel_module_layout_for_bar(bar)
+                    .into_iter()
+                    .map(|(zone, id)| {
+                        let focused =
+                            origin == &crate::surface::panel::PanelOrigin::Module(id.clone());
+                        crate::surface::panel::PanelModuleEntry { id, zone, focused }
+                    })
+                    .collect()
+            }
+            crate::surface::panel::PanelContent::ModulePanel(id) => {
+                vec![crate::surface::panel::PanelModuleEntry {
+                    id: id.clone(),
+                    zone: crate::modules::Zone::Center,
+                    focused: origin == &crate::surface::panel::PanelOrigin::Module(id.clone()),
+                }]
+            }
+            crate::surface::panel::PanelContent::Menu(_)
+            | crate::surface::panel::PanelContent::DmenuRequest => Vec::new(),
+        }
     }
 
     fn open_panel_window(

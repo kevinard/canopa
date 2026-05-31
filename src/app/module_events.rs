@@ -153,9 +153,9 @@ mod tests {
         }));
     }
 
-    fn active_u32_session(app: &App) -> Option<u32> {
+    fn detail_session_value(app: &App, id: &str) -> Option<u32> {
         app.panel
-            .module_detail_session()
+            .module_detail_session_for(&ModuleId::new(id))
             .and_then(|session| session.downcast_ref::<u32>())
             .copied()
     }
@@ -186,7 +186,7 @@ mod tests {
             message: ModuleDetailMessage::new(DetailTestMessage::Add(7)),
         }));
 
-        assert_eq!(active_u32_session(&app), Some(7));
+        assert_eq!(detail_session_value(&app, "detail"), Some(7));
     }
 
     #[test]
@@ -202,7 +202,29 @@ mod tests {
             message: ModuleDetailMessage::new(DetailTestMessage::Add(7)),
         }));
 
-        assert_eq!(active_u32_session(&app), Some(7));
+        assert_eq!(detail_session_value(&app, "detail"), Some(7));
+    }
+
+    #[test]
+    fn bar_panel_routes_detail_messages_to_independent_module_sessions() {
+        let mut app = app_with_detail_modules(&["first", "second"]);
+        app.config.bars[0].panel.modules.start = vec!["first".into()];
+        app.config.bars[0].panel.modules.end = vec!["second".into()];
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
+        open_bar_panel(&mut app, origin);
+
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::Detail {
+            target: ModuleId::new("first"),
+            message: ModuleDetailMessage::new(DetailTestMessage::Add(7)),
+        }));
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::Detail {
+            target: ModuleId::new("second"),
+            message: ModuleDetailMessage::new(DetailTestMessage::Add(11)),
+        }));
+
+        assert_eq!(detail_session_value(&app, "first"), Some(7));
+        assert_eq!(detail_session_value(&app, "second"), Some(11));
     }
 
     #[test]
@@ -217,7 +239,7 @@ mod tests {
             message: ModuleDetailMessage::new(DetailTestMessage::Add(7)),
         }));
 
-        assert_eq!(active_u32_session(&app), Some(0));
+        assert_eq!(detail_session_value(&app, "active"), Some(0));
     }
 
     #[test]
@@ -233,7 +255,7 @@ mod tests {
             message: ModuleDetailMessage::new(DetailTestMessage::Add(7)),
         }));
 
-        assert_eq!(active_u32_session(&app), Some(0));
+        assert_eq!(detail_session_value(&app, "second"), Some(0));
     }
 
     #[test]
@@ -249,7 +271,7 @@ mod tests {
             message: ModuleDetailMessage::new(DetailTestMessage::Add(7)),
         }));
 
-        assert_eq!(active_u32_session(&app), None);
+        assert_eq!(detail_session_value(&app, "detail"), None);
     }
 
     #[test]
@@ -372,23 +394,14 @@ impl App {
         target: ModuleId,
         message: crate::modules::ModuleDetailMessage,
     ) -> Task<Message> {
-        let module_panel_target = self.panel.active_module_detail_target() == Some(target.clone());
-        let bar_panel_target =
-            self.panel
-                .active_bar_panel_origin_window()
-                .is_some_and(|origin_window| {
-                    self.panel_module_ids_for_origin_window(origin_window)
-                        .into_iter()
-                        .any(|id| id == target)
-                });
-        if !module_panel_target && !bar_panel_target {
+        if !self.panel.active_module_panel_contains(&target) {
             return Task::none();
         }
 
         let Some(module) = self.modules.get_mut(&target) else {
             return Task::none();
         };
-        let Some(session) = self.panel.module_detail_session_mut() else {
+        let Some(session) = self.panel.module_detail_session_for_mut(&target) else {
             return Task::none();
         };
 

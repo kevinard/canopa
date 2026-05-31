@@ -14,6 +14,13 @@ pub enum PanelContent {
     DmenuRequest,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelModuleEntry {
+    pub id: ModuleId,
+    pub zone: crate::modules::Zone,
+    pub focused: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct PanelTree {
     pub origin: PanelOrigin,
