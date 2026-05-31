@@ -198,7 +198,6 @@ pub trait Module: Send + Sync {
         &self,
         state: &ModuleState,
         bar_style: &crate::config::Style,
-        _clock_month_offset: i32,
     ) -> iced::Element<'_, crate::app::Message> {
         self.view_panel_with_style(state, bar_style)
     }
@@ -209,10 +208,9 @@ pub trait Module: Send + Sync {
         &self,
         state: &ModuleState,
         bar_style: &crate::config::Style,
-        clock_month_offset: i32,
         _session: Option<&ModuleDetailSession>,
     ) -> iced::Element<'_, crate::app::Message> {
-        self.view_module_detail_with_style(state, bar_style, clock_month_offset)
+        self.view_module_detail_with_style(state, bar_style)
     }
     fn update_module_detail_session(
         &mut self,

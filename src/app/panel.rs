@@ -241,25 +241,6 @@ impl App {
             PanelEvent::FocusSearchInput { retries } => self.focus_panel_search_input(retries),
             PanelEvent::Activate => self.activate_panel_entry(None),
             PanelEvent::ActivateIndex(index) => self.activate_panel_entry(Some(index)),
-            PanelEvent::ClockMonthPrevious => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::BrowseClockMonth(
-                        -1,
-                    ));
-                Task::none()
-            }
-            PanelEvent::ClockMonthNext => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::BrowseClockMonth(
-                        1,
-                    ));
-                Task::none()
-            }
-            PanelEvent::ClockMonthToday => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::ResetClockMonth);
-                Task::none()
-            }
             PanelEvent::Back => {
                 self.panel
                     .handle(super::panel_runtime::PanelRuntimeIntent::Back);

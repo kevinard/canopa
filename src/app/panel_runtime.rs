@@ -135,8 +135,6 @@ pub(super) enum PanelRuntimeIntent<'a> {
     Activate(Option<usize>),
     CompleteDmenu(crate::ipc::protocol::IpcResponse),
     CancelDmenu,
-    BrowseClockMonth(i32),
-    ResetClockMonth,
     BeginDmenuSelection {
         request: crate::ipc::protocol::DmenuRequest,
         responder: super::messages::IpcResponder,
@@ -174,7 +172,6 @@ pub(super) struct PanelRuntime {
     module_detail_session: Option<crate::modules::ModuleDetailSession>,
     menu_scroll_y: f32,
     menu_viewport_height: f32,
-    clock_month_offset: i32,
     search_focus_pending: bool,
     dmenu_responder: Option<super::messages::IpcResponder>,
     closing_windows: HashSet<iced::window::Id>,
@@ -243,14 +240,6 @@ impl PanelRuntime {
             PanelRuntimeIntent::CancelDmenu => {
                 self.cancel_dmenu(crate::ipc::protocol::IpcResponse::Cancelled)
             }
-            PanelRuntimeIntent::BrowseClockMonth(delta) => {
-                self.browse_clock_month(delta);
-                Vec::new()
-            }
-            PanelRuntimeIntent::ResetClockMonth => {
-                self.reset_clock_month();
-                Vec::new()
-            }
             PanelRuntimeIntent::BeginDmenuSelection {
                 request,
                 responder,
@@ -265,7 +254,6 @@ impl PanelRuntime {
         self.module_detail_session = None;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
-        self.clock_month_offset = 0;
         self.search_focus_pending = false;
         self.dmenu_responder = None;
     }
@@ -278,16 +266,6 @@ impl PanelRuntime {
         self.active_panel.as_ref().is_some_and(|panel| {
             panel.origin_window == request.origin_window && panel.content == request.content
         }) && self.active_panel_window().is_some()
-    }
-
-    fn accepts_clock_detail_events(&self) -> bool {
-        self.active_panel.as_ref().is_some_and(|panel| {
-            matches!(
-                &panel.content,
-                crate::surface::panel::PanelContent::BarPanel
-                    | crate::surface::panel::PanelContent::ModulePanel(_)
-            )
-        })
     }
 
     fn panel_window_opened(
@@ -342,7 +320,6 @@ impl PanelRuntime {
             self.module_detail_session = None;
             self.menu_scroll_y = 0.0;
             self.menu_viewport_height = 0.0;
-            self.clock_month_offset = 0;
             self.search_focus_pending = false;
             return vec![PanelRuntimeEffect::ClosePanelWindow(window)];
         }
@@ -376,7 +353,6 @@ impl PanelRuntime {
         self.module_detail_session = module_detail_session;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
-        self.clock_month_offset = 0;
         self.search_focus_pending = false;
         effects.push(PanelRuntimeEffect::OpenPanelWindow(request.clone()));
         if matches!(
@@ -449,22 +425,6 @@ impl PanelRuntime {
         self.menu_viewport_height = viewport_height.max(0.0);
     }
 
-    pub(super) fn clock_month_offset(&self) -> i32 {
-        self.clock_month_offset
-    }
-
-    fn browse_clock_month(&mut self, delta: i32) {
-        if self.accepts_clock_detail_events() {
-            self.clock_month_offset = self.clock_month_offset.saturating_add(delta);
-        }
-    }
-
-    fn reset_clock_month(&mut self) {
-        if self.accepts_clock_detail_events() {
-            self.clock_month_offset = 0;
-        }
-    }
-
     #[cfg(test)]
     pub(super) fn reset_menu_scroll(&mut self) {
         self.menu_scroll_y = 0.0;
@@ -529,7 +489,6 @@ impl PanelRuntime {
         self.module_detail_session = None;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
-        self.clock_month_offset = 0;
         self.search_focus_pending = false;
         self.open_session(super::panel_menu_session::PanelMenuSource::Dmenu(request));
         self.dmenu_responder = Some(responder);
@@ -1158,69 +1117,6 @@ mod tests {
 
         runtime.forget_closing_window(window);
         assert!(!runtime.is_closing_window(window));
-    }
-
-    #[test]
-    fn clock_month_browsing_resets_when_clock_module_panel_opens() {
-        let origin = wid();
-        let mut runtime = PanelRuntime::default();
-        runtime.browse_clock_month(2);
-
-        open_panel(
-            &mut runtime,
-            super::PanelOpenRequest {
-                origin_window: origin,
-                origin: crate::surface::panel::PanelOrigin::Module(crate::modules::ModuleId::new(
-                    "clock",
-                )),
-                content: crate::surface::panel::PanelContent::ModulePanel(
-                    crate::modules::ModuleId::new("clock"),
-                ),
-                anchor: None,
-            },
-        );
-
-        assert_eq!(runtime.clock_month_offset(), 0);
-    }
-
-    #[test]
-    fn clock_month_browsing_moves_and_returns_to_current_month() {
-        let mut runtime = PanelRuntime::default();
-        record_panel_window_opened(
-            &mut runtime,
-            wid(),
-            wid(),
-            crate::surface::panel::PanelContent::ModulePanel(crate::modules::ModuleId::new(
-                "clock",
-            )),
-        );
-
-        runtime.browse_clock_month(1);
-        runtime.browse_clock_month(1);
-        assert_eq!(runtime.clock_month_offset(), 2);
-
-        runtime.browse_clock_month(-1);
-        assert_eq!(runtime.clock_month_offset(), 1);
-
-        runtime.reset_clock_month();
-        assert_eq!(runtime.clock_month_offset(), 0);
-    }
-
-    #[test]
-    fn clock_month_browsing_works_in_bar_panel() {
-        let mut runtime = PanelRuntime::default();
-        record_panel_window_opened(
-            &mut runtime,
-            wid(),
-            wid(),
-            crate::surface::panel::PanelContent::BarPanel,
-        );
-
-        runtime.browse_clock_month(1);
-        assert_eq!(runtime.clock_month_offset(), 1);
-
-        runtime.reset_clock_month();
-        assert_eq!(runtime.clock_month_offset(), 0);
     }
 
     #[test]

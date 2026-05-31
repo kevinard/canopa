@@ -127,9 +127,6 @@ pub enum PanelEvent {
     Activate,
     ActivateIndex(usize),
     Back,
-    ClockMonthPrevious,
-    ClockMonthNext,
-    ClockMonthToday,
 }
 
 #[allow(dead_code)]

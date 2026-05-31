@@ -235,6 +235,108 @@ impl ClockModule {
             default_style,
         )
     }
+
+    fn view_clock_detail_with_month_offset(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+        month_offset: i32,
+    ) -> iced::Element<'_, crate::app::Message> {
+        use iced::widget::{button, column, container, row, text};
+        use iced::{Alignment, Length};
+
+        let crate::modules::ModuleState::Clock(_) = state else {
+            return iced::widget::Space::new().into();
+        };
+
+        let summary =
+            <Self as crate::modules::Module>::view_panel_with_style(self, state, bar_style);
+        let today = chrono::Local::now().date_naive();
+        let month = calendar_month_for(today, month_offset);
+        let first = chrono::NaiveDate::from_ymd_opt(month.year, month.month, 1)
+            .expect("calendar month is valid");
+        let title = first.format("%B %Y").to_string();
+
+        let controls = row![
+            button(text("<")).on_press(crate::app::Message::Modules(
+                crate::app::messages::ModuleRuntimeEvent::Detail {
+                    target: self.id.clone(),
+                    message: crate::modules::ModuleDetailMessage::new(
+                        ClockDetailMessage::PreviousMonth,
+                    ),
+                }
+            )),
+            text(title).width(Length::Fill),
+            button(text("Today")).on_press(crate::app::Message::Modules(
+                crate::app::messages::ModuleRuntimeEvent::Detail {
+                    target: self.id.clone(),
+                    message: crate::modules::ModuleDetailMessage::new(ClockDetailMessage::Today),
+                }
+            )),
+            button(text(">")).on_press(crate::app::Message::Modules(
+                crate::app::messages::ModuleRuntimeEvent::Detail {
+                    target: self.id.clone(),
+                    message: crate::modules::ModuleDetailMessage::new(
+                        ClockDetailMessage::NextMonth
+                    ),
+                }
+            )),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .width(Length::Fill);
+
+        let mut calendar = column![controls].spacing(6).width(Length::Fill);
+        let mut weekdays = row![].spacing(4).width(Length::Fill);
+        for label in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] {
+            weekdays = weekdays.push(
+                container(text(label).size(10))
+                    .width(Length::FillPortion(1))
+                    .center_x(Length::Fill),
+            );
+        }
+        calendar = calendar.push(weekdays);
+
+        for week in month.weeks {
+            let mut row = row![].spacing(4).width(Length::Fill);
+            for day in week {
+                let is_today = day == month.today;
+                let label = day.map(|day| day.to_string()).unwrap_or_default();
+                let cell = container(text(label).size(11))
+                    .width(Length::FillPortion(1))
+                    .center_x(Length::Fill);
+                let cell = cell.padding([3, 0]).style(move |_| {
+                    if is_today {
+                        iced::widget::container::Style {
+                            background: Some(iced::Background::Color(crate::theme::SURFACE0)),
+                            border: iced::Border {
+                                color: crate::theme::ACCENT,
+                                width: 1.0,
+                                radius: iced::border::Radius::from(4.0),
+                            },
+                            ..Default::default()
+                        }
+                    } else {
+                        iced::widget::container::Style {
+                            border: iced::Border {
+                                color: iced::Color::TRANSPARENT,
+                                width: 1.0,
+                                radius: iced::border::Radius::from(4.0),
+                            },
+                            ..Default::default()
+                        }
+                    }
+                });
+                row = row.push(cell);
+            }
+            calendar = calendar.push(row);
+        }
+
+        column![summary, calendar]
+            .spacing(12)
+            .width(Length::Fill)
+            .into()
+    }
 }
 
 impl crate::modules::Module for ClockModule {
@@ -432,101 +534,8 @@ impl crate::modules::Module for ClockModule {
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
-        clock_month_offset: i32,
     ) -> iced::Element<'_, crate::app::Message> {
-        use iced::widget::{button, column, container, row, text};
-        use iced::{Alignment, Length};
-
-        let crate::modules::ModuleState::Clock(_) = state else {
-            return iced::widget::Space::new().into();
-        };
-
-        let summary = self.view_panel_with_style(state, bar_style);
-        let today = chrono::Local::now().date_naive();
-        let month = calendar_month_for(today, clock_month_offset);
-        let first = chrono::NaiveDate::from_ymd_opt(month.year, month.month, 1)
-            .expect("calendar month is valid");
-        let title = first.format("%B %Y").to_string();
-
-        let controls = row![
-            button(text("<")).on_press(crate::app::Message::Modules(
-                crate::app::messages::ModuleRuntimeEvent::Detail {
-                    target: self.id.clone(),
-                    message: crate::modules::ModuleDetailMessage::new(
-                        ClockDetailMessage::PreviousMonth,
-                    ),
-                }
-            )),
-            text(title).width(Length::Fill),
-            button(text("Today")).on_press(crate::app::Message::Modules(
-                crate::app::messages::ModuleRuntimeEvent::Detail {
-                    target: self.id.clone(),
-                    message: crate::modules::ModuleDetailMessage::new(ClockDetailMessage::Today),
-                }
-            )),
-            button(text(">")).on_press(crate::app::Message::Modules(
-                crate::app::messages::ModuleRuntimeEvent::Detail {
-                    target: self.id.clone(),
-                    message: crate::modules::ModuleDetailMessage::new(
-                        ClockDetailMessage::NextMonth
-                    ),
-                }
-            )),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center)
-        .width(Length::Fill);
-
-        let mut calendar = column![controls].spacing(6).width(Length::Fill);
-        let mut weekdays = row![].spacing(4).width(Length::Fill);
-        for label in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] {
-            weekdays = weekdays.push(
-                container(text(label).size(10))
-                    .width(Length::FillPortion(1))
-                    .center_x(Length::Fill),
-            );
-        }
-        calendar = calendar.push(weekdays);
-
-        for week in month.weeks {
-            let mut row = row![].spacing(4).width(Length::Fill);
-            for day in week {
-                let is_today = day == month.today;
-                let label = day.map(|day| day.to_string()).unwrap_or_default();
-                let cell = container(text(label).size(11))
-                    .width(Length::FillPortion(1))
-                    .center_x(Length::Fill);
-                let cell = cell.padding([3, 0]).style(move |_| {
-                    if is_today {
-                        iced::widget::container::Style {
-                            background: Some(iced::Background::Color(crate::theme::SURFACE0)),
-                            border: iced::Border {
-                                color: crate::theme::ACCENT,
-                                width: 1.0,
-                                radius: iced::border::Radius::from(4.0),
-                            },
-                            ..Default::default()
-                        }
-                    } else {
-                        iced::widget::container::Style {
-                            border: iced::Border {
-                                color: iced::Color::TRANSPARENT,
-                                width: 1.0,
-                                radius: iced::border::Radius::from(4.0),
-                            },
-                            ..Default::default()
-                        }
-                    }
-                });
-                row = row.push(cell);
-            }
-            calendar = calendar.push(row);
-        }
-
-        column![summary, calendar]
-            .spacing(12)
-            .width(Length::Fill)
-            .into()
+        self.view_clock_detail_with_month_offset(state, bar_style, 0)
     }
 
     fn create_module_detail_session(
@@ -541,15 +550,14 @@ impl crate::modules::Module for ClockModule {
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
-        _clock_month_offset: i32,
         session: Option<&crate::modules::ModuleDetailSession>,
     ) -> iced::Element<'_, crate::app::Message> {
-        let clock_month_offset = session
+        let month_offset = session
             .and_then(|session| session.downcast_ref::<ClockDetailSession>())
             .map(|session| session.month_offset)
             .unwrap_or_default();
 
-        self.view_module_detail_with_style(state, bar_style, clock_month_offset)
+        self.view_clock_detail_with_month_offset(state, bar_style, month_offset)
     }
 
     fn update_module_detail_session(

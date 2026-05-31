@@ -14,11 +14,11 @@ This slice should leave **Panel Runtime** responsible for generic panel lifecycl
 
 ## Acceptance criteria
 
-- [ ] Generic **Panel Runtime** no longer stores clock-specific month offset state.
-- [ ] Generic panel messages no longer include clock-specific previous, next, or Today events.
-- [ ] The shared **Module** detail rendering interface no longer needs a clock-specific argument.
-- [ ] Tests tied to old clock-specific **Panel Runtime** internals are removed or rewritten against the new seam.
-- [ ] Existing panel lifecycle tests continue to cover generic open, close, toggle, replacement, focus, and Escape behavior.
+- [x] Generic **Panel Runtime** no longer stores clock-specific month offset state.
+- [x] Generic panel messages no longer include clock-specific previous, next, or Today events.
+- [x] The shared **Module** detail rendering interface no longer needs a clock-specific argument.
+- [x] Tests tied to old clock-specific **Panel Runtime** internals are removed or rewritten against the new seam.
+- [x] Existing panel lifecycle tests continue to cover generic open, close, toggle, replacement, focus, and Escape behavior.
 
 ## Blocked by
 
