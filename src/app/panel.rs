@@ -198,7 +198,7 @@ impl App {
                 let catalog =
                     super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
                 let module_detail_session = (!self.panel.would_toggle_close(&request))
-                    .then(|| self.module_detail_session_for(&request.content))
+                    .then(|| self.module_detail_session_for_request(&request))
                     .flatten();
                 let effects = self
                     .panel
@@ -266,23 +266,49 @@ impl App {
         let effects = self
             .panel
             .handle(super::panel_runtime::PanelRuntimeIntent::Open {
-                module_detail_session: self.module_detail_session_for(&request.content),
+                module_detail_session: self.module_detail_session_for_request(&request),
                 request,
                 catalog,
             });
         self.apply_panel_runtime_effects(effects)
     }
 
+    fn module_detail_session_for_request(
+        &self,
+        request: &super::panel_runtime::PanelOpenRequest,
+    ) -> Option<crate::modules::ModuleDetailSession> {
+        match &request.content {
+            crate::surface::panel::PanelContent::ModulePanel(id) => {
+                self.module_detail_session_for(id)
+            }
+            crate::surface::panel::PanelContent::BarPanel => self
+                .panel_module_ids_for_origin_window(request.origin_window)
+                .into_iter()
+                .find_map(|id| self.module_detail_session_for(&id)),
+            crate::surface::panel::PanelContent::Menu(_)
+            | crate::surface::panel::PanelContent::DmenuRequest => None,
+        }
+    }
+
     fn module_detail_session_for(
         &self,
-        content: &crate::surface::panel::PanelContent,
+        id: &crate::modules::ModuleId,
     ) -> Option<crate::modules::ModuleDetailSession> {
-        let crate::surface::panel::PanelContent::ModulePanel(id) = content else {
-            return None;
-        };
         let module = self.modules.get(id)?;
         let state = self.modules.state(id).cloned().unwrap_or_default();
         module.create_module_detail_session(&state)
+    }
+
+    pub(super) fn panel_module_ids_for_origin_window(
+        &self,
+        origin_window: iced::window::Id,
+    ) -> Vec<crate::modules::ModuleId> {
+        let origin_surface = self.surface(origin_window).cloned().unwrap_or_default();
+        let bar = Self::bar_for_surface_name(&self.config.bars, &origin_surface.bar_name);
+        self.effective_panel_module_layout_for_bar(bar)
+            .into_iter()
+            .map(|(_, id)| id)
+            .collect()
     }
 
     fn open_panel_window(

@@ -144,6 +144,15 @@ mod tests {
         }));
     }
 
+    fn open_bar_panel(app: &mut App, origin_window: iced::window::Id) {
+        let _ = app.update(Message::Panel(PanelEvent::Open {
+            origin_window,
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::BarPanel,
+            anchor: None,
+        }));
+    }
+
     fn active_u32_session(app: &App) -> Option<u32> {
         app.panel
             .module_detail_session()
@@ -171,6 +180,22 @@ mod tests {
         let origin = iced::window::Id::unique();
         app.surface_mut(origin);
         open_module_detail(&mut app, origin, "detail");
+
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::Detail {
+            target: ModuleId::new("detail"),
+            message: ModuleDetailMessage::new(DetailTestMessage::Add(7)),
+        }));
+
+        assert_eq!(active_u32_session(&app), Some(7));
+    }
+
+    #[test]
+    fn opaque_detail_message_routes_to_module_in_active_bar_panel() {
+        let mut app = app_with_detail_modules(&["detail"]);
+        app.config.bars[0].panel.modules.center = vec!["detail".into()];
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
+        open_bar_panel(&mut app, origin);
 
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::Detail {
             target: ModuleId::new("detail"),
@@ -347,7 +372,16 @@ impl App {
         target: ModuleId,
         message: crate::modules::ModuleDetailMessage,
     ) -> Task<Message> {
-        if self.panel.active_module_detail_target() != Some(target.clone()) {
+        let module_panel_target = self.panel.active_module_detail_target() == Some(target.clone());
+        let bar_panel_target =
+            self.panel
+                .active_bar_panel_origin_window()
+                .is_some_and(|origin_window| {
+                    self.panel_module_ids_for_origin_window(origin_window)
+                        .into_iter()
+                        .any(|id| id == target)
+                });
+        if !module_panel_target && !bar_panel_target {
             return Task::none();
         }
 

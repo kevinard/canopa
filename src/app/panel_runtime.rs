@@ -566,6 +566,17 @@ impl PanelRuntime {
         }
     }
 
+    pub(super) fn active_bar_panel_origin_window(&self) -> Option<iced::window::Id> {
+        match self.active_panel.as_ref() {
+            Some(ActivePanel {
+                origin_window,
+                content: crate::surface::panel::PanelContent::BarPanel,
+                ..
+            }) if self.module_detail_session.is_some() => Some(*origin_window),
+            _ => None,
+        }
+    }
+
     #[cfg(test)]
     fn module_detail_session_value<T: 'static>(&self) -> Option<&T> {
         self.module_detail_session
