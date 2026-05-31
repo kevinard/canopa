@@ -40,13 +40,20 @@ impl std::fmt::Debug for ModuleDetailMessage {
 
 #[derive(Debug, Clone)]
 pub enum ModuleDetailAppEffect {
+    /// Request shared app infrastructure such as command execution, panel
+    /// lifecycle, menu opening, or app-owned process launch policy.
     PanelAction(crate::config::PanelAction),
+    /// Request closing the active Panel without making the Module know how
+    /// Panel windows are tracked.
     ClosePanel,
 }
 
 #[derive(Debug, Clone)]
 pub enum ModuleDetailEffect {
+    /// App-owned work that must run through centralized app infrastructure.
     App(ModuleDetailAppEffect),
+    /// Module-owned work for future runtime adapters, such as connecting to a
+    /// network or switching an audio source.
     Module(ModuleDetailMessage),
 }
 

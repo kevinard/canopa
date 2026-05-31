@@ -34,6 +34,7 @@ mod tests {
     enum DetailTestMessage {
         Add(u32),
         ClosePanel,
+        RunCommand(String),
         ModuleOwned,
     }
 
@@ -101,6 +102,13 @@ mod tests {
                 DetailTestMessage::ClosePanel => ModuleDetailUpdate {
                     effects: vec![ModuleDetailEffect::App(ModuleDetailAppEffect::ClosePanel)],
                 },
+                DetailTestMessage::RunCommand(command) => ModuleDetailUpdate {
+                    effects: vec![ModuleDetailEffect::App(ModuleDetailAppEffect::PanelAction(
+                        crate::config::PanelAction::Command(crate::config::CommandConfig::Shell(
+                            command.clone(),
+                        )),
+                    ))],
+                },
                 DetailTestMessage::ModuleOwned => ModuleDetailUpdate {
                     effects: vec![ModuleDetailEffect::Module(ModuleDetailMessage::new(
                         "module-owned",
@@ -141,6 +149,20 @@ mod tests {
             .module_detail_session()
             .and_then(|session| session.downcast_ref::<u32>())
             .copied()
+    }
+
+    fn unique_tmp_path(name: &str) -> String {
+        format!("/tmp/niribar-{name}-{}", std::process::id())
+    }
+
+    fn wait_for_path(path: &str) -> bool {
+        for _ in 0..50 {
+            if std::path::Path::new(path).exists() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        false
     }
 
     #[test]
@@ -224,6 +246,29 @@ mod tests {
             message: ModuleDetailMessage::new(DetailTestMessage::ClosePanel),
         }));
         assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+    }
+
+    #[test]
+    fn app_owned_detail_panel_action_uses_central_command_runner() {
+        let command_path = unique_tmp_path("detail-command");
+        let _ = std::fs::remove_file(&command_path);
+        let mut app = app_with_detail_modules(&["detail"]);
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
+        open_module_detail(&mut app, origin, "detail");
+
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::Detail {
+            target: ModuleId::new("detail"),
+            message: ModuleDetailMessage::new(DetailTestMessage::RunCommand(format!(
+                "printf detail >{command_path}"
+            ))),
+        }));
+
+        assert!(
+            wait_for_path(&command_path),
+            "app-owned detail command should create {command_path}"
+        );
+        let _ = std::fs::remove_file(&command_path);
     }
 }
 

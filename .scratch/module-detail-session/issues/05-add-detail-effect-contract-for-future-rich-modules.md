@@ -14,11 +14,11 @@ This slice should document and test the contract enough that future network and 
 
 ## Acceptance criteria
 
-- [ ] The detail effect contract clearly distinguishes app-owned effects from module-owned effects.
-- [ ] App-owned effects can be returned from **Module Detail Content** and handled by app-owned infrastructure.
-- [ ] The contract does not require a **Module** to reimplement centralized command execution or process launch policy.
-- [ ] Module-owned effects remain representable for future runtime-adapter work such as network connect/disconnect or audio source switching.
-- [ ] Tests or documentation cover the intended ownership split without adding full network or audio detail functionality.
+- [x] The detail effect contract clearly distinguishes app-owned effects from module-owned effects.
+- [x] App-owned effects can be returned from **Module Detail Content** and handled by app-owned infrastructure.
+- [x] The contract does not require a **Module** to reimplement centralized command execution or process launch policy.
+- [x] Module-owned effects remain representable for future runtime-adapter work such as network connect/disconnect or audio source switching.
+- [x] Tests or documentation cover the intended ownership split without adding full network or audio detail functionality.
 
 ## Blocked by
 
