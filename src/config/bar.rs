@@ -199,22 +199,6 @@ pub enum Edge {
 }
 
 impl Edge {
-    /// Parse a KDL string value into an Edge variant.
-    #[cfg(test)]
-    pub(crate) fn from_str(s: &str) -> anyhow::Result<Edge> {
-        match s {
-            "left" => Ok(Edge::Left),
-            "right" => Ok(Edge::Right),
-            "top" => Ok(Edge::Top),
-            "bottom" => Ok(Edge::Bottom),
-            other => {
-                anyhow::bail!(
-                    "bar.edge: unknown value {other:?}. Expected: one of: left, right, top, bottom."
-                )
-            }
-        }
-    }
-
     /// Returns `true` for edges that span the full screen width (top/bottom).
     pub fn is_horizontal(&self) -> bool {
         matches!(self, Edge::Top | Edge::Bottom)

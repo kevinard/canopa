@@ -14,7 +14,6 @@ pub fn ipc_responder(
     Arc::new(Mutex::new(Some(sender)))
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum IpcEvent {
     DmenuSelection {
@@ -31,7 +30,6 @@ impl IpcEvent {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum SurfaceEvent {
     BarClick(iced::window::Id),
@@ -105,7 +103,6 @@ impl SurfaceEvent {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum MenuEvent {
     ItemSelected {
@@ -150,7 +147,6 @@ impl MenuEvent {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum PanelEvent {
     Open {
@@ -201,7 +197,6 @@ impl PanelEvent {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum ModuleRuntimeEvent {
     Module(ModuleId, ModuleEvent),
@@ -270,7 +265,6 @@ pub(super) fn module_event_diagnostic_label(event: &ModuleEvent) -> &'static str
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum AppNiriEvent {
     Ipc(crate::niri::NiriEvent),
@@ -314,7 +308,6 @@ pub(super) fn niri_event_diagnostic_label(event: &niri_ipc::Event) -> &'static s
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum TrayRuntimeEvent {
     Host(TrayEvent),

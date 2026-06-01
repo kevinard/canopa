@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod icon_rule_tests {
     use super::super::*;
 
@@ -57,7 +56,6 @@ mod icon_rule_tests {
     }
 }
 
-#[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]
 mod config_tests {
     use super::super::*;
@@ -120,19 +118,6 @@ mod config_tests {
         assert!(anchor.contains(Anchor::Left));
         assert!(anchor.contains(Anchor::Top));
         assert!(anchor.contains(Anchor::Bottom));
-    }
-
-    #[test]
-    fn edge_from_str_known_values() {
-        assert!(matches!(Edge::from_str("left").unwrap(), Edge::Left));
-        assert!(matches!(Edge::from_str("right").unwrap(), Edge::Right));
-        assert!(matches!(Edge::from_str("top").unwrap(), Edge::Top));
-        assert!(matches!(Edge::from_str("bottom").unwrap(), Edge::Bottom));
-    }
-
-    #[test]
-    fn edge_from_str_unknown_returns_error() {
-        assert!(Edge::from_str("center").is_err());
     }
 
     #[test]
@@ -845,8 +830,6 @@ mod config_tests {
     #[test]
     fn state_selectors_per_module() {
         use crate::config::states;
-        assert_eq!(states::BATTERY, &["charging", "critical", "low", "normal"]);
-        assert_eq!(states::VOLUME, &["muted", "unmuted"]);
         assert_eq!(states::NETWORK, &["full", "limited", "none"]);
         assert_eq!(states::WORKSPACES, &["focused", "active", "inactive"]);
         assert!(states::EMPTY.is_empty());

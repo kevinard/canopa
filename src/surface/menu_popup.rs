@@ -10,7 +10,6 @@ pub struct MenuTree {
     pub screen_size: (u32, u32),
 }
 
-#[allow(dead_code)]
 /// One item in a `MenuTree`. Children are ignored for MVP (no nested submenus).
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuItem {

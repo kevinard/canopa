@@ -44,14 +44,6 @@ impl ButtonModule {
         })
     }
 
-    #[cfg(test)]
-    fn styled_segments(
-        &self,
-        mode: crate::config::FormatMode,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_with_default(mode, &crate::config::Style::default())
-    }
-
     fn styled_segments_with_default(
         &self,
         mode: crate::config::FormatMode,
@@ -308,7 +300,10 @@ mod tests {
             styled_format_config(),
         );
         let segment = &m
-            .styled_segments(crate::config::FormatMode::Collapsed)
+            .styled_segments_with_default(
+                crate::config::FormatMode::Collapsed,
+                &crate::config::Style::default(),
+            )
             .unwrap()[0];
 
         assert_eq!(segment.1.color, Some(crate::theme::ACCENT));

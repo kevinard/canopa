@@ -230,7 +230,6 @@ pub fn desktop_exec_to_argv(exec: &str) -> std::io::Result<DesktopLaunchArgv> {
     })
 }
 
-#[cfg_attr(test, allow(dead_code))]
 pub fn spawn_desktop_application_fire_and_forget(
     app: &crate::desktop_apps::DesktopApplication,
 ) -> std::io::Result<SpawnResult> {
@@ -441,6 +440,24 @@ mod tests {
                 args: &args,
             })
             .unwrap(),
+            SpawnResult::Spawned
+        );
+    }
+
+    #[test]
+    fn spawn_desktop_application_fire_and_forget_returns_spawned() {
+        let app = crate::desktop_apps::DesktopApplication {
+            id: "true.desktop".into(),
+            name: "True".into(),
+            generic_name: None,
+            comment: None,
+            keywords: Vec::new(),
+            icon: None,
+            exec: "true %U".into(),
+        };
+
+        assert_eq!(
+            spawn_desktop_application_fire_and_forget(&app).unwrap(),
             SpawnResult::Spawned
         );
     }

@@ -177,7 +177,6 @@ pub(super) struct SurfaceManager {
     pub(super) last_cursor: Option<(iced::window::Id, iced::Point)>,
 }
 
-#[allow(dead_code)]
 impl SurfaceManager {
     pub(super) fn new(
         surfaces: HashMap<iced::window::Id, SurfaceState>,
@@ -198,14 +197,17 @@ impl SurfaceManager {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn is_empty(&self) -> bool {
         self.surfaces.is_empty()
     }
 
+    #[cfg(test)]
     pub(super) fn len(&self) -> usize {
         self.surfaces.len()
     }
 
+    #[cfg(test)]
     pub(super) fn contains_key(&self, id: &iced::window::Id) -> bool {
         self.surfaces.contains_key(id)
     }
@@ -256,6 +258,7 @@ impl SurfaceManager {
             .map(BarSurfaceIdentity::from_surface_state)
     }
 
+    #[cfg(test)]
     pub(super) fn surfaces(&self) -> impl Iterator<Item = (&iced::window::Id, &SurfaceState)> {
         self.surfaces.iter()
     }
@@ -270,10 +273,6 @@ impl SurfaceManager {
 
     pub(super) fn set_last_cursor(&mut self, value: Option<(iced::window::Id, iced::Point)>) {
         self.last_cursor = value;
-    }
-
-    pub(super) fn set_manual_outputs(&mut self, value: bool) {
-        self.manual_outputs = value;
     }
 
     pub(super) fn desired_bar_surfaces(
@@ -328,7 +327,6 @@ impl SurfaceManager {
         let mut stale: Vec<_> = live
             .into_iter()
             .filter(|(identity, _)| !desired_identities.contains(identity))
-            .map(|(identity, window)| (identity, window))
             .collect();
         stale.sort_by_key(|(_, window)| format!("{window:?}"));
         for (identity, window) in stale {
@@ -426,18 +424,11 @@ impl SurfaceManager {
         self.popups.get(&id)
     }
 
-    pub(super) fn popup_ids(&self) -> impl Iterator<Item = iced::window::Id> + '_ {
-        self.popups.keys().copied()
-    }
-
-    pub(super) fn popups(&self) -> impl Iterator<Item = (&iced::window::Id, &PopupMeta)> {
-        self.popups.iter()
-    }
-
     pub(super) fn popup_values(&self) -> impl Iterator<Item = &PopupMeta> {
         self.popups.values()
     }
 
+    #[cfg(test)]
     pub(super) fn insert_popup(&mut self, id: iced::window::Id, meta: PopupMeta) {
         self.popups.insert(id, meta);
     }
@@ -466,6 +457,7 @@ impl SurfaceManager {
         self.panel_popups.get(&window)
     }
 
+    #[cfg(test)]
     pub(super) fn insert_panel_popup(&mut self, window: iced::window::Id, meta: PanelMeta) {
         self.panel_popups.insert(window, meta);
     }
@@ -494,10 +486,6 @@ impl SurfaceManager {
         self.panel_popups.contains_key(&window)
     }
 
-    pub(super) fn is_closing_panel_popup(&self, window: iced::window::Id) -> bool {
-        self.closing_panel_popups.contains(&window)
-    }
-
     pub(super) fn active_panel_origin_for(
         &self,
         origin_window: iced::window::Id,
@@ -519,6 +507,7 @@ impl SurfaceManager {
         self.tooltip_popups.get_mut(&window)
     }
 
+    #[cfg(test)]
     pub(super) fn insert_tooltip_popup(&mut self, popup: TooltipPopup) {
         self.tooltip_popups.insert(popup.window, popup);
     }
@@ -528,15 +517,6 @@ impl SurfaceManager {
         window: iced::window::Id,
     ) -> Option<TooltipPopup> {
         self.tooltip_popups.remove(&window)
-    }
-
-    pub(super) fn tooltip_popup_for_target(
-        &self,
-        target_window: iced::window::Id,
-    ) -> Option<&TooltipPopup> {
-        self.tooltip_popups
-            .values()
-            .find(|p| p.target_window == target_window)
     }
 
     pub(super) fn open_panel_overlay(
@@ -1590,6 +1570,57 @@ mod tests {
         assert_eq!(
             registry.window_role(Some(window)),
             crate::app::surface_input_router::WindowRole::Menu
+        );
+    }
+
+    #[test]
+    fn registry_classifies_missing_and_bar_surface_windows() {
+        let window = test_wid();
+        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
+
+        assert_eq!(
+            registry.window_role(None),
+            crate::app::surface_input_router::WindowRole::Unknown
+        );
+        assert_eq!(
+            registry.window_role(Some(window)),
+            crate::app::surface_input_router::WindowRole::Unknown
+        );
+
+        registry
+            .surfaces
+            .insert(window, SurfaceState::new("DP-1".into(), "main".into()));
+        assert_eq!(
+            registry.window_role(Some(window)),
+            crate::app::surface_input_router::WindowRole::BarSurface
+        );
+    }
+
+    #[test]
+    fn registry_prefers_tooltip_over_panel_and_menu_windows() {
+        let window = test_wid();
+        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
+        registry.insert_popup(
+            window,
+            popup_meta_for_identity(BarSurfaceIdentity::all_screens(), "org.test"),
+        );
+        registry.insert_panel_popup(
+            window,
+            PanelMeta {
+                tree: panel_tree(test_wid()),
+                search_input_id: crate::app::panel::panel_search_input_id(window),
+            },
+        );
+        registry.insert_tooltip_popup(TooltipPopup {
+            window,
+            target_window: test_wid(),
+            target_module: crate::modules::ModuleId::new("clock"),
+            tree: tooltip_tree(crate::config::Edge::Top),
+        });
+
+        assert_eq!(
+            registry.window_role(Some(window)),
+            crate::app::surface_input_router::WindowRole::Tooltip
         );
     }
 

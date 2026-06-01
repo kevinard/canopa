@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod tests {
     use crate::config::parse::parse;
     use crate::config::{BarLayer, Edge, OutputTarget};

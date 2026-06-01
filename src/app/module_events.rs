@@ -20,6 +20,275 @@ fn insert_module_state_if_changed(
     }
 }
 
+impl App {
+    pub(super) fn handle_module_runtime_event(
+        &mut self,
+        event: ModuleRuntimeEvent,
+    ) -> Task<Message> {
+        tracing::trace!(
+            target: "niribar::modules",
+            module_event = event.diagnostic_label(),
+            "module runtime event received"
+        );
+        match event {
+            ModuleRuntimeEvent::Module(id, event) => self.handle_module_event(id, event),
+            ModuleRuntimeEvent::Detail { target, message } => {
+                self.handle_module_detail_message(target, message)
+            }
+            ModuleRuntimeEvent::ModuleClick(id, window) => self.dispatch_module_interaction(
+                &id,
+                crate::modules::InteractionEvent::Clicked,
+                window,
+            ),
+            ModuleRuntimeEvent::ModuleRightClick(id, window) => self.dispatch_module_interaction(
+                &id,
+                crate::modules::InteractionEvent::RightClicked(window),
+                window,
+            ),
+            ModuleRuntimeEvent::ModuleScrollUp(id, window) => self.dispatch_module_interaction(
+                &id,
+                crate::modules::InteractionEvent::ScrollUp,
+                window,
+            ),
+            ModuleRuntimeEvent::ModuleScrollDown(id, window) => self.dispatch_module_interaction(
+                &id,
+                crate::modules::InteractionEvent::ScrollDown,
+                window,
+            ),
+            ModuleRuntimeEvent::Battery(event) => self.handle_battery_event(event),
+            ModuleRuntimeEvent::Network(event) => self.handle_network_event(event),
+            ModuleRuntimeEvent::Volume(event) => self.handle_volume_event(event),
+        }
+    }
+
+    pub(super) fn handle_module_event(
+        &mut self,
+        id: ModuleId,
+        event: ModuleEvent,
+    ) -> Task<Message> {
+        let module_kind = self
+            .modules
+            .get(&id)
+            .map(|module| module.kind().runtime_name())
+            .unwrap_or("unknown");
+        tracing::trace!(
+            target: "niribar::modules",
+            module_name = self.modules.diagnostic_name_for(&id),
+            module_kind,
+            module_event = super::messages::module_event_diagnostic_label(&event),
+            "module event received"
+        );
+        match event {
+            ModuleEvent::Clock(ClockEvent::Tick { time, date }) => {
+                insert_module_state_if_changed(
+                    &mut self.modules,
+                    id,
+                    ModuleState::Clock(ClockState { time, date }),
+                );
+            }
+            ModuleEvent::Script(ScriptEvent::Output(text)) => {
+                insert_module_state_if_changed(
+                    &mut self.modules,
+                    id,
+                    ModuleState::Script(ScriptState { output: text }),
+                );
+            }
+            ModuleEvent::Script(ScriptEvent::Failed) => {
+                self.modules.set_state(id, ModuleState::Unavailable);
+            }
+            ModuleEvent::Button(ButtonEvent::Ready) => {
+                insert_module_state_if_changed(
+                    &mut self.modules,
+                    id,
+                    ModuleState::Button(ButtonState),
+                );
+            }
+        }
+        Task::none()
+    }
+
+    pub(super) fn handle_module_detail_message(
+        &mut self,
+        target: ModuleId,
+        message: crate::modules::ModuleDetailMessage,
+    ) -> Task<Message> {
+        if !self.panel.active_module_panel_contains(&target) {
+            return Task::none();
+        }
+
+        let Some(module) = self.modules.get_mut(&target) else {
+            return Task::none();
+        };
+        let Some(session) = self.panel.module_detail_session_for_mut(&target) else {
+            return Task::none();
+        };
+
+        let update = module.update_module_detail_session(session, message);
+        self.apply_module_detail_update(update)
+    }
+
+    fn apply_module_detail_update(
+        &mut self,
+        update: crate::modules::ModuleDetailUpdate,
+    ) -> Task<Message> {
+        let mut tasks = Vec::new();
+        for effect in update.effects {
+            match effect {
+                crate::modules::ModuleDetailEffect::App(app_effect) => {
+                    tasks.push(self.apply_module_detail_app_effect(app_effect));
+                }
+                crate::modules::ModuleDetailEffect::Module(_module_effect) => {}
+            }
+        }
+        Task::batch(tasks)
+    }
+
+    fn apply_module_detail_app_effect(
+        &mut self,
+        effect: crate::modules::ModuleDetailAppEffect,
+    ) -> Task<Message> {
+        match effect {
+            crate::modules::ModuleDetailAppEffect::PanelAction(action) => {
+                self.dispatch_panel_action_from_active_panel(action)
+            }
+            crate::modules::ModuleDetailAppEffect::ClosePanel => {
+                Task::batch(self.close_all_panels())
+            }
+        }
+    }
+
+    pub(super) fn dispatch_module_interaction(
+        &mut self,
+        id: &ModuleId,
+        event: InteractionEvent,
+        origin_window: iced::window::Id,
+    ) -> Task<Message> {
+        let trigger = match &event {
+            InteractionEvent::Clicked => Some(crate::config::ActionTrigger::Click),
+            InteractionEvent::RightClicked(_) => Some(crate::config::ActionTrigger::RightClick),
+            _ => None,
+        };
+        if let Some(action) =
+            trigger.and_then(|trigger| self.modules.action_for(id, &trigger).cloned())
+        {
+            tracing::debug!(
+                target: "niribar::modules",
+                module_name = self.modules.diagnostic_name_for(id),
+                has_anchor = super::panel::panel_action_needs_anchor(&action),
+                "dispatching configured module action"
+            );
+            let origin = crate::surface::panel::PanelOrigin::Module(id.clone());
+            if super::panel::panel_action_needs_anchor(&action) {
+                let target = super::widget_ops::module_widget_id(origin_window, id);
+                let op = super::widget_ops::FindBounds {
+                    target,
+                    result: None,
+                };
+                return iced::advanced::widget::operate(op).then(move |bounds| {
+                    let event = super::panel::panel_event_for_action(
+                        origin_window,
+                        origin.clone(),
+                        action.clone(),
+                        bounds,
+                    );
+                    match event {
+                        Some(event) => Task::done(Message::Panel(event)),
+                        None => Task::none(),
+                    }
+                });
+            }
+
+            return self.dispatch_panel_action(origin_window, origin, action);
+        }
+
+        if let Some(module) = self.modules.get(id)
+            && let Some(msg) = module.on_interaction(event)
+        {
+            tracing::trace!(
+                target: "niribar::modules",
+                module_name = self.modules.diagnostic_name_for(id),
+                module_kind = module.kind().runtime_name(),
+                "module interaction produced app message"
+            );
+            return Task::done(msg);
+        }
+        Task::none()
+    }
+
+    pub(super) fn handle_battery_event(&mut self, event: BatteryEvent) -> Task<Message> {
+        match event {
+            BatteryEvent::StateChanged {
+                percentage,
+                is_charging,
+            } => self.push_battery_state(percentage, is_charging),
+            BatteryEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Battery),
+        }
+        Task::none()
+    }
+
+    pub(super) fn handle_network_event(&mut self, event: NetworkEvent) -> Task<Message> {
+        match event {
+            NetworkEvent::StateChanged {
+                connectivity,
+                label,
+            } => self.push_network_state(connectivity, label),
+            NetworkEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Network),
+        }
+        Task::none()
+    }
+
+    pub(super) fn handle_volume_event(&mut self, event: VolumeEvent) -> Task<Message> {
+        match event {
+            VolumeEvent::StateChanged { volume, muted } => self.push_volume_state(volume, muted),
+            VolumeEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Volume),
+        }
+        Task::none()
+    }
+
+    pub(super) fn handle_volume_adjust(&self, step: u8, up: bool) -> Task<Message> {
+        tracing::debug!(
+            target: "niribar::modules",
+            step,
+            up,
+            "volume adjustment requested"
+        );
+        let arg = if up {
+            format!("{step}%+")
+        } else {
+            format!("{step}%-")
+        };
+        tokio::task::spawn(async move {
+            match crate::command::set_default_sink_volume(&arg).await {
+                Ok(status) if status.success() => {}
+                Ok(status) => tracing::warn!(
+                    target: "niribar::modules",
+                    ?status,
+                    "wpctl set-volume exited unsuccessfully"
+                ),
+                Err(err) => tracing::warn!(
+                    target: "niribar::modules",
+                    error = %err,
+                    "failed to run wpctl set-volume"
+                ),
+            }
+        });
+        Task::none()
+    }
+
+    fn mark_module_type_unavailable(&mut self, module_type: ModuleKind) {
+        let ids: Vec<_> = self.modules.ids_by_kind(module_type).to_vec();
+        tracing::debug!(
+            target: "niribar::modules",
+            module_kind = module_type.runtime_name(),
+            affected_module_count = ids.len(),
+            "module kind unavailable"
+        );
+        for id in ids {
+            self.modules.set_state(id, ModuleState::Unavailable);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,274 +585,5 @@ mod tests {
             "app-owned detail command should create {command_path}"
         );
         let _ = std::fs::remove_file(&command_path);
-    }
-}
-
-impl App {
-    pub(super) fn handle_module_runtime_event(
-        &mut self,
-        event: ModuleRuntimeEvent,
-    ) -> Task<Message> {
-        tracing::trace!(
-            target: "niribar::modules",
-            module_event = event.diagnostic_label(),
-            "module runtime event received"
-        );
-        match event {
-            ModuleRuntimeEvent::Module(id, event) => self.handle_module_event(id, event),
-            ModuleRuntimeEvent::Detail { target, message } => {
-                self.handle_module_detail_message(target, message)
-            }
-            ModuleRuntimeEvent::ModuleClick(id, window) => self.dispatch_module_interaction(
-                &id,
-                crate::modules::InteractionEvent::Clicked,
-                window,
-            ),
-            ModuleRuntimeEvent::ModuleRightClick(id, window) => self.dispatch_module_interaction(
-                &id,
-                crate::modules::InteractionEvent::RightClicked(window),
-                window,
-            ),
-            ModuleRuntimeEvent::ModuleScrollUp(id, window) => self.dispatch_module_interaction(
-                &id,
-                crate::modules::InteractionEvent::ScrollUp,
-                window,
-            ),
-            ModuleRuntimeEvent::ModuleScrollDown(id, window) => self.dispatch_module_interaction(
-                &id,
-                crate::modules::InteractionEvent::ScrollDown,
-                window,
-            ),
-            ModuleRuntimeEvent::Battery(event) => self.handle_battery_event(event),
-            ModuleRuntimeEvent::Network(event) => self.handle_network_event(event),
-            ModuleRuntimeEvent::Volume(event) => self.handle_volume_event(event),
-        }
-    }
-
-    pub(super) fn handle_module_event(
-        &mut self,
-        id: ModuleId,
-        event: ModuleEvent,
-    ) -> Task<Message> {
-        let module_kind = self
-            .modules
-            .get(&id)
-            .map(|module| module.kind().runtime_name())
-            .unwrap_or("unknown");
-        tracing::trace!(
-            target: "niribar::modules",
-            module_name = self.modules.diagnostic_name_for(&id),
-            module_kind,
-            module_event = super::messages::module_event_diagnostic_label(&event),
-            "module event received"
-        );
-        match event {
-            ModuleEvent::Clock(ClockEvent::Tick { time, date }) => {
-                insert_module_state_if_changed(
-                    &mut self.modules,
-                    id,
-                    ModuleState::Clock(ClockState { time, date }),
-                );
-            }
-            ModuleEvent::Script(ScriptEvent::Output(text)) => {
-                insert_module_state_if_changed(
-                    &mut self.modules,
-                    id,
-                    ModuleState::Script(ScriptState { output: text }),
-                );
-            }
-            ModuleEvent::Script(ScriptEvent::Failed) => {
-                self.modules.set_state(id, ModuleState::Unavailable);
-            }
-            ModuleEvent::Button(ButtonEvent::Ready) => {
-                insert_module_state_if_changed(
-                    &mut self.modules,
-                    id,
-                    ModuleState::Button(ButtonState),
-                );
-            }
-        }
-        Task::none()
-    }
-
-    pub(super) fn handle_module_detail_message(
-        &mut self,
-        target: ModuleId,
-        message: crate::modules::ModuleDetailMessage,
-    ) -> Task<Message> {
-        if !self.panel.active_module_panel_contains(&target) {
-            return Task::none();
-        }
-
-        let Some(module) = self.modules.get_mut(&target) else {
-            return Task::none();
-        };
-        let Some(session) = self.panel.module_detail_session_for_mut(&target) else {
-            return Task::none();
-        };
-
-        let update = module.update_module_detail_session(session, message);
-        self.apply_module_detail_update(update)
-    }
-
-    fn apply_module_detail_update(
-        &mut self,
-        update: crate::modules::ModuleDetailUpdate,
-    ) -> Task<Message> {
-        let mut tasks = Vec::new();
-        for effect in update.effects {
-            match effect {
-                crate::modules::ModuleDetailEffect::App(app_effect) => {
-                    tasks.push(self.apply_module_detail_app_effect(app_effect));
-                }
-                crate::modules::ModuleDetailEffect::Module(_module_effect) => {}
-            }
-        }
-        Task::batch(tasks)
-    }
-
-    fn apply_module_detail_app_effect(
-        &mut self,
-        effect: crate::modules::ModuleDetailAppEffect,
-    ) -> Task<Message> {
-        match effect {
-            crate::modules::ModuleDetailAppEffect::PanelAction(action) => {
-                self.dispatch_panel_action_from_active_panel(action)
-            }
-            crate::modules::ModuleDetailAppEffect::ClosePanel => {
-                Task::batch(self.close_all_panels())
-            }
-        }
-    }
-
-    pub(super) fn dispatch_module_interaction(
-        &mut self,
-        id: &ModuleId,
-        event: InteractionEvent,
-        origin_window: iced::window::Id,
-    ) -> Task<Message> {
-        let trigger = match &event {
-            InteractionEvent::Clicked => Some(crate::config::ActionTrigger::Click),
-            InteractionEvent::RightClicked(_) => Some(crate::config::ActionTrigger::RightClick),
-            _ => None,
-        };
-        if let Some(action) =
-            trigger.and_then(|trigger| self.modules.action_for(id, &trigger).cloned())
-        {
-            tracing::debug!(
-                target: "niribar::modules",
-                module_name = self.modules.diagnostic_name_for(id),
-                has_anchor = super::panel::panel_action_needs_anchor(&action),
-                "dispatching configured module action"
-            );
-            let origin = crate::surface::panel::PanelOrigin::Module(id.clone());
-            if super::panel::panel_action_needs_anchor(&action) {
-                let target = super::widget_ops::module_widget_id(origin_window, id);
-                let op = super::widget_ops::FindBounds {
-                    target,
-                    result: None,
-                };
-                return iced::advanced::widget::operate(op).then(move |bounds| {
-                    let event = super::panel::panel_event_for_action(
-                        origin_window,
-                        origin.clone(),
-                        action.clone(),
-                        bounds,
-                    );
-                    match event {
-                        Some(event) => Task::done(Message::Panel(event)),
-                        None => Task::none(),
-                    }
-                });
-            }
-
-            return self.dispatch_panel_action(origin_window, origin, action);
-        }
-
-        if let Some(module) = self.modules.get(id)
-            && let Some(msg) = module.on_interaction(event)
-        {
-            tracing::trace!(
-                target: "niribar::modules",
-                module_name = self.modules.diagnostic_name_for(id),
-                module_kind = module.kind().runtime_name(),
-                "module interaction produced app message"
-            );
-            return Task::done(msg);
-        }
-        Task::none()
-    }
-
-    pub(super) fn handle_battery_event(&mut self, event: BatteryEvent) -> Task<Message> {
-        match event {
-            BatteryEvent::StateChanged {
-                percentage,
-                is_charging,
-            } => self.push_battery_state(percentage, is_charging),
-            BatteryEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Battery),
-        }
-        Task::none()
-    }
-
-    pub(super) fn handle_network_event(&mut self, event: NetworkEvent) -> Task<Message> {
-        match event {
-            NetworkEvent::StateChanged {
-                connectivity,
-                label,
-            } => self.push_network_state(connectivity, label),
-            NetworkEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Network),
-        }
-        Task::none()
-    }
-
-    pub(super) fn handle_volume_event(&mut self, event: VolumeEvent) -> Task<Message> {
-        match event {
-            VolumeEvent::StateChanged { volume, muted } => self.push_volume_state(volume, muted),
-            VolumeEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Volume),
-        }
-        Task::none()
-    }
-
-    pub(super) fn handle_volume_adjust(&self, step: u8, up: bool) -> Task<Message> {
-        tracing::debug!(
-            target: "niribar::modules",
-            step,
-            up,
-            "volume adjustment requested"
-        );
-        let arg = if up {
-            format!("{step}%+")
-        } else {
-            format!("{step}%-")
-        };
-        tokio::task::spawn(async move {
-            match crate::command::set_default_sink_volume(&arg).await {
-                Ok(status) if status.success() => {}
-                Ok(status) => tracing::warn!(
-                    target: "niribar::modules",
-                    ?status,
-                    "wpctl set-volume exited unsuccessfully"
-                ),
-                Err(err) => tracing::warn!(
-                    target: "niribar::modules",
-                    error = %err,
-                    "failed to run wpctl set-volume"
-                ),
-            }
-        });
-        Task::none()
-    }
-
-    fn mark_module_type_unavailable(&mut self, module_type: ModuleKind) {
-        let ids: Vec<_> = self.modules.ids_by_kind(module_type).to_vec();
-        tracing::debug!(
-            target: "niribar::modules",
-            module_kind = module_type.runtime_name(),
-            affected_module_count = ids.len(),
-            "module kind unavailable"
-        );
-        for id in ids {
-            self.modules.set_state(id, ModuleState::Unavailable);
-        }
     }
 }

@@ -77,29 +77,6 @@ impl NetworkModule {
         })
     }
 
-    #[cfg(test)]
-    fn formatted_text(
-        &self,
-        network: &NetworkState,
-        mode: crate::config::FormatMode,
-    ) -> Option<String> {
-        let icon = self
-            .icons
-            .icon_for_state(connectivity_state(&network.connectivity))
-            .unwrap_or_else(|| icon_str(&network.connectivity))
-            .to_string();
-        let label = Self::default_label(network);
-        let state = connectivity_state(&network.connectivity).to_string();
-        self.format.template_for(mode).map(|template| {
-            template.render_joined(&[
-                ("icon", icon),
-                ("value", label.clone()),
-                ("label", label),
-                ("state", state),
-            ])
-        })
-    }
-
     fn styled_segments_with_default(
         &self,
         network: &NetworkState,
@@ -409,10 +386,14 @@ mod tests {
             label: Some("wifi".to_string()),
         };
 
-        assert_eq!(
-            m.formatted_text(&state, crate::config::FormatMode::Expanded),
-            Some("◆ wifi (full)".to_string())
-        );
+        let rendered = m
+            .styled_segments_with_default(
+                &state,
+                crate::config::FormatMode::Expanded,
+                &crate::config::Style::default(),
+            )
+            .unwrap();
+        assert_eq!(rendered[0].0, "◆ wifi (full)");
     }
 
     #[test]

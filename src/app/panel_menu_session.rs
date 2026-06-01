@@ -220,7 +220,7 @@ impl PanelMenuSession {
     }
 }
 
-fn dmenu_entry_views(
+pub(super) fn dmenu_entry_views(
     request: &crate::ipc::protocol::DmenuRequest,
     query: &str,
 ) -> Vec<PanelMenuEntry> {
@@ -324,7 +324,10 @@ fn current_menu_entries(menu: &crate::config::MenuConfig, path: &[usize]) -> Vec
         .collect()
 }
 
-fn search_menu_entries(menu: &crate::config::MenuConfig, query: &str) -> Vec<PanelMenuEntry> {
+pub(super) fn search_menu_entries(
+    menu: &crate::config::MenuConfig,
+    query: &str,
+) -> Vec<PanelMenuEntry> {
     if panel_search::is_blank_query(query) {
         return current_menu_entries(menu, &[]);
     }

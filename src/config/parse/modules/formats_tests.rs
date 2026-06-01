@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod tests {
     use ::kdl::KdlDocument;
 
@@ -62,7 +61,10 @@ mod tests {
         let s = parse_tooltip_field_ctx(&doc, &ctx(), allowed(), &[]).unwrap();
         match s {
             crate::config::TooltipSetting::Custom(t) => {
-                assert_eq!(t.segments().len(), 2);
+                assert_eq!(
+                    t.render_segments(&[("icon", "i".into()), ("value", "v".into())]),
+                    vec!["i".to_string(), "v".to_string()]
+                );
             }
             _ => panic!("expected Custom"),
         }

@@ -21,22 +21,6 @@ mod tray;
 mod volume;
 mod workspaces;
 
-#[cfg(test)]
-fn has_config_parser(kind: ModuleKind) -> bool {
-    matches!(
-        kind,
-        ModuleKind::Battery
-            | ModuleKind::Clock
-            | ModuleKind::Network
-            | ModuleKind::Volume
-            | ModuleKind::Script
-            | ModuleKind::Button
-            | ModuleKind::Workspaces
-            | ModuleKind::FocusedWindow
-            | ModuleKind::Tray
-    )
-}
-
 pub(super) fn dispatch(
     kind: ModuleKind,
     node: &KdlNode,
@@ -74,11 +58,28 @@ pub(super) fn dispatch(
 
 #[cfg(test)]
 mod tests {
+    use crate::modules::ModuleKind;
+
+    fn has_config_parser(kind: ModuleKind) -> bool {
+        matches!(
+            kind,
+            ModuleKind::Battery
+                | ModuleKind::Clock
+                | ModuleKind::Network
+                | ModuleKind::Volume
+                | ModuleKind::Script
+                | ModuleKind::Button
+                | ModuleKind::Workspaces
+                | ModuleKind::FocusedWindow
+                | ModuleKind::Tray
+        )
+    }
+
     #[test]
     fn every_config_descriptor_has_parser() {
         for descriptor in crate::modules::MODULE_DESCRIPTORS {
             assert!(
-                super::has_config_parser(descriptor.kind),
+                has_config_parser(descriptor.kind),
                 "missing parser for {:?}",
                 descriptor.kind
             );

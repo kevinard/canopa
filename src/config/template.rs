@@ -1,6 +1,3 @@
-#[cfg(test)]
-use std::collections::HashMap;
-
 use super::FormatValue;
 use super::style::{ResolvedStyle, SegmentStyles, Style};
 
@@ -69,11 +66,6 @@ impl StyledSegment {
         }
     }
 
-    #[cfg(test)]
-    pub fn styles(&self) -> &SegmentStyles {
-        &self.styles
-    }
-
     pub fn set_styles(&mut self, styles: SegmentStyles) {
         self.styles = styles;
     }
@@ -97,11 +89,6 @@ impl FormatTemplate {
     }
 
     #[cfg(test)]
-    pub fn segments(&self) -> &[StyledSegment] {
-        &self.segments
-    }
-
-    #[cfg(test)]
     pub fn set_segment_styles(&mut self, index: usize, styles: SegmentStyles) {
         if let Some(s) = self.segments.get_mut(index) {
             s.set_styles(styles);
@@ -117,15 +104,6 @@ impl FormatTemplate {
 
     pub fn render_joined(&self, values: &[(&str, String)]) -> String {
         self.render_segments(values).join(" ")
-    }
-
-    #[cfg(test)]
-    pub fn render_styled_segments(
-        &self,
-        values: &[(&str, String)],
-        state: Option<&str>,
-    ) -> Vec<(String, ResolvedStyle)> {
-        self.render_styled_segments_with_default(values, state, &Style::default())
     }
 
     pub fn render_styled_segments_with_default(
@@ -246,22 +224,6 @@ impl TextTemplate {
         }
 
         Ok(TextTemplate { parts })
-    }
-
-    #[cfg(test)]
-    pub fn render(&self, values: &HashMap<&str, &str>) -> String {
-        let mut rendered = String::new();
-        for part in &self.parts {
-            match part {
-                TemplatePart::Literal(value) => rendered.push_str(value),
-                TemplatePart::Placeholder(name) => {
-                    if let Some(value) = values.get(name.as_str()) {
-                        rendered.push_str(value);
-                    }
-                }
-            }
-        }
-        rendered
     }
 
     pub fn render_pairs(&self, values: &[(&str, String)]) -> String {

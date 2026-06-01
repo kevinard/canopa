@@ -8,34 +8,6 @@ pub(super) enum WindowRole {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct WindowRoleSnapshot {
-    pub(super) is_closing_panel: bool,
-    pub(super) is_tooltip: bool,
-    pub(super) is_panel: bool,
-    pub(super) is_menu: bool,
-}
-
-pub(super) fn classify_window(snapshot: Option<WindowRoleSnapshot>) -> WindowRole {
-    let Some(snapshot) = snapshot else {
-        return WindowRole::Unknown;
-    };
-
-    if snapshot.is_closing_panel {
-        return WindowRole::ClosingPanel;
-    }
-    if snapshot.is_tooltip {
-        return WindowRole::Tooltip;
-    }
-    if snapshot.is_panel {
-        return WindowRole::Panel;
-    }
-    if snapshot.is_menu {
-        return WindowRole::Menu;
-    }
-    WindowRole::BarSurface
-}
-
 #[derive(Debug, Clone)]
 pub(super) enum SurfaceInputEffect {
     BarActionKey {
@@ -590,46 +562,6 @@ mod tests {
                 &super::super::messages::SurfaceEvent::WindowClosed(window),
             ),
             SurfaceInputEffect::MenuWindowClosed(window)
-        );
-    }
-
-    #[test]
-    fn classify_window_prefers_closing_panel_over_registered_popups() {
-        assert_eq!(
-            classify_window(Some(WindowRoleSnapshot {
-                is_closing_panel: true,
-                is_tooltip: true,
-                is_panel: true,
-                is_menu: true,
-            })),
-            WindowRole::ClosingPanel
-        );
-    }
-
-    #[test]
-    fn classify_window_prefers_tooltip_over_panel_and_menu() {
-        assert_eq!(
-            classify_window(Some(WindowRoleSnapshot {
-                is_closing_panel: false,
-                is_tooltip: true,
-                is_panel: true,
-                is_menu: true,
-            })),
-            WindowRole::Tooltip
-        );
-    }
-
-    #[test]
-    fn classify_window_treats_missing_snapshot_as_unknown_and_plain_window_as_bar_surface() {
-        assert_eq!(classify_window(None), WindowRole::Unknown);
-        assert_eq!(
-            classify_window(Some(WindowRoleSnapshot {
-                is_closing_panel: false,
-                is_tooltip: false,
-                is_panel: false,
-                is_menu: false,
-            })),
-            WindowRole::BarSurface
         );
     }
 }

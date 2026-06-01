@@ -172,6 +172,7 @@ impl App {
 
     /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
     /// Empty means `StartMode::AllScreens` handles window creation (single "all" bar case).
+    #[cfg(test)]
     pub(crate) fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
         let eligible_outputs = if allowed_outputs.is_empty() {
             eligible_outputs::EligibleOutputState::Unknown

@@ -1,16 +1,11 @@
-#[cfg(test)]
 mod tests {
     use super::super::*;
-
-    fn vars<'a>(pairs: &[(&'a str, &'a str)]) -> HashMap<&'a str, &'a str> {
-        pairs.iter().copied().collect()
-    }
 
     #[test]
     fn text_template_substitutes_value() {
         let template = TextTemplate::parse("{value}% left", &["value"], "test.format").unwrap();
 
-        assert_eq!(template.render(&vars(&[("value", "42")])), "42% left");
+        assert_eq!(template.render_pairs(&[("value", "42".into())]), "42% left");
     }
 
     #[test]
@@ -29,14 +24,14 @@ mod tests {
     fn text_template_substitutes_repeated_placeholders() {
         let template = TextTemplate::parse("{value}/{value}", &["value"], "test.format").unwrap();
 
-        assert_eq!(template.render(&vars(&[("value", "42")])), "42/42");
+        assert_eq!(template.render_pairs(&[("value", "42".into())]), "42/42");
     }
 
     #[test]
     fn text_template_escapes_literal_braces() {
         let template = TextTemplate::parse("{{{value}}}", &["value"], "test.format").unwrap();
 
-        assert_eq!(template.render(&vars(&[("value", "42")])), "{42}");
+        assert_eq!(template.render_pairs(&[("value", "42".into())]), "{42}");
     }
 
     #[test]
@@ -86,8 +81,11 @@ mod tests {
                 ..Default::default()
             }),
         );
-        let rendered =
-            tmpl.render_styled_segments(&[("icon", "▓".into()), ("value", "42".into())], None);
+        let rendered = tmpl.render_styled_segments_with_default(
+            &[("icon", "▓".into()), ("value", "42".into())],
+            None,
+            &Style::default(),
+        );
         assert_eq!(rendered.len(), 2);
         assert_eq!(rendered[0].0, "▓");
         assert_eq!(rendered[0].1.color, Some(ThemeToken::Accent.resolve()));
@@ -116,9 +114,17 @@ mod tests {
                 )],
             },
         );
-        let crit = tmpl.render_styled_segments(&[("icon", "x".into())], Some("critical"));
+        let crit = tmpl.render_styled_segments_with_default(
+            &[("icon", "x".into())],
+            Some("critical"),
+            &Style::default(),
+        );
         assert_eq!(crit[0].1.color, Some(ThemeToken::Critical.resolve()));
-        let norm = tmpl.render_styled_segments(&[("icon", "x".into())], Some("normal"));
+        let norm = tmpl.render_styled_segments_with_default(
+            &[("icon", "x".into())],
+            Some("normal"),
+            &Style::default(),
+        );
         assert_eq!(norm[0].1.color, Some(ThemeToken::Accent.resolve()));
     }
 

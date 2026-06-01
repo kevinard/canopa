@@ -6,13 +6,6 @@ use std::time::Duration;
 
 use super::{App, Message};
 
-#[cfg(test)]
-use super::panel_search::{self, SearchField, SearchMatch, SearchText};
-#[cfg(test)]
-type MenuEntryTarget = super::panel_menu_session::PanelMenuEntryTarget;
-#[cfg(test)]
-type MenuEntryView = super::panel_menu_session::PanelMenuEntry;
-
 pub(super) fn panel_search_input_id(window: iced::window::Id) -> iced::widget::Id {
     iced::widget::Id::from(format!("panel-search-input-{window:?}"))
 }
@@ -90,36 +83,6 @@ fn panel_window_settings(
         namespace: Some(App::namespace()),
         ..Default::default()
     }
-}
-
-#[cfg(test)]
-fn panel_position_for_test(
-    edge: crate::config::Edge,
-    bar_size: u32,
-    panel_size: (u32, u32),
-    anchor: Option<iced::Rectangle>,
-    screen_size: (u32, u32),
-    surface_origin: (i32, i32),
-) -> (i32, i32) {
-    let placement = crate::surface::placement::centered_position(
-        &edge,
-        anchor,
-        crate::surface::placement::Size {
-            width: panel_size.0,
-            height: panel_size.1,
-        },
-        crate::surface::placement::Size {
-            width: screen_size.0,
-            height: screen_size.1,
-        },
-        crate::surface::placement::Point {
-            x: surface_origin.0,
-            y: surface_origin.1,
-        },
-        bar_size,
-        0,
-    );
-    (placement.position.x, placement.position.y)
 }
 
 impl App {
@@ -218,9 +181,11 @@ impl App {
                 };
                 let catalog =
                     super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
-                let module_detail_sessions = (!self.panel.would_toggle_close(&request))
-                    .then(|| self.module_detail_sessions_for_request(&request))
-                    .unwrap_or_default();
+                let module_detail_sessions = if !self.panel.would_toggle_close(&request) {
+                    self.module_detail_sessions_for_request(&request)
+                } else {
+                    Default::default()
+                };
                 let effects = self
                     .panel
                     .handle(super::panel_runtime::PanelRuntimeIntent::Toggle {
@@ -563,18 +528,6 @@ impl App {
         self.apply_panel_runtime_effects(effects)
     }
 
-    #[cfg(test)]
-    fn active_menu_entries(&self) -> Vec<super::panel_menu_session::PanelMenuEntry> {
-        self.active_panel_menu_entries()
-    }
-
-    #[cfg(test)]
-    pub(super) fn active_panel_menu_entries(
-        &self,
-    ) -> Vec<super::panel_menu_session::PanelMenuEntry> {
-        self.panel.active_panel_menu_entries_for_test()
-    }
-
     fn focus_panel_search_input(&mut self, retries: u8) -> Task<Message> {
         if !self.panel.search_focus_pending() {
             return Task::none();
@@ -666,15 +619,6 @@ impl App {
         self.apply_panel_runtime_effects(effects)
     }
 
-    pub(super) fn complete_dmenu_request(&mut self, response: crate::ipc::protocol::IpcResponse) {
-        let effects = self
-            .panel
-            .handle(super::panel_runtime::PanelRuntimeIntent::CompleteDmenu(
-                response,
-            ));
-        let _ = self.apply_panel_runtime_effects(effects);
-    }
-
     fn default_panel_origin_window(&self) -> Option<iced::window::Id> {
         self.surfaces.keys().copied().next()
     }
@@ -690,200 +634,6 @@ fn send_ipc_response(
         .take()
     {
         let _ = sender.send(response);
-    }
-}
-
-#[cfg(test)]
-fn dmenu_entry_views(
-    request: &crate::ipc::protocol::DmenuRequest,
-    query: &str,
-) -> Vec<MenuEntryView> {
-    let exact_match = request
-        .entries
-        .iter()
-        .any(|entry| entry.display_label() == query || entry.selected_value() == query);
-
-    let mut matches = Vec::new();
-    for (index, entry) in request.entries.iter().enumerate() {
-        let view = MenuEntryView {
-            label: entry.display_label().to_string(),
-            icon: entry.icon.clone(),
-            path: vec![index],
-            target: MenuEntryTarget::DmenuValue(entry.selected_value().to_string()),
-            is_submenu: false,
-        };
-
-        if panel_search::is_blank_query(query) {
-            matches.push(SearchMatch {
-                item: view,
-                score: panel_search::best_match(
-                    &[SearchText {
-                        field: SearchField::Label,
-                        text: entry.display_label(),
-                    }],
-                    "",
-                )
-                .expect("blank query matches"),
-                source_index: index,
-            });
-            continue;
-        }
-
-        let keywords = entry.keywords.join(" ");
-        let fields = [
-            SearchText {
-                field: SearchField::Label,
-                text: entry.display_label(),
-            },
-            SearchText {
-                field: SearchField::Secondary,
-                text: keywords.as_str(),
-            },
-        ];
-
-        if let Some(score) = panel_search::best_match(&fields, query) {
-            matches.push(SearchMatch {
-                item: view,
-                score,
-                source_index: index,
-            });
-        }
-    }
-
-    let mut entries = if panel_search::is_blank_query(query) {
-        matches.into_iter().map(|matched| matched.item).collect()
-    } else {
-        panel_search::rank_matches(matches)
-    };
-
-    if request.allow_custom && !panel_search::is_blank_query(query) && !exact_match {
-        entries.push(MenuEntryView {
-            label: query.to_string(),
-            icon: None,
-            path: Vec::new(),
-            target: MenuEntryTarget::DmenuCustomValue(query.to_string()),
-            is_submenu: false,
-        });
-    }
-
-    entries
-}
-
-#[cfg(test)]
-fn current_menu_entries(menu: &crate::config::MenuConfig, path: &[usize]) -> Vec<MenuEntryView> {
-    let items = if path.is_empty() {
-        &menu.items
-    } else {
-        menu_item_at_path(&menu.items, path)
-            .map(|item| item.children.as_slice())
-            .unwrap_or(&[])
-    };
-    items
-        .iter()
-        .enumerate()
-        .map(|(index, item)| {
-            let mut item_path = path.to_vec();
-            item_path.push(index);
-            MenuEntryView {
-                label: item.label.clone(),
-                icon: item.icon.clone(),
-                target: MenuEntryTarget::StaticPath(item_path.clone()),
-                path: item_path,
-                is_submenu: !item.children.is_empty(),
-            }
-        })
-        .collect()
-}
-
-#[cfg(test)]
-fn search_menu_entries(menu: &crate::config::MenuConfig, query: &str) -> Vec<MenuEntryView> {
-    if panel_search::is_blank_query(query) {
-        return current_menu_entries(menu, &[]);
-    }
-
-    let mut results = Vec::new();
-    collect_search_menu_entries(
-        &menu.items,
-        query,
-        &mut Vec::new(),
-        &mut Vec::new(),
-        &mut 0,
-        &mut results,
-    );
-    panel_search::rank_matches(results)
-}
-
-#[cfg(test)]
-fn collect_search_menu_entries(
-    items: &[crate::config::MenuItemConfig],
-    query: &str,
-    labels: &mut Vec<String>,
-    path: &mut Vec<usize>,
-    source_index: &mut usize,
-    results: &mut Vec<SearchMatch<MenuEntryView>>,
-) {
-    for (index, item) in items.iter().enumerate() {
-        labels.push(item.label.clone());
-        path.push(index);
-        let current_source_index = *source_index;
-        *source_index += 1;
-
-        let breadcrumb = labels
-            .iter()
-            .take(labels.len().saturating_sub(1))
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-            .join(" / ");
-        let keyword_text = item.keywords.join(" ");
-        let fields = [
-            SearchText {
-                field: SearchField::Label,
-                text: item.label.as_str(),
-            },
-            SearchText {
-                field: SearchField::Secondary,
-                text: keyword_text.as_str(),
-            },
-            SearchText {
-                field: SearchField::Breadcrumb,
-                text: breadcrumb.as_str(),
-            },
-        ];
-
-        if let Some(mut score) = panel_search::best_match(&fields, query) {
-            if !item.children.is_empty() {
-                score.score -= 1;
-            }
-            results.push(SearchMatch {
-                item: MenuEntryView {
-                    label: labels.join(" / "),
-                    icon: item.icon.clone(),
-                    path: path.clone(),
-                    target: MenuEntryTarget::StaticPath(path.clone()),
-                    is_submenu: !item.children.is_empty(),
-                },
-                score,
-                source_index: current_source_index,
-            });
-        }
-
-        collect_search_menu_entries(&item.children, query, labels, path, source_index, results);
-        path.pop();
-        labels.pop();
-    }
-}
-
-#[cfg(test)]
-fn menu_item_at_path<'a>(
-    items: &'a [crate::config::MenuItemConfig],
-    path: &[usize],
-) -> Option<&'a crate::config::MenuItemConfig> {
-    let (first, rest) = path.split_first()?;
-    let item = items.get(*first)?;
-    if rest.is_empty() {
-        Some(item)
-    } else {
-        menu_item_at_path(&item.children, rest)
     }
 }
 
@@ -952,7 +702,43 @@ pub(super) fn panel_event_for_action(
 
 #[cfg(test)]
 mod tests {
+    use super::super::panel_menu_session::{
+        PanelMenuEntryTarget as MenuEntryTarget, dmenu_entry_views, search_menu_entries,
+    };
     use super::*;
+
+    fn panel_position_for_test(
+        edge: crate::config::Edge,
+        bar_size: u32,
+        panel_size: (u32, u32),
+        anchor: Option<iced::Rectangle>,
+        screen_size: (u32, u32),
+        surface_origin: (i32, i32),
+    ) -> (i32, i32) {
+        let placement = crate::surface::placement::centered_position(
+            &edge,
+            anchor,
+            crate::surface::placement::Size {
+                width: panel_size.0,
+                height: panel_size.1,
+            },
+            crate::surface::placement::Size {
+                width: screen_size.0,
+                height: screen_size.1,
+            },
+            crate::surface::placement::Point {
+                x: surface_origin.0,
+                y: surface_origin.1,
+            },
+            bar_size,
+            0,
+        );
+        (placement.position.x, placement.position.y)
+    }
+
+    fn active_menu_entries(app: &App) -> Vec<super::super::panel_menu_session::PanelMenuEntry> {
+        app.panel.active_panel_menu_entries_for_test()
+    }
 
     #[test]
     fn dmenu_entries_use_input_as_label_and_value() {
@@ -1200,20 +986,27 @@ mod tests {
         });
 
         assert!(app.panel.has_dmenu_responder());
-        assert_eq!(app.active_menu_entries()[0].label, "firefox");
+        assert_eq!(active_menu_entries(&app)[0].label, "firefox");
     }
 
     #[test]
-    fn completing_dmenu_selection_sends_selected_response() {
+    fn activating_dmenu_selection_sends_selected_response() {
         let (mut app, _task) = crate::app::App::boot(crate::config::Config::default(), Vec::new());
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
         let (tx, mut rx) = tokio::sync::oneshot::channel();
-        app.panel
-            .begin_dmenu_request(crate::app::messages::ipc_responder(tx))
-            .expect("stored");
 
-        app.complete_dmenu_request(crate::ipc::protocol::IpcResponse::Selected {
-            value: "firefox".into(),
+        let _ = app.handle_ipc_event(crate::app::messages::IpcEvent::DmenuSelection {
+            request: crate::ipc::protocol::DmenuRequest {
+                prompt: None,
+                entries: vec![crate::ipc::protocol::DmenuEntry::plain("firefox")],
+                allow_custom: true,
+            },
+            responder: crate::app::messages::ipc_responder(tx),
         });
+        let _ = app.update(Message::Panel(
+            crate::app::messages::PanelEvent::ActivateIndex(0),
+        ));
 
         assert_eq!(
             rx.try_recv().unwrap(),
@@ -1445,7 +1238,7 @@ mod tests {
 
     #[test]
     fn panel_position_top_centers_on_anchor_and_clamps() {
-        let position = super::panel_position_for_test(
+        let position = panel_position_for_test(
             crate::config::Edge::Top,
             48,
             (300, 600),
@@ -1899,7 +1692,7 @@ mod tests {
         }));
 
         assert_eq!(
-            app.active_menu_entries()
+            active_menu_entries(&app)
                 .iter()
                 .map(|entry| entry.label.as_str())
                 .collect::<Vec<_>>(),
@@ -1916,7 +1709,7 @@ mod tests {
 
         open_apps_menu_panel(&mut app);
 
-        let entries = app.active_menu_entries();
+        let entries = active_menu_entries(&app);
         assert_eq!(
             entries
                 .iter()
@@ -1937,7 +1730,7 @@ mod tests {
 
         set_panel_search(&mut app, "internet");
 
-        let entries = app.active_menu_entries();
+        let entries = active_menu_entries(&app);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].label, "Browser");
     }
@@ -1953,7 +1746,7 @@ mod tests {
 
         set_panel_search(&mut app, "net");
 
-        let entries = app.active_menu_entries();
+        let entries = active_menu_entries(&app);
         assert_eq!(
             entries
                 .iter()
@@ -1972,7 +1765,7 @@ mod tests {
 
         set_panel_search(&mut app, "code editor");
 
-        let entries = app.active_menu_entries();
+        let entries = active_menu_entries(&app);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].label, "Visual Studio Code");
     }
@@ -1987,7 +1780,7 @@ mod tests {
 
         set_panel_search(&mut app, "   ");
 
-        let entries = app.active_menu_entries();
+        let entries = active_menu_entries(&app);
         assert_eq!(
             entries
                 .iter()
@@ -2006,7 +1799,7 @@ mod tests {
         let mut app = app_with_installed_apps_menu(vec![alpha, beta]);
         open_apps_menu_panel(&mut app);
 
-        let entries = app.active_menu_entries();
+        let entries = active_menu_entries(&app);
         assert_eq!(entries[0].icon, Some("alpha-icon".into()));
         assert_eq!(entries[1].icon, None);
     }
@@ -2036,7 +1829,7 @@ mod tests {
         ]);
         open_apps_menu_panel(&mut app);
 
-        let entries = app.active_menu_entries();
+        let entries = active_menu_entries(&app);
 
         assert_eq!(entries.len(), 2);
         assert!(entries[0].label.contains("Terminal"));
@@ -2050,7 +1843,7 @@ mod tests {
         open_apps_menu_panel(&mut app);
 
         assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
-        assert!(app.active_menu_entries().is_empty());
+        assert!(active_menu_entries(&app).is_empty());
     }
 
     #[test]

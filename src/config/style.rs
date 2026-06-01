@@ -183,11 +183,6 @@ impl SegmentStyles {
             }
         }
     }
-
-    #[cfg(test)]
-    pub fn resolve_for(&self, state: Option<&str>) -> ResolvedStyle {
-        self.style_for(state).resolve()
-    }
 }
 
 #[cfg(test)]
@@ -249,8 +244,11 @@ mod tests {
     #[test]
     fn segment_styles_none_resolves_empty() {
         let s = SegmentStyles::None;
-        assert_eq!(s.resolve_for(None), ResolvedStyle::default());
-        assert_eq!(s.resolve_for(Some("critical")), ResolvedStyle::default());
+        assert_eq!(s.style_for(None).resolve(), ResolvedStyle::default());
+        assert_eq!(
+            s.style_for(Some("critical")).resolve(),
+            ResolvedStyle::default()
+        );
     }
 
     #[test]
@@ -261,8 +259,8 @@ mod tests {
         };
         let s = SegmentStyles::Static(style);
         let expected = style.resolve();
-        assert_eq!(s.resolve_for(None), expected);
-        assert_eq!(s.resolve_for(Some("critical")), expected);
+        assert_eq!(s.style_for(None).resolve(), expected);
+        assert_eq!(s.style_for(Some("critical")).resolve(), expected);
     }
 
     #[test]
@@ -279,9 +277,9 @@ mod tests {
             default: Some(default),
             by_state: vec![("critical".into(), crit)],
         };
-        assert_eq!(s.resolve_for(Some("critical")), crit.resolve());
-        assert_eq!(s.resolve_for(Some("normal")), default.resolve());
-        assert_eq!(s.resolve_for(None), default.resolve());
+        assert_eq!(s.style_for(Some("critical")).resolve(), crit.resolve());
+        assert_eq!(s.style_for(Some("normal")).resolve(), default.resolve());
+        assert_eq!(s.style_for(None).resolve(), default.resolve());
     }
 
     #[test]
@@ -296,6 +294,9 @@ mod tests {
                 },
             )],
         };
-        assert_eq!(s.resolve_for(Some("normal")), ResolvedStyle::default());
+        assert_eq!(
+            s.style_for(Some("normal")).resolve(),
+            ResolvedStyle::default()
+        );
     }
 }

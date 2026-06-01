@@ -42,11 +42,6 @@ impl ModuleRuntime {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn is_empty(&self) -> bool {
-        self.store.is_empty()
-    }
-
     pub(super) fn len(&self) -> usize {
         self.store.len()
     }
@@ -303,7 +298,7 @@ mod tests {
     #[test]
     fn boot_modules_empty_with_no_module_config() {
         let (app, _) = App::boot(make_config(), vec![]);
-        assert!(app.modules.is_empty());
+        assert_eq!(app.modules.len(), 0);
     }
 
     #[test]

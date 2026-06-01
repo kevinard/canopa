@@ -32,15 +32,6 @@ impl FocusedWindowModule {
         })
     }
 
-    #[cfg(test)]
-    fn styled_segments(
-        &self,
-        title: &str,
-        mode: crate::config::FormatMode,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_with_default(title, mode, &crate::config::Style::default())
-    }
-
     fn styled_segments_with_default(
         &self,
         title: &str,
@@ -306,7 +297,11 @@ mod tests {
             styled_format_config(),
         );
         let segment = &m
-            .styled_segments("Firefox", crate::config::FormatMode::Collapsed)
+            .styled_segments_with_default(
+                "Firefox",
+                crate::config::FormatMode::Collapsed,
+                &crate::config::Style::default(),
+            )
             .unwrap()[0];
 
         assert_eq!(segment.1.color, Some(crate::theme::ACCENT));

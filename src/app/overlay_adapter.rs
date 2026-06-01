@@ -1,6 +1,3 @@
-#[cfg(test)]
-use crate::modules::ModuleId;
-
 use super::surfaces::RegistryEffect;
 
 impl super::App {
@@ -34,7 +31,7 @@ impl super::App {
         &mut self,
         window: iced::window::Id,
         target_surface: iced::window::Id,
-        target_module: ModuleId,
+        target_module: crate::modules::ModuleId,
         tree: crate::surface::tooltip_popup::TooltipTree,
     ) {
         self.surfaces

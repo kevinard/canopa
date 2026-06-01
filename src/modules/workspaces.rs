@@ -293,14 +293,6 @@ impl WorkspaceItemModule {
             .map(|template| template.render_segments(&self.format_values()))
     }
 
-    #[cfg(test)]
-    fn styled_segments(
-        &self,
-        mode: crate::config::FormatMode,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_with_default(mode, &crate::config::Style::default())
-    }
-
     fn styled_segments_with_default(
         &self,
         mode: crate::config::FormatMode,
@@ -594,7 +586,10 @@ mod tests {
 
         assert_eq!(
             focused
-                .styled_segments(crate::config::FormatMode::Collapsed)
+                .styled_segments_with_default(
+                    crate::config::FormatMode::Collapsed,
+                    &crate::config::Style::default(),
+                )
                 .unwrap()[0]
                 .1
                 .color,
@@ -602,7 +597,10 @@ mod tests {
         );
         assert_eq!(
             active
-                .styled_segments(crate::config::FormatMode::Collapsed)
+                .styled_segments_with_default(
+                    crate::config::FormatMode::Collapsed,
+                    &crate::config::Style::default(),
+                )
                 .unwrap()[0]
                 .1
                 .color,
@@ -610,7 +608,10 @@ mod tests {
         );
         assert_eq!(
             inactive
-                .styled_segments(crate::config::FormatMode::Collapsed)
+                .styled_segments_with_default(
+                    crate::config::FormatMode::Collapsed,
+                    &crate::config::Style::default(),
+                )
                 .unwrap()[0]
                 .1
                 .color,

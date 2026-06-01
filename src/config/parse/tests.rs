@@ -784,17 +784,26 @@ fn segment_inline_style_props() {
     .unwrap();
     match &config.modules[0].params {
         crate::config::ModuleParams::Battery(cfg) => {
-            let segs = cfg.format.collapsed.as_ref().unwrap().segments();
-            use crate::config::style::{ColorValue, SegmentStyles, ThemeToken, Weight};
-            match segs[0].styles() {
-                SegmentStyles::Static(s) => {
-                    assert_eq!(s.color, Some(ColorValue::Token(ThemeToken::Accent)));
-                    assert_eq!(s.size, Some(18.0));
-                    assert_eq!(s.weight, Some(Weight::Bold));
-                }
-                other => panic!("expected Static, got {other:?}"),
-            }
-            matches!(segs[1].styles(), SegmentStyles::None);
+            use crate::config::style::{Style, ThemeToken, Weight};
+            let rendered = cfg
+                .format
+                .collapsed
+                .as_ref()
+                .unwrap()
+                .render_styled_segments_with_default(
+                    &[
+                        ("icon", "i".into()),
+                        ("value", "42".into()),
+                        ("percent", "42".into()),
+                        ("state", "normal".into()),
+                    ],
+                    None,
+                    &Style::default(),
+                );
+            assert_eq!(rendered[0].1.color, Some(ThemeToken::Accent.resolve()));
+            assert_eq!(rendered[0].1.size, Some(18.0));
+            assert_eq!(rendered[0].1.weight, Some(Weight::Bold));
+            assert_eq!(rendered[1].1, crate::config::ResolvedStyle::default());
         }
         other => panic!("expected Battery params, got {other:?}"),
     }
@@ -820,17 +829,24 @@ fn segment_stateful_style_children() {
     .unwrap();
     match &config.modules[0].params {
         crate::config::ModuleParams::Battery(cfg) => {
-            let segs = cfg.format.collapsed.as_ref().unwrap().segments();
-            use crate::config::style::SegmentStyles;
-            match segs[0].styles() {
-                SegmentStyles::Stateful { default, by_state } => {
-                    assert!(default.is_some());
-                    assert_eq!(by_state.len(), 2);
-                    assert_eq!(by_state[0].0, "critical");
-                    assert_eq!(by_state[1].0, "charging");
-                }
-                other => panic!("expected Stateful, got {other:?}"),
-            }
+            use crate::config::style::{Style, ThemeToken};
+            let template = cfg.format.collapsed.as_ref().unwrap();
+            let values = [
+                ("icon", "i".into()),
+                ("value", "42".into()),
+                ("percent", "42".into()),
+                ("state", "critical".into()),
+            ];
+            let default = Style::default();
+            let normal = template.render_styled_segments_with_default(&values, None, &default);
+            let critical =
+                template.render_styled_segments_with_default(&values, Some("critical"), &default);
+            let charging =
+                template.render_styled_segments_with_default(&values, Some("charging"), &default);
+
+            assert_eq!(normal[0].1.color, Some(ThemeToken::Accent.resolve()));
+            assert_eq!(critical[0].1.color, Some(ThemeToken::Critical.resolve()));
+            assert_eq!(charging[0].1.color, Some(ThemeToken::Success.resolve()));
         }
         other => panic!("expected Battery params, got {other:?}"),
     }

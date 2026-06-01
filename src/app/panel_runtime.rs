@@ -135,7 +135,6 @@ pub(super) enum PanelRuntimeIntent<'a> {
     Back,
     Escape,
     Activate(Option<usize>),
-    CompleteDmenu(crate::ipc::protocol::IpcResponse),
     CancelDmenu,
     BeginDmenuSelection {
         request: crate::ipc::protocol::DmenuRequest,
@@ -237,7 +236,6 @@ impl PanelRuntime {
             }
             PanelRuntimeIntent::Escape => self.escape(),
             PanelRuntimeIntent::Activate(index) => self.activate(index),
-            PanelRuntimeIntent::CompleteDmenu(response) => self.complete_dmenu(response),
             PanelRuntimeIntent::CancelDmenu => {
                 self.cancel_dmenu(crate::ipc::protocol::IpcResponse::Cancelled)
             }
@@ -380,6 +378,7 @@ impl PanelRuntime {
         self.menu_scroll_y
     }
 
+    #[cfg(test)]
     fn menu_viewport_height(&self) -> f32 {
         self.menu_viewport_height
     }
@@ -1249,16 +1248,12 @@ mod tests {
         let mut runtime = PanelRuntime::default();
 
         runtime.begin_dmenu_request(responder).expect("stored");
-        let first = runtime.handle(PanelRuntimeIntent::CompleteDmenu(
-            crate::ipc::protocol::IpcResponse::Selected {
-                value: "firefox".into(),
-            },
-        ));
-        let second = runtime.handle(PanelRuntimeIntent::CompleteDmenu(
-            crate::ipc::protocol::IpcResponse::Selected {
-                value: "firefox".into(),
-            },
-        ));
+        let first = runtime.complete_dmenu(crate::ipc::protocol::IpcResponse::Selected {
+            value: "firefox".into(),
+        });
+        let second = runtime.complete_dmenu(crate::ipc::protocol::IpcResponse::Selected {
+            value: "firefox".into(),
+        });
 
         assert!(matches!(
             first.as_slice(),

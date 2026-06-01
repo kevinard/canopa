@@ -98,25 +98,6 @@ impl VolumeModule {
             .to_string()
     }
 
-    #[cfg(test)]
-    fn formatted_text(
-        &self,
-        volume: &VolumeState,
-        mode: crate::config::FormatMode,
-    ) -> Option<String> {
-        let icon = self.current_icon(volume);
-        let value = format!("{}", volume.volume.round() as u64);
-        let state = self.state_key(volume);
-        self.format.template_for(mode).map(|template| {
-            template.render_joined(&[
-                ("icon", icon),
-                ("value", value.clone()),
-                ("percent", value),
-                ("state", state),
-            ])
-        })
-    }
-
     fn styled_segments_with_default(
         &self,
         volume: &VolumeState,
@@ -505,10 +486,14 @@ mod tests {
             muted: false,
         };
 
-        assert_eq!(
-            m.formatted_text(&state, crate::config::FormatMode::Horizontal),
-            Some("◈ 80%".to_string())
-        );
+        let rendered = m
+            .styled_segments_with_default(
+                &state,
+                crate::config::FormatMode::Horizontal,
+                &crate::config::Style::default(),
+            )
+            .unwrap();
+        assert_eq!(rendered[0].0, "◈ 80%");
     }
 
     #[test]

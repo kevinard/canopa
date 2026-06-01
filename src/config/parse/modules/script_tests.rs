@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod tests {
     use crate::config::ModuleParams;
     use crate::config::parse::parse;

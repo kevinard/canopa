@@ -68,15 +68,6 @@ impl ScriptModule {
         })
     }
 
-    #[cfg(test)]
-    fn styled_segments(
-        &self,
-        state: &ScriptState,
-        mode: crate::config::FormatMode,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_with_default(state, mode, &crate::config::Style::default())
-    }
-
     fn styled_segments_with_default(
         &self,
         state: &ScriptState,
@@ -346,7 +337,11 @@ mod tests {
             output: "ok".into(),
         };
         let segment = &m
-            .styled_segments(&state, crate::config::FormatMode::Collapsed)
+            .styled_segments_with_default(
+                &state,
+                crate::config::FormatMode::Collapsed,
+                &crate::config::Style::default(),
+            )
             .unwrap()[0];
 
         assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
