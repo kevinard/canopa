@@ -52,6 +52,18 @@ _Avoid_: Module, widget instance
 A **Module** that produces runtime child **Module Instances** from external state.
 _Avoid_: Generated module, synthetic module
 
+**Module Data Source**:
+An app-owned runtime source of changing domain state used by one or more **Module Instances**.
+_Avoid_: Module subscription, backend, provider
+
+**Module Data Source Identity**:
+The stable runtime identity of a **Module Data Source**. Multiple **Module Instances** may depend on the same **Module Data Source Identity** when they share one source of truth.
+_Avoid_: Module kind, subscription key, source id
+
+**Module Data Source State**:
+The source-shaped runtime state emitted by a **Module Data Source** before it is mapped into per-**Module Instance** render state.
+_Avoid_: Module state, widget state
+
 **Zone**:
 A logical placement group within a **Bar**, named **Start**, **Center**, or **End**.
 _Avoid_: Top, bottom, left, right
@@ -299,6 +311,15 @@ _Avoid_: Default config, fallback surface
 - A **Module** may expose a **Menu**.
 - A **Dynamic Module** owns the placement and configuration for its runtime child **Module Instances**.
 - Child **Module Instances** produced by a **Dynamic Module** are individually navigable and actionable when they represent distinct user targets.
+- A **Module Instance** may depend on a **Module Data Source**.
+- Multiple **Module Instances** may share one **Module Data Source Identity**.
+- A **Module Data Source** emits **Module Data Source State**, not render-specific **ModuleState**.
+- Runtime lifecycle maps **Module Data Source State** into per-**Module Instance** render state.
+- Runtime lifecycle owns first emission, recovery, and **Unavailable Module** transitions for **Module Data Sources**.
+- Pending first emission is internal runtime lifecycle state, not a public render state for **Module Implementations**.
+- When a **Module Data Source** recovers and emits valid **Module Data Source State**, runtime lifecycle automatically remaps all dependent **Module Instances**.
+- A **Module Implementation** maps available **Module Data Source State** into either visible render state or an explicit **Empty Module** outcome.
+- An **Empty Module** outcome is module-owned; runtime lifecycle does not infer it from blank rendered content.
 - The visible **Module** or child **Module Instance** target owns the **Tooltip** shown for that target.
 - A **Tooltip** closes when its originating visible target disappears.
 - A **Tooltip** closes when a **Panel** opens.
