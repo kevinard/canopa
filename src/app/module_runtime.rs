@@ -113,9 +113,8 @@ impl ModuleRuntime {
     ) -> Vec<crate::modules::ModuleId> {
         self.store
             .iter()
-            .filter_map(|(_, module)| {
-                (module.data_source_identity() == Some(identity)).then(|| module.id())
-            })
+            .filter(|(_, module)| module.data_source_identity() == Some(identity))
+            .map(|(_, module)| module.id())
             .collect()
     }
 
