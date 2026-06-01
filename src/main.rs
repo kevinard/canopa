@@ -17,8 +17,22 @@ use app::eligible_outputs::{EligibleOutputState, resolve_eligible_outputs};
 use iced_layershell::build_pattern::daemon;
 use iced_layershell::settings::{LayerShellSettings, Settings, StartMode};
 
+fn cli_mode_label(command: &cli::Command) -> &'static str {
+    match command {
+        cli::Command::Run => "run",
+        cli::Command::PrintVersion => "version",
+        cli::Command::IpcCommand(_) => "ipc",
+        cli::Command::Dmenu(_) => "dmenu",
+        cli::Command::UsageError(_) => "usage-error",
+    }
+}
+
 fn main() {
-    match cli::parse() {
+    let diagnostics = diagnostics::init();
+    let command = cli::parse();
+    diagnostics::log_startup(cli_mode_label(&command), &diagnostics);
+
+    match command {
         cli::Command::PrintVersion => println!("{}", env!("CARGO_PKG_VERSION")),
         cli::Command::IpcCommand(cmd) => send_ipc_command(&cmd),
         cli::Command::Dmenu(options) => std::process::exit(run_dmenu_cli(options)),
@@ -281,6 +295,29 @@ mod tests {
         // Smoke test: if this test runs, the binary entry point compiled
         let entry: fn() = super::main;
         let _ = entry;
+    }
+
+    #[test]
+    fn cli_mode_label_identifies_cli_modes() {
+        assert_eq!(super::cli_mode_label(&crate::cli::Command::Run), "run");
+        assert_eq!(
+            super::cli_mode_label(&crate::cli::Command::PrintVersion),
+            "version"
+        );
+        assert_eq!(
+            super::cli_mode_label(&crate::cli::Command::IpcCommand("toggle-panel".into())),
+            "ipc"
+        );
+        assert_eq!(
+            super::cli_mode_label(&crate::cli::Command::Dmenu(
+                crate::cli::DmenuOptions::default()
+            )),
+            "dmenu"
+        );
+        assert_eq!(
+            super::cli_mode_label(&crate::cli::Command::UsageError("bad flag".into())),
+            "usage-error"
+        );
     }
 
     #[test]
