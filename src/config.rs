@@ -80,9 +80,7 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Return all bar configs that should appear on the given Output.
-    ///
-    /// In AllScreens mode (`output_name == ""`), returns Bars without an Output Target.
+    /// Return all bar configs whose Output Target matches the given Output name.
     pub fn bars_for_output(&self, output_name: &str) -> Vec<&BarConfig> {
         self.bars
             .iter()

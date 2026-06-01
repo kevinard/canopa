@@ -366,7 +366,7 @@ mod config_tests {
 
     #[test]
     fn bars_for_output_empty_string_matches_only_all() {
-        // AllScreens mode: output_name is ""
+        // Empty output names follow the same Output Target matching rules as named Outputs.
         let config = Config::default();
         let bars = config.bars_for_output("");
         assert_eq!(bars.len(), 1);

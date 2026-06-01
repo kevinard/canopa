@@ -202,8 +202,8 @@ fn try_main() -> Result<(), AppError> {
         "configuration loaded"
     );
 
-    // Extract default surface settings from the first bar (used when AllScreens is active).
-    // In AllScreens mode there is always exactly one bar targeting "all" outputs.
+    // Extract layer-shell startup settings from the first bar. `StartMode::AllScreens`
+    // accepts one initial bar shape; planned multi-bar surfaces need known output names.
     let anchor = config.bars[0].edge.anchor();
     let layer = config.bars[0].layer.layer_shell();
     let collapsed_width = config.bars[0].collapsed_width;
@@ -217,10 +217,9 @@ fn try_main() -> Result<(), AppError> {
         Some((collapsed_width, 0)) // logical width for vertical bar
     };
 
-    // Use AllScreens only for the single-Bar-without-Output-Target case (Story 9.1).
-    // This preserves non-Niri compositor compatibility while supporting multi-bar configs.
-    // Any other configuration (multiple bars or output-specific targeting) requires manual mode
-    // so each (bar, output) pair can be spawned individually.
+    // Use AllScreens only when the layer-shell startup settings can represent the plan
+    // without app-spawned per-output windows. Other configurations need manual mode so
+    // each planned Bar Surface can be opened against a concrete Output name.
     let use_allscreens = config.bars.len() == 1 && config.bars[0].targets_all_outputs();
     let (start_mode, eligible_outputs) = if use_allscreens {
         (StartMode::AllScreens, EligibleOutputState::Unknown)
@@ -231,11 +230,12 @@ fn try_main() -> Result<(), AppError> {
                 (StartMode::Background, EligibleOutputState::Known(outputs))
             }
             EligibleOutputState::Unknown => {
-                // Niri unavailable — warn and fall back to AllScreens single-bar mode.
+                // Niri unavailable: keep a non-Niri fallback, but only the first bar can be
+                // represented by layer-shell startup settings without concrete Output names.
                 tracing::warn!(
                     target: "niribar::runtime",
-                    "multi-bar or output-targeted configuration requires Niri IPC but it is \
-                     unavailable; bar will appear on all outputs in single-bar mode"
+                    "configuration requires Niri IPC to create all planned bar surfaces but it is \
+                     unavailable; falling back to one all-screens surface using the first bar"
                 );
                 (StartMode::AllScreens, EligibleOutputState::Unknown)
             }

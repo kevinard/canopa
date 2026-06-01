@@ -1,4 +1,5 @@
 mod animation;
+mod bar_surface_plan;
 mod dynamic_modules;
 pub(crate) mod eligible_outputs;
 mod focus;
@@ -171,7 +172,7 @@ impl App {
     }
 
     /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
-    /// Empty means `StartMode::AllScreens` handles window creation (single "all" bar case).
+    /// Empty means `StartMode::AllScreens` handles initial window creation.
     #[cfg(test)]
     pub(crate) fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
         let eligible_outputs = if allowed_outputs.is_empty() {
@@ -202,8 +203,14 @@ impl App {
             std::collections::HashMap::new(),
             manual_outputs,
         );
-        let desired =
-            surfaces::SurfaceManager::desired_bar_surfaces(&config.bars, &allowed_outputs);
+        let desired = if manual_outputs {
+            bar_surface_plan::plan_bar_surfaces(
+                &config.bars,
+                &eligible_outputs::EligibleOutputState::Known(allowed_outputs.clone()),
+            )
+        } else {
+            Vec::new()
+        };
         let desired_surface_count = desired.len();
         let effects = surfaces.reconcile_bar_surfaces(desired);
         let lifecycle_effect_count = effects.len();

@@ -4,6 +4,7 @@ use std::ops::{Index, IndexMut};
 use iced::Task;
 use iced_layershell::reexport::{KeyboardInteractivity, NewLayerShellSettings, OutputOption};
 
+use super::bar_surface_plan::PlannedBarSurface;
 use super::{App, Message};
 use crate::modules::ModuleKind;
 use crate::surface::SurfaceState;
@@ -41,14 +42,8 @@ impl BarSurfaceIdentity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct DesiredBarSurface {
-    pub(super) identity: BarSurfaceIdentity,
-    pub(super) bar_index: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum BarSurfaceLifecycleEffect {
-    Open(DesiredBarSurface),
+    Open(PlannedBarSurface),
     RemoveWindow(iced::window::Id),
 }
 
@@ -275,36 +270,9 @@ impl SurfaceManager {
         self.last_cursor = value;
     }
 
-    pub(super) fn desired_bar_surfaces(
-        bars: &[crate::config::BarConfig],
-        eligible_outputs: &[String],
-    ) -> Vec<DesiredBarSurface> {
-        let mut desired = Vec::new();
-        for output_name in eligible_outputs {
-            let mut matches: Vec<_> = bars
-                .iter()
-                .enumerate()
-                .filter(|(_, bar)| bar.matches_output(output_name))
-                .collect();
-            matches.sort_by_key(|(_, bar)| !bar.edge.is_horizontal());
-            desired.extend(
-                matches
-                    .into_iter()
-                    .map(|(bar_index, bar)| DesiredBarSurface {
-                        identity: BarSurfaceIdentity::new(
-                            bar.name.clone(),
-                            Some(output_name.clone()),
-                        ),
-                        bar_index,
-                    }),
-            );
-        }
-        desired
-    }
-
     pub(super) fn reconcile_bar_surfaces(
         &mut self,
-        desired: Vec<DesiredBarSurface>,
+        desired: Vec<PlannedBarSurface>,
     ) -> Vec<BarSurfaceLifecycleEffect> {
         let live: HashMap<BarSurfaceIdentity, iced::window::Id> = self
             .surfaces
@@ -1013,8 +981,10 @@ impl App {
         match super::eligible_outputs::resolve_eligible_outputs(observed_outputs, &[]) {
             super::eligible_outputs::EligibleOutputState::Unknown => Vec::new(),
             super::eligible_outputs::EligibleOutputState::Known(eligible_outputs) => {
-                let desired =
-                    SurfaceManager::desired_bar_surfaces(&self.config.bars, &eligible_outputs);
+                let desired = super::bar_surface_plan::plan_bar_surfaces(
+                    &self.config.bars,
+                    &super::eligible_outputs::EligibleOutputState::Known(eligible_outputs),
+                );
                 let effects = self.surfaces.reconcile_bar_surfaces(desired);
                 self.apply_bar_surface_lifecycle_effects(effects)
             }
@@ -1536,7 +1506,7 @@ mod tests {
             ),
         );
 
-        let effects = registry.reconcile_bar_surfaces(vec![DesiredBarSurface {
+        let effects = registry.reconcile_bar_surfaces(vec![PlannedBarSurface {
             identity: BarSurfaceIdentity::new("main", Some("HDMI-A-1".into())),
             bar_index: 0,
         }]);
@@ -1830,33 +1800,6 @@ mod tests {
     }
 
     #[test]
-    fn registry_calculates_desired_bar_surfaces_with_horizontal_first_ordering() {
-        let bars = vec![
-            crate::config::BarConfig {
-                name: "left".into(),
-                edge: Edge::Left,
-                ..crate::config::BarConfig::default()
-            },
-            crate::config::BarConfig {
-                name: "top".into(),
-                edge: Edge::Top,
-                ..crate::config::BarConfig::default()
-            },
-        ];
-
-        let desired = SurfaceManager::desired_bar_surfaces(&bars, &["DP-1".into()]);
-        let identities: Vec<_> = desired.into_iter().map(|d| d.identity).collect();
-
-        assert_eq!(
-            identities,
-            vec![
-                BarSurfaceIdentity::new("top", Some("DP-1".into())),
-                BarSurfaceIdentity::new("left", Some("DP-1".into())),
-            ]
-        );
-    }
-
-    #[test]
     fn registry_reconciliation_keeps_live_surface_and_opens_missing_surface() {
         let existing = test_wid();
         let mut registry = SurfaceManager::new(
@@ -1865,11 +1808,11 @@ mod tests {
             true,
         );
         let desired = vec![
-            DesiredBarSurface {
+            PlannedBarSurface {
                 identity: BarSurfaceIdentity::new("main", Some("DP-1".into())),
                 bar_index: 0,
             },
-            DesiredBarSurface {
+            PlannedBarSurface {
                 identity: BarSurfaceIdentity::new("side", Some("DP-1".into())),
                 bar_index: 1,
             },
@@ -1879,7 +1822,7 @@ mod tests {
 
         assert_eq!(
             effects,
-            vec![BarSurfaceLifecycleEffect::Open(DesiredBarSurface {
+            vec![BarSurfaceLifecycleEffect::Open(PlannedBarSurface {
                 identity: BarSurfaceIdentity::new("side", Some("DP-1".into())),
                 bar_index: 1,
             })]

@@ -24,6 +24,10 @@ _Avoid_: Output/bar tuple, window ID
 The runtime owner of live **Bar Surface** records and overlay surface metadata, including **Panel**, **Menu**, and **Tooltip** windows associated with **Bar Surfaces**.
 _Avoid_: Overlay lifecycle, surface manager
 
+**Bar Surface Plan**:
+A runtime description of the desired **Bar Surfaces** derived from configured **Bars** and current **Eligible Outputs** before live window reconciliation.
+_Avoid_: Desired windows, surface list
+
 **Output**:
 A Wayland display target that can host zero or more **Bar Surfaces**.
 _Avoid_: Screen, monitor, display
@@ -232,9 +236,14 @@ _Avoid_: Default config, fallback surface
 - An **Implicit Bar** exists only when configuration declares no **Bars**.
 - The **Implicit Bar** uses `main` as its diagnostic **Bar Name**, but `main` is not reserved for declared **Bars**.
 - An **Implicit Bar** uses **Global Defaults** and applies to all **Eligible Outputs**.
+- For **Bar Surface Plan** purposes, any **Bar** with no explicit **Output Target** applies to all screens when **Eligible Outputs** are unknown, whether it is implicit or declared alongside other **Bars**.
+- The **Bar Name** is not the condition that enables all-screens planning.
 - A **Bar Surface** belongs to exactly one **Bar** and exactly one **Output**.
 - A **Bar Surface Identity** identifies one desired or live **Bar Surface** independently of its layer-shell window ID.
-- In AllScreens mode, a **Bar Surface Identity** uses the **Implicit Bar** diagnostic **Bar Name** `main` and no specific **Output**.
+- A **Bar Surface Plan** contains desired **Bar Surface Identities** and enough **Bar** lookup information to create missing **Bar Surfaces**.
+- A **Bar Surface Plan** is computed before the **Bar Surface Registry** reconciles desired **Bar Surfaces** with live **Bar Surfaces**.
+- A **Bar Surface Plan** does not own live windows, overlay metadata, or **Panel Runtime** interaction state.
+- In AllScreens mode, a **Bar Surface Identity** has no specific **Output** and identifies an all-screens **Bar** being planned.
 - The **Bar Surface Registry** is the source of truth for which live windows are **Bar Surfaces** and which live windows are overlays associated with **Bar Surfaces**.
 - The **Bar Surface Registry** does not own **Panel Runtime** interaction state.
 - A **Bar Surface** uses the available **Edge Span** by default.
@@ -252,6 +261,8 @@ _Avoid_: Default config, fallback surface
 - Niribar does not automatically resolve overlap between **Bar Surfaces** that share the same **Output** and **Edge**.
 - Niribar creates horizontal **Bar Surfaces** before vertical **Bar Surfaces** so the compositor can allocate remaining **Edge Span** to vertical surfaces.
 - A **Bar** with no **Output Target** applies to all eligible **Outputs**.
+- `all` is the default **Output Target** value for a **Bar**.
+- For runtime planning, omitted and explicit all-screens **Output Targets** are equivalent.
 - A positive **Output Target** list matches any listed exact **Output** name.
 - A negative **Output Target** list applies to all **Eligible Outputs** except the listed exact **Output** names.
 - A single **Output Target** cannot mix positive and negative entries.
