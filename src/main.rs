@@ -3,6 +3,7 @@ mod cli;
 mod command;
 mod config;
 mod dbus;
+mod diagnostics;
 mod desktop_apps;
 mod icon_theme;
 mod ipc;
