@@ -1,6 +1,7 @@
 pub mod battery;
 pub mod button;
 pub mod clock;
+pub mod data_source;
 pub mod focused_window;
 pub mod network;
 pub mod script;
@@ -136,9 +137,11 @@ pub enum Zone {
 /// Per-module runtime state. Variants added per concrete module (Stories 2.3+).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum ModuleState {
-    /// Module is starting up; no data yet. Render as empty space — no spinner, no text.
+    /// Module has no visible content. Used for available-but-empty Module outcomes
+    /// and as the no-state render fallback while first emission is pending inside
+    /// the Module Data Source runtime lifecycle.
     #[default]
-    Loading,
+    Empty,
     /// Module's data source is unavailable. Render as nothing — zero height, no gap left.
     Unavailable,
     Battery(battery::BatteryState),
@@ -560,8 +563,8 @@ mod tests {
     }
 
     #[test]
-    fn module_state_default_is_loading() {
-        assert!(matches!(ModuleState::default(), ModuleState::Loading));
+    fn module_state_default_is_empty() {
+        assert!(matches!(ModuleState::default(), ModuleState::Empty));
     }
 
     #[test]
@@ -699,7 +702,7 @@ mod tests {
     #[test]
     fn module_id_hashable() {
         let mut map = HashMap::new();
-        map.insert(ModuleId::new("clock"), ModuleState::Loading);
+        map.insert(ModuleId::new("clock"), ModuleState::Empty);
         assert!(map.contains_key(&ModuleId::new("clock")));
         assert!(!map.contains_key(&ModuleId::new("battery")));
     }

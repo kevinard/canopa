@@ -1,0 +1,105 @@
+use super::ModuleState;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModuleDataSourceIdentity {
+    Battery,
+    Network,
+    Volume,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BatteryReading {
+    pub percentage: f64,
+    pub is_charging: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NetworkReading {
+    pub connectivity: crate::modules::network::NetworkConnectivity,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VolumeReading {
+    pub volume: f64,
+    pub muted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ModuleDataSourceState {
+    Battery(BatteryReading),
+    Network(NetworkReading),
+    Volume(VolumeReading),
+}
+
+impl ModuleDataSourceState {
+    pub fn identity(&self) -> ModuleDataSourceIdentity {
+        match self {
+            Self::Battery(_) => ModuleDataSourceIdentity::Battery,
+            Self::Network(_) => ModuleDataSourceIdentity::Network,
+            Self::Volume(_) => ModuleDataSourceIdentity::Volume,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ModuleInstanceOutcome {
+    Visible(ModuleState),
+    Empty,
+    Unavailable,
+}
+
+impl ModuleInstanceOutcome {
+    pub fn into_module_state(self) -> ModuleState {
+        match self {
+            Self::Visible(state) => state,
+            Self::Empty => ModuleState::Empty,
+            Self::Unavailable => ModuleState::Unavailable,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_state_reports_its_identity() {
+        assert_eq!(
+            ModuleDataSourceState::Battery(BatteryReading {
+                percentage: 42.0,
+                is_charging: false,
+            })
+            .identity(),
+            ModuleDataSourceIdentity::Battery
+        );
+        assert_eq!(
+            ModuleDataSourceState::Network(NetworkReading {
+                connectivity: crate::modules::network::NetworkConnectivity::Full,
+                label: Some("wifi".into()),
+            })
+            .identity(),
+            ModuleDataSourceIdentity::Network
+        );
+        assert_eq!(
+            ModuleDataSourceState::Volume(VolumeReading {
+                volume: 55.0,
+                muted: false,
+            })
+            .identity(),
+            ModuleDataSourceIdentity::Volume
+        );
+    }
+
+    #[test]
+    fn outcome_converts_to_existing_runtime_state() {
+        assert_eq!(
+            ModuleInstanceOutcome::Empty.into_module_state(),
+            crate::modules::ModuleState::Empty
+        );
+        assert_eq!(
+            ModuleInstanceOutcome::Unavailable.into_module_state(),
+            crate::modules::ModuleState::Unavailable
+        );
+    }
+}

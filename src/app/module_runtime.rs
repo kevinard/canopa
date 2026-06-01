@@ -1120,7 +1120,7 @@ mod tests {
 
         let _ = app.handle_tray_event(TrayEvent::Snapshot(vec![item]));
         app.modules
-            .set_state(runtime_id.clone(), ModuleState::Loading);
+            .set_state(runtime_id.clone(), ModuleState::Empty);
         let _ = app.handle_tray_event(TrayEvent::ItemRemoved(
             ":1.42/CustomStatusNotifierItem".into(),
         ));
