@@ -387,7 +387,12 @@ mod tests {
         config.bars[0].modules.end = vec!["battery".into(), "battery2".into()];
         let (mut app, _) = App::boot(config, vec![]);
 
-        app.push_battery_state(42.0, false);
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(
+            BatteryEvent::StateChanged {
+                percentage: 42.0,
+                is_charging: false,
+            },
+        )));
 
         for id in ["battery", "battery2"] {
             let Some(ModuleState::Battery(state)) = app.modules.state(&ModuleId::new(id)) else {
@@ -732,6 +737,34 @@ mod tests {
             app.modules.state(&id),
             Some(ModuleState::Unavailable)
         ));
+    }
+
+    #[test]
+    fn battery_source_recovers_after_unavailable_event() {
+        let mut app = make_battery_app();
+
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(
+            BatteryEvent::Unavailable,
+        )));
+        assert!(matches!(
+            app.modules.state(&ModuleId::new("battery")),
+            Some(ModuleState::Unavailable)
+        ));
+
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(
+            BatteryEvent::StateChanged {
+                percentage: 74.0,
+                is_charging: true,
+            },
+        )));
+
+        match app.modules.state(&ModuleId::new("battery")) {
+            Some(ModuleState::Battery(state)) => {
+                assert!((state.percentage - 74.0).abs() < 0.001);
+                assert!(state.is_charging);
+            }
+            other => panic!("expected recovered battery state, got {other:?}"),
+        }
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::network::NetworkEvent;
 use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::volume::VolumeEvent;
-use crate::modules::{InteractionEvent, ModuleEvent, ModuleId, ModuleKind, ModuleState};
+use crate::modules::{InteractionEvent, ModuleEvent, ModuleId, ModuleState};
 
 fn insert_module_state_if_changed(
     modules: &mut super::module_runtime::ModuleRuntime,
@@ -215,13 +215,38 @@ impl App {
         Task::none()
     }
 
+    fn apply_module_data_source_state(
+        &mut self,
+        state: crate::modules::data_source::ModuleDataSourceState,
+    ) {
+        let outcomes = self.data_sources.apply_source_state(state, &self.modules);
+        self.modules.apply_outcomes(outcomes);
+    }
+
+    fn apply_module_data_source_unavailable(
+        &mut self,
+        identity: crate::modules::data_source::ModuleDataSourceIdentity,
+    ) {
+        let outcomes = self.data_sources.mark_unavailable(identity, &self.modules);
+        self.modules.apply_outcomes(outcomes);
+    }
+
     pub(super) fn handle_battery_event(&mut self, event: BatteryEvent) -> Task<Message> {
         match event {
             BatteryEvent::StateChanged {
                 percentage,
                 is_charging,
-            } => self.push_battery_state(percentage, is_charging),
-            BatteryEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Battery),
+            } => self.apply_module_data_source_state(
+                crate::modules::data_source::ModuleDataSourceState::Battery(
+                    crate::modules::data_source::BatteryReading {
+                        percentage,
+                        is_charging,
+                    },
+                ),
+            ),
+            BatteryEvent::Unavailable => self.apply_module_data_source_unavailable(
+                crate::modules::data_source::ModuleDataSourceIdentity::Battery,
+            ),
         }
         Task::none()
     }
@@ -231,16 +256,31 @@ impl App {
             NetworkEvent::StateChanged {
                 connectivity,
                 label,
-            } => self.push_network_state(connectivity, label),
-            NetworkEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Network),
+            } => self.apply_module_data_source_state(
+                crate::modules::data_source::ModuleDataSourceState::Network(
+                    crate::modules::data_source::NetworkReading {
+                        connectivity,
+                        label,
+                    },
+                ),
+            ),
+            NetworkEvent::Unavailable => self.apply_module_data_source_unavailable(
+                crate::modules::data_source::ModuleDataSourceIdentity::Network,
+            ),
         }
         Task::none()
     }
 
     pub(super) fn handle_volume_event(&mut self, event: VolumeEvent) -> Task<Message> {
         match event {
-            VolumeEvent::StateChanged { volume, muted } => self.push_volume_state(volume, muted),
-            VolumeEvent::Unavailable => self.mark_module_type_unavailable(ModuleKind::Volume),
+            VolumeEvent::StateChanged { volume, muted } => self.apply_module_data_source_state(
+                crate::modules::data_source::ModuleDataSourceState::Volume(
+                    crate::modules::data_source::VolumeReading { volume, muted },
+                ),
+            ),
+            VolumeEvent::Unavailable => self.apply_module_data_source_unavailable(
+                crate::modules::data_source::ModuleDataSourceIdentity::Volume,
+            ),
         }
         Task::none()
     }
@@ -273,19 +313,6 @@ impl App {
             }
         });
         Task::none()
-    }
-
-    fn mark_module_type_unavailable(&mut self, module_type: ModuleKind) {
-        let ids: Vec<_> = self.modules.ids_by_kind(module_type).to_vec();
-        tracing::debug!(
-            target: "niribar::modules",
-            module_kind = module_type.runtime_name(),
-            affected_module_count = ids.len(),
-            "module kind unavailable"
-        );
-        for id in ids {
-            self.modules.set_state(id, ModuleState::Unavailable);
-        }
     }
 }
 
