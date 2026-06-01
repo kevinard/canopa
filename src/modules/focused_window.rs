@@ -90,7 +90,7 @@ impl crate::modules::Module for FocusedWindowModule {
 
         let title = match state {
             ModuleState::FocusedWindow(s) => &s.title,
-            _ => return iced::widget::Space::new().into(), // Loading → empty
+            _ => return iced::widget::Space::new().into(), // Empty/pending render as empty
         };
 
         // No focused window → render nothing (AC #4, UX-DR16).

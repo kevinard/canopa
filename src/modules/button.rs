@@ -5,7 +5,7 @@ pub struct ButtonState;
 /// Events emitted by the button module.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ButtonEvent {
-    /// Emitted once at startup to transition Loading → Button(ButtonState).
+    /// Emitted once at startup to transition Empty into Button(ButtonState).
     Ready,
 }
 
@@ -157,7 +157,7 @@ impl crate::modules::Module for ButtonModule {
                 .width(Length::Fill)
                 .into()
             }
-            _ => iced::widget::Space::new().into(), // Loading/Unavailable → empty (UX-DR16)
+            _ => iced::widget::Space::new().into(), // Empty/Unavailable render as empty (UX-DR16)
         }
     }
 
