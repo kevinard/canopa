@@ -16,12 +16,7 @@ pub(super) struct PerfTracker {
 
 impl PerfTracker {
     pub(super) fn from_env() -> Option<Self> {
-        match std::env::var("NIRIBAR_PERF") {
-            Ok(value) if matches!(value.as_str(), "1" | "true" | "yes" | "on") => {
-                Some(Self::default())
-            }
-            _ => None,
-        }
+        crate::diagnostics::perf_enabled_from_env().then(Self::default)
     }
 
     pub(super) fn record_update(&self, label: &'static str) {
@@ -109,5 +104,12 @@ mod tests {
         assert!(line.contains("views [Id(1)=2]"));
         assert!(line.contains("workspace_rebuilds=1"));
         assert!(line.contains("tray_events=4"));
+    }
+
+    #[test]
+    fn perf_env_values_are_defined_by_diagnostics_module() {
+        assert!(crate::diagnostics::perf_enabled_from_value(Some("1")));
+        assert!(crate::diagnostics::perf_enabled_from_value(Some("true")));
+        assert!(!crate::diagnostics::perf_enabled_from_value(Some("0")));
     }
 }

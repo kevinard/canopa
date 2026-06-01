@@ -236,9 +236,11 @@ impl App {
             }
             Message::PerfReport => {
                 if let Some(perf) = &self.perf {
-                    eprintln!(
+                    let report = crate::app::perf::format_snapshot(&perf.snapshot_and_reset());
+                    tracing::info!(
+                        target: "niribar::perf",
                         "{}",
-                        crate::app::perf::format_snapshot(&perf.snapshot_and_reset())
+                        report
                     );
                 }
                 Task::none()
