@@ -173,6 +173,28 @@ impl crate::modules::Module for VolumeModule {
         iced::Subscription::none() // fed via Message::Volume from app.rs
     }
 
+    fn data_source_identity(
+        &self,
+    ) -> Option<crate::modules::data_source::ModuleDataSourceIdentity> {
+        Some(crate::modules::data_source::ModuleDataSourceIdentity::Volume)
+    }
+
+    fn map_data_source_state(
+        &self,
+        state: &crate::modules::data_source::ModuleDataSourceState,
+    ) -> crate::modules::data_source::ModuleInstanceOutcome {
+        let crate::modules::data_source::ModuleDataSourceState::Volume(reading) = state else {
+            return crate::modules::data_source::ModuleInstanceOutcome::Unavailable;
+        };
+
+        crate::modules::data_source::ModuleInstanceOutcome::Visible(
+            crate::modules::ModuleState::Volume(VolumeState {
+                volume: reading.volume,
+                muted: reading.muted,
+            }),
+        )
+    }
+
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Volume(v) = state {
             let icon = self.current_icon(v);
@@ -333,6 +355,36 @@ mod tests {
         );
         assert_eq!(m.id().0, "volume");
         assert_eq!(m.module_type(), "volume");
+    }
+
+    #[test]
+    fn volume_maps_source_reading_to_visible_module_state() {
+        let module = VolumeModule::new(
+            crate::modules::ModuleId::new("volume"),
+            5,
+            crate::config::StatesConfig::volume_default(),
+            crate::config::IconRulesConfig::default(),
+            crate::config::FormatConfig::default(),
+        );
+
+        let outcome = module.map_data_source_state(
+            &crate::modules::data_source::ModuleDataSourceState::Volume(
+                crate::modules::data_source::VolumeReading {
+                    volume: 22.0,
+                    muted: false,
+                },
+            ),
+        );
+
+        assert_eq!(
+            outcome,
+            crate::modules::data_source::ModuleInstanceOutcome::Visible(
+                crate::modules::ModuleState::Volume(VolumeState {
+                    volume: 22.0,
+                    muted: false,
+                })
+            )
+        );
     }
 
     #[test]

@@ -226,6 +226,28 @@ impl crate::modules::Module for BatteryModule {
         iced::Subscription::none()
     }
 
+    fn data_source_identity(
+        &self,
+    ) -> Option<crate::modules::data_source::ModuleDataSourceIdentity> {
+        Some(crate::modules::data_source::ModuleDataSourceIdentity::Battery)
+    }
+
+    fn map_data_source_state(
+        &self,
+        state: &crate::modules::data_source::ModuleDataSourceState,
+    ) -> crate::modules::data_source::ModuleInstanceOutcome {
+        let crate::modules::data_source::ModuleDataSourceState::Battery(reading) = state else {
+            return crate::modules::data_source::ModuleInstanceOutcome::Unavailable;
+        };
+
+        crate::modules::data_source::ModuleInstanceOutcome::Visible(
+            crate::modules::ModuleState::Battery(BatteryState {
+                percentage: reading.percentage,
+                is_charging: reading.is_charging,
+            }),
+        )
+    }
+
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Battery(b) = state {
             let icon = self.current_icon(b);
@@ -411,6 +433,36 @@ mod tests {
         );
         assert_eq!(m.id().0, "battery");
         assert_eq!(m.module_type(), "battery");
+    }
+
+    #[test]
+    fn battery_maps_source_reading_to_visible_module_state() {
+        let module = BatteryModule::new(
+            crate::modules::ModuleId::new("battery"),
+            15,
+            crate::config::StatesConfig::battery_default(),
+            crate::config::IconRulesConfig::default(),
+            crate::config::FormatConfig::default(),
+        );
+
+        let outcome = module.map_data_source_state(
+            &crate::modules::data_source::ModuleDataSourceState::Battery(
+                crate::modules::data_source::BatteryReading {
+                    percentage: 66.0,
+                    is_charging: true,
+                },
+            ),
+        );
+
+        assert_eq!(
+            outcome,
+            crate::modules::data_source::ModuleInstanceOutcome::Visible(
+                crate::modules::ModuleState::Battery(BatteryState {
+                    percentage: 66.0,
+                    is_charging: true,
+                })
+            )
+        );
     }
 
     #[test]

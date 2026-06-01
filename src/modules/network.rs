@@ -159,6 +159,28 @@ impl crate::modules::Module for NetworkModule {
         iced::Subscription::none() // fed via Message::Network from app.rs
     }
 
+    fn data_source_identity(
+        &self,
+    ) -> Option<crate::modules::data_source::ModuleDataSourceIdentity> {
+        Some(crate::modules::data_source::ModuleDataSourceIdentity::Network)
+    }
+
+    fn map_data_source_state(
+        &self,
+        state: &crate::modules::data_source::ModuleDataSourceState,
+    ) -> crate::modules::data_source::ModuleInstanceOutcome {
+        let crate::modules::data_source::ModuleDataSourceState::Network(reading) = state else {
+            return crate::modules::data_source::ModuleInstanceOutcome::Unavailable;
+        };
+
+        crate::modules::data_source::ModuleInstanceOutcome::Visible(
+            crate::modules::ModuleState::Network(NetworkState {
+                connectivity: reading.connectivity.clone(),
+                label: reading.label.clone(),
+            }),
+        )
+    }
+
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Network(n) = state {
             let icon = self
@@ -310,6 +332,34 @@ mod tests {
         );
         assert_eq!(m.id().0, "network");
         assert_eq!(m.module_type(), "network");
+    }
+
+    #[test]
+    fn network_maps_source_reading_to_visible_module_state() {
+        let module = NetworkModule::new(
+            crate::modules::ModuleId::new("network"),
+            crate::config::IconRulesConfig::default(),
+            crate::config::FormatConfig::default(),
+        );
+
+        let outcome = module.map_data_source_state(
+            &crate::modules::data_source::ModuleDataSourceState::Network(
+                crate::modules::data_source::NetworkReading {
+                    connectivity: NetworkConnectivity::Limited,
+                    label: Some("captive".into()),
+                },
+            ),
+        );
+
+        assert_eq!(
+            outcome,
+            crate::modules::data_source::ModuleInstanceOutcome::Visible(
+                crate::modules::ModuleState::Network(NetworkState {
+                    connectivity: NetworkConnectivity::Limited,
+                    label: Some("captive".into()),
+                })
+            )
+        );
     }
 
     #[test]

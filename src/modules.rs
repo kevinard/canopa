@@ -194,6 +194,15 @@ pub trait Module: Send + Sync {
         self.kind().as_str()
     }
     fn subscription(&self) -> iced::Subscription<crate::app::Message>;
+    fn data_source_identity(&self) -> Option<data_source::ModuleDataSourceIdentity> {
+        None
+    }
+    fn map_data_source_state(
+        &self,
+        _state: &data_source::ModuleDataSourceState,
+    ) -> data_source::ModuleInstanceOutcome {
+        data_source::ModuleInstanceOutcome::Empty
+    }
     fn view_collapsed_with_style(
         &self,
         state: &ModuleState,
