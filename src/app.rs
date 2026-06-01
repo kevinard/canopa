@@ -1,5 +1,6 @@
 mod animation;
 mod dynamic_modules;
+pub(crate) mod eligible_outputs;
 mod focus;
 mod layout;
 mod menu;
@@ -152,11 +153,26 @@ impl App {
     /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
     /// Empty means `StartMode::AllScreens` handles window creation (single "all" bar case).
     pub(crate) fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
+        let eligible_outputs = if allowed_outputs.is_empty() {
+            eligible_outputs::EligibleOutputState::Unknown
+        } else {
+            eligible_outputs::EligibleOutputState::Known(allowed_outputs)
+        };
+        Self::boot_with_eligible_outputs(config, eligible_outputs)
+    }
+
+    pub(crate) fn boot_with_eligible_outputs(
+        config: Config,
+        eligible_outputs: eligible_outputs::EligibleOutputState,
+    ) -> (Self, Task<Message>) {
         let _command_policy = &config.command_policy;
 
         let module_graph = module_graph::build_module_graph(&config)
             .expect("validated config should build a module graph");
-        let manual_outputs = !allowed_outputs.is_empty();
+        let (manual_outputs, allowed_outputs) = match eligible_outputs {
+            eligible_outputs::EligibleOutputState::Unknown => (false, Vec::new()),
+            eligible_outputs::EligibleOutputState::Known(outputs) => (true, outputs),
+        };
         let mut surfaces = surfaces::SurfaceManager::new(
             std::collections::HashMap::new(),
             std::collections::HashMap::new(),

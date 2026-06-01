@@ -1004,22 +1004,30 @@ impl App {
 
     /// In manual-output mode, opens new layer-shell windows for any (output, bar) pairs present
     /// in `workspaces` that do not already have a surface.
+    pub(super) fn open_new_output_windows_from_observed_outputs(
+        &mut self,
+        observed_outputs: Option<Vec<String>>,
+    ) -> Vec<Task<Message>> {
+        match super::eligible_outputs::resolve_eligible_outputs(observed_outputs, &[]) {
+            super::eligible_outputs::EligibleOutputState::Unknown => Vec::new(),
+            super::eligible_outputs::EligibleOutputState::Known(eligible_outputs) => {
+                let desired =
+                    SurfaceManager::desired_bar_surfaces(&self.config.bars, &eligible_outputs);
+                let effects = self.surfaces.reconcile_bar_surfaces(desired);
+                self.apply_bar_surface_lifecycle_effects(effects)
+            }
+        }
+    }
+
     pub(super) fn open_new_output_windows(
         &mut self,
         workspaces: &[niri_ipc::Workspace],
     ) -> Vec<Task<Message>> {
-        let mut eligible_outputs: Vec<String> = workspaces
+        let observed_outputs: Vec<String> = workspaces
             .iter()
-            .filter_map(|ws| ws.output.as_deref())
-            .filter(|n| !n.is_empty())
-            .map(str::to_string)
-            .collect::<HashSet<_>>()
-            .into_iter()
+            .filter_map(|ws| ws.output.clone())
             .collect();
-        eligible_outputs.sort();
-        let desired = SurfaceManager::desired_bar_surfaces(&self.config.bars, &eligible_outputs);
-        let effects = self.surfaces.reconcile_bar_surfaces(desired);
-        self.apply_bar_surface_lifecycle_effects(effects)
+        self.open_new_output_windows_from_observed_outputs(Some(observed_outputs))
     }
 
     /// Look up the `BarConfig` for a surface by its `bar_name`.
@@ -1684,6 +1692,17 @@ mod tests {
     }
 
     #[test]
+    fn boot_with_known_empty_outputs_uses_manual_mode() {
+        let (app, _) = App::boot_with_eligible_outputs(
+            make_config(),
+            crate::app::eligible_outputs::EligibleOutputState::Known(Vec::new()),
+        );
+
+        assert!(app.surfaces.manual_outputs());
+        assert!(app.surfaces.is_empty());
+    }
+
+    #[test]
     fn bar_for_surface_name_returns_first_when_name_empty() {
         let config = make_config();
         let bars = &config.bars;
@@ -1959,6 +1978,17 @@ mod tests {
             output_names.contains(&"eDP-1"),
             "surface must carry output_name 'eDP-1'; got: {output_names:?}"
         );
+    }
+
+    #[test]
+    fn unknown_output_observation_does_not_reconcile_existing_surfaces() {
+        let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
+        let surface_count = app.surfaces.len();
+
+        let tasks = app.open_new_output_windows_from_observed_outputs(None);
+
+        assert!(tasks.is_empty());
+        assert_eq!(app.surfaces.len(), surface_count);
     }
 
     #[test]

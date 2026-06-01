@@ -12,6 +12,7 @@ mod surface;
 mod theme;
 
 use app::App;
+use app::eligible_outputs::{EligibleOutputState, resolve_eligible_outputs};
 use iced_layershell::build_pattern::daemon;
 use iced_layershell::settings::{LayerShellSettings, Settings, StartMode};
 
@@ -199,24 +200,27 @@ fn try_main() -> Result<(), AppError> {
     // Any other configuration (multiple bars or output-specific targeting) requires manual mode
     // so each (bar, output) pair can be spawned individually.
     let use_allscreens = config.bars.len() == 1 && config.bars[0].targets_all_outputs();
-    let (start_mode, allowed_outputs) = if use_allscreens {
-        (StartMode::AllScreens, Vec::new())
+    let (start_mode, eligible_outputs) = if use_allscreens {
+        (StartMode::AllScreens, EligibleOutputState::Unknown)
     } else {
-        match fetch_niri_outputs() {
-            Some(all) => (StartMode::Background, all),
-            None => {
+        let excluded_outputs = Vec::new();
+        match resolve_eligible_outputs(fetch_niri_outputs(), &excluded_outputs) {
+            EligibleOutputState::Known(outputs) => {
+                (StartMode::Background, EligibleOutputState::Known(outputs))
+            }
+            EligibleOutputState::Unknown => {
                 // Niri unavailable — warn and fall back to AllScreens single-bar mode.
                 eprintln!(
                     "warning: niribar: multi-bar or output-targeted configuration requires Niri \
                      IPC but it is unavailable; bar will appear on all outputs in single-bar mode."
                 );
-                (StartMode::AllScreens, Vec::new())
+                (StartMode::AllScreens, EligibleOutputState::Unknown)
             }
         }
     };
 
     daemon(
-        move || App::boot(config.clone(), allowed_outputs.clone()),
+        move || App::boot_with_eligible_outputs(config.clone(), eligible_outputs.clone()),
         App::namespace,
         App::update,
         App::view,
