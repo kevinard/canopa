@@ -56,6 +56,15 @@ impl ModuleRuntime {
         }
     }
 
+    pub(super) fn apply_outcomes(
+        &mut self,
+        outcomes: Vec<(ModuleId, crate::modules::data_source::ModuleInstanceOutcome)>,
+    ) {
+        for (id, outcome) in outcomes {
+            self.set_state(id, outcome.into_module_state());
+        }
+    }
+
     pub(super) fn iter(&self) -> impl Iterator<Item = &(Zone, Box<dyn Module>)> {
         self.store.iter()
     }
@@ -320,6 +329,39 @@ mod tests {
     fn boot_modules_empty_with_no_module_config() {
         let (app, _) = App::boot(make_config(), vec![]);
         assert_eq!(app.modules.len(), 0);
+    }
+
+    #[test]
+    fn module_runtime_applies_data_source_outcomes() {
+        let mut app = make_battery_app();
+
+        app.modules.apply_outcomes(vec![(
+            ModuleId::new("battery"),
+            crate::modules::data_source::ModuleInstanceOutcome::Visible(ModuleState::Battery(
+                crate::modules::battery::BatteryState {
+                    percentage: 91.0,
+                    is_charging: false,
+                },
+            )),
+        )]);
+
+        match app.modules.state(&ModuleId::new("battery")) {
+            Some(ModuleState::Battery(state)) => {
+                assert!((state.percentage - 91.0).abs() < 0.001);
+                assert!(!state.is_charging);
+            }
+            other => panic!("expected battery state, got {other:?}"),
+        }
+
+        app.modules.apply_outcomes(vec![(
+            ModuleId::new("battery"),
+            crate::modules::data_source::ModuleInstanceOutcome::Unavailable,
+        )]);
+
+        assert!(matches!(
+            app.modules.state(&ModuleId::new("battery")),
+            Some(ModuleState::Unavailable)
+        ));
     }
 
     #[test]
