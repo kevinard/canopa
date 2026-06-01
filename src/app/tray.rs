@@ -129,6 +129,18 @@ impl App {
         }
 
         let active_items = self.tray.apply_host_event(&event);
+        let (tray_event, event_item_count) = match &event {
+            TrayEvent::Snapshot(items) => ("snapshot", items.len()),
+            TrayEvent::ItemAdded(_) => ("item-added", 1),
+            TrayEvent::ItemRemoved(_) => ("item-removed", 1),
+        };
+        tracing::debug!(
+            target: "niribar::tray",
+            tray_event,
+            event_item_count,
+            active_item_count = active_items.len(),
+            "tray host event applied"
+        );
 
         match event {
             TrayEvent::Snapshot(_) => {
@@ -246,6 +258,11 @@ impl App {
         source_window: Option<iced::window::Id>,
     ) -> Task<Message> {
         let Some(source_window) = source_window else {
+            tracing::debug!(
+                target: "niribar::tray",
+                has_menu_path = menu_path.is_some(),
+                "tray menu request ignored without source window"
+            );
             return Task::none();
         };
         let screen_size = self
@@ -284,12 +301,24 @@ impl App {
         let Some(origin_window) =
             source_window.or_else(|| self.surfaces.last_cursor().map(|(w, _)| w))
         else {
+            tracing::debug!(
+                target: "niribar::tray",
+                has_menu_path = menu_path.is_some(),
+                has_bounds = bounds.is_some(),
+                "tray menu request ignored without origin window"
+            );
             return Task::none();
         };
         let conn = self.shared.dbus.session.clone();
         if let (Some(conn), Some((dbus_service, menu_path))) =
             (conn, self.tray_menu_target(&service, menu_path))
         {
+            tracing::debug!(
+                target: "niribar::tray",
+                has_bounds = bounds.is_some(),
+                source_window_known = source_window.is_some(),
+                "fetching tray menu"
+            );
             let service_clone = dbus_service.clone();
             let menu_path_clone = menu_path.clone();
             let (anchor_x, anchor_y) = match bounds {
@@ -342,6 +371,11 @@ impl App {
                 },
             );
         }
+        tracing::debug!(
+            target: "niribar::tray",
+            has_session_bus = self.shared.dbus.session.is_some(),
+            "tray menu target unavailable"
+        );
         Task::none()
     }
 }

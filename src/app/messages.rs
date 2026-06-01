@@ -23,6 +23,14 @@ pub enum IpcEvent {
     },
 }
 
+impl IpcEvent {
+    pub(super) fn diagnostic_label(&self) -> &'static str {
+        match self {
+            IpcEvent::DmenuSelection { .. } => "Ipc::DmenuSelection",
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum SurfaceEvent {
@@ -66,6 +74,37 @@ pub enum SurfaceEvent {
     },
 }
 
+impl SurfaceEvent {
+    pub(super) fn diagnostic_label(&self) -> &'static str {
+        match self {
+            SurfaceEvent::BarClick(_) => "Surface::BarClick",
+            SurfaceEvent::BarRightClick(_) => "Surface::BarRightClick",
+            SurfaceEvent::Tick => "Surface::Tick",
+            SurfaceEvent::BarHoverEnter(_) => "Surface::BarHoverEnter",
+            SurfaceEvent::BarHoverExit(_) => "Surface::BarHoverExit",
+            SurfaceEvent::ModuleHoverEnter(_, _) => "Surface::ModuleHoverEnter",
+            SurfaceEvent::ModuleHoverExit(_, _) => "Surface::ModuleHoverExit",
+            SurfaceEvent::BarFocusGained(_) => "Surface::BarFocusGained",
+            SurfaceEvent::BarFocusLost(_) => "Surface::BarFocusLost",
+            SurfaceEvent::EscapePressed(_) => "Surface::EscapePressed",
+            SurfaceEvent::FocusMoveNext(_) => "Surface::FocusMoveNext",
+            SurfaceEvent::FocusMovePrev(_) => "Surface::FocusMovePrev",
+            SurfaceEvent::FocusNextZone(_) => "Surface::FocusNextZone",
+            SurfaceEvent::FocusPrevZone(_) => "Surface::FocusPrevZone",
+            SurfaceEvent::KeyboardActivate(_) => "Surface::KeyboardActivate",
+            SurfaceEvent::KeyboardSecondaryActivate(_) => "Surface::KeyboardSecondaryActivate",
+            SurfaceEvent::ActionKeyPressed { .. } => "Surface::ActionKeyPressed",
+            SurfaceEvent::BackPressed(_) => "Surface::BackPressed",
+            SurfaceEvent::TogglePanel => "Surface::TogglePanel",
+            SurfaceEvent::CursorMoved(_, _) => "Surface::CursorMoved",
+            SurfaceEvent::WindowSized(_, _, _) => "Surface::WindowSized",
+            SurfaceEvent::WindowClosed(_) => "Surface::WindowClosed",
+            SurfaceEvent::TooltipDwellElapsed { .. } => "Surface::TooltipDwellElapsed",
+            SurfaceEvent::CloseTooltip { .. } => "Surface::CloseTooltip",
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum MenuEvent {
@@ -95,6 +134,20 @@ pub enum MenuEvent {
         menu_path: OwnedObjectPath,
         tree: MenuTree,
     },
+}
+
+impl MenuEvent {
+    pub(super) fn diagnostic_label(&self) -> &'static str {
+        match self {
+            MenuEvent::ItemSelected { .. } => "Menu::ItemSelected",
+            MenuEvent::Closed => "Menu::Closed",
+            MenuEvent::ItemHoverEnter { .. } => "Menu::ItemHoverEnter",
+            MenuEvent::ItemHoverExit(_) => "Menu::ItemHoverExit",
+            MenuEvent::LayoutChanged { .. } => "Menu::LayoutChanged",
+            MenuEvent::Open { .. } => "Menu::Open",
+            MenuEvent::Updated { .. } => "Menu::Updated",
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -129,6 +182,25 @@ pub enum PanelEvent {
     Back,
 }
 
+impl PanelEvent {
+    pub(super) fn diagnostic_label(&self) -> &'static str {
+        match self {
+            PanelEvent::Open { .. } => "Panel::Open",
+            PanelEvent::Close => "Panel::Close",
+            PanelEvent::Toggle { .. } => "Panel::Toggle",
+            PanelEvent::SearchChanged(_) => "Panel::SearchChanged",
+            PanelEvent::MenuScrolled { .. } => "Panel::MenuScrolled",
+            PanelEvent::FocusMoveNext => "Panel::FocusMoveNext",
+            PanelEvent::FocusMovePrev => "Panel::FocusMovePrev",
+            PanelEvent::FocusIndex(_) => "Panel::FocusIndex",
+            PanelEvent::FocusSearchInput { .. } => "Panel::FocusSearchInput",
+            PanelEvent::Activate => "Panel::Activate",
+            PanelEvent::ActivateIndex(_) => "Panel::ActivateIndex",
+            PanelEvent::Back => "Panel::Back",
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum ModuleRuntimeEvent {
@@ -146,10 +218,100 @@ pub enum ModuleRuntimeEvent {
     Volume(crate::modules::volume::VolumeEvent),
 }
 
+impl ModuleRuntimeEvent {
+    pub(super) fn diagnostic_label(&self) -> &'static str {
+        match self {
+            ModuleRuntimeEvent::Module(_, event) => module_event_diagnostic_label(event),
+            ModuleRuntimeEvent::Detail { .. } => "Modules::Detail",
+            ModuleRuntimeEvent::ModuleClick(_, _) => "Modules::ModuleClick",
+            ModuleRuntimeEvent::ModuleRightClick(_, _) => "Modules::ModuleRightClick",
+            ModuleRuntimeEvent::ModuleScrollUp(_, _) => "Modules::ModuleScrollUp",
+            ModuleRuntimeEvent::ModuleScrollDown(_, _) => "Modules::ModuleScrollDown",
+            ModuleRuntimeEvent::Battery(event) => match event {
+                crate::modules::battery::BatteryEvent::StateChanged { .. } => {
+                    "Modules::Battery::StateChanged"
+                }
+                crate::modules::battery::BatteryEvent::Unavailable => {
+                    "Modules::Battery::Unavailable"
+                }
+            },
+            ModuleRuntimeEvent::Network(event) => match event {
+                crate::modules::network::NetworkEvent::StateChanged { .. } => {
+                    "Modules::Network::StateChanged"
+                }
+                crate::modules::network::NetworkEvent::Unavailable => {
+                    "Modules::Network::Unavailable"
+                }
+            },
+            ModuleRuntimeEvent::Volume(event) => match event {
+                crate::modules::volume::VolumeEvent::StateChanged { .. } => {
+                    "Modules::Volume::StateChanged"
+                }
+                crate::modules::volume::VolumeEvent::Unavailable => "Modules::Volume::Unavailable",
+            },
+        }
+    }
+}
+
+pub(super) fn module_event_diagnostic_label(event: &ModuleEvent) -> &'static str {
+    match event {
+        ModuleEvent::Clock(crate::modules::clock::ClockEvent::Tick { .. }) => {
+            "Modules::Module::ClockTick"
+        }
+        ModuleEvent::Script(crate::modules::script::ScriptEvent::Output(_)) => {
+            "Modules::Module::ScriptOutput"
+        }
+        ModuleEvent::Script(crate::modules::script::ScriptEvent::Failed) => {
+            "Modules::Module::ScriptFailed"
+        }
+        ModuleEvent::Button(crate::modules::button::ButtonEvent::Ready) => {
+            "Modules::Module::ButtonReady"
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum AppNiriEvent {
     Ipc(crate::niri::NiriEvent),
+}
+
+impl AppNiriEvent {
+    pub(super) fn diagnostic_label(&self) -> &'static str {
+        match self {
+            AppNiriEvent::Ipc(crate::niri::NiriEvent::Connected) => "Niri::Connected",
+            AppNiriEvent::Ipc(crate::niri::NiriEvent::Unavailable) => "Niri::Unavailable",
+            AppNiriEvent::Ipc(crate::niri::NiriEvent::Event(event)) => {
+                niri_event_diagnostic_label(event)
+            }
+        }
+    }
+}
+
+pub(super) fn niri_event_diagnostic_label(event: &niri_ipc::Event) -> &'static str {
+    match event {
+        niri_ipc::Event::WorkspacesChanged { .. } => "Niri::WorkspacesChanged",
+        niri_ipc::Event::WorkspaceUrgencyChanged { .. } => "Niri::WorkspaceUrgencyChanged",
+        niri_ipc::Event::WorkspaceActivated { .. } => "Niri::WorkspaceActivated",
+        niri_ipc::Event::WorkspaceActiveWindowChanged { .. } => {
+            "Niri::WorkspaceActiveWindowChanged"
+        }
+        niri_ipc::Event::WindowFocusChanged { .. } => "Niri::WindowFocusChanged",
+        niri_ipc::Event::WindowsChanged { .. } => "Niri::WindowsChanged",
+        niri_ipc::Event::WindowOpenedOrChanged { .. } => "Niri::WindowOpenedOrChanged",
+        niri_ipc::Event::WindowClosed { .. } => "Niri::WindowClosed",
+        niri_ipc::Event::WindowFocusTimestampChanged { .. } => "Niri::WindowFocusTimestampChanged",
+        niri_ipc::Event::WindowUrgencyChanged { .. } => "Niri::WindowUrgencyChanged",
+        niri_ipc::Event::WindowLayoutsChanged { .. } => "Niri::WindowLayoutsChanged",
+        niri_ipc::Event::KeyboardLayoutsChanged { .. } => "Niri::KeyboardLayoutsChanged",
+        niri_ipc::Event::KeyboardLayoutSwitched { .. } => "Niri::KeyboardLayoutSwitched",
+        niri_ipc::Event::OverviewOpenedOrClosed { .. } => "Niri::OverviewOpenedOrClosed",
+        niri_ipc::Event::ConfigLoaded { .. } => "Niri::ConfigLoaded",
+        niri_ipc::Event::ScreenshotCaptured { .. } => "Niri::ScreenshotCaptured",
+        niri_ipc::Event::CastsChanged { .. } => "Niri::CastsChanged",
+        niri_ipc::Event::CastStartedOrChanged { .. } => "Niri::CastStartedOrChanged",
+        niri_ipc::Event::CastStopped { .. } => "Niri::CastStopped",
+    }
 }
 
 #[allow(dead_code)]
@@ -184,4 +346,71 @@ pub enum TrayRuntimeEvent {
         delta: i32,
         orientation: String,
     },
+}
+
+impl TrayRuntimeEvent {
+    pub(super) fn diagnostic_label(&self) -> &'static str {
+        match self {
+            TrayRuntimeEvent::Host(event) => match event {
+                TrayEvent::Snapshot(_) => "Tray::Host::Snapshot",
+                TrayEvent::ItemAdded(_) => "Tray::Host::ItemAdded",
+                TrayEvent::ItemRemoved(_) => "Tray::Host::ItemRemoved",
+            },
+            TrayRuntimeEvent::Activate { .. } => "Tray::Activate",
+            TrayRuntimeEvent::MenuRequest { .. } => "Tray::MenuRequest",
+            TrayRuntimeEvent::MenuRequestKeyboard { .. } => "Tray::MenuRequestKeyboard",
+            TrayRuntimeEvent::MenuRequestWithBounds { .. } => "Tray::MenuRequestWithBounds",
+            TrayRuntimeEvent::SecondaryActivate { .. } => "Tray::SecondaryActivate",
+            TrayRuntimeEvent::Scroll { .. } => "Tray::Scroll",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::script::ScriptEvent;
+    use crate::modules::{ModuleEvent, ModuleId};
+
+    #[test]
+    fn diagnostic_labels_omit_user_payloads() {
+        assert_eq!(
+            PanelEvent::SearchChanged("private search".into()).diagnostic_label(),
+            "Panel::SearchChanged"
+        );
+        assert_eq!(
+            ModuleRuntimeEvent::Module(
+                ModuleId::new("script"),
+                ModuleEvent::Script(ScriptEvent::Output("private output".into())),
+            )
+            .diagnostic_label(),
+            "Modules::Module::ScriptOutput"
+        );
+        assert_eq!(
+            TrayRuntimeEvent::Scroll {
+                service: "org.example.PrivateApp".into(),
+                delta: 1,
+                orientation: "vertical".into(),
+            }
+            .diagnostic_label(),
+            "Tray::Scroll"
+        );
+    }
+
+    #[test]
+    fn diagnostic_labels_identify_nested_runtime_events() {
+        assert_eq!(
+            SurfaceEvent::WindowClosed(iced::window::Id::unique()).diagnostic_label(),
+            "Surface::WindowClosed"
+        );
+        assert_eq!(
+            ModuleRuntimeEvent::ModuleClick(ModuleId::new("clock"), iced::window::Id::unique(),)
+                .diagnostic_label(),
+            "Modules::ModuleClick"
+        );
+        assert_eq!(
+            AppNiriEvent::Ipc(crate::niri::NiriEvent::Connected).diagnostic_label(),
+            "Niri::Connected"
+        );
+    }
 }

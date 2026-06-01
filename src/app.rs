@@ -73,6 +73,23 @@ pub enum Message {
 }
 
 impl Message {
+    fn diagnostic_label(&self) -> &'static str {
+        match self {
+            Message::Surface(event) => event.diagnostic_label(),
+            Message::Ipc(event) => event.diagnostic_label(),
+            Message::Menu(event) => event.diagnostic_label(),
+            Message::Panel(event) => event.diagnostic_label(),
+            Message::Modules(event) => event.diagnostic_label(),
+            Message::Niri(event) => event.diagnostic_label(),
+            Message::Tray(event) => event.diagnostic_label(),
+            Message::VolumeAdjust { .. } => "VolumeAdjust",
+            Message::DbusReady(_) => "DbusReady",
+            Message::NiriFocusWorkspace { .. } => "NiriFocusWorkspace",
+            Message::PerfReport => "PerfReport",
+            _ => "LayerShell",
+        }
+    }
+
     fn perf_label(&self) -> &'static str {
         match self {
             Message::Surface(messages::SurfaceEvent::Tick) => "Surface::Tick",
@@ -176,6 +193,9 @@ impl App {
             eligible_outputs::EligibleOutputState::Unknown => (false, Vec::new()),
             eligible_outputs::EligibleOutputState::Known(outputs) => (true, outputs),
         };
+        let bar_count = config.bars.len();
+        let configured_module_count = config.modules.len();
+        let allowed_output_count = allowed_outputs.len();
         let mut surfaces = surfaces::SurfaceManager::new(
             std::collections::HashMap::new(),
             std::collections::HashMap::new(),
@@ -183,8 +203,11 @@ impl App {
         );
         let desired =
             surfaces::SurfaceManager::desired_bar_surfaces(&config.bars, &allowed_outputs);
+        let desired_surface_count = desired.len();
         let effects = surfaces.reconcile_bar_surfaces(desired);
+        let lifecycle_effect_count = effects.len();
         let window_tasks = Self::lifecycle_effects_to_tasks(&config, &mut surfaces, effects);
+        let runtime_module_count = module_graph.modules.len();
         let app = App {
             config,
             shared: shared::SharedContext::new(),
@@ -196,6 +219,18 @@ impl App {
             tray: tray::TrayState::default(),
             perf: perf::PerfTracker::from_env(),
         };
+        tracing::debug!(
+            target: "niribar::runtime",
+            bar_count,
+            configured_module_count,
+            runtime_module_count,
+            manual_outputs,
+            allowed_output_count,
+            desired_surface_count,
+            lifecycle_effect_count,
+            perf_enabled = app.perf.is_some(),
+            "app boot planned"
+        );
         (app, Task::batch(window_tasks))
     }
 
@@ -204,6 +239,12 @@ impl App {
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
+        tracing::trace!(
+            target: "niribar::runtime",
+            app_message = message.diagnostic_label(),
+            "app message received"
+        );
+
         if let Some(perf) = &self.perf {
             perf.record_update(message.perf_label());
         }
@@ -217,12 +258,23 @@ impl App {
             Message::Niri(event) => self.handle_app_niri_event(event),
             Message::VolumeAdjust { step, up } => self.handle_volume_adjust(step, up),
             Message::DbusReady(connections) => {
+                tracing::debug!(
+                    target: "niribar::runtime",
+                    session_bus = connections.session.is_some(),
+                    system_bus = connections.system.is_some(),
+                    "dbus connections ready"
+                );
                 // Store shared handles; modules borrow clones of these (AR5, Story 5.1).
                 self.shared.dbus = connections;
                 Task::none()
             }
             Message::Tray(event) => self.handle_tray_runtime_event(event),
             Message::NiriFocusWorkspace { id } => {
+                tracing::debug!(
+                    target: "niribar::niri",
+                    workspace_id = id,
+                    "niri focus workspace requested"
+                );
                 tokio::task::spawn_blocking(move || {
                     if let Ok(mut socket) = niri_ipc::socket::Socket::connect() {
                         let _ = socket.send(niri_ipc::Request::Action(

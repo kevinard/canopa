@@ -3,8 +3,8 @@ mod cli;
 mod command;
 mod config;
 mod dbus;
-mod diagnostics;
 mod desktop_apps;
+mod diagnostics;
 mod icon_theme;
 mod ipc;
 mod modules;
@@ -194,6 +194,13 @@ fn fetch_niri_outputs() -> Option<Vec<String>> {
 fn try_main() -> Result<(), AppError> {
     // Load config fully before any surface is created (AR7).
     let config = config::load()?;
+    tracing::debug!(
+        target: "niribar::runtime",
+        bar_count = config.bars.len(),
+        configured_module_count = config.modules.len(),
+        menu_count = config.menus.len(),
+        "configuration loaded"
+    );
 
     // Extract default surface settings from the first bar (used when AllScreens is active).
     // In AllScreens mode there is always exactly one bar targeting "all" outputs.
@@ -225,9 +232,10 @@ fn try_main() -> Result<(), AppError> {
             }
             EligibleOutputState::Unknown => {
                 // Niri unavailable — warn and fall back to AllScreens single-bar mode.
-                eprintln!(
-                    "warning: niribar: multi-bar or output-targeted configuration requires Niri \
-                     IPC but it is unavailable; bar will appear on all outputs in single-bar mode."
+                tracing::warn!(
+                    target: "niribar::runtime",
+                    "multi-bar or output-targeted configuration requires Niri IPC but it is \
+                     unavailable; bar will appear on all outputs in single-bar mode"
                 );
                 (StartMode::AllScreens, EligibleOutputState::Unknown)
             }

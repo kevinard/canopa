@@ -111,6 +111,10 @@ impl ModuleRuntime {
         self.get(id).and_then(Module::config_name)
     }
 
+    pub(super) fn diagnostic_name_for<'a>(&'a self, id: &'a ModuleId) -> &'a str {
+        self.config_name_for(id).unwrap_or(id.0.as_str())
+    }
+
     pub(super) fn action_for(
         &self,
         id: &ModuleId,
@@ -862,6 +866,21 @@ mod tests {
             app.modules
                 .iter()
                 .any(|(_, m)| m.kind() == ModuleKind::TrayIcon && m.id().0 == "tray:org.test.App")
+        );
+    }
+
+    #[test]
+    fn diagnostic_module_name_uses_config_name_for_expanded_modules() {
+        let (mut app, _) = App::boot(make_tray_config(), vec![]);
+
+        let _ = app.update(Message::Tray(TrayRuntimeEvent::Host(TrayEvent::Snapshot(
+            vec![tray_item("org.private.App")],
+        ))));
+
+        assert_eq!(
+            app.modules
+                .diagnostic_name_for(&ModuleId::new("tray:org.private.App")),
+            "tray"
         );
     }
 

@@ -34,6 +34,22 @@ fn request_panel_search_focus() -> Task<Message> {
     ))
 }
 
+fn panel_origin_label(origin: &crate::surface::panel::PanelOrigin) -> &'static str {
+    match origin {
+        crate::surface::panel::PanelOrigin::Bar => "bar",
+        crate::surface::panel::PanelOrigin::Module(_) => "module",
+    }
+}
+
+fn panel_content_label(content: &crate::surface::panel::PanelContent) -> &'static str {
+    match content {
+        crate::surface::panel::PanelContent::BarPanel => "bar-panel",
+        crate::surface::panel::PanelContent::ModulePanel(_) => "module-panel",
+        crate::surface::panel::PanelContent::Menu(_) => "menu",
+        crate::surface::panel::PanelContent::DmenuRequest => "dmenu-request",
+    }
+}
+
 fn panel_window_settings(
     bar: &crate::config::BarConfig,
     tree: &crate::surface::panel::PanelTree,
@@ -147,6 +163,11 @@ impl App {
         }
         let effects = self.surfaces.close_panel_overlays();
         if !effects.is_empty() {
+            tracing::debug!(
+                target: "niribar::panel",
+                panel_effect_count = effects.len(),
+                "closing panel overlays"
+            );
             self.panel.clear();
         }
         tasks.extend(self.apply_registry_effects(effects));
@@ -360,6 +381,16 @@ impl App {
         let settings = panel_window_settings(bar, &tree, surface_origin);
         let (panel_window, open_task) = Message::layershell_open(settings);
         self.surface_mut(request.origin_window).tooltip_pending = None;
+        tracing::debug!(
+            target: "niribar::panel",
+            origin = panel_origin_label(&tree.origin),
+            content = panel_content_label(&tree.content),
+            origin_bar = tree.origin_bar_name.as_str(),
+            origin_output = tree.origin_output_name.as_str(),
+            has_anchor = tree.anchor.is_some(),
+            ?panel_window,
+            "opening panel window"
+        );
 
         let panel_meta = super::surfaces::PanelMeta {
             tree: tree.clone(),
@@ -404,6 +435,11 @@ impl App {
                 }
                 super::panel_runtime::PanelRuntimeEffect::ClosePanelWindow(window) => {
                     if self.surfaces.close_panel_popup_window(window) {
+                        tracing::debug!(
+                            target: "niribar::panel",
+                            ?window,
+                            "closing panel window"
+                        );
                         tasks.push(Task::done(Message::RemoveWindow(window)));
                         if !will_open_panel {
                             tasks.extend(self.restore_bar_keyboard_interactivity());

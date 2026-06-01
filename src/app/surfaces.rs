@@ -919,6 +919,12 @@ impl App {
                 BarSurfaceLifecycleEffect::Open(desired) => {
                     let bar = &config.bars[desired.bar_index];
                     let output_name = desired.identity.output_name_for_surface_state();
+                    tracing::debug!(
+                        target: "niribar::surface",
+                        bar = bar.name.as_str(),
+                        output = output_name.as_str(),
+                        "opening bar surface"
+                    );
                     tasks.push(Self::spawn_bar_on_output(
                         bar,
                         &output_name,
@@ -927,6 +933,11 @@ impl App {
                     ));
                 }
                 BarSurfaceLifecycleEffect::RemoveWindow(window) => {
+                    tracing::debug!(
+                        target: "niribar::surface",
+                        ?window,
+                        "removing bar surface"
+                    );
                     tasks.push(Task::done(Message::RemoveWindow(window)));
                 }
             }
@@ -944,6 +955,12 @@ impl App {
                 BarSurfaceLifecycleEffect::Open(desired) => {
                     let bar = &self.config.bars[desired.bar_index];
                     let output_name = desired.identity.output_name_for_surface_state();
+                    tracing::debug!(
+                        target: "niribar::surface",
+                        bar = bar.name.as_str(),
+                        output = output_name.as_str(),
+                        "opening bar surface"
+                    );
                     tasks.push(Self::spawn_bar_on_output(
                         bar,
                         &output_name,
@@ -952,6 +969,11 @@ impl App {
                     ));
                 }
                 BarSurfaceLifecycleEffect::RemoveWindow(window) => {
+                    tracing::debug!(
+                        target: "niribar::surface",
+                        ?window,
+                        "removing bar surface"
+                    );
                     tasks.push(Task::done(Message::RemoveWindow(window)));
                 }
             }

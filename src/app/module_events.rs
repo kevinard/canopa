@@ -324,6 +324,11 @@ impl App {
         &mut self,
         event: ModuleRuntimeEvent,
     ) -> Task<Message> {
+        tracing::trace!(
+            target: "niribar::modules",
+            module_event = event.diagnostic_label(),
+            "module runtime event received"
+        );
         match event {
             ModuleRuntimeEvent::Module(id, event) => self.handle_module_event(id, event),
             ModuleRuntimeEvent::Detail { target, message } => {
@@ -360,6 +365,18 @@ impl App {
         id: ModuleId,
         event: ModuleEvent,
     ) -> Task<Message> {
+        let module_kind = self
+            .modules
+            .get(&id)
+            .map(|module| module.kind().runtime_name())
+            .unwrap_or("unknown");
+        tracing::trace!(
+            target: "niribar::modules",
+            module_name = self.modules.diagnostic_name_for(&id),
+            module_kind,
+            module_event = super::messages::module_event_diagnostic_label(&event),
+            "module event received"
+        );
         match event {
             ModuleEvent::Clock(ClockEvent::Tick { time, date }) => {
                 insert_module_state_if_changed(
@@ -453,6 +470,12 @@ impl App {
         if let Some(action) =
             trigger.and_then(|trigger| self.modules.action_for(id, &trigger).cloned())
         {
+            tracing::debug!(
+                target: "niribar::modules",
+                module_name = self.modules.diagnostic_name_for(id),
+                has_anchor = super::panel::panel_action_needs_anchor(&action),
+                "dispatching configured module action"
+            );
             let origin = crate::surface::panel::PanelOrigin::Module(id.clone());
             if super::panel::panel_action_needs_anchor(&action) {
                 let target = super::widget_ops::module_widget_id(origin_window, id);
@@ -480,6 +503,12 @@ impl App {
         if let Some(module) = self.modules.get(id)
             && let Some(msg) = module.on_interaction(event)
         {
+            tracing::trace!(
+                target: "niribar::modules",
+                module_name = self.modules.diagnostic_name_for(id),
+                module_kind = module.kind().runtime_name(),
+                "module interaction produced app message"
+            );
             return Task::done(msg);
         }
         Task::none()
@@ -516,6 +545,12 @@ impl App {
     }
 
     pub(super) fn handle_volume_adjust(&self, step: u8, up: bool) -> Task<Message> {
+        tracing::debug!(
+            target: "niribar::modules",
+            step,
+            up,
+            "volume adjustment requested"
+        );
         let arg = if up {
             format!("{step}%+")
         } else {
@@ -524,8 +559,16 @@ impl App {
         tokio::task::spawn(async move {
             match crate::command::set_default_sink_volume(&arg).await {
                 Ok(status) if status.success() => {}
-                Ok(status) => eprintln!("niribar: wpctl set-volume exited with {status}"),
-                Err(err) => eprintln!("niribar: failed to run wpctl set-volume: {err}"),
+                Ok(status) => tracing::warn!(
+                    target: "niribar::modules",
+                    ?status,
+                    "wpctl set-volume exited unsuccessfully"
+                ),
+                Err(err) => tracing::warn!(
+                    target: "niribar::modules",
+                    error = %err,
+                    "failed to run wpctl set-volume"
+                ),
             }
         });
         Task::none()
@@ -533,6 +576,12 @@ impl App {
 
     fn mark_module_type_unavailable(&mut self, module_type: ModuleKind) {
         let ids: Vec<_> = self.modules.ids_by_kind(module_type).to_vec();
+        tracing::debug!(
+            target: "niribar::modules",
+            module_kind = module_type.runtime_name(),
+            affected_module_count = ids.len(),
+            "module kind unavailable"
+        );
         for id in ids {
             self.modules.set_state(id, ModuleState::Unavailable);
         }

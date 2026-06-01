@@ -49,6 +49,10 @@ impl App {
         match event {
             NiriEvent::Connected => {
                 self.niri.state_mut().connected = true;
+                tracing::info!(
+                    target: "niribar::niri",
+                    "niri ipc connected"
+                );
                 Task::none()
             }
             NiriEvent::Unavailable => {
@@ -64,6 +68,11 @@ impl App {
                     })
                     .map(|(_, module)| module.id())
                     .collect();
+                tracing::info!(
+                    target: "niribar::niri",
+                    affected_module_count = ids.len(),
+                    "niri ipc unavailable"
+                );
                 for id in ids {
                     self.modules.set_state(id, ModuleState::Unavailable);
                 }
@@ -82,6 +91,13 @@ impl App {
                         } else {
                             vec![]
                         };
+                        tracing::debug!(
+                            target: "niribar::niri",
+                            workspace_count = workspaces.len(),
+                            changed,
+                            surface_task_count = open_tasks.len(),
+                            "niri workspaces changed"
+                        );
                         if changed {
                             self.rebuild_workspace_item_modules(&workspaces);
                             self.niri.state_mut().workspaces = workspaces;
@@ -91,6 +107,11 @@ impl App {
                         }
                     }
                     Event::WindowFocusChanged { id } => {
+                        tracing::trace!(
+                            target: "niribar::niri",
+                            focused = id.is_some(),
+                            "niri focused window changed"
+                        );
                         self.niri.state_mut().focused_window_id = id;
                         if id.is_some() {
                             self.push_focused_window_state();
@@ -136,6 +157,12 @@ impl App {
                         }
                     }
                     Event::WindowsChanged { windows } => {
+                        tracing::trace!(
+                            target: "niribar::niri",
+                            window_count = windows.len(),
+                            focused_present = windows.iter().any(|w| w.is_focused),
+                            "niri windows changed"
+                        );
                         self.niri.state_mut().focused_window_id =
                             windows.iter().find(|w| w.is_focused).map(|w| w.id);
                         self.niri.state_mut().windows =
@@ -143,6 +170,11 @@ impl App {
                         self.push_focused_window_state();
                     }
                     Event::WindowOpenedOrChanged { window } => {
+                        tracing::trace!(
+                            target: "niribar::niri",
+                            focused = window.is_focused,
+                            "niri window opened or changed"
+                        );
                         if window.is_focused {
                             self.niri.state_mut().focused_window_id = Some(window.id);
                         }
@@ -150,8 +182,14 @@ impl App {
                         self.push_focused_window_state();
                     }
                     Event::WindowClosed { id } => {
+                        let had_focus = self.niri.state().focused_window_id == Some(id);
+                        tracing::trace!(
+                            target: "niribar::niri",
+                            had_focus,
+                            "niri window closed"
+                        );
                         self.niri.state_mut().windows.remove(&id);
-                        if self.niri.state().focused_window_id == Some(id) {
+                        if had_focus {
                             self.niri.state_mut().focused_window_id = None;
                         }
                         self.push_focused_window_state();
