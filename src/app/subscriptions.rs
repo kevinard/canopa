@@ -47,9 +47,15 @@ impl App {
     }
 
     pub(crate) fn subscription(&self) -> iced::Subscription<Message> {
-        let has_battery = self.has_module_kind(ModuleKind::Battery);
-        let has_network = self.has_module_kind(ModuleKind::Network);
-        let has_volume = self.has_module_kind(ModuleKind::Volume);
+        let has_battery = self
+            .modules
+            .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Battery);
+        let has_network = self
+            .modules
+            .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Network);
+        let has_volume = self
+            .modules
+            .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Volume);
         let has_tray = self.has_module_kind(ModuleKind::Tray);
         let needs_system_dbus = self.has_capability(|capabilities| capabilities.needs_system_dbus);
         let needs_session_dbus =
@@ -280,5 +286,25 @@ mod tests {
         let (app, _) = App::boot(Config::default(), vec![]);
 
         assert!(app.needs_ipc_subscription());
+    }
+
+    #[test]
+    fn data_source_identity_detects_global_source_modules() {
+        let app = app_with_modules(
+            vec![module(
+                "battery",
+                ModuleParams::Battery(crate::config::BatteryConfig::default()),
+            )],
+            vec!["battery"],
+        );
+
+        assert!(
+            app.modules
+                .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Battery)
+        );
+        assert!(
+            !app.modules
+                .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Network)
+        );
     }
 }
