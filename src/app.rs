@@ -6,6 +6,7 @@ mod focus;
 mod layout;
 mod menu;
 pub(crate) mod messages;
+mod module_data_sources;
 mod module_events;
 mod module_graph;
 mod module_runtime;
@@ -43,6 +44,7 @@ pub(crate) struct App {
     menu: menu::MenuSystem,
     panel: panel_runtime::PanelRuntime,
     modules: module_runtime::ModuleRuntime,
+    data_sources: module_data_sources::ModuleDataSourceRuntime,
     niri: niri::AppNiriState,
     tray: tray::TrayState,
     perf: Option<perf::PerfTracker>,
@@ -216,13 +218,17 @@ impl App {
         let lifecycle_effect_count = effects.len();
         let window_tasks = Self::lifecycle_effects_to_tasks(&config, &mut surfaces, effects);
         let runtime_module_count = module_graph.modules.len();
+        let modules =
+            module_runtime::ModuleRuntime::from_modules_with_actions(module_graph.modules);
+        let data_sources = module_data_sources::ModuleDataSourceRuntime::from_modules(&modules);
         let app = App {
             config,
             shared: shared::SharedContext::new(),
             surfaces,
             menu: menu::MenuSystem::default(),
             panel: panel_runtime::PanelRuntime::default(),
-            modules: module_runtime::ModuleRuntime::from_modules_with_actions(module_graph.modules),
+            modules,
+            data_sources,
             niri: niri::AppNiriState::new(),
             tray: tray::TrayState::default(),
             perf: perf::PerfTracker::from_env(),

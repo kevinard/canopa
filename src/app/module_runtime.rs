@@ -98,6 +98,27 @@ impl ModuleRuntime {
         self.store.get(id)
     }
 
+    pub(super) fn data_source_dependents(
+        &self,
+        identity: crate::modules::data_source::ModuleDataSourceIdentity,
+    ) -> Vec<crate::modules::ModuleId> {
+        self.store
+            .iter()
+            .filter_map(|(_, module)| {
+                (module.data_source_identity() == Some(identity)).then(|| module.id())
+            })
+            .collect()
+    }
+
+    pub(super) fn has_data_source(
+        &self,
+        identity: crate::modules::data_source::ModuleDataSourceIdentity,
+    ) -> bool {
+        self.store
+            .iter()
+            .any(|(_, module)| module.data_source_identity() == Some(identity))
+    }
+
     pub(super) fn get_mut(&mut self, id: &ModuleId) -> Option<&mut (dyn Module + '_)> {
         self.store.get_mut(id)
     }
