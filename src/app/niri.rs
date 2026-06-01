@@ -121,6 +121,20 @@ impl App {
                             }
                         }
                     }
+                    Event::WorkspaceActiveWindowChanged {
+                        workspace_id,
+                        active_window_id,
+                    } => {
+                        if let Some(workspace) = self
+                            .niri
+                            .state_mut()
+                            .workspaces
+                            .iter_mut()
+                            .find(|workspace| workspace.id == workspace_id)
+                        {
+                            workspace.active_window_id = active_window_id;
+                        }
+                    }
                     Event::WindowsChanged { windows } => {
                         self.niri.state_mut().focused_window_id =
                             windows.iter().find(|w| w.is_focused).map(|w| w.id);
@@ -388,6 +402,26 @@ mod tests {
             is_active: is_focused,
             is_focused,
             active_window_id: None,
+        }
+    }
+
+    fn make_workspace_on_output(
+        id: u64,
+        idx: u8,
+        output: &str,
+        is_active: bool,
+        is_focused: bool,
+        active_window_id: Option<u64>,
+    ) -> niri_ipc::Workspace {
+        niri_ipc::Workspace {
+            id,
+            idx,
+            name: None,
+            output: Some(output.to_string()),
+            is_urgent: false,
+            is_active,
+            is_focused,
+            active_window_id,
         }
     }
 
@@ -712,5 +746,48 @@ mod tests {
         ))));
         let id = ModuleId::new("focused-window");
         assert!(app.modules.state(&id).is_none());
+    }
+
+    #[test]
+    fn workspace_active_window_change_updates_output_focused_window_title() {
+        use crate::modules::focused_window::FocusedWindowState;
+        use crate::surface::SurfaceState;
+        use niri_ipc::Event;
+
+        let mut app = make_focused_window_app();
+        let focused_window = make_window(1, Some("Focused"), true);
+        let output_window = make_window(2, Some("Output Active"), false);
+        app.niri.state_mut().focused_window_id = Some(1);
+        app.niri.state_mut().windows.insert(1, focused_window);
+        app.niri.state_mut().windows.insert(2, output_window);
+        app.niri.state_mut().workspaces = vec![
+            make_workspace_on_output(10, 1, "eDP-1", true, true, Some(1)),
+            make_workspace_on_output(20, 2, "DP-1", true, false, None),
+        ];
+        app.modules.set_state(
+            ModuleId::new("focused-window"),
+            ModuleState::FocusedWindow(FocusedWindowState {
+                title: Some("Focused".into()),
+            }),
+        );
+        let window = iced::window::Id::unique();
+        app.surfaces
+            .surfaces
+            .insert(window, SurfaceState::new("DP-1".into(), String::new()));
+
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspaceActiveWindowChanged {
+                workspace_id: 20,
+                active_window_id: Some(2),
+            },
+        ))));
+
+        let model = app.bar_render_model(window);
+        match &model.center[0].state {
+            ModuleState::FocusedWindow(state) => {
+                assert_eq!(state.title.as_deref(), Some("Output Active"));
+            }
+            state => panic!("expected focused-window state, got {state:?}"),
+        }
     }
 }

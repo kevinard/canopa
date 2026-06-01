@@ -117,6 +117,9 @@ impl Message {
                     }
                     niri_ipc::Event::ConfigLoaded { .. } => "Niri::ConfigLoaded",
                     niri_ipc::Event::ScreenshotCaptured { .. } => "Niri::ScreenshotCaptured",
+                    niri_ipc::Event::CastsChanged { .. } => "Niri::CastsChanged",
+                    niri_ipc::Event::CastStartedOrChanged { .. } => "Niri::CastStartedOrChanged",
+                    niri_ipc::Event::CastStopped { .. } => "Niri::CastStopped",
                 }
             }
             Message::VolumeAdjust { .. } => "VolumeAdjust",
