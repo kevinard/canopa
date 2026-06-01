@@ -6,6 +6,14 @@
 //   # Enable and start the service
 //   systemctl --user enable --now niribar.service
 //
+// To enable diagnostics for a systemd-run instance, set environment variables
+// in a user drop-in, for example:
+//
+//   systemctl --user edit niribar.service
+//   [Service]
+//   Environment=RUST_LOG=niribar=debug
+//   Environment=NIRIBAR_PERF=1
+//
 // The service starts after graphical-session.target and restarts on failure.
 //
 // niribar default configuration
