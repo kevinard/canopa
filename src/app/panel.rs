@@ -131,21 +131,15 @@ impl App {
                 panel_effect_count = effects.len(),
                 "closing panel overlays"
             );
-            self.panel.clear();
+            self.panel
+                .handle(super::panel_runtime::PanelRuntimeIntent::CloseAll);
         }
         tasks.extend(self.apply_registry_effects(effects));
         tasks
     }
 
     pub(super) fn handle_panel_focus_gained(&mut self, window: iced::window::Id) -> Task<Message> {
-        let Some(meta) = self.surfaces.panel_popup(window) else {
-            return Task::none();
-        };
-        if matches!(
-            meta.tree.content,
-            crate::surface::panel::PanelContent::Menu(_)
-                | crate::surface::panel::PanelContent::DmenuRequest
-        ) {
+        if self.panel.is_menu_panel_window(window) {
             let effects = self
                 .panel
                 .handle(super::panel_runtime::PanelRuntimeIntent::RequestSearchFocus);
@@ -173,12 +167,7 @@ impl App {
                 content,
                 anchor,
             } => {
-                let request = super::panel_runtime::PanelOpenRequest {
-                    origin_window,
-                    origin,
-                    content,
-                    anchor,
-                };
+                let request = self.panel_open_request(origin_window, origin, content, anchor);
                 let catalog =
                     super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
                 let module_detail_sessions = if !self.panel.would_toggle_close(&request) {
@@ -242,12 +231,7 @@ impl App {
         content: crate::surface::panel::PanelContent,
         anchor: Option<iced::Rectangle>,
     ) -> Task<Message> {
-        let request = super::panel_runtime::PanelOpenRequest {
-            origin_window,
-            origin,
-            content,
-            anchor,
-        };
+        let request = self.panel_open_request(origin_window, origin, content, anchor);
         let catalog = super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
         let effects = self
             .panel
@@ -257,6 +241,25 @@ impl App {
                 catalog,
             });
         self.apply_panel_runtime_effects(effects)
+    }
+
+    pub(super) fn panel_open_request(
+        &self,
+        origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
+        content: crate::surface::panel::PanelContent,
+        anchor: Option<iced::Rectangle>,
+    ) -> super::panel_runtime::PanelOpenRequest {
+        let origin_surface = self.surface(origin_window).cloned().unwrap_or_default();
+        super::panel_runtime::PanelOpenRequest {
+            origin_window,
+            origin,
+            content,
+            anchor,
+            origin_bar_name: origin_surface.bar_name,
+            origin_output_name: origin_surface.output_name,
+            screen_size: origin_surface.screen_size,
+        }
     }
 
     fn module_detail_sessions_for_request(
@@ -326,26 +329,18 @@ impl App {
 
     fn open_panel_window(
         &mut self,
-        request: super::panel_runtime::PanelOpenRequest,
+        request: super::panel_runtime::PanelWindowOpenRequest,
     ) -> Task<Message> {
+        let tree = request.tree.clone();
         let origin_surface = self
-            .surface(request.origin_window)
+            .surface(tree.origin_window)
             .cloned()
             .unwrap_or_default();
-        let tree = crate::surface::panel::PanelTree {
-            origin: request.origin.clone(),
-            content: request.content.clone(),
-            origin_window: request.origin_window,
-            origin_bar_name: origin_surface.bar_name.clone(),
-            origin_output_name: origin_surface.output_name.clone(),
-            anchor: request.anchor,
-            screen_size: origin_surface.screen_size,
-        };
-        let bar = Self::bar_for_surface_name(&self.config.bars, &origin_surface.bar_name);
+        let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
         let surface_origin = self.inferred_panel_surface_origin(&origin_surface, bar);
         let settings = panel_window_settings(bar, &tree, surface_origin);
         let (panel_window, open_task) = Message::layershell_open(settings);
-        self.surface_mut(request.origin_window).tooltip_pending = None;
+        self.surface_mut(tree.origin_window).tooltip_pending = None;
         tracing::debug!(
             target: "niribar::panel",
             origin = panel_origin_label(&tree.origin),
@@ -358,21 +353,17 @@ impl App {
         );
 
         let panel_meta = super::surfaces::PanelMeta {
-            tree: tree.clone(),
-            search_input_id: panel_search_input_id(panel_window),
+            attachment_id: request.attachment_id,
+            origin_window: tree.origin_window,
         };
         let effects =
             self.surfaces
-                .open_panel_overlay(request.origin_window, panel_window, panel_meta);
+                .open_panel_overlay(tree.origin_window, panel_window, panel_meta);
         let mut tasks = self.apply_registry_effects(effects);
-        let catalog = super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
         self.panel.handle(
             super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id: request.attachment_id,
                 window: panel_window,
-                origin_window: request.origin_window,
-                origin: tree.origin.clone(),
-                content: tree.content.clone(),
-                catalog,
             },
         );
 
@@ -532,21 +523,12 @@ impl App {
         if !self.panel.search_focus_pending() {
             return Task::none();
         }
-        let Some(search_input_id) = self.surfaces.panel_popup_values().find_map(|meta| {
-            if matches!(
-                meta.tree.content,
-                crate::surface::panel::PanelContent::Menu(_)
-                    | crate::surface::panel::PanelContent::DmenuRequest
-            ) {
-                Some(meta.search_input_id.clone())
-            } else {
-                None
-            }
-        }) else {
+        let Some(panel_window) = self.panel.active_panel_window() else {
             self.panel
                 .handle(super::panel_runtime::PanelRuntimeIntent::SearchFocusSettled);
             return Task::none();
         };
+        let search_input_id = panel_search_input_id(panel_window);
         let mut tasks = vec![iced::widget::operation::focus(search_input_id)];
         if retries > 0 {
             tasks.push(Task::perform(
@@ -570,12 +552,7 @@ impl App {
         &mut self,
         action: crate::config::PanelAction,
     ) -> Task<Message> {
-        let Some(tree) = self
-            .surfaces
-            .panel_popup_values()
-            .next()
-            .map(|meta| meta.tree.clone())
-        else {
+        let Some(tree) = self.panel.active_panel_tree().cloned() else {
             return Task::none();
         };
         self.dispatch_panel_action(tree.origin_window, tree.origin, action)
@@ -609,11 +586,19 @@ impl App {
         request: crate::ipc::protocol::DmenuRequest,
         responder: super::messages::IpcResponder,
     ) -> Task<Message> {
+        let panel_request = self.default_panel_origin_window().map(|origin_window| {
+            self.panel_open_request(
+                origin_window,
+                crate::surface::panel::PanelOrigin::Bar,
+                crate::surface::panel::PanelContent::DmenuRequest,
+                None,
+            )
+        });
         let effects = self.panel.handle(
             super::panel_runtime::PanelRuntimeIntent::BeginDmenuSelection {
                 request,
                 responder,
-                origin_window: self.default_panel_origin_window(),
+                panel_request,
             },
         );
         self.apply_panel_runtime_effects(effects)
@@ -1453,32 +1438,48 @@ mod tests {
     }
 
     fn register_menu_panel(app: &mut App, panel: iced::window::Id, origin: iced::window::Id) {
-        app.register_panel_popup(
-            panel,
-            origin,
-            crate::surface::panel::PanelTree {
-                origin: crate::surface::panel::PanelOrigin::Bar,
-                content: crate::surface::panel::PanelContent::Menu("main".into()),
-                origin_window: origin,
-                origin_bar_name: "main".into(),
-                origin_output_name: "DP-1".into(),
-                anchor: None,
-                screen_size: (1920, 1080),
-            },
-        );
-        if app.panel.panel_menu_snapshot_for_test().is_none() {
+        let attachment_id = if let Some(attachment_id) = app.panel.current_attachment_for_test() {
             app.panel.handle(
                 super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                    attachment_id,
                     window: panel,
-                    origin_window: origin,
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+                },
+            );
+            attachment_id
+        } else {
+            let request = app.panel_open_request(
+                origin,
+                crate::surface::panel::PanelOrigin::Bar,
+                crate::surface::panel::PanelContent::Menu("main".into()),
+                None,
+            );
+            let effects = app
+                .panel
+                .handle(super::super::panel_runtime::PanelRuntimeIntent::Open {
+                    request,
                     catalog: super::super::panel_runtime::PanelMenuCatalog::new(
                         app.config.menus.as_slice(),
                     ),
+                    module_detail_sessions: std::collections::HashMap::new(),
+                });
+            let attachment_id = effects
+                .iter()
+                .find_map(|effect| match effect {
+                    super::super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
+                        Some(open.attachment_id)
+                    }
+                    _ => None,
+                })
+                .expect("panel should request a window");
+            app.panel.handle(
+                super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                    attachment_id,
+                    window: panel,
                 },
             );
-        }
+            attachment_id
+        };
+        app.register_panel_popup(panel, origin, attachment_id);
     }
 
     fn set_panel_search(app: &mut App, query: &str) {
@@ -1488,15 +1489,36 @@ mod tests {
 
     fn set_panel_focus(app: &mut App, index: usize) {
         if app.panel.panel_menu_snapshot_for_test().is_none() {
-            app.panel.handle(
-                super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
-                    window: iced::window::Id::unique(),
-                    origin_window: iced::window::Id::unique(),
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::Menu("main".into()),
+            let origin = iced::window::Id::unique();
+            let panel = iced::window::Id::unique();
+            let request = app.panel_open_request(
+                origin,
+                crate::surface::panel::PanelOrigin::Bar,
+                crate::surface::panel::PanelContent::Menu("main".into()),
+                None,
+            );
+            let effects = app
+                .panel
+                .handle(super::super::panel_runtime::PanelRuntimeIntent::Open {
+                    request,
                     catalog: super::super::panel_runtime::PanelMenuCatalog::new(
                         app.config.menus.as_slice(),
                     ),
+                    module_detail_sessions: std::collections::HashMap::new(),
+                });
+            let attachment_id = effects
+                .iter()
+                .find_map(|effect| match effect {
+                    super::super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
+                        Some(open.attachment_id)
+                    }
+                    _ => None,
+                })
+                .expect("panel should request a window");
+            app.panel.handle(
+                super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                    attachment_id,
+                    window: panel,
                 },
             );
         }
@@ -1993,27 +2015,18 @@ mod tests {
         let origin = iced::window::Id::unique();
         let tracked_panel = iced::window::Id::unique();
         let untracked_panel = iced::window::Id::unique();
-        let tree = crate::surface::panel::PanelTree {
-            origin: crate::surface::panel::PanelOrigin::Bar,
-            content: crate::surface::panel::PanelContent::Menu("main".into()),
-            origin_window: origin,
-            origin_bar_name: "main".into(),
-            origin_output_name: "DP-1".into(),
-            anchor: None,
-            screen_size: (1920, 1080),
-        };
         app.surfaces.insert_panel_popup(
             tracked_panel,
             super::super::surfaces::PanelMeta {
-                tree: tree.clone(),
-                search_input_id: panel_search_input_id(tracked_panel),
+                attachment_id: super::super::panel_runtime::PanelAttachmentId::for_test(1),
+                origin_window: origin,
             },
         );
         app.surfaces.insert_panel_popup(
             untracked_panel,
             super::super::surfaces::PanelMeta {
-                tree,
-                search_input_id: panel_search_input_id(untracked_panel),
+                attachment_id: super::super::panel_runtime::PanelAttachmentId::for_test(2),
+                origin_window: origin,
             },
         );
 
@@ -2042,18 +2055,118 @@ mod tests {
     }
 
     #[test]
+    fn replacing_panel_ignores_stale_old_window_close() {
+        let config = config_with_menu(menu_with_two_entries());
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin).bar_name = "main".into();
+        app.surface_mut(origin).output_name = "DP-1".into();
+        app.surface_mut(origin).screen_size = (1920, 1080);
+
+        let first_window = iced::window::Id::unique();
+        let first_request = app.panel_open_request(
+            origin,
+            crate::surface::panel::PanelOrigin::Bar,
+            crate::surface::panel::PanelContent::BarPanel,
+            None,
+        );
+        let first_effects =
+            app.panel
+                .handle(super::super::panel_runtime::PanelRuntimeIntent::Open {
+                    request: first_request,
+                    catalog: super::super::panel_runtime::PanelMenuCatalog::new(
+                        app.config.menus.as_slice(),
+                    ),
+                    module_detail_sessions: std::collections::HashMap::new(),
+                });
+        let first_attachment = first_effects
+            .iter()
+            .find_map(|effect| match effect {
+                super::super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
+                    Some(open.attachment_id)
+                }
+                _ => None,
+            })
+            .expect("first panel should request a window");
+        app.panel.handle(
+            super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id: first_attachment,
+                window: first_window,
+            },
+        );
+        app.register_panel_popup(first_window, origin, first_attachment);
+
+        let second_window = iced::window::Id::unique();
+        let second_request = app.panel_open_request(
+            origin,
+            crate::surface::panel::PanelOrigin::Bar,
+            crate::surface::panel::PanelContent::Menu("main".into()),
+            None,
+        );
+        let second_effects =
+            app.panel
+                .handle(super::super::panel_runtime::PanelRuntimeIntent::Open {
+                    request: second_request,
+                    catalog: super::super::panel_runtime::PanelMenuCatalog::new(
+                        app.config.menus.as_slice(),
+                    ),
+                    module_detail_sessions: std::collections::HashMap::new(),
+                });
+        let second_attachment = second_effects
+            .iter()
+            .find_map(|effect| match effect {
+                super::super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
+                    Some(open.attachment_id)
+                }
+                _ => None,
+            })
+            .expect("second panel should request a window");
+        app.panel.handle(
+            super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id: second_attachment,
+                window: second_window,
+            },
+        );
+        app.register_panel_popup(second_window, origin, second_attachment);
+
+        let _ =
+            app.apply_registry_effects(vec![super::super::surfaces::RegistryEffect::PanelClosed {
+                window: first_window,
+                attachment_id: first_attachment,
+            }]);
+
+        assert_eq!(app.panel.active_panel_window(), Some(second_window));
+        assert!(
+            app.panel
+                .panel_tree_for_attachment(second_attachment)
+                .is_some()
+        );
+        assert!(
+            app.panel
+                .panel_tree_for_attachment(first_attachment)
+                .is_none()
+        );
+        assert!(app.surfaces.panel_popup(first_window).is_none());
+        assert!(app.surfaces.panel_popup(second_window).is_some());
+    }
+
+    #[test]
     fn escape_clears_search_before_closing_panel() {
         let mut panel = super::super::panel_runtime::PanelRuntime::default();
         let menus = [menu_with_two_entries()];
-        panel.handle(
-            super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
-                window: iced::window::Id::unique(),
+        panel.handle(super::super::panel_runtime::PanelRuntimeIntent::Open {
+            request: super::super::panel_runtime::PanelOpenRequest {
                 origin_window: iced::window::Id::unique(),
                 origin: crate::surface::panel::PanelOrigin::Bar,
                 content: crate::surface::panel::PanelContent::Menu("main".into()),
-                catalog: super::super::panel_runtime::PanelMenuCatalog::new(&menus),
+                anchor: None,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                screen_size: (1920, 1080),
             },
-        );
+            catalog: super::super::panel_runtime::PanelMenuCatalog::new(&menus),
+            module_detail_sessions: std::collections::HashMap::new(),
+        });
         panel.handle(super::super::panel_runtime::PanelRuntimeIntent::SearchChanged("term".into()));
 
         assert!(matches!(

@@ -392,19 +392,43 @@ mod tests {
         let (mut app, _) = App::boot(Config::default(), vec![]);
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
-        app.register_panel_popup(
-            panel,
+        {
+            let surface = app.surface_mut(origin);
+            surface.bar_name = "main".into();
+            surface.output_name = "DP-1".into();
+            surface.screen_size = (1920, 1080);
+        }
+        let request = app.panel_open_request(
             origin,
-            crate::surface::panel::PanelTree {
-                origin: crate::surface::panel::PanelOrigin::Bar,
-                content: crate::surface::panel::PanelContent::BarPanel,
-                origin_window: origin,
-                origin_bar_name: "main".into(),
-                origin_output_name: "DP-1".into(),
-                anchor: None,
-                screen_size: (1920, 1080),
+            crate::surface::panel::PanelOrigin::Bar,
+            crate::surface::panel::PanelContent::BarPanel,
+            None,
+        );
+        let effects = app
+            .panel
+            .handle(crate::app::panel_runtime::PanelRuntimeIntent::Open {
+                request,
+                catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
+                    app.config.menus.as_slice(),
+                ),
+                module_detail_sessions: std::collections::HashMap::new(),
+            });
+        let attachment_id = effects
+            .iter()
+            .find_map(|effect| match effect {
+                crate::app::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
+                    Some(open.attachment_id)
+                }
+                _ => None,
+            })
+            .expect("panel should request a window");
+        app.panel.handle(
+            crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id,
+                window: panel,
             },
         );
+        app.register_panel_popup(panel, origin, attachment_id);
 
         let _ = app.view(panel);
     }

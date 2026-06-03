@@ -267,15 +267,7 @@ mod tests {
         app.register_panel_popup(
             panel,
             origin,
-            crate::surface::panel::PanelTree {
-                origin: crate::surface::panel::PanelOrigin::Bar,
-                content: crate::surface::panel::PanelContent::Menu("main".into()),
-                origin_window: origin,
-                origin_bar_name: "main".into(),
-                origin_output_name: "DP-1".into(),
-                anchor: None,
-                screen_size: (1920, 1080),
-            },
+            crate::app::panel_runtime::PanelAttachmentId::for_test(1),
         );
 
         assert!(app.needs_keyboard_focus_subscription());

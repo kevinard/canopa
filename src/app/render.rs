@@ -68,7 +68,7 @@ impl App {
         window: iced::window::Id,
     ) -> Option<PanelRenderModel<'_>> {
         let meta = self.surfaces.panel_popup(window)?;
-        let tree = &meta.tree;
+        let tree = self.panel.panel_tree_for_attachment(meta.attachment_id)?;
         let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
         let origin_surface = self
             .surfaces
@@ -116,7 +116,7 @@ impl App {
 
         Some(PanelRenderModel {
             tree,
-            search_input_id: meta.search_input_id.clone(),
+            search_input_id: super::panel::panel_search_input_id(window),
             entries,
             menu_entries: menu.entries,
             show_icons: menu.show_icons,
@@ -151,7 +151,7 @@ impl App {
             let state = self.module_render_state(module.kind(), &id, &surface, &default_state);
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);
-            let active = self.surfaces.active_panel_origin_for(window)
+            let active = self.panel.active_panel_origin_for(window)
                 == Some(&crate::surface::panel::PanelOrigin::Module(id.clone()));
 
             let module_view =
@@ -314,6 +314,52 @@ mod tests {
             is_focused,
             active_window_id,
         }
+    }
+
+    fn open_and_register_panel(
+        app: &mut App,
+        panel: iced::window::Id,
+        tree: crate::surface::panel::PanelTree,
+    ) -> crate::app::panel_runtime::PanelAttachmentId {
+        let origin = tree.origin_window;
+        {
+            let surface = app.surface_mut(origin);
+            surface.bar_name = tree.origin_bar_name.clone();
+            surface.output_name = tree.origin_output_name.clone();
+            surface.screen_size = tree.screen_size;
+        }
+        let request = app.panel_open_request(
+            origin,
+            tree.origin.clone(),
+            tree.content.clone(),
+            tree.anchor,
+        );
+        let effects = app
+            .panel
+            .handle(crate::app::panel_runtime::PanelRuntimeIntent::Open {
+                request,
+                catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
+                    app.config.menus.as_slice(),
+                ),
+                module_detail_sessions: std::collections::HashMap::new(),
+            });
+        let attachment_id = effects
+            .iter()
+            .find_map(|effect| match effect {
+                crate::app::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
+                    Some(open.attachment_id)
+                }
+                _ => None,
+            })
+            .expect("panel should request a window");
+        app.panel.handle(
+            crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id,
+                window: panel,
+            },
+        );
+        app.register_panel_popup(panel, origin, attachment_id);
+        attachment_id
     }
 
     #[test]
@@ -514,9 +560,9 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin = test_wid();
         let panel = test_wid();
-        app.register_panel_popup(
+        open_and_register_panel(
+            &mut app,
             panel,
-            origin,
             crate::surface::panel::PanelTree {
                 origin: crate::surface::panel::PanelOrigin::Bar,
                 content: crate::surface::panel::PanelContent::BarPanel,
@@ -550,9 +596,9 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin = test_wid();
         let panel = test_wid();
-        app.register_panel_popup(
+        open_and_register_panel(
+            &mut app,
             panel,
-            origin,
             crate::surface::panel::PanelTree {
                 origin: crate::surface::panel::PanelOrigin::Module(ModuleId::new("clock")),
                 content: crate::surface::panel::PanelContent::ModulePanel(ModuleId::new("clock")),
@@ -591,9 +637,9 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin = test_wid();
         let panel = test_wid();
-        app.register_panel_popup(
+        open_and_register_panel(
+            &mut app,
             panel,
-            origin,
             crate::surface::panel::PanelTree {
                 origin: crate::surface::panel::PanelOrigin::Bar,
                 content: crate::surface::panel::PanelContent::Menu("main".into()),
@@ -602,17 +648,6 @@ mod tests {
                 origin_output_name: "DP-1".into(),
                 anchor: None,
                 screen_size: (1920, 1080),
-            },
-        );
-        app.panel.handle(
-            crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
-                window: panel,
-                origin_window: origin,
-                origin: crate::surface::panel::PanelOrigin::Bar,
-                content: crate::surface::panel::PanelContent::Menu("main".into()),
-                catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
-                    app.config.menus.as_slice(),
-                ),
             },
         );
 
@@ -631,7 +666,19 @@ mod tests {
         let (sender, _receiver) = tokio::sync::oneshot::channel();
         let origin = test_wid();
         let panel = test_wid();
-        app.panel.handle(
+        {
+            let surface = app.surface_mut(origin);
+            surface.bar_name = "main".into();
+            surface.output_name = "DP-1".into();
+            surface.screen_size = (1920, 1080);
+        }
+        let panel_request = app.panel_open_request(
+            origin,
+            crate::surface::panel::PanelOrigin::Bar,
+            crate::surface::panel::PanelContent::DmenuRequest,
+            None,
+        );
+        let effects = app.panel.handle(
             crate::app::panel_runtime::PanelRuntimeIntent::BeginDmenuSelection {
                 request: crate::ipc::protocol::DmenuRequest {
                     prompt: None,
@@ -644,22 +691,25 @@ mod tests {
                     allow_custom: true,
                 },
                 responder: crate::app::messages::ipc_responder(sender),
-                origin_window: Some(origin),
+                panel_request: Some(panel_request),
             },
         );
-        app.register_panel_popup(
-            panel,
-            origin,
-            crate::surface::panel::PanelTree {
-                origin: crate::surface::panel::PanelOrigin::Bar,
-                content: crate::surface::panel::PanelContent::DmenuRequest,
-                origin_window: origin,
-                origin_bar_name: "main".into(),
-                origin_output_name: "DP-1".into(),
-                anchor: None,
-                screen_size: (1920, 1080),
+        let attachment_id = effects
+            .iter()
+            .find_map(|effect| match effect {
+                crate::app::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
+                    Some(open.attachment_id)
+                }
+                _ => None,
+            })
+            .expect("dmenu should request a window");
+        app.panel.handle(
+            crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id,
+                window: panel,
             },
         );
+        app.register_panel_popup(panel, origin, attachment_id);
 
         let model = app.panel_render_model(panel).expect("panel model");
 
@@ -685,9 +735,9 @@ mod tests {
         app.surfaces
             .surfaces
             .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
-        app.register_panel_popup(
+        open_and_register_panel(
+            &mut app,
             panel,
-            origin,
             crate::surface::panel::PanelTree {
                 origin: crate::surface::panel::PanelOrigin::Module(ModuleId::new("clock")),
                 content: crate::surface::panel::PanelContent::ModulePanel(ModuleId::new("clock")),
@@ -702,6 +752,44 @@ mod tests {
         let model = app.bar_render_model(origin);
 
         assert!(model.start[0].active);
+    }
+
+    #[test]
+    fn panel_render_model_ignores_stale_panel_window_attachment() {
+        let (mut app, _) = App::boot(Config::default(), vec![]);
+        let origin = test_wid();
+        let stale_panel = test_wid();
+        let current_panel = test_wid();
+
+        open_and_register_panel(
+            &mut app,
+            stale_panel,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::BarPanel,
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
+            },
+        );
+        open_and_register_panel(
+            &mut app,
+            current_panel,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::Menu("main".into()),
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
+            },
+        );
+
+        assert!(app.panel_render_model(stale_panel).is_none());
+        assert!(app.panel_render_model(current_panel).is_some());
     }
 
     #[test]

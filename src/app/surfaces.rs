@@ -5,6 +5,7 @@ use iced::Task;
 use iced_layershell::reexport::{KeyboardInteractivity, NewLayerShellSettings, OutputOption};
 
 use super::bar_surface_plan::PlannedBarSurface;
+use super::panel_runtime::PanelAttachmentId;
 use super::{App, Message};
 use crate::modules::ModuleKind;
 use crate::surface::SurfaceState;
@@ -57,14 +58,15 @@ pub(super) struct PopupMeta {
 
 #[derive(Debug, Clone)]
 pub(super) struct PanelMeta {
-    pub(super) tree: crate::surface::panel::PanelTree,
-    pub(super) search_input_id: iced::widget::Id,
+    pub(super) attachment_id: PanelAttachmentId,
+    pub(super) origin_window: iced::window::Id,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum RegistryEffect {
     PanelClosed {
         window: iced::window::Id,
+        attachment_id: PanelAttachmentId,
     },
     MenuClosed {
         window: iced::window::Id,
@@ -303,7 +305,7 @@ impl SurfaceManager {
                 self.close_overlays_for_bar_surface(window, &identity)
                     .into_iter()
                     .filter_map(|effect| match effect {
-                        RegistryEffect::PanelClosed { window }
+                        RegistryEffect::PanelClosed { window, .. }
                         | RegistryEffect::MenuClosed { window, .. }
                         | RegistryEffect::TooltipClosed { window } => {
                             Some(BarSurfaceLifecycleEffect::RemoveWindow(window))
@@ -355,18 +357,18 @@ impl SurfaceManager {
         let closing_panels: Vec<_> = self
             .panel_popups
             .iter()
-            .filter_map(|(window, meta)| {
-                (meta.tree.origin_window == target_surface).then_some(*window)
-            })
+            .filter_map(|(window, meta)| (meta.origin_window == target_surface).then_some(*window))
             .collect();
         for window in &closing_panels {
-            self.panel_popups.remove(window);
+            if let Some(meta) = self.panel_popups.remove(window) {
+                self.closing_panel_popups.insert(*window);
+                effects.push(RegistryEffect::PanelClosed {
+                    window: *window,
+                    attachment_id: meta.attachment_id,
+                });
+            }
         }
         if !closing_panels.is_empty() {
-            effects.extend(closing_panels.into_iter().map(|window| {
-                self.closing_panel_popups.insert(window);
-                RegistryEffect::PanelClosed { window }
-            }));
             effects.push(RegistryEffect::RestoreBarKeyboardInteractivity);
         }
         let closing_menus: Vec<_> = self
@@ -452,16 +454,6 @@ impl SurfaceManager {
 
     pub(super) fn has_panel_popup(&self, window: iced::window::Id) -> bool {
         self.panel_popups.contains_key(&window)
-    }
-
-    pub(super) fn active_panel_origin_for(
-        &self,
-        origin_window: iced::window::Id,
-    ) -> Option<&crate::surface::panel::PanelOrigin> {
-        self.panel_popups
-            .values()
-            .find(|meta| meta.tree.origin_window == origin_window)
-            .map(|meta| &meta.tree.origin)
     }
 
     pub(super) fn tooltip_popup(&self, window: iced::window::Id) -> Option<&TooltipPopup> {
@@ -565,9 +557,12 @@ impl SurfaceManager {
     fn close_panel_overlays_without_restore(&mut self) -> Vec<RegistryEffect> {
         self.panel_popups
             .drain()
-            .map(|(window, _)| {
+            .map(|(window, meta)| {
                 self.closing_panel_popups.insert(window);
-                RegistryEffect::PanelClosed { window }
+                RegistryEffect::PanelClosed {
+                    window,
+                    attachment_id: meta.attachment_id,
+                }
             })
             .collect()
     }
@@ -612,9 +607,12 @@ impl SurfaceManager {
     }
 
     pub(super) fn window_closed(&mut self, window: iced::window::Id) -> Vec<RegistryEffect> {
-        if self.panel_popups.remove(&window).is_some() {
+        if let Some(meta) = self.panel_popups.remove(&window) {
             return vec![
-                RegistryEffect::PanelClosed { window },
+                RegistryEffect::PanelClosed {
+                    window,
+                    attachment_id: meta.attachment_id,
+                },
                 RegistryEffect::RestoreBarKeyboardInteractivity,
             ];
         }
@@ -1108,11 +1106,7 @@ impl App {
         target_window: iced::window::Id,
         module: crate::modules::ModuleId,
     ) -> Task<Message> {
-        if self
-            .surfaces
-            .active_panel_origin_for(target_window)
-            .is_some()
-        {
+        if self.panel.active_panel_origin_for(target_window).is_some() {
             self.surface_mut(target_window).tooltip_pending = None;
             return Task::none();
         }
@@ -1276,6 +1270,20 @@ mod tests {
         }
     }
 
+    fn panel_meta_for_test(
+        attachment_id: super::super::panel_runtime::PanelAttachmentId,
+        origin_window: iced::window::Id,
+    ) -> PanelMeta {
+        PanelMeta {
+            attachment_id,
+            origin_window,
+        }
+    }
+
+    fn attachment_id(value: u64) -> super::super::panel_runtime::PanelAttachmentId {
+        super::super::panel_runtime::PanelAttachmentId::for_test(value)
+    }
+
     fn popup_meta_for_identity(identity: BarSurfaceIdentity, service: &str) -> PopupMeta {
         PopupMeta {
             service: service.into(),
@@ -1310,19 +1318,35 @@ mod tests {
         let origin = test_wid();
         let panel = test_wid();
 
-        app.surfaces.insert_panel_popup(
-            panel,
-            PanelMeta {
-                tree: panel_tree(origin),
-                search_input_id: crate::app::panel::panel_search_input_id(panel),
-            },
-        );
+        app.surfaces
+            .insert_panel_popup(panel, panel_meta_for_test(attachment_id(1), origin));
 
         assert!(app.surfaces.has_panel_popup(panel));
         assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        let meta = app.surfaces.panel_popup(panel).expect("panel popup");
+        assert_eq!(meta.attachment_id, attachment_id(1));
+        assert_eq!(meta.origin_window, origin);
+    }
+
+    #[test]
+    fn panel_closed_effect_carries_attachment_id() {
+        let origin = test_wid();
+        let panel = test_wid();
+        let attachment_id = attachment_id(7);
+        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
+        registry.insert_panel_popup(panel, panel_meta_for_test(attachment_id, origin));
+
+        let effects = registry.window_closed(panel);
+
         assert_eq!(
-            app.surfaces.active_panel_origin_for(origin),
-            Some(&crate::surface::panel::PanelOrigin::Bar)
+            effects,
+            vec![
+                RegistryEffect::PanelClosed {
+                    window: panel,
+                    attachment_id,
+                },
+                RegistryEffect::RestoreBarKeyboardInteractivity,
+            ]
         );
     }
 
@@ -1359,10 +1383,7 @@ mod tests {
         let effects = app.surfaces.open_panel_overlay(
             origin,
             panel,
-            PanelMeta {
-                tree: panel_tree(origin),
-                search_input_id: crate::app::panel::panel_search_input_id(panel),
-            },
+            panel_meta_for_test(attachment_id(2), origin),
         );
 
         assert_eq!(
@@ -1417,10 +1438,7 @@ mod tests {
         let effects = registry.open_panel_overlay(
             origin,
             panel,
-            PanelMeta {
-                tree: panel_tree(origin),
-                search_input_id: iced::widget::Id::from("search"),
-            },
+            panel_meta_for_test(attachment_id(3), origin),
         );
 
         assert!(registry.popup(old_menu).is_none());
@@ -1574,13 +1592,7 @@ mod tests {
             window,
             popup_meta_for_identity(BarSurfaceIdentity::all_screens(), "org.test"),
         );
-        registry.insert_panel_popup(
-            window,
-            PanelMeta {
-                tree: panel_tree(test_wid()),
-                search_input_id: crate::app::panel::panel_search_input_id(window),
-            },
-        );
+        registry.insert_panel_popup(window, panel_meta_for_test(attachment_id(4), test_wid()));
         registry.insert_tooltip_popup(TooltipPopup {
             window,
             target_window: test_wid(),
@@ -1599,17 +1611,13 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let origin = test_wid();
         let panel = test_wid();
-        app.surfaces.insert_panel_popup(
-            panel,
-            PanelMeta {
-                tree: panel_tree(origin),
-                search_input_id: crate::app::panel::panel_search_input_id(panel),
-            },
-        );
+        app.surfaces
+            .insert_panel_popup(panel, panel_meta_for_test(attachment_id(5), origin));
 
         let removed = app.surfaces.remove_panel_popup(panel).expect("panel popup");
 
-        assert_eq!(removed.tree.origin_window, origin);
+        assert_eq!(removed.origin_window, origin);
+        assert_eq!(removed.attachment_id, attachment_id(5));
         assert!(!app.surfaces.has_panel_popup(panel));
         assert!(!app.surfaces.has_any_popup());
     }
@@ -1623,13 +1631,8 @@ mod tests {
             .surfaces
             .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
         app.surface_mut(origin).focused_module = Some(ModuleId::new("clock"));
-        app.surfaces.insert_panel_popup(
-            panel,
-            PanelMeta {
-                tree: panel_tree(origin),
-                search_input_id: crate::app::panel::panel_search_input_id(panel),
-            },
-        );
+        app.surfaces
+            .insert_panel_popup(panel, panel_meta_for_test(attachment_id(6), origin));
 
         let _ = app.handle_surface_event(crate::app::messages::SurfaceEvent::WindowClosed(panel));
 
@@ -1645,7 +1648,7 @@ mod tests {
         app.surfaces
             .surfaces
             .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
-        app.register_panel_popup(panel, origin, panel_tree(origin));
+        app.register_panel_popup(panel, origin, attachment_id(7));
 
         let _ = app.update(Message::Surface(
             crate::app::messages::SurfaceEvent::TogglePanel,
@@ -1672,7 +1675,7 @@ mod tests {
 
         assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
         let panel = app.surfaces.panel_popup_values().next().unwrap();
-        assert_eq!(panel.tree.origin_window, first);
+        assert_eq!(panel.origin_window, first);
     }
 
     #[test]
@@ -1847,13 +1850,7 @@ mod tests {
             target_module: ModuleId::new("clock"),
             tree: tooltip_tree(crate::config::Edge::Top),
         });
-        registry.insert_panel_popup(
-            panel,
-            PanelMeta {
-                tree: panel_tree(stale),
-                search_input_id: crate::app::panel::panel_search_input_id(panel),
-            },
-        );
+        registry.insert_panel_popup(panel, panel_meta_for_test(attachment_id(8), stale));
         registry.insert_popup(
             menu,
             PopupMeta {
@@ -2129,19 +2126,37 @@ mod tests {
         );
         app.surface_mut(origin).hovered_module = Some(module.clone());
         app.surface_mut(origin).tooltip_pending = Some((module.clone(), 32.0));
-        app.register_panel_popup(
-            panel,
+        let request = app.panel_open_request(
             origin,
-            crate::surface::panel::PanelTree {
-                origin: crate::surface::panel::PanelOrigin::Module(module.clone()),
-                content: crate::surface::panel::PanelContent::Menu("main".into()),
-                origin_window: origin,
-                origin_bar_name: "main".into(),
-                origin_output_name: String::new(),
-                anchor: None,
-                screen_size: (1920, 1080),
+            crate::surface::panel::PanelOrigin::Module(module.clone()),
+            crate::surface::panel::PanelContent::Menu("main".into()),
+            None,
+        );
+        let effects = app
+            .panel
+            .handle(super::super::panel_runtime::PanelRuntimeIntent::Open {
+                request,
+                catalog: super::super::panel_runtime::PanelMenuCatalog::new(
+                    app.config.menus.as_slice(),
+                ),
+                module_detail_sessions: HashMap::new(),
+            });
+        let attachment_id = effects
+            .iter()
+            .find_map(|effect| match effect {
+                super::super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
+                    Some(open.attachment_id)
+                }
+                _ => None,
+            })
+            .expect("panel should request a window");
+        app.panel.handle(
+            super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id,
+                window: panel,
             },
         );
+        app.register_panel_popup(panel, origin, attachment_id);
 
         let _ = app.handle_tooltip_dwell_elapsed(origin, module);
 

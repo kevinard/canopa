@@ -5,14 +5,14 @@ impl super::App {
     pub(super) fn register_panel_popup(
         &mut self,
         window: iced::window::Id,
-        _origin_surface: iced::window::Id,
-        tree: crate::surface::panel::PanelTree,
+        origin_surface: iced::window::Id,
+        attachment_id: super::panel_runtime::PanelAttachmentId,
     ) {
         self.surfaces.insert_panel_popup(
             window,
             super::surfaces::PanelMeta {
-                tree,
-                search_input_id: super::panel::panel_search_input_id(window),
+                attachment_id,
+                origin_window: origin_surface,
             },
         );
     }
@@ -50,8 +50,16 @@ impl super::App {
         let mut tasks = Vec::new();
         for effect in effects {
             match effect {
-                RegistryEffect::PanelClosed { window } => {
-                    self.panel.clear();
+                RegistryEffect::PanelClosed {
+                    window,
+                    attachment_id,
+                } => {
+                    self.panel.handle(
+                        super::panel_runtime::PanelRuntimeIntent::PanelWindowClosed {
+                            attachment_id,
+                            window,
+                        },
+                    );
                     self.surfaces.remove_panel_popup(window);
                     tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
                 }
@@ -103,24 +111,57 @@ mod tests {
         iced::window::Id::unique()
     }
 
+    fn open_and_attach_panel(
+        app: &mut super::super::App,
+        origin: iced::window::Id,
+        window: iced::window::Id,
+        content: crate::surface::panel::PanelContent,
+    ) -> crate::app::panel_runtime::PanelAttachmentId {
+        let request = app.panel_open_request(
+            origin,
+            crate::surface::panel::PanelOrigin::Bar,
+            content,
+            None,
+        );
+        let effects = app
+            .panel
+            .handle(crate::app::panel_runtime::PanelRuntimeIntent::Open {
+                request,
+                catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
+                    app.config.menus.as_slice(),
+                ),
+                module_detail_sessions: std::collections::HashMap::new(),
+            });
+        let attachment_id = effects
+            .iter()
+            .find_map(|effect| match effect {
+                crate::app::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
+                    Some(open.attachment_id)
+                }
+                _ => None,
+            })
+            .expect("panel should request a window");
+        app.panel.handle(
+            crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id,
+                window,
+            },
+        );
+        attachment_id
+    }
+
     #[test]
     fn register_panel_popup_tracks_lifecycle_and_metadata() {
         let (mut app, _) = super::super::App::boot(crate::config::Config::default(), vec![]);
         let origin = wid();
         let panel = wid();
-        let tree = crate::surface::panel::PanelTree {
-            origin: crate::surface::panel::PanelOrigin::Bar,
-            content: crate::surface::panel::PanelContent::BarPanel,
-            origin_window: origin,
-            origin_bar_name: "main".into(),
-            origin_output_name: "DP-1".into(),
-            anchor: None,
-            screen_size: (1920, 1080),
-        };
+        let attachment_id = crate::app::panel_runtime::PanelAttachmentId::for_test(1);
 
-        app.register_panel_popup(panel, origin, tree);
+        app.register_panel_popup(panel, origin, attachment_id);
 
-        assert!(app.surfaces.panel_popup(panel).is_some());
+        let meta = app.surfaces.panel_popup(panel).expect("panel popup");
+        assert_eq!(meta.attachment_id, attachment_id);
+        assert_eq!(meta.origin_window, origin);
     }
 
     #[test]
@@ -163,5 +204,62 @@ mod tests {
         app.register_tooltip_popup(tooltip, surface, module.clone(), tree);
 
         assert!(app.surfaces.tooltip_popup(tooltip).is_some());
+    }
+
+    #[test]
+    fn stale_panel_closed_effect_does_not_clear_current_panel_runtime() {
+        let (mut app, _) = super::super::App::boot(crate::config::Config::default(), vec![]);
+        let origin = wid();
+        let old_window = wid();
+        let new_window = wid();
+
+        let old_attachment = open_and_attach_panel(
+            &mut app,
+            origin,
+            old_window,
+            crate::surface::panel::PanelContent::BarPanel,
+        );
+        let new_attachment = open_and_attach_panel(
+            &mut app,
+            origin,
+            new_window,
+            crate::surface::panel::PanelContent::Menu("main".into()),
+        );
+        app.register_panel_popup(old_window, origin, old_attachment);
+        app.register_panel_popup(new_window, origin, new_attachment);
+
+        let _ =
+            app.apply_registry_effects(vec![super::super::surfaces::RegistryEffect::PanelClosed {
+                window: old_window,
+                attachment_id: old_attachment,
+            }]);
+
+        assert_eq!(app.panel.active_panel_window(), Some(new_window));
+        assert!(app.surfaces.panel_popup(old_window).is_none());
+        assert!(app.surfaces.panel_popup(new_window).is_some());
+    }
+
+    #[test]
+    fn current_panel_closed_effect_clears_current_panel_runtime() {
+        let (mut app, _) = super::super::App::boot(crate::config::Config::default(), vec![]);
+        let origin = wid();
+        let window = wid();
+        let attachment_id = open_and_attach_panel(
+            &mut app,
+            origin,
+            window,
+            crate::surface::panel::PanelContent::BarPanel,
+        );
+        app.register_panel_popup(window, origin, attachment_id);
+
+        let _ =
+            app.apply_registry_effects(vec![super::super::surfaces::RegistryEffect::PanelClosed {
+                window,
+                attachment_id,
+            }]);
+
+        assert_eq!(app.panel.active_panel_window(), None);
+        assert!(app.panel.active_panel_tree().is_none());
+        assert!(app.surfaces.panel_popup(window).is_none());
     }
 }

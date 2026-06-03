@@ -21,7 +21,7 @@ pub struct PanelModuleEntry {
     pub focused: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PanelTree {
     pub origin: PanelOrigin,
     pub content: PanelContent,

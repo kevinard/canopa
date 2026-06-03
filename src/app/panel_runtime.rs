@@ -1,11 +1,44 @@
 use std::{collections::HashMap, sync::Arc};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct PanelAttachmentId(u64);
+
+impl PanelAttachmentId {
+    #[cfg(test)]
+    pub(super) fn for_test(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct PanelWindowOpenRequest {
+    pub(super) attachment_id: PanelAttachmentId,
+    pub(super) tree: crate::surface::panel::PanelTree,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PanelOpenRequest {
     pub(super) origin_window: iced::window::Id,
     pub(super) origin: crate::surface::panel::PanelOrigin,
     pub(super) content: crate::surface::panel::PanelContent,
     pub(super) anchor: Option<iced::Rectangle>,
+    pub(super) origin_bar_name: String,
+    pub(super) origin_output_name: String,
+    pub(super) screen_size: (u32, u32),
+}
+
+impl PanelOpenRequest {
+    fn tree(&self) -> crate::surface::panel::PanelTree {
+        crate::surface::panel::PanelTree {
+            origin: self.origin.clone(),
+            content: self.content.clone(),
+            origin_window: self.origin_window,
+            origin_bar_name: self.origin_bar_name.clone(),
+            origin_output_name: self.origin_output_name.clone(),
+            anchor: self.anchor,
+            screen_size: self.screen_size,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -16,15 +49,14 @@ pub(super) struct PendingPanelOpen {
 
 #[derive(Debug, Clone, PartialEq)]
 struct ActivePanel {
-    window: iced::window::Id,
-    origin_window: iced::window::Id,
-    origin: crate::surface::panel::PanelOrigin,
-    content: crate::surface::panel::PanelContent,
+    attachment_id: PanelAttachmentId,
+    window: Option<iced::window::Id>,
+    tree: crate::surface::panel::PanelTree,
 }
 
 #[derive(Debug, Clone)]
 pub(super) enum PanelRuntimeEffect {
-    OpenPanelWindow(PanelOpenRequest),
+    OpenPanelWindow(PanelWindowOpenRequest),
     ClosePanelWindow(iced::window::Id),
     RequestSearchFocus,
     LoadInstalledAppsThenOpenPanel(PendingPanelOpen),
@@ -112,11 +144,12 @@ pub(super) enum PanelRuntimeIntent<'a> {
             HashMap<crate::modules::ModuleId, crate::modules::ModuleDetailSession>,
     },
     PanelWindowOpened {
+        attachment_id: PanelAttachmentId,
         window: iced::window::Id,
-        origin_window: iced::window::Id,
-        origin: crate::surface::panel::PanelOrigin,
-        content: crate::surface::panel::PanelContent,
-        catalog: PanelMenuCatalog<'a>,
+    },
+    PanelWindowClosed {
+        attachment_id: PanelAttachmentId,
+        window: iced::window::Id,
     },
     InstalledAppsLoaded {
         pending: PendingPanelOpen,
@@ -136,10 +169,11 @@ pub(super) enum PanelRuntimeIntent<'a> {
     Escape,
     Activate(Option<usize>),
     CancelDmenu,
+    CloseAll,
     BeginDmenuSelection {
         request: crate::ipc::protocol::DmenuRequest,
         responder: super::messages::IpcResponder,
-        origin_window: Option<iced::window::Id>,
+        panel_request: Option<PanelOpenRequest>,
     },
 }
 
@@ -175,6 +209,7 @@ pub(super) struct PanelRuntime {
     menu_viewport_height: f32,
     search_focus_pending: bool,
     dmenu_responder: Option<super::messages::IpcResponder>,
+    next_attachment_id: u64,
     #[cfg(test)]
     pub(super) installed_apps_for_test: Option<Vec<crate::desktop_apps::DesktopApplication>>,
     #[cfg(test)]
@@ -195,15 +230,16 @@ impl PanelRuntime {
                 module_detail_sessions,
             } => self.toggle_panel_with_catalog(request, catalog, module_detail_sessions),
             PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id,
                 window,
-                origin_window,
-                origin,
-                content,
-                catalog,
             } => {
-                self.panel_window_opened(window, origin_window, origin, content, catalog);
+                self.panel_window_opened(attachment_id, window);
                 Vec::new()
             }
+            PanelRuntimeIntent::PanelWindowClosed {
+                attachment_id,
+                window,
+            } => self.panel_window_closed(attachment_id, window),
             PanelRuntimeIntent::InstalledAppsLoaded {
                 pending,
                 apps,
@@ -239,11 +275,15 @@ impl PanelRuntime {
             PanelRuntimeIntent::CancelDmenu => {
                 self.cancel_dmenu(crate::ipc::protocol::IpcResponse::Cancelled)
             }
+            PanelRuntimeIntent::CloseAll => {
+                self.clear();
+                Vec::new()
+            }
             PanelRuntimeIntent::BeginDmenuSelection {
                 request,
                 responder,
-                origin_window,
-            } => self.begin_dmenu_selection(request, responder, origin_window),
+                panel_request,
+            } => self.begin_dmenu_selection(request, responder, panel_request),
         }
     }
 
@@ -257,35 +297,98 @@ impl PanelRuntime {
         self.dmenu_responder = None;
     }
 
-    fn active_panel_window(&self) -> Option<iced::window::Id> {
-        self.active_panel.as_ref().map(|panel| panel.window)
+    fn allocate_attachment_id(&mut self) -> PanelAttachmentId {
+        self.next_attachment_id = self.next_attachment_id.saturating_add(1);
+        PanelAttachmentId(self.next_attachment_id)
+    }
+
+    pub(super) fn active_panel_window(&self) -> Option<iced::window::Id> {
+        self.active_panel.as_ref().and_then(|panel| panel.window)
+    }
+
+    pub(super) fn panel_tree_for_attachment(
+        &self,
+        attachment_id: PanelAttachmentId,
+    ) -> Option<&crate::surface::panel::PanelTree> {
+        self.active_panel
+            .as_ref()
+            .filter(|panel| panel.attachment_id == attachment_id)
+            .map(|panel| &panel.tree)
+    }
+
+    pub(super) fn panel_tree_for_window(
+        &self,
+        window: iced::window::Id,
+    ) -> Option<&crate::surface::panel::PanelTree> {
+        self.active_panel
+            .as_ref()
+            .filter(|panel| panel.window == Some(window))
+            .map(|panel| &panel.tree)
+    }
+
+    pub(super) fn active_panel_origin_for(
+        &self,
+        origin_window: iced::window::Id,
+    ) -> Option<&crate::surface::panel::PanelOrigin> {
+        self.active_panel
+            .as_ref()
+            .filter(|panel| panel.tree.origin_window == origin_window)
+            .map(|panel| &panel.tree.origin)
+    }
+
+    pub(super) fn is_menu_panel_window(&self, window: iced::window::Id) -> bool {
+        self.panel_tree_for_window(window).is_some_and(|tree| {
+            matches!(
+                tree.content,
+                crate::surface::panel::PanelContent::Menu(_)
+                    | crate::surface::panel::PanelContent::DmenuRequest
+            )
+        })
+    }
+
+    pub(super) fn active_panel_tree(&self) -> Option<&crate::surface::panel::PanelTree> {
+        self.active_panel.as_ref().map(|panel| &panel.tree)
+    }
+
+    #[cfg(test)]
+    pub(super) fn current_attachment_for_test(&self) -> Option<PanelAttachmentId> {
+        self.active_panel.as_ref().map(|panel| panel.attachment_id)
+    }
+
+    #[cfg(test)]
+    pub(super) fn active_panel_tree_for_test(&self) -> Option<&crate::surface::panel::PanelTree> {
+        self.active_panel_tree()
     }
 
     pub(super) fn would_toggle_close(&self, request: &PanelOpenRequest) -> bool {
         self.active_panel.as_ref().is_some_and(|panel| {
-            panel.origin_window == request.origin_window && panel.content == request.content
+            panel.tree.origin_window == request.origin_window
+                && panel.tree.content == request.content
         }) && self.active_panel_window().is_some()
     }
 
-    fn panel_window_opened(
-        &mut self,
-        window: iced::window::Id,
-        origin_window: iced::window::Id,
-        origin: crate::surface::panel::PanelOrigin,
-        content: crate::surface::panel::PanelContent,
-        catalog: PanelMenuCatalog<'_>,
-    ) {
-        if let crate::surface::panel::PanelContent::Menu(name) = &content
-            && let Some(source) = catalog.configured_menu_source(name)
+    fn panel_window_opened(&mut self, attachment_id: PanelAttachmentId, window: iced::window::Id) {
+        if let Some(panel) = self
+            .active_panel
+            .as_mut()
+            .filter(|panel| panel.attachment_id == attachment_id)
         {
-            self.open_session(source);
+            panel.window = Some(window);
         }
-        self.active_panel = Some(ActivePanel {
-            window,
-            origin_window,
-            origin,
-            content,
+    }
+
+    fn panel_window_closed(
+        &mut self,
+        attachment_id: PanelAttachmentId,
+        window: iced::window::Id,
+    ) -> Vec<PanelRuntimeEffect> {
+        let should_clear = self.active_panel.as_ref().is_some_and(|panel| {
+            panel.attachment_id == attachment_id && panel.window == Some(window)
         });
+        if should_clear {
+            self.clear();
+        }
+        Vec::new()
     }
 
     fn open_panel_with_catalog(
@@ -305,7 +408,13 @@ impl PanelRuntime {
                 PendingPanelOpen { request, menu_name },
             )];
         }
-        self.open_panel_after_source_ready(request, module_detail_sessions)
+        let menu_source = if let crate::surface::panel::PanelContent::Menu(name) = &request.content
+        {
+            catalog.configured_menu_source(name)
+        } else {
+            None
+        };
+        self.open_panel_after_source_ready(request, module_detail_sessions, menu_source)
     }
 
     fn toggle_panel_with_catalog(
@@ -320,12 +429,7 @@ impl PanelRuntime {
         if self.would_toggle_close(&request)
             && let Some(window) = self.active_panel_window()
         {
-            self.active_panel = None;
-            self.session = None;
-            self.module_detail_sessions.clear();
-            self.menu_scroll_y = 0.0;
-            self.menu_viewport_height = 0.0;
-            self.search_focus_pending = false;
+            self.clear();
             return vec![PanelRuntimeEffect::ClosePanelWindow(window)];
         }
         self.open_panel_with_catalog(request, catalog, module_detail_sessions)
@@ -337,11 +441,8 @@ impl PanelRuntime {
         apps: Vec<crate::desktop_apps::DesktopApplication>,
         catalog: PanelMenuCatalog<'_>,
     ) -> Vec<PanelRuntimeEffect> {
-        let effects = self.open_panel_after_source_ready(pending.request, HashMap::new());
-        if let Some(source) = catalog.installed_apps_source(&pending.menu_name, apps) {
-            self.open_session(source);
-        }
-        effects
+        let source = catalog.installed_apps_source(&pending.menu_name, apps);
+        self.open_panel_after_source_ready(pending.request, HashMap::new(), source)
     }
 
     fn open_panel_after_source_ready(
@@ -351,18 +452,37 @@ impl PanelRuntime {
             crate::modules::ModuleId,
             crate::modules::ModuleDetailSession,
         >,
+        menu_source: Option<super::panel_menu_session::PanelMenuSource>,
     ) -> Vec<PanelRuntimeEffect> {
         let mut effects = Vec::new();
         if let Some(window) = self.active_panel_window() {
             effects.push(PanelRuntimeEffect::ClosePanelWindow(window));
         }
-        self.active_panel = None;
+
         self.session = None;
+        if let Some(source) = menu_source {
+            self.open_session(source);
+        }
+
         self.module_detail_sessions = module_detail_sessions;
         self.menu_scroll_y = 0.0;
         self.menu_viewport_height = 0.0;
         self.search_focus_pending = false;
-        effects.push(PanelRuntimeEffect::OpenPanelWindow(request.clone()));
+
+        let tree = request.tree();
+        let attachment_id = self.allocate_attachment_id();
+        self.active_panel = Some(ActivePanel {
+            attachment_id,
+            window: None,
+            tree: tree.clone(),
+        });
+
+        effects.push(PanelRuntimeEffect::OpenPanelWindow(
+            PanelWindowOpenRequest {
+                attachment_id,
+                tree,
+            },
+        ));
         if matches!(
             request.content,
             crate::surface::panel::PanelContent::Menu(_)
@@ -457,7 +577,7 @@ impl PanelRuntime {
         &mut self,
         request: crate::ipc::protocol::DmenuRequest,
         responder: super::messages::IpcResponder,
-        origin_window: Option<iced::window::Id>,
+        panel_request: Option<PanelOpenRequest>,
     ) -> Vec<PanelRuntimeEffect> {
         if self.dmenu_responder.is_some() {
             return vec![PanelRuntimeEffect::SendDmenuResponse {
@@ -468,7 +588,7 @@ impl PanelRuntime {
             }];
         }
 
-        let Some(origin_window) = origin_window else {
+        let Some(panel_request) = panel_request else {
             return vec![PanelRuntimeEffect::SendDmenuResponse {
                 responder,
                 response: crate::ipc::protocol::IpcResponse::Rejected {
@@ -477,27 +597,12 @@ impl PanelRuntime {
             }];
         };
 
-        let mut effects = Vec::new();
-        if let Some(window) = self.active_panel_window() {
-            effects.push(PanelRuntimeEffect::ClosePanelWindow(window));
-        }
-        self.active_panel = None;
-        self.session = None;
-        self.module_detail_sessions.clear();
-        self.menu_scroll_y = 0.0;
-        self.menu_viewport_height = 0.0;
-        self.search_focus_pending = false;
-        self.open_session(super::panel_menu_session::PanelMenuSource::Dmenu(request));
         self.dmenu_responder = Some(responder);
-
-        effects.push(PanelRuntimeEffect::OpenPanelWindow(PanelOpenRequest {
-            origin_window,
-            origin: crate::surface::panel::PanelOrigin::Bar,
-            content: crate::surface::panel::PanelContent::DmenuRequest,
-            anchor: None,
-        }));
-        effects.push(self.request_search_focus());
-        effects
+        self.open_panel_after_source_ready(
+            panel_request,
+            HashMap::new(),
+            Some(super::panel_menu_session::PanelMenuSource::Dmenu(request)),
+        )
     }
 
     fn complete_dmenu(
@@ -557,11 +662,19 @@ impl PanelRuntime {
     pub(super) fn active_module_panel_contains(&self, id: &crate::modules::ModuleId) -> bool {
         match self.active_panel.as_ref() {
             Some(ActivePanel {
-                content: crate::surface::panel::PanelContent::ModulePanel(content_id),
+                tree:
+                    crate::surface::panel::PanelTree {
+                        content: crate::surface::panel::PanelContent::ModulePanel(content_id),
+                        ..
+                    },
                 ..
             }) => content_id == id && self.module_detail_sessions.contains_key(id),
             Some(ActivePanel {
-                content: crate::surface::panel::PanelContent::BarPanel,
+                tree:
+                    crate::surface::panel::PanelTree {
+                        content: crate::surface::panel::PanelContent::BarPanel,
+                        ..
+                    },
                 ..
             }) => self.module_detail_sessions.contains_key(id),
             _ => false,
@@ -717,6 +830,9 @@ mod tests {
             origin: crate::surface::panel::PanelOrigin::Bar,
             content,
             anchor: None,
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            screen_size: (1920, 1080),
         }
     }
 
@@ -777,6 +893,20 @@ mod tests {
         })
     }
 
+    fn open_window_request(
+        request: PanelOpenRequest,
+        attachment_id: u64,
+    ) -> PanelWindowOpenRequest {
+        PanelWindowOpenRequest {
+            attachment_id: PanelAttachmentId::for_test(attachment_id),
+            tree: request.tree(),
+        }
+    }
+
+    fn open_window_effect(request: PanelOpenRequest, attachment_id: u64) -> PanelRuntimeEffect {
+        PanelRuntimeEffect::OpenPanelWindow(open_window_request(request, attachment_id))
+    }
+
     fn detail_sessions(
         id: &str,
         value: u32,
@@ -792,15 +922,15 @@ mod tests {
     fn record_panel_window_opened(
         runtime: &mut PanelRuntime,
         window: iced::window::Id,
-        origin_window: iced::window::Id,
-        content: crate::surface::panel::PanelContent,
+        _origin_window: iced::window::Id,
+        _content: crate::surface::panel::PanelContent,
     ) {
+        let attachment_id = runtime
+            .current_attachment_for_test()
+            .expect("active panel should exist before a window attaches");
         runtime.handle(PanelRuntimeIntent::PanelWindowOpened {
+            attachment_id,
             window,
-            origin_window,
-            origin: crate::surface::panel::PanelOrigin::Bar,
-            content,
-            catalog: empty_catalog(),
         });
     }
 
@@ -811,6 +941,9 @@ mod tests {
             origin: crate::surface::panel::PanelOrigin::Module(id.clone()),
             content: crate::surface::panel::PanelContent::ModulePanel(id),
             anchor: None,
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            screen_size: (1920, 1080),
         }
     }
 
@@ -827,9 +960,10 @@ mod tests {
 
         assert_eq!(
             effects,
-            vec![PanelRuntimeEffect::OpenPanelWindow(module_panel_request(
-                origin, "custom"
-            ))]
+            vec![open_window_effect(
+                module_panel_request(origin, "custom"),
+                1
+            )]
         );
         assert_eq!(
             runtime.module_detail_session_value::<u32>(&crate::modules::ModuleId::new("custom")),
@@ -862,7 +996,7 @@ mod tests {
             effects,
             vec![
                 PanelRuntimeEffect::ClosePanelWindow(first_panel),
-                PanelRuntimeEffect::OpenPanelWindow(module_panel_request(origin, "second")),
+                open_window_effect(module_panel_request(origin, "second"), 2),
             ]
         );
         assert_eq!(
@@ -940,9 +1074,10 @@ mod tests {
 
         assert_eq!(
             effects,
-            vec![PanelRuntimeEffect::OpenPanelWindow(module_panel_request(
-                origin, "simple"
-            ))]
+            vec![open_window_effect(
+                module_panel_request(origin, "simple"),
+                1
+            )]
         );
         assert!(
             runtime
@@ -964,10 +1099,10 @@ mod tests {
         );
         assert_eq!(
             first,
-            vec![PanelRuntimeEffect::OpenPanelWindow(open_request(
-                origin,
-                crate::surface::panel::PanelContent::BarPanel
-            ))]
+            vec![open_window_effect(
+                open_request(origin, crate::surface::panel::PanelContent::BarPanel),
+                1
+            )]
         );
         record_panel_window_opened(
             &mut runtime,
@@ -988,10 +1123,13 @@ mod tests {
             second,
             vec![
                 PanelRuntimeEffect::ClosePanelWindow(first_panel),
-                PanelRuntimeEffect::OpenPanelWindow(open_request(
-                    origin,
-                    crate::surface::panel::PanelContent::Menu("main".into())
-                )),
+                open_window_effect(
+                    open_request(
+                        origin,
+                        crate::surface::panel::PanelContent::Menu("main".into())
+                    ),
+                    2
+                ),
                 PanelRuntimeEffect::RequestSearchFocus,
             ]
         );
@@ -1005,10 +1143,121 @@ mod tests {
     }
 
     #[test]
+    fn opening_panel_is_logically_active_before_window_attaches() {
+        let origin = wid();
+        let mut runtime = PanelRuntime::default();
+
+        let effects = open_panel(
+            &mut runtime,
+            open_request(origin, crate::surface::panel::PanelContent::BarPanel),
+        );
+
+        let [PanelRuntimeEffect::OpenPanelWindow(open)] = effects.as_slice() else {
+            panic!("expected only OpenPanelWindow, got {effects:?}");
+        };
+
+        assert_eq!(runtime.active_panel_window(), None);
+        assert_eq!(
+            runtime.current_attachment_for_test(),
+            Some(open.attachment_id)
+        );
+        assert_eq!(runtime.active_panel_tree_for_test(), Some(&open.tree));
+        assert_eq!(open.tree.origin_window, origin);
+        assert_eq!(open.tree.origin_bar_name, "main");
+        assert_eq!(open.tree.origin_output_name, "DP-1");
+    }
+
+    #[test]
+    fn stale_panel_window_close_does_not_clear_replacement_panel() {
+        let origin = wid();
+        let first_window = wid();
+        let second_window = wid();
+        let mut runtime = PanelRuntime::default();
+
+        let first_effects = open_panel(
+            &mut runtime,
+            open_request(origin, crate::surface::panel::PanelContent::BarPanel),
+        );
+        let [PanelRuntimeEffect::OpenPanelWindow(first_open)] = first_effects.as_slice() else {
+            panic!("expected first OpenPanelWindow, got {first_effects:?}");
+        };
+        let first_attachment = first_open.attachment_id;
+        runtime.handle(PanelRuntimeIntent::PanelWindowOpened {
+            attachment_id: first_attachment,
+            window: first_window,
+        });
+
+        let second_effects = open_panel(
+            &mut runtime,
+            open_request(
+                origin,
+                crate::surface::panel::PanelContent::Menu("main".into()),
+            ),
+        );
+        let second_open = second_effects
+            .iter()
+            .find_map(|effect| match effect {
+                PanelRuntimeEffect::OpenPanelWindow(open) => Some(open),
+                _ => None,
+            })
+            .expect("replacement should open a second panel");
+        let second_attachment = second_open.attachment_id;
+        runtime.handle(PanelRuntimeIntent::PanelWindowOpened {
+            attachment_id: second_attachment,
+            window: second_window,
+        });
+
+        let effects = runtime.handle(PanelRuntimeIntent::PanelWindowClosed {
+            attachment_id: first_attachment,
+            window: first_window,
+        });
+
+        assert!(effects.is_empty());
+        assert_eq!(
+            runtime.current_attachment_for_test(),
+            Some(second_attachment)
+        );
+        assert_eq!(runtime.active_panel_window(), Some(second_window));
+    }
+
+    #[test]
+    fn current_panel_window_close_clears_runtime_state() {
+        let origin = wid();
+        let panel_window = wid();
+        let mut runtime = PanelRuntime::default();
+
+        let effects = open_panel(
+            &mut runtime,
+            open_request(origin, crate::surface::panel::PanelContent::BarPanel),
+        );
+        let [PanelRuntimeEffect::OpenPanelWindow(open)] = effects.as_slice() else {
+            panic!("expected OpenPanelWindow, got {effects:?}");
+        };
+        runtime.handle(PanelRuntimeIntent::PanelWindowOpened {
+            attachment_id: open.attachment_id,
+            window: panel_window,
+        });
+
+        let close_effects = runtime.handle(PanelRuntimeIntent::PanelWindowClosed {
+            attachment_id: open.attachment_id,
+            window: panel_window,
+        });
+
+        assert!(close_effects.is_empty());
+        assert_eq!(runtime.current_attachment_for_test(), None);
+        assert_eq!(runtime.active_panel_window(), None);
+        assert!(runtime.active_panel_tree_for_test().is_none());
+    }
+
+    #[test]
     fn toggling_the_same_panel_closes_it() {
         let origin = wid();
         let panel = wid();
         let mut runtime = PanelRuntime::default();
+        open_panel(
+            &mut runtime,
+            open_request(origin, crate::surface::panel::PanelContent::BarPanel),
+        );
         record_panel_window_opened(
             &mut runtime,
             panel,
@@ -1071,7 +1320,14 @@ mod tests {
         let second = ipc_responder_for_test();
         assert!(runtime.begin_dmenu_request(first).is_ok());
 
-        let effects = runtime.begin_dmenu_selection(dmenu_request(), second, Some(wid()));
+        let effects = runtime.begin_dmenu_selection(
+            dmenu_request(),
+            second,
+            Some(open_request(
+                wid(),
+                crate::surface::panel::PanelContent::DmenuRequest,
+            )),
+        );
 
         assert_eq!(effects.len(), 1);
         match &effects[0] {
@@ -1106,19 +1362,23 @@ mod tests {
         let origin = wid();
         let mut runtime = PanelRuntime::default();
 
-        let effects =
-            runtime.begin_dmenu_selection(dmenu_request(), ipc_responder_for_test(), Some(origin));
+        let effects = runtime.begin_dmenu_selection(
+            dmenu_request(),
+            ipc_responder_for_test(),
+            Some(open_request(
+                origin,
+                crate::surface::panel::PanelContent::DmenuRequest,
+            )),
+        );
 
         assert!(runtime.has_dmenu_responder());
         assert_eq!(
             effects,
             vec![
-                PanelRuntimeEffect::OpenPanelWindow(super::PanelOpenRequest {
-                    origin_window: origin,
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::DmenuRequest,
-                    anchor: None,
-                }),
+                open_window_effect(
+                    open_request(origin, crate::surface::panel::PanelContent::DmenuRequest),
+                    1
+                ),
                 PanelRuntimeEffect::RequestSearchFocus,
             ]
         );
