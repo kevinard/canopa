@@ -194,51 +194,65 @@ fn ipc_message_for_line(line: &str) -> Option<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
 
-    #[test]
-    fn socket_path_ends_with_niribar_sock() {
-        let original = std::env::var("XDG_RUNTIME_DIR").ok();
-        unsafe { std::env::set_var("XDG_RUNTIME_DIR", "/run/user/1000") };
-        let path = socket_path().unwrap();
-        assert_eq!(path.file_name().unwrap(), "niribar.sock");
-        unsafe {
-            match original {
-                Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
-                None => std::env::remove_var("XDG_RUNTIME_DIR"),
+    static XDG_RUNTIME_DIR_LOCK: Mutex<()> = Mutex::new(());
+
+    struct XdgRuntimeDirGuard {
+        original: Option<String>,
+        _lock: MutexGuard<'static, ()>,
+    }
+
+    impl XdgRuntimeDirGuard {
+        fn set(value: Option<&str>) -> Self {
+            let lock = XDG_RUNTIME_DIR_LOCK.lock().unwrap();
+            let original = std::env::var("XDG_RUNTIME_DIR").ok();
+            unsafe {
+                match value {
+                    Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
+                    None => std::env::remove_var("XDG_RUNTIME_DIR"),
+                }
+            }
+            Self {
+                original,
+                _lock: lock,
+            }
+        }
+    }
+
+    impl Drop for XdgRuntimeDirGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.original {
+                    Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
+                    None => std::env::remove_var("XDG_RUNTIME_DIR"),
+                }
             }
         }
     }
 
     #[test]
+    fn socket_path_ends_with_niribar_sock() {
+        let _guard = XdgRuntimeDirGuard::set(Some("/run/user/1000"));
+        let path = socket_path().unwrap();
+        assert_eq!(path.file_name().unwrap(), "niribar.sock");
+    }
+
+    #[test]
     fn socket_path_uses_xdg_runtime_dir_when_set() {
-        let original = std::env::var("XDG_RUNTIME_DIR").ok();
-        // SAFETY: single-threaded test; no concurrent env reads.
-        unsafe { std::env::set_var("XDG_RUNTIME_DIR", "/run/user/1000") };
+        let _guard = XdgRuntimeDirGuard::set(Some("/run/user/1000"));
         let path = socket_path().unwrap();
         assert_eq!(
             path,
             std::path::PathBuf::from("/run/user/1000/niribar.sock")
         );
-        unsafe {
-            match original {
-                Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
-                None => std::env::remove_var("XDG_RUNTIME_DIR"),
-            }
-        }
     }
 
     #[test]
     fn socket_path_errors_when_xdg_unset() {
-        let original = std::env::var("XDG_RUNTIME_DIR").ok();
-        // SAFETY: single-threaded test; no concurrent env reads.
-        unsafe { std::env::remove_var("XDG_RUNTIME_DIR") };
+        let _guard = XdgRuntimeDirGuard::set(None);
         let err = socket_path().unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
-        unsafe {
-            if let Some(v) = original {
-                std::env::set_var("XDG_RUNTIME_DIR", v);
-            }
-        }
     }
 
     #[test]

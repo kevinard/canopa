@@ -6,8 +6,8 @@ use zbus::zvariant::OwnedObjectPath;
 use super::module_runtime::ModuleOrigin;
 use super::{App, Message, messages};
 use crate::dbus::sni::host::{ItemStatus, TrayEvent, TrayItem};
-use crate::modules::ModuleId;
 use crate::modules::ModuleKind;
+use crate::modules::{ModuleId, ModuleInteractionProfile};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TrayState {
@@ -166,6 +166,7 @@ impl App {
                             (zone.clone(), Box::new(icon_module)),
                             actions,
                             origin,
+                            ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
                         );
                     }
                 }
@@ -186,6 +187,7 @@ impl App {
                             (zone.clone(), Box::new(icon_module)),
                             actions,
                             origin,
+                            ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
                         );
                     }
                 }

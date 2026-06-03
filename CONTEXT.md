@@ -44,6 +44,10 @@ _Avoid_: Module type, widget ID
 The category of behavior a **Module** provides, such as clock, battery, or script.
 _Avoid_: Module name, instance name
 
+**Module Descriptor**:
+The static description of a **Module Kind** used to construct configured **Modules** and declare their app-owned runtime needs.
+_Avoid_: Module metadata, capability flags, constructor registry
+
 **Module Instance**:
 The runtime state and behavior of a **Module** while Niribar is running.
 _Avoid_: Module, widget instance
@@ -113,6 +117,10 @@ _Avoid_: Unavailable module, runtime failure
 **Module Action**:
 An intentional user-triggered effect caused by interacting with a **Module**.
 _Avoid_: Event, subscription, refresh, panel action when the action is not module-scoped
+
+**Module Interaction**:
+A pointer or keyboard input delivered to a **Module Instance** before it resolves into a **Module Action**, **Menu**, or module-owned effect.
+_Avoid_: Module action, app event, key binding
 
 **Tooltip**:
 Supplemental information shown for a **Module** on a **Bar Surface**.

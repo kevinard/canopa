@@ -174,6 +174,42 @@ pub enum InteractionEvent {
     ScrollDown,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ModuleInteractionProfile {
+    pub primary_activation: bool,
+    pub secondary_activation: bool,
+    pub scroll: bool,
+}
+
+impl ModuleInteractionProfile {
+    pub(crate) const NONE: Self = Self {
+        primary_activation: false,
+        secondary_activation: false,
+        scroll: false,
+    };
+
+    pub(crate) const PRIMARY: Self = Self {
+        primary_activation: true,
+        ..Self::NONE
+    };
+
+    pub(crate) const SECONDARY: Self = Self {
+        secondary_activation: true,
+        ..Self::NONE
+    };
+
+    pub(crate) const PRIMARY_AND_SECONDARY: Self = Self {
+        primary_activation: true,
+        secondary_activation: true,
+        scroll: false,
+    };
+
+    pub(crate) const SCROLL: Self = Self {
+        scroll: true,
+        ..Self::NONE
+    };
+}
+
 /// The core abstraction for all bar content modules.
 ///
 /// # Subscription Contract
@@ -318,15 +354,15 @@ impl ModuleCapabilities {
 macro_rules! config_module_descriptors {
     ($macro:ident) => {
         $macro! {
-            (ModuleKind::Battery, "battery", battery_ctor, Some(battery_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }),
-            (ModuleKind::Button, "button", button_ctor, None, ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }),
-            (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE),
-            (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor, Some(focused_window_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }),
-            (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }),
-            (ModuleKind::Script, "script", script_ctor, None, ModuleCapabilities::NONE),
-            (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, needs_session_dbus: true, ..ModuleCapabilities::NONE }),
-            (ModuleKind::Volume, "volume", volume_ctor, Some(volume_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, needs_wireplumber: true, ..ModuleCapabilities::NONE }),
-            (ModuleKind::Workspaces, "workspaces", workspaces_ctor, Some(workspaces_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, needs_keyboard_focus: true, ..ModuleCapabilities::NONE }),
+            (ModuleKind::Battery, "battery", battery_ctor, Some(battery_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Button, "button", button_ctor, None, ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY),
+            (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
+            (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor, Some(focused_window_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Script, "script", script_ctor, None, ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
+            (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, needs_session_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Volume, "volume", volume_ctor, Some(volume_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, needs_wireplumber: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::SCROLL),
+            (ModuleKind::Workspaces, "workspaces", workspaces_ctor, Some(workspaces_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
         }
     };
 }
@@ -339,6 +375,7 @@ pub(crate) struct ModuleDescriptor {
     pub constructor: ModuleConstructor,
     pub synthesized_params_factory: Option<SynthesizedParamsFactory>,
     pub capabilities: ModuleCapabilities,
+    pub interactions: ModuleInteractionProfile,
 }
 
 impl ModuleDescriptor {
@@ -348,7 +385,7 @@ impl ModuleDescriptor {
 }
 
 macro_rules! build_module_descriptors {
-    ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr, $capabilities:expr)),* $(,)?) => {
+    ($(($kind:expr, $config_name:expr, $ctor:ident, $factory:expr, $capabilities:expr, $interactions:expr)),* $(,)?) => {
         &[
             $(ModuleDescriptor {
                 kind: $kind,
@@ -356,6 +393,7 @@ macro_rules! build_module_descriptors {
                 constructor: $ctor,
                 synthesized_params_factory: $factory,
                 capabilities: $capabilities,
+                interactions: $interactions,
             }),*
         ]
     };

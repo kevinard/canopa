@@ -933,6 +933,104 @@ mod tests {
         (app, wid)
     }
 
+    struct ProbeInteractionModule {
+        id: ModuleId,
+        clicked: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl ProbeInteractionModule {
+        fn new(id: &str, clicked: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
+            Self {
+                id: ModuleId::new(id),
+                clicked,
+            }
+        }
+    }
+
+    impl crate::modules::Module for ProbeInteractionModule {
+        fn id(&self) -> ModuleId {
+            self.id.clone()
+        }
+
+        fn kind(&self) -> ModuleKind {
+            ModuleKind::Button
+        }
+
+        fn subscription(&self) -> iced::Subscription<Message> {
+            iced::Subscription::none()
+        }
+
+        fn view_collapsed_with_style(
+            &self,
+            _state: &crate::modules::ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn view_panel_with_style(
+            &self,
+            _state: &crate::modules::ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn on_interaction(&self, event: crate::modules::InteractionEvent) -> Option<Message> {
+            match event {
+                crate::modules::InteractionEvent::Clicked => {
+                    self.clicked
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    None
+                }
+                crate::modules::InteractionEvent::ScrollDown
+                | crate::modules::InteractionEvent::ScrollUp => {
+                    panic!("keyboard focus must not probe module interactions")
+                }
+                _ => None,
+            }
+        }
+    }
+
+    #[test]
+    fn keyboard_activate_does_not_probe_module_interactions() {
+        let clicked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        use crate::config::{ButtonConfig, ModuleConfig, ModuleParams};
+        let mut config = Config::default();
+        config.modules = vec![ModuleConfig {
+            name: "probe".into(),
+            module_type: "button".into(),
+            params: ModuleParams::Button(ButtonConfig {
+                label: "probe".into(),
+                icon: ">".into(),
+                on_click: crate::config::CommandConfig::Shell("true".into()),
+                format: crate::config::FormatConfig::default(),
+                tooltip: crate::config::TooltipSetting::Default,
+            }),
+            actions: crate::config::ModuleActionsConfig::default(),
+        }];
+        config.bars[0].modules.start = vec!["probe".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        app.modules = module_runtime::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(ProbeInteractionModule::new("probe", clicked.clone()))
+                as Box<dyn crate::modules::Module>,
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let wid = test_wid();
+        app.surface_mut(wid);
+
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
+            wid,
+        )));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+            wid,
+        )));
+
+        assert!(clicked.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!app.surfaces[&wid].module_activated);
+    }
+
     #[test]
     fn clear_surface_module_refs_clears_focus_and_hover_for_matching_ids() {
         let (mut app, wid) = make_interact_app();

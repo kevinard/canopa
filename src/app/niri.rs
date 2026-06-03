@@ -2,9 +2,8 @@ use iced::Task;
 
 use super::module_runtime::ModuleOrigin;
 use super::{App, Message};
-use crate::modules::ModuleId;
 use crate::modules::workspaces::WorkspaceItemModule;
-use crate::modules::{ModuleKind, ModuleState};
+use crate::modules::{ModuleId, ModuleInteractionProfile, ModuleKind, ModuleState};
 use crate::niri::NiriEvent;
 
 pub(super) struct AppNiriState {
@@ -276,6 +275,7 @@ impl App {
                     (zone.clone(), Box::new(item)),
                     actions,
                     origin,
+                    ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
                 );
             }
         }

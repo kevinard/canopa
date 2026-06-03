@@ -1,7 +1,6 @@
 use iced::Task;
 use iced_layershell::reexport::KeyboardInteractivity;
 
-use super::widget_ops::FindBounds;
 use super::{App, Message};
 use crate::modules::{InteractionEvent, Zone};
 
@@ -164,20 +163,12 @@ impl App {
             {
                 return self.dispatch_module_interaction(id, InteractionEvent::Clicked, window);
             }
-            for (_, module) in &self.modules {
-                if module.id() == *id {
-                    if module
-                        .on_interaction(InteractionEvent::ScrollDown)
-                        .is_some()
-                    {
-                        self.surface_mut(window).module_activated = true;
-                        return Task::none();
-                    }
-                    if let Some(msg) = module.on_interaction(InteractionEvent::Clicked) {
-                        return Task::done(msg);
-                    }
-                    break;
-                }
+            if self.modules.supports_scroll_interaction(id) {
+                self.surface_mut(window).module_activated = true;
+                return Task::none();
+            }
+            if self.modules.supports_primary_activation(id) {
+                return self.dispatch_module_interaction(id, InteractionEvent::Clicked, window);
             }
         }
         Task::none()
@@ -204,41 +195,12 @@ impl App {
                     window,
                 );
             }
-            for (_, module) in &self.modules {
-                if module.id() == *id {
-                    if let Some(msg) = module.on_interaction(InteractionEvent::Activated(window)) {
-                        if let Message::Tray(
-                            super::messages::TrayRuntimeEvent::MenuRequestKeyboard {
-                                service,
-                                menu_path,
-                                source_window,
-                            },
-                        ) = msg
-                        {
-                            let target =
-                                crate::modules::tray::tray_icon_widget_id(window, &service);
-                            let op = FindBounds {
-                                target,
-                                result: None,
-                            };
-                            let svc = service.clone();
-                            let mp = menu_path.clone();
-                            return iced::advanced::widget::operate(op).then(move |bounds| {
-                                Task::done(Message::Tray(
-                                    super::messages::TrayRuntimeEvent::MenuRequestWithBounds {
-                                        service: svc.clone(),
-                                        menu_path: mp.clone(),
-                                        bounds,
-                                        screen_size,
-                                        source_window,
-                                    },
-                                ))
-                            });
-                        }
-                        return Task::done(msg);
-                    }
-                    break;
-                }
+            if self.modules.supports_secondary_activation(id) {
+                return self.dispatch_keyboard_secondary_module_interaction(
+                    id,
+                    window,
+                    screen_size,
+                );
             }
         }
         Task::none()

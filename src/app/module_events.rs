@@ -201,18 +201,63 @@ impl App {
             return self.dispatch_panel_action(origin_window, origin, action);
         }
 
-        if let Some(module) = self.modules.get(id)
-            && let Some(msg) = module.on_interaction(event)
-        {
+        if let Some(msg) = self.modules.module_owned_interaction(id, event) {
             tracing::trace!(
                 target: "niribar::modules",
                 module_name = self.modules.diagnostic_name_for(id),
-                module_kind = module.kind().runtime_name(),
                 "module interaction produced app message"
             );
             return Task::done(msg);
         }
         Task::none()
+    }
+
+    pub(super) fn dispatch_keyboard_secondary_module_interaction(
+        &mut self,
+        id: &ModuleId,
+        window: iced::window::Id,
+        screen_size: (u32, u32),
+    ) -> Task<Message> {
+        let Some(msg) = self
+            .modules
+            .module_owned_interaction(id, InteractionEvent::Activated(window))
+        else {
+            return Task::none();
+        };
+
+        tracing::trace!(
+            target: "niribar::modules",
+            module_name = self.modules.diagnostic_name_for(id),
+            "keyboard module interaction produced app message"
+        );
+
+        match msg {
+            Message::Tray(super::messages::TrayRuntimeEvent::MenuRequestKeyboard {
+                service,
+                menu_path,
+                source_window,
+            }) => {
+                let target = crate::modules::tray::tray_icon_widget_id(window, &service);
+                let op = super::widget_ops::FindBounds {
+                    target,
+                    result: None,
+                };
+                let svc = service.clone();
+                let mp = menu_path.clone();
+                iced::advanced::widget::operate(op).then(move |bounds| {
+                    Task::done(Message::Tray(
+                        super::messages::TrayRuntimeEvent::MenuRequestWithBounds {
+                            service: svc.clone(),
+                            menu_path: mp.clone(),
+                            bounds,
+                            screen_size,
+                            source_window,
+                        },
+                    ))
+                })
+            }
+            other => Task::done(other),
+        }
     }
 
     fn apply_module_data_source_state(

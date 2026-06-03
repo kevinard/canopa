@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::config::ModuleActionsConfig;
-use crate::modules::{Module, ModuleId, ModuleKind, ModuleState, Zone};
+use crate::modules::{
+    Module, ModuleId, ModuleInteractionProfile, ModuleKind, ModuleState, Zone, descriptor_for_kind,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ModuleOrigin {
@@ -14,6 +16,7 @@ pub(super) struct ModuleRuntime {
     states: HashMap<ModuleId, ModuleState>,
     actions: HashMap<ModuleId, ModuleActionsConfig>,
     origins: HashMap<ModuleId, ModuleOrigin>,
+    interactions: HashMap<ModuleId, ModuleInteractionProfile>,
 }
 
 impl ModuleRuntime {
@@ -22,12 +25,16 @@ impl ModuleRuntime {
     ) -> Self {
         let mut actions = HashMap::new();
         let mut origins = HashMap::new();
+        let mut interactions = HashMap::new();
         let ordered = modules
             .into_iter()
             .map(|(zone, module, module_actions)| {
                 let id = module.id();
                 if module_actions != ModuleActionsConfig::default() {
                     actions.insert(id.clone(), module_actions);
+                }
+                if let Some(descriptor) = descriptor_for_kind(module.kind()) {
+                    interactions.insert(id.clone(), descriptor.interactions);
                 }
                 origins.insert(id, ModuleOrigin::Configured);
                 (zone, module)
@@ -39,6 +46,7 @@ impl ModuleRuntime {
             states: HashMap::new(),
             actions,
             origins,
+            interactions,
         }
     }
 
@@ -80,6 +88,7 @@ impl ModuleRuntime {
         item: (Zone, Box<dyn Module>),
         actions: ModuleActionsConfig,
         origin: ModuleOrigin,
+        interactions: ModuleInteractionProfile,
     ) {
         let id = item.1.id();
         self.store.insert(index, item);
@@ -88,7 +97,8 @@ impl ModuleRuntime {
         } else {
             self.actions.insert(id.clone(), actions);
         }
-        self.origins.insert(id, origin);
+        self.origins.insert(id.clone(), origin);
+        self.interactions.insert(id, interactions);
     }
 
     pub(super) fn retain(&mut self, keep: impl FnMut(&(Zone, Box<dyn Module>)) -> bool) {
@@ -97,6 +107,7 @@ impl ModuleRuntime {
         self.states.retain(|id, _| retained_ids.contains(id));
         self.actions.retain(|id, _| retained_ids.contains(id));
         self.origins.retain(|id, _| retained_ids.contains(id));
+        self.interactions.retain(|id, _| retained_ids.contains(id));
     }
 
     pub(super) fn ids_by_kind(&self, kind: ModuleKind) -> &[ModuleId] {
@@ -146,6 +157,43 @@ impl ModuleRuntime {
     ) -> Option<&crate::config::PanelAction> {
         let actions = self.actions.get(id)?;
         actions.action_for(trigger)
+    }
+
+    pub(super) fn interaction_profile_for(&self, id: &ModuleId) -> ModuleInteractionProfile {
+        let mut profile = self.interactions.get(id).copied().unwrap_or_default();
+        if self
+            .action_for(id, &crate::config::ActionTrigger::Click)
+            .is_some()
+        {
+            profile.primary_activation = true;
+        }
+        if self
+            .action_for(id, &crate::config::ActionTrigger::RightClick)
+            .is_some()
+        {
+            profile.secondary_activation = true;
+        }
+        profile
+    }
+
+    pub(super) fn supports_primary_activation(&self, id: &ModuleId) -> bool {
+        self.interaction_profile_for(id).primary_activation
+    }
+
+    pub(super) fn supports_secondary_activation(&self, id: &ModuleId) -> bool {
+        self.interaction_profile_for(id).secondary_activation
+    }
+
+    pub(super) fn supports_scroll_interaction(&self, id: &ModuleId) -> bool {
+        self.interaction_profile_for(id).scroll
+    }
+
+    pub(super) fn module_owned_interaction(
+        &self,
+        id: &ModuleId,
+        event: crate::modules::InteractionEvent,
+    ) -> Option<super::Message> {
+        self.get(id).and_then(|module| module.on_interaction(event))
     }
 }
 
