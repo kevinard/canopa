@@ -134,12 +134,32 @@ _Avoid_: Popup action, module display
 An interactive popup exposed by a **Module** or child **Module Instance**.
 _Avoid_: Tooltip, action, launcher
 
+**SNI Menu**:
+A **Menu** exposed by a StatusNotifierItem through DBusMenu and rendered by Niribar as a popup.
+_Avoid_: Panel Menu, launcher, configured menu
+
+**Menu Search**:
+The user-facing matching behavior that filters or ranks selectable **Menu** or **Panel Menu** entries from typed input.
+_Avoid_: Panel Menu Search when the behavior is not panel-only, filter when referring to ranked matching behavior
+
+**Custom Menu Value**:
+A user-submitted typed value returned by a selectable menu instead of an existing entry.
+_Avoid_: Dmenu entry when the value was typed by the user, menu item when no configured item exists
+
+**Selectable Menu Session**:
+The live runtime interaction for one selectable **Menu** or **Panel Menu**, including its entry source, active menu level, optional **Menu Search** text, focused entry, hover state, optional **Custom Menu Value** affordance, and selected-entry completion. It does not own physical **Menu** or **Panel** window lifecycle.
+_Avoid_: Panel Menu Session when the behavior applies beyond panels, popup state when referring to selection behavior
+
+**Foreground**:
+The currently active interactive overlay state, either no overlay, a **Menu**, or a **Panel**. **Tooltip** is not **Foreground** because it is passive, non-interactive, and owned as a **Bar Surface** affordance.
+_Avoid_: overlay registry when referring to interactive state, popup when referring to **Panel** or **Menu** interaction
+
 **Panel**:
 A transient overlay surface opened from a **Bar Surface**. A **Panel** is anchored to its originating **Bar Surface** or **Module** and can render module detail content, a **Bar**'s configured panel module layout, or named **Panel Menu** content.
 _Avoid_: Popup when referring to Niribar's generic panel
 
 **Panel Runtime**:
-The live state machine for the currently active **Panel**, including its **Panel Menu Session** when present, pending search focus, menu scroll position, and any active **Dmenu Selection Request** responder.
+The live state machine for the currently active **Panel**, including its **Selectable Menu Session** when a **Panel Menu** is present, pending search focus, menu scroll position, and any active **Dmenu Selection Request** responder.
 _Avoid_: Panel state when referring to the full open/search/activation/cancel lifecycle
 
 **Panel Lifecycle**:
@@ -180,7 +200,7 @@ An app-owned, named launcher/menu list rendered inside a **Panel**.
 _Avoid_: Menu when referring to SNI or other module-owned context menus
 
 **Panel Menu Session**:
-The live runtime interaction for one opened **Panel Menu**, including its **Panel Menu Source**, active menu level, **Panel Menu Search** text, focused entry, and activation/completion state.
+The **Selectable Menu Session** for one opened **Panel Menu**.
 _Avoid_: Panel state when referring only to menu selection behavior
 
 **Panel Menu Entry Icon**:
@@ -194,10 +214,6 @@ _Avoid_: Generated config, launcher backend
 **Panel Menu Prompt**:
 Optional text that gives user-facing context for a **Panel Menu** search or selection.
 _Avoid_: Menu item, title when the text is not just a heading
-
-**Panel Menu Search**:
-The user-facing matching behavior that filters or ranks **Panel Menu** entries from typed input.
-_Avoid_: Filter when referring to ranked matching behavior
 
 **Installed Desktop Application**:
 A user-launchable GUI application discovered from the desktop environment's application metadata.
@@ -356,13 +372,22 @@ _Avoid_: Default config, fallback surface
 - The visible **Module** or child **Module Instance** target owns the **Tooltip** shown for that target.
 - A **Tooltip** closes when its originating visible target disappears.
 - A **Tooltip** closes when a **Panel** opens.
+- A **Tooltip** is not **Foreground**.
 - A **Bar Surface** shows at most one **Tooltip** at a time.
 - Opening a **Menu** closes open **Tooltips** on the same **Bar Surface**.
 - Niribar shows at most one **Menu** at a time.
 - A **Menu** closes when its originating visible target disappears.
 - Opening a **Panel** closes any open **Menu**.
 - Opening a **Menu** closes any open **Panel**.
+- Niribar has at most one **Foreground** at a time.
+- Opening a **Panel** or **Menu** replaces the current **Foreground**.
+- Every request that opens, toggles, or closes a **Panel** or **Menu** goes through **Foreground**.
 - **Keyboard Focus** enters a **Menu** while it is open and returns to the originating target when the **Menu** closes, if that target still exists.
+- A **SNI Menu** is a **Menu**.
+- **SNI Menus** do not show **Menu Search** by default.
+- A user may configure **Menu Search** for **SNI Menus**.
+- A **SNI Menu** with configured **Menu Search** renders a visible search input while the **Menu** is open.
+- When a **SNI Menu** layout updates while open, Niribar resets that **Menu** to its top level with empty **Menu Search** text and initial focus.
 - **Menus** and **Tooltips** do not inherit the **Layer** of their **Bar Surface**.
 - Niribar shows at most one **Panel** at a time.
 - A **Panel** becomes logically active when the **Panel Runtime** accepts the open request, before its overlay window is created.
@@ -439,22 +464,28 @@ _Avoid_: Default config, fallback surface
 - **Installed Desktop Applications** may supply best-effort **Panel Menu Entry Icons**, but missing icons do not prevent display or launch.
 - Invalid **Panel Menu Entry Icons** from installed application metadata are treated as missing icons, not **Configuration Errors**.
 - An installed-applications **Panel Menu Source** presents **Installed Desktop Applications** as a flat list by default.
-- **Panel Menu Search** uses fuzzy matching for configured **Panel Menus**, installed-applications **Panel Menu Sources**, and **Dmenu Panel Menu Sources**.
-- **Panel Menu Search** uses fuzzy matching as the default behavior rather than offering a substring-search mode.
-- **Panel Menu Search** fuzzy matching requires query characters to appear in order.
-- **Panel Menu Search** is ASCII case-insensitive.
-- **Panel Menu Search** splits search text on whitespace and requires every query token to match.
-- **Panel Menu Search** ranks matching entries by match quality and uses source order as the tie-breaker.
-- **Panel Menu Search** ranks substring matches ahead of non-contiguous fuzzy matches when other priority rules are equal.
-- **Panel Menu Search** preserves source order when the search text has no non-whitespace tokens.
-- **Panel Menu Search** returns all matching entries rather than applying a hidden result cap.
-- **Panel Menu Search** ranks visible leaf labels ahead of secondary metadata, and secondary metadata ahead of breadcrumb-only ancestor matches.
-- **Panel Menu Search** can match breadcrumb ancestor labels for nested configured **Panel Menu** entries as lowest-priority text.
-- **Panel Menu Search** uses Niribar-owned matching behavior rather than exposing a third-party matcher as domain behavior.
-- **Panel Menu Search** for **Installed Desktop Applications** matches application names, descriptions, generic names, and keywords.
+- **Menu Search** uses fuzzy matching for configured **Panel Menus**, installed-applications **Panel Menu Sources**, **Dmenu Panel Menu Sources**, and configured searchable **SNI Menus**.
+- **Menu Search** uses the same matching, ranking, and nested-entry behavior everywhere it is enabled.
+- **Menu Search** uses fuzzy matching as the default behavior rather than offering a substring-search mode.
+- **Menu Search** fuzzy matching requires query characters to appear in order.
+- **Menu Search** is ASCII case-insensitive.
+- **Menu Search** splits search text on whitespace and requires every query token to match.
+- **Menu Search** ranks matching entries by match quality and uses source order as the tie-breaker.
+- **Menu Search** ranks substring matches ahead of non-contiguous fuzzy matches when other priority rules are equal.
+- **Menu Search** preserves source order when the search text has no non-whitespace tokens.
+- **Menu Search** returns all matching entries rather than applying a hidden result cap.
+- **Menu Search** ranks visible leaf labels ahead of secondary metadata, and secondary metadata ahead of breadcrumb-only ancestor matches.
+- **Menu Search** can match breadcrumb ancestor labels for nested entries as lowest-priority text.
+- **Menu Search** uses Niribar-owned matching behavior rather than exposing a third-party matcher as domain behavior.
+- **Menu Search** for **Installed Desktop Applications** matches application names, descriptions, generic names, and keywords.
+- A selectable menu may allow a **Custom Menu Value** when its source or configuration enables typed values.
+- A **Custom Menu Value** appears after fuzzy-matched entries, or first when there are no matching entries.
+- Activating a **Selectable Menu Session** produces a generic selected entry; the owning runtime interprets that selected entry as a **Panel Action**, **Installed Desktop Application** launch, **Dmenu Selection Request** response, or **SNI Menu** item activation.
+- A **Selectable Menu Session** owns both pointer hover and keyboard focus for its entries.
+- Niribar has at most one active **Selectable Menu Session** at a time.
 - A dynamic **Panel Menu Source** is refreshed when its **Panel Menu** opens and remains stable while that **Panel** is open.
-- A **Panel Menu** may contain nested items, but the **Panel** displays one active menu level at a time unless search is active.
-- **Panel Menu Search** matches nested items and displays matching results with breadcrumb context.
+- A selectable menu may contain nested items, but Niribar displays one active menu level at a time unless **Menu Search** is active.
+- **Menu Search** matches nested items and displays matching results with breadcrumb context.
 - A searched **Panel Menu** entry keeps its own **Panel Menu Entry Icon**; breadcrumb ancestors do not provide the result icon.
 - Activating a command item in a **Panel Menu** closes the **Panel** by default.
 - Activating a command from module panel content does not close the **Panel** by default.
@@ -475,12 +506,11 @@ _Avoid_: Default config, fallback surface
 - Empty input is valid in **Dmenu Selection Mode**.
 - **Dmenu Selection Mode** preserves duplicate input entries in display order.
 - **Dmenu Selection Mode** preserves duplicate **Rich Dmenu Entries** in display order, regardless of shared labels or values.
-- **Dmenu Selection Mode** allows the user to submit arbitrary typed text by default.
+- **Dmenu Selection Mode** allows the user to submit a **Custom Menu Value** by default.
 - **Dmenu Selection Mode** can be explicitly restricted to provided entries with `--no-custom`.
 - Empty input with `--no-custom` offers no selectable entries and can only be cancelled.
 - When **Dmenu Selection Mode** has a focused matching entry, normal activation returns that focused entry.
-- Submitting arbitrary typed text uses a distinct custom-value affordance.
-- In **Dmenu Selection Mode**, a custom typed value appears after fuzzy-matched entries, or first when there are no matching entries.
+- Submitting a **Custom Menu Value** uses a distinct custom-value affordance.
 - **Dmenu Selection Mode** writes the selected entry and does not run configured **Panel Actions**.
 - **Dmenu Selection Mode** exits successfully only when the user selects or submits a value.
 - Cancelling **Dmenu Selection Mode** exits distinctly from CLI usage errors and IPC/request failures.
@@ -499,7 +529,7 @@ _Avoid_: Default config, fallback surface
 - A value-only **Rich Dmenu Entry** uses its returned value as its visible label.
 - Selecting a **Rich Dmenu Entry** returns its value to the caller; if no separate value is present, it returns the visible label.
 - A custom typed value in **Dmenu Selection Mode** is returned as typed and is not a **Rich Dmenu Entry**.
-- **Dmenu Selection Mode** keeps its selection-value semantics when using **Panel Menu Search**.
+- **Dmenu Selection Mode** keeps its selection-value semantics when using **Menu Search**.
 - **Dmenu Selection Mode** search matches rich entry labels and keywords; it does not match opaque returned values unless no label is provided.
 - Rich **Dmenu Entries** are selectable leaf candidates, not configured **Panel Menu** items; they do not define **Panel Actions** or child entries.
 - Rich **Dmenu Entry** icons use the same XDG icon-theme-name constraint as other **Panel Menu Entry Icons**.
