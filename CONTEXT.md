@@ -56,6 +56,10 @@ _Avoid_: Module, widget instance
 A **Module** that produces runtime child **Module Instances** from external state.
 _Avoid_: Generated module, synthetic module
 
+**Dynamic Module Lifecycle**:
+The app-owned runtime lifecycle that replaces a **Dynamic Module** placeholder with child **Module Instances**, clears stale child targets, preserves inherited actions and interactions, and expands child placement in **Bar** and **Panel** module layouts.
+_Avoid_: Dynamic module cleanup, generated module registry
+
 **Module Data Source**:
 An app-owned runtime source of changing domain state used by one or more **Module Instances**.
 _Avoid_: Module subscription, backend, provider
@@ -326,6 +330,11 @@ _Avoid_: Default config, fallback surface
 - A **Module** may expose a **Tooltip**.
 - A **Module** may expose a **Menu**.
 - A **Dynamic Module** owns the placement and configuration for its runtime child **Module Instances**.
+- The **Dynamic Module Lifecycle** owns placeholder lookup, child replacement, stale focus and hover cleanup, inherited actions and interactions, and layout expansion for **Dynamic Modules**.
+- The **Dynamic Module Lifecycle** lives in the app runtime, with **Module Runtime** acting as the storage adapter for ordered **Module Instances**, actions, origins, and interaction profiles.
+- Child-origin mapping for **Dynamic Modules** is internal to the **Dynamic Module Lifecycle**; other app modules should not inspect child **Module Instances** to infer the parent **Dynamic Module**.
+- The **Dynamic Module Lifecycle** supports both full child replacement and single-child replacement or removal for one parent **Dynamic Module**; this covers tray item changes without forcing workspace changes to become incremental.
+- **Dynamic Module Lifecycle** tests should cover full replacement, single-child replacement, single-child removal, stale **Keyboard Focus** and hover cleanup, inherited **Module Actions** and interaction profiles, and identical expansion in **Bar** and **Panel** module layouts.
 - Child **Module Instances** produced by a **Dynamic Module** are individually navigable and actionable when they represent distinct user targets.
 - A **Module Instance** may depend on a **Module Data Source**.
 - Multiple **Module Instances** may share one **Module Data Source Identity**.

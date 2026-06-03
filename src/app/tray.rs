@@ -3,11 +3,9 @@ use std::collections::BTreeMap;
 use iced::Task;
 use zbus::zvariant::OwnedObjectPath;
 
-use super::module_runtime::ModuleOrigin;
 use super::{App, Message, messages};
 use crate::dbus::sni::host::{ItemStatus, TrayEvent, TrayItem};
-use crate::modules::ModuleKind;
-use crate::modules::{ModuleId, ModuleInteractionProfile};
+use crate::modules::ModuleId;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TrayState {
@@ -69,15 +67,6 @@ impl App {
         let item = self.tray_item(id)?;
         let menu_path = menu_path.or_else(|| item.menu_path.clone())?;
         Some((item.service.clone(), menu_path))
-    }
-
-    fn find_tray_slots(&self) -> Vec<(usize, crate::modules::Zone, String)> {
-        self.modules
-            .iter()
-            .enumerate()
-            .filter(|(_, (_, m))| m.kind() == ModuleKind::Tray)
-            .map(|(i, (z, m))| (i, z.clone(), m.id().0.clone()))
-            .collect()
     }
 
     pub(super) fn handle_tray_runtime_event(
@@ -144,57 +133,45 @@ impl App {
 
         match event {
             TrayEvent::Snapshot(_) => {
-                let stale_icon_ids: Vec<_> = self
-                    .modules
-                    .iter()
-                    .filter(|(_, module)| module.kind() == ModuleKind::TrayIcon)
-                    .map(|(_, module)| module.id())
-                    .collect();
-                self.modules
-                    .retain(|(_, module)| module.kind() != ModuleKind::TrayIcon);
-                self.clear_surface_module_refs(&stale_icon_ids);
-
-                let tray_slots = self.find_tray_slots();
-                for (slot_idx, zone, config_name) in tray_slots.iter().rev() {
-                    let insert_at = slot_idx + 1;
-                    for item in active_items.iter().rev() {
-                        let icon_module = TrayIconModule::new(item.clone(), config_name.clone());
-                        let actions = self.actions_for_config_module(config_name);
-                        let origin = ModuleOrigin::ExpandedFrom(ModuleId::new(config_name));
-                        self.modules.insert_with_actions_and_origin(
-                            insert_at,
-                            (zone.clone(), Box::new(icon_module)),
-                            actions,
-                            origin,
-                            ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
-                        );
-                    }
-                }
+                self.replace_dynamic_children(
+                    super::dynamic_modules::TRAY_DYNAMIC_MODULE,
+                    |slot| {
+                        active_items
+                            .iter()
+                            .cloned()
+                            .map(|item| {
+                                Box::new(TrayIconModule::new(item, slot.parent_name().to_string()))
+                                    as Box<dyn crate::modules::Module>
+                            })
+                            .collect()
+                    },
+                );
             }
             TrayEvent::ItemAdded(item) => {
-                let service_id = format!("tray:{}", item.runtime_id());
-                self.remove_tray_icon(&service_id);
-
+                let child_id = ModuleId::new(format!("tray:{}", item.runtime_id()));
                 if item.status != ItemStatus::Passive {
-                    let tray_slots = self.find_tray_slots();
-                    for (slot_idx, zone, config_name) in tray_slots.iter().rev() {
-                        let insert_at = self.tray_insert_position(*slot_idx, config_name);
-                        let icon_module = TrayIconModule::new(item.clone(), config_name.clone());
-                        let actions = self.actions_for_config_module(config_name);
-                        let origin = ModuleOrigin::ExpandedFrom(ModuleId::new(config_name));
-                        self.modules.insert_with_actions_and_origin(
-                            insert_at,
-                            (zone.clone(), Box::new(icon_module)),
-                            actions,
-                            origin,
-                            ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
-                        );
-                    }
+                    self.replace_dynamic_child(
+                        super::dynamic_modules::TRAY_DYNAMIC_MODULE,
+                        &child_id,
+                        |slot| {
+                            Box::new(TrayIconModule::new(
+                                item.clone(),
+                                slot.parent_name().to_string(),
+                            ))
+                        },
+                    );
+                } else {
+                    self.remove_dynamic_child(
+                        super::dynamic_modules::TRAY_DYNAMIC_MODULE,
+                        &child_id,
+                    );
                 }
             }
             TrayEvent::ItemRemoved(service) => {
-                let service_id = format!("tray:{service}");
-                self.remove_tray_icon(&service_id);
+                self.remove_dynamic_child(
+                    super::dynamic_modules::TRAY_DYNAMIC_MODULE,
+                    &ModuleId::new(format!("tray:{service}")),
+                );
             }
         }
 
@@ -387,6 +364,7 @@ mod tests {
     use super::*;
     use crate::app::Message;
     use crate::config::{Config, Edge, ModuleConfig, ModuleParams};
+    use crate::modules::ModuleKind;
     use zbus::zvariant::OwnedObjectPath;
 
     fn make_tray_config() -> Config {

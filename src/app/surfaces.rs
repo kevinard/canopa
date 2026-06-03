@@ -1022,43 +1022,6 @@ impl App {
         Self::bar_for_surface_name(bars, &identity.bar_name)
     }
 
-    /// Remove the `tray_icon` module with the given module id from `self.modules`,
-    /// and clear any surface hover/focus that pointed at it.
-    pub(super) fn remove_tray_icon(&mut self, module_id: &str) {
-        let had_it = self
-            .modules
-            .iter()
-            .any(|(_, m)| m.kind() == ModuleKind::TrayIcon && m.id().0 == module_id);
-        if !had_it {
-            return;
-        }
-        self.modules
-            .retain(|(_, m)| !(m.kind() == ModuleKind::TrayIcon && m.id().0 == module_id));
-        for s in self.surfaces.surfaces_mut() {
-            if s.focused_module.as_ref().map(|id| id.0.as_str()) == Some(module_id) {
-                s.focused_module = None;
-            }
-            if s.hovered_module.as_ref().map(|id| id.0.as_str()) == Some(module_id) {
-                s.hovered_module = None;
-            }
-        }
-    }
-
-    /// Return the index at which to insert a new tray icon after `slot_idx`.
-    /// Scans forward past any existing `tray_icon` modules for the same slot.
-    pub(super) fn tray_insert_position(&self, slot_idx: usize, config_name: &str) -> usize {
-        let mut pos = slot_idx + 1;
-        while pos < self.modules.len() {
-            let (_, m) = &self.modules[pos];
-            if m.kind() == ModuleKind::TrayIcon && m.config_name() == Some(config_name) {
-                pos += 1;
-            } else {
-                break;
-            }
-        }
-        pos
-    }
-
     fn handle_module_hover_enter(
         &mut self,
         id: crate::modules::ModuleId,
@@ -1191,10 +1154,7 @@ impl App {
         use crate::config::ModuleParams;
         use crate::config::tooltip_defaults as td;
 
-        let config_name = self
-            .modules
-            .config_name_for(module)
-            .unwrap_or(module.0.as_str());
+        let config_name = self.configured_module_name_for_instance(module);
         let mc = self.config.modules.iter().find(|m| m.name == config_name)?;
 
         let (setting, default) = match &mc.params {

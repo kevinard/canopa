@@ -1,9 +1,8 @@
 use iced::Task;
 
-use super::module_runtime::ModuleOrigin;
 use super::{App, Message};
 use crate::modules::workspaces::WorkspaceItemModule;
-use crate::modules::{ModuleId, ModuleInteractionProfile, ModuleKind, ModuleState};
+use crate::modules::{ModuleKind, ModuleState};
 use crate::niri::NiriEvent;
 
 pub(super) struct AppNiriState {
@@ -210,7 +209,6 @@ impl App {
     }
 
     /// Rebuild one `WorkspaceItemModule` per workspace for each `WorkspacesModule` placeholder.
-    /// Mirrors the `TrayUpdated` handler: find placeholder slots, remove stale items, insert fresh ones.
     pub(super) fn rebuild_workspace_item_modules(&mut self, workspaces: &[niri_ipc::Workspace]) {
         use crate::config::ModuleParams;
 
@@ -218,67 +216,36 @@ impl App {
             perf.record_workspace_rebuild();
         }
 
-        let stale_item_ids: Vec<_> = self
-            .modules
-            .iter()
-            .filter(|(_, module)| module.kind() == ModuleKind::WorkspaceItem)
-            .map(|(_, module)| module.id())
-            .collect();
-        self.modules
-            .retain(|(_, module)| module.kind() != ModuleKind::WorkspaceItem);
-
-        // Collect current placeholder slots after stale generated modules are removed:
-        // (index, zone, config_name, WorkspacesConfig clone).
-        let slots: Vec<(
-            usize,
-            crate::modules::Zone,
-            String,
-            crate::config::WorkspacesConfig,
-        )> = self
-            .modules
-            .iter()
-            .enumerate()
-            .filter(|(_, (_, m))| m.kind() == ModuleKind::Workspaces)
-            .map(|(i, (z, m))| {
-                let name = m.id().0.clone();
-                let cfg = self
-                    .config
-                    .modules
-                    .iter()
-                    .find(|mc| mc.name == name)
-                    .and_then(|mc| match &mc.params {
-                        ModuleParams::Workspaces(c) => Some(c.clone()),
-                        _ => None,
-                    })
-                    .unwrap_or_default();
-                (i, z.clone(), name, cfg)
-            })
-            .collect();
-
-        // Clear focused/hovered module on every surface if they pointed at a workspace item
-        // that may no longer exist after this rebuild.
-        self.clear_surface_module_refs(&stale_item_ids);
-
-        // Sort workspaces by idx to match Niri's scrollable-tiling order.
         let mut sorted: Vec<niri_ipc::Workspace> = workspaces.to_vec();
         sorted.sort_by_key(|ws| ws.idx);
 
-        // Insert in reverse slot order so earlier slots' indices remain valid.
-        for (slot_idx, zone, config_name, cfg) in slots.iter().rev() {
-            let insert_at = slot_idx + 1;
-            for ws in sorted.iter().rev() {
-                let item = WorkspaceItemModule::new(ws.clone(), cfg.clone(), config_name.clone());
-                let actions = self.actions_for_config_module(config_name);
-                let origin = ModuleOrigin::ExpandedFrom(ModuleId::new(config_name));
-                self.modules.insert_with_actions_and_origin(
-                    insert_at,
-                    (zone.clone(), Box::new(item)),
-                    actions,
-                    origin,
-                    ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
-                );
-            }
-        }
+        let workspace_configs: std::collections::HashMap<String, crate::config::WorkspacesConfig> =
+            self.config
+                .modules
+                .iter()
+                .filter_map(|mc| match &mc.params {
+                    ModuleParams::Workspaces(config) => Some((mc.name.clone(), config.clone())),
+                    _ => None,
+                })
+                .collect();
+
+        self.replace_dynamic_children(super::dynamic_modules::WORKSPACES_DYNAMIC_MODULE, |slot| {
+            let config = workspace_configs
+                .get(slot.parent_name())
+                .cloned()
+                .unwrap_or_default();
+            sorted
+                .iter()
+                .cloned()
+                .map(|workspace| {
+                    Box::new(WorkspaceItemModule::new(
+                        workspace,
+                        config.clone(),
+                        slot.parent_name().to_string(),
+                    )) as Box<dyn crate::modules::Module>
+                })
+                .collect()
+        });
     }
 }
 
