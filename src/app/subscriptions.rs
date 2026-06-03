@@ -47,15 +47,6 @@ impl App {
     }
 
     pub(crate) fn subscription(&self) -> iced::Subscription<Message> {
-        let has_battery = self
-            .modules
-            .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Battery);
-        let has_network = self
-            .modules
-            .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Network);
-        let has_volume = self
-            .modules
-            .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Volume);
         let has_tray = self.has_module_kind(ModuleKind::Tray);
         let needs_system_dbus = self.has_capability(|capabilities| capabilities.needs_system_dbus);
         let needs_session_dbus =
@@ -79,23 +70,7 @@ impl App {
             iced::Subscription::none()
         };
 
-        let battery_sub = dbus_subscription(
-            has_battery,
-            self.shared.dbus.system.clone(),
-            crate::dbus::upower::battery_subscription,
-        );
-
-        let network_sub = dbus_subscription(
-            has_network,
-            self.shared.dbus.system.clone(),
-            crate::dbus::networkmanager::network_subscription,
-        );
-
-        let volume_sub = if has_volume {
-            crate::dbus::wireplumber::volume_subscription()
-        } else {
-            iced::Subscription::none()
-        };
+        let module_data_source_subs = self.data_sources.subscriptions(&self.shared);
 
         let sni_sub = dbus_subscription(
             has_tray,
@@ -146,9 +121,7 @@ impl App {
             module_subs,
             niri_sub,
             dbus_sub,
-            battery_sub,
-            network_sub,
-            volume_sub,
+            module_data_source_subs,
             sni_sub,
             menu_watch_sub,
             focus_sub,
@@ -278,25 +251,5 @@ mod tests {
         let (app, _) = App::boot(Config::default(), vec![]);
 
         assert!(app.needs_ipc_subscription());
-    }
-
-    #[test]
-    fn data_source_identity_detects_global_source_modules() {
-        let app = app_with_modules(
-            vec![module(
-                "battery",
-                ModuleParams::Battery(crate::config::BatteryConfig::default()),
-            )],
-            vec!["battery"],
-        );
-
-        assert!(
-            app.modules
-                .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Battery)
-        );
-        assert!(
-            !app.modules
-                .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::Network)
-        );
     }
 }

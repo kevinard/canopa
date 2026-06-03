@@ -7,6 +7,10 @@ pub enum ModuleDataSourceIdentity {
     Volume,
 }
 
+impl ModuleDataSourceIdentity {
+    pub const ALL: [Self; 3] = [Self::Battery, Self::Network, Self::Volume];
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BatteryReading {
     pub percentage: f64,

@@ -2,12 +2,9 @@ use iced::Task;
 
 use super::messages::ModuleRuntimeEvent;
 use super::{App, Message};
-use crate::modules::battery::BatteryEvent;
 use crate::modules::button::{ButtonEvent, ButtonState};
 use crate::modules::clock::{ClockEvent, ClockState};
-use crate::modules::network::NetworkEvent;
 use crate::modules::script::{ScriptEvent, ScriptState};
-use crate::modules::volume::VolumeEvent;
 use crate::modules::{InteractionEvent, ModuleEvent, ModuleId, ModuleState};
 
 fn insert_module_state_if_changed(
@@ -260,73 +257,40 @@ impl App {
         }
     }
 
-    fn apply_module_data_source_state(
+    fn apply_module_data_source_outcomes(
         &mut self,
-        state: crate::modules::data_source::ModuleDataSourceState,
+        outcomes: Vec<(
+            crate::modules::ModuleId,
+            crate::modules::data_source::ModuleInstanceOutcome,
+        )>,
     ) {
-        let outcomes = self.data_sources.apply_source_state(state, &self.modules);
         self.modules.apply_outcomes(outcomes);
     }
 
-    fn apply_module_data_source_unavailable(
+    pub(super) fn handle_battery_event(
         &mut self,
-        identity: crate::modules::data_source::ModuleDataSourceIdentity,
-    ) {
-        let outcomes = self.data_sources.mark_unavailable(identity, &self.modules);
-        self.modules.apply_outcomes(outcomes);
-    }
-
-    pub(super) fn handle_battery_event(&mut self, event: BatteryEvent) -> Task<Message> {
-        match event {
-            BatteryEvent::StateChanged {
-                percentage,
-                is_charging,
-            } => self.apply_module_data_source_state(
-                crate::modules::data_source::ModuleDataSourceState::Battery(
-                    crate::modules::data_source::BatteryReading {
-                        percentage,
-                        is_charging,
-                    },
-                ),
-            ),
-            BatteryEvent::Unavailable => self.apply_module_data_source_unavailable(
-                crate::modules::data_source::ModuleDataSourceIdentity::Battery,
-            ),
-        }
+        event: crate::modules::battery::BatteryEvent,
+    ) -> Task<Message> {
+        let outcomes = self.data_sources.handle_battery_event(event, &self.modules);
+        self.apply_module_data_source_outcomes(outcomes);
         Task::none()
     }
 
-    pub(super) fn handle_network_event(&mut self, event: NetworkEvent) -> Task<Message> {
-        match event {
-            NetworkEvent::StateChanged {
-                connectivity,
-                label,
-            } => self.apply_module_data_source_state(
-                crate::modules::data_source::ModuleDataSourceState::Network(
-                    crate::modules::data_source::NetworkReading {
-                        connectivity,
-                        label,
-                    },
-                ),
-            ),
-            NetworkEvent::Unavailable => self.apply_module_data_source_unavailable(
-                crate::modules::data_source::ModuleDataSourceIdentity::Network,
-            ),
-        }
+    pub(super) fn handle_network_event(
+        &mut self,
+        event: crate::modules::network::NetworkEvent,
+    ) -> Task<Message> {
+        let outcomes = self.data_sources.handle_network_event(event, &self.modules);
+        self.apply_module_data_source_outcomes(outcomes);
         Task::none()
     }
 
-    pub(super) fn handle_volume_event(&mut self, event: VolumeEvent) -> Task<Message> {
-        match event {
-            VolumeEvent::StateChanged { volume, muted } => self.apply_module_data_source_state(
-                crate::modules::data_source::ModuleDataSourceState::Volume(
-                    crate::modules::data_source::VolumeReading { volume, muted },
-                ),
-            ),
-            VolumeEvent::Unavailable => self.apply_module_data_source_unavailable(
-                crate::modules::data_source::ModuleDataSourceIdentity::Volume,
-            ),
-        }
+    pub(super) fn handle_volume_event(
+        &mut self,
+        event: crate::modules::volume::VolumeEvent,
+    ) -> Task<Message> {
+        let outcomes = self.data_sources.handle_volume_event(event, &self.modules);
+        self.apply_module_data_source_outcomes(outcomes);
         Task::none()
     }
 
