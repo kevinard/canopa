@@ -79,38 +79,6 @@ impl App {
     }
 
     pub(super) fn popup_nav_step(&mut self, window: iced::window::Id, forward: bool) {
-        let Some(meta) = self.surfaces.popup(window) else {
-            return;
-        };
-        let navigable: Vec<String> = meta
-            .tree
-            .items
-            .iter()
-            .filter(|i| i.visible && i.enabled && !i.is_separator)
-            .map(|i| i.id.clone())
-            .collect();
-        if navigable.is_empty() {
-            return;
-        }
-        let current = self.menu.focused_item(window).map(str::to_owned);
-        let len = navigable.len();
-        let next = match current {
-            None => {
-                if forward {
-                    navigable[0].clone()
-                } else {
-                    navigable[len - 1].clone()
-                }
-            }
-            Some(c) => {
-                let idx = navigable.iter().position(|id| id == &c).unwrap_or(0);
-                if forward {
-                    navigable[(idx + 1) % len].clone()
-                } else {
-                    navigable[(idx + len - 1) % len].clone()
-                }
-            }
-        };
-        self.menu.focus(window, next);
+        self.menu.move_focus(window, forward);
     }
 }

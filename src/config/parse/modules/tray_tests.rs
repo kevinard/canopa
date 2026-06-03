@@ -56,6 +56,18 @@ mod tests {
     }
 
     #[test]
+    fn menu_search_defaults_to_disabled() {
+        let cfg = tray_config(r#"modules { module "tray" {} }"#);
+        assert!(!cfg.menu_search);
+    }
+
+    #[test]
+    fn menu_search_true_enables_sni_menu_search() {
+        let cfg = tray_config(r#"modules { module "tray" { menu-search #true } }"#);
+        assert!(cfg.menu_search);
+    }
+
+    #[test]
     fn parse_tray_unknown_field_is_structured_diagnostic() {
         let kdl = r#"modules { module "tray" { tooltipp "{title}" } }"#;
         let err = parse(kdl).unwrap_err();

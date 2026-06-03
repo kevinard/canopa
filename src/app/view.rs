@@ -17,9 +17,21 @@ impl App {
 
         // Popup window -- full-screen transparent overlay; menu widget positioned inside.
         if let Some(model) = self.popup_render_model(window) {
+            if let Some(session) = self
+                .menu
+                .session(window)
+                .filter(|session| session.search_enabled())
+            {
+                return render_searchable_sni_popup_model(model, window, session);
+            }
             let hovered_item = self.menu.hovered_item(window);
             let focused_item = self.menu.focused_item(window);
-            return render_popup_model(model, window, hovered_item, focused_item);
+            return render_popup_model(
+                model,
+                window,
+                hovered_item.as_deref(),
+                focused_item.as_deref(),
+            );
         }
 
         if let Some(popup) = self.surfaces.tooltip_popup(window) {
@@ -240,8 +252,8 @@ fn render_tooltip_popup<'a>(
 fn render_popup_model<'a>(
     model: PopupRenderModel<'a>,
     window: iced::window::Id,
-    hovered_item: Option<&'a str>,
-    focused_item: Option<&'a str>,
+    hovered_item: Option<&str>,
+    focused_item: Option<&str>,
 ) -> Element<'a, Message> {
     use crate::surface::menu_popup::view_menu_popup;
 
@@ -255,6 +267,84 @@ fn render_popup_model<'a>(
     );
 
     iced::widget::mouse_area(menu)
+        .on_press(Message::Menu(super::messages::MenuEvent::Closed))
+        .into()
+}
+
+fn render_searchable_sni_popup_model<'a>(
+    model: PopupRenderModel<'a>,
+    window: iced::window::Id,
+    session: &'a super::selectable_menu_session::SelectableMenuSession,
+) -> Element<'a, Message> {
+    let entries_snapshot = session.entries_snapshot();
+    let focused_index = session.focused_index();
+    let hovered_index = session.hovered_index();
+    let search = text_input("Search", session.search_query())
+        .on_input(move |query| {
+            Message::Menu(super::messages::MenuEvent::SearchChanged { window, query })
+        })
+        .padding([8, 10])
+        .width(Length::Fill);
+
+    let mut entries = column![].spacing(0);
+    for (index, entry) in entries_snapshot.iter().enumerate() {
+        let highlighted = hovered_index.or(focused_index) == Some(index);
+        let row = container(text(entry.label.clone()).size(13))
+            .padding([4, 12])
+            .width(Length::Fill)
+            .style(move |_| iced::widget::container::Style {
+                background: if highlighted {
+                    Some(iced::Background::Color(crate::theme::SURFACE0))
+                } else {
+                    None
+                },
+                border: iced::Border {
+                    radius: iced::border::Radius::from(3.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+        let super::selectable_menu_session::SelectableMenuEntryTarget::SniMenuItem(item_id) =
+            &entry.target
+        else {
+            continue;
+        };
+        let menu_item_id = item_id.parse().unwrap_or(0);
+        let service = model.service.to_string();
+        let menu_path = model.menu_path.clone();
+        let hover_id = item_id.clone();
+        entries = entries.push(
+            mouse_area(row)
+                .on_enter(Message::Menu(super::messages::MenuEvent::ItemHoverEnter {
+                    window,
+                    item_id: hover_id,
+                }))
+                .on_press(Message::Menu(super::messages::MenuEvent::ItemSelected {
+                    service,
+                    menu_item_id,
+                    menu_path,
+                })),
+        );
+    }
+
+    let menu = mouse_area(
+        container(column![search, entries].spacing(4))
+            .style(|_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+                border: iced::Border {
+                    color: crate::theme::BORDER,
+                    width: 1.0,
+                    radius: iced::border::Radius::from(4.0),
+                },
+                ..Default::default()
+            })
+            .padding(4),
+    )
+    .on_exit(Message::Menu(super::messages::MenuEvent::ItemHoverExit(
+        window,
+    )));
+
+    mouse_area(menu)
         .on_press(Message::Menu(super::messages::MenuEvent::Closed))
         .into()
 }

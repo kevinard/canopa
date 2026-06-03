@@ -136,7 +136,7 @@ impl App {
             return self.handle_panel_event(super::messages::PanelEvent::Activate);
         }
         if self.surfaces.has_popup(window) {
-            let focused = self.menu.focused_item(window).map(str::to_owned);
+            let focused = self.menu.focused_item(window);
             if let Some(item_id) = focused {
                 let menu_item_id: i32 = item_id.parse().unwrap_or(0);
                 if let Some(model) = self.menu_model(window) {

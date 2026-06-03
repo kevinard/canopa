@@ -116,6 +116,10 @@ pub enum MenuEvent {
         item_id: String,
     },
     ItemHoverExit(iced::window::Id),
+    SearchChanged {
+        window: iced::window::Id,
+        query: String,
+    },
     LayoutChanged {
         service: String,
         menu_path: OwnedObjectPath,
@@ -140,6 +144,7 @@ impl MenuEvent {
             MenuEvent::Closed => "Menu::Closed",
             MenuEvent::ItemHoverEnter { .. } => "Menu::ItemHoverEnter",
             MenuEvent::ItemHoverExit(_) => "Menu::ItemHoverExit",
+            MenuEvent::SearchChanged { .. } => "Menu::SearchChanged",
             MenuEvent::LayoutChanged { .. } => "Menu::LayoutChanged",
             MenuEvent::Open { .. } => "Menu::Open",
             MenuEvent::Updated { .. } => "Menu::Updated",

@@ -246,12 +246,14 @@ impl Default for NetworkConfig {
 #[derive(Debug, Clone)]
 pub struct TrayConfig {
     pub tooltip: TooltipSetting,
+    pub menu_search: bool,
 }
 
 impl Default for TrayConfig {
     fn default() -> Self {
         TrayConfig {
             tooltip: TooltipSetting::Default,
+            menu_search: false,
         }
     }
 }

@@ -18,6 +18,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<TrayConf
             "format",
             "expanded-format",
             "horizontal-format",
+            "menu-search",
         ],
         &[
             "type",
@@ -26,12 +27,20 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<TrayConf
             "format",
             "expanded-format",
             "horizontal-format",
+            "menu-search",
         ],
     )?;
     formats::reject_format_fields_ctx(node.children(), ctx, "tray")?;
 
     let tooltip = formats::parse_tooltip_field_ctx(children, ctx, &["title", "description"], &[])?;
-    Ok(TrayConfig { tooltip })
+    let menu_search = super::super::fields::field(children, ctx, "menu-search")
+        .optional()
+        .bool()
+        .unwrap_or(false)?;
+    Ok(TrayConfig {
+        tooltip,
+        menu_search,
+    })
 }
 
 #[cfg(test)]

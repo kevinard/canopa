@@ -23,6 +23,7 @@ impl super::App {
         window: iced::window::Id,
         meta: super::surfaces::PopupMeta,
     ) {
+        self.menu.open_window(window, meta.tree.clone(), false);
         self.surfaces.insert_popup(window, meta);
     }
 
@@ -54,6 +55,12 @@ impl super::App {
                     window,
                     attachment_id,
                 } => {
+                    self.foreground.handle(
+                        super::foreground::ForegroundIntent::PanelWindowClosed {
+                            attachment_id,
+                            window,
+                        },
+                    );
                     for effect in super::panel_attachment::close_attached_panel_window(
                         &mut self.panel,
                         &mut self.surfaces,
@@ -70,6 +77,8 @@ impl super::App {
                     }
                 }
                 RegistryEffect::MenuClosed { window, meta } => {
+                    self.foreground
+                        .handle(super::foreground::ForegroundIntent::MenuWindowClosed { window });
                     self.surfaces.remove_popup(window);
                     self.menu.clear_window(window);
                     send_menu_closed_event(self.shared.dbus.session.clone(), meta);

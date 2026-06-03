@@ -369,10 +369,70 @@ impl App {
                 window: panel_window,
             },
         );
+        self.foreground
+            .handle(super::foreground::ForegroundIntent::PanelWindowOpened {
+                attachment_id: request.attachment_id,
+                window: panel_window,
+            });
 
         let open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
         tasks.push(open_sequence);
         Task::batch(tasks)
+    }
+
+    fn close_panel_window(
+        &mut self,
+        window: iced::window::Id,
+        restore_keyboard: bool,
+    ) -> Vec<Task<Message>> {
+        let mut tasks = Vec::new();
+        if self.surfaces.close_panel_popup_window(window) {
+            tracing::debug!(
+                target: "niribar::panel",
+                ?window,
+                "closing panel window"
+            );
+            tasks.push(Task::done(Message::RemoveWindow(window)));
+            if restore_keyboard {
+                tasks.extend(self.restore_bar_keyboard_interactivity());
+            }
+        }
+        tasks
+    }
+
+    pub(super) fn apply_foreground_effects(
+        &mut self,
+        effects: Vec<super::foreground::ForegroundEffect>,
+        restore_keyboard_on_panel_close: bool,
+    ) -> Vec<Task<Message>> {
+        let mut tasks = Vec::new();
+        for effect in effects {
+            match effect {
+                super::foreground::ForegroundEffect::OpenPanel(request) => {
+                    tasks.push(self.open_panel_window(request));
+                }
+                super::foreground::ForegroundEffect::ClosePanel {
+                    window,
+                    attachment_id,
+                } => {
+                    tasks.extend(self.apply_registry_effects(vec![
+                        super::surfaces::RegistryEffect::PanelClosed {
+                            window,
+                            attachment_id,
+                        },
+                    ]));
+                    if restore_keyboard_on_panel_close {
+                        tasks.extend(self.restore_bar_keyboard_interactivity());
+                    }
+                }
+                super::foreground::ForegroundEffect::CloseMenu { window, meta } => {
+                    tasks.extend(self.apply_registry_effects(vec![
+                        super::surfaces::RegistryEffect::MenuClosed { window, meta },
+                    ]));
+                }
+            }
+        }
+        tasks
     }
 
     fn apply_panel_runtime_effects(
@@ -390,19 +450,21 @@ impl App {
         for effect in effects {
             match effect {
                 super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(request) => {
-                    tasks.push(self.open_panel_window(request));
+                    let effects = self.foreground.handle(
+                        super::foreground::ForegroundIntent::OpenPanelWindow(request),
+                    );
+                    tasks.extend(self.apply_foreground_effects(effects, !will_open_panel));
                 }
                 super::panel_runtime::PanelRuntimeEffect::ClosePanelWindow(window) => {
-                    if self.surfaces.close_panel_popup_window(window) {
-                        tracing::debug!(
-                            target: "niribar::panel",
-                            ?window,
-                            "closing panel window"
+                    let foreground_effects = self
+                        .foreground
+                        .handle(super::foreground::ForegroundIntent::ClosePanel);
+                    if foreground_effects.is_empty() {
+                        tasks.extend(self.close_panel_window(window, !will_open_panel));
+                    } else {
+                        tasks.extend(
+                            self.apply_foreground_effects(foreground_effects, !will_open_panel),
                         );
-                        tasks.push(Task::done(Message::RemoveWindow(window)));
-                        if !will_open_panel {
-                            tasks.extend(self.restore_bar_keyboard_interactivity());
-                        }
                     }
                 }
                 super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus => {

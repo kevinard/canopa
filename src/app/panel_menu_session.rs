@@ -3,10 +3,12 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum PanelMenuActivation {
-    RunPanelAction(crate::config::PanelAction),
-    LaunchInstalledApp(String),
-    CompleteDmenu(crate::ipc::protocol::IpcResponse),
+pub(super) enum SelectedMenuEntry {
+    ConfiguredPath(Vec<usize>),
+    InstalledApp(String),
+    DmenuValue(String),
+    CustomValue(String),
+    SniMenuItem(String),
     None,
 }
 
@@ -16,6 +18,7 @@ pub(super) enum PanelMenuEntryTarget {
     InstalledApp(String),
     DmenuValue(String),
     DmenuCustomValue(String),
+    SniMenuItem(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +36,8 @@ pub(super) struct PanelMenuSnapshot {
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
     pub(super) show_icons: bool,
+    pub(super) search_enabled: bool,
+    pub(super) hovered_index: Option<usize>,
     pub(super) entries: Arc<[PanelMenuEntry]>,
 }
 
@@ -45,6 +50,10 @@ pub(super) enum PanelMenuSource {
         apps: Vec<crate::desktop_apps::DesktopApplication>,
     },
     Dmenu(crate::ipc::protocol::DmenuRequest),
+    SniMenu {
+        tree: crate::surface::menu_popup::MenuTree,
+        search_enabled: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -52,16 +61,23 @@ pub(super) struct PanelMenuSession {
     source: PanelMenuSource,
     search_query: String,
     focused_index: Option<usize>,
+    hovered_index: Option<usize>,
     menu_path: Vec<usize>,
     entries_cache: RefCell<Option<(String, Arc<[PanelMenuEntry]>)>>,
 }
 
 impl PanelMenuSession {
     pub(super) fn open(source: PanelMenuSource) -> Self {
+        let focused_index = if matches!(source, PanelMenuSource::SniMenu { .. }) {
+            None
+        } else {
+            Some(0)
+        };
         Self {
             source,
             search_query: String::new(),
-            focused_index: Some(0),
+            focused_index,
+            hovered_index: None,
             menu_path: Vec::new(),
             entries_cache: RefCell::new(None),
         }
@@ -87,6 +103,14 @@ impl PanelMenuSession {
         self.focused_index = Some(index);
     }
 
+    pub(super) fn hover_index(&mut self, index: usize) {
+        self.hovered_index = Some(index);
+    }
+
+    pub(super) fn clear_hover(&mut self) {
+        self.hovered_index = None;
+    }
+
     pub(super) fn focused_index(&self) -> Option<usize> {
         self.focused_index
     }
@@ -98,7 +122,11 @@ impl PanelMenuSession {
             return;
         }
         let current = self.focused_index.unwrap_or(0).min(entries.len() - 1);
-        let next = if delta > 0 {
+        let next = if self.focused_index.is_none() && delta > 0 {
+            0
+        } else if self.focused_index.is_none() {
+            entries.len() - 1
+        } else if delta > 0 {
             (current + 1) % entries.len()
         } else if current == 0 {
             entries.len() - 1
@@ -127,31 +155,74 @@ impl PanelMenuSession {
             search_query: self.search_query.clone(),
             focused_index: self.focused_index,
             show_icons: self.show_icons(),
+            search_enabled: self.search_enabled(),
+            hovered_index: self.hovered_index,
             entries: self.entries(),
         }
     }
 
-    pub(super) fn activate_focused(&mut self) -> PanelMenuActivation {
+    pub(super) fn activate_focused(&mut self) -> SelectedMenuEntry {
         let Some(index) = self.focused_index else {
-            return PanelMenuActivation::None;
+            return SelectedMenuEntry::None;
         };
         self.activate_index(index)
     }
 
-    pub(super) fn activate_index(&mut self, index: usize) -> PanelMenuActivation {
+    pub(super) fn activate_index(&mut self, index: usize) -> SelectedMenuEntry {
         let Some(entry) = self.entries().get(index).cloned() else {
-            return PanelMenuActivation::None;
+            return SelectedMenuEntry::None;
         };
 
         match entry.target {
             PanelMenuEntryTarget::StaticPath(path) => self.activate_static_path(path),
-            PanelMenuEntryTarget::InstalledApp(id) => PanelMenuActivation::LaunchInstalledApp(id),
-            PanelMenuEntryTarget::DmenuValue(value)
-            | PanelMenuEntryTarget::DmenuCustomValue(value) => {
-                PanelMenuActivation::CompleteDmenu(crate::ipc::protocol::IpcResponse::Selected {
-                    value,
-                })
-            }
+            PanelMenuEntryTarget::InstalledApp(id) => SelectedMenuEntry::InstalledApp(id),
+            PanelMenuEntryTarget::DmenuValue(value) => SelectedMenuEntry::DmenuValue(value),
+            PanelMenuEntryTarget::DmenuCustomValue(value) => SelectedMenuEntry::CustomValue(value),
+            PanelMenuEntryTarget::SniMenuItem(item_id) => SelectedMenuEntry::SniMenuItem(item_id),
+        }
+    }
+
+    pub(super) fn configured_action_for_path(
+        &self,
+        path: &[usize],
+    ) -> Option<crate::config::PanelAction> {
+        let PanelMenuSource::Configured(menu) = &self.source else {
+            return None;
+        };
+        menu_item_at_path(&menu.items, path).and_then(|item| item.action.clone())
+    }
+
+    #[cfg(test)]
+    pub(super) fn focus_sni_item(&mut self, item_id: &str) {
+        if let Some(index) = self.index_for_sni_item(item_id) {
+            self.focus_index(index);
+        }
+    }
+
+    pub(super) fn hover_sni_item(&mut self, item_id: &str) {
+        if let Some(index) = self.index_for_sni_item(item_id) {
+            self.hover_index(index);
+        }
+    }
+
+    pub(super) fn focused_sni_item(&self) -> Option<String> {
+        self.sni_item_at_index(self.focused_index?)
+    }
+
+    pub(super) fn hovered_sni_item(&self) -> Option<String> {
+        self.sni_item_at_index(self.hovered_index?)
+    }
+
+    fn index_for_sni_item(&self, item_id: &str) -> Option<usize> {
+        self.entries().iter().position(
+            |entry| matches!(&entry.target, PanelMenuEntryTarget::SniMenuItem(id) if id == item_id),
+        )
+    }
+
+    fn sni_item_at_index(&self, index: usize) -> Option<String> {
+        match self.entries().get(index).map(|entry| &entry.target) {
+            Some(PanelMenuEntryTarget::SniMenuItem(id)) => Some(id.clone()),
+            _ => None,
         }
     }
 
@@ -160,6 +231,7 @@ impl PanelMenuSession {
             PanelMenuSource::Configured(menu) => menu.prompt.clone(),
             PanelMenuSource::InstalledApps { prompt, .. } => prompt.clone(),
             PanelMenuSource::Dmenu(request) => request.prompt.clone(),
+            PanelMenuSource::SniMenu { .. } => None,
         }
     }
 
@@ -168,7 +240,29 @@ impl PanelMenuSession {
             PanelMenuSource::Configured(menu) => menu.show_icons,
             PanelMenuSource::InstalledApps { show_icons, .. } => *show_icons,
             PanelMenuSource::Dmenu(request) => dmenu_request_show_icons(request),
+            PanelMenuSource::SniMenu { .. } => false,
         }
+    }
+
+    pub(super) fn search_enabled(&self) -> bool {
+        match &self.source {
+            PanelMenuSource::SniMenu { search_enabled, .. } => *search_enabled,
+            PanelMenuSource::Configured(_)
+            | PanelMenuSource::InstalledApps { .. }
+            | PanelMenuSource::Dmenu(_) => true,
+        }
+    }
+
+    pub(super) fn search_query(&self) -> &str {
+        &self.search_query
+    }
+
+    pub(super) fn hovered_index(&self) -> Option<usize> {
+        self.hovered_index
+    }
+
+    pub(super) fn entries_snapshot(&self) -> Arc<[PanelMenuEntry]> {
+        self.entries()
     }
 
     fn entries(&self) -> Arc<[PanelMenuEntry]> {
@@ -191,28 +285,36 @@ impl PanelMenuSession {
             PanelMenuSource::Dmenu(request) => {
                 dmenu_entry_views(request, &self.search_query).into()
             }
+            PanelMenuSource::SniMenu {
+                tree,
+                search_enabled,
+            } if *search_enabled && !panel_search::is_blank_query(&self.search_query) => {
+                search_sni_menu_entries(tree, &self.search_query).into()
+            }
+            PanelMenuSource::SniMenu { tree, .. } => sni_menu_entries(tree).into(),
         };
         *self.entries_cache.borrow_mut() = Some((cache_key, entries.clone()));
         entries
     }
 
-    fn activate_static_path(&mut self, path: Vec<usize>) -> PanelMenuActivation {
+    fn activate_static_path(&mut self, path: Vec<usize>) -> SelectedMenuEntry {
         let PanelMenuSource::Configured(menu) = &self.source else {
-            return PanelMenuActivation::None;
+            return SelectedMenuEntry::None;
         };
         let Some(item) = menu_item_at_path(&menu.items, &path) else {
-            return PanelMenuActivation::None;
+            return SelectedMenuEntry::None;
         };
         if !item.children.is_empty() && self.search_query.is_empty() {
             self.menu_path = path;
             self.focused_index = Some(0);
             self.clear_entries_cache();
-            return PanelMenuActivation::None;
+            return SelectedMenuEntry::None;
         }
-        item.action
-            .clone()
-            .map(PanelMenuActivation::RunPanelAction)
-            .unwrap_or(PanelMenuActivation::None)
+        if item.action.is_some() {
+            SelectedMenuEntry::ConfiguredPath(path)
+        } else {
+            SelectedMenuEntry::None
+        }
     }
 
     fn clear_entries_cache(&self) {
@@ -297,6 +399,92 @@ pub(super) fn dmenu_entry_views(
 
 pub(super) fn dmenu_request_show_icons(request: &crate::ipc::protocol::DmenuRequest) -> bool {
     request.entries.iter().any(|entry| entry.icon.is_some())
+}
+
+fn sni_menu_entries(tree: &crate::surface::menu_popup::MenuTree) -> Vec<PanelMenuEntry> {
+    tree.items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item.visible && item.enabled && !item.is_separator)
+        .map(|(index, item)| PanelMenuEntry {
+            label: item.label.clone(),
+            icon: item.icon_name.clone(),
+            path: vec![index],
+            target: PanelMenuEntryTarget::SniMenuItem(item.id.clone()),
+            is_submenu: !item.children.is_empty(),
+        })
+        .collect()
+}
+
+fn search_sni_menu_entries(
+    tree: &crate::surface::menu_popup::MenuTree,
+    query: &str,
+) -> Vec<PanelMenuEntry> {
+    let mut results = Vec::new();
+    collect_search_sni_entries(
+        &tree.items,
+        query,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut 0,
+        &mut results,
+    );
+    panel_search::rank_matches(results)
+}
+
+fn collect_search_sni_entries(
+    items: &[crate::surface::menu_popup::MenuItem],
+    query: &str,
+    labels: &mut Vec<String>,
+    path: &mut Vec<usize>,
+    source_index: &mut usize,
+    results: &mut Vec<SearchMatch<PanelMenuEntry>>,
+) {
+    for (index, item) in items.iter().enumerate() {
+        if !item.visible {
+            continue;
+        }
+        labels.push(item.label.clone());
+        path.push(index);
+
+        if item.enabled && !item.is_separator {
+            let current_source_index = *source_index;
+            *source_index += 1;
+            let breadcrumb = labels
+                .iter()
+                .take(labels.len().saturating_sub(1))
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(" / ");
+            let fields = [
+                SearchText {
+                    field: SearchField::Label,
+                    text: item.label.as_str(),
+                },
+                SearchText {
+                    field: SearchField::Breadcrumb,
+                    text: breadcrumb.as_str(),
+                },
+            ];
+            if let Some(score) = panel_search::best_match(&fields, query) {
+                results.push(SearchMatch {
+                    item: PanelMenuEntry {
+                        label: labels.join(" / "),
+                        icon: item.icon_name.clone(),
+                        path: path.clone(),
+                        target: PanelMenuEntryTarget::SniMenuItem(item.id.clone()),
+                        is_submenu: !item.children.is_empty(),
+                    },
+                    score,
+                    source_index: current_source_index,
+                });
+            }
+        }
+
+        collect_search_sni_entries(&item.children, query, labels, path, source_index, results);
+        path.pop();
+        labels.pop();
+    }
 }
 
 fn current_menu_entries(menu: &crate::config::MenuConfig, path: &[usize]) -> Vec<PanelMenuEntry> {
@@ -599,7 +787,7 @@ mod tests {
         let mut session =
             PanelMenuSession::open(PanelMenuSource::Configured(menu_with_apps_browser()));
 
-        assert_eq!(session.activate_index(0), PanelMenuActivation::None);
+        assert_eq!(session.activate_index(0), SelectedMenuEntry::None);
         let snapshot = session.snapshot();
 
         assert_eq!(snapshot.entries.len(), 1);
@@ -607,14 +795,19 @@ mod tests {
     }
 
     #[test]
-    fn configured_leaf_activation_returns_panel_action() {
+    fn configured_leaf_activation_returns_generic_path() {
         let mut session =
             PanelMenuSession::open(PanelMenuSource::Configured(menu_with_apps_browser()));
         session.activate_index(0);
 
+        let selected = session.activate_focused();
+        assert_eq!(selected, SelectedMenuEntry::ConfiguredPath(vec![0, 0]));
+        let SelectedMenuEntry::ConfiguredPath(path) = selected else {
+            panic!("expected configured path");
+        };
         assert_eq!(
-            session.activate_focused(),
-            PanelMenuActivation::RunPanelAction(crate::config::PanelAction::Command(
+            session.configured_action_for_path(&path),
+            Some(crate::config::PanelAction::Command(
                 crate::config::CommandConfig::Shell("firefox".into())
             ))
         );

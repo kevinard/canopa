@@ -713,6 +713,9 @@ impl App {
         &self,
         window: Option<iced::window::Id>,
     ) -> super::surface_input_router::WindowRole {
+        if let Some(role) = self.foreground.window_role(window) {
+            return role;
+        }
         self.surfaces.window_role(window)
     }
 

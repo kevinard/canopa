@@ -3,6 +3,7 @@ mod bar_surface_plan;
 mod dynamic_modules;
 pub(crate) mod eligible_outputs;
 mod focus;
+mod foreground;
 mod layout;
 mod menu;
 pub(crate) mod messages;
@@ -22,6 +23,7 @@ mod panel_runtime;
 mod panel_search;
 mod perf;
 mod render;
+mod selectable_menu_session;
 mod shared;
 mod subscriptions;
 mod surface_input_router;
@@ -42,6 +44,7 @@ pub(crate) struct App {
     config: Config,
     shared: shared::SharedContext,
     surfaces: surfaces::SurfaceManager,
+    foreground: foreground::Foreground,
     menu: menu::MenuSystem,
     panel: panel_runtime::PanelRuntime,
     modules: module_runtime::ModuleRuntime,
@@ -226,6 +229,7 @@ impl App {
             config,
             shared: shared::SharedContext::new(),
             surfaces,
+            foreground: foreground::Foreground::default(),
             menu: menu::MenuSystem::default(),
             panel: panel_runtime::PanelRuntime::default(),
             modules,

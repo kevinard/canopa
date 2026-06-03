@@ -36,8 +36,8 @@ pub fn view_menu_popup<'a>(
     service: &'a str,
     menu_path: &'a zbus::zvariant::OwnedObjectPath,
     window: iced::window::Id,
-    hovered_item: Option<&'a str>,
-    focused_item: Option<&'a str>,
+    hovered_item: Option<&str>,
+    focused_item: Option<&str>,
 ) -> iced::Element<'a, crate::app::Message> {
     use iced::Length;
     use iced::widget::{column, container, rule, text};

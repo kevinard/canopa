@@ -1,9 +1,19 @@
 use std::{collections::HashMap, sync::Arc};
 
+use super::selectable_menu_session::{
+    SelectableMenuEntry, SelectableMenuSession, SelectableMenuSnapshot, SelectableMenuSource,
+    SelectedMenuEntry,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct PanelAttachmentId(u64);
 
 impl PanelAttachmentId {
+    #[cfg(test)]
+    pub(super) fn new(value: u64) -> Self {
+        Self(value)
+    }
+
     #[cfg(test)]
     pub(super) fn for_test(value: u64) -> Self {
         Self(value)
@@ -70,7 +80,7 @@ pub(super) enum PanelRuntimeEffect {
 
 #[derive(Debug, Clone)]
 pub(super) struct PanelMenuRenderState {
-    pub(super) entries: Arc<[super::panel_menu_session::PanelMenuEntry]>,
+    pub(super) entries: Arc<[SelectableMenuEntry]>,
     pub(super) show_icons: bool,
     pub(super) prompt: Option<String>,
     pub(super) search_query: String,
@@ -101,32 +111,27 @@ impl<'a> PanelMenuCatalog<'a> {
             .is_some_and(|kind| matches!(kind, crate::config::MenuSourceKind::InstalledApps))
     }
 
-    fn configured_menu_source(
-        &self,
-        name: &str,
-    ) -> Option<super::panel_menu_session::PanelMenuSource> {
+    fn configured_menu_source(&self, name: &str) -> Option<SelectableMenuSource> {
         self.menus
             .iter()
             .find(|menu| menu.name == name && menu.source.is_none())
             .cloned()
-            .map(super::panel_menu_session::PanelMenuSource::Configured)
+            .map(SelectableMenuSource::Configured)
     }
 
     fn installed_apps_source(
         &self,
         name: &str,
         apps: Vec<crate::desktop_apps::DesktopApplication>,
-    ) -> Option<super::panel_menu_session::PanelMenuSource> {
+    ) -> Option<SelectableMenuSource> {
         self.menus
             .iter()
             .find(|menu| menu.name == name)
-            .map(
-                |menu| super::panel_menu_session::PanelMenuSource::InstalledApps {
-                    prompt: menu.prompt.clone(),
-                    show_icons: menu.show_icons,
-                    apps,
-                },
-            )
+            .map(|menu| SelectableMenuSource::InstalledApps {
+                prompt: menu.prompt.clone(),
+                show_icons: menu.show_icons,
+                apps,
+            })
     }
 }
 
@@ -203,7 +208,7 @@ impl PartialEq for PanelRuntimeEffect {
 #[derive(Default)]
 pub(super) struct PanelRuntime {
     active_panel: Option<ActivePanel>,
-    session: Option<super::panel_menu_session::PanelMenuSession>,
+    session: Option<SelectableMenuSession>,
     module_detail_sessions: HashMap<crate::modules::ModuleId, crate::modules::ModuleDetailSession>,
     menu_scroll_y: f32,
     menu_viewport_height: f32,
@@ -601,7 +606,7 @@ impl PanelRuntime {
         self.open_panel_after_source_ready(
             panel_request,
             HashMap::new(),
-            Some(super::panel_menu_session::PanelMenuSource::Dmenu(request)),
+            Some(SelectableMenuSource::Dmenu(request)),
         )
     }
 
@@ -639,8 +644,8 @@ impl PanelRuntime {
             .collect()
     }
 
-    fn open_session(&mut self, source: super::panel_menu_session::PanelMenuSource) {
-        let session = super::panel_menu_session::PanelMenuSession::open(source);
+    fn open_session(&mut self, source: SelectableMenuSource) {
+        let session = SelectableMenuSession::open(source);
         let _ = session.snapshot();
         self.session = Some(session);
     }
@@ -743,14 +748,12 @@ impl PanelRuntime {
         }
     }
 
-    fn panel_menu_snapshot(&self) -> Option<super::panel_menu_session::PanelMenuSnapshot> {
+    fn panel_menu_snapshot(&self) -> Option<SelectableMenuSnapshot> {
         self.session.as_ref().map(|session| session.snapshot())
     }
 
     #[cfg(test)]
-    pub(super) fn panel_menu_snapshot_for_test(
-        &self,
-    ) -> Option<super::panel_menu_session::PanelMenuSnapshot> {
+    pub(super) fn panel_menu_snapshot_for_test(&self) -> Option<SelectableMenuSnapshot> {
         self.panel_menu_snapshot()
     }
 
@@ -779,16 +782,14 @@ impl PanelRuntime {
         }
     }
 
-    fn active_panel_menu_entries(&self) -> Vec<super::panel_menu_session::PanelMenuEntry> {
+    fn active_panel_menu_entries(&self) -> Vec<SelectableMenuEntry> {
         self.panel_menu_snapshot()
             .map(|snapshot| snapshot.entries.to_vec())
             .unwrap_or_default()
     }
 
     #[cfg(test)]
-    pub(super) fn active_panel_menu_entries_for_test(
-        &self,
-    ) -> Vec<super::panel_menu_session::PanelMenuEntry> {
+    pub(super) fn active_panel_menu_entries_for_test(&self) -> Vec<SelectableMenuEntry> {
         self.active_panel_menu_entries()
     }
 
@@ -796,19 +797,24 @@ impl PanelRuntime {
         let activation = match (self.session.as_mut(), index) {
             (Some(session), Some(index)) => session.activate_index(index),
             (Some(session), None) => session.activate_focused(),
-            (None, _) => super::panel_menu_session::PanelMenuActivation::None,
+            (None, _) => SelectedMenuEntry::None,
         };
         match activation {
-            super::panel_menu_session::PanelMenuActivation::RunPanelAction(action) => {
-                vec![PanelRuntimeEffect::RunPanelAction(action)]
-            }
-            super::panel_menu_session::PanelMenuActivation::LaunchInstalledApp(id) => {
+            SelectedMenuEntry::ConfiguredPath(path) => self
+                .session
+                .as_ref()
+                .and_then(|session| session.configured_action_for_path(&path))
+                .map(PanelRuntimeEffect::RunPanelAction)
+                .into_iter()
+                .collect(),
+            SelectedMenuEntry::InstalledApp(id) => {
                 vec![PanelRuntimeEffect::LaunchInstalledApp(id)]
             }
-            super::panel_menu_session::PanelMenuActivation::CompleteDmenu(response) => {
-                self.complete_dmenu(response)
+            SelectedMenuEntry::DmenuValue(value) | SelectedMenuEntry::CustomValue(value) => {
+                self.complete_dmenu(crate::ipc::protocol::IpcResponse::Selected { value })
             }
-            super::panel_menu_session::PanelMenuActivation::None => Vec::new(),
+            SelectedMenuEntry::SniMenuItem(_) => Vec::new(),
+            SelectedMenuEntry::None => Vec::new(),
         }
     }
 }
