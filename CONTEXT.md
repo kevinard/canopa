@@ -130,6 +130,14 @@ _Avoid_: Popup when referring to Niribar's generic panel
 The live state machine for the currently active **Panel**, including its **Panel Menu Session** when present, pending search focus, menu scroll position, and any active **Dmenu Selection Request** responder.
 _Avoid_: Panel state when referring to the full open/search/activation/cancel lifecycle
 
+**Panel Lifecycle**:
+The logical lifecycle of the currently active **Panel** from accepted open request through opening, visible, replacement, and close. It is distinct from overlay window creation, registration, and stale-window cleanup.
+_Avoid_: Panel popup lifecycle, overlay lifecycle when referring to logical **Panel** ownership
+
+**Panel Attachment**:
+The runtime association between the current logical **Panel** and the overlay window that renders it, used to decide whether an overlay window event still belongs to the current **Panel Lifecycle**.
+_Avoid_: Panel identity, panel popup metadata when referring to the logical-window association
+
 **Panel Origin**:
 The **Bar Surface** or **Module** that triggered the current **Panel**.
 _Avoid_: Active module when referring specifically to panel source
@@ -332,6 +340,12 @@ _Avoid_: Default config, fallback surface
 - **Keyboard Focus** enters a **Menu** while it is open and returns to the originating target when the **Menu** closes, if that target still exists.
 - **Menus** and **Tooltips** do not inherit the **Layer** of their **Bar Surface**.
 - Niribar shows at most one **Panel** at a time.
+- A **Panel** becomes logically active when the **Panel Runtime** accepts the open request, before its overlay window is created.
+- Replacing a **Panel** makes the old **Panel** logically gone immediately, even while its old overlay window is still closing.
+- An external **Panel** window close clears **Panel Runtime** state only when that window is still attached to the current logical **Panel**.
+- The **Panel Runtime** owns the current **Panel**'s logical render identity.
+- The **Bar Surface Registry** may track **Panel** overlay windows for classification and cleanup, but it does not own **Panel Lifecycle** identity.
+- A **Panel Attachment** may be absent while a **Panel** is opening and must be replaced when a newer logical **Panel** replaces the old one.
 - A **Panel** belongs to exactly one originating **Bar Surface**.
 - A **Panel** has exactly one **Panel Origin**.
 - A **Panel Origin** may be the **Bar Surface** itself or a **Module** on that **Bar Surface**.
