@@ -294,13 +294,11 @@ mod config_tests {
         let cfg = ButtonConfig {
             label: "Launch Terminal".into(),
             icon: ">".into(),
-            on_click: CommandConfig::Shell("kitty".into()),
             format: FormatConfig::default(),
             tooltip: TooltipSetting::Default,
         };
         assert_eq!(cfg.label, "Launch Terminal");
         assert_eq!(cfg.icon, ">");
-        assert_eq!(cfg.on_click, CommandConfig::Shell("kitty".into()));
     }
 
     #[test]
@@ -308,7 +306,6 @@ mod config_tests {
         let params = ModuleParams::Button(ButtonConfig {
             label: "launch".into(),
             icon: ">".into(),
-            on_click: CommandConfig::Shell("kitty".into()),
             format: FormatConfig::default(),
             tooltip: TooltipSetting::Default,
         });
@@ -316,7 +313,6 @@ mod config_tests {
             ModuleParams::Button(cfg) => {
                 assert_eq!(cfg.label, "launch");
                 assert_eq!(cfg.icon, ">");
-                assert_eq!(cfg.on_click, CommandConfig::Shell("kitty".into()));
             }
             _ => panic!("expected ModuleParams::Button"),
         }

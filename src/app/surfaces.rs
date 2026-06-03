@@ -260,10 +260,6 @@ impl SurfaceManager {
         self.surfaces.iter()
     }
 
-    pub(super) fn surfaces_mut(&mut self) -> impl Iterator<Item = &mut SurfaceState> {
-        self.surfaces.values_mut()
-    }
-
     pub(super) fn last_cursor(&self) -> Option<(iced::window::Id, iced::Point)> {
         self.last_cursor
     }
@@ -448,6 +444,7 @@ impl SurfaceManager {
         self.panel_popups.keys().copied()
     }
 
+    #[cfg(test)]
     pub(super) fn panel_popup_values(&self) -> impl Iterator<Item = &PanelMeta> {
         self.panel_popups.values()
     }
@@ -1215,18 +1212,6 @@ mod tests {
             bar_size: (48, 1080),
             screen_size: (48, 1080),
             bar_edge: edge,
-        }
-    }
-
-    fn panel_tree(origin_window: iced::window::Id) -> crate::surface::panel::PanelTree {
-        crate::surface::panel::PanelTree {
-            origin: crate::surface::panel::PanelOrigin::Bar,
-            content: crate::surface::panel::PanelContent::BarPanel,
-            origin_window,
-            origin_bar_name: "main".into(),
-            origin_output_name: "DP-1".into(),
-            anchor: None,
-            screen_size: (1920, 1080),
         }
     }
 

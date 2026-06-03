@@ -106,7 +106,10 @@ impl App {
     ) -> Task<Message> {
         match action {
             crate::config::PanelAction::Command(command) => {
-                let _ = crate::command::spawn_config_command_fire_and_forget(&command);
+                let _ = crate::command::spawn_config_command_with_policy_fire_and_forget(
+                    &command,
+                    &self.config.command_policy,
+                );
                 Task::none()
             }
             action => match panel_event_for_action(origin_window, origin, action, None) {
@@ -1278,10 +1281,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_module_click_open_panel_takes_precedence_over_builtin_click() {
-        let legacy_path = format!("/tmp/niribar-panel-legacy-click-{}", std::process::id());
-        let _ = std::fs::remove_file(&legacy_path);
-
+    fn configured_module_open_panel_action_opens_panel() {
         let mut config = crate::config::Config {
             modules: vec![crate::config::ModuleConfig {
                 name: "button".into(),
@@ -1289,9 +1289,6 @@ mod tests {
                 params: crate::config::ModuleParams::Button(crate::config::ButtonConfig {
                     label: "Launch".into(),
                     icon: ">".into(),
-                    on_click: crate::config::CommandConfig::Shell(format!(
-                        "printf legacy >{legacy_path}"
-                    )),
                     format: crate::config::FormatConfig::default(),
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
@@ -1308,18 +1305,20 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         app.surface_mut(origin);
+        let id = crate::modules::ModuleId::new("button");
+        let action = app
+            .modules
+            .action_for(&id, &crate::config::ActionTrigger::Click)
+            .cloned()
+            .expect("configured click action");
 
-        let _ = app.update(Message::Modules(
-            crate::app::messages::ModuleRuntimeEvent::ModuleClick(
-                crate::modules::ModuleId::new("button"),
-                origin,
-            ),
-        ));
-
-        assert!(
-            !std::path::Path::new(&legacy_path).exists(),
-            "legacy button command should not run when open-panel action is configured"
+        let _ = app.dispatch_panel_action(
+            origin,
+            crate::surface::panel::PanelOrigin::Module(id),
+            action,
         );
+
+        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
     }
 
     #[test]

@@ -57,7 +57,6 @@ pub struct ScriptConfig {
 pub struct ButtonConfig {
     pub label: String,
     pub icon: String,
-    pub on_click: CommandConfig,
     pub format: FormatConfig,
     pub tooltip: TooltipSetting,
 }

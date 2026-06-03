@@ -582,7 +582,6 @@ mod tests {
                 params: ModuleParams::Button(ButtonConfig {
                     label: "Launch".into(),
                     icon: ">".into(),
-                    on_click: crate::config::CommandConfig::Shell("kitty".into()),
                     format: crate::config::FormatConfig::default(),
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
@@ -620,13 +619,11 @@ mod tests {
     }
 
     #[test]
-    fn module_actions_click_overrides_button_legacy_on_click() {
+    fn module_actions_click_runs_configured_command() {
         use crate::config::{ButtonConfig, ModuleActionsConfig, ModuleConfig, ModuleParams};
 
         let action_path = unique_tmp_path("action-click");
-        let legacy_path = unique_tmp_path("legacy-click");
         let _ = std::fs::remove_file(&action_path);
-        let _ = std::fs::remove_file(&legacy_path);
 
         let mut config = Config {
             modules: vec![ModuleConfig {
@@ -635,9 +632,6 @@ mod tests {
                 params: ModuleParams::Button(ButtonConfig {
                     label: "Launch".into(),
                     icon: ">".into(),
-                    on_click: crate::config::CommandConfig::Shell(format!(
-                        "printf legacy >{legacy_path}"
-                    )),
                     format: crate::config::FormatConfig::default(),
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
@@ -666,12 +660,7 @@ mod tests {
             wait_for_path(&action_path),
             "configured click action should create {action_path}"
         );
-        assert!(
-            !std::path::Path::new(&legacy_path).exists(),
-            "legacy on-click should not run when actions.click is configured"
-        );
         let _ = std::fs::remove_file(&action_path);
-        let _ = std::fs::remove_file(&legacy_path);
     }
 
     #[test]
@@ -712,6 +701,54 @@ mod tests {
             "configured right-click action should create {action_path}"
         );
         let _ = std::fs::remove_file(&action_path);
+    }
+
+    #[test]
+    fn module_actions_command_uses_command_policy_timeout() {
+        use crate::config::{ClockConfig, ModuleActionsConfig, ModuleConfig, ModuleParams};
+
+        let action_path = unique_tmp_path("action-timeout");
+        let _ = std::fs::remove_file(&action_path);
+
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "clock".into(),
+                module_type: "clock".into(),
+                params: ModuleParams::Clock(ClockConfig::default()),
+                actions: ModuleActionsConfig {
+                    bindings: vec![crate::config::ActionBinding {
+                        trigger: crate::config::ActionTrigger::Click,
+                        action: crate::config::PanelAction::Command(
+                            crate::config::CommandConfig::Argv {
+                                program: "sh".into(),
+                                args: vec![
+                                    "-c".into(),
+                                    format!("sleep 1; printf late >{action_path}"),
+                                ],
+                            },
+                        ),
+                    }],
+                },
+            }],
+            command_policy: crate::config::CommandPolicy {
+                action_timeout_ms: 50,
+                ..crate::config::CommandPolicy::default()
+            },
+            ..Default::default()
+        };
+        config.bars[0].modules.start = vec!["clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::ModuleClick(
+            ModuleId::new("clock"),
+            iced::window::Id::unique(),
+        )));
+
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(
+            !std::path::Path::new(&action_path).exists(),
+            "configured command should be killed before writing {action_path}"
+        );
     }
 
     #[test]

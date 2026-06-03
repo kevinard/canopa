@@ -167,6 +167,14 @@ A typed configured operation triggered by pointer input, focused keyboard input,
 Examples: `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, `command`.
 _Avoid_: Shell action when the action is not a command
 
+**Configured Command**:
+A user-declared command value from configuration, either shell text or an explicit argv program and argument list. It can power script content, command-backed **Module Actions**, and command-backed **Panel Actions**.
+_Avoid_: Shell command when the value may be argv; action when referring only to the command value
+
+**Command Policy**:
+The configuration-owned policy for **Configured Commands**, including whether shell-form commands are accepted and how long command-backed **Module Actions** and **Panel Actions** may run before Niribar kills and reaps the process. It does not define **Dmenu Selection Mode** selection waiting or **Installed Desktop Application** launch behavior.
+_Avoid_: Script timeout, desktop launch policy, security mode
+
 **Panel Menu**:
 An app-owned, named launcher/menu list rendered inside a **Panel**.
 _Avoid_: Menu when referring to SNI or other module-owned context menus

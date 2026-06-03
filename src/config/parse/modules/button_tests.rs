@@ -15,11 +15,26 @@ mod tests {
         }
     }
 
+    fn button_kdl(extra: &str) -> String {
+        format!(
+            r#"
+modules {{
+    module "button" {{
+        label "Launch"
+        icon ">"
+        actions {{
+            click {{ command "kitty" }}
+        }}
+        {extra}
+    }}
+}}
+"#
+        )
+    }
+
     #[test]
     fn tooltip_string_parsed() {
-        let cfg = button_config(
-            "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\"; tooltip \"{label}\" } }",
-        );
+        let cfg = button_config(&button_kdl(r#"tooltip "{label}""#));
         assert!(matches!(
             cfg.tooltip,
             crate::config::TooltipSetting::Custom(_)
@@ -28,9 +43,7 @@ mod tests {
 
     #[test]
     fn tooltip_false_disables() {
-        let cfg = button_config(
-            "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\"; tooltip #false } }",
-        );
+        let cfg = button_config(&button_kdl("tooltip #false"));
         assert!(matches!(
             cfg.tooltip,
             crate::config::TooltipSetting::Disabled
@@ -39,16 +52,15 @@ mod tests {
 
     #[test]
     fn tooltip_true_errors() {
-        let kdl = "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\"; tooltip #true } }";
-        let err = crate::config::parse::parse(kdl).unwrap_err().to_string();
+        let err = crate::config::parse::parse(&button_kdl("tooltip #true"))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("tooltip true"), "got: {err}");
     }
 
     #[test]
     fn tooltip_absent_is_default() {
-        let cfg = button_config(
-            "modules { module \"button\" { label \"L\"; icon \">\"; on-click \"x\" } }",
-        );
+        let cfg = button_config(&button_kdl(""));
         assert!(matches!(
             cfg.tooltip,
             crate::config::TooltipSetting::Default
@@ -57,61 +69,49 @@ mod tests {
 
     #[test]
     fn parse_button_with_all_params() {
-        let kdl = r#"
-modules {
-    module "button" {
-        label "Launch Terminal"
-        icon ">"
-        on-click "kitty"
-    }
-}
-"#;
-        let config = parse(kdl).unwrap();
+        let config = parse(&button_kdl("")).unwrap();
         assert_eq!(config.modules.len(), 1);
         match &config.modules[0].params {
             ModuleParams::Button(cfg) => {
-                assert_eq!(cfg.label, "Launch Terminal");
+                assert_eq!(cfg.label, "Launch");
                 assert_eq!(cfg.icon, ">");
-                assert_eq!(
-                    cfg.on_click,
-                    crate::config::CommandConfig::Shell("kitty".into())
-                );
             }
             _ => panic!("expected ModuleParams::Button"),
         }
+        assert_eq!(
+            config.modules[0]
+                .actions
+                .action_for(&crate::config::ActionTrigger::Click),
+            Some(&crate::config::PanelAction::Command(
+                crate::config::CommandConfig::Shell("kitty".into())
+            ))
+        );
     }
 
     #[test]
-    fn parse_button_argv_on_click() {
+    fn parse_button_allows_non_command_click_action() {
         let kdl = r#"
 modules {
     module "button" {
-        label "Run"
+        label "Open"
         icon ">"
-        on-click {
-            argv "true"
+        actions {
+            click { open-panel }
         }
     }
 }
 "#;
         let config = parse(kdl).unwrap();
-        match &config.modules[0].params {
-            ModuleParams::Button(cfg) => {
-                assert_eq!(
-                    cfg.on_click,
-                    crate::config::CommandConfig::Argv {
-                        program: "true".into(),
-                        args: vec![],
-                    }
-                );
-            }
-            _ => panic!("expected ModuleParams::Button"),
-        }
+        assert_eq!(
+            config.modules[0]
+                .actions
+                .action_for(&crate::config::ActionTrigger::Click),
+            Some(&crate::config::PanelAction::OpenPanel)
+        );
     }
 
     #[test]
     fn parse_button_missing_block_errors() {
-        // No child block at all -- distinct from a missing individual field.
         let kdl = r#"modules { module "button" }"#;
         let err = parse(kdl).unwrap_err();
         let msg = err.to_string();
@@ -123,12 +123,13 @@ modules {
 
     #[test]
     fn parse_button_missing_label_errors() {
-        // Child block present but label node absent.
         let kdl = r#"
 modules {
     module "button" {
         icon ">"
-        on-click "kitty"
+        actions {
+            click { command "kitty" }
+        }
     }
 }
 "#;
@@ -142,7 +143,8 @@ modules {
 
     #[test]
     fn parse_required_string_child_reports_missing_name() {
-        let kdl = r#"modules { module "button" { icon ">" on-click "kitty" } }"#;
+        let kdl =
+            r#"modules { module "button" { icon ">" actions { click { command "kitty" } } } }"#;
         let err = parse(kdl).unwrap_err();
         let msg = err.to_string();
         assert!(
@@ -161,12 +163,13 @@ modules {
 
     #[test]
     fn parse_button_missing_icon_errors() {
-        // Child block present but icon node absent.
         let kdl = r#"
 modules {
     module "button" {
         label "Launch"
-        on-click "kitty"
+        actions {
+            click { command "kitty" }
+        }
     }
 }
 "#;
@@ -179,7 +182,7 @@ modules {
     }
 
     #[test]
-    fn parse_button_missing_on_click_errors() {
+    fn parse_button_missing_click_action_errors() {
         let kdl = r#"
 modules {
     module "button" {
@@ -191,8 +194,8 @@ modules {
         let err = parse(kdl).unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("button.on-click"),
-            "expected 'button.on-click' in error, got: {msg}"
+            msg.contains("button.actions.click"),
+            "expected 'button.actions.click' in error, got: {msg}"
         );
     }
 
@@ -203,7 +206,9 @@ modules {
     module "button" {
         label 42
         icon ">"
-        on-click "kitty"
+        actions {
+            click { command "kitty" }
+        }
     }
 }
 "#;
@@ -217,7 +222,7 @@ modules {
 
     #[test]
     fn parse_button_unknown_field_is_structured_diagnostic() {
-        let kdl = r#"modules { module "button" { label "Launch"; icon ">"; on-click "kitty"; lable "x" } }"#;
+        let kdl = r#"modules { module "button" { label "Launch"; icon ">"; actions { click { command "kitty" } }; lable "x" } }"#;
         let err = parse(kdl).unwrap_err();
         let diagnostic = err.as_diagnostic().expect("config diagnostic");
         assert_eq!(diagnostic.path(), Some("modules[0].button.lable"));
@@ -231,7 +236,16 @@ modules {
     }
 
     #[test]
-    fn parse_button_shell_command_policy_error_points_at_on_click() {
+    fn parse_button_rejects_legacy_on_click() {
+        let kdl = r#"modules { module "button" { label "Launch"; icon ">"; actions { click { command "kitty" } }; on-click "kitty" } }"#;
+        let err = parse(kdl).unwrap_err();
+        let diagnostic = err.as_diagnostic().expect("config diagnostic");
+        assert_eq!(diagnostic.path(), Some("modules[0].button.on-click"));
+        assert!(diagnostic.has_span(), "expected source span");
+    }
+
+    #[test]
+    fn parse_button_shell_command_policy_error_points_at_action_command() {
         let kdl = r#"
 command-policy {
     allow-shell #false
@@ -240,13 +254,18 @@ modules {
     module "button" {
         label "Launch"
         icon ">"
-        on-click "kitty"
+        actions {
+            click { command "kitty" }
+        }
     }
 }
 "#;
         let err = parse(kdl).unwrap_err();
         let diagnostic = err.as_diagnostic().expect("config diagnostic");
-        assert_eq!(diagnostic.path(), Some("modules[0].button.on-click"));
+        assert_eq!(
+            diagnostic.path(),
+            Some("modules[0].button.actions.click.command")
+        );
         assert!(
             diagnostic
                 .to_string()
@@ -257,7 +276,7 @@ modules {
 
     #[test]
     fn parse_button_format_unknown_placeholder_points_at_format() {
-        let kdl = r#"modules { module "button" { label "Launch"; icon ">"; on-click { argv "true" }; format "{missing}" } }"#;
+        let kdl = r#"modules { module "button" { label "Launch"; icon ">"; actions { click { command { argv "true" } } }; format "{missing}" } }"#;
         let err = parse(kdl).unwrap_err();
         let diagnostic = err.as_diagnostic().expect("config diagnostic");
         assert_eq!(diagnostic.path(), Some("modules[0].button.format"));

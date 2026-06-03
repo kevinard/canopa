@@ -209,6 +209,29 @@ pub fn spawn_command_fire_and_forget(spec: CommandSpec<'_>) -> std::io::Result<S
     Ok(SpawnResult::Spawned)
 }
 
+pub fn spawn_command_with_timeout_fire_and_forget(
+    spec: CommandSpec<'_>,
+    timeout: std::time::Duration,
+) -> std::io::Result<SpawnResult> {
+    let mut child = std_command(spec).spawn()?;
+    std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) if std::time::Instant::now() >= deadline => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return;
+                }
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
+                Err(_) => return,
+            }
+        }
+    });
+    Ok(SpawnResult::Spawned)
+}
+
 pub fn desktop_exec_to_argv(exec: &str) -> std::io::Result<DesktopLaunchArgv> {
     let tokens = split_desktop_exec(exec)?;
     let mut cleaned = Vec::new();
@@ -241,19 +264,33 @@ pub fn spawn_desktop_application_fire_and_forget(
     })
 }
 
-pub fn spawn_config_command_fire_and_forget(
+pub fn spawn_config_command_with_policy_fire_and_forget(
     config: &crate::config::CommandConfig,
+    policy: &crate::config::CommandPolicy,
+) -> std::io::Result<SpawnResult> {
+    spawn_config_command_with_timeout_fire_and_forget(
+        config,
+        std::time::Duration::from_millis(policy.action_timeout_ms),
+    )
+}
+
+fn spawn_config_command_with_timeout_fire_and_forget(
+    config: &crate::config::CommandConfig,
+    timeout: std::time::Duration,
 ) -> std::io::Result<SpawnResult> {
     match config {
         crate::config::CommandConfig::Shell(command) => {
-            spawn_command_fire_and_forget(CommandSpec::Shell(command))
+            spawn_command_with_timeout_fire_and_forget(CommandSpec::Shell(command), timeout)
         }
         crate::config::CommandConfig::Argv { program, args } => {
             let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-            spawn_command_fire_and_forget(CommandSpec::Argv {
-                program,
-                args: &borrowed,
-            })
+            spawn_command_with_timeout_fire_and_forget(
+                CommandSpec::Argv {
+                    program,
+                    args: &borrowed,
+                },
+                timeout,
+            )
         }
     }
 }
@@ -333,6 +370,20 @@ pub async fn set_default_sink_volume(arg: &str) -> std::io::Result<std::process:
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    fn unique_tmp_path(name: &str) -> String {
+        format!("/tmp/niribar-command-{name}-{}", std::process::id())
+    }
+
+    fn wait_for_path(path: &str) -> bool {
+        for _ in 0..50 {
+            if std::path::Path::new(path).exists() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        false
+    }
 
     #[test]
     fn sanitize_stdout_trims_and_caps_bytes() {
@@ -441,6 +492,53 @@ mod tests {
             })
             .unwrap(),
             SpawnResult::Spawned
+        );
+    }
+
+    #[test]
+    fn spawn_config_command_with_policy_returns_spawned() {
+        let path = unique_tmp_path("policy-spawned");
+        let _ = std::fs::remove_file(&path);
+        let config = crate::config::CommandConfig::Argv {
+            program: "sh".into(),
+            args: vec!["-c".into(), format!("printf done >{path}")],
+        };
+
+        assert_eq!(
+            spawn_config_command_with_policy_fire_and_forget(
+                &config,
+                &crate::config::CommandPolicy::default()
+            )
+            .unwrap(),
+            SpawnResult::Spawned
+        );
+
+        assert!(wait_for_path(&path), "expected command to create {path}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn spawn_config_command_with_policy_kills_after_timeout() {
+        let path = unique_tmp_path("policy-timeout");
+        let _ = std::fs::remove_file(&path);
+        let config = crate::config::CommandConfig::Argv {
+            program: "sh".into(),
+            args: vec!["-c".into(), format!("sleep 1; printf done >{path}")],
+        };
+        let policy = crate::config::CommandPolicy {
+            action_timeout_ms: 50,
+            ..crate::config::CommandPolicy::default()
+        };
+
+        assert_eq!(
+            spawn_config_command_with_policy_fire_and_forget(&config, &policy).unwrap(),
+            SpawnResult::Spawned
+        );
+
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !std::path::Path::new(&path).exists(),
+            "timed-out command should not create {path}"
         );
     }
 

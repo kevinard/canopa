@@ -1,23 +1,22 @@
 use ::kdl::KdlNode;
 
-use super::super::actions;
 use super::super::error::ParseCtx;
 use super::super::fields;
 use super::formats;
 use crate::config::{
-    ActionTrigger, ButtonConfig, CommandPolicy, ConfigResult, ModuleActionsConfig, PanelAction,
+    ActionTrigger, ButtonConfig, CommandPolicy, ConfigResult, ModuleActionsConfig,
 };
 
 pub(super) fn parse_ctx(
     node: &KdlNode,
     actions: &ModuleActionsConfig,
     ctx: &ParseCtx,
-    command_policy: &CommandPolicy,
+    _command_policy: &CommandPolicy,
 ) -> ConfigResult<ButtonConfig> {
     let Some(children) = node.children() else {
         return Err(ctx.node_err(
             node,
-            "missing required parameters block. Expected child nodes: label, icon, on-click",
+            "missing required parameters block. Expected child nodes: label, icon, actions",
             None,
         ));
     };
@@ -28,7 +27,6 @@ pub(super) fn parse_ctx(
             "type",
             "label",
             "icon",
-            "on-click",
             "actions",
             "format",
             "expanded-format",
@@ -39,7 +37,6 @@ pub(super) fn parse_ctx(
             "type",
             "label",
             "icon",
-            "on-click",
             "actions",
             "format",
             "expanded-format",
@@ -52,21 +49,14 @@ pub(super) fn parse_ctx(
 
     let icon = fields::field(children, ctx, "icon").required_nonempty_string()?;
 
-    let on_click = match fields::field(children, ctx, "on-click").optional_node()? {
-        Some(on_click_node) => {
-            actions::parse_command_node_ctx(on_click_node, &ctx.child("on-click"), command_policy)?
-        }
-        None => match actions.action_for(&ActionTrigger::Click) {
-            Some(PanelAction::Command(command)) => command.clone(),
-            _ => {
-                return Err(ctx.child("on-click").node_err(
-                    node,
-                    "missing required parameter. Expected: a string value, argv block, or actions.click command",
-                    None,
-                ));
-            }
-        },
-    };
+    if actions.action_for(&ActionTrigger::Click).is_none() {
+        return Err(ctx.child("actions").child("click").node_err(
+            node,
+            "missing required action. Expected: actions { click { ... } }",
+            None,
+        ));
+    }
+
     let (format, tooltip) = formats::parse_format_and_tooltip_ctx(
         children,
         ctx,
@@ -77,7 +67,6 @@ pub(super) fn parse_ctx(
     Ok(ButtonConfig {
         label,
         icon,
-        on_click,
         format,
         tooltip,
     })

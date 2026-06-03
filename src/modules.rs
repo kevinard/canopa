@@ -193,11 +193,6 @@ impl ModuleInteractionProfile {
         ..Self::NONE
     };
 
-    pub(crate) const SECONDARY: Self = Self {
-        secondary_activation: true,
-        ..Self::NONE
-    };
-
     pub(crate) const PRIMARY_AND_SECONDARY: Self = Self {
         primary_activation: true,
         secondary_activation: true,
@@ -509,7 +504,6 @@ fn button_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Modul
             ModuleId::new(&mc.name),
             cfg.label.clone(),
             cfg.icon.clone(),
-            cfg.on_click.clone(),
             cfg.format.clone(),
         ))),
         _ => anyhow::bail!(

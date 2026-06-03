@@ -167,8 +167,8 @@ modules {
         //     segment "{title}" color="text"
         // }
         // actions {
-        //     click "niri msg action focus-window-up"
-        //     right-click "niri msg action close-window"
+        //     click { command "niri msg action focus-window-up" }
+        //     right-click { command "niri msg action close-window" }
         // }
         //
         // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
@@ -331,8 +331,8 @@ modules {
         //     segment "{date}" color="subtext"
         // }
         // actions {
-        //     click "gnome-clocks"
-        //     right-click "notify-send \"$(date)\""
+        //     click { command "gnome-clocks" }
+        //     right-click { command "notify-send \"$(date)\"" }
         // }
         //
         // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`
@@ -364,7 +364,6 @@ modules {
     // module "button" {
     //     label "Launch"
     //     icon ">"
-    //     on-click "kitty"
     //     // Optional display templates. Placeholders: {icon}, {value}, {label}.
     //     format "{icon}"
     //     expanded-format "{icon} {label}"
@@ -379,8 +378,8 @@ modules {
     //     //     segment "{label}" color="text" weight="bold"
     //     // }
     //     actions {
-    //         click "kitty"
-    //         right-click "notify-send Launch"
+    //         click { command "kitty" }
+    //         right-click { command "notify-send Launch" }
     //     }
     //     //
     //     // Tooltip on hover. Same grammar as `format`. Use `tooltip #false`

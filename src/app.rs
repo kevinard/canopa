@@ -917,7 +917,6 @@ mod tests {
                     params: ModuleParams::Button(ButtonConfig {
                         label: "test".into(),
                         icon: ">".into(),
-                        on_click: crate::config::CommandConfig::Shell("true".into()),
                         format: crate::config::FormatConfig::default(),
                         tooltip: crate::config::TooltipSetting::Default,
                     }),
@@ -1004,7 +1003,6 @@ mod tests {
             params: ModuleParams::Button(ButtonConfig {
                 label: "probe".into(),
                 icon: ">".into(),
-                on_click: crate::config::CommandConfig::Shell("true".into()),
                 format: crate::config::FormatConfig::default(),
                 tooltip: crate::config::TooltipSetting::Default,
             }),

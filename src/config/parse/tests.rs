@@ -267,7 +267,7 @@ fn parse_module_actions_rejects_empty_command() {
 }
 
 #[test]
-fn parse_button_allows_actions_click_without_legacy_on_click() {
+fn parse_button_requires_shared_actions_click() {
     let kdl = r#"
 modules {
     module "button" {
@@ -1066,7 +1066,9 @@ modules {
     module "button" {
         label "Launch"
         icon ">"
-        on-click "kitty"
+        actions {
+            click { command "kitty" }
+        }
         format "{icon}"
         expanded-format "{label}"
         horizontal-format "{value}"
