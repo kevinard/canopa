@@ -16,6 +16,7 @@ mod navigation;
 mod niri;
 mod overlay_adapter;
 mod panel;
+mod panel_attachment;
 mod panel_menu_session;
 mod panel_runtime;
 mod panel_search;

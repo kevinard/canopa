@@ -67,8 +67,11 @@ impl App {
         &self,
         window: iced::window::Id,
     ) -> Option<PanelRenderModel<'_>> {
-        let meta = self.surfaces.panel_popup(window)?;
-        let tree = self.panel.panel_tree_for_attachment(meta.attachment_id)?;
+        let tree = super::panel_attachment::attached_panel_tree_for_window(
+            &self.panel,
+            &self.surfaces,
+            window,
+        )?;
         let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
         let origin_surface = self
             .surfaces

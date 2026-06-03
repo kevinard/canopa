@@ -147,7 +147,7 @@ The logical lifecycle of the currently active **Panel** from accepted open reque
 _Avoid_: Panel popup lifecycle, overlay lifecycle when referring to logical **Panel** ownership
 
 **Panel Attachment**:
-The runtime association between the current logical **Panel** and the overlay window that renders it, used to decide whether an overlay window event still belongs to the current **Panel Lifecycle**.
+The runtime association between the current logical **Panel** and the overlay window that renders it. It is the app-level seam for deciding whether overlay-window render or close work still belongs to the current **Panel Lifecycle**, and for applying the current-vs-stale consequences without moving **Panel Runtime** ownership into the **Bar Surface Registry** or overlay-window ownership into **Panel Runtime**.
 _Avoid_: Panel identity, panel popup metadata when referring to the logical-window association
 
 **Panel Origin**:

@@ -54,14 +54,20 @@ impl super::App {
                     window,
                     attachment_id,
                 } => {
-                    self.panel.handle(
-                        super::panel_runtime::PanelRuntimeIntent::PanelWindowClosed {
-                            attachment_id,
-                            window,
-                        },
-                    );
-                    self.surfaces.remove_panel_popup(window);
-                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
+                    for effect in super::panel_attachment::close_attached_panel_window(
+                        &mut self.panel,
+                        &mut self.surfaces,
+                        window,
+                        attachment_id,
+                    ) {
+                        match effect {
+                            super::panel_attachment::PanelAttachmentEffect::RemoveWindow(
+                                window,
+                            ) => {
+                                tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
+                            }
+                        }
+                    }
                 }
                 RegistryEffect::MenuClosed { window, meta } => {
                     self.surfaces.remove_popup(window);
