@@ -64,6 +64,12 @@ impl ModuleStore {
         self.rebuild_indexes();
     }
 
+    pub fn remove(&mut self, index: usize) -> (Zone, Box<dyn Module>) {
+        let item = self.ordered.remove(index);
+        self.rebuild_indexes();
+        item
+    }
+
     pub fn retain(&mut self, mut keep: impl FnMut(&(Zone, Box<dyn Module>)) -> bool) {
         self.ordered.retain(|item| keep(item));
         self.rebuild_indexes();

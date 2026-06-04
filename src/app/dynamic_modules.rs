@@ -1,6 +1,8 @@
+use std::collections::{HashMap, HashSet};
+
 use super::App;
 use super::module_runtime::ModuleOrigin;
-use crate::config::{BarModules, PanelModules};
+use crate::config::{BarModules, ModuleParams, PanelModules};
 use crate::modules::{Module, ModuleId, ModuleInteractionProfile, ModuleKind, Zone};
 
 #[derive(Debug, Clone, Copy)]
@@ -55,46 +57,101 @@ impl App {
         }
     }
 
-    pub(super) fn replace_dynamic_children(
+    pub(super) fn reconcile_workspace_dynamic_modules(
         &mut self,
-        family: DynamicModuleFamily,
-        mut children_for_slot: impl FnMut(&DynamicModuleSlot) -> Vec<Box<dyn Module>>,
+        workspaces: &[niri_ipc::Workspace],
     ) {
-        let stale_child_ids = self.remove_dynamic_children_by_kind(family.child_kind);
-        self.clear_surface_module_refs(&stale_child_ids);
+        let mut sorted = workspaces.to_vec();
+        sorted.sort_by_key(|workspace| workspace.idx);
 
-        let slots = self.dynamic_module_slots(family.parent_kind);
+        let slots = self.dynamic_module_slots(WORKSPACES_DYNAMIC_MODULE.parent_kind);
         for slot in slots.iter().rev() {
-            let children = children_for_slot(slot);
+            let config = self.workspaces_config_for_dynamic_parent(slot.parent_name());
+            let desired: Vec<_> = sorted
+                .iter()
+                .cloned()
+                .map(|workspace| {
+                    let id = crate::modules::workspaces::WorkspaceItemModule::module_id(
+                        slot.parent_name(),
+                        workspace.id,
+                    );
+                    (id, workspace)
+                })
+                .collect();
+            let desired_ids: HashSet<_> = desired.iter().map(|(id, _)| id.clone()).collect();
+
+            let mut existing = self.take_dynamic_children_by_id(
+                slot.parent_name(),
+                WORKSPACES_DYNAMIC_MODULE.child_kind,
+            );
+            let stale_child_ids: Vec<_> = existing
+                .keys()
+                .filter(|id| !desired_ids.contains(*id))
+                .cloned()
+                .collect();
+            self.clear_surface_module_refs(&stale_child_ids);
+
+            let mut children = Vec::with_capacity(desired.len());
+            for (id, workspace) in desired {
+                if let Some(mut child) = existing.remove(&id) {
+                    child.update_workspace(&workspace);
+                    children.push(child);
+                } else {
+                    children.push(
+                        Box::new(crate::modules::workspaces::WorkspaceItemModule::new(
+                            workspace,
+                            config.clone(),
+                            slot.parent_name().to_string(),
+                        )) as Box<dyn Module>,
+                    );
+                }
+            }
+
             for child in children.into_iter().rev() {
-                self.insert_dynamic_child(slot.index + 1, slot, family, child);
+                self.insert_dynamic_child(slot.index + 1, slot, WORKSPACES_DYNAMIC_MODULE, child);
             }
         }
+
+        self.modules.prune_metadata_to_retained_ids();
     }
 
-    pub(super) fn replace_dynamic_child(
+    pub(super) fn reconcile_tray_dynamic_modules(
         &mut self,
-        family: DynamicModuleFamily,
-        child_id: &ModuleId,
-        mut child_for_slot: impl FnMut(&DynamicModuleSlot) -> Box<dyn Module>,
+        items: &[crate::dbus::sni::host::TrayItem],
     ) {
-        self.remove_dynamic_child(family, child_id);
+        let mut sorted = items.to_vec();
+        sorted.sort_by_key(|item| item.runtime_id());
 
-        let slots = self.dynamic_module_slots(family.parent_kind);
+        let slots = self.dynamic_module_slots(TRAY_DYNAMIC_MODULE.parent_kind);
         for slot in slots.iter().rev() {
-            let insert_at = self.dynamic_child_insert_position(slot.index, slot, family.child_kind);
-            let child = child_for_slot(slot);
-            self.insert_dynamic_child(insert_at, slot, family, child);
-        }
-    }
+            let desired_ids: HashSet<_> = sorted
+                .iter()
+                .map(|item| {
+                    crate::modules::tray::TrayIconModule::module_id(
+                        slot.parent_name(),
+                        &item.runtime_id(),
+                    )
+                })
+                .collect();
+            let existing = self
+                .take_dynamic_children_by_id(slot.parent_name(), TRAY_DYNAMIC_MODULE.child_kind);
+            let stale_child_ids: Vec<_> = existing
+                .keys()
+                .filter(|id| !desired_ids.contains(*id))
+                .cloned()
+                .collect();
+            self.clear_surface_module_refs(&stale_child_ids);
 
-    pub(super) fn remove_dynamic_child(
-        &mut self,
-        family: DynamicModuleFamily,
-        child_id: &ModuleId,
-    ) {
-        let removed_child_ids = self.remove_dynamic_children_matching(family.child_kind, child_id);
-        self.clear_surface_module_refs(&removed_child_ids);
+            for item in sorted.iter().rev().cloned() {
+                let child = Box::new(crate::modules::tray::TrayIconModule::new(
+                    item,
+                    slot.parent_name().to_string(),
+                ));
+                self.insert_dynamic_child(slot.index + 1, slot, TRAY_DYNAMIC_MODULE, child);
+            }
+        }
+
+        self.modules.prune_metadata_to_retained_ids();
     }
 
     pub(super) fn expand_dynamic_module_layout(
@@ -156,24 +213,6 @@ impl App {
             .and_then(|(_, module)| module.config_name())
     }
 
-    fn dynamic_child_insert_position(
-        &self,
-        slot_idx: usize,
-        slot: &DynamicModuleSlot,
-        child_kind: ModuleKind,
-    ) -> usize {
-        let mut pos = slot_idx + 1;
-        while pos < self.modules.len() {
-            let (_, module) = &self.modules[pos];
-            if module.kind() == child_kind && module.config_name() == Some(slot.parent_name()) {
-                pos += 1;
-            } else {
-                break;
-            }
-        }
-        pos
-    }
-
     fn insert_dynamic_child(
         &mut self,
         index: usize,
@@ -191,38 +230,31 @@ impl App {
         );
     }
 
-    fn remove_dynamic_children_by_kind(&mut self, child_kind: ModuleKind) -> Vec<ModuleId> {
-        let stale_child_ids: Vec<_> = self
-            .modules
-            .iter()
-            .filter(|(_, module)| module.kind() == child_kind)
-            .map(|(_, module)| module.id())
-            .collect();
-        if stale_child_ids.is_empty() {
-            return Vec::new();
-        }
+    fn take_dynamic_children_by_id(
+        &mut self,
+        parent_name: &str,
+        child_kind: ModuleKind,
+    ) -> HashMap<ModuleId, Box<dyn Module>> {
         self.modules
-            .retain(|(_, module)| module.kind() != child_kind);
-        stale_child_ids
+            .take_dynamic_children_for_parent(parent_name, child_kind)
+            .into_iter()
+            .map(|(_, module)| (module.id(), module))
+            .collect()
     }
 
-    fn remove_dynamic_children_matching(
-        &mut self,
-        child_kind: ModuleKind,
-        child_id: &ModuleId,
-    ) -> Vec<ModuleId> {
-        let removed_child_ids: Vec<_> = self
+    fn workspaces_config_for_dynamic_parent(
+        &self,
+        parent_name: &str,
+    ) -> crate::config::WorkspacesConfig {
+        self.config
             .modules
             .iter()
-            .filter(|(_, module)| module.kind() == child_kind && module.id() == *child_id)
-            .map(|(_, module)| module.id())
-            .collect();
-        if removed_child_ids.is_empty() {
-            return Vec::new();
-        }
-        self.modules
-            .retain(|(_, module)| !(module.kind() == child_kind && module.id() == *child_id));
-        removed_child_ids
+            .find(|module| module.name == parent_name)
+            .and_then(|module| match &module.params {
+                ModuleParams::Workspaces(config) => Some(config.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -300,24 +332,13 @@ mod tests {
         config
     }
 
-    fn tray_child(item: TrayItem, parent_name: &str) -> Box<dyn Module> {
-        Box::new(crate::modules::tray::TrayIconModule::new(
-            item,
-            parent_name.to_string(),
-        ))
-    }
-
     fn insert_tray_children(app: &mut App, services: &[&str]) {
-        app.replace_dynamic_children(TRAY_DYNAMIC_MODULE, |slot| {
-            services
-                .iter()
-                .map(|service| tray_child(tray_item(service), slot.parent_name()))
-                .collect()
-        });
+        let items: Vec<_> = services.iter().map(|service| tray_item(service)).collect();
+        app.reconcile_tray_dynamic_modules(&items);
     }
 
     #[test]
-    fn full_replacement_removes_stale_children_clears_refs_and_expands_layouts() {
+    fn tray_reconciliation_removes_stale_children_clears_refs_and_expands_layouts() {
         let (mut app, _) = App::boot(tray_config(), vec![]);
         insert_tray_children(&mut app, &["org.old"]);
         let old_id = ModuleId::new("tray:org.old");
@@ -343,13 +364,11 @@ mod tests {
     }
 
     #[test]
-    fn single_child_replacement_preserves_sibling_children() {
+    fn tray_reconciliation_preserves_sibling_children() {
         let (mut app, _) = App::boot(tray_config(), vec![]);
         insert_tray_children(&mut app, &["org.a", "org.b"]);
 
-        app.replace_dynamic_child(TRAY_DYNAMIC_MODULE, &ModuleId::new("tray:org.b"), |slot| {
-            tray_child(tray_item("org.b"), slot.parent_name())
-        });
+        insert_tray_children(&mut app, &["org.a", "org.b"]);
 
         let ids: Vec<_> = app
             .effective_module_layout_for_bar(&app.config.bars[0])
@@ -363,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn single_child_removal_preserves_sibling_children_and_clears_refs() {
+    fn tray_reconciliation_removal_preserves_sibling_children_and_clears_refs() {
         let (mut app, _) = App::boot(tray_config(), vec![]);
         insert_tray_children(&mut app, &["org.a", "org.b"]);
         let removed_id = ModuleId::new("tray:org.a");
@@ -371,7 +390,7 @@ mod tests {
         let window = iced::window::Id::unique();
         app.surface_mut(window).focused_module = Some(removed_id.clone());
 
-        app.remove_dynamic_child(TRAY_DYNAMIC_MODULE, &removed_id);
+        insert_tray_children(&mut app, &["org.b"]);
 
         assert!(app.modules.get(&removed_id).is_none());
         assert!(app.modules.get(&retained_id).is_some());
@@ -390,5 +409,91 @@ mod tests {
         );
         assert!(app.modules.supports_primary_activation(&child_id));
         assert!(app.modules.supports_secondary_activation(&child_id));
+    }
+
+    #[test]
+    fn workspace_reconciliation_updates_matching_children_and_preserves_focus() {
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "workspaces".into(),
+                module_type: "workspaces".into(),
+                params: ModuleParams::Workspaces(crate::config::WorkspacesConfig::default()),
+                actions: ModuleActionsConfig::default(),
+            }],
+            ..Config::default()
+        };
+        config.bars[0].modules.start = vec!["workspaces".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let window = iced::window::Id::unique();
+        let mut first = niri_ipc::Workspace {
+            id: 1,
+            idx: 0,
+            name: None,
+            output: Some("eDP-1".into()),
+            is_urgent: false,
+            is_active: true,
+            is_focused: true,
+            active_window_id: None,
+        };
+        app.reconcile_workspace_dynamic_modules(&[first.clone()]);
+        app.surface_mut(window).focused_module = Some(ModuleId::new("workspace:1"));
+
+        first.is_focused = false;
+        app.reconcile_workspace_dynamic_modules(&[first]);
+
+        assert_eq!(
+            app.surface(window).unwrap().focused_module,
+            Some(ModuleId::new("workspace:1"))
+        );
+        assert!(app.modules.get(&ModuleId::new("workspace:1")).is_some());
+    }
+
+    #[test]
+    fn custom_dynamic_parent_child_ids_include_parent_name() {
+        let mut config = Config {
+            modules: vec![
+                ModuleConfig {
+                    name: "workspaces-left".into(),
+                    module_type: "workspaces".into(),
+                    params: ModuleParams::Workspaces(crate::config::WorkspacesConfig::default()),
+                    actions: ModuleActionsConfig::default(),
+                },
+                ModuleConfig {
+                    name: "workspaces-right".into(),
+                    module_type: "workspaces".into(),
+                    params: ModuleParams::Workspaces(crate::config::WorkspacesConfig::default()),
+                    actions: ModuleActionsConfig::default(),
+                },
+            ],
+            ..Config::default()
+        };
+        config.bars[0].modules.start = vec!["workspaces-left".into(), "workspaces-right".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let workspace = niri_ipc::Workspace {
+            id: 1,
+            idx: 0,
+            name: None,
+            output: Some("eDP-1".into()),
+            is_urgent: false,
+            is_active: true,
+            is_focused: true,
+            active_window_id: None,
+        };
+
+        app.reconcile_workspace_dynamic_modules(&[workspace]);
+
+        let ids: Vec<_> = app
+            .modules
+            .iter()
+            .filter(|(_, module)| module.kind() == ModuleKind::WorkspaceItem)
+            .map(|(_, module)| module.id().0)
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                "workspace:workspaces-left:1".to_string(),
+                "workspace:workspaces-right:1".to_string(),
+            ]
+        );
     }
 }

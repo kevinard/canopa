@@ -1,7 +1,6 @@
 use iced::Task;
 
 use super::{App, Message};
-use crate::modules::workspaces::WorkspaceItemModule;
 use crate::modules::{ModuleKind, ModuleState};
 use crate::niri::NiriEvent;
 
@@ -210,42 +209,11 @@ impl App {
 
     /// Rebuild one `WorkspaceItemModule` per workspace for each `WorkspacesModule` placeholder.
     pub(super) fn rebuild_workspace_item_modules(&mut self, workspaces: &[niri_ipc::Workspace]) {
-        use crate::config::ModuleParams;
-
         if let Some(perf) = &self.perf {
             perf.record_workspace_rebuild();
         }
 
-        let mut sorted: Vec<niri_ipc::Workspace> = workspaces.to_vec();
-        sorted.sort_by_key(|ws| ws.idx);
-
-        let workspace_configs: std::collections::HashMap<String, crate::config::WorkspacesConfig> =
-            self.config
-                .modules
-                .iter()
-                .filter_map(|mc| match &mc.params {
-                    ModuleParams::Workspaces(config) => Some((mc.name.clone(), config.clone())),
-                    _ => None,
-                })
-                .collect();
-
-        self.replace_dynamic_children(super::dynamic_modules::WORKSPACES_DYNAMIC_MODULE, |slot| {
-            let config = workspace_configs
-                .get(slot.parent_name())
-                .cloned()
-                .unwrap_or_default();
-            sorted
-                .iter()
-                .cloned()
-                .map(|workspace| {
-                    Box::new(WorkspaceItemModule::new(
-                        workspace,
-                        config.clone(),
-                        slot.parent_name().to_string(),
-                    )) as Box<dyn crate::modules::Module>
-                })
-                .collect()
-        });
+        self.reconcile_workspace_dynamic_modules(workspaces);
     }
 }
 

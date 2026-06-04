@@ -88,12 +88,20 @@ pub(crate) struct WorkspaceItemModule {
 }
 
 impl WorkspaceItemModule {
+    pub(crate) fn module_id(config_name: &str, workspace_id: u64) -> crate::modules::ModuleId {
+        if config_name == "workspaces" {
+            crate::modules::ModuleId(format!("workspace:{workspace_id}"))
+        } else {
+            crate::modules::ModuleId(format!("workspace:{config_name}:{workspace_id}"))
+        }
+    }
+
     pub(crate) fn new(
         workspace: niri_ipc::Workspace,
         config: crate::config::WorkspacesConfig,
         config_name: String,
     ) -> Self {
-        let id = crate::modules::ModuleId(format!("workspace:{}", workspace.id));
+        let id = Self::module_id(&config_name, workspace.id);
         WorkspaceItemModule {
             id,
             workspace,

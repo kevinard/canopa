@@ -5,7 +5,6 @@ use zbus::zvariant::OwnedObjectPath;
 
 use super::{App, Message, messages};
 use crate::dbus::sni::host::{ItemStatus, TrayEvent, TrayItem};
-use crate::modules::ModuleId;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TrayState {
@@ -111,8 +110,6 @@ impl App {
     }
 
     pub(super) fn handle_tray_event(&mut self, event: TrayEvent) -> Task<Message> {
-        use crate::modules::tray::TrayIconModule;
-
         if let Some(perf) = &self.perf {
             perf.record_tray_event();
         }
@@ -131,49 +128,7 @@ impl App {
             "tray host event applied"
         );
 
-        match event {
-            TrayEvent::Snapshot(_) => {
-                self.replace_dynamic_children(
-                    super::dynamic_modules::TRAY_DYNAMIC_MODULE,
-                    |slot| {
-                        active_items
-                            .iter()
-                            .cloned()
-                            .map(|item| {
-                                Box::new(TrayIconModule::new(item, slot.parent_name().to_string()))
-                                    as Box<dyn crate::modules::Module>
-                            })
-                            .collect()
-                    },
-                );
-            }
-            TrayEvent::ItemAdded(item) => {
-                let child_id = ModuleId::new(format!("tray:{}", item.runtime_id()));
-                if item.status != ItemStatus::Passive {
-                    self.replace_dynamic_child(
-                        super::dynamic_modules::TRAY_DYNAMIC_MODULE,
-                        &child_id,
-                        |slot| {
-                            Box::new(TrayIconModule::new(
-                                item.clone(),
-                                slot.parent_name().to_string(),
-                            ))
-                        },
-                    );
-                } else {
-                    self.remove_dynamic_child(
-                        super::dynamic_modules::TRAY_DYNAMIC_MODULE,
-                        &child_id,
-                    );
-                }
-            }
-            TrayEvent::ItemRemoved(service) => {
-                self.remove_dynamic_child(
-                    super::dynamic_modules::TRAY_DYNAMIC_MODULE,
-                    &ModuleId::new(format!("tray:{service}")),
-                );
-            }
-        }
+        self.reconcile_tray_dynamic_modules(&active_items);
 
         Task::none()
     }

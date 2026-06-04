@@ -163,8 +163,16 @@ pub(crate) struct TrayIconModule {
 }
 
 impl TrayIconModule {
+    pub(crate) fn module_id(config_name: &str, runtime_id: &str) -> ModuleId {
+        if config_name == "tray" {
+            ModuleId(format!("tray:{runtime_id}"))
+        } else {
+            ModuleId(format!("tray:{config_name}:{runtime_id}"))
+        }
+    }
+
     pub(crate) fn new(item: TrayItem, config_name: String) -> Self {
-        let id = ModuleId(format!("tray:{}", item.runtime_id()));
+        let id = Self::module_id(&config_name, &item.runtime_id());
         TrayIconModule {
             id,
             item,

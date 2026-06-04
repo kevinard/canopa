@@ -103,6 +103,34 @@ impl ModuleRuntime {
 
     pub(super) fn retain(&mut self, keep: impl FnMut(&(Zone, Box<dyn Module>)) -> bool) {
         self.store.retain(keep);
+        self.prune_metadata_to_retained_ids();
+    }
+
+    pub(super) fn take_dynamic_children_for_parent(
+        &mut self,
+        parent_name: &str,
+        child_kind: ModuleKind,
+    ) -> Vec<(Zone, Box<dyn Module>)> {
+        let mut indices: Vec<_> = self
+            .store
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, module))| {
+                module.kind() == child_kind && module.config_name() == Some(parent_name)
+            })
+            .map(|(index, _)| index)
+            .collect();
+
+        let mut removed = Vec::with_capacity(indices.len());
+        indices.sort_unstable_by(|a, b| b.cmp(a));
+        for index in indices {
+            removed.push(self.store.remove(index));
+        }
+        removed.reverse();
+        removed
+    }
+
+    pub(super) fn prune_metadata_to_retained_ids(&mut self) {
         let retained_ids: HashSet<_> = self.store.iter().map(|(_, module)| module.id()).collect();
         self.states.retain(|id, _| retained_ids.contains(id));
         self.actions.retain(|id, _| retained_ids.contains(id));
@@ -1178,23 +1206,23 @@ mod tests {
                 (
                     ModuleKind::TrayIcon,
                     Some("tray-left".into()),
-                    "tray:org.a".into()
+                    "tray:tray-left:org.a".into()
                 ),
                 (
                     ModuleKind::TrayIcon,
                     Some("tray-left".into()),
-                    "tray:org.b".into()
+                    "tray:tray-left:org.b".into()
                 ),
                 (ModuleKind::Tray, None, "tray-right".into()),
                 (
                     ModuleKind::TrayIcon,
                     Some("tray-right".into()),
-                    "tray:org.a".into()
+                    "tray:tray-right:org.a".into()
                 ),
                 (
                     ModuleKind::TrayIcon,
                     Some("tray-right".into()),
-                    "tray:org.b".into()
+                    "tray:tray-right:org.b".into()
                 ),
             ]
         );
