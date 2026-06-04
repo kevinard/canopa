@@ -5,7 +5,6 @@ use iced::Task;
 use iced_layershell::reexport::{KeyboardInteractivity, NewLayerShellSettings, OutputOption};
 
 use super::bar_surface_plan::PlannedBarSurface;
-use super::panel_runtime::PanelAttachmentId;
 use super::{App, Message};
 use crate::modules::ModuleKind;
 use crate::surface::SurfaceState;
@@ -58,7 +57,6 @@ pub(super) struct PopupMeta {
 
 #[derive(Debug, Clone)]
 pub(super) struct PanelMeta {
-    pub(super) attachment_id: PanelAttachmentId,
     pub(super) origin_window: iced::window::Id,
 }
 
@@ -66,7 +64,6 @@ pub(super) struct PanelMeta {
 pub(super) enum RegistryEffect {
     PanelClosed {
         window: iced::window::Id,
-        attachment_id: PanelAttachmentId,
     },
     MenuClosed {
         window: iced::window::Id,
@@ -76,6 +73,7 @@ pub(super) enum RegistryEffect {
         window: iced::window::Id,
     },
     PendingMenuReady(PopupMeta),
+    #[cfg(test)]
     SuspendBarKeyboardInteractivity,
     RestoreBarKeyboardInteractivity,
 }
@@ -301,13 +299,14 @@ impl SurfaceManager {
                 self.close_overlays_for_bar_surface(window, &identity)
                     .into_iter()
                     .filter_map(|effect| match effect {
-                        RegistryEffect::PanelClosed { window, .. }
+                        RegistryEffect::PanelClosed { window }
                         | RegistryEffect::MenuClosed { window, .. }
                         | RegistryEffect::TooltipClosed { window } => {
                             Some(BarSurfaceLifecycleEffect::RemoveWindow(window))
                         }
-                        RegistryEffect::SuspendBarKeyboardInteractivity
-                        | RegistryEffect::RestoreBarKeyboardInteractivity
+                        #[cfg(test)]
+                        RegistryEffect::SuspendBarKeyboardInteractivity => None,
+                        RegistryEffect::RestoreBarKeyboardInteractivity
                         | RegistryEffect::PendingMenuReady(_) => None,
                     }),
             );
@@ -356,12 +355,9 @@ impl SurfaceManager {
             .filter_map(|(window, meta)| (meta.origin_window == target_surface).then_some(*window))
             .collect();
         for window in &closing_panels {
-            if let Some(meta) = self.panel_popups.remove(window) {
+            if self.panel_popups.remove(window).is_some() {
                 self.closing_panel_popups.insert(*window);
-                effects.push(RegistryEffect::PanelClosed {
-                    window: *window,
-                    attachment_id: meta.attachment_id,
-                });
+                effects.push(RegistryEffect::PanelClosed { window: *window });
             }
         }
         if !closing_panels.is_empty() {
@@ -419,11 +415,11 @@ impl SurfaceManager {
         !self.popups.is_empty() || !self.closing_menu_popups.is_empty()
     }
 
+    #[cfg(test)]
     pub(super) fn panel_popup(&self, window: iced::window::Id) -> Option<&PanelMeta> {
         self.panel_popups.get(&window)
     }
 
-    #[cfg(test)]
     pub(super) fn insert_panel_popup(&mut self, window: iced::window::Id, meta: PanelMeta) {
         self.panel_popups.insert(window, meta);
     }
@@ -432,14 +428,7 @@ impl SurfaceManager {
         self.panel_popups.remove(&window)
     }
 
-    pub(super) fn close_panel_popup_window(&mut self, window: iced::window::Id) -> bool {
-        let removed = self.panel_popups.remove(&window).is_some();
-        if removed {
-            self.closing_panel_popups.insert(window);
-        }
-        removed
-    }
-
+    #[cfg(test)]
     pub(super) fn panel_popup_ids(&self) -> impl Iterator<Item = iced::window::Id> + '_ {
         self.panel_popups.keys().copied()
     }
@@ -449,6 +438,7 @@ impl SurfaceManager {
         self.panel_popups.values()
     }
 
+    #[cfg(test)]
     pub(super) fn has_panel_popup(&self, window: iced::window::Id) -> bool {
         self.panel_popups.contains_key(&window)
     }
@@ -476,6 +466,7 @@ impl SurfaceManager {
         self.tooltip_popups.remove(&window)
     }
 
+    #[cfg(test)]
     pub(super) fn open_panel_overlay(
         &mut self,
         origin_surface: iced::window::Id,
@@ -543,23 +534,12 @@ impl SurfaceManager {
         effects
     }
 
-    pub(super) fn close_panel_overlays(&mut self) -> Vec<RegistryEffect> {
-        let mut effects = self.close_panel_overlays_without_restore();
-        if !effects.is_empty() {
-            effects.push(RegistryEffect::RestoreBarKeyboardInteractivity);
-        }
-        effects
-    }
-
     fn close_panel_overlays_without_restore(&mut self) -> Vec<RegistryEffect> {
         self.panel_popups
             .drain()
-            .map(|(window, meta)| {
+            .map(|(window, _meta)| {
                 self.closing_panel_popups.insert(window);
-                RegistryEffect::PanelClosed {
-                    window,
-                    attachment_id: meta.attachment_id,
-                }
+                RegistryEffect::PanelClosed { window }
             })
             .collect()
     }
@@ -604,12 +584,9 @@ impl SurfaceManager {
     }
 
     pub(super) fn window_closed(&mut self, window: iced::window::Id) -> Vec<RegistryEffect> {
-        if let Some(meta) = self.panel_popups.remove(&window) {
+        if self.panel_popups.remove(&window).is_some() {
             return vec![
-                RegistryEffect::PanelClosed {
-                    window,
-                    attachment_id: meta.attachment_id,
-                },
+                RegistryEffect::PanelClosed { window },
                 RegistryEffect::RestoreBarKeyboardInteractivity,
             ];
         }
@@ -766,8 +743,21 @@ impl App {
                 self.surfaces.surface_mut(window).screen_size = (width, height);
                 Task::none()
             }
+            SurfaceInputEffect::WindowClosed(window) if self.foreground.is_panel_window(window) => {
+                self.surfaces.remove_panel_popup(window);
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
+                Task::batch(self.apply_foreground_effects(effects))
+            }
+            SurfaceInputEffect::ClosingPanelWindowClosed(window) => {
+                self.surfaces.remove_panel_popup(window);
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
+                Task::batch(self.apply_foreground_effects(effects))
+            }
             SurfaceInputEffect::WindowClosed(window)
-            | SurfaceInputEffect::ClosingPanelWindowClosed(window)
             | SurfaceInputEffect::MenuWindowClosed(window) => {
                 let effects = self.surfaces.window_closed(window);
                 Task::batch(self.apply_registry_effects(effects))
@@ -835,7 +825,7 @@ impl App {
     }
 
     pub(super) fn handle_toggle_panel_ipc(&mut self) -> Task<Message> {
-        if self.surfaces.panel_popup_ids().next().is_some() {
+        if self.foreground.has_active_panel() {
             return self.handle_panel_event(super::messages::PanelEvent::Close);
         }
 
@@ -1069,7 +1059,11 @@ impl App {
         target_window: iced::window::Id,
         module: crate::modules::ModuleId,
     ) -> Task<Message> {
-        if self.panel.active_panel_origin_for(target_window).is_some() {
+        if self
+            .foreground
+            .active_panel_origin_for(target_window)
+            .is_some()
+        {
             self.surface_mut(target_window).tooltip_pending = None;
             return Task::none();
         }
@@ -1219,13 +1213,10 @@ mod tests {
     }
 
     fn panel_meta_for_test(
-        attachment_id: super::super::panel_runtime::PanelAttachmentId,
+        _attachment_id: super::super::panel_runtime::PanelAttachmentId,
         origin_window: iced::window::Id,
     ) -> PanelMeta {
-        PanelMeta {
-            attachment_id,
-            origin_window,
-        }
+        PanelMeta { origin_window }
     }
 
     fn attachment_id(value: u64) -> super::super::panel_runtime::PanelAttachmentId {
@@ -1272,12 +1263,11 @@ mod tests {
         assert!(app.surfaces.has_panel_popup(panel));
         assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
         let meta = app.surfaces.panel_popup(panel).expect("panel popup");
-        assert_eq!(meta.attachment_id, attachment_id(1));
         assert_eq!(meta.origin_window, origin);
     }
 
     #[test]
-    fn panel_closed_effect_carries_attachment_id() {
+    fn panel_closed_effect_carries_panel_window() {
         let origin = test_wid();
         let panel = test_wid();
         let attachment_id = attachment_id(7);
@@ -1289,10 +1279,7 @@ mod tests {
         assert_eq!(
             effects,
             vec![
-                RegistryEffect::PanelClosed {
-                    window: panel,
-                    attachment_id,
-                },
+                RegistryEffect::PanelClosed { window: panel },
                 RegistryEffect::RestoreBarKeyboardInteractivity,
             ]
         );
@@ -1565,7 +1552,6 @@ mod tests {
         let removed = app.surfaces.remove_panel_popup(panel).expect("panel popup");
 
         assert_eq!(removed.origin_window, origin);
-        assert_eq!(removed.attachment_id, attachment_id(5));
         assert!(!app.surfaces.has_panel_popup(panel));
         assert!(!app.surfaces.has_any_popup());
     }

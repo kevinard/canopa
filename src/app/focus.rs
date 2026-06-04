@@ -32,7 +32,7 @@ impl App {
     }
 
     pub(super) fn handle_escape_pressed(&mut self, window: iced::window::Id) -> Task<Message> {
-        if self.surfaces.has_panel_popup(window) {
+        if self.foreground.is_panel_window(window) {
             return self.handle_panel_escape_pressed();
         }
         let close_tt = self.close_tooltip_popup_if_open(window);
@@ -65,7 +65,7 @@ impl App {
             self.popup_nav_step(window, forward);
             return Task::none();
         }
-        if self.surfaces.has_panel_popup(window) {
+        if self.foreground.is_panel_window(window) {
             return self.handle_panel_event(if forward {
                 super::messages::PanelEvent::FocusMoveNext
             } else {
@@ -132,7 +132,7 @@ impl App {
     }
 
     pub(super) fn handle_keyboard_activate(&mut self, window: iced::window::Id) -> Task<Message> {
-        if self.surfaces.has_panel_popup(window) {
+        if self.foreground.is_panel_window(window) {
             return self.handle_panel_event(super::messages::PanelEvent::Activate);
         }
         if self.surfaces.has_popup(window) {

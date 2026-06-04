@@ -127,22 +127,15 @@ impl App {
         if !effects.is_empty() {
             tasks.push(self.apply_panel_runtime_effects(effects));
         }
-        let effects = self.surfaces.close_panel_overlays();
-        if !effects.is_empty() {
-            tracing::debug!(
-                target: "niribar::panel",
-                panel_effect_count = effects.len(),
-                "closing panel overlays"
-            );
-            self.panel
-                .handle(super::panel_runtime::PanelRuntimeIntent::CloseAll);
-        }
-        tasks.extend(self.apply_registry_effects(effects));
+        let effects = self
+            .foreground
+            .handle(super::foreground::ForegroundIntent::ClosePanel);
+        tasks.extend(self.apply_foreground_effects(effects));
         tasks
     }
 
     pub(super) fn handle_panel_focus_gained(&mut self, window: iced::window::Id) -> Task<Message> {
-        if self.panel.is_menu_panel_window(window) {
+        if self.foreground.is_menu_panel_window(window) {
             let effects = self
                 .panel
                 .handle(super::panel_runtime::PanelRuntimeIntent::RequestSearchFocus);
@@ -171,21 +164,10 @@ impl App {
                 anchor,
             } => {
                 let request = self.panel_open_request(origin_window, origin, content, anchor);
-                let catalog =
-                    super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
-                let module_detail_sessions = if !self.panel.would_toggle_close(&request) {
-                    self.module_detail_sessions_for_request(&request)
-                } else {
-                    Default::default()
-                };
                 let effects = self
-                    .panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::Toggle {
-                        module_detail_sessions,
-                        request,
-                        catalog,
-                    });
-                self.apply_panel_runtime_effects(effects)
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::TogglePanel { request });
+                Task::batch(self.apply_foreground_effects(effects))
             }
             PanelEvent::Close => Task::batch(self.close_all_panels()),
             PanelEvent::SearchChanged(query) => {
@@ -235,15 +217,10 @@ impl App {
         anchor: Option<iced::Rectangle>,
     ) -> Task<Message> {
         let request = self.panel_open_request(origin_window, origin, content, anchor);
-        let catalog = super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
         let effects = self
-            .panel
-            .handle(super::panel_runtime::PanelRuntimeIntent::Open {
-                module_detail_sessions: self.module_detail_sessions_for_request(&request),
-                request,
-                catalog,
-            });
-        self.apply_panel_runtime_effects(effects)
+            .foreground
+            .handle(super::foreground::ForegroundIntent::OpenPanel { request });
+        Task::batch(self.apply_foreground_effects(effects))
     }
 
     pub(super) fn panel_open_request(
@@ -252,9 +229,9 @@ impl App {
         origin: crate::surface::panel::PanelOrigin,
         content: crate::surface::panel::PanelContent,
         anchor: Option<iced::Rectangle>,
-    ) -> super::panel_runtime::PanelOpenRequest {
+    ) -> super::foreground::PanelForegroundRequest {
         let origin_surface = self.surface(origin_window).cloned().unwrap_or_default();
-        super::panel_runtime::PanelOpenRequest {
+        super::foreground::PanelForegroundRequest {
             origin_window,
             origin,
             content,
@@ -267,7 +244,7 @@ impl App {
 
     fn module_detail_sessions_for_request(
         &self,
-        request: &super::panel_runtime::PanelOpenRequest,
+        request: &super::foreground::PanelForegroundRequest,
     ) -> std::collections::HashMap<crate::modules::ModuleId, crate::modules::ModuleDetailSession>
     {
         self.panel_module_layout_for_request(request)
@@ -330,11 +307,7 @@ impl App {
         }
     }
 
-    fn open_panel_window(
-        &mut self,
-        request: super::panel_runtime::PanelWindowOpenRequest,
-    ) -> Task<Message> {
-        let tree = request.tree.clone();
+    fn open_panel_window(&mut self, tree: crate::surface::panel::PanelTree) -> Task<Message> {
         let origin_surface = self
             .surface(tree.origin_window)
             .cloned()
@@ -355,23 +328,15 @@ impl App {
             "opening panel window"
         );
 
-        let panel_meta = super::surfaces::PanelMeta {
-            attachment_id: request.attachment_id,
-            origin_window: tree.origin_window,
-        };
-        let effects =
-            self.surfaces
-                .open_panel_overlay(tree.origin_window, panel_window, panel_meta);
-        let mut tasks = self.apply_registry_effects(effects);
-        self.panel.handle(
-            super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
-                attachment_id: request.attachment_id,
-                window: panel_window,
+        self.surfaces.insert_panel_popup(
+            panel_window,
+            super::surfaces::PanelMeta {
+                origin_window: tree.origin_window,
             },
         );
+        let mut tasks = Vec::new();
         self.foreground
             .handle(super::foreground::ForegroundIntent::PanelWindowOpened {
-                attachment_id: request.attachment_id,
                 window: panel_window,
             });
 
@@ -380,50 +345,46 @@ impl App {
         Task::batch(tasks)
     }
 
-    fn close_panel_window(
-        &mut self,
-        window: iced::window::Id,
-        restore_keyboard: bool,
-    ) -> Vec<Task<Message>> {
-        let mut tasks = Vec::new();
-        if self.surfaces.close_panel_popup_window(window) {
-            tracing::debug!(
-                target: "niribar::panel",
-                ?window,
-                "closing panel window"
-            );
-            tasks.push(Task::done(Message::RemoveWindow(window)));
-            if restore_keyboard {
-                tasks.extend(self.restore_bar_keyboard_interactivity());
-            }
-        }
-        tasks
-    }
-
     pub(super) fn apply_foreground_effects(
         &mut self,
         effects: Vec<super::foreground::ForegroundEffect>,
-        restore_keyboard_on_panel_close: bool,
     ) -> Vec<Task<Message>> {
         let mut tasks = Vec::new();
         for effect in effects {
             match effect {
-                super::foreground::ForegroundEffect::OpenPanel(request) => {
-                    tasks.push(self.open_panel_window(request));
+                super::foreground::ForegroundEffect::PreparePanelRuntime { request, .. } => {
+                    let catalog =
+                        super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
+                    let module_detail_sessions = self.module_detail_sessions_for_request(&request);
+                    let effects =
+                        self.panel
+                            .handle(super::panel_runtime::PanelRuntimeIntent::PrepareOpen {
+                                module_detail_sessions,
+                                request,
+                                catalog,
+                            });
+                    tasks.push(self.apply_panel_runtime_effects(effects));
                 }
-                super::foreground::ForegroundEffect::ClosePanel {
-                    window,
-                    attachment_id,
-                } => {
-                    tasks.extend(self.apply_registry_effects(vec![
-                        super::surfaces::RegistryEffect::PanelClosed {
-                            window,
-                            attachment_id,
-                        },
-                    ]));
-                    if restore_keyboard_on_panel_close {
-                        tasks.extend(self.restore_bar_keyboard_interactivity());
-                    }
+                super::foreground::ForegroundEffect::ClearPanelRuntime => {
+                    self.panel
+                        .handle(super::panel_runtime::PanelRuntimeIntent::Clear);
+                }
+                super::foreground::ForegroundEffect::OpenPanelWindow { tree } => {
+                    tasks.push(self.open_panel_window(tree));
+                }
+                super::foreground::ForegroundEffect::RemoveWindow(window) => {
+                    self.surfaces.remove_panel_popup(window);
+                    tasks.push(Task::done(Message::RemoveWindow(window)));
+                }
+                super::foreground::ForegroundEffect::SuspendBarKeyboardInteractivity => {
+                    tasks.extend(self.suspend_bar_keyboard_interactivity());
+                }
+                super::foreground::ForegroundEffect::RestoreBarKeyboardInteractivity => {
+                    tasks.extend(self.restore_bar_keyboard_interactivity());
+                }
+                super::foreground::ForegroundEffect::CloseTooltipsForSurface(window) => {
+                    let effects = self.surfaces.close_tooltip_for_surface(window);
+                    tasks.extend(self.apply_registry_effects(effects));
                 }
                 super::foreground::ForegroundEffect::CloseMenu { window, meta } => {
                     tasks.extend(self.apply_registry_effects(vec![
@@ -440,44 +401,25 @@ impl App {
         effects: Vec<super::panel_runtime::PanelRuntimeEffect>,
     ) -> Task<Message> {
         let mut tasks = Vec::new();
-        let will_open_panel = effects.iter().any(|effect| {
-            matches!(
-                effect,
-                super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(_)
-                    | super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenOpenPanel(_)
-            )
-        });
         for effect in effects {
             match effect {
-                super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(request) => {
-                    let effects = self.foreground.handle(
-                        super::foreground::ForegroundIntent::OpenPanelWindow(request),
-                    );
-                    tasks.extend(self.apply_foreground_effects(effects, !will_open_panel));
-                }
-                super::panel_runtime::PanelRuntimeEffect::ClosePanelWindow(window) => {
-                    let foreground_effects = self
+                super::panel_runtime::PanelRuntimeEffect::PanelPrepared(tree) => {
+                    let effects = self
                         .foreground
-                        .handle(super::foreground::ForegroundIntent::ClosePanel);
-                    if foreground_effects.is_empty() {
-                        tasks.extend(self.close_panel_window(window, !will_open_panel));
-                    } else {
-                        tasks.extend(
-                            self.apply_foreground_effects(foreground_effects, !will_open_panel),
-                        );
-                    }
+                        .handle(super::foreground::ForegroundIntent::PanelRuntimePrepared { tree });
+                    tasks.extend(self.apply_foreground_effects(effects));
                 }
                 super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus => {
                     tasks.push(request_panel_search_focus());
                 }
-                super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenOpenPanel(
+                super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenPreparePanel(
                     pending,
                 ) => {
                     let apps = self.load_installed_apps_for_panel();
                     let catalog =
                         super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
                     let effects = self.panel.handle(
-                        super::panel_runtime::PanelRuntimeIntent::InstalledAppsLoaded {
+                        super::panel_runtime::PanelRuntimeIntent::PrepareInstalledAppsLoaded {
                             pending,
                             apps,
                             catalog,
@@ -499,6 +441,44 @@ impl App {
                     response,
                 } => {
                     send_ipc_response(responder, response);
+                    tasks.extend(self.close_all_panels());
+                }
+                #[cfg(test)]
+                super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(request) => {
+                    let effects = self.foreground.handle(
+                        super::foreground::ForegroundIntent::PanelRuntimePrepared {
+                            tree: request.tree,
+                        },
+                    );
+                    tasks.extend(self.apply_foreground_effects(effects));
+                }
+                #[cfg(test)]
+                super::panel_runtime::PanelRuntimeEffect::ClosePanelWindow(window) => {
+                    let effects = self
+                        .foreground
+                        .handle(super::foreground::ForegroundIntent::ClosePanel);
+                    if effects.is_empty() {
+                        self.surfaces.remove_panel_popup(window);
+                        tasks.push(Task::done(Message::RemoveWindow(window)));
+                    } else {
+                        tasks.extend(self.apply_foreground_effects(effects));
+                    }
+                }
+                #[cfg(test)]
+                super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenOpenPanel(
+                    pending,
+                ) => {
+                    let apps = self.load_installed_apps_for_panel();
+                    let catalog =
+                        super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
+                    let effects = self.panel.handle(
+                        super::panel_runtime::PanelRuntimeIntent::InstalledAppsLoaded {
+                            pending,
+                            apps,
+                            catalog,
+                        },
+                    );
+                    tasks.push(self.apply_panel_runtime_effects(effects));
                 }
             }
         }
@@ -554,14 +534,10 @@ impl App {
     }
 
     fn scroll_panel_menu_to_focus(&mut self) -> Task<Message> {
-        let Some(scroll_id) = self
-            .surfaces
-            .panel_popup_ids()
-            .next()
-            .map(panel_menu_scroll_id)
-        else {
+        let Some(panel_window) = self.foreground.active_panel_window() else {
             return Task::none();
         };
+        let scroll_id = panel_menu_scroll_id(panel_window);
         let Some(y) = self
             .panel
             .scroll_focused_menu_into_view(MENU_ROW_EXTENT, DEFAULT_MENU_VIEWPORT_HEIGHT)
@@ -588,7 +564,7 @@ impl App {
         if !self.panel.search_focus_pending() {
             return Task::none();
         }
-        let Some(panel_window) = self.panel.active_panel_window() else {
+        let Some(panel_window) = self.foreground.active_panel_window() else {
             self.panel
                 .handle(super::panel_runtime::PanelRuntimeIntent::SearchFocusSettled);
             return Task::none();
@@ -2070,32 +2046,21 @@ mod tests {
     }
 
     #[test]
-    fn close_all_panels_closes_tracked_and_untracked_panel_popups() {
+    fn close_all_panels_closes_active_foreground_panel() {
         let config = config_with_menu(menu_with_two_entries());
         let (mut app, _) = App::boot(config, vec![]);
         let origin = iced::window::Id::unique();
         let tracked_panel = iced::window::Id::unique();
-        let untracked_panel = iced::window::Id::unique();
-        app.surfaces.insert_panel_popup(
+        app.register_panel_popup(
             tracked_panel,
-            super::super::surfaces::PanelMeta {
-                attachment_id: super::super::panel_runtime::PanelAttachmentId::for_test(1),
-                origin_window: origin,
-            },
-        );
-        app.surfaces.insert_panel_popup(
-            untracked_panel,
-            super::super::surfaces::PanelMeta {
-                attachment_id: super::super::panel_runtime::PanelAttachmentId::for_test(2),
-                origin_window: origin,
-            },
+            origin,
+            super::super::panel_runtime::PanelAttachmentId::for_test(1),
         );
 
         let tasks = app.close_all_panels();
 
-        assert!(tasks.len() >= 2);
+        assert!(!tasks.is_empty());
         assert!(app.surfaces.panel_popup(tracked_panel).is_none());
-        assert!(app.surfaces.panel_popup(untracked_panel).is_none());
     }
 
     #[test]
@@ -2193,7 +2158,6 @@ mod tests {
         let _ =
             app.apply_registry_effects(vec![super::super::surfaces::RegistryEffect::PanelClosed {
                 window: first_window,
-                attachment_id: first_attachment,
             }]);
 
         assert_eq!(app.panel.active_panel_window(), Some(second_window));

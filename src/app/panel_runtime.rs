@@ -5,50 +5,24 @@ use super::selectable_menu_session::{
     SelectedMenuEntry,
 };
 
+pub(super) type PanelOpenRequest = super::foreground::PanelForegroundRequest;
+
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct PanelAttachmentId(u64);
 
+#[cfg(test)]
 impl PanelAttachmentId {
-    #[cfg(test)]
-    pub(super) fn new(value: u64) -> Self {
-        Self(value)
-    }
-
-    #[cfg(test)]
     pub(super) fn for_test(value: u64) -> Self {
         Self(value)
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PanelWindowOpenRequest {
     pub(super) attachment_id: PanelAttachmentId,
     pub(super) tree: crate::surface::panel::PanelTree,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct PanelOpenRequest {
-    pub(super) origin_window: iced::window::Id,
-    pub(super) origin: crate::surface::panel::PanelOrigin,
-    pub(super) content: crate::surface::panel::PanelContent,
-    pub(super) anchor: Option<iced::Rectangle>,
-    pub(super) origin_bar_name: String,
-    pub(super) origin_output_name: String,
-    pub(super) screen_size: (u32, u32),
-}
-
-impl PanelOpenRequest {
-    fn tree(&self) -> crate::surface::panel::PanelTree {
-        crate::surface::panel::PanelTree {
-            origin: self.origin.clone(),
-            content: self.content.clone(),
-            origin_window: self.origin_window,
-            origin_bar_name: self.origin_bar_name.clone(),
-            origin_output_name: self.origin_output_name.clone(),
-            anchor: self.anchor,
-            screen_size: self.screen_size,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,16 +33,23 @@ pub(super) struct PendingPanelOpen {
 
 #[derive(Debug, Clone, PartialEq)]
 struct ActivePanel {
-    attachment_id: PanelAttachmentId,
-    window: Option<iced::window::Id>,
     tree: crate::surface::panel::PanelTree,
+    #[cfg(test)]
+    attachment_id: Option<PanelAttachmentId>,
+    #[cfg(test)]
+    window: Option<iced::window::Id>,
 }
 
 #[derive(Debug, Clone)]
 pub(super) enum PanelRuntimeEffect {
+    PanelPrepared(crate::surface::panel::PanelTree),
+    #[cfg(test)]
     OpenPanelWindow(PanelWindowOpenRequest),
+    #[cfg(test)]
     ClosePanelWindow(iced::window::Id),
     RequestSearchFocus,
+    LoadInstalledAppsThenPreparePanel(PendingPanelOpen),
+    #[cfg(test)]
     LoadInstalledAppsThenOpenPanel(PendingPanelOpen),
     RunPanelAction(crate::config::PanelAction),
     LaunchInstalledApp(String),
@@ -136,31 +117,48 @@ impl<'a> PanelMenuCatalog<'a> {
 }
 
 pub(super) enum PanelRuntimeIntent<'a> {
+    PrepareOpen {
+        request: PanelOpenRequest,
+        catalog: PanelMenuCatalog<'a>,
+        module_detail_sessions:
+            HashMap<crate::modules::ModuleId, crate::modules::ModuleDetailSession>,
+    },
+    #[cfg(test)]
     Open {
         request: PanelOpenRequest,
         catalog: PanelMenuCatalog<'a>,
         module_detail_sessions:
             HashMap<crate::modules::ModuleId, crate::modules::ModuleDetailSession>,
     },
+    #[cfg(test)]
     Toggle {
         request: PanelOpenRequest,
         catalog: PanelMenuCatalog<'a>,
         module_detail_sessions:
             HashMap<crate::modules::ModuleId, crate::modules::ModuleDetailSession>,
     },
-    PanelWindowOpened {
-        attachment_id: PanelAttachmentId,
-        window: iced::window::Id,
+    PrepareInstalledAppsLoaded {
+        pending: PendingPanelOpen,
+        apps: Vec<crate::desktop_apps::DesktopApplication>,
+        catalog: PanelMenuCatalog<'a>,
     },
-    PanelWindowClosed {
-        attachment_id: PanelAttachmentId,
-        window: iced::window::Id,
-    },
+    #[cfg(test)]
     InstalledAppsLoaded {
         pending: PendingPanelOpen,
         apps: Vec<crate::desktop_apps::DesktopApplication>,
         catalog: PanelMenuCatalog<'a>,
     },
+    #[cfg(test)]
+    PanelWindowOpened {
+        attachment_id: PanelAttachmentId,
+        window: iced::window::Id,
+    },
+    #[cfg(test)]
+    PanelWindowClosed {
+        attachment_id: PanelAttachmentId,
+        window: iced::window::Id,
+    },
+    Clear,
     SearchChanged(String),
     MenuScrolled {
         y: f32,
@@ -174,7 +172,6 @@ pub(super) enum PanelRuntimeIntent<'a> {
     Escape,
     Activate(Option<usize>),
     CancelDmenu,
-    CloseAll,
     BeginDmenuSelection {
         request: crate::ipc::protocol::DmenuRequest,
         responder: super::messages::IpcResponder,
@@ -185,9 +182,17 @@ pub(super) enum PanelRuntimeIntent<'a> {
 impl PartialEq for PanelRuntimeEffect {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::PanelPrepared(left), Self::PanelPrepared(right)) => left == right,
+            #[cfg(test)]
             (Self::OpenPanelWindow(left), Self::OpenPanelWindow(right)) => left == right,
+            #[cfg(test)]
             (Self::ClosePanelWindow(left), Self::ClosePanelWindow(right)) => left == right,
             (Self::RequestSearchFocus, Self::RequestSearchFocus) => true,
+            (
+                Self::LoadInstalledAppsThenPreparePanel(left),
+                Self::LoadInstalledAppsThenPreparePanel(right),
+            ) => left == right,
+            #[cfg(test)]
             (
                 Self::LoadInstalledAppsThenOpenPanel(left),
                 Self::LoadInstalledAppsThenOpenPanel(right),
@@ -214,6 +219,7 @@ pub(super) struct PanelRuntime {
     menu_viewport_height: f32,
     search_focus_pending: bool,
     dmenu_responder: Option<super::messages::IpcResponder>,
+    #[cfg(test)]
     next_attachment_id: u64,
     #[cfg(test)]
     pub(super) installed_apps_for_test: Option<Vec<crate::desktop_apps::DesktopApplication>>,
@@ -224,32 +230,51 @@ pub(super) struct PanelRuntime {
 impl PanelRuntime {
     pub(super) fn handle(&mut self, intent: PanelRuntimeIntent<'_>) -> Vec<PanelRuntimeEffect> {
         match intent {
-            PanelRuntimeIntent::Open {
+            PanelRuntimeIntent::PrepareOpen {
                 request,
                 catalog,
                 module_detail_sessions,
             } => self.open_panel_with_catalog(request, catalog, module_detail_sessions),
+            #[cfg(test)]
+            PanelRuntimeIntent::Open {
+                request,
+                catalog,
+                module_detail_sessions,
+            } => self.legacy_open_panel_with_catalog(request, catalog, module_detail_sessions),
+            #[cfg(test)]
             PanelRuntimeIntent::Toggle {
                 request,
                 catalog,
                 module_detail_sessions,
-            } => self.toggle_panel_with_catalog(request, catalog, module_detail_sessions),
-            PanelRuntimeIntent::PanelWindowOpened {
-                attachment_id,
-                window,
-            } => {
-                self.panel_window_opened(attachment_id, window);
-                Vec::new()
-            }
-            PanelRuntimeIntent::PanelWindowClosed {
-                attachment_id,
-                window,
-            } => self.panel_window_closed(attachment_id, window),
-            PanelRuntimeIntent::InstalledAppsLoaded {
+            } => self.legacy_toggle_panel_with_catalog(request, catalog, module_detail_sessions),
+            PanelRuntimeIntent::PrepareInstalledAppsLoaded {
                 pending,
                 apps,
                 catalog,
             } => self.open_panel_after_installed_apps_loaded(pending, apps, catalog),
+            #[cfg(test)]
+            PanelRuntimeIntent::InstalledAppsLoaded {
+                pending,
+                apps,
+                catalog,
+            } => self.legacy_open_panel_after_installed_apps_loaded(pending, apps, catalog),
+            #[cfg(test)]
+            PanelRuntimeIntent::PanelWindowOpened {
+                attachment_id,
+                window,
+            } => {
+                self.legacy_panel_window_opened(attachment_id, window);
+                Vec::new()
+            }
+            #[cfg(test)]
+            PanelRuntimeIntent::PanelWindowClosed {
+                attachment_id,
+                window,
+            } => self.legacy_panel_window_closed(attachment_id, window),
+            PanelRuntimeIntent::Clear => {
+                self.clear();
+                Vec::new()
+            }
             PanelRuntimeIntent::SearchChanged(query) => {
                 self.search_changed(query);
                 Vec::new()
@@ -280,10 +305,6 @@ impl PanelRuntime {
             PanelRuntimeIntent::CancelDmenu => {
                 self.cancel_dmenu(crate::ipc::protocol::IpcResponse::Cancelled)
             }
-            PanelRuntimeIntent::CloseAll => {
-                self.clear();
-                Vec::new()
-            }
             PanelRuntimeIntent::BeginDmenuSelection {
                 request,
                 responder,
@@ -302,93 +323,58 @@ impl PanelRuntime {
         self.dmenu_responder = None;
     }
 
+    #[cfg(test)]
     fn allocate_attachment_id(&mut self) -> PanelAttachmentId {
         self.next_attachment_id = self.next_attachment_id.saturating_add(1);
         PanelAttachmentId(self.next_attachment_id)
     }
 
+    #[cfg(test)]
     pub(super) fn active_panel_window(&self) -> Option<iced::window::Id> {
         self.active_panel.as_ref().and_then(|panel| panel.window)
     }
 
+    #[cfg(test)]
     pub(super) fn panel_tree_for_attachment(
         &self,
         attachment_id: PanelAttachmentId,
     ) -> Option<&crate::surface::panel::PanelTree> {
         self.active_panel
             .as_ref()
-            .filter(|panel| panel.attachment_id == attachment_id)
+            .filter(|panel| panel.attachment_id == Some(attachment_id))
             .map(|panel| &panel.tree)
-    }
-
-    pub(super) fn panel_tree_for_window(
-        &self,
-        window: iced::window::Id,
-    ) -> Option<&crate::surface::panel::PanelTree> {
-        self.active_panel
-            .as_ref()
-            .filter(|panel| panel.window == Some(window))
-            .map(|panel| &panel.tree)
-    }
-
-    pub(super) fn active_panel_origin_for(
-        &self,
-        origin_window: iced::window::Id,
-    ) -> Option<&crate::surface::panel::PanelOrigin> {
-        self.active_panel
-            .as_ref()
-            .filter(|panel| panel.tree.origin_window == origin_window)
-            .map(|panel| &panel.tree.origin)
-    }
-
-    pub(super) fn is_menu_panel_window(&self, window: iced::window::Id) -> bool {
-        self.panel_tree_for_window(window).is_some_and(|tree| {
-            matches!(
-                tree.content,
-                crate::surface::panel::PanelContent::Menu(_)
-                    | crate::surface::panel::PanelContent::DmenuRequest
-            )
-        })
-    }
-
-    pub(super) fn active_panel_tree(&self) -> Option<&crate::surface::panel::PanelTree> {
-        self.active_panel.as_ref().map(|panel| &panel.tree)
     }
 
     #[cfg(test)]
     pub(super) fn current_attachment_for_test(&self) -> Option<PanelAttachmentId> {
-        self.active_panel.as_ref().map(|panel| panel.attachment_id)
+        self.active_panel
+            .as_ref()
+            .and_then(|panel| panel.attachment_id)
     }
 
     #[cfg(test)]
-    pub(super) fn active_panel_tree_for_test(&self) -> Option<&crate::surface::panel::PanelTree> {
-        self.active_panel_tree()
-    }
-
-    pub(super) fn would_toggle_close(&self, request: &PanelOpenRequest) -> bool {
-        self.active_panel.as_ref().is_some_and(|panel| {
-            panel.tree.origin_window == request.origin_window
-                && panel.tree.content == request.content
-        }) && self.active_panel_window().is_some()
-    }
-
-    fn panel_window_opened(&mut self, attachment_id: PanelAttachmentId, window: iced::window::Id) {
+    fn legacy_panel_window_opened(
+        &mut self,
+        attachment_id: PanelAttachmentId,
+        window: iced::window::Id,
+    ) {
         if let Some(panel) = self
             .active_panel
             .as_mut()
-            .filter(|panel| panel.attachment_id == attachment_id)
+            .filter(|panel| panel.attachment_id == Some(attachment_id))
         {
             panel.window = Some(window);
         }
     }
 
-    fn panel_window_closed(
+    #[cfg(test)]
+    fn legacy_panel_window_closed(
         &mut self,
         attachment_id: PanelAttachmentId,
         window: iced::window::Id,
     ) -> Vec<PanelRuntimeEffect> {
         let should_clear = self.active_panel.as_ref().is_some_and(|panel| {
-            panel.attachment_id == attachment_id && panel.window == Some(window)
+            panel.attachment_id == Some(attachment_id) && panel.window == Some(window)
         });
         if should_clear {
             self.clear();
@@ -396,7 +382,51 @@ impl PanelRuntime {
         Vec::new()
     }
 
+    pub(super) fn active_panel_tree(&self) -> Option<&crate::surface::panel::PanelTree> {
+        self.active_panel.as_ref().map(|panel| &panel.tree)
+    }
+
+    #[cfg(test)]
+    pub(super) fn active_panel_tree_for_test(&self) -> Option<&crate::surface::panel::PanelTree> {
+        self.active_panel_tree()
+    }
+
+    #[cfg(test)]
+    pub(super) fn would_toggle_close(&self, request: &PanelOpenRequest) -> bool {
+        self.active_panel.as_ref().is_some_and(|panel| {
+            panel.tree.origin_window == request.origin_window
+                && panel.tree.content == request.content
+        })
+    }
+
     fn open_panel_with_catalog(
+        &mut self,
+        request: PanelOpenRequest,
+        catalog: PanelMenuCatalog<'_>,
+        module_detail_sessions: HashMap<
+            crate::modules::ModuleId,
+            crate::modules::ModuleDetailSession,
+        >,
+    ) -> Vec<PanelRuntimeEffect> {
+        if let crate::surface::panel::PanelContent::Menu(name) = &request.content
+            && catalog.is_installed_apps_menu(name)
+        {
+            let menu_name = name.clone();
+            return vec![PanelRuntimeEffect::LoadInstalledAppsThenPreparePanel(
+                PendingPanelOpen { request, menu_name },
+            )];
+        }
+        let menu_source = if let crate::surface::panel::PanelContent::Menu(name) = &request.content
+        {
+            catalog.configured_menu_source(name)
+        } else {
+            None
+        };
+        self.open_panel_after_source_ready(request, module_detail_sessions, menu_source)
+    }
+
+    #[cfg(test)]
+    fn legacy_open_panel_with_catalog(
         &mut self,
         request: PanelOpenRequest,
         catalog: PanelMenuCatalog<'_>,
@@ -419,10 +449,11 @@ impl PanelRuntime {
         } else {
             None
         };
-        self.open_panel_after_source_ready(request, module_detail_sessions, menu_source)
+        self.legacy_open_panel_after_source_ready(request, module_detail_sessions, menu_source)
     }
 
-    fn toggle_panel_with_catalog(
+    #[cfg(test)]
+    fn legacy_toggle_panel_with_catalog(
         &mut self,
         request: PanelOpenRequest,
         catalog: PanelMenuCatalog<'_>,
@@ -437,20 +468,22 @@ impl PanelRuntime {
             self.clear();
             return vec![PanelRuntimeEffect::ClosePanelWindow(window)];
         }
-        self.open_panel_with_catalog(request, catalog, module_detail_sessions)
+        self.legacy_open_panel_with_catalog(request, catalog, module_detail_sessions)
     }
 
-    fn open_panel_after_installed_apps_loaded(
+    #[cfg(test)]
+    fn legacy_open_panel_after_installed_apps_loaded(
         &mut self,
         pending: PendingPanelOpen,
         apps: Vec<crate::desktop_apps::DesktopApplication>,
         catalog: PanelMenuCatalog<'_>,
     ) -> Vec<PanelRuntimeEffect> {
         let source = catalog.installed_apps_source(&pending.menu_name, apps);
-        self.open_panel_after_source_ready(pending.request, HashMap::new(), source)
+        self.legacy_open_panel_after_source_ready(pending.request, HashMap::new(), source)
     }
 
-    fn open_panel_after_source_ready(
+    #[cfg(test)]
+    fn legacy_open_panel_after_source_ready(
         &mut self,
         request: PanelOpenRequest,
         module_detail_sessions: HashMap<
@@ -477,9 +510,9 @@ impl PanelRuntime {
         let tree = request.tree();
         let attachment_id = self.allocate_attachment_id();
         self.active_panel = Some(ActivePanel {
-            attachment_id,
-            window: None,
             tree: tree.clone(),
+            attachment_id: Some(attachment_id),
+            window: None,
         });
 
         effects.push(PanelRuntimeEffect::OpenPanelWindow(
@@ -488,6 +521,57 @@ impl PanelRuntime {
                 tree,
             },
         ));
+        if matches!(
+            request.content,
+            crate::surface::panel::PanelContent::Menu(_)
+                | crate::surface::panel::PanelContent::DmenuRequest
+        ) {
+            effects.push(self.request_search_focus());
+        }
+        effects
+    }
+
+    fn open_panel_after_installed_apps_loaded(
+        &mut self,
+        pending: PendingPanelOpen,
+        apps: Vec<crate::desktop_apps::DesktopApplication>,
+        catalog: PanelMenuCatalog<'_>,
+    ) -> Vec<PanelRuntimeEffect> {
+        let source = catalog.installed_apps_source(&pending.menu_name, apps);
+        self.open_panel_after_source_ready(pending.request, HashMap::new(), source)
+    }
+
+    fn open_panel_after_source_ready(
+        &mut self,
+        request: PanelOpenRequest,
+        module_detail_sessions: HashMap<
+            crate::modules::ModuleId,
+            crate::modules::ModuleDetailSession,
+        >,
+        menu_source: Option<super::panel_menu_session::PanelMenuSource>,
+    ) -> Vec<PanelRuntimeEffect> {
+        let mut effects = Vec::new();
+
+        self.session = None;
+        if let Some(source) = menu_source {
+            self.open_session(source);
+        }
+
+        self.module_detail_sessions = module_detail_sessions;
+        self.menu_scroll_y = 0.0;
+        self.menu_viewport_height = 0.0;
+        self.search_focus_pending = false;
+
+        let tree = request.tree();
+        self.active_panel = Some(ActivePanel {
+            tree: tree.clone(),
+            #[cfg(test)]
+            attachment_id: None,
+            #[cfg(test)]
+            window: None,
+        });
+
+        effects.push(PanelRuntimeEffect::PanelPrepared(tree));
         if matches!(
             request.content,
             crate::surface::panel::PanelContent::Menu(_)
@@ -614,7 +698,7 @@ impl PanelRuntime {
         &mut self,
         response: crate::ipc::protocol::IpcResponse,
     ) -> Vec<PanelRuntimeEffect> {
-        let mut effects: Vec<_> = self
+        let effects: Vec<_> = self
             .dmenu_responder
             .take()
             .map(|responder| PanelRuntimeEffect::SendDmenuResponse {
@@ -623,9 +707,6 @@ impl PanelRuntime {
             })
             .into_iter()
             .collect();
-        if let Some(window) = self.active_panel_window() {
-            effects.push(PanelRuntimeEffect::ClosePanelWindow(window));
-        }
         self.clear();
         effects
     }
@@ -1364,27 +1445,22 @@ mod tests {
     }
 
     #[test]
-    fn dmenu_selection_opens_dmenu_panel_and_requests_search_focus() {
+    fn dmenu_selection_prepares_dmenu_panel_and_requests_search_focus() {
         let origin = wid();
         let mut runtime = PanelRuntime::default();
+        let request = open_request(origin, crate::surface::panel::PanelContent::DmenuRequest);
 
         let effects = runtime.begin_dmenu_selection(
             dmenu_request(),
             ipc_responder_for_test(),
-            Some(open_request(
-                origin,
-                crate::surface::panel::PanelContent::DmenuRequest,
-            )),
+            Some(request.clone()),
         );
 
         assert!(runtime.has_dmenu_responder());
         assert_eq!(
             effects,
             vec![
-                open_window_effect(
-                    open_request(origin, crate::surface::panel::PanelContent::DmenuRequest),
-                    1
-                ),
+                PanelRuntimeEffect::PanelPrepared(request.tree()),
                 PanelRuntimeEffect::RequestSearchFocus,
             ]
         );

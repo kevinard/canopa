@@ -6,15 +6,31 @@ impl super::App {
         &mut self,
         window: iced::window::Id,
         origin_surface: iced::window::Id,
-        attachment_id: super::panel_runtime::PanelAttachmentId,
+        _attachment_id: super::panel_runtime::PanelAttachmentId,
     ) {
         self.surfaces.insert_panel_popup(
             window,
             super::surfaces::PanelMeta {
-                attachment_id,
                 origin_window: origin_surface,
             },
         );
+        let tree =
+            self.panel
+                .active_panel_tree()
+                .cloned()
+                .unwrap_or(crate::surface::panel::PanelTree {
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::BarPanel,
+                    origin_window: origin_surface,
+                    origin_bar_name: "main".into(),
+                    origin_output_name: "DP-1".into(),
+                    anchor: None,
+                    screen_size: (1920, 1080),
+                });
+        self.foreground
+            .handle(super::foreground::ForegroundIntent::PanelRuntimePrepared { tree });
+        self.foreground
+            .handle(super::foreground::ForegroundIntent::PanelWindowOpened { window });
     }
 
     #[cfg(test)]
@@ -51,30 +67,13 @@ impl super::App {
         let mut tasks = Vec::new();
         for effect in effects {
             match effect {
-                RegistryEffect::PanelClosed {
-                    window,
-                    attachment_id,
-                } => {
-                    self.foreground.handle(
-                        super::foreground::ForegroundIntent::PanelWindowClosed {
-                            attachment_id,
-                            window,
-                        },
-                    );
-                    for effect in super::panel_attachment::close_attached_panel_window(
-                        &mut self.panel,
-                        &mut self.surfaces,
-                        window,
-                        attachment_id,
-                    ) {
-                        match effect {
-                            super::panel_attachment::PanelAttachmentEffect::RemoveWindow(
-                                window,
-                            ) => {
-                                tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
-                            }
-                        }
-                    }
+                RegistryEffect::PanelClosed { window } => {
+                    let foreground_effects = self
+                        .foreground
+                        .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
+                    tasks.extend(self.apply_foreground_effects(foreground_effects));
+                    self.surfaces.remove_panel_popup(window);
+                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
                 }
                 RegistryEffect::MenuClosed { window, meta } => {
                     self.foreground
@@ -91,6 +90,7 @@ impl super::App {
                 RegistryEffect::PendingMenuReady(meta) => {
                     tasks.push(self.open_ready_menu_popup(meta));
                 }
+                #[cfg(test)]
                 RegistryEffect::SuspendBarKeyboardInteractivity => {
                     tasks.extend(self.suspend_bar_keyboard_interactivity());
                 }
@@ -175,7 +175,6 @@ mod tests {
         app.register_panel_popup(panel, origin, attachment_id);
 
         let meta = app.surfaces.panel_popup(panel).expect("panel popup");
-        assert_eq!(meta.attachment_id, attachment_id);
         assert_eq!(meta.origin_window, origin);
     }
 
@@ -246,7 +245,6 @@ mod tests {
         let _ =
             app.apply_registry_effects(vec![super::super::surfaces::RegistryEffect::PanelClosed {
                 window: old_window,
-                attachment_id: old_attachment,
             }]);
 
         assert_eq!(app.panel.active_panel_window(), Some(new_window));
@@ -270,7 +268,6 @@ mod tests {
         let _ =
             app.apply_registry_effects(vec![super::super::surfaces::RegistryEffect::PanelClosed {
                 window,
-                attachment_id,
             }]);
 
         assert_eq!(app.panel.active_panel_window(), None);

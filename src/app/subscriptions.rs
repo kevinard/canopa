@@ -39,7 +39,7 @@ impl App {
 
     fn needs_keyboard_focus_subscription(&self) -> bool {
         self.has_capability(|capabilities| capabilities.needs_keyboard_focus)
-            || self.surfaces.panel_popup_ids().next().is_some()
+            || self.foreground.has_active_panel()
     }
 
     fn needs_ipc_subscription(&self) -> bool {

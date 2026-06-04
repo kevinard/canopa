@@ -67,11 +67,7 @@ impl App {
         &self,
         window: iced::window::Id,
     ) -> Option<PanelRenderModel<'_>> {
-        let tree = super::panel_attachment::attached_panel_tree_for_window(
-            &self.panel,
-            &self.surfaces,
-            window,
-        )?;
+        let tree = self.foreground.panel_tree_for_window(window)?;
         let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
         let origin_surface = self
             .surfaces
@@ -154,7 +150,7 @@ impl App {
             let state = self.module_render_state(module.kind(), &id, &surface, &default_state);
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);
-            let active = self.panel.active_panel_origin_for(window)
+            let active = self.foreground.active_panel_origin_for(window)
                 == Some(&crate::surface::panel::PanelOrigin::Module(id.clone()));
 
             let module_view =
@@ -697,22 +693,15 @@ mod tests {
                 panel_request: Some(panel_request),
             },
         );
-        let attachment_id = effects
-            .iter()
-            .find_map(|effect| match effect {
-                crate::app::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
-                    Some(open.attachment_id)
-                }
-                _ => None,
-            })
-            .expect("dmenu should request a window");
-        app.panel.handle(
-            crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
-                attachment_id,
-                window: panel,
-            },
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            crate::app::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+        )));
+        app.register_panel_popup(
+            panel,
+            origin,
+            crate::app::panel_runtime::PanelAttachmentId::for_test(1),
         );
-        app.register_panel_popup(panel, origin, attachment_id);
 
         let model = app.panel_render_model(panel).expect("panel model");
 
