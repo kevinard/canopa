@@ -79,6 +79,7 @@ impl App {
     }
 
     pub(super) fn popup_nav_step(&mut self, window: iced::window::Id, forward: bool) {
-        self.menu.move_focus(window, forward);
+        self.foreground
+            .handle(super::foreground::ForegroundIntent::MenuMoveFocus { window, forward });
     }
 }

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use iced::Task;
 use iced_layershell::actions::IcedNewPopupSettings;
 use iced_layershell::reexport::KeyboardInteractivity;
@@ -26,97 +24,6 @@ impl MenuModel {
             menu_path: self.menu_path.clone(),
             item_id,
         }
-    }
-}
-
-#[derive(Default)]
-pub(super) struct MenuSystem {
-    sessions: HashMap<iced::window::Id, super::selectable_menu_session::SelectableMenuSession>,
-}
-
-impl MenuSystem {
-    pub(super) fn open_window(
-        &mut self,
-        window: iced::window::Id,
-        tree: crate::surface::menu_popup::MenuTree,
-        search_enabled: bool,
-    ) {
-        self.sessions.insert(
-            window,
-            super::selectable_menu_session::SelectableMenuSession::open(
-                super::selectable_menu_session::SelectableMenuSource::SniMenu {
-                    tree,
-                    search_enabled,
-                },
-            ),
-        );
-    }
-
-    pub(super) fn hovered_item(&self, window: iced::window::Id) -> Option<String> {
-        self.sessions
-            .get(&window)
-            .and_then(|session| session.hovered_sni_item())
-    }
-
-    pub(super) fn focused_item(&self, window: iced::window::Id) -> Option<String> {
-        self.sessions
-            .get(&window)
-            .and_then(|session| session.focused_sni_item())
-    }
-
-    pub(super) fn hover_enter(&mut self, window: iced::window::Id, item_id: String) {
-        if let Some(session) = self.sessions.get_mut(&window) {
-            session.hover_sni_item(&item_id);
-        }
-    }
-
-    pub(super) fn hover_exit(&mut self, window: iced::window::Id) {
-        if let Some(session) = self.sessions.get_mut(&window) {
-            session.clear_hover();
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn focus(&mut self, window: iced::window::Id, item_id: String) {
-        if let Some(session) = self.sessions.get_mut(&window) {
-            session.focus_sni_item(&item_id);
-        }
-    }
-
-    pub(super) fn move_focus(&mut self, window: iced::window::Id, forward: bool) {
-        if let Some(session) = self.sessions.get_mut(&window) {
-            session.move_focus(if forward { 1 } else { -1 });
-        }
-    }
-
-    pub(super) fn set_search_query(&mut self, window: iced::window::Id, query: String) {
-        if let Some(session) = self.sessions.get_mut(&window) {
-            session.set_search_query(query);
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn snapshot(
-        &self,
-        window: iced::window::Id,
-    ) -> Option<super::selectable_menu_session::SelectableMenuSnapshot> {
-        self.sessions.get(&window).map(|session| session.snapshot())
-    }
-
-    pub(super) fn session(
-        &self,
-        window: iced::window::Id,
-    ) -> Option<&super::selectable_menu_session::SelectableMenuSession> {
-        self.sessions.get(&window)
-    }
-
-    pub(super) fn clear_window(&mut self, window: iced::window::Id) {
-        self.sessions.remove(&window);
-    }
-
-    #[cfg(test)]
-    pub(super) fn is_empty(&self) -> bool {
-        self.sessions.is_empty()
     }
 }
 
@@ -153,7 +60,7 @@ fn menu_popup_window_settings(
 }
 
 impl App {
-    fn sni_menu_search_enabled(&self) -> bool {
+    pub(super) fn sni_menu_search_enabled(&self) -> bool {
         self.config.modules.iter().any(|module| {
             matches!(
                 &module.params,
@@ -163,7 +70,7 @@ impl App {
     }
 
     pub(super) fn menu_model(&self, window: iced::window::Id) -> Option<MenuModel> {
-        let popup = self.surfaces.popup(window)?;
+        let popup = self.foreground.active_menu_meta_for_window(window)?;
         Some(MenuModel {
             service: popup.service.clone(),
             menu_path: popup.menu_path.clone(),
@@ -210,15 +117,24 @@ impl App {
             } => self.handle_menu_item_selected(service, menu_item_id, menu_path),
             MenuEvent::Closed => self.handle_menu_closed(),
             MenuEvent::ItemHoverEnter { window, item_id } => {
-                self.menu.hover_enter(window, item_id);
+                self.foreground
+                    .handle(super::foreground::ForegroundIntent::MenuHoverEnter {
+                        window,
+                        item_id,
+                    });
                 Task::none()
             }
             MenuEvent::ItemHoverExit(window) => {
-                self.menu.hover_exit(window);
+                self.foreground
+                    .handle(super::foreground::ForegroundIntent::MenuHoverExit { window });
                 Task::none()
             }
             MenuEvent::SearchChanged { window, query } => {
-                self.menu.set_search_query(window, query);
+                self.foreground
+                    .handle(super::foreground::ForegroundIntent::MenuSearchChanged {
+                        window,
+                        query,
+                    });
                 Task::none()
             }
             MenuEvent::LayoutChanged { service, menu_path } => {
@@ -279,43 +195,48 @@ impl App {
                 .bar_surface_identity_for_window(origin_window)
                 .unwrap_or_else(super::surfaces::BarSurfaceIdentity::all_screens),
         };
+        let request = super::foreground::MenuForegroundRequest {
+            meta,
+            search_enabled: self.sni_menu_search_enabled(),
+        };
         let effects = self
             .foreground
-            .handle(super::foreground::ForegroundIntent::OpenMenu { meta });
+            .handle(super::foreground::ForegroundIntent::OpenMenu { request });
         Task::batch(self.apply_foreground_effects(effects))
     }
 
-    pub(super) fn open_menu_window(&mut self, meta: super::surfaces::PopupMeta) -> Task<Message> {
+    pub(super) fn open_menu_window(
+        &mut self,
+        request: super::foreground::MenuForegroundRequest,
+    ) -> Task<Message> {
+        let meta = request.meta.clone();
         let bar = Self::bar_for_surface_identity(&self.config.bars, &meta.origin);
         let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &meta.tree);
         let (popup_id, open_task) = Message::popup_open(settings);
         self.surfaces
             .register_ready_menu_overlay(popup_id, meta.clone());
-        self.menu
-            .open_window(popup_id, meta.tree.clone(), self.sni_menu_search_enabled());
         self.foreground
             .handle(super::foreground::ForegroundIntent::MenuWindowOpened {
                 window: popup_id,
-                meta,
+                request,
             });
         open_task
     }
 
     pub(super) fn open_ready_menu_popup(
         &mut self,
-        meta: super::surfaces::PopupMeta,
+        request: super::foreground::MenuForegroundRequest,
     ) -> Task<Message> {
+        let meta = request.meta.clone();
         let bar = Self::bar_for_surface_identity(&self.config.bars, &meta.origin);
         let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &meta.tree);
         let (popup_id, open_task) = Message::popup_open(settings);
         self.surfaces
             .register_ready_menu_overlay(popup_id, meta.clone());
-        self.menu
-            .open_window(popup_id, meta.tree.clone(), self.sni_menu_search_enabled());
         self.foreground
             .handle(super::foreground::ForegroundIntent::MenuWindowOpened {
                 window: popup_id,
-                meta,
+                request,
             });
         open_task
     }
@@ -337,7 +258,12 @@ impl App {
         };
 
         popup.tree = tree.clone();
-        self.menu.open_window(*window, tree, search_enabled);
+        self.foreground
+            .handle(super::foreground::ForegroundIntent::MenuTreeUpdated {
+                window: *window,
+                tree,
+                search_enabled,
+            });
         Task::none()
     }
 
@@ -513,24 +439,20 @@ mod tests {
     #[test]
     fn tray_menu_search_config_controls_sni_session_search() {
         let (mut app, _) = App::boot(make_searchable_tray_config(), vec![]);
-        let wid = test_wid();
-        app.menu
-            .open_window(wid, menu_tree((0, 0)), app.sni_menu_search_enabled());
+        let wid = make_popup_wid(&mut app);
 
         assert!(
-            app.menu
-                .session(wid)
+            app.foreground
+                .menu_session(wid)
                 .is_some_and(|session| session.search_enabled())
         );
 
         let (mut app, _) = App::boot(make_config(), vec![]);
-        let wid = test_wid();
-        app.menu
-            .open_window(wid, menu_tree((0, 0)), app.sni_menu_search_enabled());
+        let wid = make_popup_wid(&mut app);
 
         assert!(
-            app.menu
-                .session(wid)
+            app.foreground
+                .menu_session(wid)
                 .is_some_and(|session| !session.search_enabled())
         );
     }
@@ -549,10 +471,11 @@ mod tests {
                 origin: surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
-        app.menu
-            .open_window(wid, menu_tree((0, 0)), app.sni_menu_search_enabled());
-        app.menu.set_search_query(wid, "open".into());
-        app.menu.move_focus(wid, true);
+        let _ = app.handle_menu_event(messages::MenuEvent::SearchChanged {
+            window: wid,
+            query: "open".into(),
+        });
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
 
         let _ = app.handle_menu_event(messages::MenuEvent::Updated {
             service: "org.test".into(),
@@ -560,7 +483,7 @@ mod tests {
             tree: menu_tree((12, 34)),
         });
 
-        let snapshot = app.menu.snapshot(wid).expect("sni session");
+        let snapshot = app.foreground.menu_snapshot(wid).expect("sni session");
         assert!(snapshot.search_enabled);
         assert_eq!(snapshot.search_query, "");
         assert_eq!(snapshot.focused_index, None);
@@ -578,7 +501,7 @@ mod tests {
             window: wid,
             item_id: "1".into(),
         }));
-        assert_eq!(app.menu.hovered_item(wid).as_deref(), Some("1"));
+        assert_eq!(app.foreground.hovered_menu_item(wid).as_deref(), Some("1"));
     }
 
     #[test]
@@ -590,7 +513,7 @@ mod tests {
             item_id: "1".into(),
         }));
         let _ = app.update(Message::Menu(messages::MenuEvent::ItemHoverExit(wid)));
-        assert_eq!(app.menu.hovered_item(wid), None);
+        assert_eq!(app.foreground.hovered_menu_item(wid), None);
     }
 
     #[test]
@@ -602,7 +525,7 @@ mod tests {
             window: wid_a,
             item_id: "1".into(),
         }));
-        assert_eq!(app.menu.hovered_item(wid_b), None);
+        assert_eq!(app.foreground.hovered_menu_item(wid_b), None);
     }
 
     #[test]
@@ -617,7 +540,7 @@ mod tests {
             window: wid,
             item_id: "2".into(),
         }));
-        assert_eq!(app.menu.hovered_item(wid).as_deref(), Some("2"));
+        assert_eq!(app.foreground.hovered_menu_item(wid).as_deref(), Some("2"));
     }
 
     #[test]
@@ -710,15 +633,24 @@ mod tests {
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
             popup_wid,
         )));
-        assert_eq!(app.menu.focused_item(popup_wid).as_deref(), Some("1"));
+        assert_eq!(
+            app.foreground.focused_menu_item(popup_wid).as_deref(),
+            Some("1")
+        );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
             popup_wid,
         )));
-        assert_eq!(app.menu.focused_item(popup_wid).as_deref(), Some("2"));
+        assert_eq!(
+            app.foreground.focused_menu_item(popup_wid).as_deref(),
+            Some("2")
+        );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
             popup_wid,
         )));
-        assert_eq!(app.menu.focused_item(popup_wid).as_deref(), Some("1"));
+        assert_eq!(
+            app.foreground.focused_menu_item(popup_wid).as_deref(),
+            Some("1")
+        );
     }
 
     #[test]
@@ -763,7 +695,10 @@ mod tests {
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMovePrev(
             popup_wid,
         )));
-        assert_eq!(app.menu.focused_item(popup_wid).as_deref(), Some("2"));
+        assert_eq!(
+            app.foreground.focused_menu_item(popup_wid).as_deref(),
+            Some("2")
+        );
     }
 
     #[test]
@@ -826,11 +761,17 @@ mod tests {
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
             popup_wid,
         )));
-        assert_eq!(app.menu.focused_item(popup_wid).as_deref(), Some("1"));
+        assert_eq!(
+            app.foreground.focused_menu_item(popup_wid).as_deref(),
+            Some("1")
+        );
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(
             popup_wid,
         )));
-        assert_eq!(app.menu.focused_item(popup_wid).as_deref(), Some("4"));
+        assert_eq!(
+            app.foreground.focused_menu_item(popup_wid).as_deref(),
+            Some("4")
+        );
     }
 
     #[test]
@@ -857,24 +798,27 @@ mod tests {
                 origin: surfaces::BarSurfaceIdentity::all_screens(),
             },
         );
-        app.menu.focus(popup_wid, "1".into());
         let _ = app.update(Message::Menu(messages::MenuEvent::Closed));
         assert!(app.surfaces[&wid].focused_module.is_none());
         assert!(!app.surfaces[&wid].module_activated);
-        assert!(app.menu.is_empty());
+        assert_eq!(app.foreground.active_menu_window(), None);
+        assert!(app.foreground.menu_session(popup_wid).is_none());
     }
 
     #[test]
     fn close_all_menu_popups_removes_popup_and_focus_maps() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = make_popup_wid(&mut app);
-        app.menu.hover_enter(wid, "1".into());
-        app.menu.focus(wid, "1".into());
+        let _ = app.update(Message::Menu(messages::MenuEvent::ItemHoverEnter {
+            window: wid,
+            item_id: "1".into(),
+        }));
+        let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
 
         let tasks = app.close_all_menu_popups();
 
         assert!(app.surfaces.popup(wid).is_none());
-        assert!(app.menu.is_empty());
+        assert!(app.foreground.menu_session(wid).is_none());
         assert_eq!(tasks.len(), 1);
     }
 

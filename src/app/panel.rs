@@ -390,12 +390,11 @@ impl App {
                     let effects = self.surfaces.close_tooltip_overlays();
                     tasks.extend(self.apply_registry_effects(effects));
                 }
-                super::foreground::ForegroundEffect::OpenMenuWindow { meta } => {
-                    tasks.push(self.open_menu_window(meta));
+                super::foreground::ForegroundEffect::OpenMenuWindow { request } => {
+                    tasks.push(self.open_menu_window(request));
                 }
                 super::foreground::ForegroundEffect::CloseMenu { window, meta } => {
                     self.surfaces.remove_popup(window);
-                    self.menu.clear_window(window);
                     super::overlay_adapter::send_menu_closed_event(
                         self.shared.dbus.session.clone(),
                         meta,

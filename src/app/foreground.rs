@@ -32,6 +32,12 @@ pub(super) enum PanelOpenMode {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct MenuForegroundRequest {
+    pub(super) meta: super::surfaces::PopupMeta,
+    pub(super) search_enabled: bool,
+}
+
+#[derive(Debug, Clone)]
 pub(super) enum ForegroundOverlay {
     Panel {
         window: Option<iced::window::Id>,
@@ -40,6 +46,7 @@ pub(super) enum ForegroundOverlay {
     Menu {
         window: iced::window::Id,
         meta: super::surfaces::PopupMeta,
+        session: super::selectable_menu_session::SelectableMenuSession,
     },
 }
 
@@ -62,15 +69,35 @@ pub(super) enum ForegroundIntent {
         window: iced::window::Id,
     },
     OpenMenu {
-        meta: super::surfaces::PopupMeta,
+        request: MenuForegroundRequest,
     },
     CloseMenu,
     MenuWindowOpened {
         window: iced::window::Id,
-        meta: super::surfaces::PopupMeta,
+        request: MenuForegroundRequest,
     },
     MenuWindowClosed {
         window: iced::window::Id,
+    },
+    MenuTreeUpdated {
+        window: iced::window::Id,
+        tree: crate::surface::menu_popup::MenuTree,
+        search_enabled: bool,
+    },
+    MenuHoverEnter {
+        window: iced::window::Id,
+        item_id: String,
+    },
+    MenuHoverExit {
+        window: iced::window::Id,
+    },
+    MenuSearchChanged {
+        window: iced::window::Id,
+        query: String,
+    },
+    MenuMoveFocus {
+        window: iced::window::Id,
+        forward: bool,
     },
 }
 
@@ -90,7 +117,7 @@ pub(super) enum ForegroundEffect {
     CloseTooltipsForSurface(iced::window::Id),
     CloseAllTooltips,
     OpenMenuWindow {
-        meta: super::surfaces::PopupMeta,
+        request: MenuForegroundRequest,
     },
     CloseMenu {
         window: iced::window::Id,
@@ -103,7 +130,7 @@ pub(super) struct Foreground {
     active: Option<ForegroundOverlay>,
     closing_panel_windows: HashSet<iced::window::Id>,
     closing_menu_windows: HashMap<iced::window::Id, super::surfaces::PopupMeta>,
-    pending_menu: Option<super::surfaces::PopupMeta>,
+    pending_menu: Option<MenuForegroundRequest>,
 }
 
 impl Foreground {
@@ -117,13 +144,45 @@ impl Foreground {
             ForegroundIntent::PanelRuntimePrepared { tree } => self.panel_runtime_prepared(tree),
             ForegroundIntent::PanelWindowOpened { window } => self.panel_window_opened(window),
             ForegroundIntent::PanelWindowClosed { window } => self.panel_window_closed(window),
-            ForegroundIntent::OpenMenu { meta } => self.open_menu(meta),
+            ForegroundIntent::OpenMenu { request } => self.open_menu(request),
             ForegroundIntent::CloseMenu => self.close_menu(),
-            ForegroundIntent::MenuWindowOpened { window, meta } => {
-                self.track_menu_window_opened(window, meta);
+            ForegroundIntent::MenuWindowOpened { window, request } => {
+                self.track_menu_window_opened(window, request);
                 Vec::new()
             }
             ForegroundIntent::MenuWindowClosed { window } => self.menu_window_closed(window),
+            ForegroundIntent::MenuTreeUpdated {
+                window,
+                tree,
+                search_enabled,
+            } => {
+                self.update_menu_tree(window, tree, search_enabled);
+                Vec::new()
+            }
+            ForegroundIntent::MenuHoverEnter { window, item_id } => {
+                if let Some(session) = self.active_menu_session_mut(window) {
+                    session.hover_sni_item(&item_id);
+                }
+                Vec::new()
+            }
+            ForegroundIntent::MenuHoverExit { window } => {
+                if let Some(session) = self.active_menu_session_mut(window) {
+                    session.clear_hover();
+                }
+                Vec::new()
+            }
+            ForegroundIntent::MenuSearchChanged { window, query } => {
+                if let Some(session) = self.active_menu_session_mut(window) {
+                    session.set_search_query(query);
+                }
+                Vec::new()
+            }
+            ForegroundIntent::MenuMoveFocus { window, forward } => {
+                if let Some(session) = self.active_menu_session_mut(window) {
+                    session.move_focus(if forward { 1 } else { -1 });
+                }
+                Vec::new()
+            }
         }
     }
 
@@ -197,12 +256,58 @@ impl Foreground {
         }
     }
 
+    pub(super) fn active_menu_meta_for_window(
+        &self,
+        window: iced::window::Id,
+    ) -> Option<&super::surfaces::PopupMeta> {
+        match self.active.as_ref()? {
+            ForegroundOverlay::Menu {
+                window: current,
+                meta,
+                ..
+            } if *current == window => Some(meta),
+            ForegroundOverlay::Menu { .. } | ForegroundOverlay::Panel { .. } => None,
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn active_menu_meta(&self) -> Option<&super::surfaces::PopupMeta> {
         match self.active.as_ref()? {
             ForegroundOverlay::Menu { meta, .. } => Some(meta),
             ForegroundOverlay::Panel { .. } => None,
         }
+    }
+
+    pub(super) fn menu_session(
+        &self,
+        window: iced::window::Id,
+    ) -> Option<&super::selectable_menu_session::SelectableMenuSession> {
+        match self.active.as_ref()? {
+            ForegroundOverlay::Menu {
+                window: current,
+                session,
+                ..
+            } if *current == window => Some(session),
+            ForegroundOverlay::Menu { .. } | ForegroundOverlay::Panel { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn menu_snapshot(
+        &self,
+        window: iced::window::Id,
+    ) -> Option<super::selectable_menu_session::SelectableMenuSnapshot> {
+        self.menu_session(window).map(|session| session.snapshot())
+    }
+
+    pub(super) fn hovered_menu_item(&self, window: iced::window::Id) -> Option<String> {
+        self.menu_session(window)
+            .and_then(|session| session.hovered_sni_item())
+    }
+
+    pub(super) fn focused_menu_item(&self, window: iced::window::Id) -> Option<String> {
+        self.menu_session(window)
+            .and_then(|session| session.focused_sni_item())
     }
 
     pub(super) fn is_panel_window(&self, window: iced::window::Id) -> bool {
@@ -270,9 +375,9 @@ impl Foreground {
         }
     }
 
-    fn open_menu(&mut self, meta: super::surfaces::PopupMeta) -> Vec<ForegroundEffect> {
+    fn open_menu(&mut self, request: MenuForegroundRequest) -> Vec<ForegroundEffect> {
         let mut effects = vec![ForegroundEffect::CloseAllTooltips];
-        effects.extend(self.close_for_menu_open(meta));
+        effects.extend(self.close_for_menu_open(request));
         effects
     }
 
@@ -287,14 +392,14 @@ impl Foreground {
                 vec![ForegroundEffect::RemoveWindow(window)]
             }
             Some(ForegroundOverlay::Panel { window: None, .. }) | None => Vec::new(),
-            Some(ForegroundOverlay::Menu { window, meta }) => {
+            Some(ForegroundOverlay::Menu { window, meta, .. }) => {
                 self.closing_menu_windows.insert(window, meta.clone());
                 vec![ForegroundEffect::CloseMenu { window, meta }]
             }
         }
     }
 
-    fn close_for_menu_open(&mut self, meta: super::surfaces::PopupMeta) -> Vec<ForegroundEffect> {
+    fn close_for_menu_open(&mut self, request: MenuForegroundRequest) -> Vec<ForegroundEffect> {
         let active = self.active.take();
         match active {
             Some(ForegroundOverlay::Panel {
@@ -305,25 +410,27 @@ impl Foreground {
                 vec![
                     ForegroundEffect::RemoveWindow(window),
                     ForegroundEffect::ClearPanelRuntime,
-                    ForegroundEffect::OpenMenuWindow { meta },
+                    ForegroundEffect::OpenMenuWindow { request },
                 ]
             }
             Some(ForegroundOverlay::Panel { window: None, .. }) => {
                 vec![
                     ForegroundEffect::ClearPanelRuntime,
-                    ForegroundEffect::OpenMenuWindow { meta },
+                    ForegroundEffect::OpenMenuWindow { request },
                 ]
             }
-            Some(ForegroundOverlay::Menu { window, meta: old }) => {
+            Some(ForegroundOverlay::Menu {
+                window, meta: old, ..
+            }) => {
                 self.closing_menu_windows.insert(window, old.clone());
-                self.pending_menu = Some(meta);
+                self.pending_menu = Some(request);
                 vec![ForegroundEffect::CloseMenu { window, meta: old }]
             }
             None => {
                 if self.closing_menu_windows.is_empty() {
-                    vec![ForegroundEffect::OpenMenuWindow { meta }]
+                    vec![ForegroundEffect::OpenMenuWindow { request }]
                 } else {
-                    self.pending_menu = Some(meta);
+                    self.pending_menu = Some(request);
                     Vec::new()
                 }
             }
@@ -341,8 +448,16 @@ impl Foreground {
                 vec![ForegroundEffect::RemoveWindow(window)]
             }
             Some(ForegroundOverlay::Panel { window: None, .. }) => Vec::new(),
-            Some(ForegroundOverlay::Menu { window, meta }) => {
-                self.active = Some(ForegroundOverlay::Menu { window, meta });
+            Some(ForegroundOverlay::Menu {
+                window,
+                meta,
+                session,
+            }) => {
+                self.active = Some(ForegroundOverlay::Menu {
+                    window,
+                    meta,
+                    session,
+                });
                 return Vec::new();
             }
             None => return Vec::new(),
@@ -390,12 +505,13 @@ impl Foreground {
             return self
                 .pending_menu
                 .take()
-                .map(|meta| vec![ForegroundEffect::OpenMenuWindow { meta }])
+                .map(|request| vec![ForegroundEffect::OpenMenuWindow { request }])
                 .unwrap_or_default();
         }
         if let Some(ForegroundOverlay::Menu {
             window: current,
             meta,
+            session,
         }) = self.active.take()
         {
             if current == window {
@@ -404,6 +520,7 @@ impl Foreground {
             self.active = Some(ForegroundOverlay::Menu {
                 window: current,
                 meta,
+                session,
             });
         }
         Vec::new()
@@ -412,16 +529,65 @@ impl Foreground {
     fn track_menu_window_opened(
         &mut self,
         window: iced::window::Id,
-        meta: super::surfaces::PopupMeta,
+        request: MenuForegroundRequest,
     ) {
+        let session = Self::menu_session_for(&request.meta.tree, request.search_enabled);
         self.pending_menu = None;
-        self.active = Some(ForegroundOverlay::Menu { window, meta });
+        self.active = Some(ForegroundOverlay::Menu {
+            window,
+            meta: request.meta,
+            session,
+        });
+    }
+
+    fn update_menu_tree(
+        &mut self,
+        window: iced::window::Id,
+        tree: crate::surface::menu_popup::MenuTree,
+        search_enabled: bool,
+    ) {
+        if let Some(ForegroundOverlay::Menu {
+            window: current,
+            meta,
+            session,
+        }) = self.active.as_mut()
+            && *current == window
+        {
+            meta.tree = tree.clone();
+            *session = Self::menu_session_for(&tree, search_enabled);
+        }
+    }
+
+    fn active_menu_session_mut(
+        &mut self,
+        window: iced::window::Id,
+    ) -> Option<&mut super::selectable_menu_session::SelectableMenuSession> {
+        match self.active.as_mut()? {
+            ForegroundOverlay::Menu {
+                window: current,
+                session,
+                ..
+            } if *current == window => Some(session),
+            ForegroundOverlay::Menu { .. } | ForegroundOverlay::Panel { .. } => None,
+        }
+    }
+
+    fn menu_session_for(
+        tree: &crate::surface::menu_popup::MenuTree,
+        search_enabled: bool,
+    ) -> super::selectable_menu_session::SelectableMenuSession {
+        super::selectable_menu_session::SelectableMenuSession::open(
+            super::selectable_menu_session::SelectableMenuSource::SniMenu {
+                tree: tree.clone(),
+                search_enabled,
+            },
+        )
     }
 
     fn close_menu(&mut self) -> Vec<ForegroundEffect> {
         self.pending_menu = None;
         match self.active.take() {
-            Some(ForegroundOverlay::Menu { window, meta }) => {
+            Some(ForegroundOverlay::Menu { window, meta, .. }) => {
                 self.closing_menu_windows.insert(window, meta.clone());
                 vec![ForegroundEffect::CloseMenu { window, meta }]
             }
@@ -488,6 +654,41 @@ mod tests {
         }
     }
 
+    fn menu_tree_with_items(items: &[(&str, &str)]) -> crate::surface::menu_popup::MenuTree {
+        crate::surface::menu_popup::MenuTree {
+            items: items
+                .iter()
+                .map(|(id, label)| crate::surface::menu_popup::MenuItem {
+                    id: (*id).into(),
+                    label: (*label).into(),
+                    enabled: true,
+                    visible: true,
+                    icon_name: None,
+                    children: Vec::new(),
+                    is_separator: false,
+                })
+                .collect(),
+            anchor: (0, 0),
+            screen_size: (1920, 1080),
+        }
+    }
+
+    fn menu_request(service: &str, search_enabled: bool) -> super::MenuForegroundRequest {
+        let mut meta = menu_meta(service);
+        meta.tree = menu_tree_with_items(&[("1", "Open"), ("2", "Close")]);
+        super::MenuForegroundRequest {
+            meta,
+            search_enabled,
+        }
+    }
+
+    fn menu_request_from_meta(meta: surfaces::PopupMeta) -> super::MenuForegroundRequest {
+        super::MenuForegroundRequest {
+            meta,
+            search_enabled: false,
+        }
+    }
+
     fn panel_prepare_effect(
         request: super::PanelForegroundRequest,
         mode: PanelOpenMode,
@@ -507,7 +708,13 @@ mod tests {
     }
 
     fn menu_open_effect(meta: surfaces::PopupMeta) -> ForegroundEffect {
-        ForegroundEffect::OpenMenuWindow { meta }
+        ForegroundEffect::OpenMenuWindow {
+            request: menu_request_from_meta(meta),
+        }
+    }
+
+    fn menu_open_request_effect(request: super::MenuForegroundRequest) -> ForegroundEffect {
+        ForegroundEffect::OpenMenuWindow { request }
     }
 
     #[test]
@@ -678,12 +885,15 @@ mod tests {
         let origin = wid();
         let menu_window = wid();
         let meta = menu_meta("org.menu");
+        let menu_request = menu_request_from_meta(meta.clone());
         let request = panel_request(origin, crate::surface::panel::PanelContent::BarPanel);
         let tree = request.tree();
         let mut foreground = Foreground::default();
 
         assert_eq!(
-            foreground.handle(ForegroundIntent::OpenMenu { meta: meta.clone() }),
+            foreground.handle(ForegroundIntent::OpenMenu {
+                request: menu_request.clone(),
+            }),
             vec![
                 ForegroundEffect::CloseAllTooltips,
                 menu_open_effect(meta.clone()),
@@ -691,7 +901,7 @@ mod tests {
         );
         foreground.handle(ForegroundIntent::MenuWindowOpened {
             window: menu_window,
-            meta: meta.clone(),
+            request: menu_request,
         });
 
         let prepare = foreground.handle(ForegroundIntent::OpenPanel {
@@ -719,10 +929,12 @@ mod tests {
         let current_window = wid();
         let old_meta = menu_meta("org.old");
         let current_meta = menu_meta("org.current");
+        let old_request = menu_request_from_meta(old_meta.clone());
+        let current_request = menu_request_from_meta(current_meta.clone());
         let mut foreground = Foreground::default();
 
         let first = foreground.handle(ForegroundIntent::OpenMenu {
-            meta: old_meta.clone(),
+            request: old_request.clone(),
         });
         assert_eq!(
             first,
@@ -733,13 +945,13 @@ mod tests {
         );
         foreground.handle(ForegroundIntent::MenuWindowOpened {
             window: old_window,
-            meta: old_meta.clone(),
+            request: old_request,
         });
         assert_eq!(foreground.active_menu_window(), Some(old_window));
         assert_eq!(foreground.active_menu_meta(), Some(&old_meta));
 
         let replacement = foreground.handle(ForegroundIntent::OpenMenu {
-            meta: current_meta.clone(),
+            request: current_request.clone(),
         });
         assert_eq!(
             replacement,
@@ -760,7 +972,7 @@ mod tests {
         );
         foreground.handle(ForegroundIntent::MenuWindowOpened {
             window: current_window,
-            meta: current_meta.clone(),
+            request: current_request,
         });
         assert_eq!(foreground.active_menu_window(), Some(current_window));
         assert_eq!(foreground.active_menu_meta(), Some(&current_meta));
@@ -791,6 +1003,7 @@ mod tests {
         let menu_window = wid();
         let tree = panel_tree(origin, crate::surface::panel::PanelContent::BarPanel);
         let meta = menu_meta("org.menu");
+        let request = menu_request_from_meta(meta.clone());
         let mut foreground = Foreground::default();
 
         foreground.handle(ForegroundIntent::PanelRuntimePrepared { tree });
@@ -798,7 +1011,9 @@ mod tests {
             window: panel_window,
         });
 
-        let menu_effects = foreground.handle(ForegroundIntent::OpenMenu { meta: meta.clone() });
+        let menu_effects = foreground.handle(ForegroundIntent::OpenMenu {
+            request: request.clone(),
+        });
         assert_eq!(
             menu_effects,
             vec![
@@ -810,9 +1025,129 @@ mod tests {
         );
         foreground.handle(ForegroundIntent::MenuWindowOpened {
             window: menu_window,
-            meta: meta.clone(),
+            request,
         });
         assert_eq!(foreground.active_menu_window(), Some(menu_window));
         assert_eq!(foreground.active_menu_meta(), Some(&meta));
+    }
+
+    #[test]
+    fn opened_menu_creates_active_selectable_session() {
+        let window = wid();
+        let request = menu_request("org.menu", true);
+        let mut foreground = Foreground::default();
+
+        assert_eq!(
+            foreground.handle(ForegroundIntent::OpenMenu {
+                request: request.clone(),
+            }),
+            vec![
+                ForegroundEffect::CloseAllTooltips,
+                menu_open_request_effect(request.clone()),
+            ]
+        );
+        foreground.handle(ForegroundIntent::MenuWindowOpened { window, request });
+
+        let snapshot = foreground
+            .menu_snapshot(window)
+            .expect("active menu session");
+        assert!(snapshot.search_enabled);
+        assert_eq!(
+            snapshot
+                .entries
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Open", "Close"]
+        );
+    }
+
+    #[test]
+    fn active_menu_interactions_update_current_session_only() {
+        let active_window = wid();
+        let stale_window = wid();
+        let request = menu_request("org.menu", true);
+        let mut foreground = Foreground::default();
+
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
+            window: active_window,
+            request,
+        });
+        foreground.handle(ForegroundIntent::MenuHoverEnter {
+            window: stale_window,
+            item_id: "1".into(),
+        });
+        foreground.handle(ForegroundIntent::MenuMoveFocus {
+            window: stale_window,
+            forward: true,
+        });
+        foreground.handle(ForegroundIntent::MenuSearchChanged {
+            window: stale_window,
+            query: "open".into(),
+        });
+
+        let unchanged = foreground
+            .menu_snapshot(active_window)
+            .expect("active menu session");
+        assert_eq!(unchanged.search_query, "");
+        assert_eq!(unchanged.focused_index, None);
+        assert_eq!(unchanged.hovered_index, None);
+
+        foreground.handle(ForegroundIntent::MenuHoverEnter {
+            window: active_window,
+            item_id: "2".into(),
+        });
+        assert_eq!(
+            foreground.hovered_menu_item(active_window).as_deref(),
+            Some("2")
+        );
+        foreground.handle(ForegroundIntent::MenuSearchChanged {
+            window: active_window,
+            query: "close".into(),
+        });
+
+        let snapshot = foreground
+            .menu_snapshot(active_window)
+            .expect("active menu session");
+        assert_eq!(snapshot.search_query, "close");
+        assert_eq!(snapshot.focused_index, Some(0));
+        assert_eq!(
+            foreground.focused_menu_item(active_window).as_deref(),
+            Some("2")
+        );
+    }
+
+    #[test]
+    fn menu_tree_update_replaces_active_session_and_resets_search() {
+        let window = wid();
+        let request = menu_request("org.menu", true);
+        let replacement_tree = menu_tree_with_items(&[("7", "Reload")]);
+        let mut foreground = Foreground::default();
+
+        foreground.handle(ForegroundIntent::MenuWindowOpened { window, request });
+        foreground.handle(ForegroundIntent::MenuSearchChanged {
+            window,
+            query: "close".into(),
+        });
+
+        foreground.handle(ForegroundIntent::MenuTreeUpdated {
+            window,
+            tree: replacement_tree,
+            search_enabled: true,
+        });
+
+        let snapshot = foreground
+            .menu_snapshot(window)
+            .expect("active menu session");
+        assert_eq!(snapshot.search_query, "");
+        assert_eq!(snapshot.focused_index, None);
+        assert_eq!(
+            snapshot
+                .entries
+                .iter()
+                .map(|entry| entry.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Reload"]
+        );
     }
 }

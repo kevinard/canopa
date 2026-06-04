@@ -18,14 +18,14 @@ impl App {
         // Popup window -- full-screen transparent overlay; menu widget positioned inside.
         if let Some(model) = self.popup_render_model(window) {
             if let Some(session) = self
-                .menu
-                .session(window)
+                .foreground
+                .menu_session(window)
                 .filter(|session| session.search_enabled())
             {
                 return render_searchable_sni_popup_model(model, window, session);
             }
-            let hovered_item = self.menu.hovered_item(window);
-            let focused_item = self.menu.focused_item(window);
+            let hovered_item = self.foreground.hovered_menu_item(window);
+            let focused_item = self.foreground.focused_menu_item(window);
             return render_popup_model(
                 model,
                 window,

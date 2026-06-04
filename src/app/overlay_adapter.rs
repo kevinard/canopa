@@ -39,10 +39,13 @@ impl super::App {
         window: iced::window::Id,
         meta: super::surfaces::PopupMeta,
     ) {
-        self.menu.open_window(window, meta.tree.clone(), false);
         self.surfaces.insert_popup(window, meta.clone());
+        let request = super::foreground::MenuForegroundRequest {
+            meta,
+            search_enabled: self.sni_menu_search_enabled(),
+        };
         self.foreground
-            .handle(super::foreground::ForegroundIntent::MenuWindowOpened { window, meta });
+            .handle(super::foreground::ForegroundIntent::MenuWindowOpened { window, request });
     }
 
     #[cfg(test)]
@@ -81,7 +84,6 @@ impl super::App {
                     self.foreground
                         .handle(super::foreground::ForegroundIntent::MenuWindowClosed { window });
                     self.surfaces.remove_popup(window);
-                    self.menu.clear_window(window);
                     send_menu_closed_event(self.shared.dbus.session.clone(), meta);
                     tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
                 }
@@ -90,7 +92,11 @@ impl super::App {
                     tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
                 }
                 RegistryEffect::PendingMenuReady(meta) => {
-                    tasks.push(self.open_ready_menu_popup(meta));
+                    let request = super::foreground::MenuForegroundRequest {
+                        meta,
+                        search_enabled: self.sni_menu_search_enabled(),
+                    };
+                    tasks.push(self.open_ready_menu_popup(request));
                 }
                 #[cfg(test)]
                 RegistryEffect::SuspendBarKeyboardInteractivity => {

@@ -192,13 +192,6 @@ impl PanelMenuSession {
         menu_item_at_path(&menu.items, path).and_then(|item| item.action.clone())
     }
 
-    #[cfg(test)]
-    pub(super) fn focus_sni_item(&mut self, item_id: &str) {
-        if let Some(index) = self.index_for_sni_item(item_id) {
-            self.focus_index(index);
-        }
-    }
-
     pub(super) fn hover_sni_item(&mut self, item_id: &str) {
         if let Some(index) = self.index_for_sni_item(item_id) {
             self.hover_index(index);
