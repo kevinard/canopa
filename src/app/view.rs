@@ -494,31 +494,20 @@ mod tests {
             crate::surface::panel::PanelContent::BarPanel,
             None,
         );
-        let effects = app
-            .panel
-            .handle(crate::app::panel_runtime::PanelRuntimeIntent::Open {
-                request,
-                catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
-                    app.config.menus.as_slice(),
-                ),
-                module_detail_sessions: std::collections::HashMap::new(),
-            });
-        let attachment_id = effects
-            .iter()
-            .find_map(|effect| match effect {
-                crate::app::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
-                    Some(open.attachment_id)
-                }
-                _ => None,
-            })
-            .expect("panel should request a window");
-        app.panel.handle(
-            crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
-                attachment_id,
-                window: panel,
-            },
-        );
-        app.register_panel_popup(panel, origin, attachment_id);
+        let effects =
+            app.panel
+                .handle(crate::app::panel_runtime::PanelRuntimeIntent::PrepareOpen {
+                    request,
+                    catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
+                        app.config.menus.as_slice(),
+                    ),
+                    module_detail_sessions: std::collections::HashMap::new(),
+                });
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            crate::app::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+        )));
+        app.register_panel_popup(panel, origin);
 
         let _ = app.view(panel);
     }

@@ -149,7 +149,7 @@ impl App {
                 self.dispatch_panel_action_from_active_panel(action)
             }
             crate::modules::ModuleDetailAppEffect::ClosePanel => {
-                Task::batch(self.close_all_panels())
+                Task::batch(self.close_active_panel())
             }
         }
     }

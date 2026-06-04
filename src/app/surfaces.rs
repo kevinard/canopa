@@ -492,28 +492,19 @@ impl App {
                 self.surfaces.surface_mut(window).screen_size = (width, height);
                 Task::none()
             }
-            SurfaceInputEffect::WindowClosed(window) if self.foreground.is_panel_window(window) => {
+            SurfaceInputEffect::PanelWindowClosed(window) => {
                 let effects = self
                     .foreground
                     .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
                 Task::batch(self.apply_foreground_effects(effects))
             }
-            SurfaceInputEffect::ClosingPanelWindowClosed(window) => {
-                let effects = self
-                    .foreground
-                    .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
-                Task::batch(self.apply_foreground_effects(effects))
-            }
-            SurfaceInputEffect::MenuWindowClosed(window)
-                if self.foreground.is_menu_window(window) =>
-            {
+            SurfaceInputEffect::MenuWindowClosed(window) => {
                 let effects = self
                     .foreground
                     .handle(super::foreground::ForegroundIntent::MenuWindowClosed { window });
                 Task::batch(self.apply_foreground_effects(effects))
             }
-            SurfaceInputEffect::WindowClosed(window)
-            | SurfaceInputEffect::MenuWindowClosed(window) => {
+            SurfaceInputEffect::RegistryWindowClosed(window) => {
                 let effects = self.surfaces.window_closed(window);
                 Task::batch(self.apply_registry_effects(effects))
             }
@@ -540,18 +531,27 @@ impl App {
                 Task::done(Message::Menu(super::messages::MenuEvent::Closed))
             }
             SurfaceInputEffect::BarFocusLost(window) => self.handle_bar_focus_lost(window),
-            SurfaceInputEffect::Escape { window } => self.handle_escape_pressed(window),
-            SurfaceInputEffect::MoveFocus { window, forward } => {
-                self.handle_focus_move(window, forward)
+            SurfaceInputEffect::BarEscape { window } => self.handle_bar_escape_pressed(window),
+            SurfaceInputEffect::PanelEscape => self.handle_panel_escape_pressed(),
+            SurfaceInputEffect::BarMoveFocus { window, forward } => {
+                self.handle_bar_focus_move(window, forward)
+            }
+            SurfaceInputEffect::PanelMoveFocus { forward } => self.handle_panel_focus_move(forward),
+            SurfaceInputEffect::MenuMoveFocus { window, forward } => {
+                self.handle_menu_focus_move(window, forward)
             }
             SurfaceInputEffect::BarFocusZone { window, forward } => {
                 self.handle_focus_zone(window, forward)
             }
-            SurfaceInputEffect::KeyboardActivate { window } => {
-                self.handle_keyboard_activate(window)
+            SurfaceInputEffect::BarKeyboardActivate { window } => {
+                self.handle_bar_keyboard_activate(window)
             }
-            SurfaceInputEffect::KeyboardSecondaryActivate { window } => {
-                self.handle_keyboard_secondary_activate(window)
+            SurfaceInputEffect::PanelKeyboardActivate => self.handle_panel_keyboard_activate(),
+            SurfaceInputEffect::MenuKeyboardActivate { window } => {
+                self.handle_menu_keyboard_activate(window)
+            }
+            SurfaceInputEffect::BarKeyboardSecondaryActivate { window } => {
+                self.handle_bar_keyboard_secondary_activate(window)
             }
             SurfaceInputEffect::BarActionKey {
                 window,
@@ -581,7 +581,7 @@ impl App {
 
     pub(super) fn handle_toggle_panel_ipc(&mut self) -> Task<Message> {
         if self.foreground.has_active_panel() {
-            return self.handle_panel_event(super::messages::PanelEvent::Close);
+            return Task::batch(self.close_active_panel());
         }
 
         let focused_output = self.niri.state().focused_output();
@@ -967,10 +967,6 @@ mod tests {
         }
     }
 
-    fn attachment_id(value: u64) -> super::super::panel_runtime::PanelAttachmentId {
-        super::super::panel_runtime::PanelAttachmentId::for_test(value)
-    }
-
     #[test]
     fn app_starts_with_no_surfaces() {
         let (app, _task) = App::boot(make_config(), vec![]);
@@ -1063,7 +1059,7 @@ mod tests {
             .surfaces
             .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
         app.surface_mut(origin).focused_module = Some(ModuleId::new("clock"));
-        app.register_panel_popup(panel, origin, attachment_id(6));
+        app.register_panel_popup(panel, origin);
 
         let _ = app.handle_surface_event(crate::app::messages::SurfaceEvent::WindowClosed(panel));
 
@@ -1079,7 +1075,7 @@ mod tests {
         app.surfaces
             .surfaces
             .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
-        app.register_panel_popup(panel, origin, attachment_id(7));
+        app.register_panel_popup(panel, origin);
 
         let _ = app.update(Message::Surface(
             crate::app::messages::SurfaceEvent::TogglePanel,
@@ -1549,31 +1545,20 @@ mod tests {
             crate::surface::panel::PanelContent::Menu("main".into()),
             None,
         );
-        let effects = app
-            .panel
-            .handle(super::super::panel_runtime::PanelRuntimeIntent::Open {
+        let effects = app.panel.handle(
+            super::super::panel_runtime::PanelRuntimeIntent::PrepareOpen {
                 request,
                 catalog: super::super::panel_runtime::PanelMenuCatalog::new(
                     app.config.menus.as_slice(),
                 ),
                 module_detail_sessions: HashMap::new(),
-            });
-        let attachment_id = effects
-            .iter()
-            .find_map(|effect| match effect {
-                super::super::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
-                    Some(open.attachment_id)
-                }
-                _ => None,
-            })
-            .expect("panel should request a window");
-        app.panel.handle(
-            super::super::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
-                attachment_id,
-                window: panel,
             },
         );
-        app.register_panel_popup(panel, origin, attachment_id);
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            super::super::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+        )));
+        app.register_panel_popup(panel, origin);
 
         let _ = app.handle_tooltip_dwell_elapsed(origin, module);
 

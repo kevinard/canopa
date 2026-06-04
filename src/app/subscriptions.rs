@@ -237,11 +237,7 @@ mod tests {
         );
         let panel = iced::window::Id::unique();
         let origin = iced::window::Id::unique();
-        app.register_panel_popup(
-            panel,
-            origin,
-            crate::app::panel_runtime::PanelAttachmentId::for_test(1),
-        );
+        app.register_panel_popup(panel, origin);
 
         assert!(app.needs_keyboard_focus_subscription());
     }

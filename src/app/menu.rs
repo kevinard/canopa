@@ -77,7 +77,7 @@ impl App {
         })
     }
 
-    pub(super) fn close_all_menu_popups(&mut self) -> Vec<Task<Message>> {
+    pub(super) fn close_active_menu(&mut self) -> Vec<Task<Message>> {
         let effects = self
             .foreground
             .handle(super::foreground::ForegroundIntent::CloseMenu);
@@ -172,7 +172,7 @@ impl App {
             }
         });
 
-        let mut tasks = self.close_all_menu_popups();
+        let mut tasks = self.close_active_menu();
         tasks.extend(self.restore_bar_keyboard_interactivity());
         Task::batch(tasks)
     }
@@ -281,7 +281,7 @@ impl App {
     }
 
     pub(super) fn handle_menu_closed(&mut self) -> Task<Message> {
-        let mut tasks = self.close_all_menu_popups();
+        let mut tasks = self.close_active_menu();
         tasks.extend(self.restore_bar_keyboard_interactivity());
         Task::batch(tasks)
     }
@@ -786,7 +786,7 @@ mod tests {
     }
 
     #[test]
-    fn close_all_menu_popups_removes_popup_and_focus_maps() {
+    fn close_active_menu_removes_popup_and_focus_maps() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = make_popup_wid(&mut app);
         let _ = app.update(Message::Menu(messages::MenuEvent::ItemHoverEnter {
@@ -795,7 +795,7 @@ mod tests {
         }));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
 
-        let tasks = app.close_all_menu_popups();
+        let tasks = app.close_active_menu();
 
         assert_eq!(app.foreground.active_menu_window(), None);
         assert!(app.foreground.menu_session(wid).is_none());

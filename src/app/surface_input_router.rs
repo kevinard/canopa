@@ -18,7 +18,7 @@ pub(super) enum SurfaceInputEffect {
     BarClick(iced::window::Id),
     BarFocusGained(iced::window::Id),
     BarFocusLost(iced::window::Id),
-    MoveFocus {
+    BarMoveFocus {
         window: iced::window::Id,
         forward: bool,
     },
@@ -28,10 +28,10 @@ pub(super) enum SurfaceInputEffect {
     },
     BarHoverEnter(iced::window::Id),
     BarHoverExit(iced::window::Id),
-    KeyboardActivate {
+    BarKeyboardActivate {
         window: iced::window::Id,
     },
-    KeyboardSecondaryActivate {
+    BarKeyboardSecondaryActivate {
         window: iced::window::Id,
     },
     BarRightClick(iced::window::Id),
@@ -41,7 +41,19 @@ pub(super) enum SurfaceInputEffect {
     ModuleHoverEnter(crate::modules::ModuleId, iced::window::Id),
     ModuleHoverExit(crate::modules::ModuleId, iced::window::Id),
     PanelBack,
-    Escape {
+    PanelEscape,
+    PanelMoveFocus {
+        forward: bool,
+    },
+    PanelKeyboardActivate,
+    BarEscape {
+        window: iced::window::Id,
+    },
+    MenuMoveFocus {
+        window: iced::window::Id,
+        forward: bool,
+    },
+    MenuKeyboardActivate {
         window: iced::window::Id,
     },
     PanelFocusGained(iced::window::Id),
@@ -65,8 +77,8 @@ pub(super) enum SurfaceInputEffect {
         width: u32,
         height: u32,
     },
-    WindowClosed(iced::window::Id),
-    ClosingPanelWindowClosed(iced::window::Id),
+    PanelWindowClosed(iced::window::Id),
+    RegistryWindowClosed(iced::window::Id),
     MenuWindowClosed(iced::window::Id),
 }
 
@@ -120,7 +132,7 @@ fn route_tooltip_input(event: &super::messages::SurfaceEvent) -> SurfaceInputEff
             width: *width,
             height: *height,
         },
-        SurfaceEvent::WindowClosed(window) => SurfaceInputEffect::WindowClosed(*window),
+        SurfaceEvent::WindowClosed(window) => SurfaceInputEffect::RegistryWindowClosed(*window),
         _ => SurfaceInputEffect::Ignore,
     }
 }
@@ -129,7 +141,7 @@ fn route_closing_panel_input(event: &super::messages::SurfaceEvent) -> SurfaceIn
     use super::messages::SurfaceEvent;
 
     match event {
-        SurfaceEvent::WindowClosed(window) => SurfaceInputEffect::ClosingPanelWindowClosed(*window),
+        SurfaceEvent::WindowClosed(window) => SurfaceInputEffect::PanelWindowClosed(*window),
         _ => SurfaceInputEffect::Ignore,
     }
 }
@@ -141,21 +153,13 @@ fn route_panel_input(event: &super::messages::SurfaceEvent) -> SurfaceInputEffec
         SurfaceEvent::WindowSized(window, _, _) | SurfaceEvent::BarFocusGained(window) => {
             SurfaceInputEffect::PanelFocusGained(*window)
         }
-        SurfaceEvent::WindowClosed(window) => SurfaceInputEffect::WindowClosed(*window),
+        SurfaceEvent::WindowClosed(window) => SurfaceInputEffect::PanelWindowClosed(*window),
         SurfaceEvent::BarFocusLost(_) => SurfaceInputEffect::Ignore,
         SurfaceEvent::BackPressed(_) => SurfaceInputEffect::PanelBack,
-        SurfaceEvent::EscapePressed(window) => SurfaceInputEffect::Escape { window: *window },
-        SurfaceEvent::FocusMoveNext(window) => SurfaceInputEffect::MoveFocus {
-            window: *window,
-            forward: true,
-        },
-        SurfaceEvent::FocusMovePrev(window) => SurfaceInputEffect::MoveFocus {
-            window: *window,
-            forward: false,
-        },
-        SurfaceEvent::KeyboardActivate(window) => {
-            SurfaceInputEffect::KeyboardActivate { window: *window }
-        }
+        SurfaceEvent::EscapePressed(_) => SurfaceInputEffect::PanelEscape,
+        SurfaceEvent::FocusMoveNext(_) => SurfaceInputEffect::PanelMoveFocus { forward: true },
+        SurfaceEvent::FocusMovePrev(_) => SurfaceInputEffect::PanelMoveFocus { forward: false },
+        SurfaceEvent::KeyboardActivate(_) => SurfaceInputEffect::PanelKeyboardActivate,
         _ => SurfaceInputEffect::Ignore,
     }
 }
@@ -166,17 +170,17 @@ fn route_menu_input(event: &super::messages::SurfaceEvent) -> SurfaceInputEffect
     match event {
         SurfaceEvent::WindowClosed(window) => SurfaceInputEffect::MenuWindowClosed(*window),
         SurfaceEvent::BarFocusLost(_) => SurfaceInputEffect::CloseMenu,
-        SurfaceEvent::EscapePressed(window) => SurfaceInputEffect::Escape { window: *window },
-        SurfaceEvent::FocusMoveNext(window) => SurfaceInputEffect::MoveFocus {
+        SurfaceEvent::EscapePressed(_) => SurfaceInputEffect::CloseMenu,
+        SurfaceEvent::FocusMoveNext(window) => SurfaceInputEffect::MenuMoveFocus {
             window: *window,
             forward: true,
         },
-        SurfaceEvent::FocusMovePrev(window) => SurfaceInputEffect::MoveFocus {
+        SurfaceEvent::FocusMovePrev(window) => SurfaceInputEffect::MenuMoveFocus {
             window: *window,
             forward: false,
         },
         SurfaceEvent::KeyboardActivate(window) => {
-            SurfaceInputEffect::KeyboardActivate { window: *window }
+            SurfaceInputEffect::MenuKeyboardActivate { window: *window }
         }
         _ => SurfaceInputEffect::Ignore,
     }
@@ -201,12 +205,12 @@ fn route_bar_input(event: &super::messages::SurfaceEvent) -> SurfaceInputEffect 
         SurfaceEvent::BarHoverExit(window) => SurfaceInputEffect::BarHoverExit(*window),
         SurfaceEvent::BarFocusGained(window) => SurfaceInputEffect::BarFocusGained(*window),
         SurfaceEvent::BarFocusLost(window) => SurfaceInputEffect::BarFocusLost(*window),
-        SurfaceEvent::EscapePressed(window) => SurfaceInputEffect::Escape { window: *window },
-        SurfaceEvent::FocusMoveNext(window) => SurfaceInputEffect::MoveFocus {
+        SurfaceEvent::EscapePressed(window) => SurfaceInputEffect::BarEscape { window: *window },
+        SurfaceEvent::FocusMoveNext(window) => SurfaceInputEffect::BarMoveFocus {
             window: *window,
             forward: true,
         },
-        SurfaceEvent::FocusMovePrev(window) => SurfaceInputEffect::MoveFocus {
+        SurfaceEvent::FocusMovePrev(window) => SurfaceInputEffect::BarMoveFocus {
             window: *window,
             forward: false,
         },
@@ -219,10 +223,10 @@ fn route_bar_input(event: &super::messages::SurfaceEvent) -> SurfaceInputEffect 
             forward: false,
         },
         SurfaceEvent::KeyboardActivate(window) => {
-            SurfaceInputEffect::KeyboardActivate { window: *window }
+            SurfaceInputEffect::BarKeyboardActivate { window: *window }
         }
         SurfaceEvent::KeyboardSecondaryActivate(window) => {
-            SurfaceInputEffect::KeyboardSecondaryActivate { window: *window }
+            SurfaceInputEffect::BarKeyboardSecondaryActivate { window: *window }
         }
         SurfaceEvent::ActionKeyPressed {
             window,
@@ -299,21 +303,32 @@ impl PartialEq for SurfaceInputEffect {
             | (BarRightClick(left), BarRightClick(right))
             | (CloseTooltip(left), CloseTooltip(right))
             | (PanelFocusGained(left), PanelFocusGained(right))
-            | (WindowClosed(left), WindowClosed(right))
-            | (ClosingPanelWindowClosed(left), ClosingPanelWindowClosed(right))
+            | (PanelWindowClosed(left), PanelWindowClosed(right))
+            | (RegistryWindowClosed(left), RegistryWindowClosed(right))
             | (MenuWindowClosed(left), MenuWindowClosed(right)) => left == right,
-            (Escape { window: left }, Escape { window: right }) => left == right,
-            (KeyboardActivate { window: left }, KeyboardActivate { window: right })
+            (BarEscape { window: left }, BarEscape { window: right }) => left == right,
+            (BarKeyboardActivate { window: left }, BarKeyboardActivate { window: right })
+            | (MenuKeyboardActivate { window: left }, MenuKeyboardActivate { window: right })
             | (
-                KeyboardSecondaryActivate { window: left },
-                KeyboardSecondaryActivate { window: right },
+                BarKeyboardSecondaryActivate { window: left },
+                BarKeyboardSecondaryActivate { window: right },
             ) => left == right,
             (
-                MoveFocus {
+                BarMoveFocus {
                     window: lw,
                     forward: lf,
                 },
-                MoveFocus {
+                BarMoveFocus {
+                    window: rw,
+                    forward: rf,
+                },
+            )
+            | (
+                MenuMoveFocus {
+                    window: lw,
+                    forward: lf,
+                },
+                MenuMoveFocus {
                     window: rw,
                     forward: rf,
                 },
@@ -379,6 +394,10 @@ impl PartialEq for SurfaceInputEffect {
             (CloseMenu, CloseMenu)
             | (Ignore, Ignore)
             | (PanelBack, PanelBack)
+            | (PanelEscape, PanelEscape)
+            | (PanelKeyboardActivate, PanelKeyboardActivate)
+            | (PanelMoveFocus { forward: true }, PanelMoveFocus { forward: true })
+            | (PanelMoveFocus { forward: false }, PanelMoveFocus { forward: false })
             | (Tick, Tick)
             | (TogglePanel, TogglePanel) => true,
             _ => false,
@@ -429,10 +448,7 @@ mod tests {
                 WindowRole::Panel,
                 &super::super::messages::SurfaceEvent::FocusMoveNext(window),
             ),
-            SurfaceInputEffect::MoveFocus {
-                window,
-                forward: true,
-            }
+            SurfaceInputEffect::PanelMoveFocus { forward: true }
         );
     }
 
@@ -445,7 +461,7 @@ mod tests {
                 WindowRole::Menu,
                 &super::super::messages::SurfaceEvent::EscapePressed(window),
             ),
-            SurfaceInputEffect::Escape { window }
+            SurfaceInputEffect::CloseMenu
         );
     }
 
@@ -471,7 +487,7 @@ mod tests {
                 WindowRole::Menu,
                 &super::super::messages::SurfaceEvent::KeyboardActivate(window),
             ),
-            SurfaceInputEffect::KeyboardActivate { window }
+            SurfaceInputEffect::MenuKeyboardActivate { window }
         );
     }
 
@@ -506,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_panel_window_closed_routes_to_closing_panel_window_closed_intent() {
+    fn closing_panel_window_closed_routes_to_panel_window_closed_intent() {
         let window = wid();
 
         assert_eq!(
@@ -514,12 +530,12 @@ mod tests {
                 WindowRole::ClosingPanel,
                 &super::super::messages::SurfaceEvent::WindowClosed(window),
             ),
-            SurfaceInputEffect::ClosingPanelWindowClosed(window)
+            SurfaceInputEffect::PanelWindowClosed(window)
         );
     }
 
     #[test]
-    fn panel_window_closed_routes_to_plain_window_closed_intent() {
+    fn panel_window_closed_routes_to_panel_window_closed_intent() {
         let window = wid();
 
         assert_eq!(
@@ -527,7 +543,7 @@ mod tests {
                 WindowRole::Panel,
                 &super::super::messages::SurfaceEvent::WindowClosed(window),
             ),
-            SurfaceInputEffect::WindowClosed(window)
+            SurfaceInputEffect::PanelWindowClosed(window)
         );
     }
 

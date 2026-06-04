@@ -6,7 +6,6 @@ impl super::App {
         &mut self,
         window: iced::window::Id,
         origin_surface: iced::window::Id,
-        _attachment_id: super::panel_runtime::PanelAttachmentId,
     ) {
         let tree =
             self.panel
@@ -73,6 +72,131 @@ impl super::App {
         }
         tasks
     }
+
+    pub(super) fn apply_foreground_effects(
+        &mut self,
+        effects: Vec<super::foreground::ForegroundEffect>,
+    ) -> Vec<iced::Task<super::Message>> {
+        let mut tasks = Vec::new();
+        for effect in effects {
+            match effect {
+                super::foreground::ForegroundEffect::PreparePanelRuntime { request, .. } => {
+                    let catalog =
+                        super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
+                    let module_detail_sessions = self.module_detail_sessions_for_request(&request);
+                    let effects =
+                        self.panel
+                            .handle(super::panel_runtime::PanelRuntimeIntent::PrepareOpen {
+                                module_detail_sessions,
+                                request,
+                                catalog,
+                            });
+                    tasks.push(self.apply_panel_runtime_effects(effects));
+                }
+                super::foreground::ForegroundEffect::ClearPanelRuntime => {
+                    let effects = self
+                        .panel
+                        .handle(super::panel_runtime::PanelRuntimeIntent::Clear);
+                    tasks.push(self.apply_panel_runtime_effects(effects));
+                }
+                super::foreground::ForegroundEffect::OpenPanelWindow { tree } => {
+                    tasks.push(self.open_panel_window(tree));
+                }
+                super::foreground::ForegroundEffect::RemoveWindow(window) => {
+                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
+                }
+                super::foreground::ForegroundEffect::SuspendBarKeyboardInteractivity => {
+                    tasks.extend(self.suspend_bar_keyboard_interactivity());
+                }
+                super::foreground::ForegroundEffect::RestoreBarKeyboardInteractivity => {
+                    tasks.extend(self.restore_bar_keyboard_interactivity());
+                }
+                super::foreground::ForegroundEffect::CloseTooltipsForSurface(window) => {
+                    let effects = self.surfaces.close_tooltip_for_surface(window);
+                    tasks.extend(self.apply_registry_effects(effects));
+                }
+                super::foreground::ForegroundEffect::CloseAllTooltips => {
+                    let effects = self.surfaces.close_tooltip_overlays();
+                    tasks.extend(self.apply_registry_effects(effects));
+                }
+                super::foreground::ForegroundEffect::OpenMenuWindow { request } => {
+                    tasks.push(self.open_menu_window(request));
+                }
+                super::foreground::ForegroundEffect::CloseMenu { window, meta } => {
+                    send_menu_closed_event(self.shared.dbus.session.clone(), meta);
+                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
+                }
+            }
+        }
+        tasks
+    }
+
+    pub(super) fn apply_panel_runtime_effects(
+        &mut self,
+        effects: Vec<super::panel_runtime::PanelRuntimeEffect>,
+    ) -> iced::Task<super::Message> {
+        let mut tasks = Vec::new();
+        for effect in effects {
+            match effect {
+                super::panel_runtime::PanelRuntimeEffect::PanelPrepared(tree) => {
+                    let effects = self
+                        .foreground
+                        .handle(super::foreground::ForegroundIntent::PanelRuntimePrepared { tree });
+                    tasks.extend(self.apply_foreground_effects(effects));
+                }
+                super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus => {
+                    tasks.push(super::panel::request_panel_search_focus());
+                }
+                super::panel_runtime::PanelRuntimeEffect::RequestPanelClose => {
+                    let effects = self
+                        .foreground
+                        .handle(super::foreground::ForegroundIntent::ClosePanel);
+                    tasks.extend(self.apply_foreground_effects(effects));
+                }
+                super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenPreparePanel(
+                    pending,
+                ) => {
+                    let apps = self.load_installed_apps_for_panel();
+                    let catalog =
+                        super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
+                    let effects = self.panel.handle(
+                        super::panel_runtime::PanelRuntimeIntent::PrepareInstalledAppsLoaded {
+                            pending,
+                            apps,
+                            catalog,
+                        },
+                    );
+                    tasks.push(self.apply_panel_runtime_effects(effects));
+                }
+                super::panel_runtime::PanelRuntimeEffect::RunPanelAction(action) => {
+                    tasks.push(self.dispatch_panel_action_from_active_panel(action));
+                }
+                super::panel_runtime::PanelRuntimeEffect::LaunchInstalledApp(id) => {
+                    self.launch_installed_app_by_id(&id);
+                }
+                super::panel_runtime::PanelRuntimeEffect::SendDmenuResponse {
+                    responder,
+                    response,
+                } => {
+                    send_ipc_response(responder, response);
+                }
+            }
+        }
+        iced::Task::batch(tasks)
+    }
+}
+
+fn send_ipc_response(
+    responder: super::messages::IpcResponder,
+    response: crate::ipc::protocol::IpcResponse,
+) {
+    if let Some(sender) = responder
+        .lock()
+        .expect("IPC responder mutex poisoned")
+        .take()
+    {
+        let _ = sender.send(response);
+    }
 }
 
 pub(super) fn send_menu_closed_event(
@@ -106,38 +230,53 @@ mod tests {
         origin: iced::window::Id,
         window: iced::window::Id,
         content: crate::surface::panel::PanelContent,
-    ) -> crate::app::panel_runtime::PanelAttachmentId {
+    ) {
         let request = app.panel_open_request(
             origin,
             crate::surface::panel::PanelOrigin::Bar,
             content,
             None,
         );
-        let effects = app
-            .panel
-            .handle(crate::app::panel_runtime::PanelRuntimeIntent::Open {
-                request,
-                catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
-                    app.config.menus.as_slice(),
-                ),
-                module_detail_sessions: std::collections::HashMap::new(),
-            });
-        let attachment_id = effects
-            .iter()
-            .find_map(|effect| match effect {
-                crate::app::panel_runtime::PanelRuntimeEffect::OpenPanelWindow(open) => {
-                    Some(open.attachment_id)
-                }
-                _ => None,
-            })
-            .expect("panel should request a window");
-        app.panel.handle(
-            crate::app::panel_runtime::PanelRuntimeIntent::PanelWindowOpened {
-                attachment_id,
-                window,
-            },
+        let effects =
+            app.panel
+                .handle(crate::app::panel_runtime::PanelRuntimeIntent::PrepareOpen {
+                    request,
+                    catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
+                        app.config.menus.as_slice(),
+                    ),
+                    module_detail_sessions: std::collections::HashMap::new(),
+                });
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            crate::app::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+        )));
+        app.register_panel_popup(window, origin);
+    }
+
+    fn prepare_panel(
+        app: &mut super::super::App,
+        origin: iced::window::Id,
+        content: crate::surface::panel::PanelContent,
+    ) {
+        let request = app.panel_open_request(
+            origin,
+            crate::surface::panel::PanelOrigin::Bar,
+            content,
+            None,
         );
-        attachment_id
+        let effects =
+            app.panel
+                .handle(crate::app::panel_runtime::PanelRuntimeIntent::PrepareOpen {
+                    request,
+                    catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
+                        app.config.menus.as_slice(),
+                    ),
+                    module_detail_sessions: std::collections::HashMap::new(),
+                });
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            crate::app::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+        )));
     }
 
     #[test]
@@ -145,9 +284,8 @@ mod tests {
         let (mut app, _) = super::super::App::boot(crate::config::Config::default(), vec![]);
         let origin = wid();
         let panel = wid();
-        let attachment_id = crate::app::panel_runtime::PanelAttachmentId::for_test(1);
 
-        app.register_panel_popup(panel, origin, attachment_id);
+        app.register_panel_popup(panel, origin);
 
         assert!(app.foreground.is_panel_window(panel));
         assert_eq!(
@@ -213,26 +351,24 @@ mod tests {
         let old_window = wid();
         let new_window = wid();
 
-        let old_attachment = open_and_attach_panel(
+        open_and_attach_panel(
             &mut app,
             origin,
             old_window,
             crate::surface::panel::PanelContent::BarPanel,
         );
-        let new_attachment = open_and_attach_panel(
+        open_and_attach_panel(
             &mut app,
             origin,
             new_window,
             crate::surface::panel::PanelContent::Menu("main".into()),
         );
-        app.register_panel_popup(old_window, origin, old_attachment);
-        app.register_panel_popup(new_window, origin, new_attachment);
 
         let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::WindowClosed(
             old_window,
         ));
 
-        assert_eq!(app.panel.active_panel_window(), Some(new_window));
+        assert_eq!(app.foreground.active_panel_window(), Some(new_window));
         assert!(!app.foreground.is_panel_window(old_window));
         assert!(app.foreground.is_panel_window(new_window));
     }
@@ -242,18 +378,16 @@ mod tests {
         let (mut app, _) = super::super::App::boot(crate::config::Config::default(), vec![]);
         let origin = wid();
         let window = wid();
-        let attachment_id = open_and_attach_panel(
+        prepare_panel(
             &mut app,
             origin,
-            window,
             crate::surface::panel::PanelContent::BarPanel,
         );
-        app.register_panel_popup(window, origin, attachment_id);
+        app.register_panel_popup(window, origin);
 
         let _ =
             app.handle_surface_event(super::super::messages::SurfaceEvent::WindowClosed(window));
 
-        assert_eq!(app.panel.active_panel_window(), None);
         assert!(app.panel.active_panel_tree().is_none());
         assert!(!app.foreground.is_panel_window(window));
     }

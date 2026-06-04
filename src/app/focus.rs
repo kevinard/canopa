@@ -31,16 +31,10 @@ impl App {
         Task::batch(tasks)
     }
 
-    pub(super) fn handle_escape_pressed(&mut self, window: iced::window::Id) -> Task<Message> {
-        if self.foreground.is_panel_window(window) {
-            return self.handle_panel_escape_pressed();
-        }
+    pub(super) fn handle_bar_escape_pressed(&mut self, window: iced::window::Id) -> Task<Message> {
         let close_tt = self.close_tooltip_popup_if_open(window);
         if !close_tt.is_empty() {
             return Task::batch(close_tt);
-        }
-        if self.foreground.is_menu_window(window) {
-            return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
         }
         let s = self.surface_mut(window);
         if s.module_activated {
@@ -56,23 +50,28 @@ impl App {
         })
     }
 
-    pub(super) fn handle_focus_move(
+    pub(super) fn handle_panel_focus_move(&mut self, forward: bool) -> Task<Message> {
+        self.handle_panel_event(if forward {
+            super::messages::PanelEvent::FocusMoveNext
+        } else {
+            super::messages::PanelEvent::FocusMovePrev
+        })
+    }
+
+    pub(super) fn handle_menu_focus_move(
         &mut self,
         window: iced::window::Id,
         forward: bool,
     ) -> Task<Message> {
-        if self.foreground.is_menu_window(window) {
-            self.popup_nav_step(window, forward);
-            return Task::none();
-        }
-        if self.foreground.is_panel_window(window) {
-            return self.handle_panel_event(if forward {
-                super::messages::PanelEvent::FocusMoveNext
-            } else {
-                super::messages::PanelEvent::FocusMovePrev
-            });
-        }
+        self.popup_nav_step(window, forward);
+        Task::none()
+    }
 
+    pub(super) fn handle_bar_focus_move(
+        &mut self,
+        window: iced::window::Id,
+        forward: bool,
+    ) -> Task<Message> {
         let s = self.surface_mut(window);
         if s.focused_module.is_none() {
             return Task::done(Message::Surface(
@@ -131,26 +130,33 @@ impl App {
         Task::none()
     }
 
-    pub(super) fn handle_keyboard_activate(&mut self, window: iced::window::Id) -> Task<Message> {
-        if self.foreground.is_panel_window(window) {
-            return self.handle_panel_event(super::messages::PanelEvent::Activate);
-        }
-        if self.foreground.is_menu_window(window) {
-            let focused = self.foreground.focused_menu_item(window);
-            if let Some(item_id) = focused {
-                let menu_item_id: i32 = item_id.parse().unwrap_or(0);
-                if let Some(model) = self.menu_model(window) {
-                    let activation = model.activation_for(menu_item_id);
-                    return Task::done(Message::Menu(super::messages::MenuEvent::ItemSelected {
-                        service: activation.service,
-                        menu_item_id: activation.item_id,
-                        menu_path: activation.menu_path,
-                    }));
-                }
-            }
-            return Task::none();
-        }
+    pub(super) fn handle_panel_keyboard_activate(&mut self) -> Task<Message> {
+        self.handle_panel_event(super::messages::PanelEvent::Activate)
+    }
 
+    pub(super) fn handle_menu_keyboard_activate(
+        &mut self,
+        window: iced::window::Id,
+    ) -> Task<Message> {
+        let focused = self.foreground.focused_menu_item(window);
+        if let Some(item_id) = focused {
+            let menu_item_id: i32 = item_id.parse().unwrap_or(0);
+            if let Some(model) = self.menu_model(window) {
+                let activation = model.activation_for(menu_item_id);
+                return Task::done(Message::Menu(super::messages::MenuEvent::ItemSelected {
+                    service: activation.service,
+                    menu_item_id: activation.item_id,
+                    menu_path: activation.menu_path,
+                }));
+            }
+        }
+        Task::none()
+    }
+
+    pub(super) fn handle_bar_keyboard_activate(
+        &mut self,
+        window: iced::window::Id,
+    ) -> Task<Message> {
         let s = self.surface_mut(window);
         if s.focused_module.is_none() {
             return Task::none();
@@ -174,7 +180,7 @@ impl App {
         Task::none()
     }
 
-    pub(super) fn handle_keyboard_secondary_activate(
+    pub(super) fn handle_bar_keyboard_secondary_activate(
         &mut self,
         window: iced::window::Id,
     ) -> Task<Message> {

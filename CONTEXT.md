@@ -424,6 +424,7 @@ _Avoid_: Default config, fallback surface
 - Replacing a **Panel** makes the old **Panel** logically gone immediately, even while its old overlay window is still closing.
 - An external **Panel** window close clears **Panel Runtime** state only when **Foreground** identifies that window as the current **Panel**.
 - The **Panel Runtime** owns the current **Panel** content state used for rendering and interaction.
+- **Panel Runtime** may request closing the active **Panel** after a Panel-owned interaction completes; **Foreground** still owns the **Panel Lifecycle** close decision and physical **Panel** window effects.
 - **Panel Runtime** does not emit physical **Panel** window open or close effects.
 - **Foreground** owns physical **Panel** overlay windows for classification and stale close handling.
 - A **Panel Attachment** is internal to **Foreground** and may be absent while a **Panel** is opening.
@@ -552,6 +553,7 @@ _Avoid_: Default config, fallback surface
 - Opening a **Dmenu Selection Request** closes any existing **Panel** or **Menu**.
 - A running **Dmenu Selection Request** rejects additional **Dmenu Selection Requests** until it completes.
 - A **Dmenu Selection Request** cancels when its **Panel** loses focus, consistent with other **Panels**.
+- Clearing the **Panel Runtime** for an active **Dmenu Selection Request** returns a cancelled response to the requesting CLI instead of silently dropping the responder.
 - A **Dmenu Selection Request** is not a configured **Panel Action**.
 - A **Dmenu Selection Request** is displayed as a **Panel Menu** with a **Dmenu Panel Menu Source**.
 - A **Dmenu Panel Menu Source** returns its activated value to the requesting CLI process instead of running a configured **Panel Action**.
