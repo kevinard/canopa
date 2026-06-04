@@ -21,7 +21,7 @@ The stable runtime identity of a **Bar Surface**, consisting of the **Bar Name**
 _Avoid_: Output/bar tuple, window ID
 
 **Bar Surface Registry**:
-The runtime owner of live **Bar Surface** records and overlay surface metadata, including **Panel**, **Menu**, and **Tooltip** windows associated with **Bar Surfaces**.
+The runtime owner of live **Bar Surface** records and passive **Tooltip** metadata associated with **Bar Surfaces**. It does not own physical **Panel** or **Menu** overlay identity; that interactive overlay identity belongs to **Foreground**.
 _Avoid_: Overlay lifecycle, surface manager
 
 **Bar Surface Plan**:
@@ -147,11 +147,11 @@ A user-submitted typed value returned by a selectable menu instead of an existin
 _Avoid_: Dmenu entry when the value was typed by the user, menu item when no configured item exists
 
 **Selectable Menu Session**:
-The live runtime interaction for one selectable **Menu** or **Panel Menu**, including its entry source, active menu level, optional **Menu Search** text, focused entry, hover state, optional **Custom Menu Value** affordance, and selected-entry completion. It does not own physical **Menu** or **Panel** window lifecycle.
+The live runtime interaction for one selectable **Menu** or **Panel Menu**, including its entry source, active menu level, optional **Menu Search** text, focused entry, hover state, optional **Custom Menu Value** affordance, and selected-entry completion. The active **Menu** session is owned by **Foreground**; **Panel Menu** sessions are owned by **Panel Runtime** while rendered inside a **Panel**. It does not own physical **Menu** or **Panel** window lifecycle.
 _Avoid_: Panel Menu Session when the behavior applies beyond panels, popup state when referring to selection behavior
 
 **Foreground**:
-The currently active interactive overlay state, either no overlay, a **Menu**, or a **Panel**. **Tooltip** is not **Foreground** because it is passive, non-interactive, and owned as a **Bar Surface** affordance.
+The currently active interactive overlay state, either no overlay, a **Menu**, or a **Panel**. **Foreground** owns physical **Panel** and **Menu** overlay window identity, the active **Menu**'s **Selectable Menu Session**, replacement, stale close handling, and interactive overlay role classification. It is a pure state machine module with an intent/effect interface; app-owned side effects remain in the app adapter. **Tooltip** is not **Foreground** because it is passive, non-interactive, and owned as a **Bar Surface** affordance.
 _Avoid_: overlay registry when referring to interactive state, popup when referring to **Panel** or **Menu** interaction
 
 **Panel**:
@@ -159,16 +159,16 @@ A transient overlay surface opened from a **Bar Surface**. A **Panel** is anchor
 _Avoid_: Popup when referring to Niribar's generic panel
 
 **Panel Runtime**:
-The live state machine for the currently active **Panel**, including its **Selectable Menu Session** when a **Panel Menu** is present, pending search focus, menu scroll position, and any active **Dmenu Selection Request** responder.
-_Avoid_: Panel state when referring to the full open/search/activation/cancel lifecycle
+The live content and interaction state for the currently active **Panel**, including its **Selectable Menu Session** when a **Panel Menu** is present, pending search focus, menu scroll position, **Module Detail Session** state, and any active **Dmenu Selection Request** responder. It does not own physical **Panel** window effects.
+_Avoid_: Panel Lifecycle, overlay lifecycle, physical Panel window identity
 
 **Panel Lifecycle**:
-The logical lifecycle of the currently active **Panel** from accepted open request through opening, visible, replacement, and close. It is distinct from overlay window creation, registration, and stale-window cleanup.
+The **Foreground**-owned logical lifecycle of the currently active **Panel** from accepted open request through opening, visible, replacement, and close.
 _Avoid_: Panel popup lifecycle, overlay lifecycle when referring to logical **Panel** ownership
 
 **Panel Attachment**:
-The runtime association between the current logical **Panel** and the overlay window that renders it. It is the app-level seam for deciding whether overlay-window render or close work still belongs to the current **Panel Lifecycle**, and for applying the current-vs-stale consequences without moving **Panel Runtime** ownership into the **Bar Surface Registry** or overlay-window ownership into **Panel Runtime**.
-_Avoid_: Panel identity, panel popup metadata when referring to the logical-window association
+The internal **Foreground** association between the active **Panel** and the physical overlay window that renders it. It may be represented by an internal identity token, but it is not a separate app-level seam and is not owned by **Panel Runtime** or the **Bar Surface Registry**.
+_Avoid_: app-level panel seam, Bar Surface Registry panel metadata, Panel Runtime window identity
 
 **Panel Origin**:
 The **Bar Surface** or **Module** that triggered the current **Panel**.
@@ -300,8 +300,8 @@ _Avoid_: Default config, fallback surface
 - A **Bar Surface Plan** is computed before the **Bar Surface Registry** reconciles desired **Bar Surfaces** with live **Bar Surfaces**.
 - A **Bar Surface Plan** does not own live windows, overlay metadata, or **Panel Runtime** interaction state.
 - In AllScreens mode, a **Bar Surface Identity** has no specific **Output** and identifies an all-screens **Bar** being planned.
-- The **Bar Surface Registry** is the source of truth for which live windows are **Bar Surfaces** and which live windows are overlays associated with **Bar Surfaces**.
-- The **Bar Surface Registry** does not own **Panel Runtime** interaction state.
+- The **Bar Surface Registry** is the source of truth for which live windows are **Bar Surfaces** and for passive **Tooltip** metadata associated with **Bar Surfaces**.
+- The **Bar Surface Registry** does not own **Panel Runtime** interaction state, **Foreground** state, or physical **Panel** and **Menu** overlay identity.
 - A **Bar Surface** uses the available **Edge Span** by default.
 - A **Bar Surface** uses the **Layer** configured by its **Bar**.
 - A **Bar Surface** remains present even when all of its **Modules** are empty or unavailable.
@@ -377,11 +377,20 @@ _Avoid_: Default config, fallback surface
 - Opening a **Menu** closes open **Tooltips** on the same **Bar Surface**.
 - Niribar shows at most one **Menu** at a time.
 - A **Menu** closes when its originating visible target disappears.
+- **Foreground** owns the active **Menu**'s **Selectable Menu Session**.
+- A **Menu** session is keyed by current **Foreground**, not by a map of physical window IDs.
 - Opening a **Panel** closes any open **Menu**.
 - Opening a **Menu** closes any open **Panel**.
 - Niribar has at most one **Foreground** at a time.
 - Opening a **Panel** or **Menu** replaces the current **Foreground**.
 - Every request that opens, toggles, or closes a **Panel** or **Menu** goes through **Foreground**.
+- App-level **Panel** open, toggle, and close intents cross the **Foreground** interface before **Panel Runtime**.
+- **Foreground** owns stale close handling for physical **Panel** and **Menu** overlay windows.
+- **Foreground** is the source of truth for interactive overlay role classification.
+- **Foreground** communicates side-effect work through effects; it does not directly create windows, call DBus, launch processes, send IPC responses, or mutate passive **Tooltip** metadata.
+- The app adapter translates **Foreground** effects into layer-shell window tasks, DBus calls, process launches, IPC responses, **Panel Runtime** content updates, and **Tooltip** close work.
+- **Foreground** tests are the primary test surface for interactive overlay replacement, stale close handling, and current close handling.
+- App tests for **Foreground** behavior should focus on adapter effect application order, not duplicate **Foreground** state-machine decisions.
 - **Keyboard Focus** enters a **Menu** while it is open and returns to the originating target when the **Menu** closes, if that target still exists.
 - A **SNI Menu** is a **Menu**.
 - **SNI Menus** do not show **Menu Search** by default.
@@ -390,12 +399,16 @@ _Avoid_: Default config, fallback surface
 - When a **SNI Menu** layout updates while open, Niribar resets that **Menu** to its top level with empty **Menu Search** text and initial focus.
 - **Menus** and **Tooltips** do not inherit the **Layer** of their **Bar Surface**.
 - Niribar shows at most one **Panel** at a time.
-- A **Panel** becomes logically active when the **Panel Runtime** accepts the open request, before its overlay window is created.
+- **Foreground** owns **Panel Lifecycle** open, toggle, replacement, and close decisions.
+- **Panel Runtime** is prepared or cleared by **Foreground** effects; callers do not open, toggle, or close **Panel Runtime** directly.
+- A **Panel** becomes logically active when **Foreground** accepts the open request and prepares **Panel Runtime** content state, before its overlay window is created.
 - Replacing a **Panel** makes the old **Panel** logically gone immediately, even while its old overlay window is still closing.
-- An external **Panel** window close clears **Panel Runtime** state only when that window is still attached to the current logical **Panel**.
-- The **Panel Runtime** owns the current **Panel**'s logical render identity.
-- The **Bar Surface Registry** may track **Panel** overlay windows for classification and cleanup, but it does not own **Panel Lifecycle** identity.
-- A **Panel Attachment** may be absent while a **Panel** is opening and must be replaced when a newer logical **Panel** replaces the old one.
+- An external **Panel** window close clears **Panel Runtime** state only when **Foreground** identifies that window as the current **Panel**.
+- The **Panel Runtime** owns the current **Panel** content state used for rendering and interaction.
+- **Panel Runtime** does not emit physical **Panel** window open or close effects.
+- **Foreground** owns physical **Panel** overlay windows for classification and stale close handling.
+- A **Panel Attachment** is internal to **Foreground** and may be absent while a **Panel** is opening.
+- Replacing a **Panel** replaces the internal **Panel Attachment** inside **Foreground**.
 - A **Panel** belongs to exactly one originating **Bar Surface**.
 - A **Panel** has exactly one **Panel Origin**.
 - A **Panel Origin** may be the **Bar Surface** itself or a **Module** on that **Bar Surface**.
