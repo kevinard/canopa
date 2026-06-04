@@ -54,7 +54,7 @@ impl App {
         &self,
         window: iced::window::Id,
     ) -> Option<PopupRenderModel<'_>> {
-        let meta = self.surfaces.popup(window)?;
+        let meta = self.foreground.active_menu_meta_for_window(window)?;
 
         Some(PopupRenderModel {
             service: meta.service.as_str(),

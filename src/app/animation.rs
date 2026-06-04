@@ -19,7 +19,7 @@ impl App {
         if self.bar_has_action(window, &crate::config::ActionTrigger::Click) {
             return self.dispatch_bar_action(window, crate::config::ActionTrigger::Click);
         }
-        if self.surfaces.has_any_popup() {
+        if self.foreground.active_menu_window().is_some() {
             return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
         }
         Task::none()
@@ -33,7 +33,7 @@ impl App {
         if self.bar_has_action(window, &crate::config::ActionTrigger::RightClick) {
             return self.dispatch_bar_action(window, crate::config::ActionTrigger::RightClick);
         }
-        if self.surfaces.has_any_popup() {
+        if self.foreground.active_menu_window().is_some() {
             return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
         }
         Task::none()
@@ -257,11 +257,17 @@ mod tooltip_dwell_tests {
         app.surface_mut(wid).bar_name = "main".into();
 
         let _ = app.handle_bar_click(wid);
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            1
+        );
 
         let _ = app.handle_bar_click(wid);
 
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            0
+        );
     }
 
     #[test]

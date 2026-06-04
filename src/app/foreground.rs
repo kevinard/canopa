@@ -32,8 +32,16 @@ pub(super) enum PanelOpenMode {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct MenuPopupMeta {
+    pub(super) service: String,
+    pub(super) menu_path: zbus::zvariant::OwnedObjectPath,
+    pub(super) tree: crate::surface::menu_popup::MenuTree,
+    pub(super) origin: super::surfaces::BarSurfaceIdentity,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct MenuForegroundRequest {
-    pub(super) meta: super::surfaces::PopupMeta,
+    pub(super) meta: MenuPopupMeta,
     pub(super) search_enabled: bool,
 }
 
@@ -59,7 +67,7 @@ pub(super) enum ForegroundOverlay {
     },
     Menu {
         window: iced::window::Id,
-        meta: super::surfaces::PopupMeta,
+        meta: MenuPopupMeta,
         session: super::selectable_menu_session::SelectableMenuSession,
     },
 }
@@ -135,7 +143,7 @@ pub(super) enum ForegroundEffect {
     },
     CloseMenu {
         window: iced::window::Id,
-        meta: super::surfaces::PopupMeta,
+        meta: MenuPopupMeta,
     },
 }
 
@@ -143,7 +151,7 @@ pub(super) enum ForegroundEffect {
 pub(super) struct Foreground {
     active: Option<ForegroundOverlay>,
     closing_panel_windows: HashSet<iced::window::Id>,
-    closing_menu_windows: HashMap<iced::window::Id, super::surfaces::PopupMeta>,
+    closing_menu_windows: HashMap<iced::window::Id, MenuPopupMeta>,
     pending_menu: Option<MenuForegroundRequest>,
 }
 
@@ -274,7 +282,7 @@ impl Foreground {
     pub(super) fn active_menu_meta_for_window(
         &self,
         window: iced::window::Id,
-    ) -> Option<&super::surfaces::PopupMeta> {
+    ) -> Option<&MenuPopupMeta> {
         match self.active.as_ref()? {
             ForegroundOverlay::Menu {
                 window: current,
@@ -285,11 +293,25 @@ impl Foreground {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn active_menu_meta(&self) -> Option<&super::surfaces::PopupMeta> {
+    pub(super) fn active_menu_meta(&self) -> Option<&MenuPopupMeta> {
         match self.active.as_ref()? {
             ForegroundOverlay::Menu { meta, .. } => Some(meta),
             ForegroundOverlay::Panel { .. } => None,
+        }
+    }
+
+    pub(super) fn active_menu_for(
+        &self,
+        service: &str,
+        menu_path: &zbus::zvariant::OwnedObjectPath,
+    ) -> Option<(iced::window::Id, &MenuPopupMeta)> {
+        match self.active.as_ref()? {
+            ForegroundOverlay::Menu { window, meta, .. }
+                if meta.service == service && meta.menu_path == *menu_path =>
+            {
+                Some((*window, meta))
+            }
+            ForegroundOverlay::Menu { .. } | ForegroundOverlay::Panel { .. } => None,
         }
     }
 
@@ -661,8 +683,8 @@ mod tests {
         panel_request(origin_window, content).tree()
     }
 
-    fn menu_meta(service: &str) -> surfaces::PopupMeta {
-        surfaces::PopupMeta {
+    fn menu_meta(service: &str) -> super::MenuPopupMeta {
+        super::MenuPopupMeta {
             service: service.into(),
             menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
             tree: crate::surface::menu_popup::MenuTree {
@@ -702,7 +724,7 @@ mod tests {
         }
     }
 
-    fn menu_request_from_meta(meta: surfaces::PopupMeta) -> super::MenuForegroundRequest {
+    fn menu_request_from_meta(meta: super::MenuPopupMeta) -> super::MenuForegroundRequest {
         super::MenuForegroundRequest {
             meta,
             search_enabled: false,
@@ -727,7 +749,7 @@ mod tests {
         ]
     }
 
-    fn menu_open_effect(meta: surfaces::PopupMeta) -> ForegroundEffect {
+    fn menu_open_effect(meta: super::MenuPopupMeta) -> ForegroundEffect {
         ForegroundEffect::OpenMenuWindow {
             request: menu_request_from_meta(meta),
         }

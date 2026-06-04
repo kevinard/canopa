@@ -79,7 +79,7 @@ impl App {
         );
 
         let menu_watch_sub = if let Some(conn) = self.shared.dbus.session.clone() {
-            if let Some(meta) = self.surfaces.popup_values().next() {
+            if let Some(meta) = self.foreground.active_menu_meta() {
                 crate::dbus::sni::menu_layout_subscription(
                     conn,
                     meta.service.clone(),

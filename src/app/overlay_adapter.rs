@@ -8,12 +8,6 @@ impl super::App {
         origin_surface: iced::window::Id,
         _attachment_id: super::panel_runtime::PanelAttachmentId,
     ) {
-        self.surfaces.insert_panel_popup(
-            window,
-            super::surfaces::PanelMeta {
-                origin_window: origin_surface,
-            },
-        );
         let tree =
             self.panel
                 .active_panel_tree()
@@ -37,9 +31,8 @@ impl super::App {
     pub(super) fn register_menu_popup(
         &mut self,
         window: iced::window::Id,
-        meta: super::surfaces::PopupMeta,
+        meta: super::foreground::MenuPopupMeta,
     ) {
-        self.surfaces.insert_popup(window, meta.clone());
         let request = super::foreground::MenuForegroundRequest {
             meta,
             search_enabled: self.sni_menu_search_enabled(),
@@ -72,38 +65,9 @@ impl super::App {
         let mut tasks = Vec::new();
         for effect in effects {
             match effect {
-                RegistryEffect::PanelClosed { window } => {
-                    let foreground_effects = self
-                        .foreground
-                        .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
-                    tasks.extend(self.apply_foreground_effects(foreground_effects));
-                    self.surfaces.remove_panel_popup(window);
-                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
-                }
-                RegistryEffect::MenuClosed { window, meta } => {
-                    self.foreground
-                        .handle(super::foreground::ForegroundIntent::MenuWindowClosed { window });
-                    self.surfaces.remove_popup(window);
-                    send_menu_closed_event(self.shared.dbus.session.clone(), meta);
-                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
-                }
                 RegistryEffect::TooltipClosed { window } => {
                     self.surfaces.remove_tooltip_popup(window);
                     tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
-                }
-                RegistryEffect::PendingMenuReady(meta) => {
-                    let request = super::foreground::MenuForegroundRequest {
-                        meta,
-                        search_enabled: self.sni_menu_search_enabled(),
-                    };
-                    tasks.push(self.open_ready_menu_popup(request));
-                }
-                #[cfg(test)]
-                RegistryEffect::SuspendBarKeyboardInteractivity => {
-                    tasks.extend(self.suspend_bar_keyboard_interactivity());
-                }
-                RegistryEffect::RestoreBarKeyboardInteractivity => {
-                    tasks.extend(self.restore_bar_keyboard_interactivity());
                 }
             }
         }
@@ -113,7 +77,7 @@ impl super::App {
 
 pub(super) fn send_menu_closed_event(
     conn: Option<zbus::Connection>,
-    meta: super::surfaces::PopupMeta,
+    meta: super::foreground::MenuPopupMeta,
 ) {
     if let Some(conn) = conn {
         tokio::task::spawn(async move {
@@ -177,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn register_panel_popup_tracks_lifecycle_and_metadata() {
+    fn register_panel_popup_tracks_foreground_lifecycle() {
         let (mut app, _) = super::super::App::boot(crate::config::Config::default(), vec![]);
         let origin = wid();
         let panel = wid();
@@ -185,12 +149,17 @@ mod tests {
 
         app.register_panel_popup(panel, origin, attachment_id);
 
-        let meta = app.surfaces.panel_popup(panel).expect("panel popup");
-        assert_eq!(meta.origin_window, origin);
+        assert!(app.foreground.is_panel_window(panel));
+        assert_eq!(
+            app.foreground
+                .active_panel_tree()
+                .map(|tree| tree.origin_window),
+            Some(origin)
+        );
     }
 
     #[test]
-    fn register_menu_popup_tracks_lifecycle_and_metadata() {
+    fn register_menu_popup_tracks_foreground_lifecycle() {
         let (mut app, _) = super::super::App::boot(crate::config::Config::default(), vec![]);
         let menu = wid();
         let tree = crate::surface::menu_popup::MenuTree {
@@ -201,7 +170,7 @@ mod tests {
 
         app.register_menu_popup(
             menu,
-            super::super::surfaces::PopupMeta {
+            super::super::foreground::MenuPopupMeta {
                 service: "org.test".into(),
                 menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
                 tree,
@@ -209,7 +178,13 @@ mod tests {
             },
         );
 
-        assert!(app.surfaces.popup(menu).is_some());
+        assert!(app.foreground.is_menu_window(menu));
+        assert_eq!(
+            app.foreground
+                .active_menu_meta_for_window(menu)
+                .map(|meta| meta.service.as_str()),
+            Some("org.test")
+        );
     }
 
     #[test]
@@ -253,14 +228,13 @@ mod tests {
         app.register_panel_popup(old_window, origin, old_attachment);
         app.register_panel_popup(new_window, origin, new_attachment);
 
-        let _ =
-            app.apply_registry_effects(vec![super::super::surfaces::RegistryEffect::PanelClosed {
-                window: old_window,
-            }]);
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::WindowClosed(
+            old_window,
+        ));
 
         assert_eq!(app.panel.active_panel_window(), Some(new_window));
-        assert!(app.surfaces.panel_popup(old_window).is_none());
-        assert!(app.surfaces.panel_popup(new_window).is_some());
+        assert!(!app.foreground.is_panel_window(old_window));
+        assert!(app.foreground.is_panel_window(new_window));
     }
 
     #[test]
@@ -277,12 +251,10 @@ mod tests {
         app.register_panel_popup(window, origin, attachment_id);
 
         let _ =
-            app.apply_registry_effects(vec![super::super::surfaces::RegistryEffect::PanelClosed {
-                window,
-            }]);
+            app.handle_surface_event(super::super::messages::SurfaceEvent::WindowClosed(window));
 
         assert_eq!(app.panel.active_panel_window(), None);
         assert!(app.panel.active_panel_tree().is_none());
-        assert!(app.surfaces.panel_popup(window).is_none());
+        assert!(!app.foreground.is_panel_window(window));
     }
 }

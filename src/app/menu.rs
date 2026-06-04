@@ -82,9 +82,7 @@ impl App {
             .foreground
             .handle(super::foreground::ForegroundIntent::CloseMenu);
         if effects.is_empty() {
-            self.surfaces.clear_pending_menu_popup();
-            let effects = self.surfaces.close_menu_overlays();
-            self.apply_registry_effects(effects)
+            Vec::new()
         } else {
             self.apply_foreground_effects(effects)
         }
@@ -186,7 +184,7 @@ impl App {
         tree: crate::surface::menu_popup::MenuTree,
         origin_window: iced::window::Id,
     ) -> Task<Message> {
-        let meta = super::surfaces::PopupMeta {
+        let meta = super::foreground::MenuPopupMeta {
             service,
             menu_path,
             tree,
@@ -213,26 +211,6 @@ impl App {
         let bar = Self::bar_for_surface_identity(&self.config.bars, &meta.origin);
         let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &meta.tree);
         let (popup_id, open_task) = Message::popup_open(settings);
-        self.surfaces
-            .register_ready_menu_overlay(popup_id, meta.clone());
-        self.foreground
-            .handle(super::foreground::ForegroundIntent::MenuWindowOpened {
-                window: popup_id,
-                request,
-            });
-        open_task
-    }
-
-    pub(super) fn open_ready_menu_popup(
-        &mut self,
-        request: super::foreground::MenuForegroundRequest,
-    ) -> Task<Message> {
-        let meta = request.meta.clone();
-        let bar = Self::bar_for_surface_identity(&self.config.bars, &meta.origin);
-        let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &meta.tree);
-        let (popup_id, open_task) = Message::popup_open(settings);
-        self.surfaces
-            .register_ready_menu_overlay(popup_id, meta.clone());
         self.foreground
             .handle(super::foreground::ForegroundIntent::MenuWindowOpened {
                 window: popup_id,
@@ -248,19 +226,17 @@ impl App {
         tree: crate::surface::menu_popup::MenuTree,
     ) -> Task<Message> {
         let search_enabled = self.sni_menu_search_enabled();
-        let Some((window, popup)) = self
-            .surfaces
-            .popups
-            .iter_mut()
-            .find(|(_, popup)| popup.service == service && popup.menu_path == menu_path)
+        let Some(window) = self
+            .foreground
+            .active_menu_for(&service, &menu_path)
+            .map(|(window, _)| window)
         else {
             return Task::none();
         };
 
-        popup.tree = tree.clone();
         self.foreground
             .handle(super::foreground::ForegroundIntent::MenuTreeUpdated {
-                window: *window,
+                window,
                 tree,
                 search_enabled,
             });
@@ -274,9 +250,9 @@ impl App {
     ) -> Task<Message> {
         let conn = self.shared.dbus.session.clone();
         let existing = self
-            .surfaces
-            .popup_values()
-            .find(|popup| popup.service == service && popup.menu_path == menu_path);
+            .foreground
+            .active_menu_for(&service, &menu_path)
+            .map(|(_, meta)| meta);
         let (anchor, screen_size) = match existing {
             Some(popup) => (popup.tree.anchor, popup.tree.screen_size),
             None => return Task::none(),
@@ -410,7 +386,7 @@ mod tests {
         let path = zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap();
         app.register_menu_popup(
             wid,
-            surfaces::PopupMeta {
+            super::super::foreground::MenuPopupMeta {
                 service: "org.test".into(),
                 menu_path: path,
                 tree,
@@ -464,7 +440,7 @@ mod tests {
         let menu_path = zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap();
         app.register_menu_popup(
             wid,
-            surfaces::PopupMeta {
+            super::super::foreground::MenuPopupMeta {
                 service: "org.test".into(),
                 menu_path: menu_path.clone(),
                 tree: menu_tree((0, 0)),
@@ -488,7 +464,11 @@ mod tests {
         assert_eq!(snapshot.search_query, "");
         assert_eq!(snapshot.focused_index, None);
         assert_eq!(
-            app.surfaces.popup(wid).expect("popup").tree.anchor,
+            app.foreground
+                .active_menu_meta_for_window(wid)
+                .expect("popup")
+                .tree
+                .anchor,
             (12, 34)
         );
     }
@@ -564,7 +544,7 @@ mod tests {
         let popup_wid = iced::window::Id::unique();
         app.register_menu_popup(
             popup_wid,
-            surfaces::PopupMeta {
+            super::super::foreground::MenuPopupMeta {
                 service: "svc".into(),
                 menu_path,
                 tree,
@@ -575,7 +555,7 @@ mod tests {
             popup_wid,
         )));
         let _ = app.update(Message::Menu(messages::MenuEvent::Closed));
-        assert!(app.surfaces.popup(popup_wid).is_none());
+        assert_eq!(app.foreground.active_menu_window(), None);
     }
 
     #[test]
@@ -588,7 +568,7 @@ mod tests {
         )));
         let _ = app.update(Message::Menu(messages::MenuEvent::Closed));
 
-        assert!(app.surfaces.popup(popup_wid).is_none());
+        assert_eq!(app.foreground.active_menu_window(), None);
     }
 
     #[test]
@@ -623,7 +603,7 @@ mod tests {
         let popup_wid = iced::window::Id::unique();
         app.register_menu_popup(
             popup_wid,
-            surfaces::PopupMeta {
+            super::super::foreground::MenuPopupMeta {
                 service: "svc".into(),
                 menu_path,
                 tree,
@@ -685,7 +665,7 @@ mod tests {
         let popup_wid = iced::window::Id::unique();
         app.register_menu_popup(
             popup_wid,
-            surfaces::PopupMeta {
+            super::super::foreground::MenuPopupMeta {
                 service: "svc".into(),
                 menu_path,
                 tree,
@@ -751,7 +731,7 @@ mod tests {
         let popup_wid = iced::window::Id::unique();
         app.register_menu_popup(
             popup_wid,
-            surfaces::PopupMeta {
+            super::super::foreground::MenuPopupMeta {
                 service: "svc".into(),
                 menu_path,
                 tree,
@@ -791,7 +771,7 @@ mod tests {
         let popup_wid = iced::window::Id::unique();
         app.register_menu_popup(
             popup_wid,
-            surfaces::PopupMeta {
+            super::super::foreground::MenuPopupMeta {
                 service: "svc".into(),
                 menu_path,
                 tree,
@@ -817,7 +797,7 @@ mod tests {
 
         let tasks = app.close_all_menu_popups();
 
-        assert!(app.surfaces.popup(wid).is_none());
+        assert_eq!(app.foreground.active_menu_window(), None);
         assert!(app.foreground.menu_session(wid).is_none());
         assert_eq!(tasks.len(), 1);
     }
@@ -830,10 +810,8 @@ mod tests {
 
         let _ = app.open_menu_popup("org.next".into(), new_path, menu_tree((24, 12)), test_wid());
 
-        assert!(app.surfaces.popup(old_wid).is_none());
         assert!(app.foreground.is_menu_window(old_wid));
         assert_eq!(app.foreground.active_menu_window(), None);
-        assert!(app.surfaces.popups.is_empty());
     }
 
     #[test]
@@ -852,12 +830,9 @@ mod tests {
             old_wid,
         )));
 
-        assert!(app.surfaces.closing_menu_popups.is_empty());
-        assert!(!app.surfaces.has_pending_menu_for_test());
         let popup = app
-            .surfaces
-            .popup_values()
-            .next()
+            .foreground
+            .active_menu_meta()
             .expect("pending popup should open");
         assert_eq!(popup.service, "org.next");
         assert_eq!(popup.menu_path, new_path);
@@ -888,7 +863,10 @@ mod tests {
             tree,
         });
 
-        let popup = app.surfaces.popup(wid).expect("popup should stay open");
+        let popup = app
+            .foreground
+            .active_menu_meta_for_window(wid)
+            .expect("popup should stay open");
         assert_eq!(popup.tree.items[0].label, "Updated");
         assert_eq!(popup.tree.anchor, (12, 34));
         let _ = task;

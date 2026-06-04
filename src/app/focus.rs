@@ -39,7 +39,7 @@ impl App {
         if !close_tt.is_empty() {
             return Task::batch(close_tt);
         }
-        if self.surfaces.has_popup(window) {
+        if self.foreground.is_menu_window(window) {
             return Task::done(Message::Menu(super::messages::MenuEvent::Closed));
         }
         let s = self.surface_mut(window);
@@ -61,7 +61,7 @@ impl App {
         window: iced::window::Id,
         forward: bool,
     ) -> Task<Message> {
-        if self.surfaces.has_popup(window) {
+        if self.foreground.is_menu_window(window) {
             self.popup_nav_step(window, forward);
             return Task::none();
         }
@@ -135,7 +135,7 @@ impl App {
         if self.foreground.is_panel_window(window) {
             return self.handle_panel_event(super::messages::PanelEvent::Activate);
         }
-        if self.surfaces.has_popup(window) {
+        if self.foreground.is_menu_window(window) {
             let focused = self.foreground.focused_menu_item(window);
             if let Some(item_id) = focused {
                 let menu_item_id: i32 = item_id.parse().unwrap_or(0);

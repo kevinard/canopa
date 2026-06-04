@@ -454,7 +454,7 @@ mod tests {
         let popup = iced::window::Id::unique();
         app.register_menu_popup(
             popup,
-            super::super::surfaces::PopupMeta {
+            super::super::foreground::MenuPopupMeta {
                 service: "org.test".into(),
                 menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
                 tree: MenuTree {
@@ -563,7 +563,7 @@ mod tests {
                 anchor: None,
             },
         ));
-        let panel = app.surfaces.panel_popup_ids().next().expect("panel");
+        let panel = app.foreground.active_panel_window().expect("panel");
         let _ = app.view(panel);
 
         let started = std::time::Instant::now();

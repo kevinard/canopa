@@ -585,19 +585,28 @@ mod tests {
         let origin = iced::window::Id::unique();
         app.surface_mut(origin);
         open_module_detail(&mut app, origin, "detail");
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            1
+        );
 
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::Detail {
             target: ModuleId::new("detail"),
             message: ModuleDetailMessage::new(DetailTestMessage::ModuleOwned),
         }));
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            1
+        );
 
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::Detail {
             target: ModuleId::new("detail"),
             message: ModuleDetailMessage::new(DetailTestMessage::ClosePanel),
         }));
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            0
+        );
     }
 
     #[test]

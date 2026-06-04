@@ -48,34 +48,8 @@ pub(super) enum BarSurfaceLifecycleEffect {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct PopupMeta {
-    pub(super) service: String,
-    pub(super) menu_path: zbus::zvariant::OwnedObjectPath,
-    pub(super) tree: crate::surface::menu_popup::MenuTree,
-    pub(super) origin: BarSurfaceIdentity,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct PanelMeta {
-    pub(super) origin_window: iced::window::Id,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub(super) enum RegistryEffect {
-    PanelClosed {
-        window: iced::window::Id,
-    },
-    MenuClosed {
-        window: iced::window::Id,
-        meta: PopupMeta,
-    },
-    TooltipClosed {
-        window: iced::window::Id,
-    },
-    PendingMenuReady(PopupMeta),
-    #[cfg(test)]
-    SuspendBarKeyboardInteractivity,
-    RestoreBarKeyboardInteractivity,
+    TooltipClosed { window: iced::window::Id },
 }
 
 fn render_to_segments(
@@ -163,12 +137,7 @@ pub(super) struct SurfaceManager {
     pub(super) surfaces: HashMap<iced::window::Id, SurfaceState>,
     pub(super) pending_surface_keys: HashMap<iced::window::Id, (String, String)>,
     pub(super) manual_outputs: bool,
-    pub(super) popups: HashMap<iced::window::Id, PopupMeta>,
-    pub(super) closing_panel_popups: HashSet<iced::window::Id>,
-    pub(super) closing_menu_popups: HashMap<iced::window::Id, PopupMeta>,
-    pub(super) pending_menu_popup: Option<PopupMeta>,
     pub(super) tooltip_popups: HashMap<iced::window::Id, TooltipPopup>,
-    pub(super) panel_popups: HashMap<iced::window::Id, PanelMeta>,
     pub(super) last_cursor: Option<(iced::window::Id, iced::Point)>,
 }
 
@@ -182,12 +151,7 @@ impl SurfaceManager {
             surfaces,
             pending_surface_keys,
             manual_outputs,
-            popups: HashMap::new(),
-            closing_panel_popups: HashSet::new(),
-            closing_menu_popups: HashMap::new(),
-            pending_menu_popup: None,
             tooltip_popups: HashMap::new(),
-            panel_popups: HashMap::new(),
             last_cursor: None,
         }
     }
@@ -293,21 +257,15 @@ impl SurfaceManager {
             .filter(|(identity, _)| !desired_identities.contains(identity))
             .collect();
         stale.sort_by_key(|(_, window)| format!("{window:?}"));
-        for (identity, window) in stale {
+        for (_identity, window) in stale {
             self.surfaces.remove(&window);
             effects.extend(
-                self.close_overlays_for_bar_surface(window, &identity)
+                self.close_tooltips_for_surface(window)
                     .into_iter()
-                    .filter_map(|effect| match effect {
-                        RegistryEffect::PanelClosed { window }
-                        | RegistryEffect::MenuClosed { window, .. }
-                        | RegistryEffect::TooltipClosed { window } => {
-                            Some(BarSurfaceLifecycleEffect::RemoveWindow(window))
+                    .map(|effect| match effect {
+                        RegistryEffect::TooltipClosed { window } => {
+                            BarSurfaceLifecycleEffect::RemoveWindow(window)
                         }
-                        #[cfg(test)]
-                        RegistryEffect::SuspendBarKeyboardInteractivity => None,
-                        RegistryEffect::RestoreBarKeyboardInteractivity
-                        | RegistryEffect::PendingMenuReady(_) => None,
                     }),
             );
             effects.push(BarSurfaceLifecycleEffect::RemoveWindow(window));
@@ -343,106 +301,6 @@ impl SurfaceManager {
         candidates.into_iter().map(|(_, window)| window).next()
     }
 
-    fn close_overlays_for_bar_surface(
-        &mut self,
-        target_surface: iced::window::Id,
-        identity: &BarSurfaceIdentity,
-    ) -> Vec<RegistryEffect> {
-        let mut effects = self.close_tooltips_for_surface(target_surface);
-        let closing_panels: Vec<_> = self
-            .panel_popups
-            .iter()
-            .filter_map(|(window, meta)| (meta.origin_window == target_surface).then_some(*window))
-            .collect();
-        for window in &closing_panels {
-            if self.panel_popups.remove(window).is_some() {
-                self.closing_panel_popups.insert(*window);
-                effects.push(RegistryEffect::PanelClosed { window: *window });
-            }
-        }
-        if !closing_panels.is_empty() {
-            effects.push(RegistryEffect::RestoreBarKeyboardInteractivity);
-        }
-        let closing_menus: Vec<_> = self
-            .popups
-            .iter()
-            .filter_map(|(window, meta)| (&meta.origin == identity).then_some(*window))
-            .collect();
-        for window in &closing_menus {
-            if let Some(meta) = self.popups.remove(window) {
-                self.closing_menu_popups.insert(*window, meta);
-            }
-        }
-        effects.extend(closing_menus.into_iter().filter_map(|window| {
-            self.closing_menu_popups
-                .get(&window)
-                .cloned()
-                .map(|meta| RegistryEffect::MenuClosed { window, meta })
-        }));
-        effects
-    }
-
-    pub(super) fn popup(&self, id: iced::window::Id) -> Option<&PopupMeta> {
-        self.popups.get(&id)
-    }
-
-    pub(super) fn popup_values(&self) -> impl Iterator<Item = &PopupMeta> {
-        self.popups.values()
-    }
-
-    #[cfg(test)]
-    pub(super) fn insert_popup(&mut self, id: iced::window::Id, meta: PopupMeta) {
-        self.popups.insert(id, meta);
-    }
-
-    pub(super) fn remove_popup(&mut self, id: iced::window::Id) -> Option<PopupMeta> {
-        self.popups.remove(&id)
-    }
-
-    pub(super) fn has_popup(&self, id: iced::window::Id) -> bool {
-        self.popups.contains_key(&id) || self.closing_menu_popups.contains_key(&id)
-    }
-
-    pub(super) fn has_any_popup(&self) -> bool {
-        !self.popups.is_empty()
-            || !self.closing_panel_popups.is_empty()
-            || !self.closing_menu_popups.is_empty()
-            || !self.tooltip_popups.is_empty()
-            || !self.panel_popups.is_empty()
-    }
-
-    pub(super) fn has_any_menu_popup(&self) -> bool {
-        !self.popups.is_empty() || !self.closing_menu_popups.is_empty()
-    }
-
-    #[cfg(test)]
-    pub(super) fn panel_popup(&self, window: iced::window::Id) -> Option<&PanelMeta> {
-        self.panel_popups.get(&window)
-    }
-
-    pub(super) fn insert_panel_popup(&mut self, window: iced::window::Id, meta: PanelMeta) {
-        self.panel_popups.insert(window, meta);
-    }
-
-    pub(super) fn remove_panel_popup(&mut self, window: iced::window::Id) -> Option<PanelMeta> {
-        self.panel_popups.remove(&window)
-    }
-
-    #[cfg(test)]
-    pub(super) fn panel_popup_ids(&self) -> impl Iterator<Item = iced::window::Id> + '_ {
-        self.panel_popups.keys().copied()
-    }
-
-    #[cfg(test)]
-    pub(super) fn panel_popup_values(&self) -> impl Iterator<Item = &PanelMeta> {
-        self.panel_popups.values()
-    }
-
-    #[cfg(test)]
-    pub(super) fn has_panel_popup(&self, window: iced::window::Id) -> bool {
-        self.panel_popups.contains_key(&window)
-    }
-
     pub(super) fn tooltip_popup(&self, window: iced::window::Id) -> Option<&TooltipPopup> {
         self.tooltip_popups.get(&window)
     }
@@ -466,94 +324,10 @@ impl SurfaceManager {
         self.tooltip_popups.remove(&window)
     }
 
-    #[cfg(test)]
-    pub(super) fn open_panel_overlay(
-        &mut self,
-        origin_surface: iced::window::Id,
-        panel_window: iced::window::Id,
-        meta: PanelMeta,
-    ) -> Vec<RegistryEffect> {
-        self.pending_menu_popup = None;
-        let mut effects = self.close_menu_overlays();
-        effects.extend(self.close_tooltips_for_surface(origin_surface));
-        effects.extend(self.close_panel_overlays_without_restore());
-        self.panel_popups.insert(panel_window, meta);
-        effects.push(RegistryEffect::SuspendBarKeyboardInteractivity);
-        effects
-    }
-
-    #[cfg(test)]
-    pub(super) fn open_menu_overlay(
-        &mut self,
-        menu_window: iced::window::Id,
-        meta: PopupMeta,
-    ) -> Vec<RegistryEffect> {
-        let mut effects = self.close_tooltip_overlays();
-        effects.extend(self.close_panel_overlays_without_restore());
-        if self.has_any_menu_popup() {
-            self.pending_menu_popup = Some(meta);
-            effects.extend(self.close_menu_overlays());
-            return effects;
-        }
-
-        self.popups.insert(menu_window, meta);
-        effects
-    }
-
-    pub(super) fn clear_pending_menu_popup(&mut self) {
-        self.pending_menu_popup = None;
-    }
-
-    #[cfg(test)]
-    pub(super) fn defer_menu_for_test(&mut self, meta: PopupMeta) {
-        self.pending_menu_popup = Some(meta);
-    }
-
-    #[cfg(test)]
-    pub(super) fn has_pending_menu_for_test(&self) -> bool {
-        self.pending_menu_popup.is_some()
-    }
-
-    pub(super) fn take_ready_pending_menu_popup(&mut self) -> Option<PopupMeta> {
-        if self.has_any_menu_popup() {
-            return None;
-        }
-        self.pending_menu_popup.take()
-    }
-
-    pub(super) fn register_ready_menu_overlay(
-        &mut self,
-        menu_window: iced::window::Id,
-        meta: PopupMeta,
-    ) {
-        self.popups.insert(menu_window, meta);
-    }
-
     pub(super) fn open_tooltip_overlay(&mut self, popup: TooltipPopup) -> Vec<RegistryEffect> {
         let effects = self.close_tooltips_for_surface(popup.target_window);
         self.tooltip_popups.insert(popup.window, popup);
         effects
-    }
-
-    #[cfg(test)]
-    fn close_panel_overlays_without_restore(&mut self) -> Vec<RegistryEffect> {
-        self.panel_popups
-            .drain()
-            .map(|(window, _meta)| {
-                self.closing_panel_popups.insert(window);
-                RegistryEffect::PanelClosed { window }
-            })
-            .collect()
-    }
-
-    pub(super) fn close_menu_overlays(&mut self) -> Vec<RegistryEffect> {
-        self.popups
-            .drain()
-            .map(|(window, meta)| {
-                self.closing_menu_popups.insert(window, meta.clone());
-                RegistryEffect::MenuClosed { window, meta }
-            })
-            .collect()
     }
 
     pub(super) fn close_tooltip_for_surface(
@@ -586,25 +360,6 @@ impl SurfaceManager {
     }
 
     pub(super) fn window_closed(&mut self, window: iced::window::Id) -> Vec<RegistryEffect> {
-        if self.panel_popups.remove(&window).is_some() {
-            return vec![
-                RegistryEffect::PanelClosed { window },
-                RegistryEffect::RestoreBarKeyboardInteractivity,
-            ];
-        }
-        if let Some(meta) = self.popups.remove(&window) {
-            return vec![RegistryEffect::MenuClosed { window, meta }];
-        }
-        if self.closing_panel_popups.remove(&window) {
-            return Vec::new();
-        }
-        if self.closing_menu_popups.remove(&window).is_some() {
-            return self
-                .take_ready_pending_menu_popup()
-                .map(RegistryEffect::PendingMenuReady)
-                .into_iter()
-                .collect();
-        }
         if self.tooltip_popups.remove(&window).is_some() {
             return vec![RegistryEffect::TooltipClosed { window }];
         }
@@ -738,14 +493,12 @@ impl App {
                 Task::none()
             }
             SurfaceInputEffect::WindowClosed(window) if self.foreground.is_panel_window(window) => {
-                self.surfaces.remove_panel_popup(window);
                 let effects = self
                     .foreground
                     .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
                 Task::batch(self.apply_foreground_effects(effects))
             }
             SurfaceInputEffect::ClosingPanelWindowClosed(window) => {
-                self.surfaces.remove_panel_popup(window);
                 let effects = self
                     .foreground
                     .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
@@ -1214,28 +967,8 @@ mod tests {
         }
     }
 
-    fn panel_meta_for_test(
-        _attachment_id: super::super::panel_runtime::PanelAttachmentId,
-        origin_window: iced::window::Id,
-    ) -> PanelMeta {
-        PanelMeta { origin_window }
-    }
-
     fn attachment_id(value: u64) -> super::super::panel_runtime::PanelAttachmentId {
         super::super::panel_runtime::PanelAttachmentId::for_test(value)
-    }
-
-    fn popup_meta_for_identity(identity: BarSurfaceIdentity, service: &str) -> PopupMeta {
-        PopupMeta {
-            service: service.into(),
-            menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
-            tree: crate::surface::menu_popup::MenuTree {
-                items: Vec::new(),
-                anchor: (0, 0),
-                screen_size: (1920, 1080),
-            },
-            origin: identity,
-        }
     }
 
     #[test]
@@ -1254,183 +987,9 @@ mod tests {
     }
 
     #[test]
-    fn panel_popup_storage_tracks_popup_by_window() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let origin = test_wid();
-        let panel = test_wid();
-
-        app.surfaces
-            .insert_panel_popup(panel, panel_meta_for_test(attachment_id(1), origin));
-
-        assert!(app.surfaces.has_panel_popup(panel));
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
-        let meta = app.surfaces.panel_popup(panel).expect("panel popup");
-        assert_eq!(meta.origin_window, origin);
-    }
-
-    #[test]
-    fn panel_closed_effect_carries_panel_window() {
-        let origin = test_wid();
-        let panel = test_wid();
-        let attachment_id = attachment_id(7);
-        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
-        registry.insert_panel_popup(panel, panel_meta_for_test(attachment_id, origin));
-
-        let effects = registry.window_closed(panel);
-
-        assert_eq!(
-            effects,
-            vec![
-                RegistryEffect::PanelClosed { window: panel },
-                RegistryEffect::RestoreBarKeyboardInteractivity,
-            ]
-        );
-    }
-
-    #[test]
-    fn registry_opening_panel_replaces_existing_overlays() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let origin = test_wid();
-        let menu = test_wid();
-        let tooltip = test_wid();
-        let panel = test_wid();
-        app.surfaces
-            .surfaces
-            .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
-        app.register_menu_popup(
-            menu,
-            PopupMeta {
-                service: "org.test".into(),
-                menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
-                tree: crate::surface::menu_popup::MenuTree {
-                    items: Vec::new(),
-                    anchor: (0, 0),
-                    screen_size: (1920, 1080),
-                },
-                origin: BarSurfaceIdentity::new("main", Some("DP-1".into())),
-            },
-        );
-        app.register_tooltip_popup(
-            tooltip,
-            origin,
-            ModuleId::new("clock"),
-            tooltip_tree(crate::config::Edge::Top),
-        );
-
-        let effects = app.surfaces.open_panel_overlay(
-            origin,
-            panel,
-            panel_meta_for_test(attachment_id(2), origin),
-        );
-
-        assert_eq!(
-            effects,
-            vec![
-                super::RegistryEffect::MenuClosed {
-                    window: menu,
-                    meta: PopupMeta {
-                        service: "org.test".into(),
-                        menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
-                        tree: crate::surface::menu_popup::MenuTree {
-                            items: Vec::new(),
-                            anchor: (0, 0),
-                            screen_size: (1920, 1080),
-                        },
-                        origin: BarSurfaceIdentity::new("main", Some("DP-1".into())),
-                    },
-                },
-                super::RegistryEffect::TooltipClosed { window: tooltip },
-                super::RegistryEffect::SuspendBarKeyboardInteractivity,
-            ]
-        );
-        assert!(app.surfaces.panel_popup(panel).is_some());
-        assert!(app.surfaces.popup(menu).is_none());
-        assert!(app.surfaces.tooltip_popup(tooltip).is_none());
-    }
-
-    #[test]
-    fn opening_panel_closes_menu_and_tooltip_discards_pending_menu_and_suspends_keyboard() {
-        let origin = test_wid();
-        let panel = test_wid();
-        let old_menu = test_wid();
-        let tooltip = test_wid();
-        let identity = BarSurfaceIdentity::new("main", Some("DP-1".into()));
-        let mut registry = SurfaceManager::new(
-            [(origin, SurfaceState::new("DP-1".into(), "main".into()))].into(),
-            HashMap::new(),
-            true,
-        );
-        registry.insert_popup(
-            old_menu,
-            popup_meta_for_identity(identity.clone(), "org.old"),
-        );
-        registry.insert_tooltip_popup(TooltipPopup {
-            window: tooltip,
-            target_window: origin,
-            target_module: crate::modules::ModuleId::new("clock"),
-            tree: tooltip_tree(crate::config::Edge::Top),
-        });
-        registry.defer_menu_for_test(popup_meta_for_identity(identity, "org.pending"));
-
-        let effects = registry.open_panel_overlay(
-            origin,
-            panel,
-            panel_meta_for_test(attachment_id(3), origin),
-        );
-
-        assert!(registry.popup(old_menu).is_none());
-        assert!(registry.tooltip_popup(tooltip).is_none());
-        assert!(!registry.has_pending_menu_for_test());
-        assert_eq!(
-            effects,
-            vec![
-                RegistryEffect::MenuClosed {
-                    window: old_menu,
-                    meta: popup_meta_for_identity(
-                        BarSurfaceIdentity::new("main", Some("DP-1".into())),
-                        "org.old"
-                    ),
-                },
-                RegistryEffect::TooltipClosed { window: tooltip },
-                RegistryEffect::SuspendBarKeyboardInteractivity,
-            ]
-        );
-        assert!(registry.panel_popup(panel).is_some());
-    }
-
-    #[test]
-    fn opening_menu_while_menu_is_live_defers_replacement_until_old_window_closes() {
-        let old_menu = test_wid();
-        let identity = BarSurfaceIdentity::new("main", Some("DP-1".into()));
-        let old_meta = popup_meta_for_identity(identity.clone(), "org.old");
-        let new_meta = popup_meta_for_identity(identity, "org.new");
-        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
-        registry.insert_popup(old_menu, old_meta.clone());
-
-        let effects = registry.open_menu_overlay(test_wid(), new_meta.clone());
-
-        assert!(registry.popup(old_menu).is_none());
-        assert!(registry.has_pending_menu_for_test());
-        assert_eq!(
-            effects,
-            vec![RegistryEffect::MenuClosed {
-                window: old_menu,
-                meta: old_meta,
-            }]
-        );
-
-        let followup = registry.window_closed(old_menu);
-
-        assert_eq!(followup, vec![RegistryEffect::PendingMenuReady(new_meta)]);
-        assert!(!registry.has_pending_menu_for_test());
-    }
-
-    #[test]
-    fn removing_bar_surface_closes_only_overlays_for_that_bar_surface_identity() {
+    fn removing_bar_surface_closes_only_tooltips_for_that_bar_surface() {
         let removed_window = test_wid();
         let kept_window = test_wid();
-        let removed_menu = test_wid();
-        let kept_menu = test_wid();
         let mut registry = SurfaceManager::new(
             [
                 (
@@ -1446,20 +1005,6 @@ mod tests {
             HashMap::new(),
             true,
         );
-        registry.insert_popup(
-            removed_menu,
-            popup_meta_for_identity(
-                BarSurfaceIdentity::new("main", Some("DP-1".into())),
-                "org.removed",
-            ),
-        );
-        registry.insert_popup(
-            kept_menu,
-            popup_meta_for_identity(
-                BarSurfaceIdentity::new("main", Some("HDMI-A-1".into())),
-                "org.kept",
-            ),
-        );
 
         let effects = registry.reconcile_bar_surfaces(vec![PlannedBarSurface {
             identity: BarSurfaceIdentity::new("main", Some("HDMI-A-1".into())),
@@ -1467,34 +1012,6 @@ mod tests {
         }]);
 
         assert!(effects.contains(&BarSurfaceLifecycleEffect::RemoveWindow(removed_window)));
-        assert!(registry.popup(removed_menu).is_none());
-        assert!(registry.popup(kept_menu).is_some());
-    }
-
-    #[test]
-    fn registry_does_not_classify_interactive_overlay_windows() {
-        let panel = test_wid();
-        let menu = test_wid();
-        let closing_panel = test_wid();
-        let closing_menu = test_wid();
-        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
-        registry.insert_panel_popup(panel, panel_meta_for_test(attachment_id(4), test_wid()));
-        registry.insert_popup(
-            menu,
-            popup_meta_for_identity(BarSurfaceIdentity::all_screens(), "org.active"),
-        );
-        registry.closing_panel_popups.insert(closing_panel);
-        registry.closing_menu_popups.insert(
-            closing_menu,
-            popup_meta_for_identity(BarSurfaceIdentity::all_screens(), "org.closing"),
-        );
-
-        for window in [panel, menu, closing_panel, closing_menu] {
-            assert_eq!(
-                registry.window_role(Some(window)),
-                crate::app::surface_input_router::WindowRole::Unknown
-            );
-        }
     }
 
     #[test]
@@ -1521,14 +1038,9 @@ mod tests {
     }
 
     #[test]
-    fn registry_prefers_tooltip_over_panel_and_menu_windows() {
+    fn registry_classifies_tooltip_windows() {
         let window = test_wid();
         let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
-        registry.insert_popup(
-            window,
-            popup_meta_for_identity(BarSurfaceIdentity::all_screens(), "org.test"),
-        );
-        registry.insert_panel_popup(window, panel_meta_for_test(attachment_id(4), test_wid()));
         registry.insert_tooltip_popup(TooltipPopup {
             window,
             target_window: test_wid(),
@@ -1540,21 +1052,6 @@ mod tests {
             registry.window_role(Some(window)),
             crate::app::surface_input_router::WindowRole::Tooltip
         );
-    }
-
-    #[test]
-    fn removing_panel_popup_clears_global_popup_state() {
-        let (mut app, _) = App::boot(make_config(), vec![]);
-        let origin = test_wid();
-        let panel = test_wid();
-        app.surfaces
-            .insert_panel_popup(panel, panel_meta_for_test(attachment_id(5), origin));
-
-        let removed = app.surfaces.remove_panel_popup(panel).expect("panel popup");
-
-        assert_eq!(removed.origin_window, origin);
-        assert!(!app.surfaces.has_panel_popup(panel));
-        assert!(!app.surfaces.has_any_popup());
     }
 
     #[test]
@@ -1570,7 +1067,7 @@ mod tests {
 
         let _ = app.handle_surface_event(crate::app::messages::SurfaceEvent::WindowClosed(panel));
 
-        assert!(app.surfaces.panel_popup(panel).is_none());
+        assert!(!app.foreground.is_panel_window(panel));
         assert!(app.surface(origin).unwrap().focused_module.is_none());
     }
 
@@ -1588,7 +1085,10 @@ mod tests {
             crate::app::messages::SurfaceEvent::TogglePanel,
         ));
 
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            0
+        );
     }
 
     #[test]
@@ -1607,8 +1107,11 @@ mod tests {
             crate::app::messages::SurfaceEvent::TogglePanel,
         ));
 
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
-        let panel = app.surfaces.panel_popup_values().next().unwrap();
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            1
+        );
+        let panel = app.foreground.active_panel_tree().unwrap();
         assert_eq!(panel.origin_window, first);
     }
 
@@ -1768,11 +1271,9 @@ mod tests {
     }
 
     #[test]
-    fn registry_reconciliation_closes_stale_surface_and_associated_overlays() {
+    fn registry_reconciliation_closes_stale_surface_and_associated_tooltips() {
         let stale = test_wid();
         let tooltip = test_wid();
-        let panel = test_wid();
-        let menu = test_wid();
         let mut registry = SurfaceManager::new(
             HashMap::from([(stale, SurfaceState::new("DP-1".into(), "main".into()))]),
             HashMap::new(),
@@ -1784,20 +1285,6 @@ mod tests {
             target_module: ModuleId::new("clock"),
             tree: tooltip_tree(crate::config::Edge::Top),
         });
-        registry.insert_panel_popup(panel, panel_meta_for_test(attachment_id(8), stale));
-        registry.insert_popup(
-            menu,
-            PopupMeta {
-                service: "org.test".into(),
-                menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
-                tree: crate::surface::menu_popup::MenuTree {
-                    items: Vec::new(),
-                    anchor: (0, 0),
-                    screen_size: (1920, 1080),
-                },
-                origin: BarSurfaceIdentity::new("main", Some("DP-1".into())),
-            },
-        );
 
         let effects = registry.reconcile_bar_surfaces(Vec::new());
 
@@ -1805,15 +1292,11 @@ mod tests {
             effects,
             vec![
                 BarSurfaceLifecycleEffect::RemoveWindow(tooltip),
-                BarSurfaceLifecycleEffect::RemoveWindow(panel),
-                BarSurfaceLifecycleEffect::RemoveWindow(menu),
                 BarSurfaceLifecycleEffect::RemoveWindow(stale),
             ]
         );
         assert!(registry.surface(stale).is_none());
         assert!(registry.tooltip_popup(tooltip).is_none());
-        assert!(registry.panel_popup(panel).is_none());
-        assert!(registry.popup(menu).is_none());
     }
 
     #[test]

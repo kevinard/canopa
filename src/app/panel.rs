@@ -328,12 +328,6 @@ impl App {
             "opening panel window"
         );
 
-        self.surfaces.insert_panel_popup(
-            panel_window,
-            super::surfaces::PanelMeta {
-                origin_window: tree.origin_window,
-            },
-        );
         let mut tasks = Vec::new();
         self.foreground
             .handle(super::foreground::ForegroundIntent::PanelWindowOpened {
@@ -373,7 +367,6 @@ impl App {
                     tasks.push(self.open_panel_window(tree));
                 }
                 super::foreground::ForegroundEffect::RemoveWindow(window) => {
-                    self.surfaces.remove_panel_popup(window);
                     tasks.push(Task::done(Message::RemoveWindow(window)));
                 }
                 super::foreground::ForegroundEffect::SuspendBarKeyboardInteractivity => {
@@ -394,7 +387,6 @@ impl App {
                     tasks.push(self.open_menu_window(request));
                 }
                 super::foreground::ForegroundEffect::CloseMenu { window, meta } => {
-                    self.surfaces.remove_popup(window);
                     super::overlay_adapter::send_menu_closed_event(
                         self.shared.dbus.session.clone(),
                         meta,
@@ -468,7 +460,6 @@ impl App {
                         .foreground
                         .handle(super::foreground::ForegroundIntent::ClosePanel);
                     if effects.is_empty() {
-                        self.surfaces.remove_panel_popup(window);
                         tasks.push(Task::done(Message::RemoveWindow(window)));
                     } else {
                         tasks.extend(self.apply_foreground_effects(effects));
@@ -1065,7 +1056,10 @@ mod tests {
             content: crate::surface::panel::PanelContent::BarPanel,
             anchor: None,
         }));
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            1
+        );
 
         let _ = app.update(Message::Panel(crate::app::messages::PanelEvent::Open {
             origin_window: origin,
@@ -1073,7 +1067,10 @@ mod tests {
             content: crate::surface::panel::PanelContent::Menu("main".into()),
             anchor: None,
         }));
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            1
+        );
     }
 
     #[test]
@@ -1110,7 +1107,10 @@ mod tests {
 
         let _ = app.update(Message::Panel(crate::app::messages::PanelEvent::Close));
 
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            0
+        );
     }
 
     #[test]
@@ -1366,7 +1366,10 @@ mod tests {
             action,
         );
 
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            1
+        );
     }
 
     #[test]
@@ -1715,7 +1718,7 @@ mod tests {
             .collect::<Vec<_>>();
         let mut app = app_with_installed_apps_menu(apps);
         open_apps_menu_panel(&mut app);
-        let panel_window = app.surfaces.panel_popup_ids().next().expect("panel window");
+        let panel_window = app.foreground.active_panel_window().expect("panel window");
 
         let started = std::time::Instant::now();
         for index in 0..100 {
@@ -1877,7 +1880,10 @@ mod tests {
     fn activating_installed_app_closes_panel() {
         let mut app = app_with_installed_apps_menu(vec![installed_app("Alpha", "alpha.desktop")]);
         open_apps_menu_panel(&mut app);
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            1
+        );
 
         let _ = app.update(Message::Panel(
             crate::app::messages::PanelEvent::ActivateIndex(0),
@@ -1887,7 +1893,10 @@ mod tests {
             app.panel.launched_installed_app_ids_for_test,
             vec!["alpha.desktop"]
         );
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 0);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            0
+        );
     }
 
     #[test]
@@ -1911,7 +1920,10 @@ mod tests {
         let mut app = app_with_installed_apps_menu(vec![]);
         open_apps_menu_panel(&mut app);
 
-        assert_eq!(app.surfaces.panel_popup_ids().count(), 1);
+        assert_eq!(
+            usize::from(app.foreground.active_panel_window().is_some()),
+            1
+        );
         assert!(active_menu_entries(&app).is_empty());
     }
 
@@ -2070,7 +2082,7 @@ mod tests {
         let tasks = app.close_all_panels();
 
         assert!(!tasks.is_empty());
-        assert!(app.surfaces.panel_popup(tracked_panel).is_none());
+        assert!(!app.foreground.is_panel_window(tracked_panel));
     }
 
     #[test]
@@ -2165,10 +2177,9 @@ mod tests {
         );
         app.register_panel_popup(second_window, origin, second_attachment);
 
-        let _ =
-            app.apply_registry_effects(vec![super::super::surfaces::RegistryEffect::PanelClosed {
-                window: first_window,
-            }]);
+        let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::WindowClosed(
+            first_window,
+        ));
 
         assert_eq!(app.panel.active_panel_window(), Some(second_window));
         assert!(
@@ -2181,8 +2192,8 @@ mod tests {
                 .panel_tree_for_attachment(first_attachment)
                 .is_none()
         );
-        assert!(app.surfaces.panel_popup(first_window).is_none());
-        assert!(app.surfaces.panel_popup(second_window).is_some());
+        assert!(!app.foreground.is_panel_window(first_window));
+        assert!(app.foreground.is_panel_window(second_window));
     }
 
     #[test]
@@ -2238,7 +2249,7 @@ mod tests {
             ""
         );
         assert!(app.panel.search_focus_pending());
-        assert!(app.surfaces.has_panel_popup(panel));
+        assert!(app.foreground.is_panel_window(panel));
     }
 
     #[test]
