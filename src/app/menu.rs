@@ -171,9 +171,16 @@ impl App {
     }
 
     pub(super) fn close_all_menu_popups(&mut self) -> Vec<Task<Message>> {
-        self.surfaces.clear_pending_menu_popup();
-        let effects = self.surfaces.close_menu_overlays();
-        self.apply_registry_effects(effects)
+        let effects = self
+            .foreground
+            .handle(super::foreground::ForegroundIntent::CloseMenu);
+        if effects.is_empty() {
+            self.surfaces.clear_pending_menu_popup();
+            let effects = self.surfaces.close_menu_overlays();
+            self.apply_registry_effects(effects)
+        } else {
+            self.apply_foreground_effects(effects)
+        }
     }
 
     pub(super) fn restore_bar_keyboard_interactivity(&mut self) -> Vec<Task<Message>> {
@@ -263,7 +270,7 @@ impl App {
         tree: crate::surface::menu_popup::MenuTree,
         origin_window: iced::window::Id,
     ) -> Task<Message> {
-        self.spawn_menu_popup(super::surfaces::PopupMeta {
+        let meta = super::surfaces::PopupMeta {
             service,
             menu_path,
             tree,
@@ -271,29 +278,27 @@ impl App {
                 .surfaces
                 .bar_surface_identity_for_window(origin_window)
                 .unwrap_or_else(super::surfaces::BarSurfaceIdentity::all_screens),
-        })
+        };
+        let effects = self
+            .foreground
+            .handle(super::foreground::ForegroundIntent::OpenMenu { meta });
+        Task::batch(self.apply_foreground_effects(effects))
     }
 
-    fn spawn_menu_popup(&mut self, meta: super::surfaces::PopupMeta) -> Task<Message> {
+    pub(super) fn open_menu_window(&mut self, meta: super::surfaces::PopupMeta) -> Task<Message> {
         let bar = Self::bar_for_surface_identity(&self.config.bars, &meta.origin);
         let settings = menu_popup_window_settings(&bar.edge, bar.collapsed_width, &meta.tree);
         let (popup_id, open_task) = Message::popup_open(settings);
-        let effects = self.surfaces.open_menu_overlay(popup_id, meta);
-        let open_now = self.surfaces.popup(popup_id).is_some();
-        let mut tasks = self.apply_registry_effects(effects);
-        if open_now {
-            if let Some(meta) = self.surfaces.popup(popup_id).cloned() {
-                self.menu
-                    .open_window(popup_id, meta.tree.clone(), self.sni_menu_search_enabled());
-                self.foreground
-                    .handle(super::foreground::ForegroundIntent::MenuWindowOpened {
-                        window: popup_id,
-                        meta,
-                    });
-            }
-            tasks.push(open_task);
-        }
-        Task::batch(tasks)
+        self.surfaces
+            .register_ready_menu_overlay(popup_id, meta.clone());
+        self.menu
+            .open_window(popup_id, meta.tree.clone(), self.sni_menu_search_enabled());
+        self.foreground
+            .handle(super::foreground::ForegroundIntent::MenuWindowOpened {
+                window: popup_id,
+                meta,
+            });
+        open_task
     }
 
     pub(super) fn open_ready_menu_popup(
@@ -882,8 +887,8 @@ mod tests {
         let _ = app.open_menu_popup("org.next".into(), new_path, menu_tree((24, 12)), test_wid());
 
         assert!(app.surfaces.popup(old_wid).is_none());
-        assert!(app.surfaces.has_popup(old_wid));
-        assert!(app.surfaces.has_pending_menu_for_test());
+        assert!(app.foreground.is_menu_window(old_wid));
+        assert_eq!(app.foreground.active_menu_window(), None);
         assert!(app.surfaces.popups.is_empty());
     }
 

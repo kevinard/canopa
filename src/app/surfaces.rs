@@ -482,6 +482,7 @@ impl SurfaceManager {
         effects
     }
 
+    #[cfg(test)]
     pub(super) fn open_menu_overlay(
         &mut self,
         menu_window: iced::window::Id,
@@ -534,6 +535,7 @@ impl SurfaceManager {
         effects
     }
 
+    #[cfg(test)]
     fn close_panel_overlays_without_restore(&mut self) -> Vec<RegistryEffect> {
         self.panel_popups
             .drain()
@@ -609,7 +611,7 @@ impl SurfaceManager {
         Vec::new()
     }
 
-    fn close_tooltip_overlays(&mut self) -> Vec<RegistryEffect> {
+    pub(super) fn close_tooltip_overlays(&mut self) -> Vec<RegistryEffect> {
         self.tooltip_popups
             .drain()
             .map(|(window, _)| RegistryEffect::TooltipClosed { window })
@@ -755,6 +757,14 @@ impl App {
                 let effects = self
                     .foreground
                     .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
+                Task::batch(self.apply_foreground_effects(effects))
+            }
+            SurfaceInputEffect::MenuWindowClosed(window)
+                if self.foreground.is_menu_window(window) =>
+            {
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::MenuWindowClosed { window });
                 Task::batch(self.apply_foreground_effects(effects))
             }
             SurfaceInputEffect::WindowClosed(window)

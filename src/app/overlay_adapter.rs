@@ -40,7 +40,9 @@ impl super::App {
         meta: super::surfaces::PopupMeta,
     ) {
         self.menu.open_window(window, meta.tree.clone(), false);
-        self.surfaces.insert_popup(window, meta);
+        self.surfaces.insert_popup(window, meta.clone());
+        self.foreground
+            .handle(super::foreground::ForegroundIntent::MenuWindowOpened { window, meta });
     }
 
     #[cfg(test)]
@@ -103,7 +105,10 @@ impl super::App {
     }
 }
 
-fn send_menu_closed_event(conn: Option<zbus::Connection>, meta: super::surfaces::PopupMeta) {
+pub(super) fn send_menu_closed_event(
+    conn: Option<zbus::Connection>,
+    meta: super::surfaces::PopupMeta,
+) {
     if let Some(conn) = conn {
         tokio::task::spawn(async move {
             let _ = crate::dbus::sni::host::send_menu_event(

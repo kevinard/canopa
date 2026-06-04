@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PanelForegroundRequest {
@@ -61,11 +61,10 @@ pub(super) enum ForegroundIntent {
     PanelWindowClosed {
         window: iced::window::Id,
     },
-    #[cfg(test)]
     OpenMenu {
-        window: iced::window::Id,
         meta: super::surfaces::PopupMeta,
     },
+    CloseMenu,
     MenuWindowOpened {
         window: iced::window::Id,
         meta: super::surfaces::PopupMeta,
@@ -89,6 +88,10 @@ pub(super) enum ForegroundEffect {
     SuspendBarKeyboardInteractivity,
     RestoreBarKeyboardInteractivity,
     CloseTooltipsForSurface(iced::window::Id),
+    CloseAllTooltips,
+    OpenMenuWindow {
+        meta: super::surfaces::PopupMeta,
+    },
     CloseMenu {
         window: iced::window::Id,
         meta: super::surfaces::PopupMeta,
@@ -99,6 +102,8 @@ pub(super) enum ForegroundEffect {
 pub(super) struct Foreground {
     active: Option<ForegroundOverlay>,
     closing_panel_windows: HashSet<iced::window::Id>,
+    closing_menu_windows: HashMap<iced::window::Id, super::surfaces::PopupMeta>,
+    pending_menu: Option<super::surfaces::PopupMeta>,
 }
 
 impl Foreground {
@@ -112,16 +117,13 @@ impl Foreground {
             ForegroundIntent::PanelRuntimePrepared { tree } => self.panel_runtime_prepared(tree),
             ForegroundIntent::PanelWindowOpened { window } => self.panel_window_opened(window),
             ForegroundIntent::PanelWindowClosed { window } => self.panel_window_closed(window),
-            #[cfg(test)]
-            ForegroundIntent::OpenMenu { window, meta } => self.open_menu(window, meta),
+            ForegroundIntent::OpenMenu { meta } => self.open_menu(meta),
+            ForegroundIntent::CloseMenu => self.close_menu(),
             ForegroundIntent::MenuWindowOpened { window, meta } => {
                 self.track_menu_window_opened(window, meta);
                 Vec::new()
             }
-            ForegroundIntent::MenuWindowClosed { window } => {
-                self.menu_window_closed(window);
-                Vec::new()
-            }
+            ForegroundIntent::MenuWindowClosed { window } => self.menu_window_closed(window),
         }
     }
 
@@ -208,7 +210,7 @@ impl Foreground {
     }
 
     pub(super) fn is_menu_window(&self, window: iced::window::Id) -> bool {
-        self.active_menu_window() == Some(window)
+        self.active_menu_window() == Some(window) || self.closing_menu_windows.contains_key(&window)
     }
 
     pub(super) fn window_role(
@@ -268,14 +270,9 @@ impl Foreground {
         }
     }
 
-    #[cfg(test)]
-    fn open_menu(
-        &mut self,
-        window: iced::window::Id,
-        meta: super::surfaces::PopupMeta,
-    ) -> Vec<ForegroundEffect> {
-        let effects = self.close_for_replacement();
-        self.active = Some(ForegroundOverlay::Menu { window, meta });
+    fn open_menu(&mut self, meta: super::surfaces::PopupMeta) -> Vec<ForegroundEffect> {
+        let mut effects = vec![ForegroundEffect::CloseAllTooltips];
+        effects.extend(self.close_for_menu_open(meta));
         effects
     }
 
@@ -291,7 +288,44 @@ impl Foreground {
             }
             Some(ForegroundOverlay::Panel { window: None, .. }) | None => Vec::new(),
             Some(ForegroundOverlay::Menu { window, meta }) => {
+                self.closing_menu_windows.insert(window, meta.clone());
                 vec![ForegroundEffect::CloseMenu { window, meta }]
+            }
+        }
+    }
+
+    fn close_for_menu_open(&mut self, meta: super::surfaces::PopupMeta) -> Vec<ForegroundEffect> {
+        let active = self.active.take();
+        match active {
+            Some(ForegroundOverlay::Panel {
+                window: Some(window),
+                ..
+            }) => {
+                self.closing_panel_windows.insert(window);
+                vec![
+                    ForegroundEffect::RemoveWindow(window),
+                    ForegroundEffect::ClearPanelRuntime,
+                    ForegroundEffect::OpenMenuWindow { meta },
+                ]
+            }
+            Some(ForegroundOverlay::Panel { window: None, .. }) => {
+                vec![
+                    ForegroundEffect::ClearPanelRuntime,
+                    ForegroundEffect::OpenMenuWindow { meta },
+                ]
+            }
+            Some(ForegroundOverlay::Menu { window, meta: old }) => {
+                self.closing_menu_windows.insert(window, old.clone());
+                self.pending_menu = Some(meta);
+                vec![ForegroundEffect::CloseMenu { window, meta: old }]
+            }
+            None => {
+                if self.closing_menu_windows.is_empty() {
+                    vec![ForegroundEffect::OpenMenuWindow { meta }]
+                } else {
+                    self.pending_menu = Some(meta);
+                    Vec::new()
+                }
             }
         }
     }
@@ -351,10 +385,28 @@ impl Foreground {
         Vec::new()
     }
 
-    fn menu_window_closed(&mut self, window: iced::window::Id) {
-        if self.is_menu_window(window) {
-            self.active = None;
+    fn menu_window_closed(&mut self, window: iced::window::Id) -> Vec<ForegroundEffect> {
+        if self.closing_menu_windows.remove(&window).is_some() {
+            return self
+                .pending_menu
+                .take()
+                .map(|meta| vec![ForegroundEffect::OpenMenuWindow { meta }])
+                .unwrap_or_default();
         }
+        if let Some(ForegroundOverlay::Menu {
+            window: current,
+            meta,
+        }) = self.active.take()
+        {
+            if current == window {
+                return vec![ForegroundEffect::CloseMenu { window, meta }];
+            }
+            self.active = Some(ForegroundOverlay::Menu {
+                window: current,
+                meta,
+            });
+        }
+        Vec::new()
     }
 
     fn track_menu_window_opened(
@@ -362,7 +414,23 @@ impl Foreground {
         window: iced::window::Id,
         meta: super::surfaces::PopupMeta,
     ) {
+        self.pending_menu = None;
         self.active = Some(ForegroundOverlay::Menu { window, meta });
+    }
+
+    fn close_menu(&mut self) -> Vec<ForegroundEffect> {
+        self.pending_menu = None;
+        match self.active.take() {
+            Some(ForegroundOverlay::Menu { window, meta }) => {
+                self.closing_menu_windows.insert(window, meta.clone());
+                vec![ForegroundEffect::CloseMenu { window, meta }]
+            }
+            Some(panel @ ForegroundOverlay::Panel { .. }) => {
+                self.active = Some(panel);
+                Vec::new()
+            }
+            None => Vec::new(),
+        }
     }
 
     fn active_panel_matches(&self, request: &PanelForegroundRequest) -> bool {
@@ -436,6 +504,10 @@ mod tests {
             ForegroundEffect::SuspendBarKeyboardInteractivity,
             ForegroundEffect::OpenPanelWindow { tree },
         ]
+    }
+
+    fn menu_open_effect(meta: surfaces::PopupMeta) -> ForegroundEffect {
+        ForegroundEffect::OpenMenuWindow { meta }
     }
 
     #[test]
@@ -610,7 +682,14 @@ mod tests {
         let tree = request.tree();
         let mut foreground = Foreground::default();
 
-        foreground.handle(ForegroundIntent::OpenMenu {
+        assert_eq!(
+            foreground.handle(ForegroundIntent::OpenMenu { meta: meta.clone() }),
+            vec![
+                ForegroundEffect::CloseAllTooltips,
+                menu_open_effect(meta.clone()),
+            ]
+        );
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
             window: menu_window,
             meta: meta.clone(),
         });
@@ -643,34 +722,65 @@ mod tests {
         let mut foreground = Foreground::default();
 
         let first = foreground.handle(ForegroundIntent::OpenMenu {
+            meta: old_meta.clone(),
+        });
+        assert_eq!(
+            first,
+            vec![
+                ForegroundEffect::CloseAllTooltips,
+                menu_open_effect(old_meta.clone()),
+            ]
+        );
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
             window: old_window,
             meta: old_meta.clone(),
         });
-        assert!(first.is_empty());
         assert_eq!(foreground.active_menu_window(), Some(old_window));
         assert_eq!(foreground.active_menu_meta(), Some(&old_meta));
 
         let replacement = foreground.handle(ForegroundIntent::OpenMenu {
-            window: current_window,
             meta: current_meta.clone(),
         });
         assert_eq!(
             replacement,
-            vec![ForegroundEffect::CloseMenu {
-                window: old_window,
-                meta: old_meta,
-            }]
+            vec![
+                ForegroundEffect::CloseAllTooltips,
+                ForegroundEffect::CloseMenu {
+                    window: old_window,
+                    meta: old_meta,
+                },
+            ]
+        );
+        assert_eq!(foreground.active_menu_window(), None);
+        assert!(foreground.is_menu_window(old_window));
+
+        assert_eq!(
+            foreground.handle(ForegroundIntent::MenuWindowClosed { window: old_window }),
+            vec![menu_open_effect(current_meta.clone())]
+        );
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
+            window: current_window,
+            meta: current_meta.clone(),
+        });
+        assert_eq!(foreground.active_menu_window(), Some(current_window));
+        assert_eq!(foreground.active_menu_meta(), Some(&current_meta));
+
+        assert_eq!(
+            foreground.handle(ForegroundIntent::MenuWindowClosed { window: old_window }),
+            Vec::<ForegroundEffect>::new()
         );
         assert_eq!(foreground.active_menu_window(), Some(current_window));
-        assert_eq!(foreground.active_menu_meta(), Some(&current_meta));
 
-        foreground.handle(ForegroundIntent::MenuWindowClosed { window: old_window });
-        assert_eq!(foreground.active_menu_window(), Some(current_window));
-        assert_eq!(foreground.active_menu_meta(), Some(&current_meta));
-
-        foreground.handle(ForegroundIntent::MenuWindowClosed {
+        let current_close = foreground.handle(ForegroundIntent::MenuWindowClosed {
             window: current_window,
         });
+        assert_eq!(
+            current_close,
+            vec![ForegroundEffect::CloseMenu {
+                window: current_window,
+                meta: current_meta,
+            }]
+        );
         assert!(foreground.active_overlay().is_none());
     }
 
@@ -688,14 +798,20 @@ mod tests {
             window: panel_window,
         });
 
-        let menu_effects = foreground.handle(ForegroundIntent::OpenMenu {
+        let menu_effects = foreground.handle(ForegroundIntent::OpenMenu { meta: meta.clone() });
+        assert_eq!(
+            menu_effects,
+            vec![
+                ForegroundEffect::CloseAllTooltips,
+                ForegroundEffect::RemoveWindow(panel_window),
+                ForegroundEffect::ClearPanelRuntime,
+                menu_open_effect(meta.clone()),
+            ]
+        );
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
             window: menu_window,
             meta: meta.clone(),
         });
-        assert_eq!(
-            menu_effects,
-            vec![ForegroundEffect::RemoveWindow(panel_window)]
-        );
         assert_eq!(foreground.active_menu_window(), Some(menu_window));
         assert_eq!(foreground.active_menu_meta(), Some(&meta));
     }
