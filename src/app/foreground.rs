@@ -37,6 +37,20 @@ pub(super) struct MenuForegroundRequest {
     pub(super) search_enabled: bool,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct ForegroundRoleSnapshot {
+    roles: HashMap<iced::window::Id, super::surface_input_router::WindowRole>,
+}
+
+impl ForegroundRoleSnapshot {
+    pub(super) fn role_for(
+        &self,
+        window: Option<iced::window::Id>,
+    ) -> Option<super::surface_input_router::WindowRole> {
+        window.and_then(|window| self.roles.get(&window).copied())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) enum ForegroundOverlay {
     Panel {
@@ -195,6 +209,7 @@ impl Foreground {
         matches!(self.active, Some(ForegroundOverlay::Panel { .. }))
     }
 
+    #[cfg(test)]
     pub(super) fn is_closing_panel_window(&self, window: iced::window::Id) -> bool {
         self.closing_panel_windows.contains(&window)
     }
@@ -318,21 +333,26 @@ impl Foreground {
         self.active_menu_window() == Some(window) || self.closing_menu_windows.contains_key(&window)
     }
 
-    pub(super) fn window_role(
-        &self,
-        window: Option<iced::window::Id>,
-    ) -> Option<super::surface_input_router::WindowRole> {
-        let window = window?;
-        if self.is_closing_panel_window(window) {
-            return Some(super::surface_input_router::WindowRole::ClosingPanel);
+    pub(super) fn role_snapshot(&self) -> ForegroundRoleSnapshot {
+        let mut roles = HashMap::new();
+
+        if let Some(window) = self.active_panel_window() {
+            roles.insert(window, super::surface_input_router::WindowRole::Panel);
         }
-        if self.is_panel_window(window) {
-            return Some(super::surface_input_router::WindowRole::Panel);
+        if let Some(window) = self.active_menu_window() {
+            roles.insert(window, super::surface_input_router::WindowRole::Menu);
         }
-        if self.is_menu_window(window) {
-            return Some(super::surface_input_router::WindowRole::Menu);
+        for window in &self.closing_panel_windows {
+            roles.insert(
+                *window,
+                super::surface_input_router::WindowRole::ClosingPanel,
+            );
         }
-        None
+        for window in self.closing_menu_windows.keys() {
+            roles.insert(*window, super::surface_input_router::WindowRole::Menu);
+        }
+
+        ForegroundRoleSnapshot { roles }
     }
 
     fn prepare_panel(
@@ -1149,5 +1169,77 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["Reload"]
         );
+    }
+
+    #[test]
+    fn role_snapshot_reports_active_and_closing_panel_windows() {
+        let origin = wid();
+        let old_window = wid();
+        let current_window = wid();
+        let mut foreground = Foreground::default();
+
+        foreground.handle(ForegroundIntent::PanelRuntimePrepared {
+            tree: panel_tree(origin, crate::surface::panel::PanelContent::BarPanel),
+        });
+        foreground.handle(ForegroundIntent::PanelWindowOpened { window: old_window });
+        foreground.handle(ForegroundIntent::PanelRuntimePrepared {
+            tree: panel_tree(
+                origin,
+                crate::surface::panel::PanelContent::Menu("main".into()),
+            ),
+        });
+        foreground.handle(ForegroundIntent::PanelWindowOpened {
+            window: current_window,
+        });
+
+        let snapshot = foreground.role_snapshot();
+
+        assert_eq!(
+            snapshot.role_for(Some(old_window)),
+            Some(super::super::surface_input_router::WindowRole::ClosingPanel)
+        );
+        assert_eq!(
+            snapshot.role_for(Some(current_window)),
+            Some(super::super::surface_input_router::WindowRole::Panel)
+        );
+    }
+
+    #[test]
+    fn role_snapshot_reports_active_and_closing_menu_windows() {
+        let old_window = wid();
+        let current_window = wid();
+        let old_request = menu_request("org.old", false);
+        let current_request = menu_request("org.current", false);
+        let mut foreground = Foreground::default();
+
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
+            window: old_window,
+            request: old_request.clone(),
+        });
+        foreground.handle(ForegroundIntent::OpenMenu {
+            request: current_request.clone(),
+        });
+
+        let closing_snapshot = foreground.role_snapshot();
+        assert_eq!(
+            closing_snapshot.role_for(Some(old_window)),
+            Some(super::super::surface_input_router::WindowRole::Menu)
+        );
+        assert_eq!(foreground.active_menu_window(), None);
+
+        foreground.handle(ForegroundIntent::MenuWindowClosed { window: old_window });
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
+            window: current_window,
+            request: current_request,
+        });
+
+        let snapshot = foreground.role_snapshot();
+
+        assert_eq!(snapshot.role_for(Some(old_window)), None);
+        assert_eq!(
+            snapshot.role_for(Some(current_window)),
+            Some(super::super::surface_input_router::WindowRole::Menu)
+        );
+        assert_eq!(snapshot.role_for(None), None);
     }
 }

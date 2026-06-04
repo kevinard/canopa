@@ -646,17 +646,8 @@ impl SurfaceManager {
             return super::surface_input_router::WindowRole::Unknown;
         };
 
-        if self.closing_panel_popups.contains(&window) {
-            return super::surface_input_router::WindowRole::ClosingPanel;
-        }
         if self.tooltip_popups.contains_key(&window) {
             return super::surface_input_router::WindowRole::Tooltip;
-        }
-        if self.panel_popups.contains_key(&window) {
-            return super::surface_input_router::WindowRole::Panel;
-        }
-        if self.popups.contains_key(&window) || self.closing_menu_popups.contains_key(&window) {
-            return super::surface_input_router::WindowRole::Menu;
         }
         if self.surfaces.contains_key(&window) {
             return super::surface_input_router::WindowRole::BarSurface;
@@ -692,7 +683,8 @@ impl App {
         &self,
         window: Option<iced::window::Id>,
     ) -> super::surface_input_router::WindowRole {
-        if let Some(role) = self.foreground.window_role(window) {
+        let foreground_roles = self.foreground.role_snapshot();
+        if let Some(role) = foreground_roles.role_for(window) {
             return role;
         }
         self.surfaces.window_role(window)
@@ -1480,30 +1472,29 @@ mod tests {
     }
 
     #[test]
-    fn registry_classifies_closing_panel_windows() {
-        let window = test_wid();
+    fn registry_does_not_classify_interactive_overlay_windows() {
+        let panel = test_wid();
+        let menu = test_wid();
+        let closing_panel = test_wid();
+        let closing_menu = test_wid();
         let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
-        registry.closing_panel_popups.insert(window);
-
-        assert_eq!(
-            registry.window_role(Some(window)),
-            crate::app::surface_input_router::WindowRole::ClosingPanel
+        registry.insert_panel_popup(panel, panel_meta_for_test(attachment_id(4), test_wid()));
+        registry.insert_popup(
+            menu,
+            popup_meta_for_identity(BarSurfaceIdentity::all_screens(), "org.active"),
         );
-    }
-
-    #[test]
-    fn registry_classifies_closing_menu_windows_as_menu_for_input_routing() {
-        let window = test_wid();
-        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
+        registry.closing_panel_popups.insert(closing_panel);
         registry.closing_menu_popups.insert(
-            window,
-            popup_meta_for_identity(BarSurfaceIdentity::all_screens(), "org.test"),
+            closing_menu,
+            popup_meta_for_identity(BarSurfaceIdentity::all_screens(), "org.closing"),
         );
 
-        assert_eq!(
-            registry.window_role(Some(window)),
-            crate::app::surface_input_router::WindowRole::Menu
-        );
+        for window in [panel, menu, closing_panel, closing_menu] {
+            assert_eq!(
+                registry.window_role(Some(window)),
+                crate::app::surface_input_router::WindowRole::Unknown
+            );
+        }
     }
 
     #[test]
@@ -1575,8 +1566,7 @@ mod tests {
             .surfaces
             .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
         app.surface_mut(origin).focused_module = Some(ModuleId::new("clock"));
-        app.surfaces
-            .insert_panel_popup(panel, panel_meta_for_test(attachment_id(6), origin));
+        app.register_panel_popup(panel, origin, attachment_id(6));
 
         let _ = app.handle_surface_event(crate::app::messages::SurfaceEvent::WindowClosed(panel));
 
