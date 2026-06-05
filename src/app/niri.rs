@@ -133,11 +133,7 @@ impl App {
                         }
 
                         let updated = self.niri.state().workspaces.clone();
-                        for workspace in &updated {
-                            for (_, module) in &mut self.modules {
-                                module.update_workspace(workspace);
-                            }
-                        }
+                        self.reconcile_workspace_dynamic_modules(&updated);
                     }
                     Event::WorkspaceActiveWindowChanged {
                         workspace_id,

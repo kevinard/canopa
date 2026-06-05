@@ -68,9 +68,10 @@ impl App {
             .get(&id)
             .map(|module| module.kind().runtime_name())
             .unwrap_or("unknown");
+        let module_name = self.configured_module_name_for_instance(&id);
         tracing::trace!(
             target: "niribar::modules",
-            module_name = self.modules.diagnostic_name_for(&id),
+            module_name = module_name.as_str(),
             module_kind,
             module_event = super::messages::module_event_diagnostic_label(&event),
             "module event received"
@@ -170,9 +171,10 @@ impl App {
         if let Some(action) =
             trigger.and_then(|trigger| self.modules.action_for(id, &trigger).cloned())
         {
+            let module_name = self.configured_module_name_for_instance(id);
             tracing::debug!(
                 target: "niribar::modules",
-                module_name = self.modules.diagnostic_name_for(id),
+                module_name = module_name.as_str(),
                 has_anchor = super::panel::panel_action_needs_anchor(&action),
                 "dispatching configured module action"
             );
@@ -201,9 +203,10 @@ impl App {
         }
 
         if let Some(msg) = self.modules.module_owned_interaction(id, event) {
+            let module_name = self.configured_module_name_for_instance(id);
             tracing::trace!(
                 target: "niribar::modules",
-                module_name = self.modules.diagnostic_name_for(id),
+                module_name = module_name.as_str(),
                 "module interaction produced app message"
             );
             return Task::done(msg);
@@ -224,9 +227,10 @@ impl App {
             return Task::none();
         };
 
+        let module_name = self.configured_module_name_for_instance(id);
         tracing::trace!(
             target: "niribar::modules",
-            module_name = self.modules.diagnostic_name_for(id),
+            module_name = module_name.as_str(),
             "keyboard module interaction produced app message"
         );
 

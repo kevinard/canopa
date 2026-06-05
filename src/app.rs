@@ -219,8 +219,10 @@ impl App {
         let lifecycle_effect_count = effects.len();
         let window_tasks = Self::lifecycle_effects_to_tasks(&config, &mut surfaces, effects);
         let runtime_module_count = module_graph.modules.len();
-        let modules =
+        let mut modules =
             module_runtime::ModuleRuntime::from_modules_with_actions(module_graph.modules);
+        modules
+            .set_dynamic_module_family_inputs(dynamic_modules::family_inputs_from_config(&config));
         let data_sources = module_data_sources::ModuleDataSourceRuntime::from_modules(&modules);
         let app = App {
             config,
@@ -320,7 +322,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::config::Edge;
-    use crate::modules::{MODULE_DESCRIPTORS, ModuleKind, Zone};
+    use crate::modules::{MODULE_DESCRIPTORS, ModuleInteractionProfile, ModuleKind, Zone};
     use crate::niri::NiriEvent;
 
     fn make_config() -> Config {
@@ -447,9 +449,15 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid);
-        app.modules.push(
-            Zone::Start,
-            Box::new(crate::modules::tray::TrayModule::new(ModuleId::new("tray"))),
+        app.modules.insert_with_actions_and_origin(
+            app.modules.len(),
+            (
+                Zone::Start,
+                Box::new(crate::modules::tray::TrayModule::new(ModuleId::new("tray"))),
+            ),
+            crate::config::ModuleActionsConfig::default(),
+            module_runtime::ModuleOrigin::Configured,
+            ModuleInteractionProfile::NONE,
         );
         let point = iced::Point::new(10.0, 20.0);
 

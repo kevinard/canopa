@@ -17,6 +17,7 @@ pub(super) struct ModuleRuntime {
     actions: HashMap<ModuleId, ModuleActionsConfig>,
     origins: HashMap<ModuleId, ModuleOrigin>,
     interactions: HashMap<ModuleId, ModuleInteractionProfile>,
+    dynamic_family_inputs: HashMap<ModuleId, super::dynamic_modules::DynamicModuleFamilyInput>,
 }
 
 impl ModuleRuntime {
@@ -47,9 +48,18 @@ impl ModuleRuntime {
             actions,
             origins,
             interactions,
+            dynamic_family_inputs: HashMap::new(),
         }
     }
 
+    pub(super) fn set_dynamic_module_family_inputs(
+        &mut self,
+        inputs: HashMap<ModuleId, super::dynamic_modules::DynamicModuleFamilyInput>,
+    ) {
+        self.dynamic_family_inputs = inputs;
+    }
+
+    #[cfg(test)]
     pub(super) fn len(&self) -> usize {
         self.store.len()
     }
@@ -77,11 +87,6 @@ impl ModuleRuntime {
         self.store.iter()
     }
 
-    #[cfg(test)]
-    pub(super) fn push(&mut self, zone: Zone, module: Box<dyn Module>) {
-        self.store.push(zone, module);
-    }
-
     pub(super) fn insert_with_actions_and_origin(
         &mut self,
         index: usize,
@@ -101,11 +106,6 @@ impl ModuleRuntime {
         self.interactions.insert(id, interactions);
     }
 
-    pub(super) fn retain(&mut self, keep: impl FnMut(&(Zone, Box<dyn Module>)) -> bool) {
-        self.store.retain(keep);
-        self.prune_metadata_to_retained_ids();
-    }
-
     pub(super) fn take_dynamic_children_for_parent(
         &mut self,
         parent_name: &str,
@@ -116,7 +116,14 @@ impl ModuleRuntime {
             .iter()
             .enumerate()
             .filter(|(_, (_, module))| {
-                module.kind() == child_kind && module.config_name() == Some(parent_name)
+                if module.kind() != child_kind {
+                    return false;
+                }
+                let id = module.id();
+                matches!(
+                    self.origins.get(&id),
+                    Some(ModuleOrigin::ExpandedFrom(parent)) if parent.0 == parent_name
+                )
             })
             .map(|(index, _)| index)
             .collect();
@@ -128,6 +135,17 @@ impl ModuleRuntime {
         }
         removed.reverse();
         removed
+    }
+
+    pub(super) fn take_dynamic_children_by_id(
+        &mut self,
+        parent_name: &str,
+        child_kind: ModuleKind,
+    ) -> HashMap<ModuleId, Box<dyn Module>> {
+        self.take_dynamic_children_for_parent(parent_name, child_kind)
+            .into_iter()
+            .map(|(_, module)| (module.id(), module))
+            .collect()
     }
 
     pub(super) fn prune_metadata_to_retained_ids(&mut self) {
@@ -168,14 +186,6 @@ impl ModuleRuntime {
 
     pub(super) fn get_mut(&mut self, id: &ModuleId) -> Option<&mut (dyn Module + '_)> {
         self.store.get_mut(id)
-    }
-
-    pub(super) fn config_name_for(&self, id: &ModuleId) -> Option<&str> {
-        self.get(id).and_then(Module::config_name)
-    }
-
-    pub(super) fn diagnostic_name_for<'a>(&'a self, id: &'a ModuleId) -> &'a str {
-        self.config_name_for(id).unwrap_or(id.0.as_str())
     }
 
     pub(super) fn action_for(
@@ -223,16 +233,32 @@ impl ModuleRuntime {
     ) -> Option<super::Message> {
         self.get(id).and_then(|module| module.on_interaction(event))
     }
-}
 
-impl super::App {
-    pub(super) fn actions_for_config_module(&self, config_name: &str) -> ModuleActionsConfig {
-        self.config
-            .modules
+    pub(super) fn dynamic_module_runtime_snapshot(
+        &self,
+    ) -> super::dynamic_modules::DynamicModuleRuntimeSnapshot {
+        let entries = self
+            .store
             .iter()
-            .find(|module| module.name == config_name)
-            .map(|module| module.actions.clone())
-            .unwrap_or_default()
+            .enumerate()
+            .map(|(order, (zone, module))| {
+                let id = module.id();
+                let parent = match self.origins.get(&id) {
+                    Some(ModuleOrigin::ExpandedFrom(parent)) => Some(parent.clone()),
+                    Some(ModuleOrigin::Configured) | None => None,
+                };
+                super::dynamic_modules::DynamicModuleRuntimeSnapshotEntry::new(
+                    order,
+                    id.clone(),
+                    module.kind(),
+                    zone.clone(),
+                    parent,
+                    self.actions.get(&id).cloned().unwrap_or_default(),
+                    self.dynamic_family_inputs.get(&id).cloned(),
+                )
+            })
+            .collect();
+        super::dynamic_modules::DynamicModuleRuntimeSnapshot::new(entries)
     }
 }
 
@@ -272,7 +298,9 @@ mod tests {
     use crate::modules::network::{NetworkConnectivity, NetworkEvent};
     use crate::modules::script::ScriptEvent;
     use crate::modules::volume::VolumeEvent;
-    use crate::modules::{ModuleEvent, ModuleId, ModuleKind, ModuleState, Zone};
+    use crate::modules::{
+        Module, ModuleEvent, ModuleId, ModuleInteractionProfile, ModuleKind, ModuleState, Zone,
+    };
     use crate::niri::NiriEvent;
     use zbus::zvariant::OwnedObjectPath;
 
@@ -1017,20 +1045,23 @@ mod tests {
             Event::WorkspacesChanged { workspaces: second },
         ))));
 
-        let layout: Vec<(ModuleKind, Option<String>)> = app
+        let layout: Vec<(ModuleKind, String)> = app
             .modules
             .iter()
-            .map(|(_, m)| (m.kind(), m.config_name().map(str::to_string)))
+            .map(|(_, m)| {
+                let id = m.id();
+                (m.kind(), app.configured_module_name_for_instance(&id))
+            })
             .collect();
         assert_eq!(
             layout,
             vec![
-                (ModuleKind::Workspaces, None),
-                (ModuleKind::WorkspaceItem, Some("workspaces-left".into())),
-                (ModuleKind::WorkspaceItem, Some("workspaces-left".into())),
-                (ModuleKind::Workspaces, None),
-                (ModuleKind::WorkspaceItem, Some("workspaces-right".into())),
-                (ModuleKind::WorkspaceItem, Some("workspaces-right".into())),
+                (ModuleKind::Workspaces, "workspaces-left".into()),
+                (ModuleKind::WorkspaceItem, "workspaces-left".into()),
+                (ModuleKind::WorkspaceItem, "workspaces-left".into()),
+                (ModuleKind::Workspaces, "workspaces-right".into()),
+                (ModuleKind::WorkspaceItem, "workspaces-right".into()),
+                (ModuleKind::WorkspaceItem, "workspaces-right".into()),
             ]
         );
     }
@@ -1039,13 +1070,18 @@ mod tests {
     fn tray_snapshot_removes_existing_tray_icons_before_insert() {
         let (mut app, _) = App::boot(make_tray_config(), vec![]);
 
-        let old_item = tray_item("org.old");
-        app.modules.push(
-            Zone::End,
-            Box::new(crate::modules::tray::TrayIconModule::new(
-                old_item,
-                "tray".into(),
-            )),
+        app.modules.insert_with_actions_and_origin(
+            app.modules.len(),
+            (
+                Zone::End,
+                Box::new(crate::modules::tray::TrayIconModule::new(
+                    tray_item("org.old"),
+                    "tray".into(),
+                )),
+            ),
+            crate::config::ModuleActionsConfig::default(),
+            super::ModuleOrigin::ExpandedFrom(ModuleId::new("tray")),
+            ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
         );
 
         let new_item = tray_item("org.new");
@@ -1055,6 +1091,28 @@ mod tests {
 
         assert!(app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.new"));
         assert!(!app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.old"));
+    }
+
+    #[test]
+    fn dynamic_child_removal_uses_runtime_origin_metadata() {
+        let (mut app, _) = App::boot(make_tray_config(), vec![]);
+        let child = crate::modules::tray::TrayIconModule::new(tray_item("org.old"), "other".into());
+        let child_id = child.id();
+
+        app.modules.insert_with_actions_and_origin(
+            app.modules.len(),
+            (Zone::End, Box::new(child)),
+            crate::config::ModuleActionsConfig::default(),
+            super::ModuleOrigin::ExpandedFrom(ModuleId::new("tray")),
+            ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
+        );
+
+        let removed = app
+            .modules
+            .take_dynamic_children_by_id("tray", ModuleKind::TrayIcon);
+
+        assert!(removed.contains_key(&child_id));
+        assert!(app.modules.get(&child_id).is_none());
     }
 
     #[test]
@@ -1073,7 +1131,7 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_module_name_uses_config_name_for_expanded_modules() {
+    fn diagnostic_module_name_uses_runtime_origin_for_expanded_modules() {
         let (mut app, _) = App::boot(make_tray_config(), vec![]);
 
         let _ = app.update(Message::Tray(TrayRuntimeEvent::Host(TrayEvent::Snapshot(
@@ -1081,8 +1139,7 @@ mod tests {
         ))));
 
         assert_eq!(
-            app.modules
-                .diagnostic_name_for(&ModuleId::new("tray:org.private.App")),
+            app.configured_module_name_for_instance(&ModuleId::new("tray:org.private.App")),
             "tray"
         );
     }
@@ -1188,40 +1245,41 @@ mod tests {
             vec![item_a, item_b],
         ))));
 
-        let layout: Vec<(ModuleKind, Option<String>, String)> = app
+        let layout: Vec<(ModuleKind, String, String)> = app
             .modules
             .iter()
             .map(|(_, m)| {
+                let id = m.id();
                 (
                     m.kind(),
-                    m.config_name().map(str::to_string),
-                    m.id().0.clone(),
+                    app.configured_module_name_for_instance(&id),
+                    id.0.clone(),
                 )
             })
             .collect();
         assert_eq!(
             layout,
             vec![
-                (ModuleKind::Tray, None, "tray-left".into()),
+                (ModuleKind::Tray, "tray-left".into(), "tray-left".into()),
                 (
                     ModuleKind::TrayIcon,
-                    Some("tray-left".into()),
+                    "tray-left".into(),
                     "tray:tray-left:org.a".into()
                 ),
                 (
                     ModuleKind::TrayIcon,
-                    Some("tray-left".into()),
+                    "tray-left".into(),
                     "tray:tray-left:org.b".into()
                 ),
-                (ModuleKind::Tray, None, "tray-right".into()),
+                (ModuleKind::Tray, "tray-right".into(), "tray-right".into()),
                 (
                     ModuleKind::TrayIcon,
-                    Some("tray-right".into()),
+                    "tray-right".into(),
                     "tray:tray-right:org.a".into()
                 ),
                 (
                     ModuleKind::TrayIcon,
-                    Some("tray-right".into()),
+                    "tray-right".into(),
                     "tray:tray-right:org.b".into()
                 ),
             ]

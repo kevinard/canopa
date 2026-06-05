@@ -65,10 +65,22 @@ A specific **Dynamic Module** behavior family with a parent **Module Kind**, chi
 Examples: tray icons produced by the tray **Dynamic Module**, workspace items produced by the workspaces **Dynamic Module**.
 _Avoid_: Generic dynamic module helper, generated module type
 
+**Dynamic Module Family Input**:
+A normalized, family-specific input derived from parent **Module** configuration and inherited runtime metadata before the **Dynamic Module Lifecycle** constructs or updates child **Module Instances**. It contains only facts needed by that **Dynamic Module Family**, not the full typed configuration shape.
+_Avoid_: Raw module config, family options, constructor params
+
 **Dynamic Module Child Fact**:
 A source-shaped runtime fact used by the **Dynamic Module Lifecycle** to construct, update, rebuild, or remove one child **Module Instance** for a **Dynamic Module Family**.
 Examples: an active SNI tray item, a compositor-reported **Workspace**.
 _Avoid_: Child config, generated child state
+
+**Dynamic Module Reconciliation Plan**:
+A pure runtime description of changes the **Dynamic Module Lifecycle** wants applied after reconciling **Dynamic Module Child Facts**, including child **Module Instance** insertion, removal, in-place update, inherited runtime metadata, and stale **Keyboard Focus** or hover cleanup targets. It does not cache expanded **Bar** or **Panel** layouts; layout expansion is a separate pure **Dynamic Module Lifecycle** interface over the current runtime snapshot.
+_Avoid_: App mutation, callback result, generated diff
+
+**Dynamic Module Runtime Snapshot**:
+A narrow, read-only snapshot of the app-owned runtime facts the **Dynamic Module Lifecycle** needs to reconcile or expand **Dynamic Modules**, including ordered **Module Instance** identity, **Module Kind**, **Zone**, parent **Module Name**, current order, inherited **Module Actions**, interaction profile, and normalized **Dynamic Module Family Inputs** needed for child construction. Existing child **Module Instances** cross the snapshot as small child facts rather than full implementations; in-place update families use a narrow update hook instead of exposing all child storage.
+_Avoid_: Module Runtime reference, storage view, full runtime state
 
 **Dynamic Module Lifecycle**:
 The app-owned runtime lifecycle that reconciles **Dynamic Module** child source facts into child **Module Instances**, owns child construction, clears stale child targets, preserves inherited actions and interactions, and expands child placement in **Bar** and **Panel** module layouts.
@@ -371,10 +383,13 @@ _Avoid_: Default config, fallback surface
 - The **Dynamic Module Lifecycle** is explicit about supported **Dynamic Module Families** rather than acting as a generic callback helper.
 - Tray and **Niri Integration** pass **Dynamic Module Child Facts** to the **Dynamic Module Lifecycle**; they do not construct child **Module Instances**.
 - The **Dynamic Module Lifecycle** owns placeholder lookup, **Dynamic Module Child Key** matching, parent **Module** configuration lookup, inherited **Module Actions**, child construction, child reconciliation, stale focus and hover cleanup, inherited actions and interactions, and layout expansion for **Dynamic Modules**.
+- The **Dynamic Module Lifecycle** returns a **Dynamic Module Reconciliation Plan** rather than directly mutating **Module Runtime**.
+- The **Dynamic Module Lifecycle** consumes a **Dynamic Module Runtime Snapshot**, not a raw **Module Runtime** reference.
 - The **Dynamic Module Lifecycle** lives in the app runtime, with **Module Runtime** acting as the storage adapter for ordered **Module Instances**, actions, origins, and interaction profiles.
 - The **Dynamic Module Lifecycle** is stateless; durable child **Module Instance** state remains in **Module Runtime**, and stale visible-target cleanup remains applied through **Bar Surface Registry** state.
-- Child-origin mapping for **Dynamic Modules** is internal to the **Dynamic Module Lifecycle**; other app modules should not inspect child **Module Instances** to infer the parent **Dynamic Module**.
+- Child-origin mapping for **Dynamic Modules** is internal to the **Dynamic Module Lifecycle**; other app modules should ask the lifecycle for the configured **Module Name** instead of inspecting child **Module Instances** to infer the parent **Dynamic Module**.
 - Callback-shaped child replacement methods are transitional implementation details only; future **Dynamic Module Families** should cross the keyed **Dynamic Module Lifecycle** interface.
+- The applied deepening path for **Dynamic Module Lifecycle** routes layout expansion and configured **Module Name** lookup through a **Dynamic Module Runtime Snapshot**, and routes child reconciliation through **Dynamic Module Reconciliation Plans**.
 - The **Dynamic Module Lifecycle** supports per-family child update policy: some **Dynamic Modules** update matching child **Module Instances** in place, while others rebuild matching child **Module Instances** from current child source facts.
 - The **Dynamic Module Lifecycle** owns per-family child ordering policy. Workspace child **Module Instances** are ordered by compositor workspace index; tray child **Module Instances** are ordered deterministically by SNI runtime identity.
 - **Dynamic Module Lifecycle** tests should cover keyed reconciliation, in-place child update, matching-child rebuild, stale **Keyboard Focus** and hover cleanup, inherited **Module Actions** and interaction profiles, and identical expansion in **Bar** and **Panel** module layouts.

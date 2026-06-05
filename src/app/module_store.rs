@@ -54,11 +54,6 @@ impl ModuleStore {
         self.by_kind.get(&kind).map(Vec::as_slice).unwrap_or(&[])
     }
 
-    pub fn push(&mut self, zone: Zone, module: Box<dyn Module>) {
-        self.ordered.push((zone, module));
-        self.rebuild_indexes();
-    }
-
     pub fn insert(&mut self, index: usize, item: (Zone, Box<dyn Module>)) {
         self.ordered.insert(index, item);
         self.rebuild_indexes();
