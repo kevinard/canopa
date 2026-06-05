@@ -20,6 +20,58 @@ pub(super) struct ModuleRuntime {
     dynamic_family_inputs: HashMap<ModuleId, super::dynamic_modules::DynamicModuleFamilyInput>,
 }
 
+pub(super) struct BarModuleRenderRequest<'a> {
+    pub id: ModuleId,
+    pub window: iced::window::Id,
+    pub horizontal: bool,
+    pub expanded: bool,
+    pub style: &'a crate::config::Style,
+    pub state_override: Option<ModuleState>,
+}
+
+pub(super) struct ModuleDetailRenderRequest<'a> {
+    pub id: ModuleId,
+    pub style: &'a crate::config::Style,
+    pub session: Option<&'a crate::modules::ModuleDetailSession>,
+    pub state_override: Option<ModuleState>,
+}
+
+pub(super) enum ModuleRuntimeIntent<'a> {
+    ApplyDataSourceState(crate::modules::data_source::ModuleDataSourceState),
+    MarkDataSourceUnavailable(crate::modules::data_source::ModuleDataSourceIdentity),
+    ModuleInteraction {
+        id: ModuleId,
+        event: crate::modules::InteractionEvent,
+        origin_window: iced::window::Id,
+    },
+    ModuleDetailUpdate {
+        target: ModuleId,
+        session: &'a mut crate::modules::ModuleDetailSession,
+        message: crate::modules::ModuleDetailMessage,
+    },
+    ApplyDynamicModuleReconciliation(super::dynamic_modules::DynamicModuleReconciliationPlan),
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum ModuleRuntimeEffect {
+    RunPanelAction {
+        origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
+        action: crate::config::PanelAction,
+    },
+    RequestActionAnchor {
+        origin_window: iced::window::Id,
+        module: ModuleId,
+        action: crate::config::PanelAction,
+    },
+    EmitMessage(super::Message),
+    ClearSurfaceModuleRefs(Vec<ModuleId>),
+    RequestForegroundPanelAction {
+        action: crate::config::PanelAction,
+    },
+    CloseActivePanel,
+}
+
 impl ModuleRuntime {
     pub(super) fn from_modules_with_actions(
         modules: Vec<(Zone, Box<dyn Module>, ModuleActionsConfig)>,
@@ -83,8 +135,250 @@ impl ModuleRuntime {
         }
     }
 
+    pub(super) fn handle(&mut self, intent: ModuleRuntimeIntent<'_>) -> Vec<ModuleRuntimeEffect> {
+        match intent {
+            ModuleRuntimeIntent::ApplyDataSourceState(state) => {
+                self.apply_data_source_state(state);
+            }
+            ModuleRuntimeIntent::MarkDataSourceUnavailable(identity) => {
+                self.mark_data_source_unavailable(identity);
+            }
+            ModuleRuntimeIntent::ModuleInteraction {
+                id,
+                event,
+                origin_window,
+            } => {
+                return self.handle_module_interaction(id, event, origin_window);
+            }
+            ModuleRuntimeIntent::ModuleDetailUpdate {
+                target,
+                session,
+                message,
+            } => {
+                return self.handle_module_detail_update(target, session, message);
+            }
+            ModuleRuntimeIntent::ApplyDynamicModuleReconciliation(plan) => {
+                return self.apply_dynamic_module_reconciliation_plan(plan);
+            }
+        }
+        Vec::new()
+    }
+
+    fn apply_dynamic_module_reconciliation_plan(
+        &mut self,
+        plan: super::dynamic_modules::DynamicModuleReconciliationPlan,
+    ) -> Vec<ModuleRuntimeEffect> {
+        if plan.is_empty() {
+            return Vec::new();
+        }
+
+        let stale_child_ids = plan.stale_child_ids.clone();
+        for parent in plan.parent_reconciliations {
+            let mut existing =
+                self.take_dynamic_children_by_id(&parent.parent_name, parent.child_kind);
+            let mut children = Vec::with_capacity(parent.children.len());
+            for planned in parent.children {
+                match planned {
+                    super::dynamic_modules::PlannedDynamicChild::Insert(child) => {
+                        children.push(child);
+                    }
+                    super::dynamic_modules::PlannedDynamicChild::UpdateWorkspace {
+                        id,
+                        workspace,
+                    } => {
+                        if let Some(mut child) = existing.remove(&id) {
+                            child.update_workspace(&workspace);
+                            children.push(child);
+                        }
+                    }
+                }
+            }
+
+            for child in children.into_iter().rev() {
+                self.insert_with_actions_and_origin(
+                    parent.insert_after_index + 1,
+                    (parent.zone.clone(), child),
+                    parent.actions.clone(),
+                    ModuleOrigin::ExpandedFrom(parent.parent.clone()),
+                    parent.interactions,
+                );
+            }
+        }
+
+        self.prune_metadata_to_retained_ids();
+        if stale_child_ids.is_empty() {
+            Vec::new()
+        } else {
+            vec![ModuleRuntimeEffect::ClearSurfaceModuleRefs(stale_child_ids)]
+        }
+    }
+
+    pub(super) fn create_module_detail_session(
+        &self,
+        id: &ModuleId,
+    ) -> Option<crate::modules::ModuleDetailSession> {
+        let module = self.get(id)?;
+        let state = self.states.get(id).unwrap_or(&ModuleState::Empty);
+        module.create_module_detail_session(state)
+    }
+
+    fn handle_module_detail_update(
+        &mut self,
+        target: ModuleId,
+        session: &mut crate::modules::ModuleDetailSession,
+        message: crate::modules::ModuleDetailMessage,
+    ) -> Vec<ModuleRuntimeEffect> {
+        let Some(module) = self.get_mut(&target) else {
+            return Vec::new();
+        };
+        let update = module.update_module_detail_session(session, message);
+        Self::module_detail_update_effects(update)
+    }
+
+    fn module_detail_update_effects(
+        update: crate::modules::ModuleDetailUpdate,
+    ) -> Vec<ModuleRuntimeEffect> {
+        update
+            .effects
+            .into_iter()
+            .filter_map(|effect| match effect {
+                crate::modules::ModuleDetailEffect::App(app_effect) => match app_effect {
+                    crate::modules::ModuleDetailAppEffect::PanelAction(action) => {
+                        Some(ModuleRuntimeEffect::RequestForegroundPanelAction { action })
+                    }
+                    crate::modules::ModuleDetailAppEffect::ClosePanel => {
+                        Some(ModuleRuntimeEffect::CloseActivePanel)
+                    }
+                },
+                crate::modules::ModuleDetailEffect::Module(_module_effect) => None,
+            })
+            .collect()
+    }
+
+    fn handle_module_interaction(
+        &self,
+        id: ModuleId,
+        event: crate::modules::InteractionEvent,
+        origin_window: iced::window::Id,
+    ) -> Vec<ModuleRuntimeEffect> {
+        let trigger = match &event {
+            crate::modules::InteractionEvent::Clicked => Some(crate::config::ActionTrigger::Click),
+            crate::modules::InteractionEvent::RightClicked(_) => {
+                Some(crate::config::ActionTrigger::RightClick)
+            }
+            _ => None,
+        };
+
+        if let Some(action) = trigger.and_then(|trigger| self.action_for(&id, &trigger).cloned()) {
+            let module_name = self.configured_module_name_for_instance(&id);
+            tracing::debug!(
+                target: "niribar::modules",
+                module_name = module_name.as_str(),
+                has_anchor = super::panel::panel_action_needs_anchor(&action),
+                "dispatching configured module action"
+            );
+            if super::panel::panel_action_needs_anchor(&action) {
+                return vec![ModuleRuntimeEffect::RequestActionAnchor {
+                    origin_window,
+                    module: id,
+                    action,
+                }];
+            }
+            return vec![ModuleRuntimeEffect::RunPanelAction {
+                origin_window,
+                origin: crate::surface::panel::PanelOrigin::Module(id),
+                action,
+            }];
+        }
+
+        if let Some(message) = self.module_owned_interaction(&id, event) {
+            let module_name = self.configured_module_name_for_instance(&id);
+            tracing::trace!(
+                target: "niribar::modules",
+                module_name = module_name.as_str(),
+                "module interaction produced app message"
+            );
+            return vec![ModuleRuntimeEffect::EmitMessage(message)];
+        }
+
+        Vec::new()
+    }
+
+    fn apply_data_source_state(
+        &mut self,
+        state: crate::modules::data_source::ModuleDataSourceState,
+    ) {
+        let identity = state.identity();
+        let outcomes: Vec<_> = self
+            .data_source_dependents(identity)
+            .into_iter()
+            .filter_map(|id| {
+                self.get(&id)
+                    .map(|module| (id, module.map_data_source_state(&state)))
+            })
+            .collect();
+        self.apply_outcomes(outcomes);
+    }
+
+    fn mark_data_source_unavailable(
+        &mut self,
+        identity: crate::modules::data_source::ModuleDataSourceIdentity,
+    ) {
+        for id in self.data_source_dependents(identity) {
+            self.set_state(id, ModuleState::Unavailable);
+        }
+    }
+
+    pub(super) fn render_bar_module<'a>(
+        &'a self,
+        request: BarModuleRenderRequest<'a>,
+    ) -> Option<iced::Element<'a, super::Message>> {
+        let module = self.get(&request.id)?;
+        let state_override = request.state_override;
+        let state = state_override
+            .as_ref()
+            .or_else(|| self.states.get(&request.id))
+            .unwrap_or(&ModuleState::Empty);
+        Some(module.view_for_bar(
+            state,
+            request.window,
+            request.horizontal,
+            request.expanded,
+            request.style,
+        ))
+    }
+
+    pub(super) fn render_module_detail<'a>(
+        &'a self,
+        request: ModuleDetailRenderRequest<'a>,
+    ) -> Option<iced::Element<'a, super::Message>> {
+        let module = self.get(&request.id)?;
+        let state_override = request.state_override;
+        let state = state_override
+            .as_ref()
+            .or_else(|| self.states.get(&request.id))
+            .unwrap_or(&ModuleState::Empty);
+        Some(module.view_module_detail_session_with_style(state, request.style, request.session))
+    }
+
+    pub(super) fn tooltip_values_for(&self, id: &ModuleId) -> Vec<(&'static str, String)> {
+        let Some(module) = self.get(id) else {
+            return Vec::new();
+        };
+        let state = self.states.get(id).unwrap_or(&ModuleState::Empty);
+        module.tooltip_values(state)
+    }
+
     pub(super) fn iter(&self) -> impl Iterator<Item = &(Zone, Box<dyn Module>)> {
         self.store.iter()
+    }
+
+    pub(super) fn kind_for(&self, id: &ModuleId) -> Option<ModuleKind> {
+        self.get(id).map(Module::kind)
+    }
+
+    pub(super) fn render_state_for(&self, id: &ModuleId) -> ModuleState {
+        self.states.get(id).cloned().unwrap_or_default()
     }
 
     pub(super) fn insert_with_actions_and_origin(
@@ -260,6 +554,20 @@ impl ModuleRuntime {
             .collect();
         super::dynamic_modules::DynamicModuleRuntimeSnapshot::new(entries)
     }
+
+    pub(super) fn configured_module_name_for_instance(&self, id: &ModuleId) -> String {
+        self.dynamic_module_runtime_snapshot()
+            .configured_module_name_for_instance(id)
+            .to_string()
+    }
+
+    pub(super) fn expand_dynamic_module_layout(
+        &self,
+        placements: [(Zone, &[String]); 3],
+    ) -> Vec<(Zone, ModuleId)> {
+        let snapshot = self.dynamic_module_runtime_snapshot();
+        super::dynamic_modules::expand_dynamic_module_layout(&snapshot, placements)
+    }
 }
 
 impl std::ops::Index<usize> for ModuleRuntime {
@@ -410,6 +718,800 @@ mod tests {
             menu_path: None,
             tooltip: None,
         }
+    }
+
+    struct RuntimeQueryTestModule {
+        id: ModuleId,
+        rendered_states: std::sync::Arc<std::sync::Mutex<Vec<ModuleState>>>,
+        detail_sessions: std::sync::Arc<std::sync::Mutex<Vec<bool>>>,
+    }
+
+    impl RuntimeQueryTestModule {
+        fn new(
+            id: &str,
+            rendered_states: std::sync::Arc<std::sync::Mutex<Vec<ModuleState>>>,
+            detail_sessions: std::sync::Arc<std::sync::Mutex<Vec<bool>>>,
+        ) -> Self {
+            Self {
+                id: ModuleId::new(id),
+                rendered_states,
+                detail_sessions,
+            }
+        }
+    }
+
+    impl Module for RuntimeQueryTestModule {
+        fn id(&self) -> ModuleId {
+            self.id.clone()
+        }
+
+        fn kind(&self) -> ModuleKind {
+            ModuleKind::Button
+        }
+
+        fn subscription(&self) -> iced::Subscription<Message> {
+            iced::Subscription::none()
+        }
+
+        fn view_collapsed_with_style(
+            &self,
+            state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            self.rendered_states.lock().unwrap().push(state.clone());
+            iced::widget::text("").into()
+        }
+
+        fn view_panel_with_style(
+            &self,
+            state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            self.rendered_states.lock().unwrap().push(state.clone());
+            iced::widget::text("").into()
+        }
+
+        fn view_module_detail_session_with_style(
+            &self,
+            state: &ModuleState,
+            _bar_style: &crate::config::Style,
+            session: Option<&crate::modules::ModuleDetailSession>,
+        ) -> iced::Element<'_, Message> {
+            self.rendered_states.lock().unwrap().push(state.clone());
+            self.detail_sessions.lock().unwrap().push(session.is_some());
+            iced::widget::text("").into()
+        }
+
+        fn tooltip_values(&self, state: &ModuleState) -> Vec<(&'static str, String)> {
+            let value = match state {
+                ModuleState::Empty => "empty",
+                ModuleState::Button(_) => "button",
+                _ => "other",
+            };
+            vec![("state", value.into())]
+        }
+    }
+
+    struct ModuleOwnedInteractionTestModule {
+        id: ModuleId,
+    }
+
+    impl ModuleOwnedInteractionTestModule {
+        fn new(id: &str) -> Self {
+            Self {
+                id: ModuleId::new(id),
+            }
+        }
+    }
+
+    impl Module for ModuleOwnedInteractionTestModule {
+        fn id(&self) -> ModuleId {
+            self.id.clone()
+        }
+
+        fn kind(&self) -> ModuleKind {
+            ModuleKind::Button
+        }
+
+        fn subscription(&self) -> iced::Subscription<Message> {
+            iced::Subscription::none()
+        }
+
+        fn view_collapsed_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn view_panel_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn on_interaction(&self, event: crate::modules::InteractionEvent) -> Option<Message> {
+            match event {
+                crate::modules::InteractionEvent::ScrollUp => {
+                    Some(Message::VolumeAdjust { step: 5, up: true })
+                }
+                _ => None,
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    enum RuntimeDetailMessage {
+        Add(u32),
+        ClosePanel,
+        RunCommand(String),
+    }
+
+    struct ModuleDetailRuntimeTestModule {
+        id: ModuleId,
+    }
+
+    impl ModuleDetailRuntimeTestModule {
+        fn new(id: &str) -> Self {
+            Self {
+                id: ModuleId::new(id),
+            }
+        }
+    }
+
+    impl Module for ModuleDetailRuntimeTestModule {
+        fn id(&self) -> ModuleId {
+            self.id.clone()
+        }
+
+        fn kind(&self) -> ModuleKind {
+            ModuleKind::Button
+        }
+
+        fn subscription(&self) -> iced::Subscription<Message> {
+            iced::Subscription::none()
+        }
+
+        fn view_collapsed_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn view_panel_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn create_module_detail_session(
+            &self,
+            _state: &ModuleState,
+        ) -> Option<crate::modules::ModuleDetailSession> {
+            Some(Box::new(0_u32))
+        }
+
+        fn update_module_detail_session(
+            &mut self,
+            session: &mut crate::modules::ModuleDetailSession,
+            message: crate::modules::ModuleDetailMessage,
+        ) -> crate::modules::ModuleDetailUpdate {
+            let Some(message) = message.downcast_ref::<RuntimeDetailMessage>() else {
+                return crate::modules::ModuleDetailUpdate::default();
+            };
+            match message {
+                RuntimeDetailMessage::Add(amount) => {
+                    if let Some(value) = session.downcast_mut::<u32>() {
+                        *value += amount;
+                    }
+                    crate::modules::ModuleDetailUpdate::default()
+                }
+                RuntimeDetailMessage::ClosePanel => crate::modules::ModuleDetailUpdate {
+                    effects: vec![crate::modules::ModuleDetailEffect::App(
+                        crate::modules::ModuleDetailAppEffect::ClosePanel,
+                    )],
+                },
+                RuntimeDetailMessage::RunCommand(command) => crate::modules::ModuleDetailUpdate {
+                    effects: vec![crate::modules::ModuleDetailEffect::App(
+                        crate::modules::ModuleDetailAppEffect::PanelAction(
+                            crate::config::PanelAction::Command(
+                                crate::config::CommandConfig::Shell(command.clone()),
+                            ),
+                        ),
+                    )],
+                },
+            }
+        }
+    }
+
+    #[test]
+    fn render_bar_module_uses_current_state_or_empty_fallback() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let button_id = ModuleId::new("button");
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states.clone(),
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let request = super::BarModuleRenderRequest {
+            id: button_id.clone(),
+            window: iced::window::Id::unique(),
+            horizontal: false,
+            expanded: false,
+            style: &crate::config::Style::default(),
+            state_override: None,
+        };
+
+        assert!(runtime.render_bar_module(request).is_some());
+        runtime.set_state(
+            button_id.clone(),
+            ModuleState::Button(crate::modules::button::ButtonState),
+        );
+        let request = super::BarModuleRenderRequest {
+            id: button_id.clone(),
+            window: iced::window::Id::unique(),
+            horizontal: false,
+            expanded: false,
+            style: &crate::config::Style::default(),
+            state_override: None,
+        };
+
+        assert!(runtime.render_bar_module(request).is_some());
+
+        assert_eq!(
+            *rendered_states.lock().unwrap(),
+            vec![
+                ModuleState::Empty,
+                ModuleState::Button(crate::modules::button::ButtonState)
+            ]
+        );
+    }
+
+    #[test]
+    fn render_module_detail_uses_provided_detail_session() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states,
+                detail_sessions.clone(),
+            )),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let button_id = ModuleId::new("button");
+        let session: crate::modules::ModuleDetailSession = Box::new(7_u32);
+        let request = super::ModuleDetailRenderRequest {
+            id: button_id,
+            style: &crate::config::Style::default(),
+            session: Some(&session),
+            state_override: None,
+        };
+
+        assert!(runtime.render_module_detail(request).is_some());
+
+        assert_eq!(*detail_sessions.lock().unwrap(), vec![true]);
+    }
+
+    #[test]
+    fn tooltip_values_for_delegates_with_current_state_and_empty_missing_outcome() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states,
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let button_id = ModuleId::new("button");
+
+        assert_eq!(
+            runtime.tooltip_values_for(&button_id),
+            vec![("state", "empty".into())]
+        );
+
+        runtime.set_state(
+            button_id.clone(),
+            ModuleState::Button(crate::modules::button::ButtonState),
+        );
+
+        assert_eq!(
+            runtime.tooltip_values_for(&button_id),
+            vec![("state", "button".into())]
+        );
+        assert!(
+            runtime
+                .tooltip_values_for(&ModuleId::new("missing"))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn configured_module_name_for_instance_resolves_configured_and_dynamic_children() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states,
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let tray_child =
+            crate::modules::tray::TrayIconModule::new(tray_item("org.test"), "tray".into());
+        let tray_child_id = tray_child.id();
+        runtime.insert_with_actions_and_origin(
+            runtime.len(),
+            (Zone::End, Box::new(tray_child)),
+            crate::config::ModuleActionsConfig::default(),
+            super::ModuleOrigin::ExpandedFrom(ModuleId::new("tray")),
+            ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
+        );
+        let workspace_child = crate::modules::workspaces::WorkspaceItemModule::new(
+            make_workspace(0, true),
+            crate::config::WorkspacesConfig::default(),
+            "workspaces".into(),
+        );
+        let workspace_child_id = workspace_child.id();
+        runtime.insert_with_actions_and_origin(
+            runtime.len(),
+            (Zone::Start, Box::new(workspace_child)),
+            crate::config::ModuleActionsConfig::default(),
+            super::ModuleOrigin::ExpandedFrom(ModuleId::new("workspaces")),
+            ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
+        );
+
+        assert_eq!(
+            runtime.configured_module_name_for_instance(&ModuleId::new("button")),
+            "button"
+        );
+        assert_eq!(
+            runtime.configured_module_name_for_instance(&tray_child_id),
+            "tray"
+        );
+        assert_eq!(
+            runtime.configured_module_name_for_instance(&workspace_child_id),
+            "workspaces"
+        );
+    }
+
+    #[test]
+    fn expand_dynamic_module_layout_expands_parent_placements_to_children() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "tray",
+                rendered_states,
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let tray_child =
+            crate::modules::tray::TrayIconModule::new(tray_item("org.test"), "tray".into());
+        let tray_child_id = tray_child.id();
+        runtime.insert_with_actions_and_origin(
+            runtime.len(),
+            (Zone::Start, Box::new(tray_child)),
+            crate::config::ModuleActionsConfig::default(),
+            super::ModuleOrigin::ExpandedFrom(ModuleId::new("tray")),
+            ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
+        );
+        let start = vec!["tray".to_string(), "missing".to_string()];
+        let center = Vec::new();
+        let end = vec!["tray:org.test".to_string()];
+
+        let layout = runtime.expand_dynamic_module_layout([
+            (Zone::Start, start.as_slice()),
+            (Zone::Center, center.as_slice()),
+            (Zone::End, end.as_slice()),
+        ]);
+
+        assert_eq!(
+            layout,
+            vec![
+                (Zone::Start, tray_child_id.clone()),
+                (Zone::End, tray_child_id),
+            ]
+        );
+    }
+
+    #[test]
+    fn applying_data_source_state_updates_dependent_module_instances_only() {
+        let mut config = Config {
+            modules: vec![
+                ModuleConfig {
+                    name: "battery-main".into(),
+                    module_type: "battery".into(),
+                    params: ModuleParams::Battery(crate::config::BatteryConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
+                },
+                ModuleConfig {
+                    name: "battery-side".into(),
+                    module_type: "battery".into(),
+                    params: ModuleParams::Battery(crate::config::BatteryConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
+                },
+                ModuleConfig {
+                    name: "clock".into(),
+                    module_type: "clock".into(),
+                    params: ModuleParams::Clock(crate::config::ClockConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
+                },
+            ],
+            ..Config::default()
+        };
+        config.bars[0].modules.end =
+            vec!["battery-main".into(), "battery-side".into(), "clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let clock_state = ModuleState::Clock(crate::modules::clock::ClockState {
+            time: "12:00".into(),
+            date: "Fri".into(),
+        });
+        app.modules
+            .set_state(ModuleId::new("clock"), clock_state.clone());
+
+        let effects = app
+            .modules
+            .handle(super::ModuleRuntimeIntent::ApplyDataSourceState(
+                crate::modules::data_source::ModuleDataSourceState::Battery(
+                    crate::modules::data_source::BatteryReading {
+                        percentage: 67.0,
+                        is_charging: true,
+                    },
+                ),
+            ));
+
+        assert!(effects.is_empty());
+        for id in ["battery-main", "battery-side"] {
+            let Some(ModuleState::Battery(state)) = app.modules.state(&ModuleId::new(id)) else {
+                panic!("expected battery state for {id}");
+            };
+            assert!((state.percentage - 67.0).abs() < 0.001);
+            assert!(state.is_charging);
+        }
+        assert_eq!(
+            app.modules.state(&ModuleId::new("clock")),
+            Some(&clock_state)
+        );
+    }
+
+    #[test]
+    fn marking_data_source_unavailable_updates_dependent_module_instances_only() {
+        let mut config = Config {
+            modules: vec![
+                ModuleConfig {
+                    name: "battery".into(),
+                    module_type: "battery".into(),
+                    params: ModuleParams::Battery(crate::config::BatteryConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
+                },
+                ModuleConfig {
+                    name: "clock".into(),
+                    module_type: "clock".into(),
+                    params: ModuleParams::Clock(crate::config::ClockConfig::default()),
+                    actions: crate::config::ModuleActionsConfig::default(),
+                },
+            ],
+            ..Config::default()
+        };
+        config.bars[0].modules.end = vec!["battery".into(), "clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let clock_state = ModuleState::Clock(crate::modules::clock::ClockState {
+            time: "12:00".into(),
+            date: "Fri".into(),
+        });
+        app.modules
+            .set_state(ModuleId::new("clock"), clock_state.clone());
+
+        let effects = app
+            .modules
+            .handle(super::ModuleRuntimeIntent::MarkDataSourceUnavailable(
+                crate::modules::data_source::ModuleDataSourceIdentity::Battery,
+            ));
+
+        assert!(effects.is_empty());
+        assert!(matches!(
+            app.modules.state(&ModuleId::new("battery")),
+            Some(ModuleState::Unavailable)
+        ));
+        assert_eq!(
+            app.modules.state(&ModuleId::new("clock")),
+            Some(&clock_state)
+        );
+    }
+
+    #[test]
+    fn configured_click_interaction_returns_panel_action_effect() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states,
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig {
+                bindings: vec![crate::config::ActionBinding {
+                    trigger: crate::config::ActionTrigger::Click,
+                    action: crate::config::PanelAction::Command(
+                        crate::config::CommandConfig::Shell("notify-send test".into()),
+                    ),
+                }],
+            },
+        )]);
+        let origin_window = iced::window::Id::unique();
+
+        let effects = runtime.handle(super::ModuleRuntimeIntent::ModuleInteraction {
+            id: ModuleId::new("button"),
+            event: crate::modules::InteractionEvent::Clicked,
+            origin_window,
+        });
+
+        let [
+            super::ModuleRuntimeEffect::RunPanelAction {
+                origin_window: actual_window,
+                origin,
+                action,
+            },
+        ] = effects.as_slice()
+        else {
+            panic!("expected RunPanelAction effect, got {effects:?}");
+        };
+        assert_eq!(*actual_window, origin_window);
+        assert_eq!(
+            origin,
+            &crate::surface::panel::PanelOrigin::Module(ModuleId::new("button"))
+        );
+        assert_eq!(
+            action,
+            &crate::config::PanelAction::Command(crate::config::CommandConfig::Shell(
+                "notify-send test".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn configured_anchor_action_returns_anchor_request_effect() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states,
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig {
+                bindings: vec![crate::config::ActionBinding {
+                    trigger: crate::config::ActionTrigger::Click,
+                    action: crate::config::PanelAction::OpenPanel,
+                }],
+            },
+        )]);
+        let origin_window = iced::window::Id::unique();
+
+        let effects = runtime.handle(super::ModuleRuntimeIntent::ModuleInteraction {
+            id: ModuleId::new("button"),
+            event: crate::modules::InteractionEvent::Clicked,
+            origin_window,
+        });
+
+        let [
+            super::ModuleRuntimeEffect::RequestActionAnchor {
+                origin_window: actual_window,
+                module,
+                action,
+            },
+        ] = effects.as_slice()
+        else {
+            panic!("expected RequestActionAnchor effect, got {effects:?}");
+        };
+        assert_eq!(*actual_window, origin_window);
+        assert_eq!(module, &ModuleId::new("button"));
+        assert_eq!(action, &crate::config::PanelAction::OpenPanel);
+    }
+
+    #[test]
+    fn module_owned_interaction_returns_emit_message_effect() {
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(ModuleOwnedInteractionTestModule::new("button")),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        let effects = runtime.handle(super::ModuleRuntimeIntent::ModuleInteraction {
+            id: ModuleId::new("button"),
+            event: crate::modules::InteractionEvent::ScrollUp,
+            origin_window: iced::window::Id::unique(),
+        });
+
+        let [super::ModuleRuntimeEffect::EmitMessage(Message::VolumeAdjust { step, up })] =
+            effects.as_slice()
+        else {
+            panic!("expected EmitMessage effect, got {effects:?}");
+        };
+        assert_eq!((*step, *up), (5, true));
+    }
+
+    #[test]
+    fn unsupported_interaction_returns_no_effects() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states,
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        let effects = runtime.handle(super::ModuleRuntimeIntent::ModuleInteraction {
+            id: ModuleId::new("button"),
+            event: crate::modules::InteractionEvent::ScrollDown,
+            origin_window: iced::window::Id::unique(),
+        });
+
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn module_runtime_creates_and_updates_module_detail_sessions() {
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Center,
+            Box::new(ModuleDetailRuntimeTestModule::new("detail")),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let detail_id = ModuleId::new("detail");
+        let mut session = runtime
+            .create_module_detail_session(&detail_id)
+            .expect("detail session");
+
+        let effects = runtime.handle(super::ModuleRuntimeIntent::ModuleDetailUpdate {
+            target: detail_id.clone(),
+            session: &mut session,
+            message: crate::modules::ModuleDetailMessage::new(RuntimeDetailMessage::Add(7)),
+        });
+
+        assert!(effects.is_empty());
+        assert_eq!(session.downcast_ref::<u32>(), Some(&7));
+        assert!(
+            runtime
+                .create_module_detail_session(&ModuleId::new("missing"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn module_detail_update_maps_app_effects_to_runtime_effects() {
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Center,
+            Box::new(ModuleDetailRuntimeTestModule::new("detail")),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let detail_id = ModuleId::new("detail");
+        let mut session = runtime
+            .create_module_detail_session(&detail_id)
+            .expect("detail session");
+
+        let effects = runtime.handle(super::ModuleRuntimeIntent::ModuleDetailUpdate {
+            target: detail_id.clone(),
+            session: &mut session,
+            message: crate::modules::ModuleDetailMessage::new(RuntimeDetailMessage::ClosePanel),
+        });
+        let [super::ModuleRuntimeEffect::CloseActivePanel] = effects.as_slice() else {
+            panic!("expected CloseActivePanel, got {effects:?}");
+        };
+
+        let effects = runtime.handle(super::ModuleRuntimeIntent::ModuleDetailUpdate {
+            target: detail_id,
+            session: &mut session,
+            message: crate::modules::ModuleDetailMessage::new(RuntimeDetailMessage::RunCommand(
+                "notify-send detail".into(),
+            )),
+        });
+        let [super::ModuleRuntimeEffect::RequestForegroundPanelAction { action }] =
+            effects.as_slice()
+        else {
+            panic!("expected RequestForegroundPanelAction, got {effects:?}");
+        };
+        assert_eq!(
+            action,
+            &crate::config::PanelAction::Command(crate::config::CommandConfig::Shell(
+                "notify-send detail".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn applying_dynamic_reconciliation_plan_inserts_workspace_children() {
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "workspaces".into(),
+                module_type: "workspaces".into(),
+                params: ModuleParams::Workspaces(crate::config::WorkspacesConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..Config::default()
+        };
+        config.bars[0].modules.start = vec!["workspaces".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let snapshot = app.modules.dynamic_module_runtime_snapshot();
+        let plan = super::super::dynamic_modules::workspace_reconciliation_plan(
+            &snapshot,
+            &[make_workspace(0, true)],
+        );
+
+        let effects = app
+            .modules
+            .handle(super::ModuleRuntimeIntent::ApplyDynamicModuleReconciliation(plan));
+
+        assert!(effects.is_empty());
+        assert!(
+            app.modules
+                .iter()
+                .any(|(_, module)| module.id() == ModuleId::new("workspace:1"))
+        );
+    }
+
+    #[test]
+    fn applying_dynamic_reconciliation_plan_returns_stale_child_cleanup_effect() {
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "workspaces".into(),
+                module_type: "workspaces".into(),
+                params: ModuleParams::Workspaces(crate::config::WorkspacesConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..Config::default()
+        };
+        config.bars[0].modules.start = vec!["workspaces".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let snapshot = app.modules.dynamic_module_runtime_snapshot();
+        let plan = super::super::dynamic_modules::workspace_reconciliation_plan(
+            &snapshot,
+            &[make_workspace(0, true)],
+        );
+        assert!(
+            app.modules
+                .handle(super::ModuleRuntimeIntent::ApplyDynamicModuleReconciliation(plan),)
+                .is_empty()
+        );
+
+        let snapshot = app.modules.dynamic_module_runtime_snapshot();
+        let plan = super::super::dynamic_modules::workspace_reconciliation_plan(&snapshot, &[]);
+
+        let effects = app
+            .modules
+            .handle(super::ModuleRuntimeIntent::ApplyDynamicModuleReconciliation(plan));
+
+        let [super::ModuleRuntimeEffect::ClearSurfaceModuleRefs(ids)] = effects.as_slice() else {
+            panic!("expected ClearSurfaceModuleRefs, got {effects:?}");
+        };
+        assert_eq!(ids, &vec![ModuleId::new("workspace:1")]);
+        assert!(app.modules.get(&ModuleId::new("workspace:1")).is_none());
     }
 
     #[test]
@@ -1050,7 +2152,10 @@ mod tests {
             .iter()
             .map(|(_, m)| {
                 let id = m.id();
-                (m.kind(), app.configured_module_name_for_instance(&id))
+                (
+                    m.kind(),
+                    app.modules.configured_module_name_for_instance(&id),
+                )
             })
             .collect();
         assert_eq!(
@@ -1139,7 +2244,8 @@ mod tests {
         ))));
 
         assert_eq!(
-            app.configured_module_name_for_instance(&ModuleId::new("tray:org.private.App")),
+            app.modules
+                .configured_module_name_for_instance(&ModuleId::new("tray:org.private.App")),
             "tray"
         );
     }
@@ -1252,7 +2358,7 @@ mod tests {
                 let id = m.id();
                 (
                     m.kind(),
-                    app.configured_module_name_for_instance(&id),
+                    app.modules.configured_module_name_for_instance(&id),
                     id.0.clone(),
                 )
             })

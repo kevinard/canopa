@@ -80,8 +80,6 @@ impl App {
                     tree.origin_bar_name.clone(),
                 )
             });
-        let default_state = ModuleState::default();
-
         let layout =
             self.panel_module_layout_for_content(tree.origin_window, &tree.origin, &tree.content);
 
@@ -89,14 +87,16 @@ impl App {
             .into_iter()
             .filter_map(|entry| {
                 let id = entry.id;
-                let module = self.modules.get(&id)?;
-                let state =
-                    self.module_render_state(module.kind(), &id, &origin_surface, &default_state);
-                let module_view = module.view_module_detail_session_with_style(
-                    &state,
-                    &bar.style,
-                    self.foreground.active_panel_module_detail_session(&id),
-                );
+                let kind = self.modules.kind_for(&id)?;
+                let state = self.module_render_state(kind, &id, &origin_surface);
+                let module_view = self.modules.render_module_detail(
+                    super::module_runtime::ModuleDetailRenderRequest {
+                        id: id.clone(),
+                        style: &bar.style,
+                        session: self.foreground.active_panel_module_detail_session(&id),
+                        state_override: Some(state.clone()),
+                    },
+                )?;
                 let element = crate::surface::panel::panel_module_frame(module_view, entry.focused);
 
                 Some(ModuleRenderEntry {
@@ -138,24 +138,34 @@ impl App {
         let content_size = surface_size.saturating_sub(1);
         let shows_expanded = false;
 
-        let default_state = ModuleState::default();
         let mut start = Vec::new();
         let mut center = Vec::new();
         let mut end = Vec::new();
 
         for (zone, id) in self.effective_module_layout_for_bar(bar) {
-            let Some(module) = self.modules.get(&id) else {
+            let Some(kind) = self.modules.kind_for(&id) else {
                 continue;
             };
 
-            let state = self.module_render_state(module.kind(), &id, &surface, &default_state);
+            let state = self.module_render_state(kind, &id, &surface);
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);
             let active = self.foreground.active_panel_origin_for(window)
                 == Some(&crate::surface::panel::PanelOrigin::Module(id.clone()));
 
-            let module_view =
-                module.view_for_bar(&state, window, is_horizontal, shows_expanded, &bar.style);
+            let Some(module_view) =
+                self.modules
+                    .render_bar_module(super::module_runtime::BarModuleRenderRequest {
+                        id: id.clone(),
+                        window,
+                        horizontal: is_horizontal,
+                        expanded: shows_expanded,
+                        style: &bar.style,
+                        state_override: Some(state.clone()),
+                    })
+            else {
+                continue;
+            };
             let framed_module = container(module_frame(module_view, hovered || focused || active))
                 .id(super::widget_ops::module_widget_id(window, &id));
             let scroll_id = id.clone();
@@ -224,13 +234,14 @@ impl App {
         kind: ModuleKind,
         id: &ModuleId,
         surface: &crate::surface::SurfaceState,
-        default_state: &ModuleState,
     ) -> ModuleState {
         if kind == ModuleKind::WorkspaceItem {
             return ModuleState::WorkspaceOutput(surface.output_name.clone());
         }
 
-        if let Some(ModuleState::FocusedWindow(fw)) = self.modules.state(id) {
+        let stored_state = self.modules.render_state_for(id);
+
+        if let ModuleState::FocusedWindow(fw) = &stored_state {
             let title = if surface.output_name.is_empty() {
                 fw.title.clone()
             } else {
@@ -256,7 +267,7 @@ impl App {
             return ModuleState::FocusedWindow(focused_window::FocusedWindowState { title });
         }
 
-        self.modules.state(id).unwrap_or(default_state).clone()
+        stored_state
     }
 }
 

@@ -871,14 +871,8 @@ impl App {
         window: iced::window::Id,
         module: &crate::modules::ModuleId,
     ) -> Vec<(&'static str, String)> {
-        let m = match self.modules.get(module) {
-            Some(m) => m,
-            None => return Vec::new(),
-        };
-        let default_state = crate::modules::ModuleState::default();
-        let state = self.modules.state(module).unwrap_or(&default_state);
         let _ = window;
-        m.tooltip_values(state)
+        self.modules.tooltip_values_for(module)
     }
 
     fn tooltip_anchor_for(&self, window: iced::window::Id) -> TooltipAnchor {
@@ -903,7 +897,7 @@ impl App {
         use crate::config::ModuleParams;
         use crate::config::tooltip_defaults as td;
 
-        let config_name = self.configured_module_name_for_instance(module);
+        let config_name = self.modules.configured_module_name_for_instance(module);
         let mc = self.config.modules.iter().find(|m| m.name == config_name)?;
 
         let (setting, default) = match &mc.params {

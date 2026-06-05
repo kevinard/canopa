@@ -269,9 +269,7 @@ impl App {
         &self,
         id: &crate::modules::ModuleId,
     ) -> Option<crate::modules::ModuleDetailSession> {
-        let module = self.modules.get(id)?;
-        let state = self.modules.state(id).cloned().unwrap_or_default();
-        module.create_module_detail_session(&state)
+        self.modules.create_module_detail_session(id)
     }
 
     pub(super) fn panel_module_layout_for_request(

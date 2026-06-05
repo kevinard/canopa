@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
-use crate::modules::ModuleId;
 use crate::modules::battery::BatteryEvent;
 use crate::modules::data_source::{
-    BatteryReading, ModuleDataSourceIdentity, ModuleDataSourceState, ModuleInstanceOutcome,
-    NetworkReading, VolumeReading,
+    BatteryReading, ModuleDataSourceIdentity, ModuleDataSourceState, NetworkReading, VolumeReading,
 };
 use crate::modules::network::NetworkEvent;
 use crate::modules::volume::VolumeEvent;
@@ -76,6 +74,12 @@ enum ModuleDataSourceStatus {
     Unavailable,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum ModuleDataSourceTransition {
+    Available(ModuleDataSourceState),
+    Unavailable(ModuleDataSourceIdentity),
+}
+
 #[derive(Debug, Default)]
 pub(super) struct ModuleDataSourceRuntime {
     sources: HashMap<ModuleDataSourceIdentity, ModuleDataSourceStatus>,
@@ -121,60 +125,44 @@ impl ModuleDataSourceRuntime {
     pub(super) fn handle_battery_event(
         &mut self,
         event: BatteryEvent,
-        modules: &super::module_runtime::ModuleRuntime,
-    ) -> Vec<(ModuleId, ModuleInstanceOutcome)> {
+    ) -> ModuleDataSourceTransition {
         match event {
             BatteryEvent::StateChanged {
                 percentage,
                 is_charging,
-            } => self.apply_source_state(
-                ModuleDataSourceState::Battery(BatteryReading {
-                    percentage,
-                    is_charging,
-                }),
-                modules,
-            ),
-            BatteryEvent::Unavailable => {
-                self.mark_unavailable(ModuleDataSourceIdentity::Battery, modules)
-            }
+            } => self.apply_source_state(ModuleDataSourceState::Battery(BatteryReading {
+                percentage,
+                is_charging,
+            })),
+            BatteryEvent::Unavailable => self.mark_unavailable(ModuleDataSourceIdentity::Battery),
         }
     }
 
     pub(super) fn handle_network_event(
         &mut self,
         event: NetworkEvent,
-        modules: &super::module_runtime::ModuleRuntime,
-    ) -> Vec<(ModuleId, ModuleInstanceOutcome)> {
+    ) -> ModuleDataSourceTransition {
         match event {
             NetworkEvent::StateChanged {
                 connectivity,
                 label,
-            } => self.apply_source_state(
-                ModuleDataSourceState::Network(NetworkReading {
-                    connectivity,
-                    label,
-                }),
-                modules,
-            ),
-            NetworkEvent::Unavailable => {
-                self.mark_unavailable(ModuleDataSourceIdentity::Network, modules)
-            }
+            } => self.apply_source_state(ModuleDataSourceState::Network(NetworkReading {
+                connectivity,
+                label,
+            })),
+            NetworkEvent::Unavailable => self.mark_unavailable(ModuleDataSourceIdentity::Network),
         }
     }
 
-    pub(super) fn handle_volume_event(
-        &mut self,
-        event: VolumeEvent,
-        modules: &super::module_runtime::ModuleRuntime,
-    ) -> Vec<(ModuleId, ModuleInstanceOutcome)> {
+    pub(super) fn handle_volume_event(&mut self, event: VolumeEvent) -> ModuleDataSourceTransition {
         match event {
-            VolumeEvent::StateChanged { volume, muted } => self.apply_source_state(
-                ModuleDataSourceState::Volume(VolumeReading { volume, muted }),
-                modules,
-            ),
-            VolumeEvent::Unavailable => {
-                self.mark_unavailable(ModuleDataSourceIdentity::Volume, modules)
+            VolumeEvent::StateChanged { volume, muted } => {
+                self.apply_source_state(ModuleDataSourceState::Volume(VolumeReading {
+                    volume,
+                    muted,
+                }))
             }
+            VolumeEvent::Unavailable => self.mark_unavailable(ModuleDataSourceIdentity::Volume),
         }
     }
 
@@ -182,46 +170,20 @@ impl ModuleDataSourceRuntime {
         self.sources.contains_key(&identity)
     }
 
-    fn apply_source_state(
-        &mut self,
-        state: ModuleDataSourceState,
-        modules: &super::module_runtime::ModuleRuntime,
-    ) -> Vec<(ModuleId, ModuleInstanceOutcome)> {
+    fn apply_source_state(&mut self, state: ModuleDataSourceState) -> ModuleDataSourceTransition {
         let identity = state.identity();
         self.sources
             .insert(identity, ModuleDataSourceStatus::Available(state.clone()));
-        self.map_dependents(identity, &state, modules)
+        ModuleDataSourceTransition::Available(state)
     }
 
     fn mark_unavailable(
         &mut self,
         identity: ModuleDataSourceIdentity,
-        modules: &super::module_runtime::ModuleRuntime,
-    ) -> Vec<(ModuleId, ModuleInstanceOutcome)> {
+    ) -> ModuleDataSourceTransition {
         self.sources
             .insert(identity, ModuleDataSourceStatus::Unavailable);
-        modules
-            .data_source_dependents(identity)
-            .into_iter()
-            .map(|id| (id, ModuleInstanceOutcome::Unavailable))
-            .collect()
-    }
-
-    fn map_dependents(
-        &self,
-        identity: ModuleDataSourceIdentity,
-        state: &ModuleDataSourceState,
-        modules: &super::module_runtime::ModuleRuntime,
-    ) -> Vec<(ModuleId, ModuleInstanceOutcome)> {
-        modules
-            .data_source_dependents(identity)
-            .into_iter()
-            .filter_map(|id| {
-                modules
-                    .get(&id)
-                    .map(|module| (id, module.map_data_source_state(state)))
-            })
-            .collect()
+        ModuleDataSourceTransition::Unavailable(identity)
     }
 }
 
@@ -230,8 +192,9 @@ mod tests {
     use super::*;
     use crate::app::App;
     use crate::config::{BatteryConfig, Config, ModuleConfig, ModuleParams};
-    use crate::modules::data_source::{ModuleDataSourceIdentity, ModuleInstanceOutcome};
-    use crate::modules::{ModuleId, ModuleState};
+    use crate::modules::data_source::{
+        BatteryReading, ModuleDataSourceIdentity, ModuleDataSourceState,
+    };
 
     fn app_with_two_battery_modules() -> App {
         let mut config = Config {
@@ -276,56 +239,34 @@ mod tests {
     }
 
     #[test]
-    fn battery_event_fans_out_to_dependent_modules() {
+    fn battery_event_returns_available_source_transition() {
         let app = app_with_two_battery_modules();
         let mut runtime = ModuleDataSourceRuntime::from_modules(&app.modules);
 
-        let updates = runtime.handle_battery_event(
-            BatteryEvent::StateChanged {
+        let transition = runtime.handle_battery_event(BatteryEvent::StateChanged {
+            percentage: 88.0,
+            is_charging: false,
+        });
+
+        assert_eq!(
+            transition,
+            ModuleDataSourceTransition::Available(ModuleDataSourceState::Battery(BatteryReading {
                 percentage: 88.0,
                 is_charging: false,
-            },
-            &app.modules,
+            }))
         );
-
-        assert_eq!(updates.len(), 2);
-        assert!(updates.iter().any(|(id, outcome)| {
-            id == &ModuleId::new("battery-main")
-                && matches!(
-                    outcome,
-                    ModuleInstanceOutcome::Visible(ModuleState::Battery(state))
-                    if (state.percentage - 88.0).abs() < 0.001 && !state.is_charging
-                )
-        }));
-        assert!(updates.iter().any(|(id, outcome)| {
-            id == &ModuleId::new("battery-side")
-                && matches!(
-                    outcome,
-                    ModuleInstanceOutcome::Visible(ModuleState::Battery(state))
-                    if (state.percentage - 88.0).abs() < 0.001 && !state.is_charging
-                )
-        }));
     }
 
     #[test]
-    fn unavailable_battery_event_fans_out_unavailable_outcomes() {
+    fn unavailable_battery_event_returns_unavailable_source_transition() {
         let app = app_with_two_battery_modules();
         let mut runtime = ModuleDataSourceRuntime::from_modules(&app.modules);
 
-        let updates = runtime.handle_battery_event(BatteryEvent::Unavailable, &app.modules);
+        let transition = runtime.handle_battery_event(BatteryEvent::Unavailable);
 
         assert_eq!(
-            updates,
-            vec![
-                (
-                    ModuleId::new("battery-main"),
-                    ModuleInstanceOutcome::Unavailable
-                ),
-                (
-                    ModuleId::new("battery-side"),
-                    ModuleInstanceOutcome::Unavailable
-                ),
-            ]
+            transition,
+            ModuleDataSourceTransition::Unavailable(ModuleDataSourceIdentity::Battery)
         );
     }
 }

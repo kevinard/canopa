@@ -1106,13 +1106,6 @@ mod tests {
         }
     }
 
-    fn panel_tree(
-        origin_window: iced::window::Id,
-        content: crate::surface::panel::PanelContent,
-    ) -> crate::surface::panel::PanelTree {
-        panel_request(origin_window, content).tree()
-    }
-
     fn menu_meta(service: &str) -> super::MenuPopupMeta {
         super::MenuPopupMeta {
             service: service.into(),

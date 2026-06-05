@@ -52,6 +52,10 @@ _Avoid_: Module metadata, capability flags, constructor registry
 The runtime state and behavior of a **Module** while Niribar is running.
 _Avoid_: Module, widget instance
 
+**Module Runtime**:
+The app-owned runtime module that owns **Module Instances**, per-instance state, **Module Actions**, origin metadata, interaction profiles, rendering, **Tooltip** values, **Module Data Source** mapping, **Module Detail Session** routing, and dynamic-child storage behavior. Its external interface may return Iced elements because Iced rendering is part of Niribar's current runtime interface.
+_Avoid_: Module storage, widget runtime
+
 **Dynamic Module**:
 A **Module** that produces runtime child **Module Instances** from external state.
 _Avoid_: Generated module, synthetic module
@@ -97,6 +101,10 @@ _Avoid_: Module kind, subscription key, source id
 **Module Data Source State**:
 The source-shaped runtime state emitted by a **Module Data Source** before it is mapped into per-**Module Instance** render state.
 _Avoid_: Module state, widget state
+
+**Module Data Source Runtime**:
+The app-owned runtime module that owns **Module Data Source** lifecycle, active source requirements, subscriptions, first emission, recovery, and **Unavailable Module** transitions before handing source-shaped state to **Module Runtime**.
+_Avoid_: Module Runtime, DBus adapter
 
 **Zone**:
 A logical placement group within a **Bar**, named **Start**, **Center**, or **End**.
@@ -385,7 +393,12 @@ _Avoid_: Default config, fallback surface
 - The **Dynamic Module Lifecycle** owns placeholder lookup, **Dynamic Module Child Key** matching, parent **Module** configuration lookup, inherited **Module Actions**, child construction, child reconciliation, stale focus and hover cleanup, inherited actions and interactions, and layout expansion for **Dynamic Modules**.
 - The **Dynamic Module Lifecycle** returns a **Dynamic Module Reconciliation Plan** rather than directly mutating **Module Runtime**.
 - The **Dynamic Module Lifecycle** consumes a **Dynamic Module Runtime Snapshot**, not a raw **Module Runtime** reference.
-- The **Dynamic Module Lifecycle** lives in the app runtime, with **Module Runtime** acting as the storage adapter for ordered **Module Instances**, actions, origins, and interaction profiles.
+- The **Dynamic Module Lifecycle** lives in the app runtime, with **Module Runtime** acting as the app-level interface and storage owner for ordered **Module Instances**, actions, origins, and interaction profiles.
+- App callers should cross the **Module Runtime** interface for **Module Instance** rendering, **Tooltip** values, **Module Data Source** mapping, **Module Interaction** dispatch, **Module Detail Session** routing, and dynamic child storage behavior instead of calling optional hooks on concrete **Module** implementations directly.
+- The **Module Runtime** interface uses query methods for read-only behavior such as **Module Instance** rendering, **Tooltip** values, and layout expansion, and uses intent/effect handling for mutating behavior such as **Module Interaction**, **Module Detail Session** updates, and dynamic child reconciliation.
+- **Module Runtime** applies **Dynamic Module Reconciliation Plans** to durable child **Module Instance** storage, including child removal, in-place update, insertion, inherited **Module Actions**, origins, interaction profiles, and metadata pruning.
+- App callers apply only the effects returned by **Module Runtime** from dynamic child reconciliation, such as stale **Keyboard Focus** or hover cleanup.
+- Deepening **Module Runtime** should first add Module Runtime interface methods that delegate to the current concrete **Module** implementation hooks, then migrate App callers to those methods, and only then shrink or split the internal concrete **Module** implementation traits.
 - The **Dynamic Module Lifecycle** is stateless; durable child **Module Instance** state remains in **Module Runtime**, and stale visible-target cleanup remains applied through **Bar Surface Registry** state.
 - Child-origin mapping for **Dynamic Modules** is internal to the **Dynamic Module Lifecycle**; other app modules should ask the lifecycle for the configured **Module Name** instead of inspecting child **Module Instances** to infer the parent **Dynamic Module**.
 - Callback-shaped child replacement methods are transitional implementation details only; future **Dynamic Module Families** should cross the keyed **Dynamic Module Lifecycle** interface.
@@ -397,10 +410,10 @@ _Avoid_: Default config, fallback surface
 - A **Module Instance** may depend on a **Module Data Source**.
 - Multiple **Module Instances** may share one **Module Data Source Identity**.
 - A **Module Data Source** emits **Module Data Source State**, not render-specific **ModuleState**.
-- Runtime lifecycle maps **Module Data Source State** into per-**Module Instance** render state.
-- Runtime lifecycle owns first emission, recovery, and **Unavailable Module** transitions for **Module Data Sources**.
-- Pending first emission is internal runtime lifecycle state, not a public render state for **Module Implementations**.
-- When a **Module Data Source** recovers and emits valid **Module Data Source State**, runtime lifecycle automatically remaps all dependent **Module Instances**.
+- **Module Data Source Runtime** maps active **Module Runtime** source requirements into subscriptions and owns first emission, recovery, and **Unavailable Module** transitions for **Module Data Sources**.
+- **Module Runtime** maps **Module Data Source State** into per-**Module Instance** render state.
+- Pending first emission is internal **Module Data Source Runtime** state, not a public render state for **Module Implementations**.
+- When a **Module Data Source** recovers and emits valid **Module Data Source State**, **Module Runtime** automatically remaps all dependent **Module Instances**.
 - A **Module Implementation** maps available **Module Data Source State** into either visible render state or an explicit **Empty Module** outcome.
 - An **Empty Module** outcome is module-owned; runtime lifecycle does not infer it from blank rendered content.
 - The visible **Module** or child **Module Instance** target owns the **Tooltip** shown for that target.

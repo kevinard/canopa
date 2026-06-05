@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use super::App;
-use super::module_runtime::ModuleOrigin;
 use crate::config::{BarModules, ModuleParams, PanelModules};
 use crate::modules::{Module, ModuleId, ModuleInteractionProfile, ModuleKind, Zone};
 
@@ -178,8 +177,8 @@ pub(super) fn expand_dynamic_module_layout(
 }
 
 pub(super) struct DynamicModuleReconciliationPlan {
-    parent_reconciliations: Vec<DynamicModuleParentReconciliation>,
-    stale_child_ids: Vec<ModuleId>,
+    pub(super) parent_reconciliations: Vec<DynamicModuleParentReconciliation>,
+    pub(super) stale_child_ids: Vec<ModuleId>,
 }
 
 impl DynamicModuleReconciliationPlan {
@@ -196,24 +195,24 @@ impl DynamicModuleReconciliationPlan {
         self.parent_reconciliations.push(parent);
     }
 
-    fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.parent_reconciliations.is_empty() && self.stale_child_ids.is_empty()
     }
 }
 
-struct DynamicModuleParentReconciliation {
-    parent: ModuleId,
-    parent_name: String,
-    insert_after_index: usize,
-    zone: Zone,
-    child_kind: ModuleKind,
-    actions: crate::config::ModuleActionsConfig,
-    interactions: ModuleInteractionProfile,
-    children: Vec<PlannedDynamicChild>,
-    stale_child_ids: Vec<ModuleId>,
+pub(super) struct DynamicModuleParentReconciliation {
+    pub(super) parent: ModuleId,
+    pub(super) parent_name: String,
+    pub(super) insert_after_index: usize,
+    pub(super) zone: Zone,
+    pub(super) child_kind: ModuleKind,
+    pub(super) actions: crate::config::ModuleActionsConfig,
+    pub(super) interactions: ModuleInteractionProfile,
+    pub(super) children: Vec<PlannedDynamicChild>,
+    pub(super) stale_child_ids: Vec<ModuleId>,
 }
 
-enum PlannedDynamicChild {
+pub(super) enum PlannedDynamicChild {
     Insert(Box<dyn Module>),
     UpdateWorkspace {
         id: ModuleId,
@@ -385,7 +384,10 @@ impl App {
     ) {
         let snapshot = self.modules.dynamic_module_runtime_snapshot();
         let plan = workspace_reconciliation_plan(&snapshot, workspaces);
-        self.apply_dynamic_module_reconciliation_plan(plan);
+        let effects = self.modules.handle(
+            super::module_runtime::ModuleRuntimeIntent::ApplyDynamicModuleReconciliation(plan),
+        );
+        self.apply_dynamic_module_reconciliation_effects(effects);
     }
 
     pub(super) fn reconcile_tray_dynamic_modules(
@@ -394,57 +396,22 @@ impl App {
     ) {
         let snapshot = self.modules.dynamic_module_runtime_snapshot();
         let plan = tray_reconciliation_plan(&snapshot, items);
-        self.apply_dynamic_module_reconciliation_plan(plan);
+        let effects = self.modules.handle(
+            super::module_runtime::ModuleRuntimeIntent::ApplyDynamicModuleReconciliation(plan),
+        );
+        self.apply_dynamic_module_reconciliation_effects(effects);
     }
 
-    pub(super) fn expand_dynamic_module_layout(
-        &self,
-        placements: [(Zone, &[String]); 3],
-    ) -> Vec<(Zone, ModuleId)> {
-        let snapshot = self.modules.dynamic_module_runtime_snapshot();
-        expand_dynamic_module_layout(&snapshot, placements)
-    }
-
-    pub(super) fn configured_module_name_for_instance(&self, id: &ModuleId) -> String {
-        let snapshot = self.modules.dynamic_module_runtime_snapshot();
-        snapshot.configured_module_name_for_instance(id).to_string()
-    }
-
-    fn apply_dynamic_module_reconciliation_plan(&mut self, plan: DynamicModuleReconciliationPlan) {
-        if plan.is_empty() {
-            return;
-        }
-
-        self.clear_surface_module_refs(&plan.stale_child_ids);
-        for parent in plan.parent_reconciliations {
-            let mut existing = self
-                .modules
-                .take_dynamic_children_by_id(&parent.parent_name, parent.child_kind);
-            let mut children = Vec::with_capacity(parent.children.len());
-            for planned in parent.children {
-                match planned {
-                    PlannedDynamicChild::Insert(child) => children.push(child),
-                    PlannedDynamicChild::UpdateWorkspace { id, workspace } => {
-                        if let Some(mut child) = existing.remove(&id) {
-                            child.update_workspace(&workspace);
-                            children.push(child);
-                        }
-                    }
-                }
-            }
-
-            for child in children.into_iter().rev() {
-                self.modules.insert_with_actions_and_origin(
-                    parent.insert_after_index + 1,
-                    (parent.zone.clone(), child),
-                    parent.actions.clone(),
-                    ModuleOrigin::ExpandedFrom(parent.parent.clone()),
-                    parent.interactions,
-                );
+    fn apply_dynamic_module_reconciliation_effects(
+        &mut self,
+        effects: Vec<super::module_runtime::ModuleRuntimeEffect>,
+    ) {
+        for effect in effects {
+            if let super::module_runtime::ModuleRuntimeEffect::ClearSurfaceModuleRefs(ids) = effect
+            {
+                self.clear_surface_module_refs(&ids);
             }
         }
-
-        self.modules.prune_metadata_to_retained_ids();
     }
 }
 
@@ -649,7 +616,9 @@ mod tests {
                 }),
             ),
             ModuleActionsConfig::default(),
-            ModuleOrigin::ExpandedFrom(ModuleId::new("dynamic-parent")),
+            super::super::module_runtime::ModuleOrigin::ExpandedFrom(ModuleId::new(
+                "dynamic-parent",
+            )),
             ModuleInteractionProfile::NONE,
         );
 

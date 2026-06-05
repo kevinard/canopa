@@ -68,7 +68,7 @@ impl App {
             .get(&id)
             .map(|module| module.kind().runtime_name())
             .unwrap_or("unknown");
-        let module_name = self.configured_module_name_for_instance(&id);
+        let module_name = self.modules.configured_module_name_for_instance(&id);
         tracing::trace!(
             target: "niribar::modules",
             module_name = module_name.as_str(),
@@ -110,9 +110,6 @@ impl App {
         target: ModuleId,
         message: crate::modules::ModuleDetailMessage,
     ) -> Task<Message> {
-        let Some(module) = self.modules.get_mut(&target) else {
-            return Task::none();
-        };
         let Some(session) = self
             .foreground
             .active_panel_module_detail_session_mut(&target)
@@ -120,41 +117,14 @@ impl App {
             return Task::none();
         };
 
-        let update = module.update_module_detail_session(session, message);
-        self.apply_module_detail_update(update)
-    }
-
-    fn apply_module_detail_update(
-        &mut self,
-        update: crate::modules::ModuleDetailUpdate,
-    ) -> Task<Message> {
-        let mut tasks = Vec::new();
-        for effect in update.effects {
-            match effect {
-                crate::modules::ModuleDetailEffect::App(app_effect) => {
-                    tasks.push(self.apply_module_detail_app_effect(app_effect));
-                }
-                crate::modules::ModuleDetailEffect::Module(_module_effect) => {}
-            }
-        }
-        Task::batch(tasks)
-    }
-
-    fn apply_module_detail_app_effect(
-        &mut self,
-        effect: crate::modules::ModuleDetailAppEffect,
-    ) -> Task<Message> {
-        match effect {
-            crate::modules::ModuleDetailAppEffect::PanelAction(action) => {
-                let effects = self.foreground.handle(
-                    super::foreground::ForegroundIntent::PanelActionRequested(action),
-                );
-                Task::batch(self.apply_foreground_effects(effects))
-            }
-            crate::modules::ModuleDetailAppEffect::ClosePanel => {
-                Task::batch(self.close_active_panel())
-            }
-        }
+        let effects = self.modules.handle(
+            super::module_runtime::ModuleRuntimeIntent::ModuleDetailUpdate {
+                target,
+                session,
+                message,
+            },
+        );
+        self.apply_module_runtime_effects(effects)
     }
 
     pub(super) fn dispatch_module_interaction(
@@ -163,29 +133,54 @@ impl App {
         event: InteractionEvent,
         origin_window: iced::window::Id,
     ) -> Task<Message> {
-        let trigger = match &event {
-            InteractionEvent::Clicked => Some(crate::config::ActionTrigger::Click),
-            InteractionEvent::RightClicked(_) => Some(crate::config::ActionTrigger::RightClick),
-            _ => None,
-        };
-        if let Some(action) =
-            trigger.and_then(|trigger| self.modules.action_for(id, &trigger).cloned())
-        {
-            let module_name = self.configured_module_name_for_instance(id);
-            tracing::debug!(
-                target: "niribar::modules",
-                module_name = module_name.as_str(),
-                has_anchor = super::panel::panel_action_needs_anchor(&action),
-                "dispatching configured module action"
-            );
-            let origin = crate::surface::panel::PanelOrigin::Module(id.clone());
-            if super::panel::panel_action_needs_anchor(&action) {
-                let target = super::widget_ops::module_widget_id(origin_window, id);
+        let effects = self.modules.handle(
+            super::module_runtime::ModuleRuntimeIntent::ModuleInteraction {
+                id: id.clone(),
+                event,
+                origin_window,
+            },
+        );
+        self.apply_module_runtime_effects(effects)
+    }
+
+    pub(super) fn dispatch_keyboard_secondary_module_interaction(
+        &mut self,
+        id: &ModuleId,
+        window: iced::window::Id,
+        screen_size: (u32, u32),
+    ) -> Task<Message> {
+        let effects = self.modules.handle(
+            super::module_runtime::ModuleRuntimeIntent::ModuleInteraction {
+                id: id.clone(),
+                event: InteractionEvent::Activated(window),
+                origin_window: window,
+            },
+        );
+        self.apply_keyboard_secondary_module_runtime_effects(effects, window, screen_size)
+    }
+
+    fn module_runtime_effect_to_task(
+        &mut self,
+        effect: super::module_runtime::ModuleRuntimeEffect,
+    ) -> Task<Message> {
+        match effect {
+            super::module_runtime::ModuleRuntimeEffect::RunPanelAction {
+                origin_window,
+                origin,
+                action,
+            } => self.dispatch_panel_action(origin_window, origin, action),
+            super::module_runtime::ModuleRuntimeEffect::RequestActionAnchor {
+                origin_window,
+                module,
+                action,
+            } => {
+                let origin = crate::surface::panel::PanelOrigin::Module(module.clone());
+                let target = super::widget_ops::module_widget_id(origin_window, &module);
                 let op = super::widget_ops::FindBounds {
                     target,
                     result: None,
                 };
-                return iced::advanced::widget::operate(op).then(move |bounds| {
+                iced::advanced::widget::operate(op).then(move |bounds| {
                     let event = super::panel::panel_event_for_action(
                         origin_window,
                         origin.clone(),
@@ -196,50 +191,39 @@ impl App {
                         Some(event) => Task::done(Message::Panel(event)),
                         None => Task::none(),
                     }
-                });
+                })
             }
-
-            return self.dispatch_panel_action(origin_window, origin, action);
+            super::module_runtime::ModuleRuntimeEffect::EmitMessage(message) => Task::done(message),
+            super::module_runtime::ModuleRuntimeEffect::ClearSurfaceModuleRefs(ids) => {
+                self.clear_surface_module_refs(&ids);
+                Task::none()
+            }
+            super::module_runtime::ModuleRuntimeEffect::RequestForegroundPanelAction { action } => {
+                let effects = self.foreground.handle(
+                    super::foreground::ForegroundIntent::PanelActionRequested(action),
+                );
+                Task::batch(self.apply_foreground_effects(effects))
+            }
+            super::module_runtime::ModuleRuntimeEffect::CloseActivePanel => {
+                Task::batch(self.close_active_panel())
+            }
         }
-
-        if let Some(msg) = self.modules.module_owned_interaction(id, event) {
-            let module_name = self.configured_module_name_for_instance(id);
-            tracing::trace!(
-                target: "niribar::modules",
-                module_name = module_name.as_str(),
-                "module interaction produced app message"
-            );
-            return Task::done(msg);
-        }
-        Task::none()
     }
 
-    pub(super) fn dispatch_keyboard_secondary_module_interaction(
+    fn keyboard_secondary_module_runtime_effect_to_task(
         &mut self,
-        id: &ModuleId,
+        effect: super::module_runtime::ModuleRuntimeEffect,
         window: iced::window::Id,
         screen_size: (u32, u32),
     ) -> Task<Message> {
-        let Some(msg) = self
-            .modules
-            .module_owned_interaction(id, InteractionEvent::Activated(window))
-        else {
-            return Task::none();
-        };
-
-        let module_name = self.configured_module_name_for_instance(id);
-        tracing::trace!(
-            target: "niribar::modules",
-            module_name = module_name.as_str(),
-            "keyboard module interaction produced app message"
-        );
-
-        match msg {
-            Message::Tray(super::messages::TrayRuntimeEvent::MenuRequestKeyboard {
-                service,
-                menu_path,
-                source_window,
-            }) => {
+        match effect {
+            super::module_runtime::ModuleRuntimeEffect::EmitMessage(Message::Tray(
+                super::messages::TrayRuntimeEvent::MenuRequestKeyboard {
+                    service,
+                    menu_path,
+                    source_window,
+                },
+            )) => {
                 let target = crate::modules::tray::tray_icon_widget_id(window, &service);
                 let op = super::widget_ops::FindBounds {
                     target,
@@ -259,45 +243,76 @@ impl App {
                     ))
                 })
             }
-            other => Task::done(other),
+            other => self.module_runtime_effect_to_task(other),
         }
     }
 
-    fn apply_module_data_source_outcomes(
+    fn apply_keyboard_secondary_module_runtime_effects(
         &mut self,
-        outcomes: Vec<(
-            crate::modules::ModuleId,
-            crate::modules::data_source::ModuleInstanceOutcome,
-        )>,
-    ) {
-        self.modules.apply_outcomes(outcomes);
+        effects: Vec<super::module_runtime::ModuleRuntimeEffect>,
+        window: iced::window::Id,
+        screen_size: (u32, u32),
+    ) -> Task<Message> {
+        let mut tasks = Vec::new();
+        for effect in effects {
+            tasks.push(self.keyboard_secondary_module_runtime_effect_to_task(
+                effect,
+                window,
+                screen_size,
+            ));
+        }
+        Task::batch(tasks)
+    }
+
+    fn apply_module_runtime_effects(
+        &mut self,
+        effects: Vec<super::module_runtime::ModuleRuntimeEffect>,
+    ) -> Task<Message> {
+        let mut tasks = Vec::new();
+        for effect in effects {
+            tasks.push(self.module_runtime_effect_to_task(effect));
+        }
+        Task::batch(tasks)
+    }
+
+    fn apply_module_data_source_transition(
+        &mut self,
+        transition: super::module_data_sources::ModuleDataSourceTransition,
+    ) -> Task<Message> {
+        let intent = match transition {
+            super::module_data_sources::ModuleDataSourceTransition::Available(state) => {
+                super::module_runtime::ModuleRuntimeIntent::ApplyDataSourceState(state)
+            }
+            super::module_data_sources::ModuleDataSourceTransition::Unavailable(identity) => {
+                super::module_runtime::ModuleRuntimeIntent::MarkDataSourceUnavailable(identity)
+            }
+        };
+        let effects = self.modules.handle(intent);
+        self.apply_module_runtime_effects(effects)
     }
 
     pub(super) fn handle_battery_event(
         &mut self,
         event: crate::modules::battery::BatteryEvent,
     ) -> Task<Message> {
-        let outcomes = self.data_sources.handle_battery_event(event, &self.modules);
-        self.apply_module_data_source_outcomes(outcomes);
-        Task::none()
+        let transition = self.data_sources.handle_battery_event(event);
+        self.apply_module_data_source_transition(transition)
     }
 
     pub(super) fn handle_network_event(
         &mut self,
         event: crate::modules::network::NetworkEvent,
     ) -> Task<Message> {
-        let outcomes = self.data_sources.handle_network_event(event, &self.modules);
-        self.apply_module_data_source_outcomes(outcomes);
-        Task::none()
+        let transition = self.data_sources.handle_network_event(event);
+        self.apply_module_data_source_transition(transition)
     }
 
     pub(super) fn handle_volume_event(
         &mut self,
         event: crate::modules::volume::VolumeEvent,
     ) -> Task<Message> {
-        let outcomes = self.data_sources.handle_volume_event(event, &self.modules);
-        self.apply_module_data_source_outcomes(outcomes);
-        Task::none()
+        let transition = self.data_sources.handle_volume_event(event);
+        self.apply_module_data_source_transition(transition)
     }
 
     pub(super) fn handle_volume_adjust(&self, step: u8, up: bool) -> Task<Message> {
