@@ -67,7 +67,8 @@ impl App {
         &self,
         window: iced::window::Id,
     ) -> Option<PanelRenderModel<'_>> {
-        let tree = self.foreground.panel_tree_for_window(window)?;
+        let panel = self.foreground.panel_render_snapshot(window)?;
+        let tree = panel.tree;
         let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
         let origin_surface = self
             .surfaces
@@ -94,7 +95,7 @@ impl App {
                 let module_view = module.view_module_detail_session_with_style(
                     &state,
                     &bar.style,
-                    self.panel.module_detail_session_for(&id),
+                    self.foreground.active_panel_module_detail_session(&id),
                 );
                 let element = crate::surface::panel::panel_module_frame(module_view, entry.focused);
 
@@ -111,7 +112,7 @@ impl App {
             })
             .collect();
 
-        let menu = self.panel.panel_menu_render_state();
+        let menu = panel.menu;
 
         Some(PanelRenderModel {
             tree,
@@ -333,18 +334,10 @@ mod tests {
             tree.content.clone(),
             tree.anchor,
         );
-        let effects =
-            app.panel
-                .handle(crate::app::panel_runtime::PanelRuntimeIntent::PrepareOpen {
-                    request,
-                    catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
-                        app.config.menus.as_slice(),
-                    ),
-                    module_detail_sessions: std::collections::HashMap::new(),
-                });
+        let effects = app.prepare_panel_for_test(request);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            crate::app::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+            crate::app::foreground::ForegroundEffect::OpenPanelWindow { .. }
         )));
         app.register_panel_popup(panel, origin);
     }
@@ -665,8 +658,8 @@ mod tests {
             crate::surface::panel::PanelContent::DmenuRequest,
             None,
         );
-        let effects = app.panel.handle(
-            crate::app::panel_runtime::PanelRuntimeIntent::BeginDmenuSelection {
+        let effects = app.foreground.handle(
+            crate::app::foreground::ForegroundIntent::BeginDmenuSelection {
                 request: crate::ipc::protocol::DmenuRequest {
                     prompt: None,
                     entries: vec![crate::ipc::protocol::DmenuEntry {
@@ -683,7 +676,7 @@ mod tests {
         );
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            crate::app::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+            crate::app::foreground::ForegroundEffect::OpenPanelWindow { .. }
         )));
         app.register_panel_popup(panel, origin);
 

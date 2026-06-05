@@ -1545,18 +1545,10 @@ mod tests {
             crate::surface::panel::PanelContent::Menu("main".into()),
             None,
         );
-        let effects = app.panel.handle(
-            super::super::panel_runtime::PanelRuntimeIntent::PrepareOpen {
-                request,
-                catalog: super::super::panel_runtime::PanelMenuCatalog::new(
-                    app.config.menus.as_slice(),
-                ),
-                module_detail_sessions: HashMap::new(),
-            },
-        );
+        let effects = app.prepare_panel_for_test(request);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            super::super::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+            super::super::foreground::ForegroundEffect::OpenPanelWindow { .. }
         )));
         app.register_panel_popup(panel, origin);
 

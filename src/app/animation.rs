@@ -236,7 +236,7 @@ mod tooltip_dwell_tests {
 
         let _ = app.handle_bar_click(wid);
 
-        let panel = app.panel.active_panel_tree().expect("active panel");
+        let panel = app.foreground.active_panel_tree().expect("active panel");
         assert_eq!(panel.origin, crate::surface::panel::PanelOrigin::Bar);
         assert_eq!(panel.content, crate::surface::panel::PanelContent::BarPanel);
         assert_eq!(panel.origin_window, wid);
@@ -286,7 +286,7 @@ mod tooltip_dwell_tests {
 
         let _ = app.handle_surface_event(super::super::messages::SurfaceEvent::BarRightClick(wid));
 
-        let panel = app.panel.active_panel_tree().expect("active panel");
+        let panel = app.foreground.active_panel_tree().expect("active panel");
         assert_eq!(panel.origin, crate::surface::panel::PanelOrigin::Bar);
         assert_eq!(panel.content, crate::surface::panel::PanelContent::BarPanel);
         assert_eq!(panel.origin_window, wid);
@@ -312,7 +312,7 @@ mod tooltip_dwell_tests {
             key: iced::keyboard::Key::Character("e".into()),
         });
 
-        let panel = app.panel.active_panel_tree().expect("active panel");
+        let panel = app.foreground.active_panel_tree().expect("active panel");
         assert_eq!(panel.origin, crate::surface::panel::PanelOrigin::Bar);
         assert_eq!(panel.content, crate::surface::panel::PanelContent::BarPanel);
         assert_eq!(panel.origin_window, wid);

@@ -109,14 +109,13 @@ impl App {
         target: ModuleId,
         message: crate::modules::ModuleDetailMessage,
     ) -> Task<Message> {
-        if !self.panel.active_module_panel_contains(&target) {
-            return Task::none();
-        }
-
         let Some(module) = self.modules.get_mut(&target) else {
             return Task::none();
         };
-        let Some(session) = self.panel.module_detail_session_for_mut(&target) else {
+        let Some(session) = self
+            .foreground
+            .active_panel_module_detail_session_mut(&target)
+        else {
             return Task::none();
         };
 
@@ -146,7 +145,10 @@ impl App {
     ) -> Task<Message> {
         match effect {
             crate::modules::ModuleDetailAppEffect::PanelAction(action) => {
-                self.dispatch_panel_action_from_active_panel(action)
+                let effects = self.foreground.handle(
+                    super::foreground::ForegroundIntent::PanelActionRequested(action),
+                );
+                Task::batch(self.apply_foreground_effects(effects))
             }
             crate::modules::ModuleDetailAppEffect::ClosePanel => {
                 Task::batch(self.close_active_panel())
@@ -459,8 +461,8 @@ mod tests {
     }
 
     fn detail_session_value(app: &App, id: &str) -> Option<u32> {
-        app.panel
-            .module_detail_session_for(&ModuleId::new(id))
+        app.foreground
+            .active_panel_module_detail_session(&ModuleId::new(id))
             .and_then(|session| session.downcast_ref::<u32>())
             .copied()
     }

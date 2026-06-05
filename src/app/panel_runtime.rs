@@ -218,6 +218,7 @@ impl PanelRuntime {
         self.dmenu_responder = None;
     }
 
+    #[cfg(test)]
     pub(super) fn active_panel_tree(&self) -> Option<&crate::surface::panel::PanelTree> {
         self.active_panel.as_ref().map(|panel| &panel.tree)
     }

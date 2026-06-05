@@ -7,21 +7,24 @@ impl super::App {
         window: iced::window::Id,
         origin_surface: iced::window::Id,
     ) {
-        let tree =
-            self.panel
-                .active_panel_tree()
-                .cloned()
-                .unwrap_or(crate::surface::panel::PanelTree {
-                    origin: crate::surface::panel::PanelOrigin::Bar,
-                    content: crate::surface::panel::PanelContent::BarPanel,
-                    origin_window: origin_surface,
-                    origin_bar_name: "main".into(),
-                    origin_output_name: "DP-1".into(),
-                    anchor: None,
-                    screen_size: (1920, 1080),
-                });
-        self.foreground
-            .handle(super::foreground::ForegroundIntent::PanelRuntimePrepared { tree });
+        if self.foreground.active_panel_tree().is_none() {
+            let request = super::foreground::PanelForegroundRequest {
+                origin_window: origin_surface,
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::BarPanel,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
+            };
+            let context = super::foreground::PanelOpenContext::new(
+                self.config.menus.as_slice(),
+                std::collections::HashMap::new(),
+            );
+            let _ = self
+                .foreground
+                .handle(super::foreground::ForegroundIntent::OpenPanel { request, context });
+        }
         self.foreground
             .handle(super::foreground::ForegroundIntent::PanelWindowOpened { window });
     }
@@ -80,25 +83,6 @@ impl super::App {
         let mut tasks = Vec::new();
         for effect in effects {
             match effect {
-                super::foreground::ForegroundEffect::PreparePanelRuntime { request, .. } => {
-                    let catalog =
-                        super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
-                    let module_detail_sessions = self.module_detail_sessions_for_request(&request);
-                    let effects =
-                        self.panel
-                            .handle(super::panel_runtime::PanelRuntimeIntent::PrepareOpen {
-                                module_detail_sessions,
-                                request,
-                                catalog,
-                            });
-                    tasks.push(self.apply_panel_runtime_effects(effects));
-                }
-                super::foreground::ForegroundEffect::ClearPanelRuntime => {
-                    let effects = self
-                        .panel
-                        .handle(super::panel_runtime::PanelRuntimeIntent::Clear);
-                    tasks.push(self.apply_panel_runtime_effects(effects));
-                }
                 super::foreground::ForegroundEffect::OpenPanelWindow { tree } => {
                     tasks.push(self.open_panel_window(tree));
                 }
@@ -126,63 +110,48 @@ impl super::App {
                     send_menu_closed_event(self.shared.dbus.session.clone(), meta);
                     tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
                 }
-            }
-        }
-        tasks
-    }
-
-    pub(super) fn apply_panel_runtime_effects(
-        &mut self,
-        effects: Vec<super::panel_runtime::PanelRuntimeEffect>,
-    ) -> iced::Task<super::Message> {
-        let mut tasks = Vec::new();
-        for effect in effects {
-            match effect {
-                super::panel_runtime::PanelRuntimeEffect::PanelPrepared(tree) => {
-                    let effects = self
-                        .foreground
-                        .handle(super::foreground::ForegroundIntent::PanelRuntimePrepared { tree });
-                    tasks.extend(self.apply_foreground_effects(effects));
-                }
-                super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus => {
+                super::foreground::ForegroundEffect::RequestPanelSearchFocus => {
                     tasks.push(super::panel::request_panel_search_focus());
                 }
-                super::panel_runtime::PanelRuntimeEffect::RequestPanelClose => {
-                    let effects = self
-                        .foreground
-                        .handle(super::foreground::ForegroundIntent::ClosePanel);
-                    tasks.extend(self.apply_foreground_effects(effects));
-                }
-                super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenPreparePanel(
-                    pending,
-                ) => {
+                super::foreground::ForegroundEffect::LoadInstalledAppsThenPreparePanel(pending) => {
                     let apps = self.load_installed_apps_for_panel();
-                    let catalog =
-                        super::panel_runtime::PanelMenuCatalog::new(self.config.menus.as_slice());
-                    let effects = self.panel.handle(
-                        super::panel_runtime::PanelRuntimeIntent::PrepareInstalledAppsLoaded {
+                    let effects = self.foreground.handle(
+                        super::foreground::ForegroundIntent::PanelInstalledAppsLoaded {
                             pending,
                             apps,
-                            catalog,
+                            menus: self.config.menus.as_slice(),
                         },
                     );
-                    tasks.push(self.apply_panel_runtime_effects(effects));
+                    tasks.extend(self.apply_foreground_effects(effects));
                 }
-                super::panel_runtime::PanelRuntimeEffect::RunPanelAction(action) => {
-                    tasks.push(self.dispatch_panel_action_from_active_panel(action));
+                super::foreground::ForegroundEffect::RunPanelAction {
+                    origin_window,
+                    origin,
+                    action,
+                } => {
+                    tasks.push(self.dispatch_panel_action(origin_window, origin, action));
                 }
-                super::panel_runtime::PanelRuntimeEffect::LaunchInstalledApp(id) => {
+                super::foreground::ForegroundEffect::LaunchInstalledApp(id) => {
                     self.launch_installed_app_by_id(&id);
                 }
-                super::panel_runtime::PanelRuntimeEffect::SendDmenuResponse {
+                super::foreground::ForegroundEffect::SendDmenuResponse {
                     responder,
                     response,
                 } => {
                     send_ipc_response(responder, response);
                 }
+                super::foreground::ForegroundEffect::ScrollPanelMenuToFocused { window, y } => {
+                    tasks.push(iced::widget::operation::scroll_to(
+                        super::panel::panel_menu_scroll_id(window),
+                        iced::widget::operation::AbsoluteOffset {
+                            x: None,
+                            y: Some(y),
+                        },
+                    ));
+                }
             }
         }
-        iced::Task::batch(tasks)
+        tasks
     }
 }
 
@@ -237,18 +206,10 @@ mod tests {
             content,
             None,
         );
-        let effects =
-            app.panel
-                .handle(crate::app::panel_runtime::PanelRuntimeIntent::PrepareOpen {
-                    request,
-                    catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
-                        app.config.menus.as_slice(),
-                    ),
-                    module_detail_sessions: std::collections::HashMap::new(),
-                });
+        let effects = app.prepare_panel_for_test(request);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            crate::app::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+            crate::app::foreground::ForegroundEffect::OpenPanelWindow { .. }
         )));
         app.register_panel_popup(window, origin);
     }
@@ -264,18 +225,10 @@ mod tests {
             content,
             None,
         );
-        let effects =
-            app.panel
-                .handle(crate::app::panel_runtime::PanelRuntimeIntent::PrepareOpen {
-                    request,
-                    catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
-                        app.config.menus.as_slice(),
-                    ),
-                    module_detail_sessions: std::collections::HashMap::new(),
-                });
+        let effects = app.prepare_panel_for_test(request);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            crate::app::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+            crate::app::foreground::ForegroundEffect::OpenPanelWindow { .. }
         )));
     }
 
@@ -388,7 +341,7 @@ mod tests {
         let _ =
             app.handle_surface_event(super::super::messages::SurfaceEvent::WindowClosed(window));
 
-        assert!(app.panel.active_panel_tree().is_none());
+        assert!(app.foreground.active_panel_tree().is_none());
         assert!(!app.foreground.is_panel_window(window));
     }
 }

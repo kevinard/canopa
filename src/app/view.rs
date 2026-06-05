@@ -494,18 +494,10 @@ mod tests {
             crate::surface::panel::PanelContent::BarPanel,
             None,
         );
-        let effects =
-            app.panel
-                .handle(crate::app::panel_runtime::PanelRuntimeIntent::PrepareOpen {
-                    request,
-                    catalog: crate::app::panel_runtime::PanelMenuCatalog::new(
-                        app.config.menus.as_slice(),
-                    ),
-                    module_detail_sessions: std::collections::HashMap::new(),
-                });
+        let effects = app.prepare_panel_for_test(request);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            crate::app::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+            crate::app::foreground::ForegroundEffect::OpenPanelWindow { .. }
         )));
         app.register_panel_popup(panel, origin);
 
@@ -529,7 +521,7 @@ mod tests {
         config.bars[0].actions.bindings.clear();
 
         let (mut app, _) = App::boot(config, vec![]);
-        app.panel.installed_apps_for_test = Some(
+        app.foreground.set_installed_apps_for_test(
             (0..5_000)
                 .map(|index| crate::desktop_apps::DesktopApplication {
                     id: format!("app-{index}.desktop"),

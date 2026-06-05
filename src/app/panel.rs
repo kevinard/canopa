@@ -129,9 +129,9 @@ impl App {
     pub(super) fn handle_panel_focus_gained(&mut self, window: iced::window::Id) -> Task<Message> {
         if self.foreground.is_menu_panel_window(window) {
             let effects = self
-                .panel
-                .handle(super::panel_runtime::PanelRuntimeIntent::RequestSearchFocus);
-            return self.apply_panel_runtime_effects(effects);
+                .foreground
+                .handle(super::foreground::ForegroundIntent::PanelRequestSearchFocus);
+            return Task::batch(self.apply_foreground_effects(effects));
         }
         Task::none()
     }
@@ -156,47 +156,45 @@ impl App {
                 anchor,
             } => {
                 let request = self.panel_open_request(origin_window, origin, content, anchor);
+                let module_detail_sessions = self.module_detail_sessions_for_request(&request);
+                let context = super::foreground::PanelOpenContext::new(
+                    self.config.menus.as_slice(),
+                    module_detail_sessions,
+                );
                 let effects = self
                     .foreground
-                    .handle(super::foreground::ForegroundIntent::TogglePanel { request });
+                    .handle(super::foreground::ForegroundIntent::TogglePanel { request, context });
                 Task::batch(self.apply_foreground_effects(effects))
             }
             PanelEvent::Close => Task::batch(self.close_active_panel()),
             PanelEvent::SearchChanged(query) => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::SearchChanged(
-                        query,
-                    ));
-                Task::none()
+                let effects = self.foreground.handle(
+                    super::foreground::ForegroundIntent::PanelSearchChanged(query),
+                );
+                Task::batch(self.apply_foreground_effects(effects))
             }
             PanelEvent::MenuScrolled { y, viewport_height } => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::MenuScrolled {
-                        y,
-                        viewport_height,
-                    });
-                Task::none()
+                let effects = self.foreground.handle(
+                    super::foreground::ForegroundIntent::PanelMenuScrolled { y, viewport_height },
+                );
+                Task::batch(self.apply_foreground_effects(effects))
             }
-            PanelEvent::FocusMoveNext => {
-                self.move_panel_focus(1);
-                self.scroll_panel_menu_to_focus()
-            }
-            PanelEvent::FocusMovePrev => {
-                self.move_panel_focus(-1);
-                self.scroll_panel_menu_to_focus()
-            }
+            PanelEvent::FocusMoveNext => self.move_panel_focus(1),
+            PanelEvent::FocusMovePrev => self.move_panel_focus(-1),
             PanelEvent::FocusIndex(index) => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::FocusIndex(index));
-                Task::none()
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::PanelFocusIndex(index));
+                Task::batch(self.apply_foreground_effects(effects))
             }
             PanelEvent::FocusSearchInput { retries } => self.focus_panel_search_input(retries),
             PanelEvent::Activate => self.activate_panel_entry(None),
             PanelEvent::ActivateIndex(index) => self.activate_panel_entry(Some(index)),
             PanelEvent::Back => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::Back);
-                Task::none()
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::PanelBack);
+                Task::batch(self.apply_foreground_effects(effects))
             }
         }
     }
@@ -209,9 +207,14 @@ impl App {
         anchor: Option<iced::Rectangle>,
     ) -> Task<Message> {
         let request = self.panel_open_request(origin_window, origin, content, anchor);
+        let module_detail_sessions = self.module_detail_sessions_for_request(&request);
+        let context = super::foreground::PanelOpenContext::new(
+            self.config.menus.as_slice(),
+            module_detail_sessions,
+        );
         let effects = self
             .foreground
-            .handle(super::foreground::ForegroundIntent::OpenPanel { request });
+            .handle(super::foreground::ForegroundIntent::OpenPanel { request, context });
         Task::batch(self.apply_foreground_effects(effects))
     }
 
@@ -232,6 +235,20 @@ impl App {
             origin_output_name: origin_surface.output_name,
             screen_size: origin_surface.screen_size,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn prepare_panel_for_test(
+        &mut self,
+        request: super::foreground::PanelForegroundRequest,
+    ) -> Vec<super::foreground::ForegroundEffect> {
+        let module_detail_sessions = self.module_detail_sessions_for_request(&request);
+        let context = super::foreground::PanelOpenContext::new(
+            self.config.menus.as_slice(),
+            module_detail_sessions,
+        );
+        self.foreground
+            .handle(super::foreground::ForegroundIntent::OpenPanel { request, context })
     }
 
     pub(super) fn module_detail_sessions_for_request(
@@ -259,7 +276,7 @@ impl App {
 
     pub(super) fn panel_module_layout_for_request(
         &self,
-        request: &super::panel_runtime::PanelOpenRequest,
+        request: &super::foreground::PanelForegroundRequest,
     ) -> Vec<crate::surface::panel::PanelModuleEntry> {
         self.panel_module_layout_for_content(
             request.origin_window,
@@ -338,7 +355,7 @@ impl App {
         &self,
     ) -> Vec<crate::desktop_apps::DesktopApplication> {
         #[cfg(test)]
-        if let Some(apps) = &self.panel.installed_apps_for_test {
+        if let Some(apps) = self.foreground.installed_apps_for_test() {
             return apps.clone();
         }
         crate::desktop_apps::discover_installed_applications().unwrap_or_default()
@@ -370,50 +387,38 @@ impl App {
 
     pub(super) fn handle_panel_escape_pressed(&mut self) -> Task<Message> {
         let effects = self
-            .panel
-            .handle(super::panel_runtime::PanelRuntimeIntent::Escape);
-        self.apply_panel_runtime_effects(effects)
+            .foreground
+            .handle(super::foreground::ForegroundIntent::PanelEscape);
+        Task::batch(self.apply_foreground_effects(effects))
     }
 
-    fn move_panel_focus(&mut self, delta: isize) {
-        self.panel
-            .handle(super::panel_runtime::PanelRuntimeIntent::FocusMove(delta));
-    }
-
-    fn scroll_panel_menu_to_focus(&mut self) -> Task<Message> {
-        let Some(panel_window) = self.foreground.active_panel_window() else {
-            return Task::none();
-        };
-        let scroll_id = panel_menu_scroll_id(panel_window);
-        let Some(y) = self
-            .panel
-            .scroll_focused_menu_into_view(MENU_ROW_EXTENT, DEFAULT_MENU_VIEWPORT_HEIGHT)
-        else {
-            return Task::none();
-        };
-        iced::widget::operation::scroll_to(
-            scroll_id,
-            iced::widget::operation::AbsoluteOffset {
-                x: None,
-                y: Some(y),
-            },
-        )
+    fn move_panel_focus(&mut self, delta: isize) -> Task<Message> {
+        let effects = self
+            .foreground
+            .handle(super::foreground::ForegroundIntent::PanelFocusMove {
+                delta,
+                scroll: super::foreground::PanelMenuScrollContext {
+                    row_extent: MENU_ROW_EXTENT,
+                    default_viewport_height: DEFAULT_MENU_VIEWPORT_HEIGHT,
+                },
+            });
+        Task::batch(self.apply_foreground_effects(effects))
     }
 
     fn activate_panel_entry(&mut self, index: Option<usize>) -> Task<Message> {
         let effects = self
-            .panel
-            .handle(super::panel_runtime::PanelRuntimeIntent::Activate(index));
-        self.apply_panel_runtime_effects(effects)
+            .foreground
+            .handle(super::foreground::ForegroundIntent::PanelActivate(index));
+        Task::batch(self.apply_foreground_effects(effects))
     }
 
     fn focus_panel_search_input(&mut self, retries: u8) -> Task<Message> {
-        if !self.panel.search_focus_pending() {
+        if !self.foreground.panel_search_focus_pending() {
             return Task::none();
         }
         let Some(panel_window) = self.foreground.active_panel_window() else {
-            self.panel
-                .handle(super::panel_runtime::PanelRuntimeIntent::SearchFocusSettled);
+            self.foreground
+                .handle(super::foreground::ForegroundIntent::PanelSearchFocusSettled);
             return Task::none();
         };
         let search_input_id = panel_search_input_id(panel_window);
@@ -430,28 +435,16 @@ impl App {
                 },
             ));
         } else {
-            self.panel
-                .handle(super::panel_runtime::PanelRuntimeIntent::SearchFocusSettled);
+            self.foreground
+                .handle(super::foreground::ForegroundIntent::PanelSearchFocusSettled);
         }
         Task::batch(tasks)
-    }
-
-    pub(super) fn dispatch_panel_action_from_active_panel(
-        &mut self,
-        action: crate::config::PanelAction,
-    ) -> Task<Message> {
-        let Some(tree) = self.panel.active_panel_tree().cloned() else {
-            return Task::none();
-        };
-        self.dispatch_panel_action(tree.origin_window, tree.origin, action)
     }
 
     pub(super) fn launch_installed_app_by_id(&mut self, id: &str) {
         #[cfg(test)]
         {
-            self.panel
-                .launched_installed_app_ids_for_test
-                .push(id.to_string());
+            self.foreground.record_launched_installed_app_for_test(id);
         }
 
         #[cfg(not(test))]
@@ -482,14 +475,14 @@ impl App {
                 None,
             )
         });
-        let effects = self.panel.handle(
-            super::panel_runtime::PanelRuntimeIntent::BeginDmenuSelection {
-                request,
-                responder,
-                panel_request,
-            },
-        );
-        self.apply_panel_runtime_effects(effects)
+        let effects =
+            self.foreground
+                .handle(super::foreground::ForegroundIntent::BeginDmenuSelection {
+                    request,
+                    responder,
+                    panel_request,
+                });
+        Task::batch(self.apply_foreground_effects(effects))
     }
 
     fn default_panel_origin_window(&self) -> Option<iced::window::Id> {
@@ -597,7 +590,7 @@ mod tests {
     }
 
     fn active_menu_entries(app: &App) -> Vec<super::super::panel_menu_session::PanelMenuEntry> {
-        app.panel.active_panel_menu_entries_for_test()
+        app.foreground.active_panel_menu_entries_for_test()
     }
 
     #[test]
@@ -807,10 +800,18 @@ mod tests {
     #[test]
     fn dmenu_request_rejects_when_another_request_is_pending() {
         let (mut app, _task) = crate::app::App::boot(crate::config::Config::default(), Vec::new());
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
         let (active_tx, _active_rx) = tokio::sync::oneshot::channel();
-        app.panel
-            .begin_dmenu_request(crate::app::messages::ipc_responder(active_tx))
-            .expect("stored");
+        let _ = app.handle_ipc_event(crate::app::messages::IpcEvent::DmenuSelection {
+            request: crate::ipc::protocol::DmenuRequest {
+                prompt: None,
+                entries: vec![crate::ipc::protocol::DmenuEntry::plain("active")],
+                allow_custom: true,
+            },
+            responder: crate::app::messages::ipc_responder(active_tx),
+        });
+        assert!(app.foreground.has_dmenu_responder_for_test());
         let (tx, mut rx) = tokio::sync::oneshot::channel();
 
         let _ = app.handle_ipc_event(crate::app::messages::IpcEvent::DmenuSelection {
@@ -845,7 +846,7 @@ mod tests {
             responder: crate::app::messages::ipc_responder(tx),
         });
 
-        assert!(app.panel.has_dmenu_responder());
+        assert!(app.foreground.has_dmenu_responder_for_test());
         assert_eq!(active_menu_entries(&app)[0].label, "firefox");
     }
 
@@ -874,7 +875,7 @@ mod tests {
                 value: "firefox".into()
             }
         );
-        assert!(!app.panel.has_dmenu_responder());
+        assert!(!app.foreground.has_dmenu_responder_for_test());
     }
 
     #[test]
@@ -903,7 +904,7 @@ mod tests {
             rx.try_recv().unwrap(),
             crate::ipc::protocol::IpcResponse::Cancelled
         );
-        assert!(!app.panel.has_dmenu_responder());
+        assert!(!app.foreground.has_dmenu_responder_for_test());
     }
 
     #[test]
@@ -1360,18 +1361,10 @@ mod tests {
             content,
             None,
         );
-        let effects = app.panel.handle(
-            super::super::panel_runtime::PanelRuntimeIntent::PrepareOpen {
-                request,
-                catalog: super::super::panel_runtime::PanelMenuCatalog::new(
-                    app.config.menus.as_slice(),
-                ),
-                module_detail_sessions: std::collections::HashMap::new(),
-            },
-        );
+        let effects = app.prepare_panel_for_test(request);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            super::super::panel_runtime::PanelRuntimeEffect::PanelPrepared(_)
+            super::super::foreground::ForegroundEffect::OpenPanelWindow { .. }
         )));
     }
 
@@ -1386,7 +1379,7 @@ mod tests {
     }
 
     fn register_menu_panel(app: &mut App, panel: iced::window::Id, origin: iced::window::Id) {
-        if app.panel.panel_menu_snapshot_for_test().is_none() {
+        if app.foreground.panel_menu_snapshot_for_test().is_none() {
             prepare_panel_content(
                 app,
                 origin,
@@ -1397,12 +1390,12 @@ mod tests {
     }
 
     fn set_panel_search(app: &mut App, query: &str) {
-        app.panel
-            .handle(super::super::panel_runtime::PanelRuntimeIntent::SearchChanged(query.into()));
+        app.foreground
+            .handle(super::super::foreground::ForegroundIntent::PanelSearchChanged(query.into()));
     }
 
     fn set_panel_focus(app: &mut App, index: usize) {
-        if app.panel.panel_menu_snapshot_for_test().is_none() {
+        if app.foreground.panel_menu_snapshot_for_test().is_none() {
             let origin = iced::window::Id::unique();
             prepare_panel_content(
                 app,
@@ -1410,14 +1403,14 @@ mod tests {
                 crate::surface::panel::PanelContent::Menu("main".into()),
             );
         }
-        app.panel
-            .handle(super::super::panel_runtime::PanelRuntimeIntent::FocusIndex(
+        app.foreground
+            .handle(super::super::foreground::ForegroundIntent::PanelFocusIndex(
                 index,
             ));
     }
 
     fn panel_focus(app: &App) -> Option<usize> {
-        app.panel.focused_index_for_test()
+        app.foreground.focused_panel_index_for_test()
     }
 
     #[test]
@@ -1545,7 +1538,7 @@ mod tests {
             items: vec![],
         });
         let (mut app, _) = App::boot(config, vec![]);
-        app.panel.installed_apps_for_test = Some(apps);
+        app.foreground.set_installed_apps_for_test(apps);
         app
     }
 
@@ -1728,8 +1721,8 @@ mod tests {
         ));
 
         assert_eq!(
-            app.panel.launched_installed_app_ids_for_test,
-            vec!["alpha.desktop"]
+            app.foreground.launched_installed_app_ids_for_test(),
+            ["alpha.desktop"]
         );
         assert_eq!(
             usize::from(app.foreground.active_panel_window().is_some()),
@@ -1787,14 +1780,14 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         set_panel_focus(&mut app, 0);
-        app.panel.reset_menu_scroll();
+        app.foreground.reset_panel_menu_scroll_for_test();
         register_menu_panel(&mut app, panel, origin);
 
         let _ =
             app.handle_surface_event(super::super::messages::SurfaceEvent::FocusMoveNext(panel));
 
         assert_eq!(panel_focus(&app), Some(1));
-        assert_eq!(app.panel.menu_scroll_y(), 0.0);
+        assert_eq!(app.foreground.panel_menu_scroll_y_for_test(), 0.0);
     }
 
     #[test]
@@ -1804,7 +1797,7 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         set_panel_focus(&mut app, 40);
-        app.panel.reset_menu_scroll();
+        app.foreground.reset_panel_menu_scroll_for_test();
         register_menu_panel(&mut app, panel, origin);
 
         let _ =
@@ -1812,7 +1805,7 @@ mod tests {
 
         assert_eq!(panel_focus(&app), Some(41));
         assert_eq!(
-            app.panel.menu_scroll_y(),
+            app.foreground.panel_menu_scroll_y_for_test(),
             42.0 * MENU_ROW_EXTENT - DEFAULT_MENU_VIEWPORT_HEIGHT
         );
     }
@@ -1824,8 +1817,8 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         set_panel_focus(&mut app, 10);
-        app.panel.handle(
-            super::super::panel_runtime::PanelRuntimeIntent::MenuScrolled {
+        app.foreground.handle(
+            super::super::foreground::ForegroundIntent::PanelMenuScrolled {
                 y: 10.0 * MENU_ROW_EXTENT,
                 viewport_height: DEFAULT_MENU_VIEWPORT_HEIGHT,
             },
@@ -1836,7 +1829,10 @@ mod tests {
             app.handle_surface_event(super::super::messages::SurfaceEvent::FocusMovePrev(panel));
 
         assert_eq!(panel_focus(&app), Some(9));
-        assert_eq!(app.panel.menu_scroll_y(), 9.0 * MENU_ROW_EXTENT);
+        assert_eq!(
+            app.foreground.panel_menu_scroll_y_for_test(),
+            9.0 * MENU_ROW_EXTENT
+        );
     }
 
     #[test]
@@ -1861,8 +1857,8 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         register_menu_panel(&mut app, panel, origin);
-        app.panel
-            .handle(super::super::panel_runtime::PanelRuntimeIntent::RequestSearchFocus);
+        app.foreground
+            .handle(super::super::foreground::ForegroundIntent::PanelRequestSearchFocus);
 
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusSearchInput {
             retries: 0,
@@ -1870,7 +1866,7 @@ mod tests {
 
         assert!(app.surface(panel).is_none());
         assert_eq!(panel_focus(&app), Some(0));
-        assert!(!app.panel.search_focus_pending());
+        assert!(!app.foreground.panel_search_focus_pending());
     }
 
     #[test]
@@ -1880,13 +1876,13 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         register_menu_panel(&mut app, panel, origin);
-        app.panel
-            .handle(super::super::panel_runtime::PanelRuntimeIntent::RequestSearchFocus);
+        app.foreground
+            .handle(super::super::foreground::ForegroundIntent::PanelRequestSearchFocus);
 
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusIndex(1));
 
         assert_eq!(panel_focus(&app), Some(1));
-        assert!(!app.panel.search_focus_pending());
+        assert!(!app.foreground.panel_search_focus_pending());
     }
 
     #[test]
@@ -1967,7 +1963,7 @@ mod tests {
 
         assert_eq!(app.foreground.active_panel_window(), Some(second_window));
         assert!(matches!(
-            app.panel.active_panel_tree().map(|tree| &tree.content),
+            app.foreground.active_panel_tree().map(|tree| &tree.content),
             Some(crate::surface::panel::PanelContent::Menu(name)) if name == "main"
         ));
         assert!(!app.foreground.is_panel_window(first_window));
@@ -2016,19 +2012,19 @@ mod tests {
         app.surface_mut(origin);
         register_menu_panel(&mut app, panel, origin);
         set_panel_search(&mut app, "term");
-        app.panel
-            .handle(super::super::panel_runtime::PanelRuntimeIntent::SearchFocusSettled);
+        app.foreground
+            .handle(super::super::foreground::ForegroundIntent::PanelSearchFocusSettled);
 
         let _ = app.handle_panel_escape_pressed();
 
         assert_eq!(
-            app.panel
+            app.foreground
                 .panel_menu_snapshot_for_test()
                 .unwrap()
                 .search_query,
             ""
         );
-        assert!(app.panel.search_focus_pending());
+        assert!(app.foreground.panel_search_focus_pending());
         assert!(app.foreground.is_panel_window(panel));
     }
 

@@ -161,11 +161,11 @@ A user-submitted typed value returned by a selectable menu instead of an existin
 _Avoid_: Dmenu entry when the value was typed by the user, menu item when no configured item exists
 
 **Selectable Menu Session**:
-The live runtime interaction for one selectable **Menu** or **Panel Menu**, including its entry source, active menu level, optional **Menu Search** text, focused entry, hover state, optional **Custom Menu Value** affordance, and selected-entry completion. The active **Menu** session is owned by **Foreground**; **Panel Menu** sessions are owned by **Panel Runtime** while rendered inside a **Panel**. It does not own physical **Menu** or **Panel** window lifecycle.
+The live runtime interaction for one selectable **Menu** or **Panel Menu**, including its entry source, active menu level, optional **Menu Search** text, focused entry, hover state, optional **Custom Menu Value** affordance, and selected-entry completion. The active **Menu** session is owned by **Foreground**; **Panel Menu** sessions are owned by **Foreground** through the active **Panel Runtime** while rendered inside a **Panel**. It does not own physical **Menu** or **Panel** window lifecycle.
 _Avoid_: Panel Menu Session when the behavior applies beyond panels, popup state when referring to selection behavior
 
 **Foreground**:
-The currently active interactive overlay state, either no overlay, a **Menu**, or a **Panel**. **Foreground** owns physical **Panel** and **Menu** overlay window identity, the active **Menu**'s **Selectable Menu Session**, replacement, stale close handling, and interactive overlay role classification. It is a pure state machine module with an intent/effect interface; app-owned side effects remain in the app adapter. **Tooltip** is not **Foreground** because it is passive, non-interactive, and owned as a **Bar Surface** affordance.
+The currently active interactive overlay state, either no overlay, a **Menu**, or a **Panel**. **Foreground** owns physical **Panel** and **Menu** overlay window identity, the active **Menu**'s **Selectable Menu Session**, the active **Panel Runtime**, replacement, stale close handling, interactive overlay role classification, and all app-level **Panel** interaction routes. It is a pure state machine module with an intent/effect interface; callers provide required pure context on intents, and app-owned side effects remain in the app adapter. **Tooltip** is not **Foreground** because it is passive, non-interactive, and owned as a **Bar Surface** affordance.
 _Avoid_: overlay registry when referring to interactive state, popup when referring to **Panel** or **Menu** interaction
 
 **Panel**:
@@ -173,7 +173,7 @@ A transient overlay surface opened from a **Bar Surface**. A **Panel** is anchor
 _Avoid_: Popup when referring to Niribar's generic panel
 
 **Panel Runtime**:
-The live content and interaction state for the currently active **Panel**, including its **Selectable Menu Session** when a **Panel Menu** is present, pending search focus, menu scroll position, **Module Detail Session** state, and any active **Dmenu Selection Request** responder. It does not own physical **Panel** window effects.
+The internal **Foreground**-owned module for the live content and interaction state of the currently active **Panel**, including its **Selectable Menu Session** when a **Panel Menu** is present, pending search focus, menu scroll position, **Module Detail Session** state, and any active **Dmenu Selection Request** responder. It does not expose an app-level interface and does not own physical **Panel** window effects.
 _Avoid_: Panel Lifecycle, overlay lifecycle, physical Panel window identity
 
 **Panel Lifecycle**:
@@ -403,11 +403,13 @@ _Avoid_: Default config, fallback surface
 - Niribar has at most one **Foreground** at a time.
 - Opening a **Panel** or **Menu** replaces the current **Foreground**.
 - Every request that opens, toggles, or closes a **Panel** or **Menu** goes through **Foreground**.
-- App-level **Panel** open, toggle, and close intents cross the **Foreground** interface before **Panel Runtime**.
+- App-level **Panel** open, toggle, close, search, focus, activation, and module-detail interaction intents cross the **Foreground** interface; callers do not talk to **Panel Runtime** directly.
 - **Foreground** owns stale close handling for physical **Panel** and **Menu** overlay windows.
 - **Foreground** is the source of truth for interactive overlay role classification.
-- **Foreground** communicates side-effect work through effects; it does not directly create windows, call DBus, launch processes, send IPC responses, or mutate passive **Tooltip** metadata.
-- The app adapter translates **Foreground** effects into layer-shell window tasks, DBus calls, process launches, IPC responses, **Panel Runtime** content updates, and **Tooltip** close work.
+- **Foreground** intents carry the pure context required to prepare or update **Panel Runtime** state, such as **Panel Menu** source configuration and **Module Detail Session** values.
+- **Foreground** communicates side-effect work through effects; it does not directly create windows, call DBus, launch processes, send IPC responses, load installed applications, or mutate passive **Tooltip** metadata.
+- When a **Panel** interaction needs impure work or external data, **Foreground** emits an effect and resumes from an explicit completion intent.
+- The app adapter translates **Foreground** effects into layer-shell window tasks, DBus calls, process launches, IPC responses, installed application loading, and **Tooltip** close work.
 - **Foreground** tests are the primary test surface for interactive overlay replacement, stale close handling, and current close handling.
 - App tests for **Foreground** behavior should focus on adapter effect application order, not duplicate **Foreground** state-machine decisions.
 - **Keyboard Focus** enters a **Menu** while it is open and returns to the originating target when the **Menu** closes, if that target still exists.
@@ -419,13 +421,17 @@ _Avoid_: Default config, fallback surface
 - **Menus** and **Tooltips** do not inherit the **Layer** of their **Bar Surface**.
 - Niribar shows at most one **Panel** at a time.
 - **Foreground** owns **Panel Lifecycle** open, toggle, replacement, and close decisions.
-- **Panel Runtime** is prepared or cleared by **Foreground** effects; callers do not open, toggle, or close **Panel Runtime** directly.
+- **Panel Runtime** is an internal **Foreground**-owned module; **Foreground** prepares, clears, and routes **Panel** interactions to it directly.
 - A **Panel** becomes logically active when **Foreground** accepts the open request and prepares **Panel Runtime** content state, before its overlay window is created.
 - Replacing a **Panel** makes the old **Panel** logically gone immediately, even while its old overlay window is still closing.
-- An external **Panel** window close clears **Panel Runtime** state only when **Foreground** identifies that window as the current **Panel**.
-- The **Panel Runtime** owns the current **Panel** content state used for rendering and interaction.
-- **Panel Runtime** may request closing the active **Panel** after a Panel-owned interaction completes; **Foreground** still owns the **Panel Lifecycle** close decision and physical **Panel** window effects.
-- **Panel Runtime** does not emit physical **Panel** window open or close effects.
+- An external **Panel** window close clears **Panel Runtime** state only through **Foreground** and only when **Foreground** identifies that window as the current **Panel**.
+- The **Panel Runtime** owns the current **Panel** content state used for rendering and interaction, but that state is exposed to callers through **Foreground** read interfaces.
+- Callers render a **Panel** from a **Foreground** **Panel** render snapshot, not by asking **Panel Runtime** for raw menu render state.
+- Callers update **Module Detail Session** state through the active **Panel** session exposed by **Foreground**; the active **Panel** check and session lookup stay local to **Foreground**.
+- **Panel** focus movement and keeping the focused **Panel Menu** entry in view are one **Foreground** interaction; callers provide scroll measurement context and apply the resulting scroll effect.
+- **Panel Action** requests produced from **Panel Runtime** or **Module Detail Session** state are resolved through **Foreground**, which attaches the active **Panel Origin** before the app adapter dispatches the action.
+- **Panel Runtime** may request closing the active **Panel** after a Panel-owned interaction completes; **Foreground** interprets that request and still owns the **Panel Lifecycle** close decision and physical **Panel** window effects.
+- **Panel Runtime** does not emit app-level physical **Panel** window open or close effects.
 - **Foreground** owns physical **Panel** overlay windows for classification and stale close handling.
 - A **Panel Attachment** is internal to **Foreground** and may be absent while a **Panel** is opening.
 - Replacing a **Panel** replaces the internal **Panel Attachment** inside **Foreground**.
