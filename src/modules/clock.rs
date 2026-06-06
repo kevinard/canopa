@@ -593,6 +593,18 @@ impl crate::modules::render::ModuleRender for ClockModule {
         Some(self.view_clock_detail_with_month_offset(state, bar_style, month_offset))
     }
 
+    fn detail_preferred_size(
+        &self,
+        _state: &crate::modules::ModuleState,
+        _bar_style: &crate::config::Style,
+        _session: Option<&crate::modules::ModuleDetailSession>,
+    ) -> Option<crate::surface::panel::PanelPreferredSize> {
+        Some(crate::surface::panel::PanelPreferredSize {
+            width: 300,
+            height: 260,
+        })
+    }
+
     fn render_horizontal_with_style(
         &self,
         state: &crate::modules::ModuleState,

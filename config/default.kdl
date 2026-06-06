@@ -76,8 +76,6 @@ bar "main" {
 
     // Default panel content for this bar.
     panel {
-        width 360
-        max-height 600
         start "workspaces"
         center "focused-window"
         end "volume" "network" "battery" "clock"

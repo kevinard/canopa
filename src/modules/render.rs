@@ -56,6 +56,15 @@ pub trait ModuleRender: Send + Sync {
         None
     }
 
+    fn detail_preferred_size(
+        &self,
+        _state: &ModuleState,
+        _style: &crate::config::Style,
+        _session: Option<&ModuleDetailSession>,
+    ) -> Option<crate::surface::panel::PanelPreferredSize> {
+        None
+    }
+
     fn tooltip_values(&self, _state: &ModuleState) -> Vec<(&'static str, String)> {
         Vec::new()
     }

@@ -469,6 +469,10 @@ impl Foreground {
         }
     }
 
+    pub(super) fn active_panel_menu_render_state(&self) -> PanelMenuRenderState {
+        self.panel.panel_menu_render_state().into()
+    }
+
     pub(super) fn active_panel_origin_for(
         &self,
         origin_window: iced::window::Id,

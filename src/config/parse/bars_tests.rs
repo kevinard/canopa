@@ -349,7 +349,7 @@ bar "main" {
                 .action_for(&crate::config::ActionTrigger::Key("Ctrl+E".into())),
             Some(&crate::config::PanelAction::TogglePanel)
         );
-        assert_eq!(bar.panel.width, 420);
+        assert_eq!(bar.panel.width, Some(420));
         assert_eq!(bar.panel.max_height, Some(720));
         assert_eq!(bar.panel.modules.start, vec!["workspaces"]);
         assert_eq!(bar.panel.modules.center, vec!["focused-window"]);
@@ -359,6 +359,25 @@ bar "main" {
         );
         assert_eq!(bar.panel.animation.open_ms, 180.0);
         assert_eq!(bar.panel.animation.close_ms, 120.0);
+    }
+
+    #[test]
+    fn parse_panel_omitted_dimensions_remain_content_aware() {
+        let config = parse(
+            r#"
+bar "main" {
+    panel {
+        start "clock"
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.bars[0].panel.width, None);
+        assert_eq!(config.bars[0].panel.height, None);
+        assert_eq!(config.bars[0].panel.max_width, None);
+        assert_eq!(config.bars[0].panel.max_height, None);
     }
 
     #[test]

@@ -44,6 +44,28 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
                 ),
             ));
         }
+        if let (Some(width), Some(max_width)) = (bar.panel.width, bar.panel.max_width)
+            && width > max_width
+        {
+            return Err(validation_error(
+                source.clone(),
+                format!(
+                    "bar {:?}: panel.width: value {} exceeds max-width {}.",
+                    bar.name, width, max_width
+                ),
+            ));
+        }
+        if let (Some(height), Some(max_height)) = (bar.panel.height, bar.panel.max_height)
+            && height > max_height
+        {
+            return Err(validation_error(
+                source.clone(),
+                format!(
+                    "bar {:?}: panel.height: value {} exceeds max-height {}.",
+                    bar.name, height, max_height
+                ),
+            ));
+        }
     }
 
     let mut declared_modules = std::collections::HashMap::new();

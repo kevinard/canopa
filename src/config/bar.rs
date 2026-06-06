@@ -95,7 +95,7 @@ impl Default for PanelAnimationConfig {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PanelConfig {
-    pub width: u32,
+    pub width: Option<u32>,
     pub max_width: Option<u32>,
     pub height: Option<u32>,
     pub max_height: Option<u32>,
@@ -106,10 +106,10 @@ pub struct PanelConfig {
 impl Default for PanelConfig {
     fn default() -> Self {
         Self {
-            width: 360,
+            width: None,
             max_width: None,
             height: None,
-            max_height: Some(600),
+            max_height: None,
             modules: PanelModules::default(),
             animation: PanelAnimationConfig::default(),
         }

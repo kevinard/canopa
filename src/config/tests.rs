@@ -146,6 +146,32 @@ mod config_tests {
     }
 
     #[test]
+    fn validate_rejects_panel_width_above_max_width() {
+        let mut config = Config::default();
+        config.bars[0].panel.width = Some(900);
+        config.bars[0].panel.max_width = Some(800);
+
+        let err = validate(&config).unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("panel.width"), "got: {msg}");
+        assert!(msg.contains("max-width"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_panel_height_above_max_height() {
+        let mut config = Config::default();
+        config.bars[0].panel.height = Some(900);
+        config.bars[0].panel.max_height = Some(800);
+
+        let err = validate(&config).unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("panel.height"), "got: {msg}");
+        assert!(msg.contains("max-height"), "got: {msg}");
+    }
+
+    #[test]
     fn validate_unknown_module_name_errors() {
         let mut config = Config::default();
         config.modules = vec![ModuleConfig {

@@ -37,6 +37,13 @@ pub(super) struct ModuleDetailRenderRequest<'a> {
     pub state_override: Option<ModuleState>,
 }
 
+pub(super) struct ModuleDetailSizeRequest<'a> {
+    pub id: ModuleId,
+    pub style: &'a crate::config::Style,
+    pub session: Option<&'a crate::modules::ModuleDetailSession>,
+    pub state_override: Option<ModuleState>,
+}
+
 pub(super) enum ModuleRuntimeIntent<'a> {
     ApplyDataSourceState(crate::modules::data_source::ModuleDataSourceState),
     MarkDataSourceUnavailable(crate::modules::data_source::ModuleDataSourceIdentity),
@@ -389,6 +396,19 @@ impl ModuleRuntime {
             return Some(element);
         }
         Some(module.render_panel_with_style(state, request.style))
+    }
+
+    pub(super) fn module_detail_preferred_size(
+        &self,
+        request: ModuleDetailSizeRequest<'_>,
+    ) -> Option<crate::surface::panel::PanelPreferredSize> {
+        let module = self.get(&request.id)?;
+        let state = request
+            .state_override
+            .as_ref()
+            .or_else(|| self.states.get(&request.id))
+            .unwrap_or(&ModuleState::Empty);
+        module.detail_preferred_size(state, request.style, request.session)
     }
 
     pub(super) fn tooltip_values_for(&self, id: &ModuleId) -> Vec<(&'static str, String)> {

@@ -1,6 +1,6 @@
 use iced::Task;
 use iced_layershell::reexport::{
-    KeyboardInteractivity, Layer, NewLayerShellSettings, OutputOption,
+    Anchor, KeyboardInteractivity, Layer, NewLayerShellSettings, OutputOption,
 };
 use std::time::Duration;
 
@@ -16,6 +16,19 @@ pub(super) fn panel_menu_scroll_id(window: iced::window::Id) -> iced::widget::Id
 
 pub(super) const MENU_ROW_EXTENT: f32 = 45.0;
 const DEFAULT_MENU_VIEWPORT_HEIGHT: f32 = MENU_ROW_EXTENT * 12.0;
+const DEFAULT_PANEL_FALLBACK_WIDTH: u32 = 360;
+const DEFAULT_PANEL_FALLBACK_HEIGHT: u32 = 600;
+const PANEL_OUTER_PADDING: u32 = 16;
+const PANEL_MODULE_FRAME_H_PADDING: u32 = 20;
+const PANEL_MODULE_FRAME_V_PADDING: u32 = 16;
+const PANEL_ENTRY_SPACING: u32 = 8;
+const PANEL_MENU_MIN_WIDTH: u32 = 240;
+const PANEL_MENU_SEARCH_HEIGHT: u32 = 38;
+const PANEL_MENU_LIST_PADDING: u32 = 16;
+const PANEL_MENU_ROW_H_PADDING: u32 = 20;
+const PANEL_MENU_CHAR_WIDTH: u32 = 8;
+const PANEL_MENU_ICON_SLOT: u32 = 26;
+const PANEL_MENU_SUBMENU_SLOT: u32 = 16;
 const PANEL_SEARCH_FOCUS_RETRIES: u8 = 8;
 const PANEL_SEARCH_FOCUS_RETRY_DELAY: Duration = Duration::from_millis(25);
 
@@ -43,18 +56,68 @@ fn panel_content_label(content: &crate::surface::panel::PanelContent) -> &'stati
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct PanelContentSizeHint {
+    preferred_width: Option<u32>,
+    preferred_height: Option<u32>,
+    fill_edge_span: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedPanelDimension {
+    value: u32,
+    fill: bool,
+}
+
+impl ResolvedPanelDimension {
+    fn exact(value: u32) -> Self {
+        Self { value, fill: false }
+    }
+
+    fn fill(span: u32) -> Self {
+        Self {
+            value: span,
+            fill: true,
+        }
+    }
+
+    fn layer_size(self) -> u32 {
+        if self.fill { 0 } else { self.value }
+    }
+}
+
 fn panel_window_settings(
     bar: &crate::config::BarConfig,
     tree: &crate::surface::panel::PanelTree,
     surface_origin: (i32, i32),
+    hint: PanelContentSizeHint,
 ) -> NewLayerShellSettings {
-    let width = bar.panel.width;
-    let height = bar.panel.height.or(bar.panel.max_height).unwrap_or(600);
-    let anchor = crate::surface::placement::layer_anchor(&bar.edge);
+    let fill_width = hint.fill_edge_span && bar.edge.is_horizontal();
+    let fill_height = hint.fill_edge_span && !bar.edge.is_horizontal();
+    let width = resolve_panel_dimension(
+        bar.panel.width,
+        bar.panel.max_width,
+        hint.preferred_width,
+        DEFAULT_PANEL_FALLBACK_WIDTH,
+        fill_width,
+        tree.screen_size.0,
+    );
+    let height = resolve_panel_dimension(
+        bar.panel.height,
+        bar.panel.max_height,
+        hint.preferred_height,
+        DEFAULT_PANEL_FALLBACK_HEIGHT,
+        fill_height,
+        tree.screen_size.1,
+    );
+    let anchor = panel_layer_anchor(&bar.edge, width.fill, height.fill);
     let position = crate::surface::placement::centered_position(
         &bar.edge,
         tree.anchor,
-        crate::surface::placement::Size { width, height },
+        crate::surface::placement::Size {
+            width: width.value,
+            height: height.value,
+        },
         crate::surface::placement::Size {
             width: tree.screen_size.0,
             height: tree.screen_size.1,
@@ -66,12 +129,12 @@ fn panel_window_settings(
         bar.collapsed_width,
         0,
     );
-    let margin = position.layer_margin();
+    let margin = panel_layer_margin(&bar.edge, position.layer_margin(), width, height);
 
     NewLayerShellSettings {
         anchor,
         exclusive_zone: Some(-1),
-        size: Some((width, height)),
+        size: Some((width.layer_size(), height.layer_size())),
         margin: Some(margin),
         layer: Layer::Overlay,
         keyboard_interactivity: KeyboardInteractivity::OnDemand,
@@ -83,6 +146,143 @@ fn panel_window_settings(
         namespace: Some(App::namespace()),
         ..Default::default()
     }
+}
+
+fn resolve_panel_dimension(
+    exact: Option<u32>,
+    max: Option<u32>,
+    preferred: Option<u32>,
+    fallback: u32,
+    fill_requested: bool,
+    span: u32,
+) -> ResolvedPanelDimension {
+    if let Some(exact) = exact {
+        return ResolvedPanelDimension::exact(exact);
+    }
+
+    if fill_requested {
+        if let Some(max) = max
+            && (span == 0 || max < span)
+        {
+            return ResolvedPanelDimension::exact(max);
+        }
+        return ResolvedPanelDimension::fill(span);
+    }
+
+    let size = preferred.unwrap_or(fallback);
+    ResolvedPanelDimension::exact(max.map(|max| size.min(max)).unwrap_or(size))
+}
+
+fn panel_layer_anchor(edge: &crate::config::Edge, fill_width: bool, fill_height: bool) -> Anchor {
+    match (edge, fill_width, fill_height) {
+        (crate::config::Edge::Top, false, false) => Anchor::Top | Anchor::Left,
+        (crate::config::Edge::Top, true, false) => Anchor::Top | Anchor::Left | Anchor::Right,
+        (crate::config::Edge::Top, false, true) => Anchor::Top | Anchor::Bottom | Anchor::Left,
+        (crate::config::Edge::Top, true, true) => {
+            Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right
+        }
+        (crate::config::Edge::Bottom, false, false) => Anchor::Bottom | Anchor::Left,
+        (crate::config::Edge::Bottom, true, false) => Anchor::Bottom | Anchor::Left | Anchor::Right,
+        (crate::config::Edge::Bottom, false, true) => Anchor::Top | Anchor::Bottom | Anchor::Left,
+        (crate::config::Edge::Bottom, true, true) => {
+            Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right
+        }
+        (crate::config::Edge::Left, false, false) => Anchor::Left | Anchor::Top,
+        (crate::config::Edge::Left, true, false) => Anchor::Left | Anchor::Right | Anchor::Top,
+        (crate::config::Edge::Left, false, true) => Anchor::Left | Anchor::Top | Anchor::Bottom,
+        (crate::config::Edge::Left, true, true) => {
+            Anchor::Left | Anchor::Right | Anchor::Top | Anchor::Bottom
+        }
+        (crate::config::Edge::Right, false, false) => Anchor::Right | Anchor::Top,
+        (crate::config::Edge::Right, true, false) => Anchor::Left | Anchor::Right | Anchor::Top,
+        (crate::config::Edge::Right, false, true) => Anchor::Right | Anchor::Top | Anchor::Bottom,
+        (crate::config::Edge::Right, true, true) => {
+            Anchor::Left | Anchor::Right | Anchor::Top | Anchor::Bottom
+        }
+    }
+}
+
+fn panel_layer_margin(
+    edge: &crate::config::Edge,
+    margin: (i32, i32, i32, i32),
+    width: ResolvedPanelDimension,
+    height: ResolvedPanelDimension,
+) -> (i32, i32, i32, i32) {
+    let (top, mut right, mut bottom, mut left) = margin;
+    if width.fill && matches!(edge, crate::config::Edge::Top | crate::config::Edge::Bottom) {
+        right = 0;
+        left = 0;
+    }
+    if height.fill && matches!(edge, crate::config::Edge::Left | crate::config::Edge::Right) {
+        bottom = 0;
+    }
+    (top, right, bottom, left)
+}
+
+fn panel_module_entry_size(
+    content: crate::surface::panel::PanelPreferredSize,
+) -> crate::surface::panel::PanelPreferredSize {
+    crate::surface::panel::PanelPreferredSize {
+        width: content.width + PANEL_MODULE_FRAME_H_PADDING,
+        height: content.height + PANEL_MODULE_FRAME_V_PADDING,
+    }
+}
+
+fn panel_module_window_size(
+    content: crate::surface::panel::PanelPreferredSize,
+) -> crate::surface::panel::PanelPreferredSize {
+    panel_module_list_window_size(&[panel_module_entry_size(content)])
+        .expect("single module detail produces one panel entry")
+}
+
+fn panel_module_list_window_size(
+    entries: &[crate::surface::panel::PanelPreferredSize],
+) -> Option<crate::surface::panel::PanelPreferredSize> {
+    if entries.is_empty() {
+        return None;
+    }
+
+    let width = entries.iter().map(|entry| entry.width).max().unwrap_or(0) + PANEL_OUTER_PADDING;
+    let height = entries.iter().map(|entry| entry.height).sum::<u32>()
+        + PANEL_ENTRY_SPACING * entries.len().saturating_sub(1) as u32
+        + PANEL_OUTER_PADDING;
+
+    Some(crate::surface::panel::PanelPreferredSize { width, height })
+}
+
+fn panel_menu_preferred_size(
+    menu: &super::foreground::PanelMenuRenderState,
+) -> crate::surface::panel::PanelPreferredSize {
+    let prompt_chars = menu.prompt.as_deref().unwrap_or("Search").chars().count() as u32;
+    let max_entry_chars = menu
+        .entries
+        .iter()
+        .map(|entry| entry.label.chars().count() as u32)
+        .max()
+        .unwrap_or(0);
+    let icon_width = if menu.show_icons {
+        PANEL_MENU_ICON_SLOT
+    } else {
+        0
+    };
+    let submenu_width = if menu.entries.iter().any(|entry| entry.is_submenu) {
+        PANEL_MENU_SUBMENU_SLOT
+    } else {
+        0
+    };
+    let row_width = max_entry_chars * PANEL_MENU_CHAR_WIDTH
+        + PANEL_MENU_ROW_H_PADDING
+        + PANEL_MENU_LIST_PADDING
+        + icon_width
+        + submenu_width;
+    let search_width =
+        prompt_chars * PANEL_MENU_CHAR_WIDTH + PANEL_MENU_ROW_H_PADDING + PANEL_MENU_LIST_PADDING;
+    let width = row_width.max(search_width).max(PANEL_MENU_MIN_WIDTH);
+    let row_extent = MENU_ROW_EXTENT.ceil() as u32;
+    let height =
+        PANEL_MENU_SEARCH_HEIGHT + PANEL_MENU_LIST_PADDING + row_extent * menu.entries.len() as u32;
+
+    crate::surface::panel::PanelPreferredSize { width, height }
 }
 
 impl App {
@@ -314,6 +514,96 @@ impl App {
         }
     }
 
+    fn panel_content_size_hint(
+        &self,
+        tree: &crate::surface::panel::PanelTree,
+        bar: &crate::config::BarConfig,
+        origin_surface: &crate::surface::SurfaceState,
+    ) -> PanelContentSizeHint {
+        match &tree.content {
+            crate::surface::panel::PanelContent::Menu(_)
+            | crate::surface::panel::PanelContent::DmenuRequest => {
+                let menu = self.foreground.active_panel_menu_render_state();
+                let preferred = panel_menu_preferred_size(&menu);
+                PanelContentSizeHint {
+                    preferred_width: Some(preferred.width),
+                    preferred_height: Some(preferred.height),
+                    fill_edge_span: true,
+                }
+            }
+            crate::surface::panel::PanelContent::ModulePanel(id) => self
+                .module_panel_preferred_size(id, bar, origin_surface)
+                .map(|preferred| PanelContentSizeHint {
+                    preferred_width: Some(preferred.width),
+                    preferred_height: Some(preferred.height),
+                    fill_edge_span: false,
+                })
+                .unwrap_or_default(),
+            crate::surface::panel::PanelContent::BarPanel => {
+                let layout = self.panel_module_layout_for_content(
+                    tree.origin_window,
+                    &tree.origin,
+                    &tree.content,
+                );
+                let mut hint = self
+                    .bar_panel_preferred_size(layout, bar, origin_surface)
+                    .map(|preferred| PanelContentSizeHint {
+                        preferred_width: Some(preferred.width),
+                        preferred_height: Some(preferred.height),
+                        fill_edge_span: true,
+                    })
+                    .unwrap_or(PanelContentSizeHint {
+                        fill_edge_span: true,
+                        ..Default::default()
+                    });
+                hint.fill_edge_span = true;
+                hint
+            }
+        }
+    }
+
+    fn module_panel_preferred_size(
+        &self,
+        id: &crate::modules::ModuleId,
+        bar: &crate::config::BarConfig,
+        origin_surface: &crate::surface::SurfaceState,
+    ) -> Option<crate::surface::panel::PanelPreferredSize> {
+        self.module_detail_preferred_content_size(id, bar, origin_surface)
+            .map(panel_module_window_size)
+    }
+
+    fn bar_panel_preferred_size(
+        &self,
+        layout: Vec<crate::surface::panel::PanelModuleEntry>,
+        bar: &crate::config::BarConfig,
+        origin_surface: &crate::surface::SurfaceState,
+    ) -> Option<crate::surface::panel::PanelPreferredSize> {
+        let mut entries = Vec::new();
+        for entry in layout {
+            let content_size =
+                self.module_detail_preferred_content_size(&entry.id, bar, origin_surface)?;
+            entries.push(panel_module_entry_size(content_size));
+        }
+        panel_module_list_window_size(&entries)
+    }
+
+    fn module_detail_preferred_content_size(
+        &self,
+        id: &crate::modules::ModuleId,
+        bar: &crate::config::BarConfig,
+        origin_surface: &crate::surface::SurfaceState,
+    ) -> Option<crate::surface::panel::PanelPreferredSize> {
+        let kind = self.modules.kind_for(id)?;
+        let state = self.module_render_state(kind, id, origin_surface);
+        self.modules
+            .module_detail_preferred_size(super::module_runtime::ModuleDetailSizeRequest {
+                id: id.clone(),
+                style: &bar.style,
+                session: self.foreground.active_panel_module_detail_session(id),
+                state_override: Some(state),
+            })
+    }
+
     pub(super) fn open_panel_window(
         &mut self,
         tree: crate::surface::panel::PanelTree,
@@ -324,7 +614,8 @@ impl App {
             .unwrap_or_default();
         let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
         let surface_origin = self.inferred_panel_surface_origin(&origin_surface, bar);
-        let settings = panel_window_settings(bar, &tree, surface_origin);
+        let hint = self.panel_content_size_hint(&tree, bar, &origin_surface);
+        let settings = panel_window_settings(bar, &tree, surface_origin, hint);
         let (panel_window, open_task) = Message::layershell_open(settings);
         self.surface_mut(tree.origin_window).tooltip_pending = None;
         tracing::debug!(
@@ -1036,7 +1327,8 @@ mod tests {
         };
 
         assert_eq!(
-            panel_window_settings(&bar, &tree, (0, 0)).keyboard_interactivity,
+            panel_window_settings(&bar, &tree, (0, 0), PanelContentSizeHint::default())
+                .keyboard_interactivity,
             KeyboardInteractivity::OnDemand
         );
     }
@@ -1057,9 +1349,20 @@ mod tests {
             screen_size: (1920, 48),
         };
 
-        let settings = panel_window_settings(&bar, &tree, (0, 0));
+        let settings = panel_window_settings(
+            &bar,
+            &tree,
+            (0, 0),
+            PanelContentSizeHint {
+                preferred_width: Some(300),
+                preferred_height: Some(400),
+                fill_edge_span: true,
+            },
+        );
 
-        assert_eq!(settings.size, Some((bar.panel.width, 600)));
+        assert_eq!(settings.size, Some((0, 400)));
+        assert!(settings.anchor.contains(Anchor::Left));
+        assert!(settings.anchor.contains(Anchor::Right));
         assert_eq!(
             settings.keyboard_interactivity,
             KeyboardInteractivity::OnDemand
@@ -1087,10 +1390,153 @@ mod tests {
             screen_size: (1920, 48),
         };
 
-        let settings = panel_window_settings(&bar, &tree, (0, 0));
+        let settings = panel_window_settings(
+            &bar,
+            &tree,
+            (0, 0),
+            PanelContentSizeHint {
+                preferred_width: Some(300),
+                preferred_height: Some(240),
+                fill_edge_span: true,
+            },
+        );
 
-        assert_eq!(settings.size, Some((bar.panel.width, 600)));
+        assert_eq!(settings.size, Some((0, 240)));
         assert_eq!(settings.margin, Some((0, 0, 48, 0)));
+    }
+
+    #[test]
+    fn left_edge_panel_menu_fills_edge_span_height() {
+        let bar = crate::config::BarConfig {
+            edge: crate::config::Edge::Left,
+            ..crate::config::BarConfig::default()
+        };
+        let tree = crate::surface::panel::PanelTree {
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::Menu("main".into()),
+            origin_window: iced::window::Id::unique(),
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            anchor: None,
+            screen_size: (48, 1080),
+        };
+
+        let settings = panel_window_settings(
+            &bar,
+            &tree,
+            (0, 0),
+            PanelContentSizeHint {
+                preferred_width: Some(320),
+                preferred_height: Some(400),
+                fill_edge_span: true,
+            },
+        );
+
+        assert_eq!(settings.size, Some((320, 0)));
+        assert!(settings.anchor.contains(Anchor::Top));
+        assert!(settings.anchor.contains(Anchor::Bottom));
+        assert_eq!(settings.margin, Some((0, 0, 0, 48)));
+    }
+
+    #[test]
+    fn exact_panel_dimension_overrides_fill_sizing() {
+        let mut bar = crate::config::BarConfig {
+            edge: crate::config::Edge::Top,
+            ..crate::config::BarConfig::default()
+        };
+        bar.panel.width = Some(500);
+        let tree = crate::surface::panel::PanelTree {
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::Menu("main".into()),
+            origin_window: iced::window::Id::unique(),
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            anchor: None,
+            screen_size: (1920, 48),
+        };
+
+        let settings = panel_window_settings(
+            &bar,
+            &tree,
+            (0, 0),
+            PanelContentSizeHint {
+                preferred_width: Some(320),
+                preferred_height: Some(400),
+                fill_edge_span: true,
+            },
+        );
+
+        assert_eq!(settings.size, Some((500, 400)));
+        assert!(!settings.anchor.contains(Anchor::Right));
+    }
+
+    #[test]
+    fn max_panel_dimension_caps_fill_sizing() {
+        let mut bar = crate::config::BarConfig {
+            edge: crate::config::Edge::Top,
+            ..crate::config::BarConfig::default()
+        };
+        bar.panel.max_width = Some(800);
+        let tree = crate::surface::panel::PanelTree {
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::Menu("main".into()),
+            origin_window: iced::window::Id::unique(),
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            anchor: None,
+            screen_size: (1920, 48),
+        };
+
+        let settings = panel_window_settings(
+            &bar,
+            &tree,
+            (0, 0),
+            PanelContentSizeHint {
+                preferred_width: Some(320),
+                preferred_height: Some(400),
+                fill_edge_span: true,
+            },
+        );
+
+        assert_eq!(settings.size, Some((800, 400)));
+        assert!(!settings.anchor.contains(Anchor::Right));
+    }
+
+    #[test]
+    fn clock_module_panel_uses_module_preferred_size() {
+        let mut config = crate::config::Config::default();
+        config.bars[0].modules.start = vec!["clock".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        {
+            let surface = app.surface_mut(origin);
+            surface.bar_name = "main".into();
+            surface.output_name = "DP-1".into();
+            surface.screen_size = (1920, 48);
+        }
+        let tree = crate::surface::panel::PanelTree {
+            origin: crate::surface::panel::PanelOrigin::Module(crate::modules::ModuleId::new(
+                "clock",
+            )),
+            content: crate::surface::panel::PanelContent::ModulePanel(
+                crate::modules::ModuleId::new("clock"),
+            ),
+            origin_window: origin,
+            origin_bar_name: "main".into(),
+            origin_output_name: "DP-1".into(),
+            anchor: None,
+            screen_size: (1920, 48),
+        };
+        let bar = app.config.bars[0].clone();
+        let origin_surface = app.surface(origin).cloned().unwrap();
+
+        let hint = app.panel_content_size_hint(&tree, &bar, &origin_surface);
+        let settings = panel_window_settings(&bar, &tree, (0, 0), hint);
+
+        assert_eq!(hint.preferred_width, Some(336));
+        assert_eq!(hint.preferred_height, Some(292));
+        assert!(!hint.fill_edge_span);
+        assert_eq!(settings.size, Some((336, 292)));
     }
 
     #[test]

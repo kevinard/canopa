@@ -192,6 +192,10 @@ _Avoid_: overlay registry when referring to interactive state, popup when referr
 A transient overlay surface opened from a **Bar Surface**. A **Panel** is anchored to its originating **Bar Surface** or **Module** and can render module detail content, a **Bar**'s configured panel module layout, or named **Panel Menu** content.
 _Avoid_: Popup when referring to Niribar's generic panel
 
+**Panel Sizing**:
+The content-aware policy that determines how much screen space a **Panel** occupies while respecting its **Panel Origin** and content kind. **Panel Sizing** keeps **Module Detail Content** compact with content-preferred sizes, uses **Edge Span** fill sizing for **Panel Menu** content and a **Bar**'s configured panel module layout, uses preferred sizing for the non-**Edge Span** axis of a configured panel module layout, treats explicit configured dimensions as overrides, applies configured maximum dimensions as caps, and falls back to default dimensions when no content-preferred size exists.
+_Avoid_: Popup size, fixed panel size
+
 **Panel Runtime**:
 The internal **Foreground**-owned module for the live content and interaction state of the currently active **Panel**, including its **Selectable Menu Session** when a **Panel Menu** is present, pending search focus, menu scroll position, **Module Detail Session** state, and any active **Dmenu Selection Request** responder. It does not expose an app-level interface and does not own physical **Panel** window effects.
 _Avoid_: Panel Lifecycle, overlay lifecycle, physical Panel window identity
@@ -481,7 +485,10 @@ _Avoid_: Default config, fallback surface
 - A **Panel** closes when Escape or an explicit close action closes it, or when its originating **Bar Surface** disappears.
 - A **Panel** may remain open when focus moves from the originating **Bar Surface** into the **Panel**.
 - Escape closes a **Panel** unless the active **Panel** content has a more specific first-Escape behavior.
+- Omitting an exact configured **Panel** dimension lets **Panel Sizing** choose that dimension from content, **Edge Span** fill behavior, or fallback defaults.
+- A **Panel** with an explicit configured dimension larger than the corresponding configured maximum dimension is a **Configuration Error**.
 - A **Module** may provide default **Module Detail Content** for its own module-originated **Panel**.
+- A **Module** that provides **Module Detail Content** may provide a content-preferred size for that detail content.
 - A **Module Detail Session** belongs to the **Module Detail Content** of one open **Panel**.
 - A **Module Detail Session** is module-owned; generic **Panel Runtime** does not interpret module-specific detail events or detail state.
 - A **Module Detail Session** resets each time module-originated **Module Detail Content** opens.

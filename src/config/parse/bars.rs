@@ -227,7 +227,8 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
             "expected a positive integer. Expected: expected a width in logical pixels, e.g. 360",
         )
         .u32()
-        .unwrap_or(defaults.width)?;
+        .transpose()?
+        .or(defaults.width);
     let max_width = fields::field(panel_children, ctx, "max-width")
         .optional()
         .help("expected a max width in logical pixels")

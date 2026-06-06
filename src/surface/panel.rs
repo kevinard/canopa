@@ -21,6 +21,12 @@ pub struct PanelModuleEntry {
     pub focused: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PanelPreferredSize {
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PanelTree {
     pub origin: PanelOrigin,

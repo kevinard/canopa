@@ -229,7 +229,7 @@ impl App {
         }
     }
 
-    fn module_render_state(
+    pub(super) fn module_render_state(
         &self,
         kind: ModuleKind,
         id: &ModuleId,
