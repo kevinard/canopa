@@ -240,8 +240,9 @@ impl ClockModule {
             return iced::widget::Space::new().into();
         };
 
-        let summary =
-            <Self as crate::modules::Module>::view_panel_with_style(self, state, bar_style);
+        let summary = <Self as crate::modules::render::ModuleRender>::render_panel_with_style(
+            self, state, bar_style,
+        );
         let today = chrono::Local::now().date_naive();
         let month = calendar_month_for(today, month_offset);
         let first = chrono::NaiveDate::from_ymd_opt(month.year, month.month, 1)
@@ -339,19 +340,6 @@ impl crate::modules::Module for ClockModule {
         crate::modules::ModuleKind::Clock
     }
 
-    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
-        if let crate::modules::ModuleState::Clock(c) = state {
-            vec![
-                ("icon", "⌚".into()),
-                ("value", c.time.clone()),
-                ("time", c.time.clone()),
-                ("date", c.date.clone()),
-            ]
-        } else {
-            Vec::new()
-        }
-    }
-
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         // Tick only as often as the configured formats can visibly change.
         // The id is included in the key tuple so multiple clock instances subscribe independently.
@@ -393,9 +381,59 @@ impl crate::modules::Module for ClockModule {
         )
     }
 
+    fn create_module_detail_session(
+        &self,
+        state: &crate::modules::ModuleState,
+    ) -> Option<crate::modules::ModuleDetailSession> {
+        matches!(state, crate::modules::ModuleState::Clock(_))
+            .then(|| Box::new(ClockDetailSession { month_offset: 0 }) as _)
+    }
+
+    fn update_module_detail_session(
+        &mut self,
+        session: &mut crate::modules::ModuleDetailSession,
+        message: crate::modules::ModuleDetailMessage,
+    ) -> crate::modules::ModuleDetailUpdate {
+        let Some(session) = session.downcast_mut::<ClockDetailSession>() else {
+            return crate::modules::ModuleDetailUpdate::default();
+        };
+        let Some(message) = message.downcast_ref::<ClockDetailMessage>() else {
+            return crate::modules::ModuleDetailUpdate::default();
+        };
+
+        match message {
+            ClockDetailMessage::PreviousMonth => {
+                session.month_offset = session.month_offset.saturating_sub(1);
+            }
+            ClockDetailMessage::NextMonth => {
+                session.month_offset = session.month_offset.saturating_add(1);
+            }
+            ClockDetailMessage::Today => {
+                session.month_offset = 0;
+            }
+        }
+
+        crate::modules::ModuleDetailUpdate::default()
+    }
+}
+
+impl crate::modules::render::ModuleRender for ClockModule {
+    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
+        if let crate::modules::ModuleState::Clock(c) = state {
+            vec![
+                ("icon", "⌚".into()),
+                ("value", c.time.clone()),
+                ("time", c.time.clone()),
+                ("date", c.date.clone()),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
     // Clock keeps custom views: collapsed renders icon + time in a column and
     // panel renders time plus a second date row.
-    fn view_collapsed_with_style(
+    fn render_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
@@ -455,7 +493,7 @@ impl crate::modules::Module for ClockModule {
         }
     }
 
-    fn view_panel_with_style(
+    fn render_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
@@ -521,68 +559,33 @@ impl crate::modules::Module for ClockModule {
         }
     }
 
-    fn view_module_detail_with_style(
+    fn render_detail_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_clock_detail_with_month_offset(state, bar_style, 0)
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        Some(self.view_clock_detail_with_month_offset(state, bar_style, 0))
     }
 
-    fn create_module_detail_session(
-        &self,
-        state: &crate::modules::ModuleState,
-    ) -> Option<crate::modules::ModuleDetailSession> {
-        matches!(state, crate::modules::ModuleState::Clock(_))
-            .then(|| Box::new(ClockDetailSession { month_offset: 0 }) as _)
-    }
-
-    fn view_module_detail_session_with_style(
+    fn render_detail_session_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
-        session: Option<&crate::modules::ModuleDetailSession>,
-    ) -> iced::Element<'_, crate::app::Message> {
+        session: &crate::modules::ModuleDetailSession,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
         let month_offset = session
-            .and_then(|session| session.downcast_ref::<ClockDetailSession>())
+            .downcast_ref::<ClockDetailSession>()
             .map(|session| session.month_offset)
             .unwrap_or_default();
 
-        self.view_clock_detail_with_month_offset(state, bar_style, month_offset)
+        Some(self.view_clock_detail_with_month_offset(state, bar_style, month_offset))
     }
 
-    fn update_module_detail_session(
-        &mut self,
-        session: &mut crate::modules::ModuleDetailSession,
-        message: crate::modules::ModuleDetailMessage,
-    ) -> crate::modules::ModuleDetailUpdate {
-        let Some(session) = session.downcast_mut::<ClockDetailSession>() else {
-            return crate::modules::ModuleDetailUpdate::default();
-        };
-        let Some(message) = message.downcast_ref::<ClockDetailMessage>() else {
-            return crate::modules::ModuleDetailUpdate::default();
-        };
-
-        match message {
-            ClockDetailMessage::PreviousMonth => {
-                session.month_offset = session.month_offset.saturating_sub(1);
-            }
-            ClockDetailMessage::NextMonth => {
-                session.month_offset = session.month_offset.saturating_add(1);
-            }
-            ClockDetailMessage::Today => {
-                session.month_offset = 0;
-            }
-        }
-
-        crate::modules::ModuleDetailUpdate::default()
-    }
-
-    fn view_horizontal_with_style(
+    fn render_horizontal_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
         use crate::modules::ModuleState;
         use crate::modules::view::horizontal_icon_label_with_style;
 
@@ -593,25 +596,37 @@ impl crate::modules::Module for ClockModule {
                     crate::config::FormatMode::Horizontal,
                     bar_style,
                 ) {
-                    return iced::widget::container(crate::modules::view::styled_segments_row(
-                        segments,
-                        12,
-                        crate::theme::TEXT,
-                    ))
-                    .height(iced::Length::Fill)
-                    .align_y(iced::Alignment::Center)
-                    .padding([0, 6])
-                    .into();
+                    return Some(
+                        iced::widget::container(crate::modules::view::styled_segments_row(
+                            segments,
+                            12,
+                            crate::theme::TEXT,
+                        ))
+                        .height(iced::Length::Fill)
+                        .align_y(iced::Alignment::Center)
+                        .padding([0, 6])
+                        .into(),
+                    );
                 }
                 if let Some(formatted) =
                     self.formatted_text(s, crate::config::FormatMode::Horizontal)
                 {
-                    horizontal_icon_label_with_style("", crate::theme::TEXT, formatted, bar_style)
+                    Some(horizontal_icon_label_with_style(
+                        "",
+                        crate::theme::TEXT,
+                        formatted,
+                        bar_style,
+                    ))
                 } else {
-                    horizontal_icon_label_with_style("⌚", crate::theme::TEXT, &s.time, bar_style)
+                    Some(horizontal_icon_label_with_style(
+                        "⌚",
+                        crate::theme::TEXT,
+                        &s.time,
+                        bar_style,
+                    ))
                 }
             }
-            _ => iced::widget::Space::new().into(),
+            _ => Some(iced::widget::Space::new().into()),
         }
     }
 }

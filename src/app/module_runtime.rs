@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::config::ModuleActionsConfig;
 use crate::modules::{
-    Module, ModuleId, ModuleInteractionProfile, ModuleKind, ModuleState, Zone, descriptor_for_kind,
+    Module, ModuleCapabilities, ModuleId, ModuleInteractionProfile, ModuleKind, ModuleState, Zone,
+    descriptor_for_kind,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +40,14 @@ pub(super) struct ModuleDetailRenderRequest<'a> {
 pub(super) enum ModuleRuntimeIntent<'a> {
     ApplyDataSourceState(crate::modules::data_source::ModuleDataSourceState),
     MarkDataSourceUnavailable(crate::modules::data_source::ModuleDataSourceIdentity),
+    ApplyModuleState {
+        id: ModuleId,
+        state: ModuleState,
+    },
+    ApplyStateToKind {
+        kind: ModuleKind,
+        state: ModuleState,
+    },
     ModuleInteraction {
         id: ModuleId,
         event: crate::modules::InteractionEvent,
@@ -116,6 +125,7 @@ impl ModuleRuntime {
         self.store.len()
     }
 
+    #[cfg(test)]
     pub(super) fn state(&self, id: &ModuleId) -> Option<&ModuleState> {
         self.states.get(id)
     }
@@ -142,6 +152,15 @@ impl ModuleRuntime {
             }
             ModuleRuntimeIntent::MarkDataSourceUnavailable(identity) => {
                 self.mark_data_source_unavailable(identity);
+            }
+            ModuleRuntimeIntent::ApplyModuleState { id, state } => {
+                self.set_state(id, state);
+            }
+            ModuleRuntimeIntent::ApplyStateToKind { kind, state } => {
+                let ids = self.store.ids_by_kind(kind).to_vec();
+                for id in ids {
+                    self.set_state(id, state.clone());
+                }
             }
             ModuleRuntimeIntent::ModuleInteraction {
                 id,
@@ -334,18 +353,12 @@ impl ModuleRuntime {
         request: BarModuleRenderRequest<'a>,
     ) -> Option<iced::Element<'a, super::Message>> {
         let module = self.get(&request.id)?;
-        let state_override = request.state_override;
-        let state = state_override
+        let state = request
+            .state_override
             .as_ref()
             .or_else(|| self.states.get(&request.id))
             .unwrap_or(&ModuleState::Empty);
-        Some(module.view_for_bar(
-            state,
-            request.window,
-            request.horizontal,
-            request.expanded,
-            request.style,
-        ))
+        Some(render_bar_form(module, state, &request))
     }
 
     pub(super) fn render_module_detail<'a>(
@@ -353,12 +366,21 @@ impl ModuleRuntime {
         request: ModuleDetailRenderRequest<'a>,
     ) -> Option<iced::Element<'a, super::Message>> {
         let module = self.get(&request.id)?;
-        let state_override = request.state_override;
-        let state = state_override
+        let state = request
+            .state_override
             .as_ref()
             .or_else(|| self.states.get(&request.id))
             .unwrap_or(&ModuleState::Empty);
-        Some(module.view_module_detail_session_with_style(state, request.style, request.session))
+        if let Some(session) = request.session
+            && let Some(element) =
+                module.render_detail_session_with_style(state, request.style, session)
+        {
+            return Some(element);
+        }
+        if let Some(element) = module.render_detail_with_style(state, request.style) {
+            return Some(element);
+        }
+        Some(module.render_panel_with_style(state, request.style))
     }
 
     pub(super) fn tooltip_values_for(&self, id: &ModuleId) -> Vec<(&'static str, String)> {
@@ -369,8 +391,24 @@ impl ModuleRuntime {
         module.tooltip_values(state)
     }
 
+    #[cfg(test)]
     pub(super) fn iter(&self) -> impl Iterator<Item = &(Zone, Box<dyn Module>)> {
         self.store.iter()
+    }
+
+    #[cfg(test)]
+    pub(super) fn contains_instance(&self, id: &ModuleId) -> bool {
+        self.store.get(id).is_some()
+    }
+
+    #[cfg(test)]
+    pub(super) fn module_ids(&self) -> Vec<ModuleId> {
+        self.store.iter().map(|(_, module)| module.id()).collect()
+    }
+
+    #[cfg(test)]
+    pub(super) fn first_id_by_kind(&self, kind: ModuleKind) -> Option<ModuleId> {
+        self.store.ids_by_kind(kind).first().cloned()
     }
 
     pub(super) fn kind_for(&self, id: &ModuleId) -> Option<ModuleKind> {
@@ -450,11 +488,26 @@ impl ModuleRuntime {
         self.interactions.retain(|id, _| retained_ids.contains(id));
     }
 
-    pub(super) fn ids_by_kind(&self, kind: ModuleKind) -> &[ModuleId] {
-        self.store.ids_by_kind(kind)
+    pub(super) fn has_kind(&self, kind: ModuleKind) -> bool {
+        !self.store.ids_by_kind(kind).is_empty()
     }
 
-    pub(super) fn get(&self, id: &ModuleId) -> Option<&dyn Module> {
+    pub(super) fn count_by_kind(&self, kind: ModuleKind) -> usize {
+        self.store.ids_by_kind(kind).len()
+    }
+
+    pub(super) fn has_capability(&self, predicate: impl Fn(ModuleCapabilities) -> bool) -> bool {
+        self.store
+            .iter()
+            .filter_map(|(_, module)| descriptor_for_kind(module.kind()))
+            .any(|descriptor| predicate(descriptor.capabilities))
+    }
+
+    pub(super) fn module_subscriptions(&self) -> iced::Subscription<super::Message> {
+        iced::Subscription::batch(self.store.iter().map(|(_, module)| module.subscription()))
+    }
+
+    fn get(&self, id: &ModuleId) -> Option<&dyn Module> {
         self.store.get(id)
     }
 
@@ -478,7 +531,7 @@ impl ModuleRuntime {
             .any(|(_, module)| module.data_source_identity() == Some(identity))
     }
 
-    pub(super) fn get_mut(&mut self, id: &ModuleId) -> Option<&mut (dyn Module + '_)> {
+    fn get_mut(&mut self, id: &ModuleId) -> Option<&mut (dyn Module + '_)> {
         self.store.get_mut(id)
     }
 
@@ -570,30 +623,30 @@ impl ModuleRuntime {
     }
 }
 
-impl std::ops::Index<usize> for ModuleRuntime {
-    type Output = (Zone, Box<dyn Module>);
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.store[index]
+fn render_bar_form<'a>(
+    module: &'a dyn Module,
+    state: &ModuleState,
+    request: &BarModuleRenderRequest<'a>,
+) -> iced::Element<'a, super::Message> {
+    if request.expanded {
+        return module.render_panel_with_style(state, request.style);
     }
-}
 
-impl<'a> IntoIterator for &'a ModuleRuntime {
-    type Item = &'a (Zone, Box<dyn Module>);
-    type IntoIter = std::slice::Iter<'a, (Zone, Box<dyn Module>)>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.store.iter()
+    if request.horizontal {
+        if let Some(element) =
+            module.render_bar_horizontal_with_style(state, request.window, request.style)
+        {
+            return element;
+        }
+        return module.render_panel_with_style(state, request.style);
     }
-}
 
-impl<'a> IntoIterator for &'a mut ModuleRuntime {
-    type Item = &'a mut (Zone, Box<dyn Module>);
-    type IntoIter = std::slice::IterMut<'a, (Zone, Box<dyn Module>)>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.store.iter_mut()
+    if let Some(element) =
+        module.render_bar_collapsed_with_style(state, request.window, request.style)
+    {
+        return element;
     }
+    module.render_collapsed_with_style(state, request.style)
 }
 
 #[cfg(test)]
@@ -608,6 +661,7 @@ mod tests {
     use crate::modules::volume::VolumeEvent;
     use crate::modules::{
         Module, ModuleEvent, ModuleId, ModuleInteractionProfile, ModuleKind, ModuleState, Zone,
+        render::ModuleRender,
     };
     use crate::niri::NiriEvent;
     use zbus::zvariant::OwnedObjectPath;
@@ -752,8 +806,10 @@ mod tests {
         fn subscription(&self) -> iced::Subscription<Message> {
             iced::Subscription::none()
         }
+    }
 
-        fn view_collapsed_with_style(
+    impl ModuleRender for RuntimeQueryTestModule {
+        fn render_collapsed_with_style(
             &self,
             state: &ModuleState,
             _bar_style: &crate::config::Style,
@@ -762,7 +818,7 @@ mod tests {
             iced::widget::text("").into()
         }
 
-        fn view_panel_with_style(
+        fn render_panel_with_style(
             &self,
             state: &ModuleState,
             _bar_style: &crate::config::Style,
@@ -771,15 +827,15 @@ mod tests {
             iced::widget::text("").into()
         }
 
-        fn view_module_detail_session_with_style(
+        fn render_detail_session_with_style(
             &self,
             state: &ModuleState,
             _bar_style: &crate::config::Style,
-            session: Option<&crate::modules::ModuleDetailSession>,
-        ) -> iced::Element<'_, Message> {
+            _session: &crate::modules::ModuleDetailSession,
+        ) -> Option<iced::Element<'_, Message>> {
             self.rendered_states.lock().unwrap().push(state.clone());
-            self.detail_sessions.lock().unwrap().push(session.is_some());
-            iced::widget::text("").into()
+            self.detail_sessions.lock().unwrap().push(true);
+            Some(iced::widget::text("").into())
         }
 
         fn tooltip_values(&self, state: &ModuleState) -> Vec<(&'static str, String)> {
@@ -789,6 +845,103 @@ mod tests {
                 _ => "other",
             };
             vec![("state", value.into())]
+        }
+    }
+
+    struct RenderPathTestModule {
+        id: ModuleId,
+        calls: std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>,
+        horizontal: bool,
+        detail: bool,
+        detail_session: bool,
+    }
+
+    impl RenderPathTestModule {
+        fn new(id: &str, calls: std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>) -> Self {
+            Self {
+                id: ModuleId::new(id),
+                calls,
+                horizontal: false,
+                detail: false,
+                detail_session: false,
+            }
+        }
+
+        fn with_horizontal(mut self) -> Self {
+            self.horizontal = true;
+            self
+        }
+
+        fn with_detail(mut self) -> Self {
+            self.detail = true;
+            self
+        }
+
+        fn with_detail_session(mut self) -> Self {
+            self.detail_session = true;
+            self
+        }
+
+        fn record(&self, form: &'static str) -> iced::Element<'_, Message> {
+            self.calls.lock().unwrap().push(form);
+            iced::widget::text(form).into()
+        }
+    }
+
+    impl ModuleRender for RenderPathTestModule {
+        fn render_collapsed_with_style(
+            &self,
+            _state: &ModuleState,
+            _style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            self.record("collapsed")
+        }
+
+        fn render_panel_with_style(
+            &self,
+            _state: &ModuleState,
+            _style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            self.record("panel")
+        }
+
+        fn render_horizontal_with_style(
+            &self,
+            _state: &ModuleState,
+            _style: &crate::config::Style,
+        ) -> Option<iced::Element<'_, Message>> {
+            self.horizontal.then(|| self.record("horizontal"))
+        }
+
+        fn render_detail_with_style(
+            &self,
+            _state: &ModuleState,
+            _style: &crate::config::Style,
+        ) -> Option<iced::Element<'_, Message>> {
+            self.detail.then(|| self.record("detail"))
+        }
+
+        fn render_detail_session_with_style(
+            &self,
+            _state: &ModuleState,
+            _style: &crate::config::Style,
+            _session: &crate::modules::ModuleDetailSession,
+        ) -> Option<iced::Element<'_, Message>> {
+            self.detail_session.then(|| self.record("session"))
+        }
+    }
+
+    impl Module for RenderPathTestModule {
+        fn id(&self) -> ModuleId {
+            self.id.clone()
+        }
+
+        fn kind(&self) -> ModuleKind {
+            ModuleKind::Button
+        }
+
+        fn subscription(&self) -> iced::Subscription<Message> {
+            iced::Subscription::none()
         }
     }
 
@@ -817,22 +970,6 @@ mod tests {
             iced::Subscription::none()
         }
 
-        fn view_collapsed_with_style(
-            &self,
-            _state: &ModuleState,
-            _bar_style: &crate::config::Style,
-        ) -> iced::Element<'_, Message> {
-            iced::widget::text("").into()
-        }
-
-        fn view_panel_with_style(
-            &self,
-            _state: &ModuleState,
-            _bar_style: &crate::config::Style,
-        ) -> iced::Element<'_, Message> {
-            iced::widget::text("").into()
-        }
-
         fn on_interaction(&self, event: crate::modules::InteractionEvent) -> Option<Message> {
             match event {
                 crate::modules::InteractionEvent::ScrollUp => {
@@ -840,6 +977,24 @@ mod tests {
                 }
                 _ => None,
             }
+        }
+    }
+
+    impl ModuleRender for ModuleOwnedInteractionTestModule {
+        fn render_collapsed_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn render_panel_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
         }
     }
 
@@ -873,22 +1028,6 @@ mod tests {
 
         fn subscription(&self) -> iced::Subscription<Message> {
             iced::Subscription::none()
-        }
-
-        fn view_collapsed_with_style(
-            &self,
-            _state: &ModuleState,
-            _bar_style: &crate::config::Style,
-        ) -> iced::Element<'_, Message> {
-            iced::widget::text("").into()
-        }
-
-        fn view_panel_with_style(
-            &self,
-            _state: &ModuleState,
-            _bar_style: &crate::config::Style,
-        ) -> iced::Element<'_, Message> {
-            iced::widget::text("").into()
         }
 
         fn create_module_detail_session(
@@ -928,6 +1067,24 @@ mod tests {
                     )],
                 },
             }
+        }
+    }
+
+    impl ModuleRender for ModuleDetailRuntimeTestModule {
+        fn render_collapsed_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn render_panel_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
         }
     }
 
@@ -977,6 +1134,188 @@ mod tests {
                 ModuleState::Button(crate::modules::button::ButtonState)
             ]
         );
+    }
+
+    #[test]
+    fn bar_rendering_uses_collapsed_render_for_collapsed_vertical_bars() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RenderPathTestModule::new("button", calls.clone())),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        let request = super::BarModuleRenderRequest {
+            id: ModuleId::new("button"),
+            window: iced::window::Id::unique(),
+            horizontal: false,
+            expanded: false,
+            style: &crate::config::Style::default(),
+            state_override: None,
+        };
+
+        assert!(runtime.render_bar_module(request).is_some());
+
+        assert_eq!(*calls.lock().unwrap(), vec!["collapsed"]);
+    }
+
+    #[test]
+    fn bar_rendering_uses_horizontal_render_when_provided() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RenderPathTestModule::new("button", calls.clone()).with_horizontal()),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        let request = super::BarModuleRenderRequest {
+            id: ModuleId::new("button"),
+            window: iced::window::Id::unique(),
+            horizontal: true,
+            expanded: false,
+            style: &crate::config::Style::default(),
+            state_override: None,
+        };
+
+        assert!(runtime.render_bar_module(request).is_some());
+
+        assert_eq!(*calls.lock().unwrap(), vec!["horizontal"]);
+    }
+
+    #[test]
+    fn bar_rendering_falls_back_to_panel_when_horizontal_render_is_absent() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RenderPathTestModule::new("button", calls.clone())),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        let request = super::BarModuleRenderRequest {
+            id: ModuleId::new("button"),
+            window: iced::window::Id::unique(),
+            horizontal: true,
+            expanded: false,
+            style: &crate::config::Style::default(),
+            state_override: None,
+        };
+
+        assert!(runtime.render_bar_module(request).is_some());
+
+        assert_eq!(*calls.lock().unwrap(), vec!["panel"]);
+    }
+
+    #[test]
+    fn expanded_bar_rendering_uses_panel_render() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RenderPathTestModule::new("button", calls.clone()).with_horizontal()),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        let request = super::BarModuleRenderRequest {
+            id: ModuleId::new("button"),
+            window: iced::window::Id::unique(),
+            horizontal: false,
+            expanded: true,
+            style: &crate::config::Style::default(),
+            state_override: None,
+        };
+
+        assert!(runtime.render_bar_module(request).is_some());
+
+        assert_eq!(*calls.lock().unwrap(), vec!["panel"]);
+    }
+
+    #[test]
+    fn module_detail_rendering_uses_detail_render_when_provided() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RenderPathTestModule::new("button", calls.clone()).with_detail()),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        let request = super::ModuleDetailRenderRequest {
+            id: ModuleId::new("button"),
+            style: &crate::config::Style::default(),
+            session: None,
+            state_override: None,
+        };
+
+        assert!(runtime.render_module_detail(request).is_some());
+
+        assert_eq!(*calls.lock().unwrap(), vec!["detail"]);
+    }
+
+    #[test]
+    fn module_detail_rendering_uses_session_render_when_provided() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(
+                RenderPathTestModule::new("button", calls.clone())
+                    .with_detail()
+                    .with_detail_session(),
+            ),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let session: crate::modules::ModuleDetailSession = Box::new(7_u32);
+
+        let request = super::ModuleDetailRenderRequest {
+            id: ModuleId::new("button"),
+            style: &crate::config::Style::default(),
+            session: Some(&session),
+            state_override: None,
+        };
+
+        assert!(runtime.render_module_detail(request).is_some());
+
+        assert_eq!(*calls.lock().unwrap(), vec!["session"]);
+    }
+
+    #[test]
+    fn module_detail_rendering_falls_back_to_panel_render_when_detail_is_absent() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RenderPathTestModule::new("button", calls.clone())),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        let request = super::ModuleDetailRenderRequest {
+            id: ModuleId::new("button"),
+            style: &crate::config::Style::default(),
+            session: None,
+            state_override: None,
+        };
+
+        assert!(runtime.render_module_detail(request).is_some());
+
+        assert_eq!(*calls.lock().unwrap(), vec!["panel"]);
+    }
+
+    #[test]
+    fn module_detail_rendering_falls_back_from_session_to_detail_render() {
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RenderPathTestModule::new("button", calls.clone()).with_detail()),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let session: crate::modules::ModuleDetailSession = Box::new(7_u32);
+
+        let request = super::ModuleDetailRenderRequest {
+            id: ModuleId::new("button"),
+            style: &crate::config::Style::default(),
+            session: Some(&session),
+            state_override: None,
+        };
+
+        assert!(runtime.render_module_detail(request).is_some());
+
+        assert_eq!(*calls.lock().unwrap(), vec!["detail"]);
     }
 
     #[test]
@@ -1040,6 +1379,102 @@ mod tests {
                 .tooltip_values_for(&ModuleId::new("missing"))
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn module_runtime_reports_module_kind_presence() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states,
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        assert!(runtime.has_kind(ModuleKind::Button));
+        assert!(!runtime.has_kind(ModuleKind::Clock));
+    }
+
+    #[test]
+    fn module_runtime_reports_module_capabilities() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states,
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+
+        assert!(runtime.has_capability(|capabilities| capabilities.needs_keyboard_focus));
+        assert!(!runtime.has_capability(|capabilities| capabilities.needs_niri));
+    }
+
+    #[test]
+    fn module_runtime_applies_module_state_intent() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![(
+            Zone::Start,
+            Box::new(RuntimeQueryTestModule::new(
+                "button",
+                rendered_states,
+                detail_sessions,
+            )),
+            crate::config::ModuleActionsConfig::default(),
+        )]);
+        let state = ModuleState::Button(crate::modules::button::ButtonState);
+
+        let effects = runtime.handle(super::ModuleRuntimeIntent::ApplyModuleState {
+            id: ModuleId::new("button"),
+            state: state.clone(),
+        });
+
+        assert!(effects.is_empty());
+        assert_eq!(runtime.state(&ModuleId::new("button")), Some(&state));
+    }
+
+    #[test]
+    fn module_runtime_applies_state_to_kind_intent() {
+        let rendered_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let detail_sessions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut runtime = super::ModuleRuntime::from_modules_with_actions(vec![
+            (
+                Zone::Start,
+                Box::new(RuntimeQueryTestModule::new(
+                    "button-left",
+                    rendered_states.clone(),
+                    detail_sessions.clone(),
+                )),
+                crate::config::ModuleActionsConfig::default(),
+            ),
+            (
+                Zone::End,
+                Box::new(RuntimeQueryTestModule::new(
+                    "button-right",
+                    rendered_states,
+                    detail_sessions,
+                )),
+                crate::config::ModuleActionsConfig::default(),
+            ),
+        ]);
+        let state = ModuleState::Button(crate::modules::button::ButtonState);
+
+        let effects = runtime.handle(super::ModuleRuntimeIntent::ApplyStateToKind {
+            kind: ModuleKind::Button,
+            state: state.clone(),
+        });
+
+        assert!(effects.is_empty());
+        assert_eq!(runtime.state(&ModuleId::new("button-left")), Some(&state));
+        assert_eq!(runtime.state(&ModuleId::new("button-right")), Some(&state));
     }
 
     #[test]

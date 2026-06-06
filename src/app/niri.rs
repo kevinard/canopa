@@ -54,25 +54,25 @@ impl App {
             }
             NiriEvent::Unavailable => {
                 self.niri.state_mut().connected = false;
-                let ids: Vec<_> = self
-                    .modules
-                    .iter()
-                    .filter(|(_, module)| {
-                        matches!(
-                            module.kind(),
-                            ModuleKind::Workspaces | ModuleKind::FocusedWindow
-                        )
-                    })
-                    .map(|(_, module)| module.id())
-                    .collect();
+                let affected_module_count = self.modules.count_by_kind(ModuleKind::Workspaces)
+                    + self.modules.count_by_kind(ModuleKind::FocusedWindow);
                 tracing::info!(
                     target: "niribar::niri",
-                    affected_module_count = ids.len(),
+                    affected_module_count,
                     "niri ipc unavailable"
                 );
-                for id in ids {
-                    self.modules.set_state(id, ModuleState::Unavailable);
-                }
+                let _ = self.modules.handle(
+                    super::module_runtime::ModuleRuntimeIntent::ApplyStateToKind {
+                        kind: ModuleKind::Workspaces,
+                        state: ModuleState::Unavailable,
+                    },
+                );
+                let _ = self.modules.handle(
+                    super::module_runtime::ModuleRuntimeIntent::ApplyStateToKind {
+                        kind: ModuleKind::FocusedWindow,
+                        state: ModuleState::Unavailable,
+                    },
+                );
                 Task::none()
             }
             NiriEvent::Event(event) => {
@@ -687,11 +687,15 @@ mod tests {
         let win = make_window(4, Some("Nautilus"), true);
         app.niri.state_mut().windows.insert(4, win);
         app.niri.state_mut().focused_window_id = Some(4);
-        app.modules.set_state(
-            ModuleId::new("focused-window"),
-            ModuleState::FocusedWindow(crate::modules::focused_window::FocusedWindowState {
-                title: Some("Nautilus".into()),
-            }),
+        let _ = app.modules.handle(
+            super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
+                id: ModuleId::new("focused-window"),
+                state: ModuleState::FocusedWindow(
+                    crate::modules::focused_window::FocusedWindowState {
+                        title: Some("Nautilus".into()),
+                    },
+                ),
+            },
         );
         let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
             Event::WindowClosed { id: 4 },
@@ -733,11 +737,13 @@ mod tests {
             make_workspace_on_output(10, 1, "eDP-1", true, true, Some(1)),
             make_workspace_on_output(20, 2, "DP-1", true, false, None),
         ];
-        app.modules.set_state(
-            ModuleId::new("focused-window"),
-            ModuleState::FocusedWindow(FocusedWindowState {
-                title: Some("Focused".into()),
-            }),
+        let _ = app.modules.handle(
+            super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
+                id: ModuleId::new("focused-window"),
+                state: ModuleState::FocusedWindow(FocusedWindowState {
+                    title: Some("Focused".into()),
+                }),
+            },
         );
         let window = iced::window::Id::unique();
         app.surfaces

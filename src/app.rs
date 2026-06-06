@@ -967,22 +967,6 @@ mod tests {
             iced::Subscription::none()
         }
 
-        fn view_collapsed_with_style(
-            &self,
-            _state: &crate::modules::ModuleState,
-            _bar_style: &crate::config::Style,
-        ) -> iced::Element<'_, Message> {
-            iced::widget::text("").into()
-        }
-
-        fn view_panel_with_style(
-            &self,
-            _state: &crate::modules::ModuleState,
-            _bar_style: &crate::config::Style,
-        ) -> iced::Element<'_, Message> {
-            iced::widget::text("").into()
-        }
-
         fn on_interaction(&self, event: crate::modules::InteractionEvent) -> Option<Message> {
             match event {
                 crate::modules::InteractionEvent::Clicked => {
@@ -996,6 +980,24 @@ mod tests {
                 }
                 _ => None,
             }
+        }
+    }
+
+    impl crate::modules::render::ModuleRender for ProbeInteractionModule {
+        fn render_collapsed_with_style(
+            &self,
+            _state: &crate::modules::ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn render_panel_with_style(
+            &self,
+            _state: &crate::modules::ModuleState,
+            _bar_style: &crate::config::Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
         }
     }
 
@@ -1302,7 +1304,12 @@ mod tests {
             command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec![]);
-        let instantiated: Vec<String> = app.modules.iter().map(|(_, m)| m.id().0.clone()).collect();
+        let instantiated: Vec<String> = app
+            .modules
+            .module_ids()
+            .into_iter()
+            .map(|id| id.0)
+            .collect();
         assert!(
             instantiated.iter().any(|n| n == "clock"),
             "clock must be instantiated from secondary bar section; got: {instantiated:?}"

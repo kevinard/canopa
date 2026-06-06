@@ -464,9 +464,8 @@ impl App {
 
         match effect {
             SurfaceInputEffect::TrackCursor { window, position } => {
-                let has_tray = self.modules.iter().any(|(_, module)| {
-                    matches!(module.kind(), ModuleKind::Tray | ModuleKind::TrayIcon)
-                });
+                let has_tray = self.modules.has_kind(ModuleKind::Tray)
+                    || self.modules.has_kind(ModuleKind::TrayIcon);
                 if has_tray && self.surfaces.last_cursor() != Some((window, position)) {
                     self.surfaces.set_last_cursor(Some((window, position)));
                 }
@@ -1464,9 +1463,7 @@ mod tests {
         let _ = app.handle_tray_event(crate::dbus::sni::host::TrayEvent::ItemAdded(item));
         let tray_icon_id = app
             .modules
-            .ids_by_kind(crate::modules::ModuleKind::TrayIcon)
-            .first()
-            .cloned()
+            .first_id_by_kind(crate::modules::ModuleKind::TrayIcon)
             .expect("tray icon inserted");
 
         assert!(
@@ -1492,12 +1489,16 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let wid = test_wid();
         let module = ModuleId::new("battery");
-        app.modules.set_state(
-            module.clone(),
-            crate::modules::ModuleState::Battery(crate::modules::battery::BatteryState {
-                percentage: 74.0,
-                is_charging: false,
-            }),
+        let _ = app.modules.handle(
+            super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
+                id: module.clone(),
+                state: crate::modules::ModuleState::Battery(
+                    crate::modules::battery::BatteryState {
+                        percentage: 74.0,
+                        is_charging: false,
+                    },
+                ),
+            },
         );
         app.surface_mut(wid).hovered_module = None;
 
@@ -1524,12 +1525,16 @@ mod tests {
         let origin = test_wid();
         let panel = test_wid();
         let module = ModuleId::new("battery");
-        app.modules.set_state(
-            module.clone(),
-            crate::modules::ModuleState::Battery(crate::modules::battery::BatteryState {
-                percentage: 74.0,
-                is_charging: false,
-            }),
+        let _ = app.modules.handle(
+            super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
+                id: module.clone(),
+                state: crate::modules::ModuleState::Battery(
+                    crate::modules::battery::BatteryState {
+                        percentage: 74.0,
+                        is_charging: false,
+                    },
+                ),
+            },
         );
         app.surface_mut(origin).hovered_module = Some(module.clone());
         app.surface_mut(origin).tooltip_pending = Some((module.clone(), 32.0));

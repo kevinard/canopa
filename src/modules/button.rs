@@ -71,14 +71,6 @@ impl crate::modules::Module for ButtonModule {
         crate::modules::ModuleKind::Button
     }
 
-    fn tooltip_values(&self, _state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
-        vec![
-            ("icon", self.icon.clone()),
-            ("value", self.label.clone()),
-            ("label", self.label.clone()),
-        ]
-    }
-
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         iced::Subscription::run_with(self.id.clone(), |id: &crate::modules::ModuleId| {
             let id = id.clone();
@@ -102,10 +94,20 @@ impl crate::modules::Module for ButtonModule {
             })
         })
     }
+}
+
+impl crate::modules::render::ModuleRender for ButtonModule {
+    fn tooltip_values(&self, _state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
+        vec![
+            ("icon", self.icon.clone()),
+            ("value", self.label.clone()),
+            ("label", self.label.clone()),
+        ]
+    }
 
     // Button keeps custom collapsed/panel views because its panel layout
     // right-aligns the label with a spacer instead of using the shared icon-label row.
-    fn view_collapsed_with_style(
+    fn render_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
@@ -143,7 +145,7 @@ impl crate::modules::Module for ButtonModule {
         }
     }
 
-    fn view_panel_with_style(
+    fn render_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
@@ -184,11 +186,11 @@ impl crate::modules::Module for ButtonModule {
         }
     }
 
-    fn view_horizontal_with_style(
+    fn render_horizontal_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
         use crate::modules::ModuleState;
         use crate::modules::view::{horizontal_icon_label_with_style, styled_segments_row};
         use iced::widget::container;
@@ -199,21 +201,23 @@ impl crate::modules::Module for ButtonModule {
                 if let Some(segments) = self
                     .styled_segments_with_default(crate::config::FormatMode::Horizontal, bar_style)
                 {
-                    return container(styled_segments_row(segments, 12, crate::theme::TEXT))
-                        .height(Length::Fill)
-                        .align_y(Alignment::Center)
-                        .padding([0, 6])
-                        .into();
+                    return Some(
+                        container(styled_segments_row(segments, 12, crate::theme::TEXT))
+                            .height(Length::Fill)
+                            .align_y(Alignment::Center)
+                            .padding([0, 6])
+                            .into(),
+                    );
                 }
-                horizontal_icon_label_with_style(
+                Some(horizontal_icon_label_with_style(
                     self.icon.clone(),
                     crate::theme::TEXT,
                     self.formatted_text(crate::config::FormatMode::Horizontal)
                         .unwrap_or_else(|| self.label.clone()),
                     bar_style,
-                )
+                ))
             }
-            _ => iced::widget::Space::new().into(),
+            _ => Some(iced::widget::Space::new().into()),
         }
     }
 }

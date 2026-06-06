@@ -46,8 +46,10 @@ impl crate::modules::Module for WorkspacesModule {
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         iced::Subscription::none()
     }
+}
 
-    fn view_collapsed_with_style(
+impl crate::modules::render::ModuleRender for WorkspacesModule {
+    fn render_collapsed_with_style(
         &self,
         _state: &crate::modules::ModuleState,
         _bar_style: &crate::config::Style,
@@ -55,19 +57,12 @@ impl crate::modules::Module for WorkspacesModule {
         iced::widget::Space::new().into()
     }
 
-    fn view_panel_with_style(
+    fn render_panel_with_style(
         &self,
         _state: &crate::modules::ModuleState,
         _bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
-    }
-
-    fn on_interaction(
-        &self,
-        _event: crate::modules::InteractionEvent,
-    ) -> Option<crate::app::Message> {
-        None
     }
 }
 
@@ -265,6 +260,14 @@ impl WorkspaceItemModule {
         }
     }
 
+    fn matches_output_state(&self, state: &crate::modules::ModuleState) -> bool {
+        let surface_output = match state {
+            crate::modules::ModuleState::WorkspaceOutput(output) => output.as_str(),
+            _ => "",
+        };
+        surface_output.is_empty() || self.workspace.output.as_deref() == Some(surface_output)
+    }
+
     fn state_key(&self) -> &'static str {
         if self.workspace.is_focused {
             "focused"
@@ -329,41 +332,6 @@ impl crate::modules::Module for WorkspaceItemModule {
         iced::Subscription::none()
     }
 
-    fn view_collapsed_with_style(
-        &self,
-        _state: &crate::modules::ModuleState,
-        _bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        iced::widget::Space::new().into()
-    }
-
-    fn view_panel_with_style(
-        &self,
-        _state: &crate::modules::ModuleState,
-        _bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        iced::widget::Space::new().into()
-    }
-
-    fn view_for_bar(
-        &self,
-        state: &crate::modules::ModuleState,
-        _window: iced::window::Id,
-        horizontal: bool,
-        _expanded: bool,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        // state carries the surface output name; filter this workspace by output.
-        let surface_output = match state {
-            crate::modules::ModuleState::WorkspaceOutput(o) => o.as_str(),
-            _ => "",
-        };
-        if !surface_output.is_empty() && self.workspace.output.as_deref() != Some(surface_output) {
-            return iced::widget::Space::new().into();
-        }
-        self.build_view(horizontal, bar_style)
-    }
-
     fn on_interaction(
         &self,
         event: crate::modules::InteractionEvent,
@@ -387,6 +355,38 @@ impl crate::modules::Module for WorkspaceItemModule {
 
     fn config_name(&self) -> Option<&str> {
         Some(&self.config_name)
+    }
+}
+
+impl crate::modules::render::ModuleRender for WorkspaceItemModule {
+    fn render_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
+        if !self.matches_output_state(state) {
+            return iced::widget::Space::new().into();
+        }
+        self.build_view(false, bar_style)
+    }
+
+    fn render_panel_with_style(
+        &self,
+        _state: &crate::modules::ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
+        iced::widget::Space::new().into()
+    }
+
+    fn render_horizontal_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        if !self.matches_output_state(state) {
+            return Some(iced::widget::Space::new().into());
+        }
+        Some(self.build_view(true, bar_style))
     }
 }
 

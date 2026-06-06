@@ -379,11 +379,13 @@ mod tests {
             make_workspace(10, 1, "eDP-1", true, true, Some(1)),
             make_workspace(20, 2, "DP-1", true, false, Some(2)),
         ];
-        app.modules.set_state(
-            ModuleId::new("focused-window"),
-            ModuleState::FocusedWindow(FocusedWindowState {
-                title: Some("Focused".into()),
-            }),
+        let _ = app.modules.handle(
+            super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
+                id: ModuleId::new("focused-window"),
+                state: ModuleState::FocusedWindow(FocusedWindowState {
+                    title: Some("Focused".into()),
+                }),
+            },
         );
         let wid = test_wid();
         app.surfaces
@@ -426,11 +428,13 @@ mod tests {
             make_workspace(10, 1, "eDP-1", true, true, Some(1)),
             make_workspace(20, 2, "DP-1", true, false, Some(2)),
         ];
-        app.modules.set_state(
-            ModuleId::new("focused-window"),
-            ModuleState::FocusedWindow(FocusedWindowState {
-                title: Some("Focused".into()),
-            }),
+        let _ = app.modules.handle(
+            super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
+                id: ModuleId::new("focused-window"),
+                state: ModuleState::FocusedWindow(FocusedWindowState {
+                    title: Some("Focused".into()),
+                }),
+            },
         );
         let wid = test_wid();
         app.surfaces

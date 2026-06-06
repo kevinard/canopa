@@ -99,18 +99,6 @@ impl crate::modules::Module for ScriptModule {
         crate::modules::ModuleKind::Script
     }
 
-    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
-        if let crate::modules::ModuleState::Script(s) = state {
-            vec![
-                ("icon", ">_".into()),
-                ("value", s.output.clone()),
-                ("output", s.output.clone()),
-            ]
-        } else {
-            Vec::new()
-        }
-    }
-
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         use iced::futures::stream;
 
@@ -143,8 +131,22 @@ impl crate::modules::Module for ScriptModule {
             },
         )
     }
+}
 
-    fn view_collapsed_with_style(
+impl crate::modules::render::ModuleRender for ScriptModule {
+    fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
+        if let crate::modules::ModuleState::Script(s) = state {
+            vec![
+                ("icon", ">_".into()),
+                ("value", s.output.clone()),
+                ("output", s.output.clone()),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn render_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
@@ -184,7 +186,7 @@ impl crate::modules::Module for ScriptModule {
         }
     }
 
-    fn view_panel_with_style(
+    fn render_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
@@ -224,11 +226,11 @@ impl crate::modules::Module for ScriptModule {
         }
     }
 
-    fn view_horizontal_with_style(
+    fn render_horizontal_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
         use crate::modules::ModuleState;
         use crate::modules::view::{horizontal_icon_label_with_style, styled_segments_row};
         use iced::widget::container;
@@ -241,21 +243,23 @@ impl crate::modules::Module for ScriptModule {
                     crate::config::FormatMode::Horizontal,
                     bar_style,
                 ) {
-                    return container(styled_segments_row(segments, 12, crate::theme::TEXT))
-                        .height(Length::Fill)
-                        .align_y(Alignment::Center)
-                        .padding([0, 6])
-                        .into();
+                    return Some(
+                        container(styled_segments_row(segments, 12, crate::theme::TEXT))
+                            .height(Length::Fill)
+                            .align_y(Alignment::Center)
+                            .padding([0, 6])
+                            .into(),
+                    );
                 }
-                horizontal_icon_label_with_style(
+                Some(horizontal_icon_label_with_style(
                     ">_",
                     crate::theme::TEXT,
                     self.formatted_text(s, crate::config::FormatMode::Horizontal)
                         .unwrap_or_else(|| s.output.clone()),
                     bar_style,
-                )
+                ))
             }
-            _ => iced::widget::Space::new().into(),
+            _ => Some(iced::widget::Space::new().into()),
         }
     }
 }

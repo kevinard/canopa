@@ -247,7 +247,9 @@ impl crate::modules::Module for BatteryModule {
             }),
         )
     }
+}
 
+impl crate::modules::render::ModuleRender for BatteryModule {
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Battery(b) = state {
             let icon = self.current_icon(b);
@@ -264,7 +266,7 @@ impl crate::modules::Module for BatteryModule {
         }
     }
 
-    fn view_collapsed_with_style(
+    fn render_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
@@ -322,7 +324,7 @@ impl crate::modules::Module for BatteryModule {
         }
     }
 
-    fn view_panel_with_style(
+    fn render_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
@@ -340,21 +342,21 @@ impl crate::modules::Module for BatteryModule {
         }
     }
 
-    fn view_horizontal_with_style(
+    fn render_horizontal_with_style(
         &self,
         state: &crate::modules::ModuleState,
         bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
         match state {
             crate::modules::ModuleState::Battery(_) => {
-                crate::modules::view::icon_label_view_with_default(
+                Some(crate::modules::view::icon_label_view_with_default(
                     self,
                     state,
                     crate::modules::view::IconLabelLayout::Horizontal,
                     bar_style,
-                )
+                ))
             }
-            _ => iced::widget::Space::new().into(),
+            _ => Some(iced::widget::Space::new().into()),
         }
     }
 }

@@ -475,8 +475,10 @@ mod tests {
         fn subscription(&self) -> iced::Subscription<crate::app::Message> {
             iced::Subscription::none()
         }
+    }
 
-        fn view_collapsed_with_style(
+    impl crate::modules::render::ModuleRender for SnapshotTestModule {
+        fn render_collapsed_with_style(
             &self,
             _state: &ModuleState,
             _bar_style: &crate::config::Style,
@@ -484,7 +486,7 @@ mod tests {
             iced::widget::text("").into()
         }
 
-        fn view_panel_with_style(
+        fn render_panel_with_style(
             &self,
             _state: &ModuleState,
             _bar_style: &crate::config::Style,
@@ -541,8 +543,8 @@ mod tests {
 
         insert_tray_children(&mut app, &["org.new"]);
 
-        assert!(app.modules.get(&old_id).is_none());
-        assert!(app.modules.get(&new_id).is_some());
+        assert!(!app.modules.contains_instance(&old_id));
+        assert!(app.modules.contains_instance(&new_id));
         assert_eq!(app.surface(window).unwrap().focused_module, None);
         assert_eq!(app.surface(window).unwrap().hovered_module, None);
         assert_eq!(
@@ -584,8 +586,8 @@ mod tests {
 
         insert_tray_children(&mut app, &["org.b"]);
 
-        assert!(app.modules.get(&removed_id).is_none());
-        assert!(app.modules.get(&retained_id).is_some());
+        assert!(!app.modules.contains_instance(&removed_id));
+        assert!(app.modules.contains_instance(&retained_id));
         assert_eq!(app.surface(window).unwrap().focused_module, None);
     }
 
@@ -700,7 +702,7 @@ mod tests {
             app.surface(window).unwrap().focused_module,
             Some(ModuleId::new("workspace:1"))
         );
-        assert!(app.modules.get(&ModuleId::new("workspace:1")).is_some());
+        assert!(app.modules.contains_instance(&ModuleId::new("workspace:1")));
     }
 
     #[test]

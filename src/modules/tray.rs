@@ -115,8 +115,10 @@ impl crate::modules::Module for TrayModule {
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         iced::Subscription::none()
     }
+}
 
-    fn view_collapsed_with_style(
+impl crate::modules::render::ModuleRender for TrayModule {
+    fn render_collapsed_with_style(
         &self,
         _state: &ModuleState,
         _bar_style: &crate::config::Style,
@@ -124,16 +126,12 @@ impl crate::modules::Module for TrayModule {
         iced::widget::Space::new().into()
     }
 
-    fn view_panel_with_style(
+    fn render_panel_with_style(
         &self,
         _state: &ModuleState,
         _bar_style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         iced::widget::Space::new().into()
-    }
-
-    fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {
-        None
     }
 }
 
@@ -256,43 +254,6 @@ impl crate::modules::Module for TrayIconModule {
         iced::Subscription::none()
     }
 
-    fn tooltip_values(&self, _state: &ModuleState) -> Vec<(&'static str, String)> {
-        match self.item.tooltip.as_ref() {
-            Some(t) => vec![
-                ("title", t.title.clone()),
-                ("description", t.description.clone()),
-            ],
-            None => Vec::new(),
-        }
-    }
-
-    fn view_collapsed_with_style(
-        &self,
-        _state: &ModuleState,
-        _bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        iced::widget::Space::new().into()
-    }
-
-    fn view_panel_with_style(
-        &self,
-        _state: &ModuleState,
-        _bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        iced::widget::Space::new().into()
-    }
-
-    fn view_for_bar(
-        &self,
-        _state: &ModuleState,
-        window: iced::window::Id,
-        horizontal: bool,
-        _expanded: bool,
-        _bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.build_view(horizontal, window, _bar_style)
-    }
-
     fn on_interaction(&self, event: InteractionEvent) -> Option<crate::app::Message> {
         match event {
             InteractionEvent::Clicked => Some(crate::app::Message::Tray(
@@ -320,6 +281,52 @@ impl crate::modules::Module for TrayIconModule {
 
     fn config_name(&self) -> Option<&str> {
         Some(&self.config_name)
+    }
+}
+
+impl crate::modules::render::ModuleRender for TrayIconModule {
+    fn tooltip_values(&self, _state: &ModuleState) -> Vec<(&'static str, String)> {
+        match self.item.tooltip.as_ref() {
+            Some(t) => vec![
+                ("title", t.title.clone()),
+                ("description", t.description.clone()),
+            ],
+            None => Vec::new(),
+        }
+    }
+
+    fn render_collapsed_with_style(
+        &self,
+        _state: &ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
+        iced::widget::Space::new().into()
+    }
+
+    fn render_panel_with_style(
+        &self,
+        _state: &ModuleState,
+        _bar_style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
+        iced::widget::Space::new().into()
+    }
+
+    fn render_bar_collapsed_with_style(
+        &self,
+        _state: &ModuleState,
+        window: iced::window::Id,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        Some(self.build_view(false, window, bar_style))
+    }
+
+    fn render_bar_horizontal_with_style(
+        &self,
+        _state: &ModuleState,
+        window: iced::window::Id,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        Some(self.build_view(true, window, bar_style))
     }
 }
 

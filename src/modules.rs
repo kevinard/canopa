@@ -4,6 +4,7 @@ pub mod clock;
 pub mod data_source;
 pub mod focused_window;
 pub mod network;
+pub mod render;
 pub mod script;
 pub mod tray;
 pub mod view;
@@ -216,7 +217,7 @@ impl ModuleInteractionProfile {
 /// - Treat D-Bus service disappearance as `{Name}Event::Unavailable`, not a fatal error.
 /// - Support reconnection: if a D-Bus service restarts, recover and resume emitting.
 // Implemented in Stories 2.3+ when concrete modules are added.
-pub trait Module: Send + Sync {
+pub trait Module: render::ModuleRender + Send + Sync {
     fn id(&self) -> ModuleId;
     fn kind(&self) -> ModuleKind;
     /// Returns the module type name (e.g. `"clock"`, `"script"`).
@@ -234,33 +235,8 @@ pub trait Module: Send + Sync {
     ) -> data_source::ModuleInstanceOutcome {
         data_source::ModuleInstanceOutcome::Empty
     }
-    fn view_collapsed_with_style(
-        &self,
-        state: &ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message>;
-    fn view_panel_with_style(
-        &self,
-        state: &ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message>;
-    fn view_module_detail_with_style(
-        &self,
-        state: &ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_panel_with_style(state, bar_style)
-    }
     fn create_module_detail_session(&self, _state: &ModuleState) -> Option<ModuleDetailSession> {
         None
-    }
-    fn view_module_detail_session_with_style(
-        &self,
-        state: &ModuleState,
-        bar_style: &crate::config::Style,
-        _session: Option<&ModuleDetailSession>,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_module_detail_with_style(state, bar_style)
     }
     fn update_module_detail_session(
         &mut self,
@@ -269,45 +245,8 @@ pub trait Module: Send + Sync {
     ) -> ModuleDetailUpdate {
         ModuleDetailUpdate::default()
     }
-    /// View for horizontal bars (top/bottom). Single-line, shrink-width content
-    /// suited for a side-by-side row layout. Defaults to `view_panel_with_style`.
-    fn view_horizontal_with_style(
-        &self,
-        state: &ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        self.view_panel_with_style(state, bar_style)
-    }
-    /// View used when rendering this module inside a bar surface.
-    ///
-    /// `window` is the bar's window ID; modules that assign widget IDs (e.g. tray icons)
-    /// must embed it so `FindBounds` only matches widgets in the correct bar.
-    /// The default dispatches to the appropriate view method.
-    fn view_for_bar(
-        &self,
-        state: &ModuleState,
-        window: iced::window::Id,
-        horizontal: bool,
-        expanded: bool,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        let _ = window;
-        if expanded {
-            self.view_panel_with_style(state, bar_style)
-        } else if horizontal {
-            self.view_horizontal_with_style(state, bar_style)
-        } else {
-            self.view_collapsed_with_style(state, bar_style)
-        }
-    }
     fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {
         None
-    }
-    /// Value bag for tooltip template rendering. Mirrors the placeholders the
-    /// module's `format` template accepts. Default returns `Vec::new()`,
-    /// meaning placeholders won't be substituted.
-    fn tooltip_values(&self, _state: &ModuleState) -> Vec<(&'static str, String)> {
-        Vec::new()
     }
     /// Update dynamic workspace item data without rebuilding module instances.
     /// Non-workspace modules ignore this hook.

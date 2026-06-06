@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use super::{App, Message, messages};
 use crate::ipc::ipc_subscription;
-use crate::modules::{ModuleCapabilities, ModuleKind, descriptor_for_kind};
+use crate::modules::{ModuleCapabilities, ModuleKind};
 use crate::niri::subscription::niri_subscription;
 use crate::surface::input::keyboard_focus_subscription;
 
@@ -22,14 +22,11 @@ where
 
 impl App {
     fn has_module_kind(&self, kind: ModuleKind) -> bool {
-        !self.modules.ids_by_kind(kind).is_empty()
+        self.modules.has_kind(kind)
     }
 
     fn has_capability(&self, predicate: impl Fn(ModuleCapabilities) -> bool) -> bool {
-        self.modules
-            .iter()
-            .filter_map(|(_, module)| descriptor_for_kind(module.kind()))
-            .any(|descriptor| predicate(descriptor.capabilities))
+        self.modules.has_capability(predicate)
     }
 
     fn needs_niri_subscription(&self) -> bool {
@@ -53,10 +50,7 @@ impl App {
             self.has_capability(|capabilities| capabilities.needs_session_dbus);
         let needs_wireplumber = self.has_capability(|capabilities| capabilities.needs_wireplumber);
 
-        let per_module: Vec<iced::Subscription<Message>> =
-            self.modules.iter().map(|(_, m)| m.subscription()).collect();
-
-        let module_subs = iced::Subscription::batch(per_module);
+        let module_subs = self.modules.module_subscriptions();
         let niri_sub = if self.needs_niri_subscription() {
             niri_subscription()
         } else {

@@ -7,14 +7,13 @@ use crate::modules::clock::{ClockEvent, ClockState};
 use crate::modules::script::{ScriptEvent, ScriptState};
 use crate::modules::{InteractionEvent, ModuleEvent, ModuleId, ModuleState};
 
-fn insert_module_state_if_changed(
+fn apply_module_state(
     modules: &mut super::module_runtime::ModuleRuntime,
     id: ModuleId,
     state: ModuleState,
 ) {
-    if modules.state(&id) != Some(&state) {
-        modules.set_state(id, state);
-    }
+    let _ =
+        modules.handle(super::module_runtime::ModuleRuntimeIntent::ApplyModuleState { id, state });
 }
 
 impl App {
@@ -65,8 +64,8 @@ impl App {
     ) -> Task<Message> {
         let module_kind = self
             .modules
-            .get(&id)
-            .map(|module| module.kind().runtime_name())
+            .kind_for(&id)
+            .map(|kind| kind.runtime_name())
             .unwrap_or("unknown");
         let module_name = self.modules.configured_module_name_for_instance(&id);
         tracing::trace!(
@@ -78,28 +77,24 @@ impl App {
         );
         match event {
             ModuleEvent::Clock(ClockEvent::Tick { time, date }) => {
-                insert_module_state_if_changed(
+                apply_module_state(
                     &mut self.modules,
                     id,
                     ModuleState::Clock(ClockState { time, date }),
                 );
             }
             ModuleEvent::Script(ScriptEvent::Output(text)) => {
-                insert_module_state_if_changed(
+                apply_module_state(
                     &mut self.modules,
                     id,
                     ModuleState::Script(ScriptState { output: text }),
                 );
             }
             ModuleEvent::Script(ScriptEvent::Failed) => {
-                self.modules.set_state(id, ModuleState::Unavailable);
+                apply_module_state(&mut self.modules, id, ModuleState::Unavailable);
             }
             ModuleEvent::Button(ButtonEvent::Ready) => {
-                insert_module_state_if_changed(
-                    &mut self.modules,
-                    id,
-                    ModuleState::Button(ButtonState),
-                );
+                apply_module_state(&mut self.modules, id, ModuleState::Button(ButtonState));
             }
         }
         Task::none()
@@ -389,22 +384,6 @@ mod tests {
             iced::Subscription::none()
         }
 
-        fn view_collapsed_with_style(
-            &self,
-            _state: &ModuleState,
-            _bar_style: &Style,
-        ) -> iced::Element<'_, Message> {
-            iced::widget::text("").into()
-        }
-
-        fn view_panel_with_style(
-            &self,
-            _state: &ModuleState,
-            _bar_style: &Style,
-        ) -> iced::Element<'_, Message> {
-            iced::widget::text("").into()
-        }
-
         fn create_module_detail_session(
             &self,
             _state: &ModuleState,
@@ -441,6 +420,24 @@ mod tests {
                     ))],
                 },
             }
+        }
+    }
+
+    impl crate::modules::render::ModuleRender for DetailTestModule {
+        fn render_collapsed_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
+        }
+
+        fn render_panel_with_style(
+            &self,
+            _state: &ModuleState,
+            _bar_style: &Style,
+        ) -> iced::Element<'_, Message> {
+            iced::widget::text("").into()
         }
     }
 
