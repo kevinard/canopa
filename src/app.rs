@@ -967,6 +967,14 @@ mod tests {
             iced::Subscription::none()
         }
 
+        fn interaction_handler(
+            &self,
+        ) -> Option<&dyn crate::modules::interaction::ModuleInteractionHandler> {
+            Some(self)
+        }
+    }
+
+    impl crate::modules::interaction::ModuleInteractionHandler for ProbeInteractionModule {
         fn on_interaction(&self, event: crate::modules::InteractionEvent) -> Option<Message> {
             match event {
                 crate::modules::InteractionEvent::Clicked => {

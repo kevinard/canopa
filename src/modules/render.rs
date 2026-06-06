@@ -32,11 +32,11 @@ pub trait ModuleRender: Send + Sync {
 
     fn render_bar_horizontal_with_style(
         &self,
-        state: &ModuleState,
+        _state: &ModuleState,
         _window: iced::window::Id,
-        style: &crate::config::Style,
+        _style: &crate::config::Style,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        self.render_horizontal_with_style(state, style)
+        None
     }
 
     fn render_detail_with_style(

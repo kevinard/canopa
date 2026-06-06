@@ -381,6 +381,18 @@ impl crate::modules::Module for ClockModule {
         )
     }
 
+    fn module_detail(&self) -> Option<&dyn crate::modules::detail::ModuleDetailLifecycle> {
+        Some(self)
+    }
+
+    fn module_detail_mut(
+        &mut self,
+    ) -> Option<&mut (dyn crate::modules::detail::ModuleDetailLifecycle + '_)> {
+        Some(self)
+    }
+}
+
+impl crate::modules::detail::ModuleDetailLifecycle for ClockModule {
     fn create_module_detail_session(
         &self,
         state: &crate::modules::ModuleState,
@@ -636,6 +648,7 @@ mod tests {
     use super::*;
     use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
     use crate::modules::Module;
+    use crate::modules::detail::ModuleDetailLifecycle;
 
     fn styled_format_config() -> crate::config::FormatConfig {
         let mut template = crate::config::FormatTemplate::parse(

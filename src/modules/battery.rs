@@ -226,10 +226,14 @@ impl crate::modules::Module for BatteryModule {
         iced::Subscription::none()
     }
 
-    fn data_source_identity(
-        &self,
-    ) -> Option<crate::modules::data_source::ModuleDataSourceIdentity> {
-        Some(crate::modules::data_source::ModuleDataSourceIdentity::Battery)
+    fn data_source(&self) -> Option<&dyn crate::modules::data_source::ModuleDataSourceMapper> {
+        Some(self)
+    }
+}
+
+impl crate::modules::data_source::ModuleDataSourceMapper for BatteryModule {
+    fn data_source_identity(&self) -> crate::modules::data_source::ModuleDataSourceIdentity {
+        crate::modules::data_source::ModuleDataSourceIdentity::Battery
     }
 
     fn map_data_source_state(
@@ -368,6 +372,7 @@ mod tests {
         ColorValue, IconRulesConfig, IconThreshold, SegmentStyles, Style, ThemeToken,
     };
     use crate::modules::Module;
+    use crate::modules::data_source::ModuleDataSourceMapper;
     use crate::modules::view::IconLabel;
     use std::collections::HashMap;
 

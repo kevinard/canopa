@@ -173,10 +173,20 @@ impl crate::modules::Module for VolumeModule {
         iced::Subscription::none() // fed via Message::Volume from app.rs
     }
 
-    fn data_source_identity(
+    fn data_source(&self) -> Option<&dyn crate::modules::data_source::ModuleDataSourceMapper> {
+        Some(self)
+    }
+
+    fn interaction_handler(
         &self,
-    ) -> Option<crate::modules::data_source::ModuleDataSourceIdentity> {
-        Some(crate::modules::data_source::ModuleDataSourceIdentity::Volume)
+    ) -> Option<&dyn crate::modules::interaction::ModuleInteractionHandler> {
+        Some(self)
+    }
+}
+
+impl crate::modules::data_source::ModuleDataSourceMapper for VolumeModule {
+    fn data_source_identity(&self) -> crate::modules::data_source::ModuleDataSourceIdentity {
+        crate::modules::data_source::ModuleDataSourceIdentity::Volume
     }
 
     fn map_data_source_state(
@@ -194,7 +204,9 @@ impl crate::modules::Module for VolumeModule {
             }),
         )
     }
+}
 
+impl crate::modules::interaction::ModuleInteractionHandler for VolumeModule {
     fn on_interaction(
         &self,
         event: crate::modules::InteractionEvent,
@@ -293,6 +305,7 @@ mod tests {
         ColorValue, IconRulesConfig, IconThreshold, SegmentStyles, Style, ThemeToken,
     };
     use crate::modules::Module;
+    use crate::modules::data_source::ModuleDataSourceMapper;
     use crate::modules::view::IconLabel;
     use std::collections::HashMap;
 

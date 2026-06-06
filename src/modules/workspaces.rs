@@ -332,6 +332,24 @@ impl crate::modules::Module for WorkspaceItemModule {
         iced::Subscription::none()
     }
 
+    fn interaction_handler(
+        &self,
+    ) -> Option<&dyn crate::modules::interaction::ModuleInteractionHandler> {
+        Some(self)
+    }
+
+    fn dynamic_instance(&self) -> Option<&dyn crate::modules::dynamic::DynamicModuleInstance> {
+        Some(self)
+    }
+
+    fn dynamic_instance_mut(
+        &mut self,
+    ) -> Option<&mut (dyn crate::modules::dynamic::DynamicModuleInstance + '_)> {
+        Some(self)
+    }
+}
+
+impl crate::modules::interaction::ModuleInteractionHandler for WorkspaceItemModule {
     fn on_interaction(
         &self,
         event: crate::modules::InteractionEvent,
@@ -346,15 +364,17 @@ impl crate::modules::Module for WorkspaceItemModule {
             _ => None,
         }
     }
+}
 
+impl crate::modules::dynamic::DynamicModuleInstance for WorkspaceItemModule {
     fn update_workspace(&mut self, workspace: &niri_ipc::Workspace) {
         if self.workspace.id == workspace.id {
             self.workspace = workspace.clone();
         }
     }
 
-    fn config_name(&self) -> Option<&str> {
-        Some(&self.config_name)
+    fn config_name(&self) -> &str {
+        &self.config_name
     }
 }
 
@@ -395,6 +415,8 @@ mod tests {
     use super::*;
     use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken};
     use crate::modules::Module;
+    use crate::modules::dynamic::DynamicModuleInstance;
+    use crate::modules::interaction::ModuleInteractionHandler;
 
     fn make_workspace(idx: u8, is_focused: bool) -> niri_ipc::Workspace {
         make_workspace_on(idx, is_focused, "eDP-1")
@@ -532,7 +554,7 @@ mod tests {
         );
         assert_eq!(m.id().0, "workspace:1");
         assert_eq!(m.module_type(), "workspace_item");
-        assert_eq!(m.config_name(), Some("workspaces"));
+        assert_eq!(m.config_name(), "workspaces");
     }
 
     #[test]

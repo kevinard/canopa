@@ -7,6 +7,12 @@ pub enum ModuleDataSourceIdentity {
     Volume,
 }
 
+pub trait ModuleDataSourceMapper: Send + Sync {
+    fn data_source_identity(&self) -> ModuleDataSourceIdentity;
+
+    fn map_data_source_state(&self, state: &ModuleDataSourceState) -> ModuleInstanceOutcome;
+}
+
 impl ModuleDataSourceIdentity {
     pub const ALL: [Self; 3] = [Self::Battery, Self::Network, Self::Volume];
 }

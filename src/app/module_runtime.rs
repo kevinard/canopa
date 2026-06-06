@@ -206,7 +206,9 @@ impl ModuleRuntime {
                         workspace,
                     } => {
                         if let Some(mut child) = existing.remove(&id) {
-                            child.update_workspace(&workspace);
+                            if let Some(dynamic) = child.dynamic_instance_mut() {
+                                dynamic.update_workspace(&workspace);
+                            }
                             children.push(child);
                         }
                     }
@@ -238,7 +240,9 @@ impl ModuleRuntime {
     ) -> Option<crate::modules::ModuleDetailSession> {
         let module = self.get(id)?;
         let state = self.states.get(id).unwrap_or(&ModuleState::Empty);
-        module.create_module_detail_session(state)
+        module
+            .module_detail()
+            .and_then(|detail| detail.create_module_detail_session(state))
     }
 
     fn handle_module_detail_update(
@@ -250,7 +254,10 @@ impl ModuleRuntime {
         let Some(module) = self.get_mut(&target) else {
             return Vec::new();
         };
-        let update = module.update_module_detail_session(session, message);
+        let Some(detail) = module.module_detail_mut() else {
+            return Vec::new();
+        };
+        let update = detail.update_module_detail_session(session, message);
         Self::module_detail_update_effects(update)
     }
 
@@ -333,7 +340,8 @@ impl ModuleRuntime {
             .into_iter()
             .filter_map(|id| {
                 self.get(&id)
-                    .map(|module| (id, module.map_data_source_state(&state)))
+                    .and_then(|module| module.data_source())
+                    .map(|source| (id, source.map_data_source_state(&state)))
             })
             .collect();
         self.apply_outcomes(outcomes);
@@ -517,7 +525,11 @@ impl ModuleRuntime {
     ) -> Vec<crate::modules::ModuleId> {
         self.store
             .iter()
-            .filter(|(_, module)| module.data_source_identity() == Some(identity))
+            .filter(|(_, module)| {
+                module
+                    .data_source()
+                    .is_some_and(|source| source.data_source_identity() == identity)
+            })
             .map(|(_, module)| module.id())
             .collect()
     }
@@ -526,9 +538,11 @@ impl ModuleRuntime {
         &self,
         identity: crate::modules::data_source::ModuleDataSourceIdentity,
     ) -> bool {
-        self.store
-            .iter()
-            .any(|(_, module)| module.data_source_identity() == Some(identity))
+        self.store.iter().any(|(_, module)| {
+            module
+                .data_source()
+                .is_some_and(|source| source.data_source_identity() == identity)
+        })
     }
 
     fn get_mut(&mut self, id: &ModuleId) -> Option<&mut (dyn Module + '_)> {
@@ -578,7 +592,9 @@ impl ModuleRuntime {
         id: &ModuleId,
         event: crate::modules::InteractionEvent,
     ) -> Option<super::Message> {
-        self.get(id).and_then(|module| module.on_interaction(event))
+        self.get(id)
+            .and_then(|module| module.interaction_handler())
+            .and_then(|handler| handler.on_interaction(event))
     }
 
     pub(super) fn dynamic_module_runtime_snapshot(
@@ -636,6 +652,9 @@ fn render_bar_form<'a>(
         if let Some(element) =
             module.render_bar_horizontal_with_style(state, request.window, request.style)
         {
+            return element;
+        }
+        if let Some(element) = module.render_horizontal_with_style(state, request.style) {
             return element;
         }
         return module.render_panel_with_style(state, request.style);
@@ -970,6 +989,14 @@ mod tests {
             iced::Subscription::none()
         }
 
+        fn interaction_handler(
+            &self,
+        ) -> Option<&dyn crate::modules::interaction::ModuleInteractionHandler> {
+            Some(self)
+        }
+    }
+
+    impl crate::modules::interaction::ModuleInteractionHandler for ModuleOwnedInteractionTestModule {
         fn on_interaction(&self, event: crate::modules::InteractionEvent) -> Option<Message> {
             match event {
                 crate::modules::InteractionEvent::ScrollUp => {
@@ -1030,6 +1057,18 @@ mod tests {
             iced::Subscription::none()
         }
 
+        fn module_detail(&self) -> Option<&dyn crate::modules::detail::ModuleDetailLifecycle> {
+            Some(self)
+        }
+
+        fn module_detail_mut(
+            &mut self,
+        ) -> Option<&mut (dyn crate::modules::detail::ModuleDetailLifecycle + '_)> {
+            Some(self)
+        }
+    }
+
+    impl crate::modules::detail::ModuleDetailLifecycle for ModuleDetailRuntimeTestModule {
         fn create_module_detail_session(
             &self,
             _state: &ModuleState,

@@ -2,7 +2,10 @@ pub mod battery;
 pub mod button;
 pub mod clock;
 pub mod data_source;
+pub mod detail;
+pub mod dynamic;
 pub mod focused_window;
+pub mod interaction;
 pub mod network;
 pub mod render;
 pub mod script;
@@ -226,35 +229,27 @@ pub trait Module: render::ModuleRender + Send + Sync {
         self.kind().as_str()
     }
     fn subscription(&self) -> iced::Subscription<crate::app::Message>;
-    fn data_source_identity(&self) -> Option<data_source::ModuleDataSourceIdentity> {
+    fn data_source(&self) -> Option<&dyn data_source::ModuleDataSourceMapper> {
         None
     }
-    fn map_data_source_state(
-        &self,
-        _state: &data_source::ModuleDataSourceState,
-    ) -> data_source::ModuleInstanceOutcome {
-        data_source::ModuleInstanceOutcome::Empty
-    }
-    fn create_module_detail_session(&self, _state: &ModuleState) -> Option<ModuleDetailSession> {
+
+    fn module_detail(&self) -> Option<&dyn detail::ModuleDetailLifecycle> {
         None
     }
-    fn update_module_detail_session(
-        &mut self,
-        _session: &mut ModuleDetailSession,
-        _message: ModuleDetailMessage,
-    ) -> ModuleDetailUpdate {
-        ModuleDetailUpdate::default()
-    }
-    fn on_interaction(&self, _event: InteractionEvent) -> Option<crate::app::Message> {
+
+    fn module_detail_mut(&mut self) -> Option<&mut (dyn detail::ModuleDetailLifecycle + '_)> {
         None
     }
-    /// Update dynamic workspace item data without rebuilding module instances.
-    /// Non-workspace modules ignore this hook.
-    fn update_workspace(&mut self, _workspace: &niri_ipc::Workspace) {}
-    /// For dynamically-expanded modules (e.g. tray icons), returns the config module name
-    /// this instance was expanded from (e.g. `"tray"`). Used for zone and nav-list lookup.
-    /// Returns `None` for all statically-configured modules.
-    fn config_name(&self) -> Option<&str> {
+
+    fn interaction_handler(&self) -> Option<&dyn interaction::ModuleInteractionHandler> {
+        None
+    }
+
+    fn dynamic_instance(&self) -> Option<&dyn dynamic::DynamicModuleInstance> {
+        None
+    }
+
+    fn dynamic_instance_mut(&mut self) -> Option<&mut (dyn dynamic::DynamicModuleInstance + '_)> {
         None
     }
 }

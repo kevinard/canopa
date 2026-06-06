@@ -384,6 +384,18 @@ mod tests {
             iced::Subscription::none()
         }
 
+        fn module_detail(&self) -> Option<&dyn crate::modules::detail::ModuleDetailLifecycle> {
+            Some(self)
+        }
+
+        fn module_detail_mut(
+            &mut self,
+        ) -> Option<&mut (dyn crate::modules::detail::ModuleDetailLifecycle + '_)> {
+            Some(self)
+        }
+    }
+
+    impl crate::modules::detail::ModuleDetailLifecycle for DetailTestModule {
         fn create_module_detail_session(
             &self,
             _state: &ModuleState,

@@ -254,6 +254,18 @@ impl crate::modules::Module for TrayIconModule {
         iced::Subscription::none()
     }
 
+    fn interaction_handler(
+        &self,
+    ) -> Option<&dyn crate::modules::interaction::ModuleInteractionHandler> {
+        Some(self)
+    }
+
+    fn dynamic_instance(&self) -> Option<&dyn crate::modules::dynamic::DynamicModuleInstance> {
+        Some(self)
+    }
+}
+
+impl crate::modules::interaction::ModuleInteractionHandler for TrayIconModule {
     fn on_interaction(&self, event: InteractionEvent) -> Option<crate::app::Message> {
         match event {
             InteractionEvent::Clicked => Some(crate::app::Message::Tray(
@@ -278,9 +290,11 @@ impl crate::modules::Module for TrayIconModule {
             _ => None,
         }
     }
+}
 
-    fn config_name(&self) -> Option<&str> {
-        Some(&self.config_name)
+impl crate::modules::dynamic::DynamicModuleInstance for TrayIconModule {
+    fn config_name(&self) -> &str {
+        &self.config_name
     }
 }
 
@@ -334,6 +348,8 @@ impl crate::modules::render::ModuleRender for TrayIconModule {
 mod tests {
     use super::*;
     use crate::modules::Module;
+    use crate::modules::dynamic::DynamicModuleInstance;
+    use crate::modules::interaction::ModuleInteractionHandler;
 
     fn make_module() -> TrayModule {
         TrayModule::new(ModuleId::new("tray"))
@@ -368,7 +384,7 @@ mod tests {
         let m = TrayIconModule::new(item, "tray".into());
         assert_eq!(m.id().0, "tray:org.test.App");
         assert_eq!(m.module_type(), "tray_icon");
-        assert_eq!(crate::modules::Module::config_name(&m), Some("tray"));
+        assert_eq!(m.config_name(), "tray");
     }
 
     #[test]

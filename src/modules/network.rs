@@ -159,10 +159,14 @@ impl crate::modules::Module for NetworkModule {
         iced::Subscription::none() // fed via Message::Network from app.rs
     }
 
-    fn data_source_identity(
-        &self,
-    ) -> Option<crate::modules::data_source::ModuleDataSourceIdentity> {
-        Some(crate::modules::data_source::ModuleDataSourceIdentity::Network)
+    fn data_source(&self) -> Option<&dyn crate::modules::data_source::ModuleDataSourceMapper> {
+        Some(self)
+    }
+}
+
+impl crate::modules::data_source::ModuleDataSourceMapper for NetworkModule {
+    fn data_source_identity(&self) -> crate::modules::data_source::ModuleDataSourceIdentity {
+        crate::modules::data_source::ModuleDataSourceIdentity::Network
     }
 
     fn map_data_source_state(
@@ -263,6 +267,7 @@ mod tests {
     use super::*;
     use crate::config::{ColorValue, IconRulesConfig, SegmentStyles, Style, ThemeToken};
     use crate::modules::Module;
+    use crate::modules::data_source::ModuleDataSourceMapper;
     use crate::modules::view::IconLabel;
     use std::collections::HashMap;
 
