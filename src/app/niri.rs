@@ -98,6 +98,7 @@ impl App {
                         if changed {
                             self.rebuild_workspace_item_modules(&workspaces);
                             self.niri.state_mut().workspaces = workspaces;
+                            self.push_focused_window_state();
                         }
                         if !open_tasks.is_empty() {
                             return Task::batch(open_tasks);
@@ -110,9 +111,7 @@ impl App {
                             "niri focused window changed"
                         );
                         self.niri.state_mut().focused_window_id = id;
-                        if id.is_some() {
-                            self.push_focused_window_state();
-                        }
+                        self.push_focused_window_state();
                     }
                     Event::WorkspaceActivated { id, focused } => {
                         let output = self
@@ -134,6 +133,7 @@ impl App {
 
                         let updated = self.niri.state().workspaces.clone();
                         self.reconcile_workspace_dynamic_modules(&updated);
+                        self.push_focused_window_state();
                     }
                     Event::WorkspaceActiveWindowChanged {
                         workspace_id,
@@ -148,6 +148,7 @@ impl App {
                         {
                             workspace.active_window_id = active_window_id;
                         }
+                        self.push_focused_window_state();
                     }
                     Event::WindowsChanged { windows } => {
                         tracing::trace!(
@@ -606,6 +607,24 @@ mod tests {
         }
     }
 
+    fn focused_window_state_with_title(
+        title: &str,
+    ) -> crate::modules::focused_window::FocusedWindowState {
+        crate::modules::focused_window::FocusedWindowState {
+            window: Some(crate::modules::focused_window::FocusedWindowInfo {
+                title: Some(title.into()),
+                app_id: None,
+                application_icon: None,
+            }),
+        }
+    }
+
+    fn focused_window_state_title(
+        state: &crate::modules::focused_window::FocusedWindowState,
+    ) -> Option<&str> {
+        state.window.as_ref().and_then(|info| info.title.as_deref())
+    }
+
     #[test]
     fn focused_window_state_updated_on_window_focus_changed() {
         use niri_ipc::Event;
@@ -618,14 +637,14 @@ mod tests {
         let id = ModuleId::new("focused-window");
         match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
-                assert_eq!(s.title.as_deref(), Some("Firefox"));
+                assert_eq!(focused_window_state_title(s), Some("Firefox"));
             }
             other => panic!("expected FocusedWindow state, got {:?}", other),
         }
     }
 
     #[test]
-    fn focused_window_title_retained_when_focus_moves_to_none() {
+    fn focused_window_state_cleared_when_focus_moves_to_none() {
         use niri_ipc::Event;
         let mut app = make_focused_window_app();
         let win = make_window(1, Some("Firefox"), false);
@@ -639,7 +658,37 @@ mod tests {
         let id = ModuleId::new("focused-window");
         match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
-                assert_eq!(s.title.as_deref(), Some("Firefox"));
+                assert!(s.window.is_none());
+            }
+            other => panic!("expected FocusedWindow state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn focused_window_state_uses_active_window_when_layer_shell_takes_focus() {
+        use niri_ipc::Event;
+        let mut app = make_focused_window_app();
+        let workspace = make_workspace_on_output(1, 0, "eDP-1", true, true, Some(1));
+        let focused_window = make_window(1, Some("Firefox"), true);
+
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WorkspacesChanged {
+                workspaces: vec![workspace],
+            },
+        ))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowsChanged {
+                windows: vec![focused_window],
+            },
+        ))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowFocusChanged { id: None },
+        ))));
+
+        let id = ModuleId::new("focused-window");
+        match app.modules.state(&id) {
+            Some(ModuleState::FocusedWindow(s)) => {
+                assert_eq!(focused_window_state_title(s), Some("Firefox"));
             }
             other => panic!("expected FocusedWindow state, got {:?}", other),
         }
@@ -657,7 +706,29 @@ mod tests {
         let id = ModuleId::new("focused-window");
         match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
-                assert_eq!(s.title.as_deref(), Some("Helix"));
+                assert_eq!(focused_window_state_title(s), Some("Helix"));
+            }
+            other => panic!("expected FocusedWindow state, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn focused_window_state_keeps_window_with_missing_title_and_app_id() {
+        use niri_ipc::Event;
+        let mut app = make_focused_window_app();
+        let mut win = make_window(2, None, true);
+        win.app_id = Some("org.example.App".into());
+
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowsChanged { windows: vec![win] },
+        ))));
+
+        let id = ModuleId::new("focused-window");
+        match app.modules.state(&id) {
+            Some(ModuleState::FocusedWindow(s)) => {
+                let info = s.window.as_ref().expect("window should be present");
+                assert!(info.title.is_none());
+                assert_eq!(info.app_id.as_deref(), Some("org.example.App"));
             }
             other => panic!("expected FocusedWindow state, got {:?}", other),
         }
@@ -674,7 +745,7 @@ mod tests {
         let id = ModuleId::new("focused-window");
         match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
-                assert_eq!(s.title.as_deref(), Some("Terminal"));
+                assert_eq!(focused_window_state_title(s), Some("Terminal"));
             }
             other => panic!("expected FocusedWindow state, got {:?}", other),
         }
@@ -690,11 +761,7 @@ mod tests {
         let _ = app.modules.handle(
             super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
                 id: ModuleId::new("focused-window"),
-                state: ModuleState::FocusedWindow(
-                    crate::modules::focused_window::FocusedWindowState {
-                        title: Some("Nautilus".into()),
-                    },
-                ),
+                state: ModuleState::FocusedWindow(focused_window_state_with_title("Nautilus")),
             },
         );
         let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
@@ -703,7 +770,7 @@ mod tests {
         let id = ModuleId::new("focused-window");
         match app.modules.state(&id) {
             Some(ModuleState::FocusedWindow(s)) => {
-                assert!(s.title.is_none());
+                assert!(s.window.is_none());
             }
             other => panic!("expected FocusedWindow state, got {:?}", other),
         }
@@ -723,7 +790,6 @@ mod tests {
 
     #[test]
     fn workspace_active_window_change_updates_output_focused_window_title() {
-        use crate::modules::focused_window::FocusedWindowState;
         use crate::surface::SurfaceState;
         use niri_ipc::Event;
 
@@ -740,9 +806,7 @@ mod tests {
         let _ = app.modules.handle(
             super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
                 id: ModuleId::new("focused-window"),
-                state: ModuleState::FocusedWindow(FocusedWindowState {
-                    title: Some("Focused".into()),
-                }),
+                state: ModuleState::FocusedWindow(focused_window_state_with_title("Focused")),
             },
         );
         let window = iced::window::Id::unique();
@@ -760,7 +824,7 @@ mod tests {
         let model = app.bar_render_model(window);
         match &model.center[0].state {
             ModuleState::FocusedWindow(state) => {
-                assert_eq!(state.title.as_deref(), Some("Output Active"));
+                assert_eq!(focused_window_state_title(state), Some("Output Active"));
             }
             state => panic!("expected focused-window state, got {state:?}"),
         }

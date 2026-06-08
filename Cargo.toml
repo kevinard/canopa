@@ -8,6 +8,7 @@ iced_layershell = "0.18.0"
 iced = { version = "0.14", default-features = false, features = [
   "image",
   "svg",
+  "canvas",
   "tokio",
   "advanced",
   "wgpu",

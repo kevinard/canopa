@@ -33,12 +33,35 @@ impl NiriState {
     /// Returns the title of the active window on the given output, or `None` if
     /// there is no active workspace or active window on that output.
     pub fn active_window_title_for_output(&self, output: &str) -> Option<String> {
+        self.active_window_for_output(output)
+            .and_then(|w| w.title.clone())
+    }
+
+    /// Returns the active window on the given output, or `None` if there is no
+    /// active workspace, no active window, or the active window is missing from
+    /// the window cache.
+    pub fn active_window_for_output(&self, output: &str) -> Option<&Window> {
         self.workspaces
             .iter()
             .find(|ws| ws.is_active && ws.output.as_deref() == Some(output))
             .and_then(|ws| ws.active_window_id)
             .and_then(|id| self.windows.get(&id))
-            .and_then(|w| w.title.clone())
+    }
+
+    /// Returns the globally focused window by `focused_window_id`, or `None`
+    /// when there is no focused window or the cached window is missing.
+    pub fn focused_window(&self) -> Option<&Window> {
+        self.focused_window_id.and_then(|id| self.windows.get(&id))
+    }
+
+    /// Returns the focused window for module display, falling back to the
+    /// active window on the focused workspace when a layer-shell surface has
+    /// keyboard focus and niri reports no focused toplevel window.
+    pub fn focused_or_active_window(&self) -> Option<&Window> {
+        self.focused_window().or_else(|| {
+            self.focused_output()
+                .and_then(|output| self.active_window_for_output(output))
+        })
     }
 }
 
@@ -188,6 +211,73 @@ mod tests {
             state.active_window_title_for_output("DP-1"),
             Some("Firefox".to_string())
         );
+    }
+
+    #[test]
+    fn active_window_for_output_returns_full_window() {
+        let mut state = NiriState::default();
+        let mut window = make_window(5, Some("Helix"));
+        window.app_id = Some("helix.desktop".into());
+        state.workspaces = vec![make_workspace(1, "eDP-1", true, true, Some(5))];
+        state.windows.insert(5, window);
+
+        let active = state
+            .active_window_for_output("eDP-1")
+            .expect("active window");
+
+        assert_eq!(active.title.as_deref(), Some("Helix"));
+        assert_eq!(active.app_id.as_deref(), Some("helix.desktop"));
+    }
+
+    #[test]
+    fn focused_window_returns_window_by_focused_id() {
+        let mut state = NiriState::default();
+        state.focused_window_id = Some(10);
+        state.windows.insert(10, make_window(10, Some("Firefox")));
+
+        let focused = state.focused_window().expect("focused window");
+
+        assert_eq!(focused.title.as_deref(), Some("Firefox"));
+    }
+
+    #[test]
+    fn focused_window_returns_none_for_cached_window_miss() {
+        let mut state = NiriState::default();
+        state.focused_window_id = Some(10);
+
+        assert!(state.focused_window().is_none());
+    }
+
+    #[test]
+    fn focused_or_active_window_returns_focused_window_first() {
+        let mut state = NiriState::default();
+        state.focused_window_id = Some(10);
+        state.workspaces = vec![make_workspace(1, "eDP-1", true, true, Some(5))];
+        state.windows.insert(5, make_window(5, Some("Active")));
+        state.windows.insert(10, make_window(10, Some("Focused")));
+
+        let window = state.focused_or_active_window().expect("window");
+
+        assert_eq!(window.title.as_deref(), Some("Focused"));
+    }
+
+    #[test]
+    fn focused_or_active_window_falls_back_to_focused_workspace_active_window() {
+        let mut state = NiriState::default();
+        state.workspaces = vec![make_workspace(1, "eDP-1", true, true, Some(5))];
+        state.windows.insert(5, make_window(5, Some("Active")));
+
+        let window = state.focused_or_active_window().expect("window");
+
+        assert_eq!(window.title.as_deref(), Some("Active"));
+    }
+
+    #[test]
+    fn focused_or_active_window_returns_none_without_focused_or_active_window() {
+        let mut state = NiriState::default();
+        state.workspaces = vec![make_workspace(1, "eDP-1", true, true, None)];
+
+        assert!(state.focused_or_active_window().is_none());
     }
 
     #[test]

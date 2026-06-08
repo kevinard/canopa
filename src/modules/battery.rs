@@ -86,6 +86,7 @@ pub(super) struct BatteryModule {
     states: crate::config::StatesConfig,
     icons: crate::config::IconRulesConfig,
     format: crate::config::FormatConfig,
+    content_rotation: crate::config::ContentRotation,
 }
 
 impl BatteryModule {
@@ -96,12 +97,31 @@ impl BatteryModule {
         icons: crate::config::IconRulesConfig,
         format: crate::config::FormatConfig,
     ) -> Self {
+        Self::new_with_content_rotation(
+            id,
+            critical_threshold,
+            states,
+            icons,
+            format,
+            crate::config::ContentRotation::None,
+        )
+    }
+
+    pub(super) fn new_with_content_rotation(
+        id: crate::modules::ModuleId,
+        critical_threshold: u8,
+        states: crate::config::StatesConfig,
+        icons: crate::config::IconRulesConfig,
+        format: crate::config::FormatConfig,
+        content_rotation: crate::config::ContentRotation,
+    ) -> Self {
         BatteryModule {
             id,
             critical_threshold,
             states,
             icons,
             format,
+            content_rotation,
         }
     }
 
@@ -328,6 +348,42 @@ impl crate::modules::render::ModuleRender for BatteryModule {
         }
     }
 
+    fn render_bar_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        context: &crate::modules::render::BarRenderContext<'_>,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let rotation = self.content_rotation.resolve_for_edge(context.edge);
+        if rotation == crate::config::ResolvedContentRotation::None
+            || self
+                .format
+                .template_for(crate::config::FormatMode::Collapsed)
+                .is_none()
+        {
+            return None;
+        }
+        let crate::modules::ModuleState::Battery(battery) = state else {
+            return None;
+        };
+        let color = icon_color(
+            battery.percentage,
+            battery.is_charging,
+            self.critical_threshold,
+        );
+        let segments = self.collapsed_styled_segments_with_default(battery, bar_style)?;
+        Some(
+            iced::widget::container(crate::modules::view::formatted_segments_content(
+                segments, 16, color, rotation,
+            ))
+            .width(iced::Length::Fill)
+            .height(iced::Length::Shrink)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        )
+    }
+
     fn render_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -362,6 +418,32 @@ impl crate::modules::render::ModuleRender for BatteryModule {
             }
             _ => Some(iced::widget::Space::new().into()),
         }
+    }
+
+    fn render_bar_horizontal_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        context: &crate::modules::render::BarRenderContext<'_>,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let rotation = self.content_rotation.resolve_for_edge(context.edge);
+        if rotation == crate::config::ResolvedContentRotation::None
+            || self
+                .format
+                .template_for(crate::config::FormatMode::Horizontal)
+                .is_none()
+        {
+            return None;
+        }
+        matches!(state, crate::modules::ModuleState::Battery(_)).then(|| {
+            crate::modules::view::icon_label_view_with_rotation(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Horizontal,
+                bar_style,
+                rotation,
+            )
+        })
     }
 }
 

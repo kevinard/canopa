@@ -275,6 +275,7 @@ mod config_tests {
             time_format: "%I:%M %p".into(),
             date_format: "%Y-%m-%d".into(),
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         });
         match params {
@@ -292,6 +293,7 @@ mod config_tests {
             command: CommandConfig::Shell("echo hi".into()),
             interval: 10,
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         };
         assert_eq!(cfg.command, CommandConfig::Shell("echo hi".into()));
@@ -304,6 +306,7 @@ mod config_tests {
             command: CommandConfig::Shell("date".into()),
             interval: 30,
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         });
         match params {
@@ -321,6 +324,7 @@ mod config_tests {
             label: "Launch Terminal".into(),
             icon: ">".into(),
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         };
         assert_eq!(cfg.label, "Launch Terminal");
@@ -333,6 +337,7 @@ mod config_tests {
             label: "launch".into(),
             icon: ">".into(),
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         });
         match params {
@@ -453,6 +458,7 @@ mod config_tests {
                 },
                 interval: 60,
                 format: FormatConfig::default(),
+                content_rotation: ContentRotation::None,
                 tooltip: TooltipSetting::Default,
             }),
             actions: ModuleActionsConfig::default(),

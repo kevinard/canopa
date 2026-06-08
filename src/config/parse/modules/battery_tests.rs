@@ -118,6 +118,30 @@ mod tests {
     }
 
     #[test]
+    fn content_rotation_parsed() {
+        let cfg = battery_config(r#"modules { module "battery" { content-rotation "auto" } }"#);
+
+        assert_eq!(cfg.content_rotation, crate::config::ContentRotation::Auto);
+    }
+
+    #[test]
+    fn content_rotation_unknown_value_has_path_and_help() {
+        let kdl = r#"modules { module "battery" { content-rotation "counterclockwise" } }"#;
+        let err = parse(kdl).unwrap_err();
+        let diagnostic = err.as_diagnostic().expect("config diagnostic");
+        assert_eq!(
+            diagnostic.path(),
+            Some("modules[0].battery.content-rotation")
+        );
+        assert!(diagnostic.to_string().contains("unknown value"));
+        let help = diagnostic.help_text().expect("help text");
+        for value in ["none", "auto", "clockwise", "counter-clockwise"] {
+            assert!(help.contains(value), "missing {value:?} in {help:?}");
+        }
+        assert!(diagnostic.has_span(), "expected source span");
+    }
+
+    #[test]
     fn custom_state_usable_in_format_selector() {
         let kdl = r#"
 modules {

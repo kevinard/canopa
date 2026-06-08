@@ -31,6 +31,7 @@ pub(super) fn parse_ctx(
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
         &[
@@ -41,6 +42,7 @@ pub(super) fn parse_ctx(
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
     )?;
@@ -63,11 +65,13 @@ pub(super) fn parse_ctx(
         &["icon", "value", "label"],
         crate::config::states::EMPTY,
     )?;
+    let content_rotation = formats::parse_content_rotation_ctx(children, ctx)?;
 
     Ok(ButtonConfig {
         label,
         icon,
         format,
+        content_rotation,
         tooltip,
     })
 }

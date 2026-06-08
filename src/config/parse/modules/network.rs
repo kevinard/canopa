@@ -19,6 +19,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<NetworkC
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
         &[
@@ -28,6 +29,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<NetworkC
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
     )?;
@@ -39,9 +41,11 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<NetworkC
         &["icon", "value", "label", "state"],
         crate::config::states::NETWORK,
     )?;
+    let content_rotation = formats::parse_content_rotation_ctx(children, ctx)?;
     Ok(NetworkConfig {
         icons,
         format,
+        content_rotation,
         tooltip,
     })
 }

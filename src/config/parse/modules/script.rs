@@ -30,6 +30,7 @@ pub(super) fn parse(
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
         &[
@@ -40,6 +41,7 @@ pub(super) fn parse(
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
     )?;
@@ -64,11 +66,13 @@ pub(super) fn parse(
         &["icon", "value", "output"],
         crate::config::states::EMPTY,
     )?;
+    let content_rotation = formats::parse_content_rotation_ctx(children, ctx)?;
 
     Ok(ScriptConfig {
         command,
         interval,
         format,
+        content_rotation,
         tooltip,
     })
 }

@@ -1,6 +1,7 @@
 use ::kdl::KdlNode;
 
 use super::super::error::ParseCtx;
+use super::super::fields;
 use super::formats;
 use crate::config::{ConfigResult, FocusedWindowConfig};
 
@@ -17,6 +18,8 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<FocusedW
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
+            "fallback-icon",
             "tooltip",
         ],
         &[
@@ -25,17 +28,41 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<FocusedW
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
+            "fallback-icon",
             "tooltip",
         ],
     )?;
 
-    let (format, tooltip) = formats::parse_format_and_tooltip_ctx(
+    let defaults = FocusedWindowConfig::default();
+    let (parsed_format, tooltip) = formats::parse_format_and_tooltip_ctx(
         children,
         ctx,
-        &["icon", "value", "title"],
+        &["icon", "value", "title", "app-id"],
         crate::config::states::EMPTY,
     )?;
-    Ok(FocusedWindowConfig { format, tooltip })
+    let mut format = defaults.format;
+    if parsed_format.collapsed.is_some() {
+        format.collapsed = parsed_format.collapsed;
+    }
+    if parsed_format.expanded.is_some() {
+        format.expanded = parsed_format.expanded;
+    }
+    if parsed_format.horizontal.is_some() {
+        format.horizontal = parsed_format.horizontal;
+    }
+    let content_rotation =
+        formats::parse_content_rotation_with_default_ctx(children, ctx, defaults.content_rotation)?;
+    let fallback_icon = fields::field(children, ctx, "fallback-icon")
+        .optional()
+        .nonempty_string()
+        .unwrap_or(defaults.fallback_icon)?;
+    Ok(FocusedWindowConfig {
+        format,
+        content_rotation,
+        fallback_icon,
+        tooltip,
+    })
 }
 
 #[cfg(test)]

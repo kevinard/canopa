@@ -101,6 +101,8 @@ bar "main" {
 // accent, text, subtext, base, surface0, surface1, border, overlay0,
 // critical, warning, success.
 // weight accepts: "light", "normal", "bold".
+// Rotate formatted bar content. Values: "none", "auto", "clockwise", "counter-clockwise".
+// "auto" rotates on left/right bars and stays unrotated on top/bottom bars.
 //
 // Optional actions can be added to any module. They run shell commands and
 // override the built-in behavior for that click type:
@@ -152,8 +154,10 @@ modules {
 
     // focused-window: shows the title of the focused window on this output.
     module "focused-window" {
-        // Optional display templates. Placeholders: {icon}, {value}, {title}.
-        // format "{icon}"
+        // Optional display templates. Placeholders: {icon}, {value}, {title}, {app-id}.
+        format "{icon}" "{title}"
+        content-rotation "auto"
+        fallback-icon "□"
         // expanded-format "{title}"
         // horizontal-format "{title}"
         //

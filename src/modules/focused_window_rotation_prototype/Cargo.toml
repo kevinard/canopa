@@ -1,0 +1,24 @@
+[package]
+name = "niribar-focused-window-rotation-prototype"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+iced = { version = "0.14", default-features = false, features = [
+  "advanced",
+  "canvas",
+  "crisp",
+  "image",
+  "svg",
+  "thread-pool",
+  "tokio",
+  "wayland",
+  "web-colors",
+  "wgpu",
+] }
+
+[patch.crates-io]
+iced_core = { path = "vendor/iced_core" }
+iced_wgpu = { path = "vendor/iced_wgpu" }
+cryoglyph = { path = "vendor/cryoglyph" }

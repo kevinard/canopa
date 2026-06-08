@@ -23,6 +23,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<BatteryC
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
         &[
@@ -34,6 +35,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<BatteryC
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
     )?;
@@ -63,12 +65,14 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<BatteryC
         &["icon", "value", "percent", "state"],
         &allowed_states,
     )?;
+    let content_rotation = formats::parse_content_rotation_ctx(children, ctx)?;
 
     Ok(BatteryConfig {
         critical_threshold,
         states: states_config,
         icons,
         format,
+        content_rotation,
         tooltip,
     })
 }

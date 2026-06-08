@@ -2,7 +2,7 @@ use ::kdl::KdlDocument;
 
 use super::super::error::ParseCtx;
 use super::super::fields;
-use crate::config::{ConfigResult, FormatConfig, FormatTemplate};
+use crate::config::{ConfigResult, ContentRotation, FormatConfig, FormatTemplate};
 
 pub(super) fn parse_format_and_tooltip_ctx(
     children: &KdlDocument,
@@ -14,6 +14,25 @@ pub(super) fn parse_format_and_tooltip_ctx(
         parse_optional_ctx(children, module_ctx, placeholders, allowed_states)?,
         parse_tooltip_field_ctx(children, module_ctx, placeholders, allowed_states)?,
     ))
+}
+
+pub(super) fn parse_content_rotation_ctx(
+    children: &KdlDocument,
+    module_ctx: &ParseCtx,
+) -> ConfigResult<ContentRotation> {
+    parse_content_rotation_with_default_ctx(children, module_ctx, ContentRotation::None)
+}
+
+pub(super) fn parse_content_rotation_with_default_ctx(
+    children: &KdlDocument,
+    module_ctx: &ParseCtx,
+    default: ContentRotation,
+) -> ConfigResult<ContentRotation> {
+    let expected = ContentRotation::ACCEPTED_VALUES.join(", ");
+    Ok(fields::field(children, module_ctx, "content-rotation")
+        .optional()
+        .one_of(&expected, ContentRotation::parse)
+        .unwrap_or(default)?)
 }
 
 fn parse_optional_ctx(

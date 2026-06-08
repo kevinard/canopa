@@ -24,8 +24,10 @@ pub use module::{
     ModuleParams, NetworkConfig, PanelAction, ScriptConfig, StateRule, StatesConfig, TrayConfig,
     VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
+#[allow(unused_imports)]
 pub use template::{
-    FormatConfig, FormatMode, FormatTemplate, StyledSegment, TextTemplate, TooltipSetting,
+    ContentRotation, FormatConfig, FormatMode, FormatTemplate, ResolvedContentRotation,
+    StyledSegment, TextTemplate, TooltipSetting,
 };
 #[cfg(test)]
 pub(crate) use validate::validate;

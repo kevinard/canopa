@@ -1,5 +1,6 @@
 mod tests {
     use super::super::*;
+    use crate::config::bar::Edge;
 
     #[test]
     fn text_template_substitutes_value() {
@@ -160,5 +161,67 @@ mod tests {
         assert_eq!(rendered[1].1.color, Some(ThemeToken::Subtext.resolve()));
         assert_eq!(rendered[1].1.size, Some(13.0));
         assert_eq!(rendered[1].1.weight, Some(Weight::Light));
+    }
+
+    #[test]
+    fn format_template_identifies_exact_placeholder_segments() {
+        use crate::config::style::{ColorValue, SegmentStyles, Style, ThemeToken};
+
+        let plain = FormatTemplate::parse(&["{icon}"], &["icon"], "test.format").unwrap();
+        assert!(plain.segment_is_exact_placeholder(0, "icon"));
+
+        let mut styled = FormatTemplate::parse(&["{icon}"], &["icon"], "test.format").unwrap();
+        styled.set_segment_styles(
+            0,
+            SegmentStyles::Static(Style {
+                color: Some(ColorValue::Token(ThemeToken::Accent)),
+                ..Default::default()
+            }),
+        );
+        assert!(styled.segment_is_exact_placeholder(0, "icon"));
+
+        let padded = FormatTemplate::parse(&[" {icon} "], &["icon"], "test.format").unwrap();
+        assert!(!padded.segment_is_exact_placeholder(0, "icon"));
+
+        let mixed =
+            FormatTemplate::parse(&["{icon}: {title}"], &["icon", "title"], "test.format").unwrap();
+        assert!(!mixed.segment_is_exact_placeholder(0, "icon"));
+    }
+
+    #[test]
+    fn content_rotation_resolves_for_bar_edge() {
+        assert_eq!(ContentRotation::default(), ContentRotation::None);
+
+        assert_eq!(
+            ContentRotation::Auto.resolve_for_edge(&Edge::Left),
+            ResolvedContentRotation::CounterClockwise
+        );
+        assert_eq!(
+            ContentRotation::Auto.resolve_for_edge(&Edge::Right),
+            ResolvedContentRotation::Clockwise
+        );
+        assert_eq!(
+            ContentRotation::Auto.resolve_for_edge(&Edge::Top),
+            ResolvedContentRotation::None
+        );
+        assert_eq!(
+            ContentRotation::Auto.resolve_for_edge(&Edge::Bottom),
+            ResolvedContentRotation::None
+        );
+
+        for edge in [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom] {
+            assert_eq!(
+                ContentRotation::Clockwise.resolve_for_edge(&edge),
+                ResolvedContentRotation::Clockwise
+            );
+            assert_eq!(
+                ContentRotation::CounterClockwise.resolve_for_edge(&edge),
+                ResolvedContentRotation::CounterClockwise
+            );
+            assert_eq!(
+                ContentRotation::None.resolve_for_edge(&edge),
+                ResolvedContentRotation::None
+            );
+        }
     }
 }

@@ -128,6 +128,18 @@ _Avoid_: Popup layer, z-index
 The layout direction of a **Bar**, derived from its **Edge**.
 _Avoid_: Edge
 
+**Content Rotation**:
+A presentation choice that changes the direction in which a **Module**'s visible content is drawn without changing the **Bar**'s **Orientation**, **Edge**, or placement.
+_Avoid_: Orientation, rotated bar, edge rotation
+
+**Application Icon**:
+The icon associated with the application that owns a compositor window, used when a **Module** represents that window rather than a generic module glyph.
+_Avoid_: Window icon, module icon
+
+**Compositor Window**:
+A window reported by the compositor integration, including its title, owning application identity, focus state, and output/workspace relationships.
+_Avoid_: App window, client, Wayland window
+
 **Output Target**:
 An exact include-list or exclude-list expression that selects which **Eligible Outputs** a **Bar** should render on.
 _Avoid_: Output override, monitor filter
@@ -159,6 +171,10 @@ _Avoid_: Event, subscription, refresh, panel action when the action is not modul
 **Module Interaction**:
 A pointer or keyboard input delivered to a **Module Instance** before it resolves into a **Module Action**, **Menu**, or module-owned effect.
 _Avoid_: Module action, app event, key binding
+
+**Format Template**:
+A configured text template that controls which **Module** values appear in a render mode and in what order, including whether an icon placeholder is part of the visible content.
+_Avoid_: Label format, display string
 
 **Tooltip**:
 Supplemental information shown for a **Module** on a **Bar Surface**.

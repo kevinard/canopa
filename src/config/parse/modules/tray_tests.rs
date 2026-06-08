@@ -93,6 +93,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_tray_content_rotation_is_unknown_field() {
+        let kdl = r#"modules { module "tray" { content-rotation "auto" } }"#;
+        let err = parse(kdl).unwrap_err();
+        let diagnostic = err.as_diagnostic().expect("config diagnostic");
+        assert_eq!(diagnostic.path(), Some("modules[0].tray.content-rotation"));
+        assert!(diagnostic.to_string().contains("unknown field"));
+        assert!(diagnostic.has_span(), "expected source span");
+    }
+
+    #[test]
     fn parse_tray_tooltip_unknown_placeholder_points_at_tooltip() {
         let kdl = r#"modules { module "tray" { tooltip "{value}" } }"#;
         let err = parse(kdl).unwrap_err();

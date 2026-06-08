@@ -1041,27 +1041,32 @@ modules {
         format "{icon} {value}"
         expanded-format "{percent} {state}"
         horizontal-format "{icon}"
+        content-rotation "clockwise"
     }
     module "network" {
         format "{icon} {label}"
         expanded-format "{value} {state}"
         horizontal-format "{icon}"
+        content-rotation "clockwise"
     }
     module "clock" {
         format "{icon} {time}"
         expanded-format "{date}"
         horizontal-format "{value}"
+        content-rotation "clockwise"
     }
     module "focused-window" {
         format "{icon}"
         expanded-format "{title}"
         horizontal-format "{value}"
+        content-rotation "clockwise"
     }
     module "script" {
         command "date"
         format "{icon} {output}"
         expanded-format "{value}"
         horizontal-format "{icon}"
+        content-rotation "clockwise"
     }
     module "button" {
         label "Launch"
@@ -1072,14 +1077,29 @@ modules {
         format "{icon}"
         expanded-format "{label}"
         horizontal-format "{value}"
+        content-rotation "clockwise"
     }
     module "workspaces" {
         format "{icon}{label}"
         expanded-format "{state}"
         horizontal-format "{index}"
+        content-rotation "clockwise"
     }
 }
 "#;
     let config = parse(kdl).unwrap();
     assert_eq!(config.modules.len(), 7);
+    for module in &config.modules {
+        let rotation = match &module.params {
+            crate::config::ModuleParams::Volume(config) => config.content_rotation,
+            crate::config::ModuleParams::Network(config) => config.content_rotation,
+            crate::config::ModuleParams::Clock(config) => config.content_rotation,
+            crate::config::ModuleParams::FocusedWindow(config) => config.content_rotation,
+            crate::config::ModuleParams::Script(config) => config.content_rotation,
+            crate::config::ModuleParams::Button(config) => config.content_rotation,
+            crate::config::ModuleParams::Workspaces(config) => config.content_rotation,
+            other => panic!("unexpected module params: {other:?}"),
+        };
+        assert_eq!(rotation, crate::config::ContentRotation::Clockwise);
+    }
 }

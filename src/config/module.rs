@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{FormatConfig, TooltipSetting};
+use super::{ContentRotation, FormatConfig, FormatTemplate, TooltipSetting};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CommandConfig {
@@ -29,6 +29,7 @@ pub struct ClockConfig {
     pub time_format: String,
     pub date_format: String,
     pub format: FormatConfig,
+    pub content_rotation: ContentRotation,
     pub tooltip: TooltipSetting,
 }
 
@@ -38,6 +39,7 @@ impl Default for ClockConfig {
             time_format: String::from("%H:%M"),
             date_format: String::from("%a %d %b"),
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         }
     }
@@ -49,6 +51,7 @@ pub struct ScriptConfig {
     pub command: CommandConfig,
     pub interval: u64, // seconds between executions
     pub format: FormatConfig,
+    pub content_rotation: ContentRotation,
     pub tooltip: TooltipSetting,
 }
 
@@ -58,6 +61,7 @@ pub struct ButtonConfig {
     pub label: String,
     pub icon: String,
     pub format: FormatConfig,
+    pub content_rotation: ContentRotation,
     pub tooltip: TooltipSetting,
 }
 
@@ -75,6 +79,7 @@ pub struct WorkspacesConfig {
     /// Absent key → workspace shows number only.
     pub workspaces: std::collections::HashMap<u32, WorkspaceLabelConfig>,
     pub format: FormatConfig,
+    pub content_rotation: ContentRotation,
     pub tooltip: TooltipSetting,
 }
 
@@ -83,6 +88,7 @@ impl Default for WorkspacesConfig {
         WorkspacesConfig {
             workspaces: std::collections::HashMap::default(),
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         }
     }
@@ -176,6 +182,7 @@ pub struct BatteryConfig {
     pub states: StatesConfig,
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
+    pub content_rotation: ContentRotation,
     pub tooltip: TooltipSetting,
 }
 
@@ -187,6 +194,7 @@ impl Default for BatteryConfig {
             states,
             icons: IconRulesConfig::default(),
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         }
     }
@@ -229,6 +237,7 @@ pub struct IconThreshold {
 pub struct NetworkConfig {
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
+    pub content_rotation: ContentRotation,
     pub tooltip: TooltipSetting,
 }
 
@@ -237,6 +246,7 @@ impl Default for NetworkConfig {
         NetworkConfig {
             icons: IconRulesConfig::default(),
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         }
     }
@@ -258,17 +268,32 @@ impl Default for TrayConfig {
     }
 }
 
-/// Configuration for the focused-window module (no user-configurable params).
+/// Configuration for the focused-window module.
 #[derive(Debug, Clone)]
 pub struct FocusedWindowConfig {
     pub format: FormatConfig,
+    pub content_rotation: ContentRotation,
+    pub fallback_icon: String,
     pub tooltip: TooltipSetting,
 }
 
 impl Default for FocusedWindowConfig {
     fn default() -> Self {
         FocusedWindowConfig {
-            format: FormatConfig::default(),
+            format: FormatConfig {
+                collapsed: Some(
+                    FormatTemplate::parse(
+                        &["{icon}", "{title}"],
+                        &["icon", "value", "title", "app-id"],
+                        "focused-window.format",
+                    )
+                    .expect("focused-window default format is valid"),
+                ),
+                expanded: None,
+                horizontal: None,
+            },
+            content_rotation: ContentRotation::Auto,
+            fallback_icon: "□".into(),
             tooltip: TooltipSetting::Default,
         }
     }
@@ -282,6 +307,7 @@ pub struct VolumeConfig {
     pub states: StatesConfig,
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
+    pub content_rotation: ContentRotation,
     pub tooltip: TooltipSetting,
 }
 
@@ -292,6 +318,7 @@ impl Default for VolumeConfig {
             states: StatesConfig::volume_default(),
             icons: IconRulesConfig::default(),
             format: FormatConfig::default(),
+            content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         }
     }

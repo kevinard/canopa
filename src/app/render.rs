@@ -158,6 +158,7 @@ impl App {
                     .render_bar_module(super::module_runtime::BarModuleRenderRequest {
                         id: id.clone(),
                         window,
+                        edge: &bar.edge,
                         horizontal: is_horizontal,
                         expanded: shows_expanded,
                         style: &bar.style,
@@ -241,30 +242,21 @@ impl App {
 
         let stored_state = self.modules.render_state_for(id);
 
-        if let ModuleState::FocusedWindow(fw) = &stored_state {
-            let title = if surface.output_name.is_empty() {
-                fw.title.clone()
+        if matches!(stored_state, ModuleState::FocusedWindow(_)) {
+            let niri = self.niri.state();
+            let window = if surface.output_name.is_empty() {
+                niri.focused_or_active_window()
             } else {
-                match self.niri.state().focused_window_id {
-                    None => self
-                        .niri
-                        .state()
-                        .active_window_title_for_output(&surface.output_name),
-                    Some(_) => {
-                        let focused_output = self.niri.state().focused_output();
-                        if focused_output.is_none()
-                            || focused_output == Some(surface.output_name.as_str())
-                        {
-                            fw.title.clone()
-                        } else {
-                            self.niri
-                                .state()
-                                .active_window_title_for_output(&surface.output_name)
-                        }
-                    }
+                let focused_output = niri.focused_output();
+                if focused_output.is_some_and(|output| output == surface.output_name.as_str()) {
+                    niri.focused_or_active_window()
+                } else {
+                    niri.active_window_for_output(&surface.output_name)
                 }
             };
-            return ModuleState::FocusedWindow(focused_window::FocusedWindowState { title });
+            return ModuleState::FocusedWindow(focused_window::FocusedWindowState {
+                window: window.map(Self::focused_window_info_from_window),
+            });
         }
 
         stored_state
@@ -278,7 +270,7 @@ mod tests {
         BarConfig, ClockConfig, Config, FocusedWindowConfig, MenuConfig, MenuItemConfig,
         ModuleConfig, ModuleParams, WorkspacesConfig,
     };
-    use crate::modules::focused_window::FocusedWindowState;
+    use crate::modules::focused_window;
     use crate::modules::{ModuleId, ModuleState, Zone};
     use crate::surface::SurfaceState;
 
@@ -305,6 +297,20 @@ mod tests {
             },
             focus_timestamp: None,
         }
+    }
+
+    fn focused_window_state_with_title(title: &str) -> focused_window::FocusedWindowState {
+        focused_window::FocusedWindowState {
+            window: Some(focused_window::FocusedWindowInfo {
+                title: Some(title.into()),
+                app_id: None,
+                application_icon: None,
+            }),
+        }
+    }
+
+    fn focused_window_state_title(state: &focused_window::FocusedWindowState) -> Option<&str> {
+        state.window.as_ref().and_then(|info| info.title.as_deref())
     }
 
     fn make_workspace(
@@ -382,8 +388,47 @@ mod tests {
         let _ = app.modules.handle(
             super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
                 id: ModuleId::new("focused-window"),
-                state: ModuleState::FocusedWindow(FocusedWindowState {
-                    title: Some("Focused".into()),
+                state: ModuleState::FocusedWindow(focused_window_state_with_title("Focused")),
+            },
+        );
+        let wid = test_wid();
+        app.surfaces
+            .surfaces
+            .insert(wid, SurfaceState::new("eDP-1".into(), String::new()));
+
+        let model = app.bar_render_model(wid);
+
+        match &model.center[0].state {
+            ModuleState::FocusedWindow(state) => {
+                assert_eq!(focused_window_state_title(state), Some("Focused"));
+            }
+            state => panic!("expected focused-window state, got {state:?}"),
+        }
+    }
+
+    #[test]
+    fn bar_render_model_uses_active_title_for_focused_output_without_toplevel_focus() {
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: "focused-window".into(),
+                module_type: "focused-window".into(),
+                params: ModuleParams::FocusedWindow(FocusedWindowConfig::default()),
+                actions: crate::config::ModuleActionsConfig::default(),
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.center = vec!["focused-window".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        app.niri
+            .state_mut()
+            .windows
+            .insert(1, make_window(1, "Active", false));
+        app.niri.state_mut().workspaces = vec![make_workspace(10, 1, "eDP-1", true, true, Some(1))];
+        let _ = app.modules.handle(
+            super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
+                id: ModuleId::new("focused-window"),
+                state: ModuleState::FocusedWindow(focused_window::FocusedWindowState {
+                    window: None,
                 }),
             },
         );
@@ -396,7 +441,7 @@ mod tests {
 
         match &model.center[0].state {
             ModuleState::FocusedWindow(state) => {
-                assert_eq!(state.title.as_deref(), Some("Focused"));
+                assert_eq!(focused_window_state_title(state), Some("Active"));
             }
             state => panic!("expected focused-window state, got {state:?}"),
         }
@@ -431,9 +476,7 @@ mod tests {
         let _ = app.modules.handle(
             super::super::module_runtime::ModuleRuntimeIntent::ApplyModuleState {
                 id: ModuleId::new("focused-window"),
-                state: ModuleState::FocusedWindow(FocusedWindowState {
-                    title: Some("Focused".into()),
-                }),
+                state: ModuleState::FocusedWindow(focused_window_state_with_title("Focused")),
             },
         );
         let wid = test_wid();
@@ -445,7 +488,7 @@ mod tests {
 
         match &model.center[0].state {
             ModuleState::FocusedWindow(state) => {
-                assert_eq!(state.title.as_deref(), Some("Other"));
+                assert_eq!(focused_window_state_title(state), Some("Other"));
             }
             state => panic!("expected focused-window state, got {state:?}"),
         }

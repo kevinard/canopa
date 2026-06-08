@@ -349,17 +349,18 @@ pub(crate) fn descriptor_for_kind(kind: ModuleKind) -> Option<&'static ModuleDes
 }
 
 fn network_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
-    let (icons, format) = match &mc.params {
-        ModuleParams::Network(cfg) => (cfg.icons.clone(), cfg.format.clone()),
+    let (icons, format, content_rotation) = match &mc.params {
+        ModuleParams::Network(cfg) => (cfg.icons.clone(), cfg.format.clone(), cfg.content_rotation),
         _ => {
             let default = NetworkConfig::default();
-            (default.icons, default.format)
+            (default.icons, default.format, default.content_rotation)
         }
     };
-    Ok(Box::new(network::NetworkModule::new(
+    Ok(Box::new(network::NetworkModule::new_with_content_rotation(
         ModuleId::new(&mc.name),
         icons,
         format,
+        content_rotation,
     )))
 }
 
@@ -372,7 +373,7 @@ fn clock_synthesized_params() -> ModuleParams {
 }
 
 fn focused_window_synthesized_params() -> ModuleParams {
-    ModuleParams::None
+    ModuleParams::FocusedWindow(crate::config::FocusedWindowConfig::default())
 }
 
 fn network_synthesized_params() -> ModuleParams {
@@ -384,34 +385,43 @@ fn tray_synthesized_params() -> ModuleParams {
 }
 
 fn volume_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
-    let (step, states, icons, format) = match &mc.params {
+    let (step, states, icons, format, content_rotation) = match &mc.params {
         ModuleParams::Volume(cfg) => (
             cfg.step,
             cfg.states.clone(),
             cfg.icons.clone(),
             cfg.format.clone(),
+            cfg.content_rotation,
         ),
         _ => {
             let default = VolumeConfig::default();
-            (default.step, default.states, default.icons, default.format)
+            (
+                default.step,
+                default.states,
+                default.icons,
+                default.format,
+                default.content_rotation,
+            )
         }
     };
-    Ok(Box::new(volume::VolumeModule::new(
+    Ok(Box::new(volume::VolumeModule::new_with_content_rotation(
         ModuleId::new(&mc.name),
         step,
         states,
         icons,
         format,
+        content_rotation,
     )))
 }
 
 fn battery_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
-    let (threshold, states, icons, format) = match &mc.params {
+    let (threshold, states, icons, format, content_rotation) = match &mc.params {
         ModuleParams::Battery(cfg) => (
             cfg.critical_threshold,
             cfg.states.clone(),
             cfg.icons.clone(),
             cfg.format.clone(),
+            cfg.content_rotation,
         ),
         _ => {
             let default = BatteryConfig::default();
@@ -420,25 +430,28 @@ fn battery_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Modu
                 default.states,
                 default.icons,
                 default.format,
+                default.content_rotation,
             )
         }
     };
-    Ok(Box::new(battery::BatteryModule::new(
+    Ok(Box::new(battery::BatteryModule::new_with_content_rotation(
         ModuleId::new(&mc.name),
         threshold,
         states,
         icons,
         format,
+        content_rotation,
     )))
 }
 
 fn button_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     match &mc.params {
-        ModuleParams::Button(cfg) => Ok(Box::new(button::ButtonModule::new(
+        ModuleParams::Button(cfg) => Ok(Box::new(button::ButtonModule::new_with_content_rotation(
             ModuleId::new(&mc.name),
             cfg.label.clone(),
             cfg.icon.clone(),
             cfg.format.clone(),
+            cfg.content_rotation,
         ))),
         _ => anyhow::bail!(
             "button constructor called with non-button params for {:?}",
@@ -448,32 +461,35 @@ fn button_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Modul
 }
 
 fn clock_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
-    let (time_fmt, date_fmt, format) = match &mc.params {
+    let (time_fmt, date_fmt, format, content_rotation) = match &mc.params {
         ModuleParams::Clock(cfg) => (
             cfg.time_format.clone(),
             cfg.date_format.clone(),
             cfg.format.clone(),
+            cfg.content_rotation,
         ),
         _ => {
             let d = ClockConfig::default();
-            (d.time_format, d.date_format, d.format)
+            (d.time_format, d.date_format, d.format, d.content_rotation)
         }
     };
-    Ok(Box::new(clock::ClockModule::new(
+    Ok(Box::new(clock::ClockModule::new_with_content_rotation(
         ModuleId::new(&mc.name),
         time_fmt,
         date_fmt,
         format,
+        content_rotation,
     )))
 }
 
 fn script_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
     match &mc.params {
-        ModuleParams::Script(cfg) => Ok(Box::new(script::ScriptModule::new(
+        ModuleParams::Script(cfg) => Ok(Box::new(script::ScriptModule::new_with_content_rotation(
             ModuleId::new(&mc.name),
             cfg.command.clone(),
             cfg.interval,
             cfg.format.clone(),
+            cfg.content_rotation,
         ))),
         _ => anyhow::bail!(
             "script constructor called with non-script params for {:?}",
@@ -494,14 +510,29 @@ fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn M
 }
 
 fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
-    let format = match &mc.params {
-        ModuleParams::FocusedWindow(cfg) => cfg.format.clone(),
-        _ => crate::config::FocusedWindowConfig::default().format,
+    let (format, content_rotation, fallback_icon) = match &mc.params {
+        ModuleParams::FocusedWindow(cfg) => (
+            cfg.format.clone(),
+            cfg.content_rotation,
+            cfg.fallback_icon.clone(),
+        ),
+        _ => {
+            let default = crate::config::FocusedWindowConfig::default();
+            (
+                default.format,
+                default.content_rotation,
+                default.fallback_icon,
+            )
+        }
     };
-    Ok(Box::new(focused_window::FocusedWindowModule::new(
-        ModuleId::new(&mc.name),
-        format,
-    )))
+    Ok(Box::new(
+        focused_window::FocusedWindowModule::new_with_content_rotation(
+            ModuleId::new(&mc.name),
+            format,
+            content_rotation,
+            fallback_icon,
+        ),
+    ))
 }
 
 fn tray_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {

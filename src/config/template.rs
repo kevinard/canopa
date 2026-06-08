@@ -1,4 +1,5 @@
 use super::FormatValue;
+use super::bar::Edge;
 use super::style::{ResolvedStyle, SegmentStyles, Style};
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -20,6 +21,50 @@ impl FormatConfig {
                 .or(self.collapsed.as_ref()),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ContentRotation {
+    #[default]
+    None,
+    Auto,
+    Clockwise,
+    CounterClockwise,
+}
+
+impl ContentRotation {
+    pub const ACCEPTED_VALUES: &'static [&'static str] =
+        &["none", "auto", "clockwise", "counter-clockwise"];
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "none" => Some(Self::None),
+            "auto" => Some(Self::Auto),
+            "clockwise" => Some(Self::Clockwise),
+            "counter-clockwise" => Some(Self::CounterClockwise),
+            _ => None,
+        }
+    }
+
+    pub fn resolve_for_edge(self, edge: &Edge) -> ResolvedContentRotation {
+        match self {
+            Self::None => ResolvedContentRotation::None,
+            Self::Auto => match edge {
+                Edge::Left => ResolvedContentRotation::CounterClockwise,
+                Edge::Right => ResolvedContentRotation::Clockwise,
+                Edge::Top | Edge::Bottom => ResolvedContentRotation::None,
+            },
+            Self::Clockwise => ResolvedContentRotation::Clockwise,
+            Self::CounterClockwise => ResolvedContentRotation::CounterClockwise,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolvedContentRotation {
+    None,
+    Clockwise,
+    CounterClockwise,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -69,10 +114,13 @@ impl StyledSegment {
     pub fn set_styles(&mut self, styles: SegmentStyles) {
         self.styles = styles;
     }
+
+    pub fn is_exact_placeholder(&self, name: &str) -> bool {
+        self.template.is_exact_placeholder(name)
+    }
 }
 
 impl FormatTemplate {
-    #[cfg(test)]
     pub fn parse(raw_segments: &[&str], allowed: &[&str], path: &str) -> anyhow::Result<Self> {
         if raw_segments.is_empty() {
             anyhow::bail!("{path}: expected at least one string value.");
@@ -144,6 +192,12 @@ impl FormatTemplate {
                 )
             })
             .collect()
+    }
+
+    pub fn segment_is_exact_placeholder(&self, index: usize, name: &str) -> bool {
+        self.segments
+            .get(index)
+            .is_some_and(|segment| segment.is_exact_placeholder(name))
     }
 }
 
@@ -224,6 +278,13 @@ impl TextTemplate {
         }
 
         Ok(TextTemplate { parts })
+    }
+
+    pub fn is_exact_placeholder(&self, name: &str) -> bool {
+        matches!(
+            self.parts.as_slice(),
+            [TemplatePart::Placeholder(placeholder)] if placeholder == name
+        )
     }
 
     pub fn render_pairs(&self, values: &[(&str, String)]) -> String {

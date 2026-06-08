@@ -260,6 +260,67 @@ impl WorkspaceItemModule {
         }
     }
 
+    fn build_rotated_format_view(
+        &self,
+        horizontal: bool,
+        bar_style: &crate::config::Style,
+        rotation: crate::config::ResolvedContentRotation,
+    ) -> Option<iced::Element<'static, crate::app::Message>> {
+        use iced::widget::container;
+        use iced::{Alignment, Background, Length};
+
+        let (bg, fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);
+        let mode = if horizontal {
+            crate::config::FormatMode::Horizontal
+        } else {
+            crate::config::FormatMode::Collapsed
+        };
+        let segments = self.styled_segments_with_default(mode, bar_style)?;
+        let content = crate::modules::view::formatted_segments_content(
+            segments,
+            if horizontal { 10 } else { 12 },
+            fg,
+            rotation,
+        );
+
+        if horizontal {
+            Some(
+                container(content)
+                    .width(32)
+                    .height(Length::Fill)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .style(move |_theme| container::Style {
+                        background: Some(Background::Color(bg)),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .into(),
+            )
+        } else {
+            Some(
+                container(content)
+                    .width(Length::Fill)
+                    .height(Length::Shrink)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .padding([0, 6])
+                    .style(move |_theme| container::Style {
+                        background: Some(Background::Color(bg)),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .into(),
+            )
+        }
+    }
+
     fn matches_output_state(&self, state: &crate::modules::ModuleState) -> bool {
         let surface_output = match state {
             crate::modules::ModuleState::WorkspaceOutput(output) => output.as_str(),
@@ -390,6 +451,26 @@ impl crate::modules::render::ModuleRender for WorkspaceItemModule {
         self.build_view(false, bar_style)
     }
 
+    fn render_bar_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        context: &crate::modules::render::BarRenderContext<'_>,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let rotation = self.config.content_rotation.resolve_for_edge(context.edge);
+        if rotation == crate::config::ResolvedContentRotation::None
+            || self
+                .config
+                .format
+                .template_for(crate::config::FormatMode::Collapsed)
+                .is_none()
+            || !self.matches_output_state(state)
+        {
+            return None;
+        }
+        self.build_rotated_format_view(false, bar_style, rotation)
+    }
+
     fn render_panel_with_style(
         &self,
         _state: &crate::modules::ModuleState,
@@ -408,6 +489,26 @@ impl crate::modules::render::ModuleRender for WorkspaceItemModule {
         }
         Some(self.build_view(true, bar_style))
     }
+
+    fn render_bar_horizontal_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        context: &crate::modules::render::BarRenderContext<'_>,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let rotation = self.config.content_rotation.resolve_for_edge(context.edge);
+        if rotation == crate::config::ResolvedContentRotation::None
+            || self
+                .config
+                .format
+                .template_for(crate::config::FormatMode::Horizontal)
+                .is_none()
+            || !self.matches_output_state(state)
+        {
+            return None;
+        }
+        self.build_rotated_format_view(true, bar_style, rotation)
+    }
 }
 
 #[cfg(test)]
@@ -417,6 +518,7 @@ mod tests {
     use crate::modules::Module;
     use crate::modules::dynamic::DynamicModuleInstance;
     use crate::modules::interaction::ModuleInteractionHandler;
+    use crate::modules::render::{BarRenderContext, ModuleRender};
 
     fn make_workspace(idx: u8, is_focused: bool) -> niri_ipc::Workspace {
         make_workspace_on(idx, is_focused, "eDP-1")
@@ -646,6 +748,56 @@ mod tests {
                 .1
                 .color,
             None
+        );
+    }
+
+    #[test]
+    fn workspace_item_auto_rotation_overrides_side_bar_collapsed_format() {
+        let mut config = workspace_format_config();
+        config.content_rotation = crate::config::ContentRotation::Auto;
+        let m = WorkspaceItemModule::new(make_workspace(0, true), config, "workspaces".into());
+        let state = crate::modules::ModuleState::WorkspaceOutput("eDP-1".into());
+        let edge = crate::config::Edge::Left;
+        let context = BarRenderContext {
+            window: iced::window::Id::unique(),
+            edge: &edge,
+            horizontal: false,
+        };
+
+        assert!(
+            m.render_bar_collapsed_with_style(&state, &context, &crate::config::Style::default())
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn workspace_item_explicit_rotation_overrides_horizontal_format() {
+        let horizontal = crate::config::FormatTemplate::parse(
+            &["{label}"],
+            &["icon", "value", "index", "name", "label", "state"],
+            "test.format.horizontal",
+        )
+        .unwrap();
+        let config = crate::config::WorkspacesConfig {
+            format: crate::config::FormatConfig {
+                horizontal: Some(horizontal),
+                ..Default::default()
+            },
+            content_rotation: crate::config::ContentRotation::Clockwise,
+            ..Default::default()
+        };
+        let m = WorkspaceItemModule::new(make_workspace(0, true), config, "workspaces".into());
+        let state = crate::modules::ModuleState::WorkspaceOutput("eDP-1".into());
+        let edge = crate::config::Edge::Top;
+        let context = BarRenderContext {
+            window: iced::window::Id::unique(),
+            edge: &edge,
+            horizontal: true,
+        };
+
+        assert!(
+            m.render_bar_horizontal_with_style(&state, &context, &crate::config::Style::default())
+                .is_some()
         );
     }
 }

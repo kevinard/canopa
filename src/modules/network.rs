@@ -55,6 +55,7 @@ pub(super) struct NetworkModule {
     id: crate::modules::ModuleId,
     icons: crate::config::IconRulesConfig,
     format: crate::config::FormatConfig,
+    content_rotation: crate::config::ContentRotation,
 }
 
 impl NetworkModule {
@@ -63,7 +64,21 @@ impl NetworkModule {
         icons: crate::config::IconRulesConfig,
         format: crate::config::FormatConfig,
     ) -> Self {
-        NetworkModule { id, icons, format }
+        Self::new_with_content_rotation(id, icons, format, crate::config::ContentRotation::None)
+    }
+
+    pub(super) fn new_with_content_rotation(
+        id: crate::modules::ModuleId,
+        icons: crate::config::IconRulesConfig,
+        format: crate::config::FormatConfig,
+        content_rotation: crate::config::ContentRotation,
+    ) -> Self {
+        NetworkModule {
+            id,
+            icons,
+            format,
+            content_rotation,
+        }
     }
 
     fn default_label(state: &NetworkState) -> String {
@@ -225,6 +240,32 @@ impl crate::modules::render::ModuleRender for NetworkModule {
         }
     }
 
+    fn render_bar_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        context: &crate::modules::render::BarRenderContext<'_>,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let rotation = self.content_rotation.resolve_for_edge(context.edge);
+        if rotation == crate::config::ResolvedContentRotation::None
+            || self
+                .format
+                .template_for(crate::config::FormatMode::Collapsed)
+                .is_none()
+        {
+            return None;
+        }
+        matches!(state, crate::modules::ModuleState::Network(_)).then(|| {
+            crate::modules::view::icon_label_view_with_rotation(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Collapsed,
+                bar_style,
+                rotation,
+            )
+        })
+    }
+
     fn render_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -259,6 +300,32 @@ impl crate::modules::render::ModuleRender for NetworkModule {
             }
             _ => Some(iced::widget::Space::new().into()),
         }
+    }
+
+    fn render_bar_horizontal_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        context: &crate::modules::render::BarRenderContext<'_>,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let rotation = self.content_rotation.resolve_for_edge(context.edge);
+        if rotation == crate::config::ResolvedContentRotation::None
+            || self
+                .format
+                .template_for(crate::config::FormatMode::Horizontal)
+                .is_none()
+        {
+            return None;
+        }
+        matches!(state, crate::modules::ModuleState::Network(_)).then(|| {
+            crate::modules::view::icon_label_view_with_rotation(
+                self,
+                state,
+                crate::modules::view::IconLabelLayout::Horizontal,
+                bar_style,
+                rotation,
+            )
+        })
     }
 }
 

@@ -173,6 +173,7 @@ pub(super) struct ClockModule {
     time_format: String,
     date_format: String,
     format: crate::config::FormatConfig,
+    content_rotation: crate::config::ContentRotation,
 }
 
 impl ClockModule {
@@ -182,11 +183,28 @@ impl ClockModule {
         date_format: String,
         format: crate::config::FormatConfig,
     ) -> Self {
+        Self::new_with_content_rotation(
+            id,
+            time_format,
+            date_format,
+            format,
+            crate::config::ContentRotation::None,
+        )
+    }
+
+    pub(super) fn new_with_content_rotation(
+        id: crate::modules::ModuleId,
+        time_format: String,
+        date_format: String,
+        format: crate::config::FormatConfig,
+        content_rotation: crate::config::ContentRotation,
+    ) -> Self {
         ClockModule {
             id,
             time_format,
             date_format,
             format,
+            content_rotation,
         }
     }
 
@@ -505,6 +523,44 @@ impl crate::modules::render::ModuleRender for ClockModule {
         }
     }
 
+    fn render_bar_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        context: &crate::modules::render::BarRenderContext<'_>,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let rotation = self.content_rotation.resolve_for_edge(context.edge);
+        if rotation == crate::config::ResolvedContentRotation::None
+            || self
+                .format
+                .template_for(crate::config::FormatMode::Collapsed)
+                .is_none()
+        {
+            return None;
+        }
+        let crate::modules::ModuleState::Clock(clock) = state else {
+            return None;
+        };
+        let segments = self.styled_segments_with_default(
+            clock,
+            crate::config::FormatMode::Collapsed,
+            bar_style,
+        )?;
+        Some(
+            iced::widget::container(crate::modules::view::formatted_segments_content(
+                segments,
+                11,
+                crate::theme::TEXT,
+                rotation,
+            ))
+            .width(iced::Length::Fill)
+            .height(iced::Length::Shrink)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        )
+    }
+
     fn render_panel_with_style(
         &self,
         state: &crate::modules::ModuleState,
@@ -653,6 +709,43 @@ impl crate::modules::render::ModuleRender for ClockModule {
             _ => Some(iced::widget::Space::new().into()),
         }
     }
+
+    fn render_bar_horizontal_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        context: &crate::modules::render::BarRenderContext<'_>,
+        bar_style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let rotation = self.content_rotation.resolve_for_edge(context.edge);
+        if rotation == crate::config::ResolvedContentRotation::None
+            || self
+                .format
+                .template_for(crate::config::FormatMode::Horizontal)
+                .is_none()
+        {
+            return None;
+        }
+        let crate::modules::ModuleState::Clock(clock) = state else {
+            return None;
+        };
+        let segments = self.styled_segments_with_default(
+            clock,
+            crate::config::FormatMode::Horizontal,
+            bar_style,
+        )?;
+        Some(
+            iced::widget::container(crate::modules::view::formatted_segments_content(
+                segments,
+                12,
+                crate::theme::TEXT,
+                rotation,
+            ))
+            .height(iced::Length::Fill)
+            .align_y(iced::Alignment::Center)
+            .padding([0, 6])
+            .into(),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -661,6 +754,7 @@ mod tests {
     use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
     use crate::modules::Module;
     use crate::modules::detail::ModuleDetailLifecycle;
+    use crate::modules::render::{BarRenderContext, ModuleRender};
 
     fn styled_format_config() -> crate::config::FormatConfig {
         let mut template = crate::config::FormatTemplate::parse(
@@ -729,6 +823,67 @@ mod tests {
 
         assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
         assert_eq!(segment.1.weight, Some(Weight::Bold));
+    }
+
+    #[test]
+    fn clock_auto_rotation_overrides_side_bar_collapsed_format() {
+        let m = ClockModule::new_with_content_rotation(
+            crate::modules::ModuleId::new("clock"),
+            "%H:%M".into(),
+            "%a".into(),
+            styled_format_config(),
+            crate::config::ContentRotation::Auto,
+        );
+        let state = crate::modules::ModuleState::Clock(ClockState {
+            time: "12:34".into(),
+            date: "Mon".into(),
+        });
+        let edge = crate::config::Edge::Left;
+        let context = BarRenderContext {
+            window: iced::window::Id::unique(),
+            edge: &edge,
+            horizontal: false,
+        };
+
+        assert!(
+            m.render_bar_collapsed_with_style(&state, &context, &crate::config::Style::default())
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn clock_explicit_rotation_overrides_horizontal_format() {
+        let horizontal = crate::config::FormatTemplate::parse(
+            &["{time}"],
+            &["icon", "value", "time", "date"],
+            "test.format.horizontal",
+        )
+        .unwrap();
+        let m = ClockModule::new_with_content_rotation(
+            crate::modules::ModuleId::new("clock"),
+            "%H:%M".into(),
+            "%a".into(),
+            crate::config::FormatConfig {
+                horizontal: Some(horizontal),
+                ..Default::default()
+            },
+            crate::config::ContentRotation::Clockwise,
+        );
+        let state = crate::modules::ModuleState::Clock(ClockState {
+            time: "12:34".into(),
+            date: "Mon".into(),
+        });
+        let edge = crate::config::Edge::Top;
+        let context = BarRenderContext {
+            window: iced::window::Id::unique(),
+            edge: &edge,
+            horizontal: true,
+        };
+
+        assert!(
+            m.render_bar_horizontal_with_style(&state, &context, &crate::config::Style::default())
+                .is_some()
+        );
     }
 
     #[test]

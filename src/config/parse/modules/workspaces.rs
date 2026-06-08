@@ -21,6 +21,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Workspac
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
         &[
@@ -29,6 +30,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Workspac
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
     )?;
@@ -40,6 +42,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Workspac
         crate::config::states::WORKSPACES,
     )?;
     config.format = format;
+    config.content_rotation = formats::parse_content_rotation_ctx(children, ctx)?;
     config.tooltip = tooltip;
 
     let mut workspace_idx = 0;

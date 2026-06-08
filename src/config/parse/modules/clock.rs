@@ -20,6 +20,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<ClockCon
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
         &[
@@ -30,6 +31,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<ClockCon
             "format",
             "expanded-format",
             "horizontal-format",
+            "content-rotation",
             "tooltip",
         ],
     )?;
@@ -53,11 +55,13 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<ClockCon
         &["icon", "value", "time", "date"],
         crate::config::states::EMPTY,
     )?;
+    let content_rotation = formats::parse_content_rotation_ctx(children, ctx)?;
 
     Ok(ClockConfig {
         time_format,
         date_format,
         format,
+        content_rotation,
         tooltip,
     })
 }

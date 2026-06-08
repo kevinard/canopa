@@ -1,5 +1,11 @@
 use crate::modules::{ModuleDetailSession, ModuleState};
 
+pub struct BarRenderContext<'a> {
+    pub window: iced::window::Id,
+    pub edge: &'a crate::config::Edge,
+    pub horizontal: bool,
+}
+
 pub trait ModuleRender: Send + Sync {
     fn render_collapsed_with_style(
         &self,
@@ -16,7 +22,7 @@ pub trait ModuleRender: Send + Sync {
     fn render_bar_collapsed_with_style(
         &self,
         _state: &ModuleState,
-        _window: iced::window::Id,
+        _context: &BarRenderContext<'_>,
         _style: &crate::config::Style,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
         None
@@ -33,7 +39,7 @@ pub trait ModuleRender: Send + Sync {
     fn render_bar_horizontal_with_style(
         &self,
         _state: &ModuleState,
-        _window: iced::window::Id,
+        _context: &BarRenderContext<'_>,
         _style: &crate::config::Style,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
         None

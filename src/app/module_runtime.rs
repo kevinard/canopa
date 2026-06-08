@@ -24,6 +24,7 @@ pub(super) struct ModuleRuntime {
 pub(super) struct BarModuleRenderRequest<'a> {
     pub id: ModuleId,
     pub window: iced::window::Id,
+    pub edge: &'a crate::config::Edge,
     pub horizontal: bool,
     pub expanded: bool,
     pub style: &'a crate::config::Style,
@@ -669,8 +670,13 @@ fn render_bar_form<'a>(
     }
 
     if request.horizontal {
+        let context = crate::modules::render::BarRenderContext {
+            window: request.window,
+            edge: request.edge,
+            horizontal: request.horizontal,
+        };
         if let Some(element) =
-            module.render_bar_horizontal_with_style(state, request.window, request.style)
+            module.render_bar_horizontal_with_style(state, &context, request.style)
         {
             return element;
         }
@@ -680,9 +686,12 @@ fn render_bar_form<'a>(
         return module.render_panel_with_style(state, request.style);
     }
 
-    if let Some(element) =
-        module.render_bar_collapsed_with_style(state, request.window, request.style)
-    {
+    let context = crate::modules::render::BarRenderContext {
+        window: request.window,
+        edge: request.edge,
+        horizontal: request.horizontal,
+    };
+    if let Some(element) = module.render_bar_collapsed_with_style(state, &context, request.style) {
         return element;
     }
     module.render_collapsed_with_style(state, request.style)
@@ -1161,9 +1170,11 @@ mod tests {
             )),
             crate::config::ModuleActionsConfig::default(),
         )]);
+        let edge = Edge::Left;
         let request = super::BarModuleRenderRequest {
             id: button_id.clone(),
             window: iced::window::Id::unique(),
+            edge: &edge,
             horizontal: false,
             expanded: false,
             style: &crate::config::Style::default(),
@@ -1178,6 +1189,7 @@ mod tests {
         let request = super::BarModuleRenderRequest {
             id: button_id.clone(),
             window: iced::window::Id::unique(),
+            edge: &edge,
             horizontal: false,
             expanded: false,
             style: &crate::config::Style::default(),
@@ -1203,10 +1215,12 @@ mod tests {
             Box::new(RenderPathTestModule::new("button", calls.clone())),
             crate::config::ModuleActionsConfig::default(),
         )]);
+        let edge = Edge::Left;
 
         let request = super::BarModuleRenderRequest {
             id: ModuleId::new("button"),
             window: iced::window::Id::unique(),
+            edge: &edge,
             horizontal: false,
             expanded: false,
             style: &crate::config::Style::default(),
@@ -1226,10 +1240,12 @@ mod tests {
             Box::new(RenderPathTestModule::new("button", calls.clone()).with_horizontal()),
             crate::config::ModuleActionsConfig::default(),
         )]);
+        let edge = Edge::Top;
 
         let request = super::BarModuleRenderRequest {
             id: ModuleId::new("button"),
             window: iced::window::Id::unique(),
+            edge: &edge,
             horizontal: true,
             expanded: false,
             style: &crate::config::Style::default(),
@@ -1249,10 +1265,12 @@ mod tests {
             Box::new(RenderPathTestModule::new("button", calls.clone())),
             crate::config::ModuleActionsConfig::default(),
         )]);
+        let edge = Edge::Top;
 
         let request = super::BarModuleRenderRequest {
             id: ModuleId::new("button"),
             window: iced::window::Id::unique(),
+            edge: &edge,
             horizontal: true,
             expanded: false,
             style: &crate::config::Style::default(),
@@ -1272,10 +1290,12 @@ mod tests {
             Box::new(RenderPathTestModule::new("button", calls.clone()).with_horizontal()),
             crate::config::ModuleActionsConfig::default(),
         )]);
+        let edge = Edge::Left;
 
         let request = super::BarModuleRenderRequest {
             id: ModuleId::new("button"),
             window: iced::window::Id::unique(),
+            edge: &edge,
             horizontal: false,
             expanded: true,
             style: &crate::config::Style::default(),
@@ -2146,6 +2166,7 @@ mod tests {
                     command: crate::config::CommandConfig::Shell("echo hi".into()),
                     interval: 5,
                     format: crate::config::FormatConfig::default(),
+                    content_rotation: crate::config::ContentRotation::None,
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
                 actions: crate::config::ModuleActionsConfig::default(),
@@ -2235,6 +2256,7 @@ mod tests {
                     label: "Launch".into(),
                     icon: ">".into(),
                     format: crate::config::FormatConfig::default(),
+                    content_rotation: crate::config::ContentRotation::None,
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
                 actions: crate::config::ModuleActionsConfig::default(),
@@ -2285,6 +2307,7 @@ mod tests {
                     label: "Launch".into(),
                     icon: ">".into(),
                     format: crate::config::FormatConfig::default(),
+                    content_rotation: crate::config::ContentRotation::None,
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
                 actions: ModuleActionsConfig {
@@ -2415,6 +2438,7 @@ mod tests {
                     command: crate::config::CommandConfig::Shell("echo hi".into()),
                     interval: 5,
                     format: crate::config::FormatConfig::default(),
+                    content_rotation: crate::config::ContentRotation::None,
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
                 actions: crate::config::ModuleActionsConfig::default(),

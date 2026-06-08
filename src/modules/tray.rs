@@ -328,19 +328,19 @@ impl crate::modules::render::ModuleRender for TrayIconModule {
     fn render_bar_collapsed_with_style(
         &self,
         _state: &ModuleState,
-        window: iced::window::Id,
+        context: &crate::modules::render::BarRenderContext<'_>,
         bar_style: &crate::config::Style,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        Some(self.build_view(false, window, bar_style))
+        Some(self.build_view(false, context.window, bar_style))
     }
 
     fn render_bar_horizontal_with_style(
         &self,
         _state: &ModuleState,
-        window: iced::window::Id,
+        context: &crate::modules::render::BarRenderContext<'_>,
         bar_style: &crate::config::Style,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        Some(self.build_view(true, window, bar_style))
+        Some(self.build_view(true, context.window, bar_style))
     }
 }
 

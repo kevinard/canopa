@@ -1645,6 +1645,7 @@ mod tests {
                     label: "Launch".into(),
                     icon: ">".into(),
                     format: crate::config::FormatConfig::default(),
+                    content_rotation: crate::config::ContentRotation::None,
                     tooltip: crate::config::TooltipSetting::Default,
                 }),
                 actions: crate::config::ModuleActionsConfig {

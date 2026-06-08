@@ -32,6 +32,7 @@ pub(super) enum DynamicModuleFamilyInput {
 pub(super) struct WorkspacesDynamicModuleInput {
     workspaces: HashMap<u32, crate::config::WorkspaceLabelConfig>,
     format: crate::config::FormatConfig,
+    content_rotation: crate::config::ContentRotation,
 }
 
 impl WorkspacesDynamicModuleInput {
@@ -39,6 +40,7 @@ impl WorkspacesDynamicModuleInput {
         Self {
             workspaces: config.workspaces.clone(),
             format: config.format.clone(),
+            content_rotation: config.content_rotation,
         }
     }
 
@@ -46,6 +48,7 @@ impl WorkspacesDynamicModuleInput {
         crate::config::WorkspacesConfig {
             workspaces: self.workspaces.clone(),
             format: self.format.clone(),
+            content_rotation: self.content_rotation,
             tooltip: crate::config::TooltipSetting::Default,
         }
     }
