@@ -16,6 +16,10 @@ _Avoid_: Surface name, output name
 A live Wayland layer-shell surface created for a specific **Bar** on a specific **Output**.
 _Avoid_: Bar, window
 
+**Bar Surface Midpoint**:
+The visual midpoint of a **Bar Surface** along its **Orientation**.
+_Avoid_: Screen center, Output center, remaining-space center
+
 **Bar Surface Identity**:
 The stable runtime identity of a **Bar Surface**, consisting of the **Bar Name** and the optional **Output** it targets.
 _Avoid_: Output/bar tuple, window ID
@@ -51,6 +55,10 @@ _Avoid_: Module metadata, capability flags, constructor registry
 **Module Instance**:
 The runtime state and behavior of a **Module** while Niribar is running.
 _Avoid_: Module, widget instance
+
+**Module Gap**:
+The visual separation between adjacent visible **Modules** on a **Bar Surface**.
+_Avoid_: Separator, border
 
 **Module Runtime**:
 The app-owned runtime module that owns **Module Instances**, per-instance state, **Module Actions**, origin metadata, interaction profiles, rendering, **Tooltip** values, **Module Data Source** mapping, **Module Detail Session** routing, and dynamic-child storage behavior. Its external interface may return Iced elements because Iced rendering is part of Niribar's current runtime interface.
@@ -109,6 +117,10 @@ _Avoid_: Module Runtime, DBus adapter
 **Zone**:
 A logical placement group within a **Bar**, named **Start**, **Center**, or **End**.
 _Avoid_: Top, bottom, left, right
+
+**Center Zone**:
+The **Zone** whose content is visually aligned to the **Bar Surface Midpoint**.
+_Avoid_: Remaining-space center, balanced zone
 
 **Edge**:
 The side of an **Output** where a **Bar Surface** is anchored: top, bottom, left, or right.
@@ -385,6 +397,17 @@ _Avoid_: Default config, fallback surface
 - A **Bar** contains zero or more **Modules**.
 - A **Bar** with no **Modules** is valid and may still produce **Bar Surfaces**.
 - A **Module** belongs to exactly one **Zone** within a **Bar**.
+- A **Center Zone** aligns to the **Bar Surface Midpoint** for horizontal and vertical **Bar Surfaces**.
+- Multiple visible **Modules** in the **Center Zone** are treated as one ordered group whose visual center aligns to the **Bar Surface Midpoint**.
+- Oversized **Center Zone** content remains aligned to the **Bar Surface Midpoint** and may be clipped by the **Bar Surface** content bounds.
+- **Zones** do not visually overlap; Start and End content gives way before it can draw over **Center Zone** content.
+- Visible content from neighboring **Zones** is separated by the **Module Gap**.
+- Clipped **Zone** content is not interactive outside its visible bounds.
+- A **Center Zone** with no visible content reserves no space, creates no **Module Gap**, and does not prevent Start or End content from crossing the **Bar Surface Midpoint**.
+- When the **Center Zone** has visible content, Start and End content are constrained independently against that visible **Center Zone** content.
+- When the **Center Zone** has no visible content and Start and End content cannot both fit, Start remains anchored to Start, End remains anchored to End, and both give way at their collision boundary.
+- Visual **Center Zone** priority does not change **Keyboard Focus** navigation order.
+- Niribar does not provide an alternate **Center Zone** mode that centers content in the remaining space between Start and End content.
 - A **Module** may be placed in multiple **Bars**.
 - Placing the same **Module** more than once within one **Bar** is a **Configuration Error**.
 - A **Module** is configured globally by name; a **Bar** places **Modules** but does not redefine their internals.

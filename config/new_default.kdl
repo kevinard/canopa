@@ -67,7 +67,7 @@ bar "main" {
     modules {
         // Start zone: stacks from the leading edge of the bar.
         start "workspaces"
-        // Center zone: centered in the remaining space between start and end zones.
+        // Center zone: centered on the bar surface midpoint.
         center "focused-window"
         // End zone: stacks from the trailing edge of the bar.
         // Multiple modules: list as separate string arguments on the same line.
