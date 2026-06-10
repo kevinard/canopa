@@ -83,7 +83,7 @@ modules {{
                 .actions
                 .action_for(&crate::config::ActionTrigger::Click),
             Some(&crate::config::PanelAction::Command(
-                crate::config::CommandConfig::Shell("kitty".into())
+                crate::config::ConfiguredCommand::shell_for_test("kitty")
             ))
         );
     }

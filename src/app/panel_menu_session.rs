@@ -801,7 +801,7 @@ mod tests {
         assert_eq!(
             session.configured_action_for_path(&path),
             Some(crate::config::PanelAction::Command(
-                crate::config::CommandConfig::Shell("firefox".into())
+                crate::config::ConfiguredCommand::shell_for_test("firefox")
             ))
         );
     }
@@ -822,7 +822,7 @@ mod tests {
                     icon: Some("firefox".into()),
                     keywords: vec!["web".into()],
                     action: Some(crate::config::PanelAction::Command(
-                        crate::config::CommandConfig::Shell("firefox".into()),
+                        crate::config::ConfiguredCommand::shell_for_test("firefox"),
                     )),
                     children: vec![],
                 }],

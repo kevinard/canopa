@@ -21,7 +21,7 @@ pub(super) enum AppEffect {
     RemoveWindow(iced::window::Id),
     SuspendBarKeyboardInteractivity,
     RestoreBarKeyboardInteractivity,
-    RunConfiguredCommand(crate::config::CommandConfig),
+    RunConfiguredCommand(crate::config::ConfiguredCommand),
     AdjustDefaultSinkVolume {
         step: u8,
         up: bool,
@@ -161,10 +161,7 @@ impl App {
             AppEffect::SuspendBarKeyboardInteractivity => self.suspend_bar_keyboard_interactivity(),
             AppEffect::RestoreBarKeyboardInteractivity => self.restore_bar_keyboard_interactivity(),
             AppEffect::RunConfiguredCommand(command) => {
-                let _ = crate::command::spawn_config_command_with_policy_fire_and_forget(
-                    &command,
-                    &self.config.command_policy,
-                );
+                let _ = crate::command::spawn_configured_command_fire_and_forget(&command);
                 Vec::new()
             }
             AppEffect::AdjustDefaultSinkVolume { step, up } => {

@@ -290,20 +290,20 @@ mod config_tests {
     #[test]
     fn script_config_stores_command_and_interval() {
         let cfg = ScriptConfig {
-            command: CommandConfig::Shell("echo hi".into()),
+            command: ConfiguredCommand::shell_for_test("echo hi"),
             interval: 10,
             format: FormatConfig::default(),
             content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         };
-        assert_eq!(cfg.command, CommandConfig::Shell("echo hi".into()));
+        assert_eq!(cfg.command, ConfiguredCommand::shell_for_test("echo hi"));
         assert_eq!(cfg.interval, 10);
     }
 
     #[test]
     fn module_params_script_stores_config() {
         let params = ModuleParams::Script(ScriptConfig {
-            command: CommandConfig::Shell("date".into()),
+            command: ConfiguredCommand::shell_for_test("date"),
             interval: 30,
             format: FormatConfig::default(),
             content_rotation: ContentRotation::None,
@@ -311,7 +311,7 @@ mod config_tests {
         });
         match params {
             ModuleParams::Script(cfg) => {
-                assert_eq!(cfg.command, CommandConfig::Shell("date".into()));
+                assert_eq!(cfg.command, ConfiguredCommand::shell_for_test("date"));
                 assert_eq!(cfg.interval, 30);
             }
             _ => panic!("expected ModuleParams::Script"),
@@ -416,7 +416,6 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("duplicate name"), "got: {err}");
@@ -432,7 +431,6 @@ mod config_tests {
             }],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("collapsed-width"), "got: {err}");
@@ -452,10 +450,7 @@ mod config_tests {
             name: name.into(),
             module_type: "script".into(),
             params: ModuleParams::Script(ScriptConfig {
-                command: CommandConfig::Argv {
-                    program: "date".into(),
-                    args: vec![],
-                },
+                command: ConfiguredCommand::argv_for_test("date", vec![]),
                 interval: 60,
                 format: FormatConfig::default(),
                 content_rotation: ContentRotation::None,
@@ -695,7 +690,6 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
         let bars = config.bars_for_output("eDP-1");
         assert_eq!(bars.len(), 2);
@@ -722,7 +716,6 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
         let bars = config.bars_for_output("eDP-1");
         assert_eq!(bars.len(), 2); // "main" (all) + "extra" (eDP-1)
@@ -742,7 +735,6 @@ mod config_tests {
             }],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
 
         assert_eq!(config.bars_for_output("DP-1").len(), 1);
@@ -760,7 +752,6 @@ mod config_tests {
             }],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
 
         assert_eq!(config.bars_for_output("DP-1").len(), 1);
@@ -787,7 +778,6 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
         let bars = config.bars_for_output("DP-1");
         assert_eq!(bars[0].name, "first");
@@ -811,7 +801,6 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
         assert!(validate(&config).is_ok());
     }
@@ -832,7 +821,6 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("side"), "got: {err}");
@@ -848,7 +836,6 @@ mod config_tests {
             }],
             modules: vec![],
             menus: vec![],
-            command_policy: CommandPolicy::default(),
         };
         // "DP-1" (uppercase) does not match "dp-1" (lowercase)
         assert!(config.bars_for_output("DP-1").is_empty());

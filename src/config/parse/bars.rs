@@ -8,10 +8,14 @@ use super::actions;
 use super::error::ParseCtx;
 use super::fields;
 use super::style::parse_style_props_ctx;
-use crate::config::ConfigResult;
 use crate::config::style::Style;
+use crate::config::{CommandPolicy, ConfigResult};
 
-pub(super) fn parse(doc: &KdlDocument, root_ctx: &ParseCtx) -> ConfigResult<Vec<BarConfig>> {
+pub(super) fn parse(
+    doc: &KdlDocument,
+    root_ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<Vec<BarConfig>> {
     let mut result = Vec::new();
     let mut bar_idx = 0;
     for node in doc.nodes() {
@@ -34,13 +38,18 @@ pub(super) fn parse(doc: &KdlDocument, root_ctx: &ParseCtx) -> ConfigResult<Vec<
                 )
             })?
             .to_string();
-        let bar = parse_single_bar_node(node, &name, &bar_ctx)?;
+        let bar = parse_single_bar_node(node, &name, &bar_ctx, command_policy)?;
         result.push(bar);
     }
     Ok(result)
 }
 
-fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigResult<BarConfig> {
+fn parse_single_bar_node(
+    node: &KdlNode,
+    name: &str,
+    ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<BarConfig> {
     let children = match node.children() {
         Some(c) => c,
         None => {
@@ -143,13 +152,7 @@ fn parse_single_bar_node(node: &KdlNode, name: &str, ctx: &ParseCtx) -> ConfigRe
     };
 
     let modules = parse_bar_modules(children, &ctx.child("modules"))?;
-    let actions = actions::parse(
-        node,
-        0,
-        "bar",
-        ctx,
-        &crate::config::CommandPolicy::default(),
-    )?;
+    let actions = actions::parse(node, 0, "bar", ctx, command_policy)?;
     let panel = parse_panel(children, &ctx.child("panel"))?;
 
     Ok(BarConfig {

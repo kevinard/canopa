@@ -191,8 +191,6 @@ impl App {
         config: Config,
         eligible_outputs: eligible_outputs::EligibleOutputState,
     ) -> (Self, Task<Message>) {
-        let _command_policy = &config.command_policy;
-
         let module_graph = module_graph::build_module_graph(&config)
             .expect("validated config should build a module graph");
         let (manual_outputs, allowed_outputs) = match eligible_outputs {
@@ -1312,7 +1310,6 @@ mod tests {
                 actions: crate::config::ModuleActionsConfig::default(),
             }],
             menus: vec![],
-            command_policy: crate::config::CommandPolicy::default(),
         };
         let (app, _) = App::boot(config, vec![]);
         let instantiated: Vec<String> = app
@@ -1482,7 +1479,6 @@ mod tests {
             }],
             modules: vec![],
             menus: vec![],
-            command_policy: crate::config::CommandPolicy::default(),
         };
         // Boot without "HDMI-A-1" in allowed (bar does not target it).
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
@@ -1533,7 +1529,6 @@ mod tests {
             }],
             modules: vec![],
             menus: vec![],
-            command_policy: crate::config::CommandPolicy::default(),
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         app.surfaces.manual_outputs = true; // simulate manual mode
@@ -1593,7 +1588,6 @@ mod tests {
             ],
             modules: vec![],
             menus: vec![],
-            command_policy: crate::config::CommandPolicy::default(),
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len(); // 2 surfaces for eDP-1 (2 bars × 1 output)
@@ -1655,7 +1649,6 @@ mod tests {
             ],
             modules: vec![],
             menus: vec![],
-            command_policy: crate::config::CommandPolicy::default(),
         };
         let (mut app, _) = App::boot(config, vec![]);
         app.surfaces.manual_outputs = true;

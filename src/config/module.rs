@@ -3,9 +3,20 @@ use std::collections::HashMap;
 use super::{ContentRotation, FormatConfig, FormatTemplate, TooltipSetting};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum CommandConfig {
+pub struct ConfiguredCommand {
+    spec: ConfiguredCommandSpec,
+    timeout_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum ConfiguredCommandSpec {
     Shell(String),
     Argv { program: String, args: Vec<String> },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommandPolicyError {
+    ShellDisabled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +30,78 @@ impl Default for CommandPolicy {
         CommandPolicy {
             allow_shell: true,
             action_timeout_ms: 3000,
+        }
+    }
+}
+
+impl ConfiguredCommand {
+    pub(crate) fn shell(
+        command: String,
+        policy: &CommandPolicy,
+    ) -> Result<Self, CommandPolicyError> {
+        if !policy.allow_shell {
+            return Err(CommandPolicyError::ShellDisabled);
+        }
+        Ok(Self {
+            spec: ConfiguredCommandSpec::Shell(command),
+            timeout_ms: policy.action_timeout_ms,
+        })
+    }
+
+    pub(crate) fn argv(program: String, args: Vec<String>, policy: &CommandPolicy) -> Self {
+        Self {
+            spec: ConfiguredCommandSpec::Argv { program, args },
+            timeout_ms: policy.action_timeout_ms,
+        }
+    }
+
+    pub(crate) fn spec(&self) -> &ConfiguredCommandSpec {
+        &self.spec
+    }
+
+    pub(crate) fn timeout_ms(&self) -> u64 {
+        self.timeout_ms
+    }
+
+    #[cfg(test)]
+    pub(crate) fn shell_for_test(command: impl Into<String>) -> Self {
+        Self {
+            spec: ConfiguredCommandSpec::Shell(command.into()),
+            timeout_ms: CommandPolicy::default().action_timeout_ms,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn shell_with_timeout_for_test(command: impl Into<String>, timeout_ms: u64) -> Self {
+        Self {
+            spec: ConfiguredCommandSpec::Shell(command.into()),
+            timeout_ms,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn argv_for_test(program: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            spec: ConfiguredCommandSpec::Argv {
+                program: program.into(),
+                args,
+            },
+            timeout_ms: CommandPolicy::default().action_timeout_ms,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn argv_with_timeout_for_test(
+        program: impl Into<String>,
+        args: Vec<String>,
+        timeout_ms: u64,
+    ) -> Self {
+        Self {
+            spec: ConfiguredCommandSpec::Argv {
+                program: program.into(),
+                args,
+            },
+            timeout_ms,
         }
     }
 }
@@ -48,7 +131,7 @@ impl Default for ClockConfig {
 /// Command and polling interval for the script module.
 #[derive(Debug, Clone)]
 pub struct ScriptConfig {
-    pub command: CommandConfig,
+    pub command: ConfiguredCommand,
     pub interval: u64, // seconds between executions
     pub format: FormatConfig,
     pub content_rotation: ContentRotation,
@@ -348,7 +431,7 @@ pub enum ActionTrigger {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PanelAction {
-    Command(CommandConfig),
+    Command(ConfiguredCommand),
     OpenPanel,
     TogglePanel,
     ClosePanel,

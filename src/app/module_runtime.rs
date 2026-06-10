@@ -1129,7 +1129,7 @@ mod tests {
                     effects: vec![crate::modules::ModuleDetailEffect::App(
                         crate::modules::ModuleDetailAppEffect::PanelAction(
                             crate::config::PanelAction::Command(
-                                crate::config::CommandConfig::Shell(command.clone()),
+                                crate::config::ConfiguredCommand::shell_for_test(command.clone()),
                             ),
                         ),
                     )],
@@ -1769,7 +1769,7 @@ mod tests {
                 bindings: vec![crate::config::ActionBinding {
                     trigger: crate::config::ActionTrigger::Click,
                     action: crate::config::PanelAction::Command(
-                        crate::config::CommandConfig::Shell("notify-send test".into()),
+                        crate::config::ConfiguredCommand::shell_for_test("notify-send test"),
                     ),
                 }],
             },
@@ -1799,8 +1799,8 @@ mod tests {
         );
         assert_eq!(
             action,
-            &crate::config::PanelAction::Command(crate::config::CommandConfig::Shell(
-                "notify-send test".into()
+            &crate::config::PanelAction::Command(crate::config::ConfiguredCommand::shell_for_test(
+                "notify-send test",
             ))
         );
     }
@@ -1953,8 +1953,8 @@ mod tests {
         };
         assert_eq!(
             action,
-            &crate::config::PanelAction::Command(crate::config::CommandConfig::Shell(
-                "notify-send detail".into()
+            &crate::config::PanelAction::Command(crate::config::ConfiguredCommand::shell_for_test(
+                "notify-send detail",
             ))
         );
     }
@@ -2163,7 +2163,7 @@ mod tests {
                 name: "script".into(),
                 module_type: "script".into(),
                 params: ModuleParams::Script(ScriptConfig {
-                    command: crate::config::CommandConfig::Shell("echo hi".into()),
+                    command: crate::config::ConfiguredCommand::shell_for_test("echo hi"),
                     interval: 5,
                     format: crate::config::FormatConfig::default(),
                     content_rotation: crate::config::ContentRotation::None,
@@ -2314,7 +2314,7 @@ mod tests {
                     bindings: vec![crate::config::ActionBinding {
                         trigger: crate::config::ActionTrigger::Click,
                         action: crate::config::PanelAction::Command(
-                            crate::config::CommandConfig::Shell(format!(
+                            crate::config::ConfiguredCommand::shell_for_test(format!(
                                 "printf action >{action_path}"
                             )),
                         ),
@@ -2354,7 +2354,7 @@ mod tests {
                     bindings: vec![crate::config::ActionBinding {
                         trigger: crate::config::ActionTrigger::RightClick,
                         action: crate::config::PanelAction::Command(
-                            crate::config::CommandConfig::Shell(format!(
+                            crate::config::ConfiguredCommand::shell_for_test(format!(
                                 "printf right >{action_path}"
                             )),
                         ),
@@ -2379,7 +2379,7 @@ mod tests {
     }
 
     #[test]
-    fn module_actions_command_uses_command_policy_timeout() {
+    fn module_actions_command_uses_configured_command_timeout() {
         use crate::config::{ClockConfig, ModuleActionsConfig, ModuleConfig, ModuleParams};
 
         let action_path = unique_tmp_path("action-timeout");
@@ -2394,21 +2394,15 @@ mod tests {
                     bindings: vec![crate::config::ActionBinding {
                         trigger: crate::config::ActionTrigger::Click,
                         action: crate::config::PanelAction::Command(
-                            crate::config::CommandConfig::Argv {
-                                program: "sh".into(),
-                                args: vec![
-                                    "-c".into(),
-                                    format!("sleep 1; printf late >{action_path}"),
-                                ],
-                            },
+                            crate::config::ConfiguredCommand::argv_with_timeout_for_test(
+                                "sh",
+                                vec!["-c".into(), format!("sleep 1; printf late >{action_path}")],
+                                50,
+                            ),
                         ),
                     }],
                 },
             }],
-            command_policy: crate::config::CommandPolicy {
-                action_timeout_ms: 50,
-                ..crate::config::CommandPolicy::default()
-            },
             ..Default::default()
         };
         config.bars[0].modules.start = vec!["clock".into()];
@@ -2435,7 +2429,7 @@ mod tests {
                 name: "script".into(),
                 module_type: "script".into(),
                 params: ModuleParams::Script(ScriptConfig {
-                    command: crate::config::CommandConfig::Shell("echo hi".into()),
+                    command: crate::config::ConfiguredCommand::shell_for_test("echo hi"),
                     interval: 5,
                     format: crate::config::FormatConfig::default(),
                     content_rotation: crate::config::ContentRotation::None,
@@ -2776,9 +2770,9 @@ mod tests {
             .bindings
             .push(crate::config::ActionBinding {
                 trigger: crate::config::ActionTrigger::RightClick,
-                action: crate::config::PanelAction::Command(crate::config::CommandConfig::Shell(
-                    "notify-send tray".into(),
-                )),
+                action: crate::config::PanelAction::Command(
+                    crate::config::ConfiguredCommand::shell_for_test("notify-send tray"),
+                ),
             });
         let (mut app, _) = App::boot(config, vec![]);
 
@@ -2792,7 +2786,7 @@ mod tests {
                 &crate::config::ActionTrigger::RightClick,
             ),
             Some(&crate::config::PanelAction::Command(
-                crate::config::CommandConfig::Shell("notify-send tray".into())
+                crate::config::ConfiguredCommand::shell_for_test("notify-send tray")
             ))
         );
     }
@@ -2810,7 +2804,9 @@ mod tests {
                     bindings: vec![crate::config::ActionBinding {
                         trigger: crate::config::ActionTrigger::Click,
                         action: crate::config::PanelAction::Command(
-                            crate::config::CommandConfig::Shell("notify-send workspace".into()),
+                            crate::config::ConfiguredCommand::shell_for_test(
+                                "notify-send workspace",
+                            ),
                         ),
                     }],
                 },
@@ -2832,7 +2828,7 @@ mod tests {
                 &crate::config::ActionTrigger::Click,
             ),
             Some(&crate::config::PanelAction::Command(
-                crate::config::CommandConfig::Shell("notify-send workspace".into())
+                crate::config::ConfiguredCommand::shell_for_test("notify-send workspace")
             ))
         );
     }

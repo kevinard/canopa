@@ -41,20 +41,19 @@ pub(crate) fn parse_input(input: ConfigInput<'_>) -> ConfigResult<Config> {
         .text
         .parse()
         .map_err(|e| ConfigError::from_kdl(source, e))?;
-    let bars = bars::parse(&doc, &ctx)?;
+    let command_policy = parse_command_policy(&doc, &ctx.child("command-policy"))?;
+    let bars = bars::parse(&doc, &ctx, &command_policy)?;
     let bars = if bars.is_empty() {
         vec![BarConfig::default()]
     } else {
         bars
     };
-    let command_policy = parse_command_policy(&doc, &ctx.child("command-policy"))?;
     let modules = parse_modules_section(&doc, &ctx, &command_policy)?;
     let menus = parse_menus_section(&doc, &ctx, &command_policy)?;
     Ok(Config {
         bars,
         modules,
         menus,
-        command_policy,
     })
 }
 
@@ -391,9 +390,8 @@ fn parse_menu_action_operation(
     command_policy: &CommandPolicy,
 ) -> ConfigResult<super::PanelAction> {
     match node.name().value() {
-        "command" => {
-            actions::parse_command_node_ctx(node, ctx, command_policy).map(super::PanelAction::Command)
-        }
+        "command" => actions::parse_command_node_ctx(node, ctx, command_policy)
+            .map(super::PanelAction::Command),
         "open-panel" => {
             require_no_arguments(node, ctx)?;
             Ok(super::PanelAction::OpenPanel)
@@ -406,12 +404,8 @@ fn parse_menu_action_operation(
             require_no_arguments(node, ctx)?;
             Ok(super::PanelAction::ClosePanel)
         }
-        "open-menu" => {
-            required_menu_name(node, ctx).map(super::PanelAction::OpenMenu)
-        }
-        "toggle-menu" => {
-            required_menu_name(node, ctx).map(super::PanelAction::ToggleMenu)
-        }
+        "open-menu" => required_menu_name(node, ctx).map(super::PanelAction::OpenMenu),
+        "toggle-menu" => required_menu_name(node, ctx).map(super::PanelAction::ToggleMenu),
         other => Err(ctx.node_err(
             node,
             format!("unknown menu item operation {other:?}"),

@@ -402,9 +402,9 @@ mod tests {
                 },
                 DetailTestMessage::RunCommand(command) => ModuleDetailUpdate {
                     effects: vec![ModuleDetailEffect::App(ModuleDetailAppEffect::PanelAction(
-                        crate::config::PanelAction::Command(crate::config::CommandConfig::Shell(
-                            command.clone(),
-                        )),
+                        crate::config::PanelAction::Command(
+                            crate::config::ConfiguredCommand::shell_for_test(command.clone()),
+                        ),
                     ))],
                 },
                 DetailTestMessage::ModuleOwned => ModuleDetailUpdate {

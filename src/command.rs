@@ -1,10 +1,10 @@
 //! Centralized external process execution helpers.
 //!
 //! This is the app's process-launch audit point. Configured script polling and
-//! button clicks use `CommandConfig` so config can preserve existing shell
-//! syntax or opt into argv boundaries. Internal app commands, such as `wpctl`
-//! volume adjustment, must use `CommandSpec::Argv` so fixed
-//! program/argument boundaries stay explicit.
+//! button clicks use `ConfiguredCommand`, which is already accepted by command
+//! policy during config parsing. Internal app commands, such as `wpctl` volume
+//! adjustment, must use `CommandSpec::Argv` so fixed program/argument
+//! boundaries stay explicit.
 
 pub const MAX_COMMAND_OUTPUT_BYTES: usize = 4096;
 
@@ -174,16 +174,16 @@ pub async fn run_command_capture_stdout(
     }
 }
 
-pub async fn run_config_command_capture_stdout(
-    config: &crate::config::CommandConfig,
-    timeout: std::time::Duration,
+pub async fn run_configured_command_capture_stdout(
+    command: &crate::config::ConfiguredCommand,
     max_output_bytes: usize,
 ) -> std::io::Result<CaptureResult> {
-    match config {
-        crate::config::CommandConfig::Shell(command) => {
+    let timeout = std::time::Duration::from_millis(command.timeout_ms());
+    match command.spec() {
+        crate::config::ConfiguredCommandSpec::Shell(command) => {
             run_command_capture_stdout(CommandSpec::Shell(command), timeout, max_output_bytes).await
         }
-        crate::config::CommandConfig::Argv { program, args } => {
+        crate::config::ConfiguredCommandSpec::Argv { program, args } => {
             let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
             run_command_capture_stdout(
                 CommandSpec::Argv {
@@ -264,25 +264,15 @@ pub fn spawn_desktop_application_fire_and_forget(
     })
 }
 
-pub fn spawn_config_command_with_policy_fire_and_forget(
-    config: &crate::config::CommandConfig,
-    policy: &crate::config::CommandPolicy,
+pub fn spawn_configured_command_fire_and_forget(
+    command: &crate::config::ConfiguredCommand,
 ) -> std::io::Result<SpawnResult> {
-    spawn_config_command_with_timeout_fire_and_forget(
-        config,
-        std::time::Duration::from_millis(policy.action_timeout_ms),
-    )
-}
-
-fn spawn_config_command_with_timeout_fire_and_forget(
-    config: &crate::config::CommandConfig,
-    timeout: std::time::Duration,
-) -> std::io::Result<SpawnResult> {
-    match config {
-        crate::config::CommandConfig::Shell(command) => {
+    let timeout = std::time::Duration::from_millis(command.timeout_ms());
+    match command.spec() {
+        crate::config::ConfiguredCommandSpec::Shell(command) => {
             spawn_command_with_timeout_fire_and_forget(CommandSpec::Shell(command), timeout)
         }
-        crate::config::CommandConfig::Argv { program, args } => {
+        crate::config::ConfiguredCommandSpec::Argv { program, args } => {
             let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
             spawn_command_with_timeout_fire_and_forget(
                 CommandSpec::Argv {
@@ -496,20 +486,16 @@ mod tests {
     }
 
     #[test]
-    fn spawn_config_command_with_policy_returns_spawned() {
+    fn spawn_configured_command_returns_spawned() {
         let path = unique_tmp_path("policy-spawned");
         let _ = std::fs::remove_file(&path);
-        let config = crate::config::CommandConfig::Argv {
-            program: "sh".into(),
-            args: vec!["-c".into(), format!("printf done >{path}")],
-        };
+        let command = crate::config::ConfiguredCommand::argv_for_test(
+            "sh",
+            vec!["-c".into(), format!("printf done >{path}")],
+        );
 
         assert_eq!(
-            spawn_config_command_with_policy_fire_and_forget(
-                &config,
-                &crate::config::CommandPolicy::default()
-            )
-            .unwrap(),
+            spawn_configured_command_fire_and_forget(&command).unwrap(),
             SpawnResult::Spawned
         );
 
@@ -518,20 +504,17 @@ mod tests {
     }
 
     #[test]
-    fn spawn_config_command_with_policy_kills_after_timeout() {
+    fn spawn_configured_command_kills_after_timeout() {
         let path = unique_tmp_path("policy-timeout");
         let _ = std::fs::remove_file(&path);
-        let config = crate::config::CommandConfig::Argv {
-            program: "sh".into(),
-            args: vec!["-c".into(), format!("sleep 1; printf done >{path}")],
-        };
-        let policy = crate::config::CommandPolicy {
-            action_timeout_ms: 50,
-            ..crate::config::CommandPolicy::default()
-        };
+        let command = crate::config::ConfiguredCommand::argv_with_timeout_for_test(
+            "sh",
+            vec!["-c".into(), format!("sleep 1; printf done >{path}")],
+            50,
+        );
 
         assert_eq!(
-            spawn_config_command_with_policy_fire_and_forget(&config, &policy).unwrap(),
+            spawn_configured_command_fire_and_forget(&command).unwrap(),
             SpawnResult::Spawned
         );
 
@@ -607,19 +590,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_config_command_capture_stdout_uses_argv_boundaries() {
-        let config = crate::config::CommandConfig::Argv {
-            program: "printf".into(),
-            args: vec!["hello world".into()],
-        };
+    async fn run_configured_command_capture_stdout_uses_argv_boundaries() {
+        let command =
+            crate::config::ConfiguredCommand::argv_for_test("printf", vec!["hello world".into()]);
 
-        let out = run_config_command_capture_stdout(
-            &config,
-            Duration::from_secs(1),
-            MAX_COMMAND_OUTPUT_BYTES,
-        )
-        .await
-        .unwrap();
+        let out = run_configured_command_capture_stdout(&command, MAX_COMMAND_OUTPUT_BYTES)
+            .await
+            .unwrap();
 
         assert_eq!(out, CaptureResult::Success("hello world".to_string()));
     }

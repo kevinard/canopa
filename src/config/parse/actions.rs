@@ -1,8 +1,8 @@
 use ::kdl::KdlNode;
 
 use crate::config::{
-    ActionBinding, ActionTrigger, CommandConfig, CommandPolicy, ConfigResult, ModuleActionsConfig,
-    PanelAction,
+    ActionBinding, ActionTrigger, CommandPolicy, CommandPolicyError, ConfigResult,
+    ConfiguredCommand, ModuleActionsConfig, PanelAction,
 };
 
 use super::error::ParseCtx;
@@ -136,25 +136,29 @@ pub(super) fn parse_command_node_ctx(
     node: &KdlNode,
     ctx: &ParseCtx,
     command_policy: &CommandPolicy,
-) -> ConfigResult<CommandConfig> {
-    let command = parse_command_node_inner(node, ctx)?;
-    if !command_policy.allow_shell && matches!(command, CommandConfig::Shell(_)) {
-        return Err(ctx.node_err(
-            node,
-            "shell commands are disabled by command-policy.allow-shell #false; use an argv block",
-            Some("use an argv block, e.g. `command { argv \"program\" \"arg\" }`".into()),
-        ));
-    }
+) -> ConfigResult<ConfiguredCommand> {
+    let command = parse_command_node_inner(node, ctx, command_policy)?;
     Ok(command)
 }
 
-fn parse_command_node_inner(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<CommandConfig> {
+fn parse_command_node_inner(
+    node: &KdlNode,
+    ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<ConfiguredCommand> {
     let entries = node.entries();
 
     if entries.len() == 1 && node.children().is_none() {
         return match entries[0].value().as_string() {
             Some("") => Err(ctx.entry_err(&entries[0], "value must not be empty", None)),
-            Some(command) => Ok(CommandConfig::Shell(command.to_string())),
+            Some(command) => ConfiguredCommand::shell(command.to_string(), command_policy)
+                .map_err(|err| match err {
+                    CommandPolicyError::ShellDisabled => ctx.node_err(
+                        node,
+                        "shell commands are disabled by command-policy.allow-shell #false; use an argv block",
+                        Some("use an argv block, e.g. `command { argv \"program\" \"arg\" }`".into()),
+                    ),
+                }),
             None => Err(ctx.entry_err(&entries[0], "expected string", None)),
         };
     }
@@ -204,8 +208,9 @@ fn parse_command_node_inner(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Comm
         return Err(argv_ctx.node_err(argv, "program must not be empty", None));
     }
 
-    Ok(CommandConfig::Argv {
-        program: program.clone(),
-        args: values.into_iter().skip(1).collect(),
-    })
+    Ok(ConfiguredCommand::argv(
+        program.clone(),
+        values.into_iter().skip(1).collect(),
+        command_policy,
+    ))
 }

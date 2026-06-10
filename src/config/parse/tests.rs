@@ -209,7 +209,7 @@ fn parse_typed_module_actions_click_command_and_key_panel() {
     assert_eq!(
         actions.action_for(&crate::config::ActionTrigger::Click),
         Some(&crate::config::PanelAction::Command(
-            crate::config::CommandConfig::Shell("gnome-clocks".into())
+            crate::config::ConfiguredCommand::shell_for_test("gnome-clocks")
         ))
     );
     assert_eq!(
@@ -285,7 +285,7 @@ modules {
             .actions
             .action_for(&crate::config::ActionTrigger::Click),
         Some(&crate::config::PanelAction::Command(
-            crate::config::CommandConfig::Shell("kitty".into())
+            crate::config::ConfiguredCommand::shell_for_test("kitty")
         ))
     );
 }
@@ -311,10 +311,7 @@ modules {
             .actions
             .action_for(&crate::config::ActionTrigger::Click),
         Some(&crate::config::PanelAction::Command(
-            crate::config::CommandConfig::Argv {
-                program: "notify-send".into(),
-                args: vec!["clock".into()],
-            }
+            crate::config::ConfiguredCommand::argv_for_test("notify-send", vec!["clock".into()])
         ))
     );
 }
@@ -366,7 +363,7 @@ menus {
     assert_eq!(
         config.menus[0].items[0].action,
         Some(crate::config::PanelAction::Command(
-            crate::config::CommandConfig::Shell("kitty".into())
+            crate::config::ConfiguredCommand::shell_for_test("kitty")
         ))
     );
 }
@@ -525,7 +522,7 @@ menus {
     assert_eq!(
         apps.children[0].action,
         Some(crate::config::PanelAction::Command(
-            crate::config::CommandConfig::Shell("firefox".into())
+            crate::config::ConfiguredCommand::shell_for_test("firefox")
         ))
     );
 }
@@ -547,6 +544,26 @@ modules {
     assert!(
         msg.contains("allow-shell #false") && msg.contains("argv"),
         "expected shell policy rejection, got: {msg}"
+    );
+}
+
+#[test]
+fn parse_command_policy_rejects_bar_action_shell_commands_when_disabled() {
+    let kdl = r#"
+command-policy {
+    allow-shell #false
+}
+bar "main" {
+    actions {
+        click { command "date" }
+    }
+}
+"#;
+    let err = parse(kdl).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("allow-shell #false") && msg.contains("argv"),
+        "expected bar action shell policy rejection, got: {msg}"
     );
 }
 

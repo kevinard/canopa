@@ -14,18 +14,10 @@ pub enum ScriptEvent {
 }
 
 const MAX_SCRIPT_OUTPUT_BYTES: usize = crate::command::MAX_COMMAND_OUTPUT_BYTES;
-const SCRIPT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
-async fn run_script_command(
-    command: &crate::config::CommandConfig,
-    timeout: std::time::Duration,
-) -> ScriptEvent {
-    match crate::command::run_config_command_capture_stdout(
-        command,
-        timeout,
-        MAX_SCRIPT_OUTPUT_BYTES,
-    )
-    .await
+async fn run_script_command(command: &crate::config::ConfiguredCommand) -> ScriptEvent {
+    match crate::command::run_configured_command_capture_stdout(command, MAX_SCRIPT_OUTPUT_BYTES)
+        .await
     {
         Ok(crate::command::CaptureResult::Success(out)) => ScriptEvent::Output(out),
         _ => ScriptEvent::Failed,
@@ -34,7 +26,7 @@ async fn run_script_command(
 
 pub(super) struct ScriptModule {
     id: crate::modules::ModuleId,
-    command: crate::config::CommandConfig,
+    command: crate::config::ConfiguredCommand,
     interval: u64,
     format: crate::config::FormatConfig,
     content_rotation: crate::config::ContentRotation,
@@ -43,7 +35,7 @@ pub(super) struct ScriptModule {
 impl ScriptModule {
     pub(super) fn new(
         id: crate::modules::ModuleId,
-        command: crate::config::CommandConfig,
+        command: crate::config::ConfiguredCommand,
         interval: u64,
         format: crate::config::FormatConfig,
     ) -> Self {
@@ -58,7 +50,7 @@ impl ScriptModule {
 
     pub(super) fn new_with_content_rotation(
         id: crate::modules::ModuleId,
-        command: crate::config::CommandConfig,
+        command: crate::config::ConfiguredCommand,
         interval: u64,
         format: crate::config::FormatConfig,
         content_rotation: crate::config::ContentRotation,
@@ -135,7 +127,7 @@ impl crate::modules::Module for ScriptModule {
                             tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
                         }
 
-                        let event = run_script_command(&cmd, SCRIPT_COMMAND_TIMEOUT).await;
+                        let event = run_script_command(&cmd).await;
 
                         let msg = crate::app::Message::Modules(
                             crate::app::messages::ModuleRuntimeEvent::Module(
@@ -389,7 +381,7 @@ mod tests {
     fn script_module_id_is_script() {
         let m = ScriptModule::new(
             crate::modules::ModuleId::new("script"),
-            crate::config::CommandConfig::Shell("echo hi".into()),
+            crate::config::ConfiguredCommand::shell_for_test("echo hi"),
             5,
             crate::config::FormatConfig::default(),
         );
@@ -401,7 +393,7 @@ mod tests {
     fn script_module_custom_id() {
         let m = ScriptModule::new(
             crate::modules::ModuleId::new("status"),
-            crate::config::CommandConfig::Shell("date".into()),
+            crate::config::ConfiguredCommand::shell_for_test("date"),
             5,
             crate::config::FormatConfig::default(),
         );
@@ -427,7 +419,7 @@ mod tests {
     fn script_styled_segments_resolve_inline_style() {
         let m = ScriptModule::new(
             crate::modules::ModuleId::new("script"),
-            crate::config::CommandConfig::Shell("echo hi".into()),
+            crate::config::ConfiguredCommand::shell_for_test("echo hi"),
             5,
             styled_format_config(),
         );
@@ -450,7 +442,7 @@ mod tests {
     fn script_auto_rotation_overrides_side_bar_collapsed_format() {
         let m = ScriptModule::new_with_content_rotation(
             crate::modules::ModuleId::new("script"),
-            crate::config::CommandConfig::Shell("echo hi".into()),
+            crate::config::ConfiguredCommand::shell_for_test("echo hi"),
             5,
             styled_format_config(),
             crate::config::ContentRotation::Auto,
@@ -481,7 +473,7 @@ mod tests {
         .unwrap();
         let m = ScriptModule::new_with_content_rotation(
             crate::modules::ModuleId::new("script"),
-            crate::config::CommandConfig::Shell("echo hi".into()),
+            crate::config::ConfiguredCommand::shell_for_test("echo hi"),
             5,
             crate::config::FormatConfig {
                 horizontal: Some(horizontal),
@@ -517,24 +509,27 @@ mod tests {
 
     #[tokio::test]
     async fn run_script_command_times_out() {
-        let command = crate::config::CommandConfig::Shell("sleep 2".into());
-        let event = run_script_command(&command, std::time::Duration::from_millis(25)).await;
+        let command = crate::config::ConfiguredCommand::shell_with_timeout_for_test("sleep 2", 25);
+        let event = run_script_command(&command).await;
 
         assert!(matches!(event, ScriptEvent::Failed));
     }
 
     #[tokio::test]
     async fn run_script_command_preserves_shell_mode() {
-        let command = crate::config::CommandConfig::Shell("printf '%s' script-ok".into());
-        let event = run_script_command(&command, std::time::Duration::from_secs(1)).await;
+        let command = crate::config::ConfiguredCommand::shell_with_timeout_for_test(
+            "printf '%s' script-ok",
+            1000,
+        );
+        let event = run_script_command(&command).await;
 
         assert_eq!(event, ScriptEvent::Output("script-ok".to_string()));
     }
 
     #[tokio::test]
     async fn run_script_command_maps_nonzero_exit_to_failed() {
-        let command = crate::config::CommandConfig::Shell("false".into());
-        let event = run_script_command(&command, std::time::Duration::from_secs(1)).await;
+        let command = crate::config::ConfiguredCommand::shell_with_timeout_for_test("false", 1000);
+        let event = run_script_command(&command).await;
 
         assert_eq!(event, ScriptEvent::Failed);
     }

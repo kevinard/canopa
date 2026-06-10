@@ -839,7 +839,6 @@ mod tests {
                 actions: crate::config::ModuleActionsConfig::default(),
             }],
             menus: vec![],
-            command_policy: crate::config::CommandPolicy::default(),
         };
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
@@ -883,7 +882,6 @@ mod tests {
                 },
             ],
             menus: vec![],
-            command_policy: crate::config::CommandPolicy::default(),
         };
         config.bars[0].modules.end = vec!["clock".into(), "tray".into()];
         config.bars[1].modules.end = vec!["tray".into(), "clock".into()];

@@ -1715,7 +1715,7 @@ mod tests {
                     icon: Some("firefox".into()),
                     keywords: vec!["web".into()],
                     action: Some(crate::config::PanelAction::Command(
-                        crate::config::CommandConfig::Shell("firefox".into()),
+                        crate::config::ConfiguredCommand::shell_for_test("firefox"),
                     )),
                     children: vec![],
                 }],
@@ -1862,7 +1862,7 @@ mod tests {
             icon: None,
             keywords: vec!["browser".into()],
             action: Some(crate::config::PanelAction::Command(
-                crate::config::CommandConfig::Shell("settings".into()),
+                crate::config::ConfiguredCommand::shell_for_test("settings"),
             )),
             children: vec![],
         });
@@ -1902,7 +1902,7 @@ mod tests {
                         icon: None,
                         keywords: vec![],
                         action: Some(crate::config::PanelAction::Command(
-                            crate::config::CommandConfig::Shell("firefox".into()),
+                            crate::config::ConfiguredCommand::shell_for_test("firefox"),
                         )),
                         children: vec![],
                     }],
@@ -1912,7 +1912,7 @@ mod tests {
                     icon: None,
                     keywords: vec![],
                     action: Some(crate::config::PanelAction::Command(
-                        crate::config::CommandConfig::Shell("settings".into()),
+                        crate::config::ConfiguredCommand::shell_for_test("settings"),
                     )),
                     children: vec![],
                 },

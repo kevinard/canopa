@@ -68,7 +68,7 @@ modules {
             ModuleParams::Script(cfg) => {
                 assert_eq!(
                     cfg.command,
-                    crate::config::CommandConfig::Shell("date".into())
+                    crate::config::ConfiguredCommand::shell_for_test("date")
                 );
                 assert_eq!(cfg.interval, 10);
             }
@@ -92,10 +92,7 @@ modules {
             ModuleParams::Script(cfg) => {
                 assert_eq!(
                     cfg.command,
-                    crate::config::CommandConfig::Argv {
-                        program: "printf".into(),
-                        args: vec!["hello".into()],
-                    }
+                    crate::config::ConfiguredCommand::argv_for_test("printf", vec!["hello".into()])
                 );
             }
             _ => panic!("expected ModuleParams::Script"),
@@ -116,7 +113,7 @@ modules {
             ModuleParams::Script(cfg) => {
                 assert_eq!(
                     cfg.command,
-                    crate::config::CommandConfig::Shell("date".into())
+                    crate::config::ConfiguredCommand::shell_for_test("date")
                 );
                 assert_eq!(cfg.interval, 5);
             }

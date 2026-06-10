@@ -683,7 +683,7 @@ mod tests {
                     icon: None,
                     keywords: vec!["shell".into()],
                     action: Some(crate::config::PanelAction::Command(
-                        crate::config::CommandConfig::Shell("kitty".into()),
+                        crate::config::ConfiguredCommand::shell_for_test("kitty"),
                     )),
                     children: vec![],
                 },
@@ -692,7 +692,7 @@ mod tests {
                     icon: None,
                     keywords: vec!["web".into()],
                     action: Some(crate::config::PanelAction::Command(
-                        crate::config::CommandConfig::Shell("firefox".into()),
+                        crate::config::ConfiguredCommand::shell_for_test("firefox"),
                     )),
                     children: vec![],
                 },

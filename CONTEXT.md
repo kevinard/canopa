@@ -670,6 +670,12 @@ _Avoid_: Unavailable module, runtime failure
 ### Configuration Errors
 
 - A **Configuration Error** is reported actionably and prevents the invalid configuration from being used.
+- A parsed **Config** contains only **Configured Commands** accepted by **Command Policy**.
+- Raw shell or argv command syntax is internal to **Configured Command** parsing and is not exposed by the runtime model.
+- A parsed **Configured Command** carries the execution timeout resolved from **Command Policy**.
+- **Command Policy** is not a runtime execution input after parsing; runtime code executes policy-resolved **Configured Commands**.
+- Configuration owns **Configured Command** validation; command execution code owns the process-launch adapter for policy-resolved **Configured Commands**.
+- A shell-form **Configured Command** is a **Configuration Error** when **Command Policy** disables shell-form commands.
 - An unknown **Module** reference in configuration is a **Configuration Error**.
 - A valid **Module** with a missing runtime dependency becomes an **Unavailable Module**, not a **Configuration Error**.
 
