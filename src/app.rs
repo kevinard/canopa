@@ -1,4 +1,5 @@
 mod animation;
+mod app_effects;
 mod bar_surface_plan;
 mod dynamic_modules;
 pub(crate) mod eligible_outputs;
@@ -217,14 +218,13 @@ impl App {
         let desired_surface_count = desired.len();
         let effects = surfaces.reconcile_bar_surfaces(desired);
         let lifecycle_effect_count = effects.len();
-        let window_tasks = Self::lifecycle_effects_to_tasks(&config, &mut surfaces, effects);
         let runtime_module_count = module_graph.modules.len();
         let mut modules =
             module_runtime::ModuleRuntime::from_modules_with_actions(module_graph.modules);
         modules
             .set_dynamic_module_family_inputs(dynamic_modules::family_inputs_from_config(&config));
         let data_sources = module_data_sources::ModuleDataSourceRuntime::from_modules(&modules);
-        let app = App {
+        let mut app = App {
             config,
             shared: shared::SharedContext::new(),
             surfaces,
@@ -235,6 +235,7 @@ impl App {
             tray: tray::TrayState::default(),
             perf: perf::PerfTracker::from_env(),
         };
+        let window_tasks = app.apply_bar_surface_lifecycle_effects(effects);
         tracing::debug!(
             target: "niribar::runtime",
             bar_count,

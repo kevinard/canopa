@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use iced::Task;
 use zbus::zvariant::OwnedObjectPath;
 
+use super::app_effects::AppEffect;
 use super::{App, Message, messages};
 use crate::dbus::sni::host::{ItemStatus, TrayEvent, TrayItem};
 
@@ -133,56 +134,34 @@ impl App {
         Task::none()
     }
 
-    pub(super) fn handle_tray_activate(&self, service: String) -> Task<Message> {
-        let item = self.tray.item(&service).cloned();
-        let conn = self.shared.dbus.session.clone();
-        tokio::task::spawn(async move {
-            if let (Some(conn), Some(item)) = (conn, item) {
-                let _ =
-                    crate::dbus::sni::host::call_activate(&conn, &item.service, &item.object_path)
-                        .await;
-            }
-        });
-        Task::none()
+    pub(super) fn handle_tray_activate(&mut self, service: String) -> Task<Message> {
+        let Some(item) = self.tray.item(&service).cloned() else {
+            return Task::none();
+        };
+        Task::batch(self.apply_app_effects(vec![AppEffect::CallSniActivate { item }]))
     }
 
-    pub(super) fn handle_tray_secondary_activate(&self, service: String) -> Task<Message> {
-        let item = self.tray.item(&service).cloned();
-        let conn = self.shared.dbus.session.clone();
-        tokio::task::spawn(async move {
-            if let (Some(conn), Some(item)) = (conn, item) {
-                let _ = crate::dbus::sni::host::call_secondary_activate(
-                    &conn,
-                    &item.service,
-                    &item.object_path,
-                )
-                .await;
-            }
-        });
-        Task::none()
+    pub(super) fn handle_tray_secondary_activate(&mut self, service: String) -> Task<Message> {
+        let Some(item) = self.tray.item(&service).cloned() else {
+            return Task::none();
+        };
+        Task::batch(self.apply_app_effects(vec![AppEffect::CallSniSecondaryActivate { item }]))
     }
 
     pub(super) fn handle_tray_scroll(
-        &self,
+        &mut self,
         service: String,
         delta: i32,
         orientation: String,
     ) -> Task<Message> {
-        let item = self.tray.item(&service).cloned();
-        let conn = self.shared.dbus.session.clone();
-        tokio::task::spawn(async move {
-            if let (Some(conn), Some(item)) = (conn, item) {
-                let _ = crate::dbus::sni::host::call_scroll(
-                    &conn,
-                    &item.service,
-                    &item.object_path,
-                    delta,
-                    &orientation,
-                )
-                .await;
-            }
-        });
-        Task::none()
+        let Some(item) = self.tray.item(&service).cloned() else {
+            return Task::none();
+        };
+        Task::batch(self.apply_app_effects(vec![AppEffect::CallSniScroll {
+            item,
+            delta,
+            orientation,
+        }]))
     }
 
     pub(super) fn handle_tray_menu_request(
@@ -225,7 +204,7 @@ impl App {
     }
 
     pub(super) fn handle_tray_menu_request_with_bounds(
-        &self,
+        &mut self,
         service: String,
         menu_path: Option<OwnedObjectPath>,
         bounds: Option<iced::Rectangle>,
@@ -243,74 +222,63 @@ impl App {
             );
             return Task::none();
         };
-        let conn = self.shared.dbus.session.clone();
-        if let (Some(conn), Some((dbus_service, menu_path))) =
-            (conn, self.tray_menu_target(&service, menu_path))
-        {
+        let Some((dbus_service, menu_path)) = self.tray_menu_target(&service, menu_path) else {
             tracing::debug!(
                 target: "niribar::tray",
-                has_bounds = bounds.is_some(),
-                source_window_known = source_window.is_some(),
-                "fetching tray menu"
+                has_session_bus = self.shared.dbus.session.is_some(),
+                "tray menu target unavailable"
             );
-            let service_clone = dbus_service.clone();
-            let menu_path_clone = menu_path.clone();
-            let (anchor_x, anchor_y) = match bounds {
-                Some(r) => {
-                    let edge = self
-                        .surfaces
-                        .surface(origin_window)
-                        .map(|surface| {
-                            Self::bar_for_surface_name(&self.config.bars, &surface.bar_name)
-                                .edge
-                                .clone()
-                        })
-                        .unwrap_or_else(|| self.config.bars[0].edge.clone());
-                    tray_menu_anchor_for_bounds(edge, r)
-                }
-                None => {
-                    let p = self
-                        .surfaces
-                        .last_cursor()
-                        .map(|(_, p)| p)
-                        .unwrap_or(iced::Point::ORIGIN);
-                    (p.x as i32, p.y as i32)
-                }
-            };
-            let screen_size = self
-                .surfaces
-                .surface(origin_window)
-                .map(|s| s.screen_size)
-                .unwrap_or(screen_size);
-            return Task::perform(
-                async move {
-                    crate::dbus::sni::host::fetch_menu(&conn, &service_clone, &menu_path_clone)
-                        .await
-                },
-                move |tree_opt| {
-                    if let Some(mut tree) = tree_opt {
-                        tree.anchor = (anchor_x, anchor_y);
-                        tree.screen_size = screen_size;
-                        Message::Menu(messages::MenuEvent::Open {
-                            service: service.clone(),
-                            menu_path: menu_path.clone(),
-                            tree,
-                            origin_window,
-                        })
-                    } else {
-                        Message::Tray(messages::TrayRuntimeEvent::Activate {
-                            service: service.clone(),
-                        })
-                    }
-                },
-            );
-        }
+            return Task::none();
+        };
         tracing::debug!(
             target: "niribar::tray",
-            has_session_bus = self.shared.dbus.session.is_some(),
-            "tray menu target unavailable"
+            has_bounds = bounds.is_some(),
+            source_window_known = source_window.is_some(),
+            "fetching tray menu"
         );
-        Task::none()
+        let anchor = match bounds {
+            Some(r) => {
+                let edge = self
+                    .surfaces
+                    .surface(origin_window)
+                    .map(|surface| {
+                        Self::bar_for_surface_name(&self.config.bars, &surface.bar_name)
+                            .edge
+                            .clone()
+                    })
+                    .unwrap_or_else(|| self.config.bars[0].edge.clone());
+                tray_menu_anchor_for_bounds(edge, r)
+            }
+            None => {
+                let p = self
+                    .surfaces
+                    .last_cursor()
+                    .map(|(_, p)| p)
+                    .unwrap_or(iced::Point::ORIGIN);
+                (p.x as i32, p.y as i32)
+            }
+        };
+        let screen_size = self
+            .surfaces
+            .surface(origin_window)
+            .map(|s| s.screen_size)
+            .unwrap_or(screen_size);
+        if self.shared.dbus.session.is_none() {
+            tracing::debug!(
+                target: "niribar::tray",
+                has_session_bus = false,
+                "tray menu target unavailable"
+            );
+            return Task::none();
+        }
+        return Task::batch(self.apply_app_effects(vec![AppEffect::FetchSniMenuForOpen {
+            dbus_service,
+            event_service: service,
+            menu_path,
+            anchor,
+            screen_size,
+            origin_window,
+        }]));
     }
 }
 

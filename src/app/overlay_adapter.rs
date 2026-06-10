@@ -1,3 +1,4 @@
+use super::app_effects::{AppEffect, app_effects_for_foreground};
 use super::surfaces::RegistryEffect;
 
 impl super::App {
@@ -69,7 +70,7 @@ impl super::App {
             match effect {
                 RegistryEffect::TooltipClosed { window } => {
                     self.surfaces.remove_tooltip_popup(window);
-                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
+                    tasks.extend(self.apply_app_effects(vec![AppEffect::RemoveWindow(window)]));
                 }
             }
         }
@@ -82,19 +83,12 @@ impl super::App {
     ) -> Vec<iced::Task<super::Message>> {
         let mut tasks = Vec::new();
         for effect in effects {
+            if let Some(app_effects) = app_effects_for_foreground(&effect) {
+                tasks.extend(self.apply_app_effects(app_effects));
+                continue;
+            }
+
             match effect {
-                super::foreground::ForegroundEffect::OpenPanelWindow { tree } => {
-                    tasks.push(self.open_panel_window(tree));
-                }
-                super::foreground::ForegroundEffect::RemoveWindow(window) => {
-                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
-                }
-                super::foreground::ForegroundEffect::SuspendBarKeyboardInteractivity => {
-                    tasks.extend(self.suspend_bar_keyboard_interactivity());
-                }
-                super::foreground::ForegroundEffect::RestoreBarKeyboardInteractivity => {
-                    tasks.extend(self.restore_bar_keyboard_interactivity());
-                }
                 super::foreground::ForegroundEffect::CloseTooltipsForSurface(window) => {
                     let effects = self.surfaces.close_tooltip_for_surface(window);
                     tasks.extend(self.apply_registry_effects(effects));
@@ -102,13 +96,6 @@ impl super::App {
                 super::foreground::ForegroundEffect::CloseAllTooltips => {
                     let effects = self.surfaces.close_tooltip_overlays();
                     tasks.extend(self.apply_registry_effects(effects));
-                }
-                super::foreground::ForegroundEffect::OpenMenuWindow { request } => {
-                    tasks.push(self.open_menu_window(request));
-                }
-                super::foreground::ForegroundEffect::CloseMenu { window, meta } => {
-                    send_menu_closed_event(self.shared.dbus.session.clone(), meta);
-                    tasks.push(iced::Task::done(super::Message::RemoveWindow(window)));
                 }
                 super::foreground::ForegroundEffect::RequestPanelSearchFocus => {
                     tasks.push(super::panel::request_panel_search_focus());
@@ -131,58 +118,20 @@ impl super::App {
                 } => {
                     tasks.push(self.dispatch_panel_action(origin_window, origin, action));
                 }
-                super::foreground::ForegroundEffect::LaunchInstalledApp(id) => {
-                    self.launch_installed_app_by_id(&id);
-                }
-                super::foreground::ForegroundEffect::SendDmenuResponse {
-                    responder,
-                    response,
-                } => {
-                    send_ipc_response(responder, response);
-                }
-                super::foreground::ForegroundEffect::ScrollPanelMenuToFocused { window, y } => {
-                    tasks.push(iced::widget::operation::scroll_to(
-                        super::panel::panel_menu_scroll_id(window),
-                        iced::widget::operation::AbsoluteOffset {
-                            x: None,
-                            y: Some(y),
-                        },
-                    ));
+                super::foreground::ForegroundEffect::OpenPanelWindow { .. }
+                | super::foreground::ForegroundEffect::RemoveWindow(_)
+                | super::foreground::ForegroundEffect::SuspendBarKeyboardInteractivity
+                | super::foreground::ForegroundEffect::RestoreBarKeyboardInteractivity
+                | super::foreground::ForegroundEffect::OpenMenuWindow { .. }
+                | super::foreground::ForegroundEffect::CloseMenu { .. }
+                | super::foreground::ForegroundEffect::LaunchInstalledApp(_)
+                | super::foreground::ForegroundEffect::SendDmenuResponse { .. }
+                | super::foreground::ForegroundEffect::ScrollPanelMenuToFocused { .. } => {
+                    unreachable!("external foreground effect should map to AppEffect")
                 }
             }
         }
         tasks
-    }
-}
-
-fn send_ipc_response(
-    responder: super::messages::IpcResponder,
-    response: crate::ipc::protocol::IpcResponse,
-) {
-    if let Some(sender) = responder
-        .lock()
-        .expect("IPC responder mutex poisoned")
-        .take()
-    {
-        let _ = sender.send(response);
-    }
-}
-
-pub(super) fn send_menu_closed_event(
-    conn: Option<zbus::Connection>,
-    meta: super::foreground::MenuPopupMeta,
-) {
-    if let Some(conn) = conn {
-        tokio::task::spawn(async move {
-            let _ = crate::dbus::sni::host::send_menu_event(
-                &conn,
-                &meta.service,
-                &meta.menu_path,
-                0,
-                "closed",
-            )
-            .await;
-        });
     }
 }
 

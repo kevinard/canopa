@@ -1,5 +1,6 @@
 use iced::Task;
 
+use super::app_effects::AppEffect;
 use super::messages::ModuleRuntimeEvent;
 use super::{App, Message};
 use crate::modules::button::{ButtonEvent, ButtonState};
@@ -310,34 +311,14 @@ impl App {
         self.apply_module_data_source_transition(transition)
     }
 
-    pub(super) fn handle_volume_adjust(&self, step: u8, up: bool) -> Task<Message> {
+    pub(super) fn handle_volume_adjust(&mut self, step: u8, up: bool) -> Task<Message> {
         tracing::debug!(
             target: "niribar::modules",
             step,
             up,
             "volume adjustment requested"
         );
-        let arg = if up {
-            format!("{step}%+")
-        } else {
-            format!("{step}%-")
-        };
-        tokio::task::spawn(async move {
-            match crate::command::set_default_sink_volume(&arg).await {
-                Ok(status) if status.success() => {}
-                Ok(status) => tracing::warn!(
-                    target: "niribar::modules",
-                    ?status,
-                    "wpctl set-volume exited unsuccessfully"
-                ),
-                Err(err) => tracing::warn!(
-                    target: "niribar::modules",
-                    error = %err,
-                    "failed to run wpctl set-volume"
-                ),
-            }
-        });
-        Task::none()
+        Task::batch(self.apply_app_effects(vec![AppEffect::AdjustDefaultSinkVolume { step, up }]))
     }
 }
 

@@ -2,6 +2,7 @@ use iced::Task;
 use iced_layershell::actions::IcedNewPopupSettings;
 use iced_layershell::reexport::KeyboardInteractivity;
 
+use super::app_effects::AppEffect;
 use super::{App, Message};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,21 +159,14 @@ impl App {
         menu_item_id: i32,
         menu_path: zbus::zvariant::OwnedObjectPath,
     ) -> Task<Message> {
-        let conn = self.shared.dbus.session.clone();
-        tokio::task::spawn(async move {
-            if let Some(conn) = conn {
-                let _ = crate::dbus::sni::host::send_menu_event(
-                    &conn,
-                    &service,
-                    &menu_path,
-                    menu_item_id,
-                    "clicked",
-                )
-                .await;
-            }
-        });
-
-        let mut tasks = self.close_active_menu();
+        let mut tasks = self.apply_app_effects(vec![AppEffect::SendSniMenuItemClicked {
+            activation: MenuActivation {
+                service,
+                menu_path,
+                item_id: menu_item_id,
+            },
+        }]);
+        tasks.extend(self.close_active_menu());
         tasks.extend(self.restore_bar_keyboard_interactivity());
         Task::batch(tasks)
     }
@@ -248,7 +242,6 @@ impl App {
         service: String,
         menu_path: zbus::zvariant::OwnedObjectPath,
     ) -> Task<Message> {
-        let conn = self.shared.dbus.session.clone();
         let existing = self
             .foreground
             .active_menu_for(&service, &menu_path)
@@ -257,27 +250,12 @@ impl App {
             Some(popup) => (popup.tree.anchor, popup.tree.screen_size),
             None => return Task::none(),
         };
-        if let Some(conn) = conn {
-            let svc = service.clone();
-            let mp = menu_path.clone();
-            return Task::perform(
-                async move { crate::dbus::sni::host::fetch_menu(&conn, &svc, &mp).await },
-                move |tree_opt| {
-                    if let Some(mut tree) = tree_opt {
-                        tree.anchor = anchor;
-                        tree.screen_size = screen_size;
-                        Message::Menu(super::messages::MenuEvent::Updated {
-                            service,
-                            menu_path,
-                            tree,
-                        })
-                    } else {
-                        Message::Menu(super::messages::MenuEvent::Closed)
-                    }
-                },
-            );
-        }
-        Task::none()
+        Task::batch(self.apply_app_effects(vec![AppEffect::FetchSniMenuUpdate {
+            service,
+            menu_path,
+            anchor,
+            screen_size,
+        }]))
     }
 
     pub(super) fn handle_menu_closed(&mut self) -> Task<Message> {

@@ -4,6 +4,7 @@ use iced_layershell::reexport::{
 };
 use std::time::Duration;
 
+use super::app_effects::AppEffect;
 use super::{App, Message};
 
 pub(super) fn panel_search_input_id(window: iced::window::Id) -> iced::widget::Id {
@@ -306,11 +307,7 @@ impl App {
     ) -> Task<Message> {
         match action {
             crate::config::PanelAction::Command(command) => {
-                let _ = crate::command::spawn_config_command_with_policy_fire_and_forget(
-                    &command,
-                    &self.config.command_policy,
-                );
-                Task::none()
+                Task::batch(self.apply_app_effects(vec![AppEffect::RunConfiguredCommand(command)]))
             }
             action => match panel_event_for_action(origin_window, origin, action, None) {
                 Some(event) => self.handle_panel_event(event),
@@ -728,25 +725,6 @@ impl App {
                 .handle(super::foreground::ForegroundIntent::PanelSearchFocusSettled);
         }
         Task::batch(tasks)
-    }
-
-    pub(super) fn launch_installed_app_by_id(&mut self, id: &str) {
-        #[cfg(test)]
-        {
-            self.foreground.record_launched_installed_app_for_test(id);
-        }
-
-        #[cfg(not(test))]
-        {
-            let Some(app) = self
-                .load_installed_apps_for_panel()
-                .into_iter()
-                .find(|app| app.id == id)
-            else {
-                return;
-            };
-            let _ = crate::command::spawn_desktop_application_fire_and_forget(&app);
-        }
     }
 }
 

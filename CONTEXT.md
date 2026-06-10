@@ -222,6 +222,10 @@ _Avoid_: Panel Menu Session when the behavior applies beyond panels, popup state
 The currently active interactive overlay state: no overlay, a **Menu**, or a **Panel**. **Foreground** owns physical **Panel** and **Menu** overlay window identity, the active **Menu**'s **Selectable Menu Session**, the active **Panel Runtime**, replacement, stale close handling, interactive overlay role classification, and app-level **Panel** interaction routes. **Tooltip** is not **Foreground** because it is passive and owned as a **Bar Surface** affordance.
 _Avoid_: overlay registry when referring to interactive state, popup when referring to **Panel** or **Menu** interaction
 
+**App Effect**:
+A runtime request to perform external work owned by the application adapter, such as opening or removing physical windows, changing keyboard interactivity, launching processes, sending IPC responses, or calling DBus. **App Effects** do not own **Foreground**, **Panel Runtime**, **Bar Surface Registry**, or **Module Runtime** coordination decisions.
+_Avoid_: foreground effect, panel action, module effect
+
 ### Panels and Panel Menus
 
 **Panel**:

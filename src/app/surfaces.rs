@@ -4,6 +4,7 @@ use std::ops::{Index, IndexMut};
 use iced::Task;
 use iced_layershell::reexport::{KeyboardInteractivity, NewLayerShellSettings, OutputOption};
 
+use super::app_effects::AppEffect;
 use super::bar_surface_plan::PlannedBarSurface;
 use super::{App, Message};
 use crate::modules::ModuleKind;
@@ -96,7 +97,7 @@ fn tooltip_margin(
     placement.layer_margin()
 }
 
-fn tooltip_popup_window_settings(
+pub(super) fn tooltip_popup_window_settings(
     tree: &crate::surface::tooltip_popup::TooltipTree,
 ) -> NewLayerShellSettings {
     let size = crate::surface::tooltip_popup::popup_size(tree);
@@ -109,13 +110,6 @@ fn tooltip_popup_window_settings(
         keyboard_interactivity: KeyboardInteractivity::None,
         ..Default::default()
     }
-}
-
-fn spawn_tooltip_popup_window(
-    tree: &crate::surface::tooltip_popup::TooltipTree,
-) -> (iced::window::Id, Task<Message>) {
-    let settings = tooltip_popup_window_settings(tree);
-    Message::layershell_open(settings)
 }
 
 #[derive(Debug, Clone)]
@@ -598,81 +592,7 @@ impl App {
         })
     }
 
-    pub(super) fn lifecycle_effects_to_tasks(
-        config: &crate::config::Config,
-        surfaces: &mut SurfaceManager,
-        effects: Vec<BarSurfaceLifecycleEffect>,
-    ) -> Vec<Task<Message>> {
-        let mut tasks = Vec::new();
-        for effect in effects {
-            match effect {
-                BarSurfaceLifecycleEffect::Open(desired) => {
-                    let bar = &config.bars[desired.bar_index];
-                    let output_name = desired.identity.output_name_for_surface_state();
-                    tracing::debug!(
-                        target: "niribar::surface",
-                        bar = bar.name.as_str(),
-                        output = output_name.as_str(),
-                        "opening bar surface"
-                    );
-                    tasks.push(Self::spawn_bar_on_output(
-                        bar,
-                        &output_name,
-                        &mut surfaces.pending_surface_keys,
-                        &mut surfaces.surfaces,
-                    ));
-                }
-                BarSurfaceLifecycleEffect::RemoveWindow(window) => {
-                    tracing::debug!(
-                        target: "niribar::surface",
-                        ?window,
-                        "removing bar surface"
-                    );
-                    tasks.push(Task::done(Message::RemoveWindow(window)));
-                }
-            }
-        }
-        tasks
-    }
-
-    fn apply_bar_surface_lifecycle_effects(
-        &mut self,
-        effects: Vec<BarSurfaceLifecycleEffect>,
-    ) -> Vec<Task<Message>> {
-        let mut tasks = Vec::new();
-        for effect in effects {
-            match effect {
-                BarSurfaceLifecycleEffect::Open(desired) => {
-                    let bar = &self.config.bars[desired.bar_index];
-                    let output_name = desired.identity.output_name_for_surface_state();
-                    tracing::debug!(
-                        target: "niribar::surface",
-                        bar = bar.name.as_str(),
-                        output = output_name.as_str(),
-                        "opening bar surface"
-                    );
-                    tasks.push(Self::spawn_bar_on_output(
-                        bar,
-                        &output_name,
-                        &mut self.surfaces.pending_surface_keys,
-                        &mut self.surfaces.surfaces,
-                    ));
-                }
-                BarSurfaceLifecycleEffect::RemoveWindow(window) => {
-                    tracing::debug!(
-                        target: "niribar::surface",
-                        ?window,
-                        "removing bar surface"
-                    );
-                    tasks.push(Task::done(Message::RemoveWindow(window)));
-                }
-            }
-        }
-        tasks
-    }
-
-    /// Opens a layer-shell window for one (bar, output) pair, records it in `pending` and
-    /// `surfaces`, and returns the open task. Shared by `boot` and `open_new_output_windows`.
+    /// Builds layer-shell settings for one **Bar Surface**.
     pub(super) fn bar_window_settings(
         bar: &crate::config::BarConfig,
         output_name: &str,
@@ -694,24 +614,6 @@ impl App {
             namespace: Some(Self::namespace()),
             ..Default::default()
         }
-    }
-
-    /// Opens a layer-shell window for one (bar, output) pair, records it in `pending` and
-    /// `surfaces`, and returns the open task. Shared by `boot` and `open_new_output_windows`.
-    pub(super) fn spawn_bar_on_output(
-        bar: &crate::config::BarConfig,
-        output_name: &str,
-        pending: &mut HashMap<iced::window::Id, (String, String)>,
-        surfaces: &mut HashMap<iced::window::Id, SurfaceState>,
-    ) -> Task<Message> {
-        let settings = Self::bar_window_settings(bar, output_name);
-        let (id, task) = Message::layershell_open(settings);
-        pending.insert(id, (output_name.to_string(), bar.name.clone()));
-        surfaces.insert(
-            id,
-            SurfaceState::new(output_name.to_string(), bar.name.clone()),
-        );
-        task
     }
 
     /// In manual-output mode, opens new layer-shell windows for any (output, bar) pairs present
@@ -852,17 +754,11 @@ impl App {
             bar_edge: placement.bar_edge,
         };
 
-        let (popup_wid, open_task) = spawn_tooltip_popup_window(&tree);
-        let effects = self.surfaces.open_tooltip_overlay(TooltipPopup {
-            window: popup_wid,
+        Task::batch(self.apply_app_effects(vec![AppEffect::OpenTooltipWindow {
             target_window,
             target_module: module,
             tree,
-        });
-        let mut tasks = self.apply_registry_effects(effects);
-
-        tasks.push(open_task);
-        Task::batch(tasks)
+        }]))
     }
 
     fn tooltip_values_for(
