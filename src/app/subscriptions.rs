@@ -31,7 +31,6 @@ impl App {
 
     fn needs_niri_subscription(&self) -> bool {
         self.has_capability(|capabilities| capabilities.needs_niri)
-            || self.surfaces.manual_outputs()
     }
 
     fn needs_keyboard_focus_subscription(&self) -> bool {
@@ -188,10 +187,10 @@ mod tests {
     }
 
     #[test]
-    fn manual_output_mode_needs_niri_subscription_for_hotplug() {
+    fn output_reconciliation_does_not_need_niri_subscription() {
         let (app, _) = App::boot(Config::default(), vec!["eDP-1".into()]);
 
-        assert!(app.needs_niri_subscription());
+        assert!(!app.needs_niri_subscription());
     }
 
     #[test]

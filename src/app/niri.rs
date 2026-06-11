@@ -83,25 +83,16 @@ impl App {
                             &self.niri.state().workspaces,
                             &workspaces,
                         );
-                        let open_tasks = if changed && self.surfaces.manual_outputs() {
-                            self.open_new_output_windows(&workspaces)
-                        } else {
-                            vec![]
-                        };
                         tracing::debug!(
                             target: "niribar::niri",
                             workspace_count = workspaces.len(),
                             changed,
-                            surface_task_count = open_tasks.len(),
                             "niri workspaces changed"
                         );
                         if changed {
                             self.rebuild_workspace_item_modules(&workspaces);
                             self.niri.state_mut().workspaces = workspaces;
                             self.push_focused_window_state();
-                        }
-                        if !open_tasks.is_empty() {
-                            return Task::batch(open_tasks);
                         }
                     }
                     Event::WindowFocusChanged { id } => {

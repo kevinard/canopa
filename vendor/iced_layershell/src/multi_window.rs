@@ -10,7 +10,9 @@ use crate::{
     actions::LayerShellCustomAction, clipboard::LayerShellClipboard, conversion, error::Error,
 };
 use crate::{
-    event::{IcedLayerShellEvent, WindowEvent as LayerShellWindowEvent},
+    event::{
+        IcedLayerShellEvent, WaylandOutputSnapshot, WindowEvent as LayerShellWindowEvent,
+    },
     proxy::IcedProxy,
     settings::Settings,
 };
@@ -29,8 +31,8 @@ use iced_program::Program as IcedProgram;
 use iced_runtime::Action;
 use iced_runtime::user_interface;
 use layershellev::{
-    DisplayWrapper, LayerShellEvent, NewPopUpSettings, RefreshRequest, ReturnData, WindowState,
-    WindowWrapper,
+    DispatchMessage, DisplayWrapper, LayerShellEvent, NewPopUpSettings, RefreshRequest,
+    ReturnData, WindowState, WindowWrapper,
     id::Id as LayerShellId,
     reexport::{
         wayland_client::{WlCompositor, WlRegion},
@@ -64,7 +66,9 @@ pub fn run<P>(
 where
     P: IcedProgram + 'static,
     P::Theme: DefaultStyle,
-    P::Message: 'static + TryInto<LayerShellCustomActionWithId, Error = P::Message>,
+    P::Message: 'static
+        + TryInto<LayerShellCustomActionWithId, Error = P::Message>
+        + From<WaylandOutputSnapshot>,
 {
     use futures::task;
     use layershellev::calloop::channel::channel;
@@ -199,10 +203,22 @@ where
                 }
             }
             LayerShellEvent::RequestMessages(message) => {
-                waiting_layer_shell_events.push_back((
-                    layer_shell_id,
-                    IcedLayerShellEvent::Window(LayerShellWindowEvent::from(message)),
-                ));
+                match message {
+                    DispatchMessage::WaylandOutputSnapshot(outputs) => {
+                        waiting_layer_shell_events.push_back((
+                            None,
+                            IcedLayerShellEvent::WaylandOutputSnapshot(WaylandOutputSnapshot {
+                                outputs: outputs.clone(),
+                            }),
+                        ));
+                    }
+                    _ => {
+                        waiting_layer_shell_events.push_back((
+                            layer_shell_id,
+                            IcedLayerShellEvent::Window(LayerShellWindowEvent::from(message)),
+                        ));
+                    }
+                }
             }
             LayerShellEvent::UserEvent(event) => {
                 waiting_layer_shell_events
@@ -293,7 +309,9 @@ where
     C: Compositor<Renderer = P::Renderer> + 'static,
     E: Executor + 'static,
     P::Theme: DefaultStyle,
-    P::Message: 'static + TryInto<LayerShellCustomActionWithId, Error = P::Message>,
+    P::Message: 'static
+        + TryInto<LayerShellCustomActionWithId, Error = P::Message>
+        + From<WaylandOutputSnapshot>,
 {
     pub fn new(
         application: Instance<P>,
@@ -384,6 +402,9 @@ where
 
         match layer_shell_event {
             IcedLayerShellEvent::UpdateInputRegion(region) => self.wl_input_region = Some(region),
+            IcedLayerShellEvent::WaylandOutputSnapshot(snapshot) => {
+                self.messages.push(snapshot.into());
+            }
             IcedLayerShellEvent::Window(LayerShellWindowEvent::Refresh) => {
                 self.handle_refresh_event(ev, layer_shell_id)
             }

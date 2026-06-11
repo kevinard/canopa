@@ -14,7 +14,7 @@ mod surface;
 mod theme;
 
 use app::App;
-use app::eligible_outputs::{EligibleOutputState, resolve_eligible_outputs};
+use app::eligible_outputs::EligibleOutputState;
 use iced_layershell::build_pattern::daemon;
 use iced_layershell::settings::{LayerShellSettings, Settings, StartMode};
 
@@ -182,16 +182,6 @@ fn send_ipc_command(cmd: &str) {
     }
 }
 
-/// Synchronously query Niri IPC for connected output names.
-/// Returns `None` if Niri is not running or the IPC call fails.
-fn fetch_niri_outputs() -> Option<Vec<String>> {
-    let mut socket = niri_ipc::socket::Socket::connect().ok()?;
-    match socket.send(niri_ipc::Request::Outputs).ok()? {
-        Ok(niri_ipc::Response::Outputs(map)) => Some(map.into_keys().collect()),
-        _ => None,
-    }
-}
-
 fn try_main() -> Result<(), AppError> {
     // Load config fully before any surface is created (AR7).
     let config = config::load()?;
@@ -203,8 +193,8 @@ fn try_main() -> Result<(), AppError> {
         "configuration loaded"
     );
 
-    // Extract layer-shell startup settings from the first bar. `StartMode::AllScreens`
-    // accepts one initial bar shape; planned multi-bar surfaces need known output names.
+    // Extract default layer-shell settings from the first bar. Normal Bar Surfaces are opened
+    // after the Wayland Output Adapter reports named Outputs.
     let anchor = config.bars[0].edge.anchor();
     let layer = config.bars[0].layer.layer_shell();
     let collapsed_width = config.bars[0].collapsed_width;
@@ -218,30 +208,12 @@ fn try_main() -> Result<(), AppError> {
         Some((collapsed_width, 0)) // logical width for vertical bar
     };
 
-    // Use AllScreens only when the layer-shell startup settings can represent the plan
-    // without app-spawned per-output windows. Other configurations need manual mode so
-    // each planned Bar Surface can be opened against a concrete Output name.
-    let use_allscreens = config.bars.len() == 1 && config.bars[0].targets_all_outputs();
-    let (start_mode, eligible_outputs) = if use_allscreens {
-        (StartMode::AllScreens, EligibleOutputState::Unknown)
-    } else {
-        let excluded_outputs = Vec::new();
-        match resolve_eligible_outputs(fetch_niri_outputs(), &excluded_outputs) {
-            EligibleOutputState::Known(outputs) => {
-                (StartMode::Background, EligibleOutputState::Known(outputs))
-            }
-            EligibleOutputState::Unknown => {
-                // Niri unavailable: keep a non-Niri fallback, but only the first bar can be
-                // represented by layer-shell startup settings without concrete Output names.
-                tracing::warn!(
-                    target: "niribar::runtime",
-                    "configuration requires Niri IPC to create all planned bar surfaces but it is \
-                     unavailable; falling back to one all-screens surface using the first bar"
-                );
-                (StartMode::AllScreens, EligibleOutputState::Unknown)
-            }
-        }
-    };
+    let start_mode = StartMode::Background;
+    let eligible_outputs = EligibleOutputState::Unknown;
+    tracing::debug!(
+        target: "niribar::runtime",
+        "waiting for Wayland Output Snapshot before opening Bar Surfaces"
+    );
 
     daemon(
         move || App::boot_with_eligible_outputs(config.clone(), eligible_outputs.clone()),

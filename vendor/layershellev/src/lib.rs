@@ -991,6 +991,24 @@ impl<T> WindowState<T> {
         self.return_data.push(data);
     }
 
+    fn wayland_output_snapshot(&self) -> Vec<String> {
+        let mut outputs: Vec<_> = self
+            .xdg_info_cache
+            .iter()
+            .filter_map(|(_, info)| (!info.name.is_empty()).then_some(info.name.clone()))
+            .collect();
+        outputs.sort();
+        outputs.dedup();
+        outputs
+    }
+
+    fn push_wayland_output_snapshot_message(&mut self) {
+        self.message.push((
+            None,
+            DispatchMessageInner::WaylandOutputSnapshot(self.wayland_output_snapshot()),
+        ));
+    }
+
     /// remove a shell, destroy the surface
     fn remove_shell(&mut self, id: id::Id) -> Option<()> {
         let index = self
@@ -1641,6 +1659,7 @@ impl<T: 'static> OutputHandler for WindowState<T> {
             self.xdg_info_cache
                 .retain(|info| info.0.id() != output_removed.id());
         }
+        self.push_wayland_output_snapshot_message();
 
         let removed_states = self.units.extract_if(.., |unit| {
             !unit.wl_surface.is_alive()
@@ -1777,6 +1796,7 @@ impl<T> Dispatch<zxdg_output_v1::ZxdgOutputV1, ()> for WindowState<T> {
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
+        let output_name_changed = matches!(event, zxdg_output_v1::Event::Name { .. });
         if let Some((_, xdg_info)) = state
             .xdg_info_cache
             .iter_mut()
@@ -1797,6 +1817,9 @@ impl<T> Dispatch<zxdg_output_v1::ZxdgOutputV1, ()> for WindowState<T> {
                 }
                 _ => {}
             };
+        }
+        if output_name_changed {
+            state.push_wayland_output_snapshot_message();
         }
 
         let Some(index) = state.units.iter().position(|info| {

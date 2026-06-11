@@ -19,7 +19,7 @@ A live Wayland layer-shell surface created for a specific **Bar** on a specific 
 _Avoid_: Bar, window
 
 **Bar Surface Identity**:
-The stable planning and reconciliation identity for a **Bar Surface**: the **Bar Name** plus an **Output** when the target output is known. The **Output** is absent only for all-output startup planning before Wayland reports concrete **Eligible Outputs**.
+The stable planning and reconciliation identity for a **Bar Surface**: the **Bar Name** plus an **Output**.
 _Avoid_: Output/bar tuple, window ID
 
 **Bar Surface Midpoint**:
@@ -29,6 +29,10 @@ _Avoid_: Screen center, Output center, remaining-space center
 **Bar Surface Plan**:
 A runtime description of desired **Bar Surfaces** derived from configured **Bars** and current **Eligible Outputs** before live window reconciliation.
 _Avoid_: Desired windows, surface list
+
+**Bar Surface Physical Plan**:
+The physical layer-shell contract for a planned **Bar Surface**, including its **Edge** anchor, **Layer**, logical size, and exclusive zone before a live surface is opened. The target **Output** comes from the **Bar Surface Identity**.
+_Avoid_: Window settings, layer-shell config
 
 **Bar Surface Registry**:
 The runtime owner of live **Bar Surface** records and passive **Tooltip** metadata associated with **Bar Surfaces**.
@@ -45,6 +49,14 @@ _Avoid_: Output override, monitor filter
 **Eligible Output**:
 A currently active Wayland **Output** that is not excluded by configuration.
 _Avoid_: Niri output, connected output
+
+**Wayland Output Adapter**:
+The application-owned adapter over Wayland/layer-shell output events that supplies **Output** add, remove, and name facts used to derive **Eligible Outputs** for **Bar Surface** planning.
+_Avoid_: Niri output source, workspace output discovery
+
+**Wayland Output Snapshot**:
+The current set of named Wayland **Outputs** emitted by the **Wayland Output Adapter** whenever output availability or output naming changes.
+_Avoid_: output added event, output removed event
 
 **Excluded Output**:
 An **Output** that configuration prevents Niribar from rendering on.
@@ -366,12 +378,13 @@ _Avoid_: Unavailable module, runtime failure
 - A **Bar** with no **Output Target** applies to all **Eligible Outputs**.
 - `all` is the default **Output Target** value for a **Bar**.
 - For **Bar Surface Plan** purposes, omitted and explicit all-output **Output Targets** are equivalent.
-- When **Eligible Outputs** are unknown, all-output planning uses a **Bar Surface Identity** without a specific **Output**.
+- When **Eligible Outputs** are unknown, **Bar Surface Plan** produces no **Bar Surfaces** until the **Wayland Output Adapter** reports concrete **Outputs**.
 - A live **Bar Surface** belongs to exactly one **Bar** and exactly one **Output**.
 - A **Bar Surface Plan** is computed before the **Bar Surface Registry** reconciles desired **Bar Surfaces** with live **Bar Surfaces**.
 - A **Bar Surface Plan** does not own live windows, overlay metadata, or **Panel Runtime** interaction state.
 - The **Bar Surface Registry** owns live **Bar Surface** records and passive **Tooltip** metadata; it does not own **Foreground**, **Panel Runtime**, or physical **Panel** and **Menu** overlay identity.
-- A **Bar Surface** uses the available **Edge Span** by default.
+- A **Bar Surface Physical Plan** does not inset a **Bar Surface** for orthogonal **Bar Surfaces** on the same **Output**; doing so leaves visible corner gaps.
+- A **Bar Surface** uses zero layer-shell margin by default.
 - A **Bar Surface** uses the **Layer** configured by its **Bar**.
 - A **Bar Surface** remains present even when all of its **Modules** are empty or unavailable.
 - An **Output** may host zero, one, or many **Bar Surfaces**.
@@ -382,6 +395,10 @@ _Avoid_: Unavailable module, runtime failure
 - An **Excluded Output** name that does not match a currently connected **Output** is valid.
 - Global **Excluded Outputs** take precedence over **Output Targets**.
 - Duplicate global **Excluded Output** names are **Configuration Errors**.
+- The **Wayland Output Adapter** is the source of **Output** discovery for **Eligible Outputs** and **Bar Surface Plan** reconciliation.
+- The **Wayland Output Adapter** emits **Wayland Output Snapshots**, not incremental output add/remove events.
+- **Niri Integration** does not provide **Output** discovery for **Bar Surface** planning; it may enrich compositor-backed **Modules** after **Bar Surfaces** exist.
+- Niribar does not use layer-shell all-screens startup for normal **Bar Surfaces**; each live **Bar Surface** is opened explicitly for one concrete **Output**.
 - A positive **Output Target** list matches any listed exact **Output** name.
 - A negative **Output Target** list applies to all **Eligible Outputs** except the listed exact **Output** names.
 - A single **Output Target** cannot mix positive and negative entries.
@@ -393,7 +410,7 @@ _Avoid_: Unavailable module, runtime failure
 - Per-output **Bar** overrides are outside Niribar's intended configuration model.
 - Multiple **Bar Surfaces** may share the same **Output** and **Edge**.
 - Niribar does not automatically resolve overlap between **Bar Surfaces** that share the same **Output** and **Edge**.
-- Niribar creates horizontal **Bar Surfaces** before vertical **Bar Surfaces** so the compositor can allocate remaining **Edge Span** to vertical surfaces.
+- Niribar creates horizontal **Bar Surfaces** before vertical **Bar Surfaces** for deterministic physical creation order.
 
 ### Layout
 

@@ -245,23 +245,24 @@ impl App {
         &mut self,
         desired: super::bar_surface_plan::PlannedBarSurface,
     ) -> Task<Message> {
-        let bar = &self.config.bars[desired.bar_index];
         let output_name = desired.identity.output_name_for_surface_state();
-        let settings = Self::bar_window_settings(bar, &output_name);
+        let bar_name = desired.identity.bar_name.clone();
+        let settings = desired
+            .physical
+            .layer_shell_settings(&output_name, Self::namespace());
         let (id, task) = Message::layershell_open(settings);
         tracing::debug!(
             target: "niribar::surface",
-            bar = bar.name.as_str(),
+            bar = bar_name.as_str(),
             output = output_name.as_str(),
             "opening bar surface"
         );
         self.surfaces
             .pending_surface_keys
-            .insert(id, (output_name.clone(), bar.name.clone()));
-        self.surfaces.surfaces.insert(
-            id,
-            crate::surface::SurfaceState::new(output_name, bar.name.clone()),
-        );
+            .insert(id, (output_name.clone(), bar_name.clone()));
+        self.surfaces
+            .surfaces
+            .insert(id, crate::surface::SurfaceState::new(output_name, bar_name));
         task
     }
 
@@ -500,10 +501,10 @@ mod tests {
     #[test]
     fn bar_surface_lifecycle_effects_map_to_external_app_effects() {
         let window = wid();
-        let planned = super::super::bar_surface_plan::PlannedBarSurface {
-            identity: super::super::surfaces::BarSurfaceIdentity::new("main", Some("DP-1".into())),
-            bar_index: 0,
-        };
+        let planned = super::super::bar_surface_plan::PlannedBarSurface::from_bar(
+            &crate::config::BarConfig::default(),
+            "DP-1",
+        );
 
         let effects = app_effects_for_bar_surface_lifecycle(vec![
             super::super::surfaces::BarSurfaceLifecycleEffect::Open(planned.clone()),

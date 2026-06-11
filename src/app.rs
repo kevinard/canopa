@@ -57,6 +57,7 @@ pub(crate) struct App {
 pub enum Message {
     Ipc(messages::IpcEvent),
     Surface(messages::SurfaceEvent),
+    WaylandOutputSnapshot(Vec<String>),
     Menu(messages::MenuEvent),
     Panel(messages::PanelEvent),
     Modules(messages::ModuleRuntimeEvent),
@@ -81,6 +82,7 @@ impl Message {
     fn diagnostic_label(&self) -> &'static str {
         match self {
             Message::Surface(event) => event.diagnostic_label(),
+            Message::WaylandOutputSnapshot(_) => "WaylandOutputSnapshot",
             Message::Ipc(event) => event.diagnostic_label(),
             Message::Menu(event) => event.diagnostic_label(),
             Message::Panel(event) => event.diagnostic_label(),
@@ -98,6 +100,7 @@ impl Message {
     fn perf_label(&self) -> &'static str {
         match self {
             Message::Surface(messages::SurfaceEvent::Tick) => "Surface::Tick",
+            Message::WaylandOutputSnapshot(_) => "WaylandOutputSnapshot",
             Message::Ipc(_) => "Ipc",
             Message::Surface(_) => "Surface",
             Message::Menu(_) => "Menu",
@@ -166,6 +169,12 @@ impl Message {
     }
 }
 
+impl From<iced_layershell::WaylandOutputSnapshot> for Message {
+    fn from(snapshot: iced_layershell::WaylandOutputSnapshot) -> Self {
+        Message::WaylandOutputSnapshot(snapshot.outputs)
+    }
+}
+
 impl App {
     pub(super) fn handle_ipc_event(&mut self, event: messages::IpcEvent) -> Task<Message> {
         match event {
@@ -175,8 +184,8 @@ impl App {
         }
     }
 
-    /// `allowed_outputs`: non-empty list of output names to create windows on (Story 7.3).
-    /// Empty means `StartMode::AllScreens` handles initial window creation.
+    /// `allowed_outputs`: output names to create windows on. Empty means no concrete Outputs
+    /// are known yet, so no Bar Surfaces are created until a Wayland Output Snapshot arrives.
     #[cfg(test)]
     pub(crate) fn boot(config: Config, allowed_outputs: Vec<String>) -> (Self, Task<Message>) {
         let eligible_outputs = if allowed_outputs.is_empty() {
@@ -193,26 +202,17 @@ impl App {
     ) -> (Self, Task<Message>) {
         let module_graph = module_graph::build_module_graph(&config)
             .expect("validated config should build a module graph");
-        let (manual_outputs, allowed_outputs) = match eligible_outputs {
-            eligible_outputs::EligibleOutputState::Unknown => (false, Vec::new()),
-            eligible_outputs::EligibleOutputState::Known(outputs) => (true, outputs),
+        let allowed_output_count = match &eligible_outputs {
+            eligible_outputs::EligibleOutputState::Unknown => 0,
+            eligible_outputs::EligibleOutputState::Known(outputs) => outputs.len(),
         };
         let bar_count = config.bars.len();
         let configured_module_count = config.modules.len();
-        let allowed_output_count = allowed_outputs.len();
         let mut surfaces = surfaces::SurfaceManager::new(
             std::collections::HashMap::new(),
             std::collections::HashMap::new(),
-            manual_outputs,
         );
-        let desired = if manual_outputs {
-            bar_surface_plan::plan_bar_surfaces(
-                &config.bars,
-                &eligible_outputs::EligibleOutputState::Known(allowed_outputs.clone()),
-            )
-        } else {
-            Vec::new()
-        };
+        let desired = bar_surface_plan::plan_bar_surfaces(&config.bars, &eligible_outputs);
         let desired_surface_count = desired.len();
         let effects = surfaces.reconcile_bar_surfaces(desired);
         let lifecycle_effect_count = effects.len();
@@ -239,7 +239,6 @@ impl App {
             bar_count,
             configured_module_count,
             runtime_module_count,
-            manual_outputs,
             allowed_output_count,
             desired_surface_count,
             lifecycle_effect_count,
@@ -266,6 +265,7 @@ impl App {
 
         match message {
             Message::Surface(event) => self.handle_surface_event(event),
+            Message::WaylandOutputSnapshot(outputs) => self.handle_wayland_output_snapshot(outputs),
             Message::Ipc(event) => self.handle_ipc_event(event),
             Message::Menu(event) => self.handle_menu_event(event),
             Message::Panel(event) => self.handle_panel_event(event),
@@ -1374,15 +1374,12 @@ mod tests {
         assert_eq!(module.module_type(), descriptor.config_name);
     }
 
-    // --- Hotplug output detection tests ---
+    // --- Wayland Output Snapshot tests ---
 
     #[test]
-    fn workspaces_changed_allscreens_mode_does_not_open_new_surfaces() {
-        // In AllScreens mode (manual_outputs = false) the compositor manages surfaces;
-        // WorkspacesChanged must not try to open additional windows.
+    fn niri_workspaces_changed_does_not_open_bar_surfaces() {
         use niri_ipc::Event;
         let (mut app, _) = App::boot(make_config(), vec![]);
-        assert!(!app.surfaces.manual_outputs());
         let before = app.surfaces.len();
         let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
             NiriEvent::Event(Event::WorkspacesChanged {
@@ -1401,32 +1398,17 @@ mod tests {
         assert_eq!(
             app.surfaces.len(),
             before,
-            "no new surfaces in AllScreens mode"
+            "Niri workspace output names must not drive Bar Surface planning"
         );
     }
 
     #[test]
-    fn workspaces_changed_manual_mode_opens_surface_for_new_output() {
-        // In manual mode a WorkspacesChanged event that includes a previously unseen output
-        // name must cause a new surface (bar) to be created for that output.
-        use niri_ipc::Event;
+    fn wayland_output_snapshot_opens_surface_for_new_output() {
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
-        assert!(app.surfaces.manual_outputs());
-        // "DP-1" was not in the initial allowed_outputs — it is newly connected.
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
-            NiriEvent::Event(Event::WorkspacesChanged {
-                workspaces: vec![niri_ipc::Workspace {
-                    id: 10,
-                    idx: 0,
-                    name: None,
-                    output: Some("DP-1".to_string()),
-                    is_urgent: false,
-                    is_active: true,
-                    is_focused: false,
-                    active_window_id: None,
-                }],
-            }),
-        )));
+        let _ = app.update(Message::WaylandOutputSnapshot(vec![
+            "eDP-1".into(),
+            "DP-1".into(),
+        ]));
         let known_names: Vec<&str> = app
             .surfaces
             .values()
@@ -1439,26 +1421,10 @@ mod tests {
     }
 
     #[test]
-    fn workspaces_changed_manual_mode_no_duplicate_for_known_output() {
-        // An output already tracked in surfaces must not get a second surface.
-        use niri_ipc::Event;
+    fn wayland_output_snapshot_no_duplicate_for_known_output() {
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
         let before = app.surfaces.len();
-        // Fire WorkspacesChanged for eDP-1 which is already in surfaces.
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
-            NiriEvent::Event(Event::WorkspacesChanged {
-                workspaces: vec![niri_ipc::Workspace {
-                    id: 1,
-                    idx: 0,
-                    name: None,
-                    output: Some("eDP-1".to_string()),
-                    is_urgent: false,
-                    is_active: true,
-                    is_focused: true,
-                    active_window_id: None,
-                }],
-            }),
-        )));
+        let _ = app.update(Message::WaylandOutputSnapshot(vec!["eDP-1".into()]));
         assert_eq!(
             app.surfaces.len(),
             before,
@@ -1467,61 +1433,44 @@ mod tests {
     }
 
     #[test]
-    fn workspaces_changed_manual_mode_skips_untargeted_output() {
-        // When the bar targets "eDP-1" only, hotplugging "HDMI-A-1" must not create a surface.
+    fn wayland_output_snapshot_removes_surfaces_for_missing_outputs() {
+        let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
+
+        let _ = app.update(Message::WaylandOutputSnapshot(Vec::new()));
+
+        assert!(app.surfaces.is_empty());
+    }
+
+    #[test]
+    fn wayland_output_snapshot_skips_untargeted_output() {
         use crate::config::BarConfig;
-        use niri_ipc::Event;
         let config = Config {
             bars: vec![BarConfig {
                 name: "main".into(),
-                output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]), // only targets eDP-1, not HDMI-A-1
+                output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]),
                 ..BarConfig::default()
             }],
             modules: vec![],
             menus: vec![],
         };
-        // Boot without "HDMI-A-1" in allowed (bar does not target it).
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len();
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
-            NiriEvent::Event(Event::WorkspacesChanged {
-                workspaces: vec![
-                    niri_ipc::Workspace {
-                        id: 99,
-                        idx: 0,
-                        name: None,
-                        output: Some("eDP-1".to_string()),
-                        is_urgent: false,
-                        is_active: false,
-                        is_focused: false,
-                        active_window_id: None,
-                    },
-                    niri_ipc::Workspace {
-                        id: 100,
-                        idx: 1,
-                        name: None,
-                        output: Some("HDMI-A-1".to_string()),
-                        is_urgent: false,
-                        is_active: true,
-                        is_focused: false,
-                        active_window_id: None,
-                    },
-                ],
-            }),
-        )));
+        let _ = app.update(Message::WaylandOutputSnapshot(vec![
+            "eDP-1".into(),
+            "HDMI-A-1".into(),
+        ]));
         assert_eq!(
             app.surfaces.len(),
             before,
-            "HDMI-A-1 must not get a surface — no bar targets it"
+            "HDMI-A-1 must not get a surface because no bar targets it"
         );
     }
 
     // --- Story 9.1: App-level multi-bar tests ---
 
     #[test]
-    fn hotplug_output_gets_all_targeting_bar() {
+    fn wayland_output_snapshot_gets_all_targeting_bar() {
         use crate::config::BarConfig;
-        use niri_ipc::Event;
         let config = Config {
             bars: vec![BarConfig {
                 name: "main".into(),
@@ -1531,33 +1480,10 @@ mod tests {
             menus: vec![],
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
-        app.surfaces.manual_outputs = true; // simulate manual mode
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
-            NiriEvent::Event(Event::WorkspacesChanged {
-                workspaces: vec![
-                    niri_ipc::Workspace {
-                        id: 5,
-                        idx: 0,
-                        name: None,
-                        output: Some("eDP-1".to_string()),
-                        is_urgent: false,
-                        is_active: false,
-                        is_focused: false,
-                        active_window_id: None,
-                    },
-                    niri_ipc::Workspace {
-                        id: 6,
-                        idx: 1,
-                        name: None,
-                        output: Some("DP-1".to_string()),
-                        is_urgent: false,
-                        is_active: true,
-                        is_focused: false,
-                        active_window_id: None,
-                    },
-                ],
-            }),
-        )));
+        let _ = app.update(Message::WaylandOutputSnapshot(vec![
+            "eDP-1".into(),
+            "DP-1".into(),
+        ]));
         let output_names: Vec<&str> = app
             .surfaces
             .values()
@@ -1571,9 +1497,8 @@ mod tests {
     }
 
     #[test]
-    fn hotplug_creates_one_surface_per_bar_targeting_output() {
+    fn wayland_output_snapshot_creates_one_surface_per_bar_targeting_output() {
         use crate::config::BarConfig;
-        use niri_ipc::Event;
         let config = Config {
             bars: vec![
                 BarConfig {
@@ -1590,35 +1515,11 @@ mod tests {
             menus: vec![],
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
-        let before = app.surfaces.len(); // 2 surfaces for eDP-1 (2 bars × 1 output)
-        app.surfaces.manual_outputs = true;
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
-            NiriEvent::Event(Event::WorkspacesChanged {
-                workspaces: vec![
-                    niri_ipc::Workspace {
-                        id: 5,
-                        idx: 0,
-                        name: None,
-                        output: Some("eDP-1".to_string()),
-                        is_urgent: false,
-                        is_active: false,
-                        is_focused: false,
-                        active_window_id: None,
-                    },
-                    niri_ipc::Workspace {
-                        id: 6,
-                        idx: 1,
-                        name: None,
-                        output: Some("DP-1".to_string()),
-                        is_urgent: false,
-                        is_active: true,
-                        is_focused: false,
-                        active_window_id: None,
-                    },
-                ],
-            }),
-        )));
-        // After hotplug: should have 2 more surfaces for DP-1 (both bars target "all")
+        let before = app.surfaces.len();
+        let _ = app.update(Message::WaylandOutputSnapshot(vec![
+            "eDP-1".into(),
+            "DP-1".into(),
+        ]));
         assert_eq!(
             app.surfaces.len(),
             before + 2,
@@ -1626,14 +1527,8 @@ mod tests {
         );
     }
 
-    // --- side_bar_margin tests ---
-
-    // --- horizontal-before-side spawn ordering tests ---
-
     #[test]
-    fn hotplug_spawns_horizontal_bars_before_side_bars() {
-        use niri_ipc::Event;
-        // Same adversarial order: side bar declared first in config.
+    fn wayland_output_snapshot_creates_horizontal_and_side_bars() {
         let config = Config {
             bars: vec![
                 crate::config::BarConfig {
@@ -1651,21 +1546,7 @@ mod tests {
             menus: vec![],
         };
         let (mut app, _) = App::boot(config, vec![]);
-        app.surfaces.manual_outputs = true;
-        let _ = app.update(Message::Niri(messages::AppNiriEvent::Ipc(
-            NiriEvent::Event(Event::WorkspacesChanged {
-                workspaces: vec![niri_ipc::Workspace {
-                    id: 1,
-                    idx: 0,
-                    name: None,
-                    output: Some("DP-1".to_string()),
-                    is_urgent: false,
-                    is_active: true,
-                    is_focused: false,
-                    active_window_id: None,
-                }],
-            }),
-        )));
+        let _ = app.update(Message::WaylandOutputSnapshot(vec!["DP-1".into()]));
         // Both bars must be registered for DP-1.
         let names: Vec<String> = app
             .surfaces

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Index, IndexMut};
 
 use iced::Task;
-use iced_layershell::reexport::{KeyboardInteractivity, NewLayerShellSettings, OutputOption};
+use iced_layershell::reexport::{KeyboardInteractivity, NewLayerShellSettings};
 
 use super::app_effects::AppEffect;
 use super::bar_surface_plan::PlannedBarSurface;
@@ -130,7 +130,6 @@ struct TooltipAnchor {
 pub(super) struct SurfaceManager {
     pub(super) surfaces: HashMap<iced::window::Id, SurfaceState>,
     pub(super) pending_surface_keys: HashMap<iced::window::Id, (String, String)>,
-    pub(super) manual_outputs: bool,
     pub(super) tooltip_popups: HashMap<iced::window::Id, TooltipPopup>,
     pub(super) last_cursor: Option<(iced::window::Id, iced::Point)>,
 }
@@ -139,12 +138,10 @@ impl SurfaceManager {
     pub(super) fn new(
         surfaces: HashMap<iced::window::Id, SurfaceState>,
         pending_surface_keys: HashMap<iced::window::Id, (String, String)>,
-        manual_outputs: bool,
     ) -> Self {
         Self {
             surfaces,
             pending_surface_keys,
-            manual_outputs,
             tooltip_popups: HashMap::new(),
             last_cursor: None,
         }
@@ -183,10 +180,6 @@ impl SurfaceManager {
 
     pub(super) fn get_mut(&mut self, id: &iced::window::Id) -> Option<&mut SurfaceState> {
         self.surfaces.get_mut(id)
-    }
-
-    pub(super) fn manual_outputs(&self) -> bool {
-        self.manual_outputs
     }
 
     pub(super) fn surface(&self, id: iced::window::Id) -> Option<&SurfaceState> {
@@ -592,33 +585,12 @@ impl App {
         })
     }
 
-    /// Builds layer-shell settings for one **Bar Surface**.
-    pub(super) fn bar_window_settings(
-        bar: &crate::config::BarConfig,
-        output_name: &str,
-    ) -> NewLayerShellSettings {
-        let anchor = bar.edge.anchor();
-        let collapsed = bar.collapsed_width;
-        let exclusive_zone = i32::try_from(collapsed).unwrap_or(48);
-        let size = if bar.edge.is_horizontal() {
-            Some((0, collapsed))
-        } else {
-            Some((collapsed, 0))
-        };
-        NewLayerShellSettings {
-            anchor,
-            layer: bar.layer.layer_shell(),
-            exclusive_zone: Some(exclusive_zone),
-            size,
-            output_option: OutputOption::OutputName(output_name.to_string()),
-            namespace: Some(Self::namespace()),
-            ..Default::default()
-        }
+    /// Reconciles live **Bar Surfaces** from a Wayland Output Snapshot.
+    pub(super) fn handle_wayland_output_snapshot(&mut self, outputs: Vec<String>) -> Task<Message> {
+        Task::batch(self.reconcile_bar_surfaces_from_observed_outputs(Some(outputs)))
     }
 
-    /// In manual-output mode, opens new layer-shell windows for any (output, bar) pairs present
-    /// in `workspaces` that do not already have a surface.
-    pub(super) fn open_new_output_windows_from_observed_outputs(
+    pub(super) fn reconcile_bar_surfaces_from_observed_outputs(
         &mut self,
         observed_outputs: Option<Vec<String>>,
     ) -> Vec<Task<Message>> {
@@ -635,19 +607,8 @@ impl App {
         }
     }
 
-    pub(super) fn open_new_output_windows(
-        &mut self,
-        workspaces: &[niri_ipc::Workspace],
-    ) -> Vec<Task<Message>> {
-        let observed_outputs: Vec<String> = workspaces
-            .iter()
-            .filter_map(|ws| ws.output.clone())
-            .collect();
-        self.open_new_output_windows_from_observed_outputs(Some(observed_outputs))
-    }
-
     /// Look up the `BarConfig` for a surface by its `bar_name`.
-    /// Falls back to the first bar when the name is empty (AllScreens mode) or not found.
+    /// Falls back to the first bar when the name is empty or not found.
     pub(super) fn bar_for_surface_name<'a>(
         bars: &'a [crate::config::BarConfig],
         bar_name: &str,
@@ -856,6 +817,14 @@ mod tests {
         }
     }
 
+    fn planned_bar_surface(name: &str, output_name: &str) -> PlannedBarSurface {
+        let bar = crate::config::BarConfig {
+            name: name.into(),
+            ..crate::config::BarConfig::default()
+        };
+        PlannedBarSurface::from_bar(&bar, output_name)
+    }
+
     #[test]
     fn app_starts_with_no_surfaces() {
         let (app, _task) = App::boot(make_config(), vec![]);
@@ -888,13 +857,10 @@ mod tests {
             ]
             .into(),
             HashMap::new(),
-            true,
         );
 
-        let effects = registry.reconcile_bar_surfaces(vec![PlannedBarSurface {
-            identity: BarSurfaceIdentity::new("main", Some("HDMI-A-1".into())),
-            bar_index: 0,
-        }]);
+        let effects =
+            registry.reconcile_bar_surfaces(vec![planned_bar_surface("main", "HDMI-A-1")]);
 
         assert!(effects.contains(&BarSurfaceLifecycleEffect::RemoveWindow(removed_window)));
     }
@@ -902,7 +868,7 @@ mod tests {
     #[test]
     fn registry_classifies_missing_and_bar_surface_windows() {
         let window = test_wid();
-        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
+        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new());
 
         assert_eq!(
             registry.window_role(None),
@@ -925,7 +891,7 @@ mod tests {
     #[test]
     fn registry_classifies_tooltip_windows() {
         let window = test_wid();
-        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new(), true);
+        let mut registry = SurfaceManager::new(HashMap::new(), HashMap::new());
         registry.insert_tooltip_popup(TooltipPopup {
             window,
             target_window: test_wid(),
@@ -1028,25 +994,24 @@ mod tests {
     }
 
     #[test]
-    fn boot_manual_outputs_false_when_no_allowed_outputs() {
+    fn boot_without_allowed_outputs_waits_for_snapshot() {
         let (app, _) = App::boot(make_config(), vec![]);
-        assert!(!app.surfaces.manual_outputs());
+        assert!(app.surfaces.is_empty());
     }
 
     #[test]
-    fn boot_manual_outputs_true_when_allowed_outputs_given() {
+    fn boot_with_allowed_outputs_creates_bar_surfaces() {
         let (app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
-        assert!(app.surfaces.manual_outputs());
+        assert_eq!(app.surfaces.len(), 1);
     }
 
     #[test]
-    fn boot_with_known_empty_outputs_uses_manual_mode() {
+    fn boot_with_known_empty_outputs_creates_no_bar_surfaces() {
         let (app, _) = App::boot_with_eligible_outputs(
             make_config(),
             crate::app::eligible_outputs::EligibleOutputState::Known(Vec::new()),
         );
 
-        assert!(app.surfaces.manual_outputs());
         assert!(app.surfaces.is_empty());
     }
 
@@ -1127,27 +1092,19 @@ mod tests {
         let mut registry = SurfaceManager::new(
             HashMap::from([(existing, SurfaceState::new("DP-1".into(), "main".into()))]),
             HashMap::new(),
-            true,
         );
         let desired = vec![
-            PlannedBarSurface {
-                identity: BarSurfaceIdentity::new("main", Some("DP-1".into())),
-                bar_index: 0,
-            },
-            PlannedBarSurface {
-                identity: BarSurfaceIdentity::new("side", Some("DP-1".into())),
-                bar_index: 1,
-            },
+            planned_bar_surface("main", "DP-1"),
+            planned_bar_surface("side", "DP-1"),
         ];
 
         let effects = registry.reconcile_bar_surfaces(desired);
 
         assert_eq!(
             effects,
-            vec![BarSurfaceLifecycleEffect::Open(PlannedBarSurface {
-                identity: BarSurfaceIdentity::new("side", Some("DP-1".into())),
-                bar_index: 1,
-            })]
+            vec![BarSurfaceLifecycleEffect::Open(planned_bar_surface(
+                "side", "DP-1"
+            ))]
         );
         assert!(registry.surface(existing).is_some());
     }
@@ -1159,7 +1116,6 @@ mod tests {
         let mut registry = SurfaceManager::new(
             HashMap::from([(stale, SurfaceState::new("DP-1".into(), "main".into()))]),
             HashMap::new(),
-            true,
         );
         registry.insert_tooltip_popup(TooltipPopup {
             window: tooltip,
@@ -1199,7 +1155,6 @@ mod tests {
                 ),
             ]),
             HashMap::new(),
-            true,
         );
 
         assert_eq!(
@@ -1210,16 +1165,6 @@ mod tests {
             registry.select_global_panel_toggle_surface(Some("missing")),
             Some(first)
         );
-    }
-
-    #[test]
-    fn bar_surface_window_settings_use_configured_bar_layer() {
-        let bar = crate::config::BarConfig {
-            layer: crate::config::BarLayer::Background,
-            ..crate::config::BarConfig::default()
-        };
-        let settings = App::bar_window_settings(&bar, "eDP-1");
-        assert_eq!(settings.layer, iced_layershell::reexport::Layer::Background);
     }
 
     #[test]
@@ -1275,7 +1220,7 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec!["eDP-1".into()]);
         let surface_count = app.surfaces.len();
 
-        let tasks = app.open_new_output_windows_from_observed_outputs(None);
+        let tasks = app.reconcile_bar_surfaces_from_observed_outputs(None);
 
         assert!(tasks.is_empty());
         assert_eq!(app.surfaces.len(), surface_count);

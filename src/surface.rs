@@ -18,10 +18,11 @@ use crate::modules::ModuleId;
 #[derive(Clone)]
 pub struct SurfaceState {
     /// Wayland output name for this surface.
-    /// Set from `pending_surface_keys` in `App::surface_mut()`. Empty (`""`) in AllScreens mode.
+    /// Set from `pending_surface_keys` in `App::surface_mut()`.
+    /// Empty (`""`) only for default or legacy fallback state.
     pub output_name: String,
     /// Name of the bar section this surface renders (Story 9.1).
-    /// Matches `BarConfig::name`. Empty (`""`) in AllScreens mode (falls back to first bar).
+    /// Matches `BarConfig::name`. Empty (`""`) falls back to the first bar.
     pub bar_name: String,
     pub focused_module: Option<ModuleId>,
     pub hovered_module: Option<ModuleId>,
