@@ -21,6 +21,7 @@ mod panel;
 mod panel_menu_session;
 mod panel_runtime;
 mod panel_search;
+mod panel_sizing;
 mod perf;
 mod render;
 mod selectable_menu_session;

@@ -252,6 +252,10 @@ _Avoid_: Active module when referring specifically to panel source
 The content-aware policy that determines how much output space a **Panel** occupies while respecting its **Panel Origin** and content kind.
 _Avoid_: Popup size, fixed panel size
 
+**Panel Physical Plan**:
+A runtime description of the desired physical overlay placement and size for a **Panel** produced by **Panel Sizing** before the application adapter converts it into layer-shell settings.
+_Avoid_: Panel window settings, layer-shell settings
+
 **Panel Runtime**:
 The internal **Foreground**-owned module for the live content and interaction state of the currently active **Panel**, including **Selectable Menu Session** state for a **Panel Menu**, pending search focus, menu scroll position, **Module Detail Session** state, and any active **Dmenu Selection Request** responder.
 _Avoid_: Panel lifecycle, overlay lifecycle, physical Panel window identity
@@ -538,6 +542,7 @@ _Avoid_: Unavailable module, runtime failure
 - **Panel Sizing** keeps **Module Detail Content** compact with content-preferred sizes.
 - **Panel Sizing** uses **Edge Span** fill sizing for **Panel Menu** content and a **Bar**'s configured panel module layout.
 - **Panel Sizing** treats explicit configured dimensions as overrides and configured maximum dimensions as caps.
+- **Panel Sizing** produces a **Panel Physical Plan** before the application adapter opens the physical **Panel** overlay window.
 - A **Panel** with an explicit configured dimension larger than the corresponding configured maximum dimension is a **Configuration Error**.
 - A **Module** may provide default **Module Detail Content** for its own module-originated **Panel**.
 - A **Module** that provides **Module Detail Content** may provide a content-preferred size for that detail content.
