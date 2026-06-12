@@ -163,6 +163,11 @@ where
                 fill_edge_span: true,
             }
         }
+        PanelContent::ExternalProvider(_) => PanelContentSizeHint {
+            preferred_width: Some(DEFAULT_PANEL_FALLBACK_WIDTH),
+            preferred_height: Some(180),
+            fill_edge_span: false,
+        },
         PanelContent::ModulePanel(id) => (input.module_detail_preferred_size)(id)
             .map(panel_module_window_size)
             .map(|preferred| PanelContentSizeHint {

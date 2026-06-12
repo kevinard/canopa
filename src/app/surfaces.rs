@@ -479,6 +479,9 @@ impl App {
                 Task::none()
             }
             SurfaceInputEffect::PanelWindowClosed(window) => {
+                if self.panel_window_is_external_provider(window) {
+                    self.close_external_panel_session_for_replacement();
+                }
                 let effects = self
                     .foreground
                     .handle(super::foreground::ForegroundIntent::PanelWindowClosed { window });
@@ -1040,6 +1043,7 @@ mod tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let bar = App::bar_for_surface_name(&config.bars, "side");
         assert_eq!(bar.name, "side");
@@ -1055,6 +1059,7 @@ mod tests {
             }],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let bar = App::bar_for_surface_name(&config.bars, "nonexistent");
         assert_eq!(bar.name, "main");
@@ -1077,6 +1082,7 @@ mod tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
         assert_eq!(
@@ -1178,6 +1184,7 @@ mod tests {
             }],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
         let bar_names: Vec<&str> = app
@@ -1202,6 +1209,7 @@ mod tests {
             }],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
         let output_names: Vec<&str> = app
@@ -1243,6 +1251,7 @@ mod tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let (app, _) = App::boot(config, vec!["eDP-1".into()]);
         let names: Vec<String> = app

@@ -2,6 +2,64 @@ use crate::config::parse::parse;
 use crate::config::parse::{ConfigInput, ConfigSourceName, parse_input};
 
 #[test]
+fn parse_panel_provider_and_open_provider_action() {
+    let kdl = r#"
+panel-providers {
+    provider "wifi" {
+        command {
+            argv "niribar-wifi-provider" "--scan"
+        }
+    }
+}
+modules {
+    module "network" {
+        actions {
+            click { open-provider "wifi" }
+        }
+    }
+}
+"#;
+    let config = parse(kdl).unwrap();
+
+    assert_eq!(config.panel_providers.len(), 1);
+    assert_eq!(config.panel_providers[0].name, "wifi");
+    assert_eq!(
+        config.panel_providers[0].command,
+        crate::config::ConfiguredCommand::argv_for_test(
+            "niribar-wifi-provider",
+            vec!["--scan".into()]
+        )
+    );
+    assert_eq!(
+        config.modules[0]
+            .actions
+            .action_for(&crate::config::ActionTrigger::Click),
+        Some(&crate::config::PanelAction::OpenProvider("wifi".into()))
+    );
+}
+
+#[test]
+fn parse_panel_provider_rejects_shell_command_when_policy_disables_shell() {
+    let kdl = r#"
+command-policy {
+    allow-shell #false
+}
+panel-providers {
+    provider "wifi" {
+        command "niribar-wifi-provider"
+    }
+}
+"#;
+
+    let err = parse(kdl).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("allow-shell #false") && msg.contains("argv"),
+        "expected shell policy rejection, got: {msg}"
+    );
+}
+
+#[test]
 fn parse_menu_with_prompt_metadata() {
     let kdl = r#"
 menus {

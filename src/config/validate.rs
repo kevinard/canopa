@@ -111,6 +111,18 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
             ));
         }
     }
+    let mut declared_panel_providers = std::collections::HashSet::new();
+    for provider in &config.panel_providers {
+        if !declared_panel_providers.insert(provider.name.as_str()) {
+            return Err(validation_error(
+                source.clone(),
+                format!(
+                    "panel provider {:?}: duplicate panel provider name.",
+                    provider.name
+                ),
+            ));
+        }
+    }
 
     for bar in &config.bars {
         validate_module_layout(
@@ -140,6 +152,7 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
             &format!("bar.{}.actions", bar.name),
             &bar.actions,
             &declared_menus,
+            &declared_panel_providers,
         )?;
     }
     for module in &config.modules {
@@ -148,6 +161,7 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
             &format!("module.{}.actions", module.name),
             &module.actions,
             &declared_menus,
+            &declared_panel_providers,
         )?;
     }
     for menu in &config.menus {
@@ -156,6 +170,7 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
             &format!("menu.{}", menu.name),
             &menu.items,
             &declared_menus,
+            &declared_panel_providers,
         )?;
     }
     Ok(())
@@ -212,13 +227,15 @@ fn validate_actions_reference_declared_menus(
     path: &str,
     actions: &super::ActionsConfig,
     declared_menus: &std::collections::HashSet<&str>,
+    declared_panel_providers: &std::collections::HashSet<&str>,
 ) -> ConfigResult<()> {
     for binding in &actions.bindings {
-        validate_action_references_declared_menu(
+        validate_action_references_declared_targets(
             source.clone(),
             path,
             &binding.action,
             declared_menus,
+            declared_panel_providers,
         )?;
     }
     Ok(())
@@ -229,15 +246,17 @@ fn validate_menu_items_reference_declared_menus(
     path: &str,
     items: &[super::MenuItemConfig],
     declared_menus: &std::collections::HashSet<&str>,
+    declared_panel_providers: &std::collections::HashSet<&str>,
 ) -> ConfigResult<()> {
     for item in items {
         let item_path = format!("{path}.item({:?})", item.label);
         if let Some(action) = &item.action {
-            validate_action_references_declared_menu(
+            validate_action_references_declared_targets(
                 source.clone(),
                 &item_path,
                 action,
                 declared_menus,
+                declared_panel_providers,
             )?;
         }
         validate_menu_items_reference_declared_menus(
@@ -245,26 +264,37 @@ fn validate_menu_items_reference_declared_menus(
             &item_path,
             &item.children,
             declared_menus,
+            declared_panel_providers,
         )?;
     }
     Ok(())
 }
 
-fn validate_action_references_declared_menu(
+fn validate_action_references_declared_targets(
     source: ConfigSource,
     path: &str,
     action: &super::PanelAction,
     declared_menus: &std::collections::HashSet<&str>,
+    declared_panel_providers: &std::collections::HashSet<&str>,
 ) -> ConfigResult<()> {
-    let menu_name = match action {
-        super::PanelAction::OpenMenu(name) | super::PanelAction::ToggleMenu(name) => name,
-        _ => return Ok(()),
-    };
-    if !declared_menus.contains(menu_name.as_str()) {
-        return Err(validation_error(
-            source,
-            format!("{path}: menu {:?} is not declared.", menu_name),
-        ));
+    match action {
+        super::PanelAction::OpenMenu(name) | super::PanelAction::ToggleMenu(name) => {
+            if !declared_menus.contains(name.as_str()) {
+                return Err(validation_error(
+                    source,
+                    format!("{path}: menu {:?} is not declared.", name),
+                ));
+            }
+        }
+        super::PanelAction::OpenProvider(name) => {
+            if !declared_panel_providers.contains(name.as_str()) {
+                return Err(validation_error(
+                    source,
+                    format!("{path}: panel provider {:?} is not declared.", name),
+                ));
+            }
+        }
+        _ => {}
     }
     Ok(())
 }

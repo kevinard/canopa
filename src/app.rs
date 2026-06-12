@@ -51,12 +51,37 @@ pub(crate) struct App {
     niri: niri::AppNiriState,
     tray: tray::TrayState,
     perf: Option<perf::PerfTracker>,
+    external_panel_pending_session_id: Option<String>,
+    external_panel_session: Option<ExternalPanelSessionRuntime>,
+    #[cfg(test)]
+    external_panel_responses_for_test: std::collections::HashMap<
+        String,
+        Result<crate::surface::panel::ExternalPanelDocument, String>,
+    >,
+    #[cfg(test)]
+    external_panel_event_responses_for_test:
+        std::collections::HashMap<(String, String), crate::surface::panel::ExternalPanelDocument>,
+}
+
+struct ExternalPanelSessionRuntime {
+    session_id: String,
+    provider_name: String,
+    handle: Option<crate::external_panel::ExternalPanelSessionHandle>,
+}
+
+impl Drop for ExternalPanelSessionRuntime {
+    fn drop(&mut self) {
+        if let Some(handle) = &self.handle {
+            handle.close();
+        }
+    }
 }
 
 #[to_layer_message(multi)]
 #[derive(Debug, Clone)]
 pub enum Message {
     Ipc(messages::IpcEvent),
+    ExternalPanel(messages::ExternalPanelEvent),
     Surface(messages::SurfaceEvent),
     WaylandOutputSnapshot(Vec<String>),
     Menu(messages::MenuEvent),
@@ -85,6 +110,7 @@ impl Message {
             Message::Surface(event) => event.diagnostic_label(),
             Message::WaylandOutputSnapshot(_) => "WaylandOutputSnapshot",
             Message::Ipc(event) => event.diagnostic_label(),
+            Message::ExternalPanel(event) => event.diagnostic_label(),
             Message::Menu(event) => event.diagnostic_label(),
             Message::Panel(event) => event.diagnostic_label(),
             Message::Modules(event) => event.diagnostic_label(),
@@ -103,6 +129,7 @@ impl Message {
             Message::Surface(messages::SurfaceEvent::Tick) => "Surface::Tick",
             Message::WaylandOutputSnapshot(_) => "WaylandOutputSnapshot",
             Message::Ipc(_) => "Ipc",
+            Message::ExternalPanel(_) => "ExternalPanel",
             Message::Surface(_) => "Surface",
             Message::Menu(_) => "Menu",
             Message::Panel(_) => "Panel",
@@ -233,6 +260,12 @@ impl App {
             niri: niri::AppNiriState::new(),
             tray: tray::TrayState::default(),
             perf: perf::PerfTracker::from_env(),
+            external_panel_pending_session_id: None,
+            external_panel_session: None,
+            #[cfg(test)]
+            external_panel_responses_for_test: std::collections::HashMap::new(),
+            #[cfg(test)]
+            external_panel_event_responses_for_test: std::collections::HashMap::new(),
         };
         let window_tasks = app.apply_bar_surface_lifecycle_effects(effects);
         tracing::debug!(
@@ -268,6 +301,7 @@ impl App {
             Message::Surface(event) => self.handle_surface_event(event),
             Message::WaylandOutputSnapshot(outputs) => self.handle_wayland_output_snapshot(outputs),
             Message::Ipc(event) => self.handle_ipc_event(event),
+            Message::ExternalPanel(event) => self.handle_external_panel_event(event),
             Message::Menu(event) => self.handle_menu_event(event),
             Message::Panel(event) => self.handle_panel_event(event),
             Message::Modules(event) => self.handle_module_runtime_event(event),
@@ -1311,6 +1345,7 @@ mod tests {
                 actions: crate::config::ModuleActionsConfig::default(),
             }],
             menus: vec![],
+            panel_providers: vec![],
         };
         let (app, _) = App::boot(config, vec![]);
         let instantiated: Vec<String> = app
@@ -1453,6 +1488,7 @@ mod tests {
             }],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len();
@@ -1479,6 +1515,7 @@ mod tests {
             }],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let _ = app.update(Message::WaylandOutputSnapshot(vec![
@@ -1514,6 +1551,7 @@ mod tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let (mut app, _) = App::boot(config, vec!["eDP-1".into()]);
         let before = app.surfaces.len();
@@ -1545,6 +1583,7 @@ mod tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let (mut app, _) = App::boot(config, vec![]);
         let _ = app.update(Message::WaylandOutputSnapshot(vec!["DP-1".into()]));

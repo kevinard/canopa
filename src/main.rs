@@ -5,6 +5,7 @@ mod config;
 mod dbus;
 mod desktop_apps;
 mod diagnostics;
+mod external_panel;
 mod focused_window_icons;
 mod icon_theme;
 mod ipc;

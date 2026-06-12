@@ -103,11 +103,14 @@ fn parse_panel_action(
         "toggle-menu" => {
             required_menu_name(operation, &operation_ctx).map(PanelAction::ToggleMenu)
         }
+        "open-provider" => {
+            required_provider_name(operation, &operation_ctx).map(PanelAction::OpenProvider)
+        }
         other => Err(operation_ctx.node_err(
             operation,
             format!("unknown action operation {other:?}"),
             Some(
-                "expected `command`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, or `toggle-menu`"
+                "expected `command`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
                     .into(),
             ),
         )),
@@ -127,6 +130,21 @@ fn required_menu_name(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<String> {
     }
     match node.entries()[0].value().as_string() {
         Some("") => Err(ctx.entry_err(&node.entries()[0], "menu name must not be empty", None)),
+        Some(name) => Ok(name.to_string()),
+        None => Err(ctx.entry_err(&node.entries()[0], "expected string", None)),
+    }
+}
+
+fn required_provider_name(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<String> {
+    if node.entries().len() != 1 {
+        return Err(ctx.node_err(node, "expected one panel provider name string", None));
+    }
+    match node.entries()[0].value().as_string() {
+        Some("") => Err(ctx.entry_err(
+            &node.entries()[0],
+            "panel provider name must not be empty",
+            None,
+        )),
         Some(name) => Ok(name.to_string()),
         None => Err(ctx.entry_err(&node.entries()[0], "expected string", None)),
     }

@@ -322,6 +322,7 @@ pub struct NetworkConfig {
     pub format: FormatConfig,
     pub content_rotation: ContentRotation,
     pub tooltip: TooltipSetting,
+    pub default_provider: Option<String>,
 }
 
 impl Default for NetworkConfig {
@@ -331,6 +332,7 @@ impl Default for NetworkConfig {
             format: FormatConfig::default(),
             content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
+            default_provider: Some("wifi".into()),
         }
     }
 }
@@ -437,6 +439,7 @@ pub enum PanelAction {
     ClosePanel,
     OpenMenu(String),
     ToggleMenu(String),
+    OpenProvider(String),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -487,6 +490,12 @@ pub struct MenuItemConfig {
     pub keywords: Vec<String>,
     pub action: Option<PanelAction>,
     pub children: Vec<MenuItemConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelProviderConfig {
+    pub name: String,
+    pub command: ConfiguredCommand,
 }
 
 /// A single module entry from the config, specifying name, type, and module params.

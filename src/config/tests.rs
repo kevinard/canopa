@@ -416,6 +416,7 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("duplicate name"), "got: {err}");
@@ -431,6 +432,7 @@ mod config_tests {
             }],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("collapsed-width"), "got: {err}");
@@ -593,6 +595,28 @@ mod config_tests {
     }
 
     #[test]
+    fn validate_open_provider_missing_errors() {
+        let config = Config {
+            modules: vec![ModuleConfig {
+                name: "network".into(),
+                module_type: "network".into(),
+                params: ModuleParams::Network(NetworkConfig::default()),
+                actions: ModuleActionsConfig {
+                    bindings: vec![ActionBinding {
+                        trigger: ActionTrigger::Click,
+                        action: PanelAction::OpenProvider("missing".into()),
+                    }],
+                },
+            }],
+            ..Config::default()
+        };
+
+        let err = validate(&config).unwrap_err();
+        assert!(err.to_string().contains("missing"), "got: {err}");
+        assert!(err.to_string().contains("provider"), "got: {err}");
+    }
+
+    #[test]
     fn validate_open_menu_accepts_source_menu() {
         let mut config = Config::default();
         config.menus = vec![MenuConfig {
@@ -690,6 +714,7 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let bars = config.bars_for_output("eDP-1");
         assert_eq!(bars.len(), 2);
@@ -716,6 +741,7 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let bars = config.bars_for_output("eDP-1");
         assert_eq!(bars.len(), 2); // "main" (all) + "extra" (eDP-1)
@@ -735,6 +761,7 @@ mod config_tests {
             }],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
 
         assert_eq!(config.bars_for_output("DP-1").len(), 1);
@@ -752,6 +779,7 @@ mod config_tests {
             }],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
 
         assert_eq!(config.bars_for_output("DP-1").len(), 1);
@@ -778,6 +806,7 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let bars = config.bars_for_output("DP-1");
         assert_eq!(bars[0].name, "first");
@@ -801,6 +830,7 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         assert!(validate(&config).is_ok());
     }
@@ -821,6 +851,7 @@ mod config_tests {
             ],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         let err = validate(&config).unwrap_err();
         assert!(err.to_string().contains("side"), "got: {err}");
@@ -836,6 +867,7 @@ mod config_tests {
             }],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         };
         // "DP-1" (uppercase) does not match "dp-1" (lowercase)
         assert!(config.bars_for_output("DP-1").is_empty());

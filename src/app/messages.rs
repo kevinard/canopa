@@ -31,6 +31,88 @@ impl IpcEvent {
 }
 
 #[derive(Debug, Clone)]
+pub enum ExternalPanelEvent {
+    HandshakeCompleted {
+        session_id: String,
+        origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
+        provider_name: String,
+        anchor: Option<iced::Rectangle>,
+        session: Option<crate::external_panel::ExternalPanelSessionHandle>,
+        content: crate::surface::panel::ExternalPanelDocument,
+    },
+    ProviderFailed {
+        session_id: String,
+        origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
+        provider_name: String,
+        anchor: Option<iced::Rectangle>,
+        message: String,
+    },
+    ProviderContentReceived {
+        session_id: String,
+        provider_name: String,
+        content: crate::surface::panel::ExternalPanelDocument,
+    },
+    ProviderSessionFailed {
+        session_id: String,
+        provider_name: String,
+        message: String,
+    },
+    ProviderSessionEnded {
+        session_id: String,
+        provider_name: String,
+    },
+    ButtonActivated {
+        provider_name: String,
+        element_id: String,
+    },
+    ListSearchChanged {
+        provider_name: String,
+        list_id: String,
+        query: String,
+    },
+    ListEntryActivated {
+        provider_name: String,
+        list_id: String,
+        entry_id: String,
+    },
+    TextInputChanged {
+        provider_name: String,
+        element_id: String,
+        value: String,
+    },
+    TextInputSubmitted {
+        provider_name: String,
+        element_id: String,
+        value: String,
+    },
+}
+
+impl ExternalPanelEvent {
+    pub(super) fn diagnostic_label(&self) -> &'static str {
+        match self {
+            ExternalPanelEvent::HandshakeCompleted { .. } => "ExternalPanel::HandshakeCompleted",
+            ExternalPanelEvent::ProviderFailed { .. } => "ExternalPanel::ProviderFailed",
+            ExternalPanelEvent::ProviderContentReceived { .. } => {
+                "ExternalPanel::ProviderContentReceived"
+            }
+            ExternalPanelEvent::ProviderSessionFailed { .. } => {
+                "ExternalPanel::ProviderSessionFailed"
+            }
+            ExternalPanelEvent::ProviderSessionEnded { .. } => {
+                "ExternalPanel::ProviderSessionEnded"
+            }
+            ExternalPanelEvent::ButtonActivated { .. } => "ExternalPanel::ButtonActivated",
+            ExternalPanelEvent::ListSearchChanged { .. } => "ExternalPanel::ListSearchChanged",
+            ExternalPanelEvent::ListEntryActivated { .. } => "ExternalPanel::ListEntryActivated",
+            ExternalPanelEvent::TextInputChanged { .. } => "ExternalPanel::TextInputChanged",
+            ExternalPanelEvent::TextInputSubmitted { .. } => "ExternalPanel::TextInputSubmitted",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum SurfaceEvent {
     BarClick(iced::window::Id),
     BarRightClick(iced::window::Id),

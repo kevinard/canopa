@@ -49,6 +49,24 @@ mod tests {
     }
 
     #[test]
+    fn provider_absent_uses_wifi_default_provider_name() {
+        let cfg = network_config(r#"modules { module "network" {} }"#);
+        assert_eq!(cfg.default_provider.as_deref(), Some("wifi"));
+    }
+
+    #[test]
+    fn provider_string_overrides_default_provider_name() {
+        let cfg = network_config(r#"modules { module "network" { provider "wifi-alt" } }"#);
+        assert_eq!(cfg.default_provider.as_deref(), Some("wifi-alt"));
+    }
+
+    #[test]
+    fn provider_false_disables_default_provider() {
+        let cfg = network_config(r#"modules { module "network" { provider #false } }"#);
+        assert_eq!(cfg.default_provider, None);
+    }
+
+    #[test]
     fn parse_network_unknown_field_is_structured_diagnostic() {
         let kdl = r#"modules { module "network" { tooltipp "{label}" } }"#;
         let err = parse(kdl).unwrap_err();

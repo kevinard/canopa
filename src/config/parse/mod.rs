@@ -9,7 +9,7 @@ use ::kdl::{KdlDocument, KdlNode};
 
 use super::{
     BarConfig, CommandPolicy, Config, MenuConfig, MenuItemConfig, MenuSourceConfig, MenuSourceKind,
-    ModuleConfig,
+    ModuleConfig, PanelProviderConfig,
 };
 pub(crate) use crate::config::ConfigSourceName;
 use crate::config::{ConfigError, ConfigResult, ConfigSource};
@@ -50,10 +50,12 @@ pub(crate) fn parse_input(input: ConfigInput<'_>) -> ConfigResult<Config> {
     };
     let modules = parse_modules_section(&doc, &ctx, &command_policy)?;
     let menus = parse_menus_section(&doc, &ctx, &command_policy)?;
+    let panel_providers = parse_panel_providers_section(&doc, &ctx, &command_policy)?;
     Ok(Config {
         bars,
         modules,
         menus,
+        panel_providers,
     })
 }
 
@@ -250,6 +252,57 @@ fn parse_menus_section(
     Ok(menus)
 }
 
+fn parse_panel_providers_section(
+    doc: &KdlDocument,
+    root_ctx: &ParseCtx,
+    command_policy: &CommandPolicy,
+) -> ConfigResult<Vec<PanelProviderConfig>> {
+    let Some(providers_node) = doc.get("panel-providers") else {
+        return Ok(Vec::new());
+    };
+    let Some(children) = providers_node.children() else {
+        return Ok(Vec::new());
+    };
+
+    let mut providers = Vec::new();
+    for (provider_idx, node) in children.nodes().iter().enumerate() {
+        let provider_ctx = root_ctx.child("panel-providers").index(provider_idx);
+        if node.name().value() != "provider" {
+            return Err(provider_ctx.node_err(
+                node,
+                format!(
+                    "expected node name \"provider\", got {:?}",
+                    node.name().value()
+                ),
+                None,
+            ));
+        }
+
+        let name = required_string_argument(node, &provider_ctx, "panel provider name")?;
+        let provider_children = node.children().ok_or_else(|| {
+            provider_ctx.node_err(
+                node,
+                "missing provider command",
+                Some("expected `command \"...\"` or `command { argv \"program\" }`".into()),
+            )
+        })?;
+        provider_ctx.validate_child_schema(provider_children, &["command"], &["command"])?;
+        let command_node = field(provider_children, &provider_ctx, "command").required_node(
+            "missing provider command",
+            Some("expected `command \"...\"` or `command { argv \"program\" }`".into()),
+        )?;
+        let command = actions::parse_command_node_ctx(
+            command_node,
+            &provider_ctx.child("command"),
+            command_policy,
+        )?;
+
+        providers.push(PanelProviderConfig { name, command });
+    }
+
+    Ok(providers)
+}
+
 fn parse_menu_prompt(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Option<String>> {
     let mut prompt = None;
     for entry in node.entries().iter().filter(|entry| entry.name().is_some()) {
@@ -406,11 +459,12 @@ fn parse_menu_action_operation(
         }
         "open-menu" => required_menu_name(node, ctx).map(super::PanelAction::OpenMenu),
         "toggle-menu" => required_menu_name(node, ctx).map(super::PanelAction::ToggleMenu),
+        "open-provider" => required_provider_name(node, ctx).map(super::PanelAction::OpenProvider),
         other => Err(ctx.node_err(
             node,
             format!("unknown menu item operation {other:?}"),
             Some(
-                "expected `command`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, or `toggle-menu`"
+                "expected `command`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
                     .into(),
             ),
         )),
@@ -426,6 +480,11 @@ fn require_no_arguments(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<()> {
 
 fn required_menu_name(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<String> {
     let value = required_string_argument(node, ctx, "menu name")?;
+    Ok(value)
+}
+
+fn required_provider_name(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<String> {
+    let value = required_string_argument(node, ctx, "panel provider name")?;
     Ok(value)
 }
 

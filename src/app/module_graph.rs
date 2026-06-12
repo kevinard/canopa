@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
 
-use crate::config::{Config, ModuleActionsConfig, ModuleConfig};
+use crate::config::{ActionBinding, ActionTrigger, Config, ModuleActionsConfig, ModuleConfig};
 use crate::modules::{MODULE_DESCRIPTORS, Module, ModuleDescriptor, Zone, build_registry};
 
 pub(super) struct ModuleGraph {
@@ -19,6 +19,11 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
         .modules
         .iter()
         .map(|module_config| (module_config.name.as_str(), module_config))
+        .collect();
+    let declared_panel_providers: HashSet<&str> = config
+        .panel_providers
+        .iter()
+        .map(|provider| provider.name.as_str())
         .collect();
 
     let mut ordered = Vec::new();
@@ -76,10 +81,38 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
             .with_context(|| format!("failed to construct module {:?}", module_config.name))?;
         debug_assert_eq!(module.module_type(), module.kind().as_str());
         debug_assert_eq!(module.kind(), descriptor.kind);
-        modules.push((zone.clone(), module, module_config.actions.clone()));
+        let actions =
+            effective_module_actions(module_config, descriptor, &declared_panel_providers);
+        modules.push((zone.clone(), module, actions));
     }
 
     Ok(ModuleGraph { modules })
+}
+
+fn effective_module_actions(
+    module_config: &ModuleConfig,
+    descriptor: &ModuleDescriptor,
+    declared_panel_providers: &HashSet<&str>,
+) -> ModuleActionsConfig {
+    let mut actions = module_config.actions.clone();
+    if descriptor.kind != crate::modules::ModuleKind::Network
+        || actions.action_for(&ActionTrigger::Click).is_some()
+    {
+        return actions;
+    }
+    let provider = match &module_config.params {
+        crate::config::ModuleParams::Network(config) => config.default_provider.clone(),
+        _ => crate::config::NetworkConfig::default().default_provider,
+    };
+    if let Some(provider) = provider.as_deref()
+        && declared_panel_providers.contains(provider)
+    {
+        actions.bindings.push(ActionBinding {
+            trigger: ActionTrigger::Click,
+            action: crate::config::PanelAction::OpenProvider(provider.to_string()),
+        });
+    }
+    actions
 }
 
 #[cfg(test)]
@@ -146,6 +179,93 @@ mod tests {
                 .modules
                 .iter()
                 .any(|(zone, module, _)| zone == &Zone::End && module.kind() == ModuleKind::Clock)
+        );
+    }
+
+    #[test]
+    fn configured_wifi_provider_adds_network_builtin_primary_action() {
+        let mut config = Config::default();
+        config.bars[0].modules.end = vec!["network".into()];
+        config.panel_providers = vec![crate::config::PanelProviderConfig {
+            name: "wifi".into(),
+            command: crate::config::ConfiguredCommand::argv_for_test("wifi-provider", Vec::new()),
+        }];
+
+        let graph = super::build_module_graph(&config).unwrap();
+        let (_, _, actions) = graph
+            .modules
+            .iter()
+            .find(|(_, module, _)| module.kind() == ModuleKind::Network)
+            .expect("network module");
+
+        assert_eq!(
+            actions.action_for(&crate::config::ActionTrigger::Click),
+            Some(&crate::config::PanelAction::OpenProvider("wifi".into()))
+        );
+    }
+
+    #[test]
+    fn configured_network_click_action_wins_over_builtin_provider() {
+        let mut config = Config::default();
+        config.bars[0].modules.end = vec!["network".into()];
+        config.panel_providers = vec![crate::config::PanelProviderConfig {
+            name: "wifi".into(),
+            command: crate::config::ConfiguredCommand::argv_for_test("wifi-provider", Vec::new()),
+        }];
+        config.modules = vec![crate::config::ModuleConfig {
+            name: "network".into(),
+            module_type: "network".into(),
+            params: crate::config::ModuleParams::Network(crate::config::NetworkConfig::default()),
+            actions: crate::config::ModuleActionsConfig {
+                bindings: vec![crate::config::ActionBinding {
+                    trigger: crate::config::ActionTrigger::Click,
+                    action: crate::config::PanelAction::Command(
+                        crate::config::ConfiguredCommand::argv_for_test("notify-send", Vec::new()),
+                    ),
+                }],
+            },
+        }];
+
+        let graph = super::build_module_graph(&config).unwrap();
+        let (_, _, actions) = graph
+            .modules
+            .iter()
+            .find(|(_, module, _)| module.kind() == ModuleKind::Network)
+            .expect("network module");
+
+        assert!(matches!(
+            actions.action_for(&crate::config::ActionTrigger::Click),
+            Some(crate::config::PanelAction::Command(_))
+        ));
+    }
+
+    #[test]
+    fn network_provider_false_disables_builtin_provider_action() {
+        let mut config = Config::default();
+        config.bars[0].modules.end = vec!["network".into()];
+        config.panel_providers = vec![crate::config::PanelProviderConfig {
+            name: "wifi".into(),
+            command: crate::config::ConfiguredCommand::argv_for_test("wifi-provider", Vec::new()),
+        }];
+        let mut network = crate::config::NetworkConfig::default();
+        network.default_provider = None;
+        config.modules = vec![crate::config::ModuleConfig {
+            name: "network".into(),
+            module_type: "network".into(),
+            params: crate::config::ModuleParams::Network(network),
+            actions: crate::config::ModuleActionsConfig::default(),
+        }];
+
+        let graph = super::build_module_graph(&config).unwrap();
+        let (_, _, actions) = graph
+            .modules
+            .iter()
+            .find(|(_, module, _)| module.kind() == ModuleKind::Network)
+            .expect("network module");
+
+        assert_eq!(
+            actions.action_for(&crate::config::ActionTrigger::Click),
+            None
         );
     }
 }

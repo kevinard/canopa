@@ -178,6 +178,7 @@ impl App {
         tree: crate::surface::menu_popup::MenuTree,
         origin_window: iced::window::Id,
     ) -> Task<Message> {
+        self.close_external_panel_session_for_replacement();
         let meta = super::foreground::MenuPopupMeta {
             service,
             menu_path,

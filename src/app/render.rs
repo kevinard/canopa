@@ -39,6 +39,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) tree: &'a crate::surface::panel::PanelTree,
     pub(super) search_input_id: iced::widget::Id,
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
+    pub(super) external_content: Option<&'a crate::surface::panel::ExternalPanelContent>,
     pub(super) menu_entries: std::sync::Arc<[super::panel_menu_session::PanelMenuEntry]>,
     pub(super) show_icons: bool,
     pub(super) menu_prompt: Option<String>,
@@ -118,6 +119,10 @@ impl App {
             tree,
             search_input_id: super::panel::panel_search_input_id(window),
             entries,
+            external_content: match &tree.content {
+                crate::surface::panel::PanelContent::ExternalProvider(content) => Some(content),
+                _ => None,
+            },
             menu_entries: menu.entries,
             show_icons: menu.show_icons,
             menu_prompt: menu.prompt,
@@ -839,6 +844,7 @@ mod tests {
                 actions: crate::config::ModuleActionsConfig::default(),
             }],
             menus: vec![],
+            panel_providers: vec![],
         };
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
@@ -882,6 +888,7 @@ mod tests {
                 },
             ],
             menus: vec![],
+            panel_providers: vec![],
         };
         config.bars[0].modules.end = vec!["clock".into(), "tray".into()];
         config.bars[1].modules.end = vec!["tray".into(), "clock".into()];

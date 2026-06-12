@@ -1,4 +1,6 @@
-use iced::widget::{Space, column, container, mouse_area, row, scrollable, text, text_input};
+use iced::widget::{
+    Space, button, column, container, mouse_area, row, scrollable, text, text_input,
+};
 use iced::{Element, Length};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -62,6 +64,9 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
     ) {
         return render_panel_menu_model(model, text_color);
     }
+    if let Some(content) = model.external_content {
+        return render_external_panel_model(content, text_color);
+    }
 
     let entries: Vec<Element<'_, Message>> = model
         .entries
@@ -83,6 +88,236 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
             ..Default::default()
         })
         .into()
+}
+
+fn render_external_panel_model<'a>(
+    content: &'a crate::surface::panel::ExternalPanelContent,
+    text_color: Option<iced::Color>,
+) -> Element<'a, Message> {
+    let mut body = column![].spacing(8).padding(8);
+    for element in &content.elements {
+        let rendered: Element<'_, Message> = match element {
+            crate::surface::panel::ExternalPanelElement::Text { text: value } => {
+                text(value.clone()).into()
+            }
+            crate::surface::panel::ExternalPanelElement::Button { id, label } => {
+                button(text(label.clone()))
+                    .on_press(Message::ExternalPanel(
+                        super::messages::ExternalPanelEvent::ButtonActivated {
+                            provider_name: content.provider_name.clone(),
+                            element_id: id.clone(),
+                        },
+                    ))
+                    .into()
+            }
+            crate::surface::panel::ExternalPanelElement::SelectableList {
+                id,
+                entries,
+                search_query,
+            } => render_external_selectable_list(
+                content.provider_name.as_str(),
+                id.as_str(),
+                entries,
+                search_query,
+            ),
+            crate::surface::panel::ExternalPanelElement::TextInput {
+                id,
+                label,
+                value,
+                secret,
+                error,
+            } => render_external_text_input(
+                content.provider_name.as_str(),
+                id.as_str(),
+                label.as_str(),
+                value.as_str(),
+                *secret,
+                error.as_deref(),
+            ),
+            crate::surface::panel::ExternalPanelElement::Status {
+                title,
+                message,
+                severity,
+            } => {
+                let border_color = match severity {
+                    crate::surface::panel::ExternalPanelSeverity::Info => crate::theme::BORDER,
+                    crate::surface::panel::ExternalPanelSeverity::Error => crate::theme::CRITICAL,
+                };
+                container(column![text(title.clone()), text(message.clone()).size(13)].spacing(4))
+                    .padding([8, 10])
+                    .width(Length::Fill)
+                    .style(move |_| iced::widget::container::Style {
+                        background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+                        border: iced::Border {
+                            color: border_color,
+                            width: 1.0,
+                            radius: iced::border::Radius::from(4.0),
+                        },
+                        ..Default::default()
+                    })
+                    .into()
+            }
+        };
+        body = body.push(rendered);
+    }
+
+    container(scrollable(body))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(crate::theme::BASE)),
+            text_color,
+            border: iced::Border {
+                color: crate::theme::BORDER,
+                width: 1.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+fn render_external_text_input<'a>(
+    provider_name: &str,
+    element_id: &str,
+    label: &str,
+    value: &str,
+    secret: bool,
+    error: Option<&str>,
+) -> Element<'a, Message> {
+    let provider_for_change = provider_name.to_string();
+    let element_for_change = element_id.to_string();
+    let provider_for_submit = provider_name.to_string();
+    let element_for_submit = element_id.to_string();
+    let submit_value = value.to_string();
+    let mut input = text_input(label, value)
+        .on_input(move |value| {
+            Message::ExternalPanel(super::messages::ExternalPanelEvent::TextInputChanged {
+                provider_name: provider_for_change.clone(),
+                element_id: element_for_change.clone(),
+                value,
+            })
+        })
+        .on_submit(Message::ExternalPanel(
+            super::messages::ExternalPanelEvent::TextInputSubmitted {
+                provider_name: provider_for_submit,
+                element_id: element_for_submit,
+                value: submit_value,
+            },
+        ))
+        .padding([8, 10])
+        .width(Length::Fill);
+    input = input.secure(secret);
+
+    let mut block = column![input].spacing(4);
+    if let Some(error) = error {
+        block = block.push(text(error.to_string()).size(12));
+    }
+    container(block).width(Length::Fill).into()
+}
+
+fn render_external_selectable_list<'a>(
+    provider_name: &str,
+    list_id: &str,
+    entries: &'a [crate::surface::panel::ExternalSelectableEntry],
+    search_query: &str,
+) -> Element<'a, Message> {
+    let provider_for_search = provider_name.to_string();
+    let list_for_search = list_id.to_string();
+    let search = text_input("Search", search_query)
+        .on_input(move |query| {
+            Message::ExternalPanel(super::messages::ExternalPanelEvent::ListSearchChanged {
+                provider_name: provider_for_search.clone(),
+                list_id: list_for_search.clone(),
+                query,
+            })
+        })
+        .padding([8, 10])
+        .width(Length::Fill);
+
+    let mut rows = column![].spacing(6);
+    for entry in visible_external_selectable_entries(entries, search_query) {
+        let provider = provider_name.to_string();
+        let list_id = list_id.to_string();
+        let entry_id = entry.id.clone();
+        let mut row_content = column![text(entry.label.clone())].spacing(2);
+        if let Some(description) = &entry.description {
+            row_content = row_content.push(text(description.clone()).size(12));
+        }
+        if let Some(status) = &entry.status {
+            row_content = row_content.push(text(status.clone()).size(12));
+        }
+        let border_color = if entry.active {
+            crate::theme::ACCENT
+        } else {
+            crate::theme::BORDER
+        };
+        let row = container(row_content)
+            .padding([8, 10])
+            .width(Length::Fill)
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+                border: iced::Border {
+                    color: border_color,
+                    width: 1.0,
+                    radius: iced::border::Radius::from(4.0),
+                },
+                ..Default::default()
+            });
+        if entry.disabled {
+            rows = rows.push(row);
+        } else {
+            rows = rows.push(mouse_area(row).on_press(Message::ExternalPanel(
+                super::messages::ExternalPanelEvent::ListEntryActivated {
+                    provider_name: provider,
+                    list_id,
+                    entry_id,
+                },
+            )));
+        }
+    }
+
+    container(column![search, rows].spacing(8))
+        .width(Length::Fill)
+        .into()
+}
+
+fn visible_external_selectable_entries<'a>(
+    entries: &'a [crate::surface::panel::ExternalSelectableEntry],
+    query: &str,
+) -> Vec<&'a crate::surface::panel::ExternalSelectableEntry> {
+    if super::panel_search::is_blank_query(query) {
+        return entries.iter().collect();
+    }
+
+    let matches = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(source_index, entry)| {
+            let fields = [
+                super::panel_search::SearchText {
+                    field: super::panel_search::SearchField::Label,
+                    text: entry.label.as_str(),
+                },
+                super::panel_search::SearchText {
+                    field: super::panel_search::SearchField::Secondary,
+                    text: entry.description.as_deref().unwrap_or(""),
+                },
+                super::panel_search::SearchText {
+                    field: super::panel_search::SearchField::Secondary,
+                    text: entry.status.as_deref().unwrap_or(""),
+                },
+            ];
+            super::panel_search::best_match(&fields, query).map(|score| {
+                super::panel_search::SearchMatch {
+                    item: entry,
+                    score,
+                    source_index,
+                }
+            })
+        })
+        .collect();
+    super::panel_search::rank_matches(matches)
 }
 
 fn render_panel_menu_model<'a>(
@@ -502,6 +737,35 @@ mod tests {
         app.register_panel_popup(panel, origin);
 
         let _ = app.view(panel);
+    }
+
+    #[test]
+    fn external_selectable_list_search_filters_and_ranks_entries() {
+        let entries = vec![
+            crate::surface::panel::ExternalSelectableEntry {
+                id: "coffee".into(),
+                label: "Coffee Shop".into(),
+                description: Some("Guest Wi-Fi".into()),
+                disabled: false,
+                active: false,
+                status: None,
+            },
+            crate::surface::panel::ExternalSelectableEntry {
+                id: "printer".into(),
+                label: "Office Printer".into(),
+                description: Some("Known network".into()),
+                disabled: false,
+                active: false,
+                status: None,
+            },
+        ];
+
+        let visible = super::visible_external_selectable_entries(&entries, "guest")
+            .into_iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(visible, vec!["coffee"]);
     }
 
     #[test]

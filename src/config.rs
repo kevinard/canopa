@@ -21,8 +21,8 @@ pub use module::{
     ActionBinding, ActionTrigger, ActionsConfig, BatteryConfig, ButtonConfig, ClockConfig,
     CommandPolicy, ConfiguredCommand, FocusedWindowConfig, IconRulesConfig, IconThreshold,
     MenuConfig, MenuItemConfig, MenuSourceConfig, MenuSourceKind, ModuleActionsConfig,
-    ModuleConfig, ModuleParams, NetworkConfig, PanelAction, ScriptConfig, StateRule, StatesConfig,
-    TrayConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    ModuleConfig, ModuleParams, NetworkConfig, PanelAction, PanelProviderConfig, ScriptConfig,
+    StateRule, StatesConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 pub(crate) use module::{CommandPolicyError, ConfiguredCommandSpec};
 #[allow(unused_imports)]
@@ -68,6 +68,7 @@ pub struct Config {
     pub bars: Vec<BarConfig>,
     pub modules: Vec<ModuleConfig>,
     pub menus: Vec<MenuConfig>,
+    pub panel_providers: Vec<PanelProviderConfig>,
 }
 
 impl Default for Config {
@@ -76,6 +77,7 @@ impl Default for Config {
             bars: vec![BarConfig::default()],
             modules: vec![],
             menus: vec![],
+            panel_providers: vec![],
         }
     }
 }
