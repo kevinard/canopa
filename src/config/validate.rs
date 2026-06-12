@@ -163,6 +163,12 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
             &declared_menus,
             &declared_panel_providers,
         )?;
+        validate_module_provider_reference(
+            source.clone(),
+            &format!("module.{}", module.name),
+            module,
+            &declared_panel_providers,
+        )?;
     }
     for menu in &config.menus {
         validate_menu_items_reference_declared_menus(
@@ -174,6 +180,34 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
         )?;
     }
     Ok(())
+}
+
+fn provider_name_is_resolvable(
+    name: &str,
+    declared_panel_providers: &std::collections::HashSet<&str>,
+) -> bool {
+    declared_panel_providers.contains(name) || crate::external_panel::is_builtin_provider_name(name)
+}
+
+fn validate_module_provider_reference(
+    source: ConfigSource,
+    path: &str,
+    module: &super::ModuleConfig,
+    declared_panel_providers: &std::collections::HashSet<&str>,
+) -> ConfigResult<()> {
+    let super::ModuleParams::Network(network) = &module.params else {
+        return Ok(());
+    };
+    let Some(name) = network.default_provider.as_deref() else {
+        return Ok(());
+    };
+    if provider_name_is_resolvable(name, declared_panel_providers) {
+        return Ok(());
+    }
+    Err(validation_error(
+        source,
+        format!("{path}: panel provider {:?} is not declared.", name),
+    ))
 }
 
 fn validate_module_layout<'a>(
@@ -287,7 +321,7 @@ fn validate_action_references_declared_targets(
             }
         }
         super::PanelAction::OpenProvider(name) => {
-            if !declared_panel_providers.contains(name.as_str()) {
+            if !provider_name_is_resolvable(name, declared_panel_providers) {
                 return Err(validation_error(
                     source,
                     format!("{path}: panel provider {:?} is not declared.", name),

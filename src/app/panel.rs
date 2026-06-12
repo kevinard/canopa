@@ -184,6 +184,13 @@ impl App {
                         handle,
                     )
                 });
+                let content_watch = session.clone().map(|handle| {
+                    self.watch_external_panel_content(
+                        session_id.clone(),
+                        provider_name.clone(),
+                        handle,
+                    )
+                });
                 self.external_panel_session = Some(super::ExternalPanelSessionRuntime {
                     session_id: session_id.clone(),
                     provider_name: provider_name.clone(),
@@ -201,7 +208,11 @@ impl App {
                     anchor,
                     true,
                 );
-                Task::batch([open_task, session_watch.unwrap_or_else(Task::none)])
+                Task::batch([
+                    open_task,
+                    session_watch.unwrap_or_else(Task::none),
+                    content_watch.unwrap_or_else(Task::none),
+                ])
             }
             super::messages::ExternalPanelEvent::ProviderFailed {
                 session_id,
@@ -249,7 +260,31 @@ impl App {
                     );
                     return Task::none();
                 }
-                self.replace_active_external_panel_content(provider_name, content)
+                let replace_task =
+                    self.replace_active_external_panel_content(provider_name.clone(), content);
+                let next_read = self
+                    .external_panel_session
+                    .as_ref()
+                    .and_then(|session| session.handle.clone())
+                    .map(|handle| {
+                        self.watch_external_panel_content(session_id, provider_name, handle)
+                    })
+                    .unwrap_or_else(Task::none);
+                Task::batch([replace_task, next_read])
+            }
+            super::messages::ExternalPanelEvent::ProviderEventSent {
+                session_id,
+                provider_name,
+            } => {
+                if !self.external_panel_session_is_active(&session_id, &provider_name) {
+                    tracing::debug!(
+                        target: "niribar::external_panel",
+                        provider = provider_name.as_str(),
+                        session = session_id.as_str(),
+                        "ignoring stale external panel event write completion"
+                    );
+                }
+                Task::none()
             }
             super::messages::ExternalPanelEvent::ProviderSessionFailed {
                 session_id,
@@ -324,6 +359,27 @@ impl App {
                     crate::external_panel::protocol::ProviderEvent::SelectableListEntryActivated {
                         element_id: list_id,
                         entry_id,
+                    },
+                )
+            }
+            super::messages::ExternalPanelEvent::ListCustomValueSubmitted {
+                provider_name,
+                list_id,
+                value,
+            } => {
+                #[cfg(test)]
+                if let Some(content) = self
+                    .external_panel_event_responses_for_test
+                    .get(&(provider_name.clone(), value.clone()))
+                    .cloned()
+                {
+                    return self.replace_active_external_panel_content(provider_name, content);
+                }
+                self.send_active_external_panel_event(
+                    provider_name,
+                    crate::external_panel::protocol::ProviderEvent::SelectableListCustomValueSubmitted {
+                        element_id: list_id,
+                        value,
                     },
                 )
             }
@@ -438,13 +494,10 @@ impl App {
                 )
                 .await
                 {
-                    Ok(Ok(content)) => {
-                        super::messages::ExternalPanelEvent::ProviderContentReceived {
-                            session_id,
-                            provider_name,
-                            content,
-                        }
-                    }
+                    Ok(Ok(())) => super::messages::ExternalPanelEvent::ProviderEventSent {
+                        session_id,
+                        provider_name,
+                    },
                     Ok(Err(err)) => super::messages::ExternalPanelEvent::ProviderSessionFailed {
                         session_id,
                         provider_name,
@@ -480,6 +533,31 @@ impl App {
                     Ok(None) => super::messages::ExternalPanelEvent::ProviderSessionEnded {
                         session_id,
                         provider_name,
+                    },
+                    Err(err) => super::messages::ExternalPanelEvent::ProviderSessionFailed {
+                        session_id,
+                        provider_name,
+                        message: err.to_string(),
+                    },
+                }
+            },
+            Message::ExternalPanel,
+        )
+    }
+
+    fn watch_external_panel_content(
+        &self,
+        session_id: String,
+        provider_name: String,
+        handle: crate::external_panel::ExternalPanelSessionHandle,
+    ) -> Task<Message> {
+        Task::perform(
+            async move {
+                match handle.read_next_content().await {
+                    Ok(content) => super::messages::ExternalPanelEvent::ProviderContentReceived {
+                        session_id,
+                        provider_name,
+                        content,
                     },
                     Err(err) => super::messages::ExternalPanelEvent::ProviderSessionFailed {
                         session_id,
@@ -668,13 +746,35 @@ impl App {
             return self.handle_external_panel_event(event);
         }
 
-        let provider = match self
+        let provider_command = match self
             .config
             .panel_providers
             .iter()
             .find(|provider| provider.name == provider_name)
         {
-            Some(provider) => provider.clone(),
+            Some(provider) => provider.command.clone(),
+            None if crate::external_panel::is_builtin_provider_name(&provider_name) => {
+                match crate::external_panel::builtin_provider_command(&provider_name) {
+                    Some(command) => command,
+                    None => {
+                        tracing::error!(
+                            target: "niribar::external_panel",
+                            provider = provider_name.as_str(),
+                            "external panel built-in provider has no launch command"
+                        );
+                        return self.handle_external_panel_event(
+                            super::messages::ExternalPanelEvent::ProviderFailed {
+                                session_id,
+                                origin_window,
+                                origin,
+                                provider_name: provider_name.clone(),
+                                anchor,
+                                message: format!("provider {provider_name:?} is not available"),
+                            },
+                        );
+                    }
+                }
+            }
             None => {
                 tracing::error!(
                     target: "niribar::external_panel",
@@ -694,7 +794,7 @@ impl App {
             }
         };
 
-        let process = match crate::external_panel::spawn_provider_process(&provider.command) {
+        let process = match crate::external_panel::spawn_provider_process(&provider_command) {
             Ok(process) => process,
             Err(err) => {
                 tracing::error!(

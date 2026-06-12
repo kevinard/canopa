@@ -54,6 +54,10 @@ pub enum ExternalPanelEvent {
         provider_name: String,
         content: crate::surface::panel::ExternalPanelDocument,
     },
+    ProviderEventSent {
+        session_id: String,
+        provider_name: String,
+    },
     ProviderSessionFailed {
         session_id: String,
         provider_name: String,
@@ -77,6 +81,11 @@ pub enum ExternalPanelEvent {
         list_id: String,
         entry_id: String,
     },
+    ListCustomValueSubmitted {
+        provider_name: String,
+        list_id: String,
+        value: String,
+    },
     TextInputChanged {
         provider_name: String,
         element_id: String,
@@ -97,6 +106,7 @@ impl ExternalPanelEvent {
             ExternalPanelEvent::ProviderContentReceived { .. } => {
                 "ExternalPanel::ProviderContentReceived"
             }
+            ExternalPanelEvent::ProviderEventSent { .. } => "ExternalPanel::ProviderEventSent",
             ExternalPanelEvent::ProviderSessionFailed { .. } => {
                 "ExternalPanel::ProviderSessionFailed"
             }
@@ -106,6 +116,9 @@ impl ExternalPanelEvent {
             ExternalPanelEvent::ButtonActivated { .. } => "ExternalPanel::ButtonActivated",
             ExternalPanelEvent::ListSearchChanged { .. } => "ExternalPanel::ListSearchChanged",
             ExternalPanelEvent::ListEntryActivated { .. } => "ExternalPanel::ListEntryActivated",
+            ExternalPanelEvent::ListCustomValueSubmitted { .. } => {
+                "ExternalPanel::ListCustomValueSubmitted"
+            }
             ExternalPanelEvent::TextInputChanged { .. } => "ExternalPanel::TextInputChanged",
             ExternalPanelEvent::TextInputSubmitted { .. } => "ExternalPanel::TextInputSubmitted",
         }

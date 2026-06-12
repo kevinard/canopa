@@ -105,7 +105,8 @@ fn effective_module_actions(
         _ => crate::config::NetworkConfig::default().default_provider,
     };
     if let Some(provider) = provider.as_deref()
-        && declared_panel_providers.contains(provider)
+        && (declared_panel_providers.contains(provider)
+            || crate::external_panel::is_builtin_provider_name(provider))
     {
         actions.bindings.push(ActionBinding {
             trigger: ActionTrigger::Click,
@@ -190,6 +191,24 @@ mod tests {
             name: "wifi".into(),
             command: crate::config::ConfiguredCommand::argv_for_test("wifi-provider", Vec::new()),
         }];
+
+        let graph = super::build_module_graph(&config).unwrap();
+        let (_, _, actions) = graph
+            .modules
+            .iter()
+            .find(|(_, module, _)| module.kind() == ModuleKind::Network)
+            .expect("network module");
+
+        assert_eq!(
+            actions.action_for(&crate::config::ActionTrigger::Click),
+            Some(&crate::config::PanelAction::OpenProvider("wifi".into()))
+        );
+    }
+
+    #[test]
+    fn builtin_wifi_provider_adds_network_primary_action_without_declaration() {
+        let mut config = Config::default();
+        config.bars[0].modules.end = vec!["network".into()];
 
         let graph = super::build_module_graph(&config).unwrap();
         let (_, _, actions) = graph

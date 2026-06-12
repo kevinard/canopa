@@ -617,6 +617,45 @@ mod config_tests {
     }
 
     #[test]
+    fn validate_open_provider_accepts_builtin_wifi_provider() {
+        let config = Config {
+            modules: vec![ModuleConfig {
+                name: "network".into(),
+                module_type: "network".into(),
+                params: ModuleParams::Network(NetworkConfig::default()),
+                actions: ModuleActionsConfig {
+                    bindings: vec![ActionBinding {
+                        trigger: ActionTrigger::Click,
+                        action: PanelAction::OpenProvider("wifi".into()),
+                    }],
+                },
+            }],
+            ..Config::default()
+        };
+
+        validate(&config).unwrap();
+    }
+
+    #[test]
+    fn validate_network_default_provider_unknown_name_errors() {
+        let mut network = NetworkConfig::default();
+        network.default_provider = Some("missing".into());
+        let config = Config {
+            modules: vec![ModuleConfig {
+                name: "network".into(),
+                module_type: "network".into(),
+                params: ModuleParams::Network(network),
+                actions: ModuleActionsConfig::default(),
+            }],
+            ..Config::default()
+        };
+
+        let err = validate(&config).unwrap_err();
+        assert!(err.to_string().contains("missing"), "got: {err}");
+        assert!(err.to_string().contains("provider"), "got: {err}");
+    }
+
+    #[test]
     fn validate_open_menu_accepts_source_menu() {
         let mut config = Config::default();
         config.menus = vec![MenuConfig {

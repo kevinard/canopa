@@ -113,11 +113,13 @@ fn render_external_panel_model<'a>(
             crate::surface::panel::ExternalPanelElement::SelectableList {
                 id,
                 entries,
+                allow_custom,
                 search_query,
             } => render_external_selectable_list(
                 content.provider_name.as_str(),
                 id.as_str(),
                 entries,
+                *allow_custom,
                 search_query,
             ),
             crate::surface::panel::ExternalPanelElement::TextInput {
@@ -220,6 +222,7 @@ fn render_external_selectable_list<'a>(
     provider_name: &str,
     list_id: &str,
     entries: &'a [crate::surface::panel::ExternalSelectableEntry],
+    allow_custom: bool,
     search_query: &str,
 ) -> Element<'a, Message> {
     let provider_for_search = provider_name.to_string();
@@ -236,44 +239,52 @@ fn render_external_selectable_list<'a>(
         .width(Length::Fill);
 
     let mut rows = column![].spacing(6);
-    for entry in visible_external_selectable_entries(entries, search_query) {
-        let provider = provider_name.to_string();
-        let list_id = list_id.to_string();
-        let entry_id = entry.id.clone();
-        let mut row_content = column![text(entry.label.clone())].spacing(2);
-        if let Some(description) = &entry.description {
-            row_content = row_content.push(text(description.clone()).size(12));
-        }
-        if let Some(status) = &entry.status {
-            row_content = row_content.push(text(status.clone()).size(12));
-        }
-        let border_color = if entry.active {
-            crate::theme::ACCENT
-        } else {
-            crate::theme::BORDER
-        };
-        let row = container(row_content)
-            .padding([8, 10])
-            .width(Length::Fill)
-            .style(move |_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(crate::theme::SURFACE1)),
-                border: iced::Border {
-                    color: border_color,
-                    width: 1.0,
-                    radius: iced::border::Radius::from(4.0),
-                },
-                ..Default::default()
-            });
-        if entry.disabled {
-            rows = rows.push(row);
-        } else {
-            rows = rows.push(mouse_area(row).on_press(Message::ExternalPanel(
-                super::messages::ExternalPanelEvent::ListEntryActivated {
-                    provider_name: provider,
-                    list_id,
-                    entry_id,
-                },
-            )));
+    for item in external_selectable_list_items_with_custom(entries, search_query, allow_custom) {
+        match item {
+            ExternalSelectableListItem::Entry(entry) => {
+                let provider = provider_name.to_string();
+                let list_id = list_id.to_string();
+                let entry_id = entry.id.clone();
+                let mut row_content = column![text(entry.label.clone())].spacing(2);
+                if let Some(description) = &entry.description {
+                    row_content = row_content.push(text(description.clone()).size(12));
+                }
+                if let Some(status) = &entry.status {
+                    row_content = row_content.push(text(status.clone()).size(12));
+                }
+                let border_color = if entry.active {
+                    crate::theme::ACCENT
+                } else {
+                    crate::theme::BORDER
+                };
+                let row = external_selectable_row(row_content, border_color);
+                if entry.disabled {
+                    rows = rows.push(row);
+                } else {
+                    rows = rows.push(mouse_area(row).on_press(Message::ExternalPanel(
+                        super::messages::ExternalPanelEvent::ListEntryActivated {
+                            provider_name: provider,
+                            list_id,
+                            entry_id,
+                        },
+                    )));
+                }
+            }
+            ExternalSelectableListItem::CustomValue(value) => {
+                let provider = provider_name.to_string();
+                let list_id = list_id.to_string();
+                let submitted_value = value.clone();
+                let row_content =
+                    column![text(value), text("Use custom value").size(12)].spacing(2);
+                let row = external_selectable_row(row_content, crate::theme::ACCENT);
+                rows = rows.push(mouse_area(row).on_press(Message::ExternalPanel(
+                    super::messages::ExternalPanelEvent::ListCustomValueSubmitted {
+                        provider_name: provider,
+                        list_id,
+                        value: submitted_value,
+                    },
+                )));
+            }
         }
     }
 
@@ -282,12 +293,48 @@ fn render_external_selectable_list<'a>(
         .into()
 }
 
-fn visible_external_selectable_entries<'a>(
+fn external_selectable_row<'a>(
+    row_content: iced::widget::Column<'a, Message>,
+    border_color: iced::Color,
+) -> iced::widget::Container<'a, Message> {
+    container(row_content)
+        .padding([8, 10])
+        .width(Length::Fill)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+            border: iced::Border {
+                color: border_color,
+                width: 1.0,
+                radius: iced::border::Radius::from(4.0),
+            },
+            ..Default::default()
+        })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ExternalSelectableListItem<'a> {
+    Entry(&'a crate::surface::panel::ExternalSelectableEntry),
+    CustomValue(String),
+}
+
+#[cfg(test)]
+fn external_selectable_list_items<'a>(
     entries: &'a [crate::surface::panel::ExternalSelectableEntry],
     query: &str,
-) -> Vec<&'a crate::surface::panel::ExternalSelectableEntry> {
+) -> Vec<ExternalSelectableListItem<'a>> {
+    external_selectable_list_items_with_custom(entries, query, false)
+}
+
+fn external_selectable_list_items_with_custom<'a>(
+    entries: &'a [crate::surface::panel::ExternalSelectableEntry],
+    query: &str,
+    allow_custom: bool,
+) -> Vec<ExternalSelectableListItem<'a>> {
     if super::panel_search::is_blank_query(query) {
-        return entries.iter().collect();
+        return entries
+            .iter()
+            .map(ExternalSelectableListItem::Entry)
+            .collect();
     }
 
     let matches = entries
@@ -317,7 +364,18 @@ fn visible_external_selectable_entries<'a>(
             })
         })
         .collect();
-    super::panel_search::rank_matches(matches)
+    let mut items: Vec<_> = super::panel_search::rank_matches(matches)
+        .into_iter()
+        .map(ExternalSelectableListItem::Entry)
+        .collect();
+    let custom_value = query.trim();
+    let exact_match = entries.iter().any(|entry| entry.label == custom_value);
+    if allow_custom && !custom_value.is_empty() && !exact_match {
+        items.push(ExternalSelectableListItem::CustomValue(
+            custom_value.to_string(),
+        ));
+    }
+    items
 }
 
 fn render_panel_menu_model<'a>(
@@ -760,12 +818,91 @@ mod tests {
             },
         ];
 
-        let visible = super::visible_external_selectable_entries(&entries, "guest")
+        let visible = super::external_selectable_list_items(&entries, "guest")
             .into_iter()
-            .map(|entry| entry.id.as_str())
+            .filter_map(|item| match item {
+                super::ExternalSelectableListItem::Entry(entry) => Some(entry.id.as_str()),
+                super::ExternalSelectableListItem::CustomValue(_) => None,
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(visible, vec!["coffee"]);
+    }
+
+    #[test]
+    fn external_selectable_list_custom_value_appears_only_when_allowed() {
+        let entries = vec![crate::surface::panel::ExternalSelectableEntry {
+            id: "home".into(),
+            label: "Home Wi-Fi".into(),
+            description: None,
+            disabled: false,
+            active: false,
+            status: None,
+        }];
+
+        let disallowed =
+            super::external_selectable_list_items_with_custom(&entries, "Hidden", false);
+        assert_eq!(
+            disallowed
+                .iter()
+                .map(|item| match item {
+                    super::ExternalSelectableListItem::Entry(entry) => entry.id.as_str(),
+                    super::ExternalSelectableListItem::CustomValue(value) => value.as_str(),
+                })
+                .collect::<Vec<_>>(),
+            Vec::<&str>::new()
+        );
+
+        let allowed = super::external_selectable_list_items_with_custom(&entries, "Hidden", true);
+        assert_eq!(
+            allowed,
+            vec![super::ExternalSelectableListItem::CustomValue(
+                "Hidden".into()
+            )]
+        );
+    }
+
+    #[test]
+    fn external_selectable_list_custom_value_uses_case_sensitive_exact_match() {
+        let entries = vec![crate::surface::panel::ExternalSelectableEntry {
+            id: "home".into(),
+            label: "Home Wi-Fi".into(),
+            description: None,
+            disabled: false,
+            active: false,
+            status: None,
+        }];
+
+        let exact = super::external_selectable_list_items_with_custom(&entries, "Home Wi-Fi", true);
+        assert!(
+            exact
+                .iter()
+                .all(|item| { !matches!(item, super::ExternalSelectableListItem::CustomValue(_)) })
+        );
+
+        let different_case =
+            super::external_selectable_list_items_with_custom(&entries, "home wi-fi", true);
+        assert!(different_case.iter().any(|item| {
+            matches!(
+                item,
+                super::ExternalSelectableListItem::CustomValue(value) if value == "home wi-fi"
+            )
+        }));
+    }
+
+    #[test]
+    fn external_selectable_list_custom_value_trims_and_rejects_blank() {
+        let entries = Vec::new();
+
+        assert!(
+            super::external_selectable_list_items_with_custom(&entries, "   ", true).is_empty()
+        );
+        assert_eq!(
+            super::external_selectable_list_items_with_custom(&entries, "  Hidden  ", true),
+            vec![super::ExternalSelectableListItem::CustomValue(
+                "Hidden".into()
+            )]
+        );
     }
 
     #[test]
