@@ -146,13 +146,29 @@ _Avoid_: Wi-Fi backend when no scan or connection behavior is involved
 An external-provider-owned integration that discovers nearby **Wi-Fi Networks** and starts connection attempts from **External Panel Content**.
 _Avoid_: Network status backend, networkd path
 
+**Wi-Fi Panel Provider**:
+An **External Panel Provider** that owns **Wi-Fi Control Integration** for the network **Module**.
+_Avoid_: Network provider when the provider only owns wireless control
+
 **Wi-Fi Network**:
 A discoverable wireless network shown as a selectable target in **External Panel Content**. One **Wi-Fi Network** may be advertised by multiple physical access points.
 _Avoid_: Access point when referring to the user-facing network choice
 
+**Personal Wi-Fi Network**:
+A wireless connection target that can be joined with a single **Network Credential**.
+_Avoid_: Enterprise Wi-Fi Network when additional identity, certificate, or EAP settings are required
+
+**Hidden Wi-Fi Network**:
+A wireless connection target identified by a user-provided network name rather than by a **Wi-Fi Scan** result.
+_Avoid_: Wi-Fi Network when the target was not discovered
+
 **Known Wi-Fi Network**:
 A **Wi-Fi Network** with saved connection material available to the active **Wi-Fi Control Integration**.
 _Avoid_: Saved SSID, configured profile
+
+**Active Wi-Fi Network**:
+The **Wi-Fi Network** that the active **Wi-Fi Control Integration** reports as currently connected.
+_Avoid_: Current network when the connection may be non-wireless
 
 **Wi-Fi Scan**:
 A refresh of discoverable **Wi-Fi Networks** performed by the active **Wi-Fi Control Integration**.
@@ -327,8 +343,12 @@ An opaque provider-supplied identifier attached to an interactive element in **E
 _Avoid_: Module ID, widget ID when referring to provider-owned element identity
 
 **External Selectable List**:
-A selectable-list primitive in **External Panel Content** whose entries are supplied by an **External Panel Provider** while Niribar owns selection rendering, focus, scrolling, and **Selectable Search** behavior.
+A selectable-list primitive in **External Panel Content** whose entries are supplied by an **External Panel Provider** while Niribar owns selection rendering, focus, scrolling, and **Selectable Search** behavior. An **External Selectable List** may explicitly allow an **External Custom List Value**.
 _Avoid_: Panel Menu when entries are provider-owned external content
+
+**External Custom List Value**:
+A user-submitted typed value from an **External Selectable List** instead of an existing provider-supplied entry.
+_Avoid_: Custom Menu Value when the value belongs to provider-owned external content
 
 **External Text Input**:
 A text-entry primitive in **External Panel Content**, optionally rendered as secret input, whose value changes are sent to an **External Panel Provider**.

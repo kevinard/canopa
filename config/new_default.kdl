@@ -31,7 +31,8 @@ menus {
 // ─── External Panel Providers ────────────────────────────────────────────────
 // Named out-of-process providers can own rich panel content while Niribar owns
 // the panel window, styling, focus, and input routing. Open them from actions
-// with `open-provider "name"`. See docs/external-panel-providers.md.
+// with `open-provider "name"`. Built-in providers do not need declarations.
+// See docs/external-panel-providers.md.
 // panel-providers {
 //     provider "wifi" {
 //         command {
@@ -237,9 +238,9 @@ modules {
     // network: network connectivity status (connected/disconnected/interface type).
     module "network" {
         // Optional default provider for rich network controls.
-        // If provider "wifi" is declared and no click action is configured,
-        // clicking the network module opens it. Override with another provider
-        // name or disable with `provider #false`.
+        // If no click action is configured, clicking the network module opens
+        // the shipped Wi-Fi provider. Override with another provider name or
+        // disable with `provider #false`.
         // provider "wifi"
         // Optional display templates. Placeholders: {icon}, {value}, {label}, {state}.
         // format "{icon}"

@@ -262,6 +262,12 @@ pub enum PanelEvent {
         content: crate::surface::panel::PanelContent,
         anchor: Option<iced::Rectangle>,
     },
+    OpenProvider {
+        origin_window: iced::window::Id,
+        origin: crate::surface::panel::PanelOrigin,
+        provider_name: String,
+        anchor: Option<iced::Rectangle>,
+    },
     SearchChanged(String),
     MenuScrolled {
         y: f32,
@@ -284,6 +290,7 @@ impl PanelEvent {
             PanelEvent::Open { .. } => "Panel::Open",
             PanelEvent::Close => "Panel::Close",
             PanelEvent::Toggle { .. } => "Panel::Toggle",
+            PanelEvent::OpenProvider { .. } => "Panel::OpenProvider",
             PanelEvent::SearchChanged(_) => "Panel::SearchChanged",
             PanelEvent::MenuScrolled { .. } => "Panel::MenuScrolled",
             PanelEvent::FocusMoveNext => "Panel::FocusMoveNext",

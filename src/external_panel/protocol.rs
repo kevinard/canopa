@@ -331,6 +331,9 @@ where
     let frame = encode_frame(value)?;
     tokio::io::AsyncWriteExt::write_all(writer, &frame)
         .await
+        .map_err(|err| ProtocolError::Io(err.to_string()))?;
+    tokio::io::AsyncWriteExt::flush(writer)
+        .await
         .map_err(|err| ProtocolError::Io(err.to_string()))
 }
 

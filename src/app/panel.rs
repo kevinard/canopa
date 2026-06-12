@@ -915,6 +915,12 @@ impl App {
                     .handle(super::foreground::ForegroundIntent::TogglePanel { request, context });
                 Task::batch(self.apply_foreground_effects(effects))
             }
+            PanelEvent::OpenProvider {
+                origin_window,
+                origin,
+                provider_name,
+                anchor,
+            } => self.open_provider_panel(origin_window, origin, provider_name, anchor),
             PanelEvent::Close => Task::batch(self.close_active_panel()),
             PanelEvent::SearchChanged(query) => {
                 let effects = self.foreground.handle(
@@ -1330,9 +1336,15 @@ pub(super) fn panel_event_for_action(
             content: crate::surface::panel::PanelContent::Menu(name),
             anchor,
         }),
-        crate::config::PanelAction::Command(_) | crate::config::PanelAction::OpenProvider(_) => {
-            None
+        crate::config::PanelAction::OpenProvider(provider_name) => {
+            Some(super::messages::PanelEvent::OpenProvider {
+                origin_window,
+                origin,
+                provider_name,
+                anchor,
+            })
         }
+        crate::config::PanelAction::Command(_) => None,
     }
 }
 
@@ -2456,6 +2468,27 @@ mod tests {
             }
             other => panic!("expected open event, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn panel_event_for_module_open_provider_carries_anchor() {
+        let anchor = iced::Rectangle {
+            x: 8.0,
+            y: 16.0,
+            width: 24.0,
+            height: 32.0,
+        };
+        let event = panel_event_for_action(
+            iced::window::Id::unique(),
+            crate::surface::panel::PanelOrigin::Module(crate::modules::ModuleId::new("network")),
+            crate::config::PanelAction::OpenProvider("wifi".into()),
+            Some(anchor),
+        );
+
+        assert!(
+            event.is_some(),
+            "module-scoped open-provider action should survive anchor lookup"
+        );
     }
 
     fn menu_with_apps_browser() -> crate::config::MenuConfig {
