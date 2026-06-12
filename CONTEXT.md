@@ -136,6 +136,44 @@ _Avoid_: Orientation, rotated bar, edge rotation
 The icon associated with the application that owns a compositor window, used when a **Module** represents that window rather than a generic module glyph.
 _Avoid_: Window icon, module icon
 
+### Network
+
+**Network Status Integration**:
+An app-owned integration that reports current connectivity and the active connection label for the network **Module**.
+_Avoid_: Wi-Fi backend when no scan or connection behavior is involved
+
+**Wi-Fi Control Integration**:
+An external-provider-owned integration that discovers nearby **Wi-Fi Networks** and starts connection attempts from **External Panel Content**.
+_Avoid_: Network status backend, networkd path
+
+**Wi-Fi Network**:
+A discoverable wireless network shown as a selectable target in **External Panel Content**. One **Wi-Fi Network** may be advertised by multiple physical access points.
+_Avoid_: Access point when referring to the user-facing network choice
+
+**Known Wi-Fi Network**:
+A **Wi-Fi Network** with saved connection material available to the active **Wi-Fi Control Integration**.
+_Avoid_: Saved SSID, configured profile
+
+**Wi-Fi Scan**:
+A refresh of discoverable **Wi-Fi Networks** performed by the active **Wi-Fi Control Integration**.
+_Avoid_: Network status update, connectivity check
+
+**Wi-Fi Connection Attempt**:
+A user-initiated attempt to connect to a selected **Wi-Fi Network** through the active **Wi-Fi Control Integration**.
+_Avoid_: Network status update, module action
+
+**Wi-Fi Network State**:
+The user-facing status of a **Wi-Fi Network** row, such as known, active, connecting, or failed.
+_Avoid_: Connectivity when referring to a row-level connection state
+
+**Network Credential**:
+A user-provided secret used to connect to a **Wi-Fi Network** that is not a **Known Wi-Fi Network**.
+_Avoid_: Password when referring to stored or submitted connection material generally
+
+**Network Credential Prompt**:
+An inline state of **External Panel Content** that uses **External Text Input** to collect a **Network Credential** for a selected personal **Wi-Fi Network**.
+_Avoid_: Password dialog, credential popup, separate overlay
+
 ### Dynamic Modules and Data Sources
 
 **Dynamic Module**:
@@ -218,16 +256,20 @@ _Avoid_: Tooltip, action, launcher
 A **Menu** exposed by a StatusNotifierItem through DBusMenu and rendered by Niribar as a popup.
 _Avoid_: Panel Menu, launcher, configured menu
 
+**Selectable Search**:
+The user-facing matching behavior that filters or ranks selectable entries from typed input.
+_Avoid_: Filter when referring to ranked matching behavior
+
 **Menu Search**:
-The user-facing matching behavior that filters or ranks selectable **Menu** or **Panel Menu** entries from typed input.
-_Avoid_: Panel Menu Search when the behavior is not panel-only, filter when referring to ranked matching behavior
+**Selectable Search** applied to selectable **Menu** or **Panel Menu** entries.
+_Avoid_: Panel Menu Search when the behavior is not panel-only
 
 **Custom Menu Value**:
 A user-submitted typed value returned by a selectable menu instead of an existing entry.
 _Avoid_: Dmenu entry when the value was typed by the user, menu item when no configured item exists
 
 **Selectable Menu Session**:
-The live runtime interaction for one selectable **Menu** or **Panel Menu**, including entry source, active menu level, optional **Menu Search** text, focus, hover, optional **Custom Menu Value**, and selection completion.
+The live runtime interaction for one selectable **Menu** or **Panel Menu**, including entry source, active menu level, optional **Selectable Search** text, focus, hover, optional **Custom Menu Value**, and selection completion.
 _Avoid_: Panel Menu Session when the behavior applies beyond panels, popup state when referring to selection behavior
 
 **Foreground**:
@@ -268,8 +310,32 @@ _Avoid_: Panel menu, popup, separate module when the content belongs to the orig
 The transient module-owned state and interaction lifecycle for **Module Detail Content** while its **Panel** is open.
 _Avoid_: Panel runtime state, global module state, persisted detail view
 
+**External Panel Provider**:
+An out-of-process owner of interactive panel content that sends Niribar a renderable content model and receives user interaction events back.
+_Avoid_: Plugin when implying in-process code loading
+
+**External Panel Session**:
+The live bidirectional interaction between Niribar and one **External Panel Provider** for one active **Panel**.
+_Avoid_: Dmenu Selection Request when the provider can update content over time
+
+**External Panel Content**:
+Provider-owned content rendered by Niribar inside a **Panel** from a provider-supplied content model.
+_Avoid_: Module Detail Content when the content lifecycle is owned outside Niribar
+
+**External Panel Element ID**:
+An opaque provider-supplied identifier attached to an interactive element in **External Panel Content**.
+_Avoid_: Module ID, widget ID when referring to provider-owned element identity
+
+**External Selectable List**:
+A selectable-list primitive in **External Panel Content** whose entries are supplied by an **External Panel Provider** while Niribar owns selection rendering, focus, scrolling, and **Selectable Search** behavior.
+_Avoid_: Panel Menu when entries are provider-owned external content
+
+**External Text Input**:
+A text-entry primitive in **External Panel Content**, optionally rendered as secret input, whose value changes are sent to an **External Panel Provider**.
+_Avoid_: Search input when the text is provider-owned form data
+
 **Panel Action**:
-A typed configured operation triggered by pointer input, focused keyboard input, **Panel Menu** item activation, or IPC. Examples: `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, and `command`.
+A typed configured operation triggered by pointer input, focused keyboard input, **Panel Menu** item activation, or IPC. Examples: `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, `open-provider`, and `command`.
 _Avoid_: Shell action when the action is not a command
 
 **Global Panel Toggle**:
@@ -360,8 +426,16 @@ _Avoid_: Default config, fallback surface
 A user-declared command value from configuration, either shell text or an explicit argv program and argument list. It can power script content, command-backed **Module Actions**, and command-backed **Panel Actions**.
 _Avoid_: Shell command when the value may be argv; action when referring only to the command value
 
+**Configured Panel Provider**:
+A configured or built-in command used to launch an **External Panel Provider** for a **Module** or **Panel Action**.
+_Avoid_: Panel Action when referring to the provider process lifecycle
+
+**Panel Provider Name**:
+The user-facing identifier for a **Configured Panel Provider**.
+_Avoid_: Module Name, command name
+
 **Command Policy**:
-The configuration-owned policy for **Configured Commands**, including whether shell-form commands are accepted and how long command-backed **Module Actions** and **Panel Actions** may run before Niribar kills and reaps the process. It does not define **Dmenu Selection Mode** selection waiting or **Installed Desktop Application** launch behavior.
+The configuration-owned policy for **Configured Commands**, including whether shell-form commands are accepted and how long command-backed **Module Actions** and **Panel Actions** may run before Niribar kills and reaps the process. It validates **Configured Panel Providers** but does not define provider session lifetime, **Dmenu Selection Mode** selection waiting, or **Installed Desktop Application** launch behavior.
 _Avoid_: Script timeout, desktop launch policy, security mode
 
 **Configuration Error**:
@@ -470,6 +544,16 @@ _Avoid_: Unavailable module, runtime failure
 - An **Empty Module** is not a runtime failure.
 - A **Bar Surface** reflows visible targets when a **Module** becomes unavailable, empty, visible, or recovered.
 
+### Network
+
+- A **Network Status Integration** reports connectivity and the active connection label.
+- A **Wi-Fi Control Integration** performs **Wi-Fi Scans** and **Wi-Fi Connection Attempts** from an **External Panel Provider**.
+- A **Network Status Integration** does not own **Wi-Fi Scans**, **Wi-Fi Connection Attempts**, or **External Panel Content**.
+- When NetworkManager is available, the network status provider and **Wi-Fi Control Integration** use NetworkManager.
+- When NetworkManager is unavailable, systemd-networkd may provide **Network Status Integration** and iwd may provide **Wi-Fi Control Integration**.
+- When no **Wi-Fi Control Integration** is available, the network **Module** remains status-only.
+- Niribar does not mix NetworkManager status with iwd Wi-Fi control.
+
 ### Dynamic Modules and Data Sources
 
 - A **Dynamic Module** owns the placement and configuration for its runtime child **Module Instances**.
@@ -550,6 +634,28 @@ _Avoid_: Unavailable module, runtime failure
 - A **Module Detail Session** is module-owned; generic **Panel Runtime** does not interpret module-specific detail events or detail state.
 - A **Module Detail Session** resets each time module-originated **Module Detail Content** opens.
 - A **Module Detail Session** may request app-owned effects for shared app infrastructure rather than reimplementing those effects inside the **Module**.
+- **External Panel Content** may use **Selectable Search** to search **Wi-Fi Networks** without modeling those networks as **Panel Menu** entries.
+- An **External Panel Provider** may be launched on demand when Niribar opens the **Panel** that will host its **External Panel Content**.
+- An **External Panel Session** ends when its hosting **Panel** closes unless a later provider lifecycle explicitly keeps the provider alive.
+- A launched **External Panel Provider** communicates with Niribar over framed JSON on standard input and standard output.
+- An **External Panel Session** starts with a protocol-version handshake between Niribar and the **External Panel Provider**.
+- An **External Panel Provider** updates **External Panel Content** by sending a complete replacement content model, not incremental patches.
+- A failed **External Panel Provider** renders provider error content in its hosting **Panel** instead of silently closing the **Panel**.
+- **External Panel Content** cannot ask Niribar to run arbitrary **Configured Commands**.
+- User interactions with **External Panel Content** are sent to the **External Panel Provider** as typed events addressed by **External Panel Element IDs**.
+- Niribar does not interpret **External Panel Element IDs** as domain meaning.
+- **External Panel Content** may include **External Selectable Lists**.
+- Niribar owns **Selectable Search** state and matching for **External Selectable Lists** unless a later provider-filtered list mode is introduced.
+- The first **External Panel Content** model supports only a small set of primitives needed for list selection, text entry, status, and simple actions.
+- The first external-provider platform supports **External Panel Content** only, not provider-owned **Menus** or **Tooltips**.
+- Niribar has at most one active **External Panel Session** at a time.
+- **Configured Panel Providers** are globally named by **Panel Provider Name** and may be referenced by **Modules** or **Panel Actions**.
+- A built-in **Module** may provide a default **Configured Panel Provider**.
+- User configuration may override or disable a built-in **Module**'s default **Configured Panel Provider**.
+- A configured **Module Action** takes precedence over a built-in **Module**'s default provider activation.
+- A missing optional built-in **Configured Panel Provider** does not make its **Module** unavailable.
+- A missing explicitly configured **Configured Panel Provider** is surfaced as a provider failure when the user tries to open it.
+- The provider platform should exist before domain-specific providers such as Wi-Fi or audio providers are integrated.
 - Clock **Module Detail Content** shows the current local month by default and may let the user browse other months while that **Panel** remains open.
 - Clock month browsing resets to the current local month each time clock **Module Detail Content** opens.
 - Clock month browsing is available through pointer controls and keyboard controls while clock **Module Detail Content** is focused.
@@ -573,6 +679,7 @@ _Avoid_: Unavailable module, runtime failure
 - If both a focused **Module** and its **Bar** define the same keybind, the **Module** binding takes precedence.
 - A **Bar Surface Interaction** may trigger a **Panel Action** when configured by the **Bar**.
 - A **Bar Surface Interaction** on empty bar background is distinct from interacting with a **Module**.
+- A **Panel Action** may open an **External Panel Session** through a **Configured Panel Provider**.
 - A **Panel Menu** is global named configuration and can be opened from any **Panel Action**.
 - A **Panel Menu** has exactly one **Panel Menu Source**.
 - A **Panel Menu Source** may be declared by explicit `item` configuration or by a `source` declaration.
@@ -602,19 +709,19 @@ _Avoid_: Unavailable module, runtime failure
 - **Installed Desktop Applications** may supply best-effort **Panel Menu Entry Icons**, but missing icons do not prevent display or launch.
 - Invalid **Panel Menu Entry Icons** from installed application metadata are treated as missing icons, not **Configuration Errors**.
 - An installed-applications **Panel Menu Source** presents **Installed Desktop Applications** as a flat list by default.
-- **Menu Search** uses fuzzy matching for configured **Panel Menus**, installed-applications **Panel Menu Sources**, **Dmenu Panel Menu Sources**, and configured searchable **SNI Menus**.
-- **Menu Search** uses the same matching, ranking, and nested-entry behavior everywhere it is enabled.
-- **Menu Search** uses fuzzy matching as the default behavior rather than offering a substring-search mode.
-- **Menu Search** fuzzy matching requires query characters to appear in order.
-- **Menu Search** is ASCII case-insensitive.
-- **Menu Search** splits search text on whitespace and requires every query token to match.
-- **Menu Search** ranks matching entries by match quality and uses source order as the tie-breaker.
-- **Menu Search** ranks substring matches ahead of non-contiguous fuzzy matches when other priority rules are equal.
-- **Menu Search** preserves source order when the search text has no non-whitespace tokens.
-- **Menu Search** returns all matching entries rather than applying a hidden result cap.
-- **Menu Search** ranks visible leaf labels ahead of secondary metadata, and secondary metadata ahead of breadcrumb-only ancestor matches.
-- **Menu Search** can match breadcrumb ancestor labels for nested entries as lowest-priority text.
-- **Menu Search** uses Niribar-owned matching behavior rather than exposing a third-party matcher as domain behavior.
+- **Menu Search** uses **Selectable Search** for configured **Panel Menus**, installed-applications **Panel Menu Sources**, **Dmenu Panel Menu Sources**, and configured searchable **SNI Menus**.
+- **Selectable Search** uses the same matching, ranking, and nested-entry behavior everywhere it is enabled.
+- **Selectable Search** uses fuzzy matching as the default behavior rather than offering a substring-search mode.
+- **Selectable Search** fuzzy matching requires query characters to appear in order.
+- **Selectable Search** is ASCII case-insensitive.
+- **Selectable Search** splits search text on whitespace and requires every query token to match.
+- **Selectable Search** ranks matching entries by match quality and uses source order as the tie-breaker.
+- **Selectable Search** ranks substring matches ahead of non-contiguous fuzzy matches when other priority rules are equal.
+- **Selectable Search** preserves source order when the search text has no non-whitespace tokens.
+- **Selectable Search** returns all matching entries rather than applying a hidden result cap.
+- **Selectable Search** ranks visible leaf labels ahead of secondary metadata, and secondary metadata ahead of breadcrumb-only ancestor matches.
+- **Selectable Search** can match breadcrumb ancestor labels for nested entries as lowest-priority text.
+- **Selectable Search** uses Niribar-owned matching behavior rather than exposing a third-party matcher as domain behavior.
 - **Menu Search** for **Installed Desktop Applications** matches application names, descriptions, generic names, and keywords.
 - A selectable menu may allow a **Custom Menu Value** when its source or configuration enables typed values.
 - A **Custom Menu Value** appears after fuzzy-matched entries, or first when there are no matching entries.
