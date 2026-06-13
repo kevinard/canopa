@@ -303,6 +303,45 @@ pub(crate) fn spawn_provider_process(
     Ok(ExternalPanelProcess { child })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PanelProviderResolutionError {
+    NotConfigured,
+    BuiltinUnavailable,
+}
+
+pub(crate) struct PanelProviderCatalog<'a> {
+    configured: &'a [crate::config::PanelProviderConfig],
+}
+
+impl<'a> PanelProviderCatalog<'a> {
+    pub(crate) fn new(configured: &'a [crate::config::PanelProviderConfig]) -> Self {
+        Self { configured }
+    }
+
+    pub(crate) fn contains(&self, name: &str) -> bool {
+        self.configured.iter().any(|provider| provider.name == name)
+            || is_builtin_provider_name(name)
+    }
+
+    pub(crate) fn resolve(
+        &self,
+        name: &str,
+    ) -> Result<crate::config::ConfiguredCommand, PanelProviderResolutionError> {
+        if let Some(provider) = self
+            .configured
+            .iter()
+            .find(|provider| provider.name == name)
+        {
+            return Ok(provider.command.clone());
+        }
+        if is_builtin_provider_name(name) {
+            return builtin_provider_command(name)
+                .ok_or(PanelProviderResolutionError::BuiltinUnavailable);
+        }
+        Err(PanelProviderResolutionError::NotConfigured)
+    }
+}
+
 pub(crate) fn is_builtin_provider_name(name: &str) -> bool {
     matches!(name, "wifi")
 }
@@ -531,5 +570,35 @@ mod tests {
             resolve_builtin_provider_binary("niribar-wifi-provider", current_exe, |_path| false);
 
         assert_eq!(resolved, "niribar-wifi-provider");
+    }
+
+    #[test]
+    fn provider_catalog_prefers_configured_provider_over_builtin() {
+        let command =
+            crate::config::ConfiguredCommand::argv_for_test("custom-wifi-provider", Vec::new());
+        let configured = vec![crate::config::PanelProviderConfig {
+            name: "wifi".into(),
+            command: command.clone(),
+        }];
+        let catalog = PanelProviderCatalog::new(&configured);
+
+        assert_eq!(catalog.resolve("wifi").unwrap(), command);
+    }
+
+    #[test]
+    fn provider_catalog_reports_missing_provider() {
+        let catalog = PanelProviderCatalog::new(&[]);
+
+        assert_eq!(
+            catalog.resolve("missing").unwrap_err(),
+            PanelProviderResolutionError::NotConfigured
+        );
+    }
+
+    #[test]
+    fn provider_catalog_treats_builtin_provider_as_resolvable() {
+        let catalog = PanelProviderCatalog::new(&[]);
+
+        assert!(catalog.contains("wifi"));
     }
 }

@@ -20,11 +20,8 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
         .iter()
         .map(|module_config| (module_config.name.as_str(), module_config))
         .collect();
-    let declared_panel_providers: HashSet<&str> = config
-        .panel_providers
-        .iter()
-        .map(|provider| provider.name.as_str())
-        .collect();
+    let panel_provider_catalog =
+        crate::external_panel::PanelProviderCatalog::new(&config.panel_providers);
 
     let mut ordered = Vec::new();
     let mut seen_names = HashSet::new();
@@ -81,8 +78,7 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
             .with_context(|| format!("failed to construct module {:?}", module_config.name))?;
         debug_assert_eq!(module.module_type(), module.kind().as_str());
         debug_assert_eq!(module.kind(), descriptor.kind);
-        let actions =
-            effective_module_actions(module_config, descriptor, &declared_panel_providers);
+        let actions = effective_module_actions(module_config, descriptor, &panel_provider_catalog);
         modules.push((zone.clone(), module, actions));
     }
 
@@ -92,7 +88,7 @@ pub(super) fn build_module_graph(config: &Config) -> anyhow::Result<ModuleGraph>
 fn effective_module_actions(
     module_config: &ModuleConfig,
     descriptor: &ModuleDescriptor,
-    declared_panel_providers: &HashSet<&str>,
+    panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> ModuleActionsConfig {
     let mut actions = module_config.actions.clone();
     if descriptor.kind != crate::modules::ModuleKind::Network
@@ -105,8 +101,7 @@ fn effective_module_actions(
         _ => crate::config::NetworkConfig::default().default_provider,
     };
     if let Some(provider) = provider.as_deref()
-        && (declared_panel_providers.contains(provider)
-            || crate::external_panel::is_builtin_provider_name(provider))
+        && panel_provider_catalog.contains(provider)
     {
         actions.bindings.push(ActionBinding {
             trigger: ActionTrigger::Click,

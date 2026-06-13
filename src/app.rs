@@ -3,6 +3,7 @@ mod app_effects;
 mod bar_surface_plan;
 mod dynamic_modules;
 pub(crate) mod eligible_outputs;
+mod external_panel_session;
 mod focus;
 mod foreground;
 mod layout;
@@ -51,8 +52,7 @@ pub(crate) struct App {
     niri: niri::AppNiriState,
     tray: tray::TrayState,
     perf: Option<perf::PerfTracker>,
-    external_panel_pending_session_id: Option<String>,
-    external_panel_session: Option<ExternalPanelSessionRuntime>,
+    external_panel_session: external_panel_session::ExternalPanelSessionRuntime,
     #[cfg(test)]
     external_panel_responses_for_test: std::collections::HashMap<
         String,
@@ -61,20 +61,6 @@ pub(crate) struct App {
     #[cfg(test)]
     external_panel_event_responses_for_test:
         std::collections::HashMap<(String, String), crate::surface::panel::ExternalPanelDocument>,
-}
-
-struct ExternalPanelSessionRuntime {
-    session_id: String,
-    provider_name: String,
-    handle: Option<crate::external_panel::ExternalPanelSessionHandle>,
-}
-
-impl Drop for ExternalPanelSessionRuntime {
-    fn drop(&mut self) {
-        if let Some(handle) = &self.handle {
-            handle.close();
-        }
-    }
 }
 
 #[to_layer_message(multi)]
@@ -260,8 +246,7 @@ impl App {
             niri: niri::AppNiriState::new(),
             tray: tray::TrayState::default(),
             perf: perf::PerfTracker::from_env(),
-            external_panel_pending_session_id: None,
-            external_panel_session: None,
+            external_panel_session: external_panel_session::ExternalPanelSessionRuntime::default(),
             #[cfg(test)]
             external_panel_responses_for_test: std::collections::HashMap::new(),
             #[cfg(test)]

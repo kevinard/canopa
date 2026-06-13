@@ -5,6 +5,7 @@ use iced_layershell::reexport::{
 use std::time::Duration;
 
 use super::app_effects::AppEffect;
+use super::external_panel_session::{ExternalPanelPanelIdentity, ExternalPanelSessionEffect};
 pub(super) use super::panel_sizing::MENU_ROW_EXTENT;
 use super::panel_sizing::{PanelPhysicalPlan, PanelSizingInput, PlannedDimension};
 use super::{App, Message};
@@ -143,14 +144,12 @@ impl App {
 
     #[cfg(test)]
     pub(super) fn set_pending_external_panel_session_for_test(&mut self, session_id: &str) {
-        self.external_panel_pending_session_id = Some(session_id.to_string());
+        self.external_panel_session.set_pending_for_test(session_id);
     }
 
     #[cfg(test)]
     pub(super) fn active_external_panel_session_id_for_test(&self) -> Option<&str> {
-        self.external_panel_session
-            .as_ref()
-            .map(|session| session.session_id.as_str())
+        self.external_panel_session.active_session_id()
     }
 
     pub(super) fn handle_external_panel_event(
@@ -167,52 +166,24 @@ impl App {
                 session,
                 content,
             } => {
-                if !self.external_panel_session_is_pending(&session_id) {
+                let effects = self.external_panel_session.handshake_completed(
+                    session_id.clone(),
+                    origin_window,
+                    origin,
+                    provider_name.clone(),
+                    anchor,
+                    session,
+                    content,
+                );
+                if effects.is_empty() {
                     tracing::debug!(
                         target: "niribar::external_panel",
                         provider = provider_name.as_str(),
                         session = session_id.as_str(),
                         "ignoring stale external panel handshake"
                     );
-                    return Task::none();
                 }
-                self.external_panel_pending_session_id = None;
-                let session_watch = session.clone().map(|handle| {
-                    self.watch_external_panel_session(
-                        session_id.clone(),
-                        provider_name.clone(),
-                        handle,
-                    )
-                });
-                let content_watch = session.clone().map(|handle| {
-                    self.watch_external_panel_content(
-                        session_id.clone(),
-                        provider_name.clone(),
-                        handle,
-                    )
-                });
-                self.external_panel_session = Some(super::ExternalPanelSessionRuntime {
-                    session_id: session_id.clone(),
-                    provider_name: provider_name.clone(),
-                    handle: session,
-                });
-                let open_task = self.open_panel_internal(
-                    origin_window,
-                    origin,
-                    crate::surface::panel::PanelContent::ExternalProvider(
-                        crate::surface::panel::ExternalPanelContent::from_provider_document(
-                            provider_name,
-                            content,
-                        ),
-                    ),
-                    anchor,
-                    true,
-                );
-                Task::batch([
-                    open_task,
-                    session_watch.unwrap_or_else(Task::none),
-                    content_watch.unwrap_or_else(Task::none),
-                ])
+                self.apply_external_panel_session_effects(effects)
             }
             super::messages::ExternalPanelEvent::ProviderFailed {
                 session_id,
@@ -222,61 +193,56 @@ impl App {
                 anchor,
                 message,
             } => {
-                if !self.external_panel_session_is_pending(&session_id) {
+                let effects = self.external_panel_session.provider_failed(
+                    session_id.clone(),
+                    origin_window,
+                    origin,
+                    provider_name.clone(),
+                    anchor,
+                    message,
+                );
+                if effects.is_empty() {
                     tracing::debug!(
                         target: "niribar::external_panel",
                         provider = provider_name.as_str(),
                         session = session_id.as_str(),
                         "ignoring stale external panel provider failure"
                     );
-                    return Task::none();
                 }
-                self.external_panel_pending_session_id = None;
-                self.external_panel_session = None;
-                self.open_panel_internal(
-                    origin_window,
-                    origin,
-                    crate::surface::panel::PanelContent::ExternalProvider(
-                        crate::surface::panel::ExternalPanelContent::failure(
-                            provider_name,
-                            message,
-                        ),
-                    ),
-                    anchor,
-                    true,
-                )
+                self.apply_external_panel_session_effects(effects)
             }
             super::messages::ExternalPanelEvent::ProviderContentReceived {
                 session_id,
                 provider_name,
                 content,
             } => {
-                if !self.external_panel_session_is_active(&session_id, &provider_name) {
+                let active_panel = self.active_external_panel_identity();
+                let effects = self.external_panel_session.provider_content_received(
+                    session_id.clone(),
+                    provider_name.clone(),
+                    content,
+                    active_panel.as_ref(),
+                );
+                if effects.is_empty() {
                     tracing::debug!(
                         target: "niribar::external_panel",
                         provider = provider_name.as_str(),
                         session = session_id.as_str(),
                         "ignoring stale external panel content"
                     );
-                    return Task::none();
                 }
-                let replace_task =
-                    self.replace_active_external_panel_content(provider_name.clone(), content);
-                let next_read = self
-                    .external_panel_session
-                    .as_ref()
-                    .and_then(|session| session.handle.clone())
-                    .map(|handle| {
-                        self.watch_external_panel_content(session_id, provider_name, handle)
-                    })
-                    .unwrap_or_else(Task::none);
-                Task::batch([replace_task, next_read])
+                self.apply_external_panel_session_effects(effects)
             }
             super::messages::ExternalPanelEvent::ProviderEventSent {
                 session_id,
                 provider_name,
             } => {
-                if !self.external_panel_session_is_active(&session_id, &provider_name) {
+                let active_panel = self.active_external_panel_identity();
+                if !self.external_panel_session.provider_event_sent(
+                    &session_id,
+                    &provider_name,
+                    active_panel.as_ref(),
+                ) {
                     tracing::debug!(
                         target: "niribar::external_panel",
                         provider = provider_name.as_str(),
@@ -291,7 +257,14 @@ impl App {
                 provider_name,
                 message,
             } => {
-                if !self.external_panel_session_is_active(&session_id, &provider_name) {
+                let active_panel = self.active_external_panel_identity();
+                let effects = self.external_panel_session.provider_session_failed(
+                    session_id.clone(),
+                    provider_name.clone(),
+                    message.clone(),
+                    active_panel.as_ref(),
+                );
+                if effects.is_empty() {
                     tracing::debug!(
                         target: "niribar::external_panel",
                         provider = provider_name.as_str(),
@@ -307,16 +280,18 @@ impl App {
                     error = message.as_str(),
                     "external panel provider session failed"
                 );
-                self.external_panel_session = None;
-                self.replace_active_external_panel_failure(provider_name, message)
+                self.apply_external_panel_session_effects(effects)
             }
             super::messages::ExternalPanelEvent::ProviderSessionEnded {
                 session_id,
                 provider_name,
             } => {
-                if self.external_panel_session_is_active(&session_id, &provider_name) {
-                    self.external_panel_session = None;
-                }
+                let active_panel = self.active_external_panel_identity();
+                self.external_panel_session.provider_session_ended(
+                    &session_id,
+                    &provider_name,
+                    active_panel.as_ref(),
+                );
                 Task::none()
             }
             super::messages::ExternalPanelEvent::ButtonActivated {
@@ -329,18 +304,38 @@ impl App {
                     .get(&(provider_name.clone(), element_id.clone()))
                     .cloned()
                 {
-                    return self.replace_active_external_panel_content(provider_name, content);
+                    let active_panel = self.active_external_panel_identity();
+                    let effects = self
+                        .external_panel_session
+                        .replace_content_from_provider_response(
+                            provider_name,
+                            content,
+                            active_panel.as_ref(),
+                        );
+                    return self.apply_external_panel_session_effects(effects);
                 }
-                self.send_active_external_panel_event(
+                let active_panel = self.active_external_panel_identity();
+                let effects = self.external_panel_session.button_activated(
                     provider_name,
-                    crate::external_panel::protocol::ProviderEvent::ButtonActivated { element_id },
-                )
+                    element_id,
+                    active_panel.as_ref(),
+                );
+                self.apply_external_panel_session_effects(effects)
             }
             super::messages::ExternalPanelEvent::ListSearchChanged {
                 provider_name,
                 list_id,
                 query,
-            } => self.update_active_external_list_search(provider_name, list_id, query),
+            } => {
+                let active_panel = self.active_external_panel_identity();
+                let effects = self.external_panel_session.list_search_changed(
+                    provider_name,
+                    list_id,
+                    query,
+                    active_panel.as_ref(),
+                );
+                self.apply_external_panel_session_effects(effects)
+            }
             super::messages::ExternalPanelEvent::ListEntryActivated {
                 provider_name,
                 list_id,
@@ -352,15 +347,24 @@ impl App {
                     .get(&(provider_name.clone(), entry_id.clone()))
                     .cloned()
                 {
-                    return self.replace_active_external_panel_content(provider_name, content);
+                    let active_panel = self.active_external_panel_identity();
+                    let effects = self
+                        .external_panel_session
+                        .replace_content_from_provider_response(
+                            provider_name,
+                            content,
+                            active_panel.as_ref(),
+                        );
+                    return self.apply_external_panel_session_effects(effects);
                 }
-                self.send_active_external_panel_event(
+                let active_panel = self.active_external_panel_identity();
+                let effects = self.external_panel_session.list_entry_activated(
                     provider_name,
-                    crate::external_panel::protocol::ProviderEvent::SelectableListEntryActivated {
-                        element_id: list_id,
-                        entry_id,
-                    },
-                )
+                    list_id,
+                    entry_id,
+                    active_panel.as_ref(),
+                );
+                self.apply_external_panel_session_effects(effects)
             }
             super::messages::ExternalPanelEvent::ListCustomValueSubmitted {
                 provider_name,
@@ -373,15 +377,24 @@ impl App {
                     .get(&(provider_name.clone(), value.clone()))
                     .cloned()
                 {
-                    return self.replace_active_external_panel_content(provider_name, content);
+                    let active_panel = self.active_external_panel_identity();
+                    let effects = self
+                        .external_panel_session
+                        .replace_content_from_provider_response(
+                            provider_name,
+                            content,
+                            active_panel.as_ref(),
+                        );
+                    return self.apply_external_panel_session_effects(effects);
                 }
-                self.send_active_external_panel_event(
+                let active_panel = self.active_external_panel_identity();
+                let effects = self.external_panel_session.list_custom_value_submitted(
                     provider_name,
-                    crate::external_panel::protocol::ProviderEvent::SelectableListCustomValueSubmitted {
-                        element_id: list_id,
-                        value,
-                    },
-                )
+                    list_id,
+                    value,
+                    active_panel.as_ref(),
+                );
+                self.apply_external_panel_session_effects(effects)
             }
             super::messages::ExternalPanelEvent::TextInputChanged {
                 provider_name,
@@ -394,21 +407,24 @@ impl App {
                     .get(&(provider_name.clone(), element_id.clone()))
                     .cloned()
                 {
-                    return self.replace_active_external_panel_content(provider_name, content);
+                    let active_panel = self.active_external_panel_identity();
+                    let effects = self
+                        .external_panel_session
+                        .replace_content_from_provider_response(
+                            provider_name,
+                            content,
+                            active_panel.as_ref(),
+                        );
+                    return self.apply_external_panel_session_effects(effects);
                 }
-                let local_update = self.update_active_external_text_input(
-                    provider_name.clone(),
-                    element_id.clone(),
-                    value.clone(),
-                );
-                let provider_update = self.send_active_external_panel_event(
+                let active_panel = self.active_external_panel_identity();
+                let effects = self.external_panel_session.text_input_changed(
                     provider_name,
-                    crate::external_panel::protocol::ProviderEvent::TextInputChanged {
-                        element_id,
-                        value,
-                    },
+                    element_id,
+                    value,
+                    active_panel.as_ref(),
                 );
-                Task::batch([local_update, provider_update])
+                self.apply_external_panel_session_effects(effects)
             }
             super::messages::ExternalPanelEvent::TextInputSubmitted {
                 provider_name,
@@ -421,34 +437,30 @@ impl App {
                     .get(&(provider_name.clone(), element_id.clone()))
                     .cloned()
                 {
-                    return self.replace_active_external_panel_content(provider_name, content);
+                    let active_panel = self.active_external_panel_identity();
+                    let effects = self
+                        .external_panel_session
+                        .replace_content_from_provider_response(
+                            provider_name,
+                            content,
+                            active_panel.as_ref(),
+                        );
+                    return self.apply_external_panel_session_effects(effects);
                 }
-                self.send_active_external_panel_event(
+                let active_panel = self.active_external_panel_identity();
+                let effects = self.external_panel_session.text_input_submitted(
                     provider_name,
-                    crate::external_panel::protocol::ProviderEvent::TextInputSubmitted {
-                        element_id,
-                        value,
-                    },
-                )
+                    element_id,
+                    value,
+                    active_panel.as_ref(),
+                );
+                self.apply_external_panel_session_effects(effects)
             }
         }
     }
 
-    fn external_panel_session_is_pending(&self, session_id: &str) -> bool {
-        self.external_panel_pending_session_id
-            .as_deref()
-            .is_some_and(|pending| pending == session_id)
-    }
-
-    fn external_panel_session_is_active(&self, session_id: &str, provider_name: &str) -> bool {
-        self.external_panel_session.as_ref().is_some_and(|session| {
-            session.session_id == session_id && session.provider_name == provider_name
-        })
-    }
-
     pub(super) fn close_external_panel_session_for_replacement(&mut self) {
-        self.external_panel_pending_session_id = None;
-        self.external_panel_session = None;
+        self.external_panel_session.close();
     }
 
     fn active_panel_is_external_provider(&self) -> bool {
@@ -471,21 +483,72 @@ impl App {
             })
     }
 
-    fn send_active_external_panel_event(
+    fn active_external_panel_identity(&self) -> Option<ExternalPanelPanelIdentity> {
+        let tree = self.foreground.active_panel_tree()?;
+        let crate::surface::panel::PanelContent::ExternalProvider(content) = &tree.content else {
+            return None;
+        };
+        Some(ExternalPanelPanelIdentity {
+            origin_window: tree.origin_window,
+            origin: tree.origin.clone(),
+            provider_name: content.provider_name.clone(),
+        })
+    }
+
+    fn apply_external_panel_session_effects(
+        &mut self,
+        effects: Vec<ExternalPanelSessionEffect>,
+    ) -> Task<Message> {
+        Task::batch(
+            effects
+                .into_iter()
+                .map(|effect| self.apply_external_panel_session_effect(effect)),
+        )
+    }
+
+    fn apply_external_panel_session_effect(
+        &mut self,
+        effect: ExternalPanelSessionEffect,
+    ) -> Task<Message> {
+        match effect {
+            ExternalPanelSessionEffect::OpenPanel {
+                origin_window,
+                origin,
+                content,
+                anchor,
+            } => self.open_panel_internal(
+                origin_window,
+                origin,
+                crate::surface::panel::PanelContent::ExternalProvider(content),
+                anchor,
+                true,
+            ),
+            ExternalPanelSessionEffect::WatchProviderSession {
+                session_id,
+                provider_name,
+                handle,
+            } => self.watch_external_panel_session(session_id, provider_name, handle),
+            ExternalPanelSessionEffect::WatchProviderContent {
+                session_id,
+                provider_name,
+                handle,
+            } => self.watch_external_panel_content(session_id, provider_name, handle),
+            ExternalPanelSessionEffect::SendProviderEvent {
+                session_id,
+                provider_name,
+                handle,
+                event,
+            } => self.send_external_panel_event(session_id, provider_name, handle, event),
+        }
+    }
+
+    fn send_external_panel_event(
         &self,
+        session_id: String,
         provider_name: String,
+        handle: crate::external_panel::ExternalPanelSessionHandle,
         event: crate::external_panel::protocol::ProviderEvent,
     ) -> Task<Message> {
-        let Some(session) = self.external_panel_session.as_ref() else {
-            return Task::none();
-        };
-        if session.provider_name != provider_name {
-            return Task::none();
-        }
-        let Some(handle) = session.handle.clone() else {
-            return Task::none();
-        };
-        let session_id = handle.session_id().to_string();
         Task::perform(
             async move {
                 match tokio::time::timeout(
@@ -570,111 +633,6 @@ impl App {
         )
     }
 
-    fn update_active_external_list_search(
-        &mut self,
-        provider_name: String,
-        list_id: String,
-        query: String,
-    ) -> Task<Message> {
-        let Some(tree) = self.foreground.active_panel_tree().cloned() else {
-            return Task::none();
-        };
-        let crate::surface::panel::PanelContent::ExternalProvider(current) = &tree.content else {
-            return Task::none();
-        };
-        if current.provider_name != provider_name {
-            return Task::none();
-        }
-        self.open_panel_internal(
-            tree.origin_window,
-            tree.origin,
-            crate::surface::panel::PanelContent::ExternalProvider(
-                current.with_list_search(&list_id, query),
-            ),
-            tree.anchor,
-            true,
-        )
-    }
-
-    fn update_active_external_text_input(
-        &mut self,
-        provider_name: String,
-        element_id: String,
-        value: String,
-    ) -> Task<Message> {
-        let Some(tree) = self.foreground.active_panel_tree().cloned() else {
-            return Task::none();
-        };
-        let crate::surface::panel::PanelContent::ExternalProvider(current) = &tree.content else {
-            return Task::none();
-        };
-        if current.provider_name != provider_name {
-            return Task::none();
-        }
-        self.open_panel_internal(
-            tree.origin_window,
-            tree.origin,
-            crate::surface::panel::PanelContent::ExternalProvider(
-                current.with_text_input_value(&element_id, value),
-            ),
-            tree.anchor,
-            true,
-        )
-    }
-
-    fn replace_active_external_panel_content(
-        &mut self,
-        provider_name: String,
-        content: crate::surface::panel::ExternalPanelDocument,
-    ) -> Task<Message> {
-        let Some(tree) = self.foreground.active_panel_tree().cloned() else {
-            return Task::none();
-        };
-        let crate::surface::panel::PanelContent::ExternalProvider(current) = &tree.content else {
-            return Task::none();
-        };
-        if current.provider_name != provider_name {
-            return Task::none();
-        }
-        self.open_panel_internal(
-            tree.origin_window,
-            tree.origin,
-            crate::surface::panel::PanelContent::ExternalProvider(
-                crate::surface::panel::ExternalPanelContent::from_provider_document(
-                    provider_name,
-                    content,
-                ),
-            ),
-            tree.anchor,
-            true,
-        )
-    }
-
-    fn replace_active_external_panel_failure(
-        &mut self,
-        provider_name: String,
-        message: String,
-    ) -> Task<Message> {
-        let Some(tree) = self.foreground.active_panel_tree().cloned() else {
-            return Task::none();
-        };
-        let crate::surface::panel::PanelContent::ExternalProvider(current) = &tree.content else {
-            return Task::none();
-        };
-        if current.provider_name != provider_name {
-            return Task::none();
-        }
-        self.open_panel_internal(
-            tree.origin_window,
-            tree.origin,
-            crate::surface::panel::PanelContent::ExternalProvider(
-                crate::surface::panel::ExternalPanelContent::failure(provider_name, message),
-            ),
-            tree.anchor,
-            true,
-        )
-    }
-
     pub(super) fn suspend_bar_keyboard_interactivity(&mut self) -> Vec<Task<Message>> {
         let ids: Vec<iced::window::Id> = self.surfaces.keys().copied().collect();
         ids.into_iter()
@@ -714,9 +672,9 @@ impl App {
         provider_name: String,
         anchor: Option<iced::Rectangle>,
     ) -> Task<Message> {
-        self.close_external_panel_session_for_replacement();
         let session_id = crate::external_panel::next_session_id();
-        self.external_panel_pending_session_id = Some(session_id.clone());
+        self.external_panel_session
+            .begin_open_provider(session_id.clone());
 
         #[cfg(test)]
         if let Some(response) = self
@@ -746,36 +704,11 @@ impl App {
             return self.handle_external_panel_event(event);
         }
 
-        let provider_command = match self
-            .config
-            .panel_providers
-            .iter()
-            .find(|provider| provider.name == provider_name)
-        {
-            Some(provider) => provider.command.clone(),
-            None if crate::external_panel::is_builtin_provider_name(&provider_name) => {
-                match crate::external_panel::builtin_provider_command(&provider_name) {
-                    Some(command) => command,
-                    None => {
-                        tracing::error!(
-                            target: "niribar::external_panel",
-                            provider = provider_name.as_str(),
-                            "external panel built-in provider has no launch command"
-                        );
-                        return self.handle_external_panel_event(
-                            super::messages::ExternalPanelEvent::ProviderFailed {
-                                session_id,
-                                origin_window,
-                                origin,
-                                provider_name: provider_name.clone(),
-                                anchor,
-                                message: format!("provider {provider_name:?} is not available"),
-                            },
-                        );
-                    }
-                }
-            }
-            None => {
+        let provider_catalog =
+            crate::external_panel::PanelProviderCatalog::new(&self.config.panel_providers);
+        let provider_command = match provider_catalog.resolve(&provider_name) {
+            Ok(command) => command,
+            Err(crate::external_panel::PanelProviderResolutionError::NotConfigured) => {
                 tracing::error!(
                     target: "niribar::external_panel",
                     provider = provider_name.as_str(),
@@ -789,6 +722,23 @@ impl App {
                         provider_name: provider_name.clone(),
                         anchor,
                         message: format!("provider {provider_name:?} is not configured"),
+                    },
+                );
+            }
+            Err(crate::external_panel::PanelProviderResolutionError::BuiltinUnavailable) => {
+                tracing::error!(
+                    target: "niribar::external_panel",
+                    provider = provider_name.as_str(),
+                    "external panel built-in provider has no launch command"
+                );
+                return self.handle_external_panel_event(
+                    super::messages::ExternalPanelEvent::ProviderFailed {
+                        session_id,
+                        origin_window,
+                        origin,
+                        provider_name: provider_name.clone(),
+                        anchor,
+                        message: format!("provider {provider_name:?} is not available"),
                     },
                 );
             }

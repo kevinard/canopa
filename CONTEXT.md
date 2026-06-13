@@ -454,6 +454,10 @@ _Avoid_: Panel Action when referring to the provider process lifecycle
 The user-facing identifier for a **Configured Panel Provider**.
 _Avoid_: Module Name, command name
 
+**Panel Provider Resolution**:
+The runtime lookup that maps a **Panel Provider Name** to a user-declared **Configured Panel Provider**, a built-in provider command, or a provider failure.
+_Avoid_: Provider registry, command lookup
+
 **Command Policy**:
 The configuration-owned policy for **Configured Commands**, including whether shell-form commands are accepted and how long command-backed **Module Actions** and **Panel Actions** may run before Niribar kills and reaps the process. It validates **Configured Panel Providers** but does not define provider session lifetime, **Dmenu Selection Mode** selection waiting, or **Installed Desktop Application** launch behavior.
 _Avoid_: Script timeout, desktop launch policy, security mode
@@ -661,6 +665,11 @@ _Avoid_: Unavailable module, runtime failure
 - An **External Panel Session** starts with a protocol-version handshake between Niribar and the **External Panel Provider**.
 - An **External Panel Provider** updates **External Panel Content** by sending a complete replacement content model, not incremental patches.
 - A failed **External Panel Provider** renders provider error content in its hosting **Panel** instead of silently closing the **Panel**.
+- **External Panel Session** owns stale provider output filtering and provider failure conversion for its active **Panel**.
+- **External Panel Session** owns the current **External Panel Content** document for its active **Panel**.
+- **External Panel Session** owns local echo for **External Selectable List** search text and **External Text Input** values before provider responses arrive.
+- Closing an **External Panel Session** is idempotent; the first close ends the provider interaction, and repeated close requests do not emit additional provider close work.
+- **Foreground** owns whether an **External Panel Session** still has an active provider-backed **Panel** to update.
 - **External Panel Content** cannot ask Niribar to run arbitrary **Configured Commands**.
 - User interactions with **External Panel Content** are sent to the **External Panel Provider** as typed events addressed by **External Panel Element IDs**.
 - Niribar does not interpret **External Panel Element IDs** as domain meaning.
@@ -670,6 +679,8 @@ _Avoid_: Unavailable module, runtime failure
 - The first external-provider platform supports **External Panel Content** only, not provider-owned **Menus** or **Tooltips**.
 - Niribar has at most one active **External Panel Session** at a time.
 - **Configured Panel Providers** are globally named by **Panel Provider Name** and may be referenced by **Modules** or **Panel Actions**.
+- **Panel Provider Resolution** prefers a user-declared **Configured Panel Provider** over a built-in provider with the same **Panel Provider Name**.
+- **External Panel Session** consumes **Panel Provider Resolution** results rather than reading raw provider configuration directly.
 - A built-in **Module** may provide a default **Configured Panel Provider**.
 - User configuration may override or disable a built-in **Module**'s default **Configured Panel Provider**.
 - A configured **Module Action** takes precedence over a built-in **Module**'s default provider activation.

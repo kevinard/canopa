@@ -123,6 +123,8 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
             ));
         }
     }
+    let panel_provider_catalog =
+        crate::external_panel::PanelProviderCatalog::new(&config.panel_providers);
 
     for bar in &config.bars {
         validate_module_layout(
@@ -152,7 +154,7 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
             &format!("bar.{}.actions", bar.name),
             &bar.actions,
             &declared_menus,
-            &declared_panel_providers,
+            &panel_provider_catalog,
         )?;
     }
     for module in &config.modules {
@@ -161,13 +163,13 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
             &format!("module.{}.actions", module.name),
             &module.actions,
             &declared_menus,
-            &declared_panel_providers,
+            &panel_provider_catalog,
         )?;
         validate_module_provider_reference(
             source.clone(),
             &format!("module.{}", module.name),
             module,
-            &declared_panel_providers,
+            &panel_provider_catalog,
         )?;
     }
     for menu in &config.menus {
@@ -176,7 +178,7 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
             &format!("menu.{}", menu.name),
             &menu.items,
             &declared_menus,
-            &declared_panel_providers,
+            &panel_provider_catalog,
         )?;
     }
     Ok(())
@@ -184,16 +186,16 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
 
 fn provider_name_is_resolvable(
     name: &str,
-    declared_panel_providers: &std::collections::HashSet<&str>,
+    panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> bool {
-    declared_panel_providers.contains(name) || crate::external_panel::is_builtin_provider_name(name)
+    panel_provider_catalog.contains(name)
 }
 
 fn validate_module_provider_reference(
     source: ConfigSource,
     path: &str,
     module: &super::ModuleConfig,
-    declared_panel_providers: &std::collections::HashSet<&str>,
+    panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> ConfigResult<()> {
     let super::ModuleParams::Network(network) = &module.params else {
         return Ok(());
@@ -201,7 +203,7 @@ fn validate_module_provider_reference(
     let Some(name) = network.default_provider.as_deref() else {
         return Ok(());
     };
-    if provider_name_is_resolvable(name, declared_panel_providers) {
+    if provider_name_is_resolvable(name, panel_provider_catalog) {
         return Ok(());
     }
     Err(validation_error(
@@ -261,7 +263,7 @@ fn validate_actions_reference_declared_menus(
     path: &str,
     actions: &super::ActionsConfig,
     declared_menus: &std::collections::HashSet<&str>,
-    declared_panel_providers: &std::collections::HashSet<&str>,
+    panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> ConfigResult<()> {
     for binding in &actions.bindings {
         validate_action_references_declared_targets(
@@ -269,7 +271,7 @@ fn validate_actions_reference_declared_menus(
             path,
             &binding.action,
             declared_menus,
-            declared_panel_providers,
+            panel_provider_catalog,
         )?;
     }
     Ok(())
@@ -280,7 +282,7 @@ fn validate_menu_items_reference_declared_menus(
     path: &str,
     items: &[super::MenuItemConfig],
     declared_menus: &std::collections::HashSet<&str>,
-    declared_panel_providers: &std::collections::HashSet<&str>,
+    panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> ConfigResult<()> {
     for item in items {
         let item_path = format!("{path}.item({:?})", item.label);
@@ -290,7 +292,7 @@ fn validate_menu_items_reference_declared_menus(
                 &item_path,
                 action,
                 declared_menus,
-                declared_panel_providers,
+                panel_provider_catalog,
             )?;
         }
         validate_menu_items_reference_declared_menus(
@@ -298,7 +300,7 @@ fn validate_menu_items_reference_declared_menus(
             &item_path,
             &item.children,
             declared_menus,
-            declared_panel_providers,
+            panel_provider_catalog,
         )?;
     }
     Ok(())
@@ -309,7 +311,7 @@ fn validate_action_references_declared_targets(
     path: &str,
     action: &super::PanelAction,
     declared_menus: &std::collections::HashSet<&str>,
-    declared_panel_providers: &std::collections::HashSet<&str>,
+    panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> ConfigResult<()> {
     match action {
         super::PanelAction::OpenMenu(name) | super::PanelAction::ToggleMenu(name) => {
@@ -321,7 +323,7 @@ fn validate_action_references_declared_targets(
             }
         }
         super::PanelAction::OpenProvider(name) => {
-            if !provider_name_is_resolvable(name, declared_panel_providers) {
+            if !provider_name_is_resolvable(name, panel_provider_catalog) {
                 return Err(validation_error(
                     source,
                     format!("{path}: panel provider {:?} is not declared.", name),
