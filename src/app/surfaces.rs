@@ -46,6 +46,10 @@ impl BarSurfaceIdentity {
 pub(super) enum BarSurfaceLifecycleEffect {
     Open(PlannedBarSurface),
     RemoveWindow(iced::window::Id),
+    BarSurfaceRemoved {
+        identity: BarSurfaceIdentity,
+        window: iced::window::Id,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -244,7 +248,7 @@ impl SurfaceManager {
             .filter(|(identity, _)| !desired_identities.contains(identity))
             .collect();
         stale.sort_by_key(|(_, window)| format!("{window:?}"));
-        for (_identity, window) in stale {
+        for (identity, window) in stale {
             self.surfaces.remove(&window);
             effects.extend(
                 self.close_tooltips_for_surface(window)
@@ -255,7 +259,7 @@ impl SurfaceManager {
                         }
                     }),
             );
-            effects.push(BarSurfaceLifecycleEffect::RemoveWindow(window));
+            effects.push(BarSurfaceLifecycleEffect::BarSurfaceRemoved { identity, window });
         }
         effects
     }
@@ -865,7 +869,12 @@ mod tests {
         let effects =
             registry.reconcile_bar_surfaces(vec![planned_bar_surface("main", "HDMI-A-1")]);
 
-        assert!(effects.contains(&BarSurfaceLifecycleEffect::RemoveWindow(removed_window)));
+        assert!(
+            effects.contains(&BarSurfaceLifecycleEffect::BarSurfaceRemoved {
+                identity: BarSurfaceIdentity::new("main", Some("DP-1".into())),
+                window: removed_window,
+            })
+        );
     }
 
     #[test]
@@ -923,6 +932,22 @@ mod tests {
 
         assert!(!app.foreground.is_panel_window(panel));
         assert!(app.surface(origin).unwrap().focused_module.is_none());
+    }
+
+    #[test]
+    fn wayland_output_snapshot_closes_panel_when_origin_bar_surface_is_removed() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let origin = test_wid();
+        let panel = test_wid();
+        app.surfaces
+            .surfaces
+            .insert(origin, SurfaceState::new("DP-1".into(), "main".into()));
+        app.register_panel_popup(panel, origin);
+
+        let _tasks = app.reconcile_bar_surfaces_from_observed_outputs(Some(Vec::new()));
+
+        assert!(app.surface(origin).is_none());
+        assert!(app.foreground.active_panel_window().is_none());
     }
 
     #[test]
@@ -1136,7 +1161,10 @@ mod tests {
             effects,
             vec![
                 BarSurfaceLifecycleEffect::RemoveWindow(tooltip),
-                BarSurfaceLifecycleEffect::RemoveWindow(stale),
+                BarSurfaceLifecycleEffect::BarSurfaceRemoved {
+                    identity: BarSurfaceIdentity::new("main", Some("DP-1".into())),
+                    window: stale,
+                },
             ]
         );
         assert!(registry.surface(stale).is_none());

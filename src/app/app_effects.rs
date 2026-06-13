@@ -68,22 +68,6 @@ pub(super) enum AppEffect {
     },
 }
 
-pub(super) fn app_effects_for_bar_surface_lifecycle(
-    effects: Vec<super::surfaces::BarSurfaceLifecycleEffect>,
-) -> Vec<AppEffect> {
-    effects
-        .into_iter()
-        .map(|effect| match effect {
-            super::surfaces::BarSurfaceLifecycleEffect::Open(desired) => {
-                AppEffect::OpenBarSurface { desired }
-            }
-            super::surfaces::BarSurfaceLifecycleEffect::RemoveWindow(window) => {
-                AppEffect::RemoveWindow(window)
-            }
-        })
-        .collect()
-}
-
 pub(super) fn app_effects_for_foreground(
     effect: &super::foreground::ForegroundEffect,
 ) -> Option<Vec<AppEffect>> {
@@ -136,7 +120,39 @@ impl App {
         &mut self,
         effects: Vec<super::surfaces::BarSurfaceLifecycleEffect>,
     ) -> Vec<Task<Message>> {
-        self.apply_app_effects(app_effects_for_bar_surface_lifecycle(effects))
+        let mut tasks = Vec::new();
+        for effect in effects {
+            match effect {
+                super::surfaces::BarSurfaceLifecycleEffect::Open(desired) => {
+                    tasks.extend(
+                        self.apply_app_effects(vec![AppEffect::OpenBarSurface { desired }]),
+                    );
+                }
+                super::surfaces::BarSurfaceLifecycleEffect::RemoveWindow(window) => {
+                    tasks.extend(self.apply_app_effects(vec![AppEffect::RemoveWindow(window)]));
+                }
+                super::surfaces::BarSurfaceLifecycleEffect::BarSurfaceRemoved {
+                    identity,
+                    window,
+                } => {
+                    if self.foreground.active_panel_tree().is_some_and(|tree| {
+                        tree.origin_window == window
+                            && matches!(
+                                tree.content,
+                                crate::surface::panel::PanelContent::ExternalProvider(_)
+                            )
+                    }) {
+                        self.close_external_panel_session_for_replacement();
+                    }
+                    let effects = self.foreground.handle(
+                        super::foreground::ForegroundIntent::BarSurfaceRemoved { identity, window },
+                    );
+                    tasks.extend(self.apply_foreground_effects(effects));
+                    tasks.extend(self.apply_app_effects(vec![AppEffect::RemoveWindow(window)]));
+                }
+            }
+        }
+        tasks
     }
 
     pub(super) fn apply_app_effects(&mut self, effects: Vec<AppEffect>) -> Vec<Task<Message>> {
@@ -496,27 +512,6 @@ mod tests {
 
     fn panel_origin() -> crate::surface::panel::PanelOrigin {
         crate::surface::panel::PanelOrigin::Bar
-    }
-
-    #[test]
-    fn bar_surface_lifecycle_effects_map_to_external_app_effects() {
-        let window = wid();
-        let planned = super::super::bar_surface_plan::PlannedBarSurface::from_bar(
-            &crate::config::BarConfig::default(),
-            "DP-1",
-        );
-
-        let effects = app_effects_for_bar_surface_lifecycle(vec![
-            super::super::surfaces::BarSurfaceLifecycleEffect::Open(planned.clone()),
-            super::super::surfaces::BarSurfaceLifecycleEffect::RemoveWindow(window),
-        ]);
-
-        assert_eq!(effects.len(), 2);
-        assert!(matches!(
-            &effects[0],
-            AppEffect::OpenBarSurface { desired } if desired == &planned
-        ));
-        assert!(matches!(effects[1], AppEffect::RemoveWindow(id) if id == window));
     }
 
     #[test]

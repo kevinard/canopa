@@ -152,6 +152,10 @@ pub(super) enum ForegroundIntent<'a> {
     PanelWindowClosed {
         window: iced::window::Id,
     },
+    BarSurfaceRemoved {
+        identity: super::surfaces::BarSurfaceIdentity,
+        window: iced::window::Id,
+    },
     PanelSearchChanged(String),
     PanelMenuScrolled {
         y: f32,
@@ -331,6 +335,9 @@ impl Foreground {
             } => self.panel_installed_apps_loaded(pending, apps, menus),
             ForegroundIntent::PanelWindowOpened { window } => self.panel_window_opened(window),
             ForegroundIntent::PanelWindowClosed { window } => self.panel_window_closed(window),
+            ForegroundIntent::BarSurfaceRemoved { identity, window } => {
+                self.bar_surface_removed(identity, window)
+            }
             ForegroundIntent::PanelSearchChanged(query) => {
                 self.panel
                     .handle(super::panel_runtime::PanelRuntimeIntent::SearchChanged(
@@ -1075,6 +1082,57 @@ impl Foreground {
         }
     }
 
+    fn bar_surface_removed(
+        &mut self,
+        identity: super::surfaces::BarSurfaceIdentity,
+        window: iced::window::Id,
+    ) -> Vec<ForegroundEffect> {
+        if self
+            .pending_menu
+            .as_ref()
+            .is_some_and(|request| request.meta.origin == identity)
+        {
+            self.pending_menu = None;
+        }
+
+        let Some(active) = self.active.take() else {
+            return Vec::new();
+        };
+
+        match active {
+            ForegroundOverlay::Panel {
+                window: panel_window,
+                tree,
+            } if tree.origin_window == window => {
+                let mut effects = match panel_window {
+                    Some(panel_window) => {
+                        self.closing_panel_windows.insert(panel_window);
+                        vec![ForegroundEffect::RemoveWindow(panel_window)]
+                    }
+                    None => Vec::new(),
+                };
+                effects.extend(self.clear_panel_runtime());
+                effects.push(ForegroundEffect::RestoreBarKeyboardInteractivity);
+                effects
+            }
+            ForegroundOverlay::Menu {
+                window: menu_window,
+                meta,
+                ..
+            } if meta.origin == identity => {
+                self.closing_menu_windows.insert(menu_window, meta.clone());
+                vec![ForegroundEffect::CloseMenu {
+                    window: menu_window,
+                    meta,
+                }]
+            }
+            other => {
+                self.active = Some(other);
+                Vec::new()
+            }
+        }
+    }
+
     fn active_panel_matches(&self, request: &PanelForegroundRequest) -> bool {
         matches!(
             self.active.as_ref(),
@@ -1110,7 +1168,14 @@ mod tests {
         }
     }
 
-    fn menu_meta(service: &str) -> super::MenuPopupMeta {
+    fn bar_identity(output: &str) -> surfaces::BarSurfaceIdentity {
+        surfaces::BarSurfaceIdentity::new("main", Some(output.into()))
+    }
+
+    fn menu_meta_for_origin(
+        service: &str,
+        origin: surfaces::BarSurfaceIdentity,
+    ) -> super::MenuPopupMeta {
         super::MenuPopupMeta {
             service: service.into(),
             menu_path: zbus::zvariant::OwnedObjectPath::try_from("/menu").unwrap(),
@@ -1119,8 +1184,12 @@ mod tests {
                 anchor: (0, 0),
                 screen_size: (1920, 1080),
             },
-            origin: surfaces::BarSurfaceIdentity::all_screens(),
+            origin,
         }
+    }
+
+    fn menu_meta(service: &str) -> super::MenuPopupMeta {
+        menu_meta_for_origin(service, surfaces::BarSurfaceIdentity::all_screens())
     }
 
     fn menu_tree_with_items(items: &[(&str, &str)]) -> crate::surface::menu_popup::MenuTree {
@@ -1309,6 +1378,102 @@ mod tests {
             effects,
             vec![ForegroundEffect::RestoreBarKeyboardInteractivity,]
         );
+        assert!(foreground.active_overlay().is_none());
+    }
+
+    #[test]
+    fn bar_surface_removed_closes_panel_from_that_origin_window() {
+        let origin = wid();
+        let panel_window = wid();
+        let identity = bar_identity("DP-1");
+        let request = panel_request(origin, crate::surface::panel::PanelContent::BarPanel);
+        let mut foreground = Foreground::default();
+
+        open_panel(&mut foreground, request);
+        foreground.handle(ForegroundIntent::PanelWindowOpened {
+            window: panel_window,
+        });
+
+        let effects = foreground.handle(ForegroundIntent::BarSurfaceRemoved {
+            identity,
+            window: origin,
+        });
+
+        assert_eq!(
+            effects,
+            vec![
+                ForegroundEffect::RemoveWindow(panel_window),
+                ForegroundEffect::RestoreBarKeyboardInteractivity,
+            ]
+        );
+        assert!(foreground.active_overlay().is_none());
+        assert!(foreground.is_closing_panel_window(panel_window));
+    }
+
+    #[test]
+    fn bar_surface_removed_closes_menu_from_that_identity() {
+        let menu_window = wid();
+        let identity = bar_identity("DP-1");
+        let removed_window = wid();
+        let meta = menu_meta_for_origin("org.menu", identity.clone());
+        let request = menu_request_from_meta(meta.clone());
+        let mut foreground = Foreground::default();
+
+        foreground.handle(ForegroundIntent::OpenMenu {
+            request: request.clone(),
+        });
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
+            window: menu_window,
+            request,
+        });
+
+        let effects = foreground.handle(ForegroundIntent::BarSurfaceRemoved {
+            identity,
+            window: removed_window,
+        });
+
+        assert_eq!(
+            effects,
+            vec![ForegroundEffect::CloseMenu {
+                window: menu_window,
+                meta,
+            }]
+        );
+        assert!(foreground.active_overlay().is_none());
+        assert!(foreground.is_menu_window(menu_window));
+    }
+
+    #[test]
+    fn bar_surface_removed_clears_pending_menu_replacement_for_that_identity() {
+        let old_window = wid();
+        let removed_window = wid();
+        let identity = bar_identity("DP-1");
+        let old_meta = menu_meta_for_origin("org.old", identity.clone());
+        let replacement_meta = menu_meta_for_origin("org.replacement", identity.clone());
+        let old_request = menu_request_from_meta(old_meta.clone());
+        let replacement_request = menu_request_from_meta(replacement_meta);
+        let mut foreground = Foreground::default();
+
+        foreground.handle(ForegroundIntent::OpenMenu {
+            request: old_request.clone(),
+        });
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
+            window: old_window,
+            request: old_request,
+        });
+        foreground.handle(ForegroundIntent::OpenMenu {
+            request: replacement_request,
+        });
+
+        let removal_effects = foreground.handle(ForegroundIntent::BarSurfaceRemoved {
+            identity,
+            window: removed_window,
+        });
+        let closed_effects =
+            foreground.handle(ForegroundIntent::MenuWindowClosed { window: old_window });
+
+        assert!(removal_effects.is_empty());
+        assert!(closed_effects.is_empty());
         assert!(foreground.active_overlay().is_none());
     }
 
