@@ -391,6 +391,17 @@ fn render_panel_menu_model<'a>(
         .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
         .padding([8, 10])
         .width(Length::Fill);
+    let back_slot: Element<'_, Message> = if model.can_go_back {
+        button(text("<").size(16))
+            .on_press(Message::Panel(super::messages::PanelEvent::Back))
+            .width(40)
+            .height(38)
+            .into()
+    } else {
+        Space::new().width(0).height(38).into()
+    };
+    let header_spacing = if model.can_go_back { 8 } else { 0 };
+    let header: Element<'_, Message> = row![search, back_slot].spacing(header_spacing).into();
 
     let mut list = column![].spacing(8).padding(8);
     let entry_count = model.menu_entries.len();
@@ -462,7 +473,7 @@ fn render_panel_menu_model<'a>(
             })
         });
 
-    container(column![search, menu_scroll])
+    container(column![header, menu_scroll])
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {

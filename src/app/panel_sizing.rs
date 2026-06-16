@@ -319,6 +319,7 @@ mod tests {
             prompt: None,
             search_query: String::new(),
             focused_index: None,
+            can_go_back: false,
             scroll_y: 0.0,
         }
     }
@@ -489,6 +490,7 @@ mod tests {
             prompt: Some("Run".into()),
             search_query: String::new(),
             focused_index: None,
+            can_go_back: false,
             scroll_y: 0.0,
         };
 

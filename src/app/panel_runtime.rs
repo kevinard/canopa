@@ -39,6 +39,7 @@ pub(super) struct PanelMenuRenderState {
     pub(super) prompt: Option<String>,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
+    pub(super) can_go_back: bool,
     pub(super) scroll_y: f32,
 }
 
@@ -194,10 +195,7 @@ impl PanelRuntime {
                 self.move_focus(delta);
                 Vec::new()
             }
-            PanelRuntimeIntent::Back => {
-                self.back();
-                Vec::new()
-            }
+            PanelRuntimeIntent::Back => self.back(),
             PanelRuntimeIntent::Escape => self.escape(),
             PanelRuntimeIntent::Activate(index) => self.activate(index),
             PanelRuntimeIntent::BeginDmenuSelection {
@@ -530,9 +528,16 @@ impl PanelRuntime {
         self.focused_index()
     }
 
-    fn back(&mut self) {
-        if let Some(session) = self.session.as_mut() {
-            session.back();
+    fn back(&mut self) -> Vec<PanelRuntimeEffect> {
+        if self
+            .session
+            .as_mut()
+            .map(super::panel_menu_session::PanelMenuSession::back)
+            .unwrap_or(false)
+        {
+            vec![self.request_search_focus()]
+        } else {
+            Vec::new()
         }
     }
 
@@ -543,10 +548,15 @@ impl PanelRuntime {
             .map(super::panel_menu_session::PanelMenuSession::clear_search)
             .unwrap_or(false);
         if cleared_search {
-            vec![self.request_search_focus()]
-        } else {
-            vec![PanelRuntimeEffect::RequestPanelClose]
+            return vec![self.request_search_focus()];
         }
+
+        let back_effects = self.back();
+        if !back_effects.is_empty() {
+            return back_effects;
+        }
+
+        vec![PanelRuntimeEffect::RequestPanelClose]
     }
 
     fn panel_menu_snapshot(&self) -> Option<SelectableMenuSnapshot> {
@@ -579,6 +589,10 @@ impl PanelRuntime {
             focused_index: snapshot
                 .as_ref()
                 .and_then(|snapshot| snapshot.focused_index),
+            can_go_back: snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.can_go_back)
+                .unwrap_or(false),
             scroll_y: self.menu_scroll_y,
         }
     }
@@ -697,6 +711,30 @@ mod tests {
                     children: vec![],
                 },
             ],
+        }
+    }
+
+    fn menu_with_apps_submenu() -> crate::config::MenuConfig {
+        crate::config::MenuConfig {
+            name: "apps".into(),
+            prompt: Some("Run".into()),
+            show_icons: false,
+            source: None,
+            items: vec![crate::config::MenuItemConfig {
+                label: "Apps".into(),
+                icon: None,
+                keywords: vec![],
+                action: None,
+                children: vec![crate::config::MenuItemConfig {
+                    label: "Browser".into(),
+                    icon: None,
+                    keywords: vec![],
+                    action: Some(crate::config::PanelAction::Command(
+                        crate::config::ConfiguredCommand::shell_for_test("firefox"),
+                    )),
+                    children: vec![],
+                }],
+            }],
         }
     }
 
@@ -1035,6 +1073,37 @@ mod tests {
             runtime.handle(PanelRuntimeIntent::Escape),
             vec![PanelRuntimeEffect::RequestPanelClose]
         );
+    }
+
+    #[test]
+    fn escape_in_configured_submenu_returns_to_parent_menu() {
+        let mut runtime = PanelRuntime::default();
+        runtime.open_session(
+            super::super::panel_menu_session::PanelMenuSource::Configured(menu_with_apps_submenu()),
+        );
+        runtime.handle(PanelRuntimeIntent::Activate(Some(0)));
+
+        let effects = runtime.handle(PanelRuntimeIntent::Escape);
+
+        assert_eq!(effects, vec![PanelRuntimeEffect::RequestSearchFocus]);
+        assert!(runtime.search_focus_pending());
+        let snapshot = runtime.panel_menu_snapshot().expect("snapshot");
+        assert!(!snapshot.can_go_back);
+        assert_eq!(snapshot.entries[0].label, "Apps");
+    }
+
+    #[test]
+    fn back_in_configured_submenu_requests_search_refocus() {
+        let mut runtime = PanelRuntime::default();
+        runtime.open_session(
+            super::super::panel_menu_session::PanelMenuSource::Configured(menu_with_apps_submenu()),
+        );
+        runtime.handle(PanelRuntimeIntent::Activate(Some(0)));
+
+        let effects = runtime.handle(PanelRuntimeIntent::Back);
+
+        assert_eq!(effects, vec![PanelRuntimeEffect::RequestSearchFocus]);
+        assert!(runtime.search_focus_pending());
     }
 
     #[test]

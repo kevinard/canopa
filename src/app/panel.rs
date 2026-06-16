@@ -3035,6 +3035,23 @@ mod tests {
     }
 
     #[test]
+    fn back_from_submenu_requests_search_refocus() {
+        let config = config_with_menu(menu_with_apps_browser());
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = iced::window::Id::unique();
+        let panel = iced::window::Id::unique();
+        register_menu_panel(&mut app, panel, origin);
+        app.foreground
+            .handle(super::super::foreground::ForegroundIntent::PanelSearchFocusSettled);
+        let _ = app.handle_panel_event(super::super::messages::PanelEvent::ActivateIndex(0));
+
+        let _ = app.handle_panel_event(super::super::messages::PanelEvent::Back);
+
+        assert_eq!(active_menu_entries(&app)[0].label, "Apps");
+        assert!(app.foreground.panel_search_focus_pending());
+    }
+
+    #[test]
     fn hover_focus_cancels_pending_search_focus_retries() {
         let config = config_with_menu(menu_with_two_entries());
         let (mut app, _) = App::boot(config, vec![]);

@@ -91,6 +91,7 @@ pub(super) struct PanelMenuRenderState {
     pub(super) prompt: Option<String>,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
+    pub(super) can_go_back: bool,
     pub(super) scroll_y: f32,
 }
 
@@ -102,6 +103,7 @@ impl From<super::panel_runtime::PanelMenuRenderState> for PanelMenuRenderState {
             prompt: value.prompt,
             search_query: value.search_query,
             focused_index: value.focused_index,
+            can_go_back: value.can_go_back,
             scroll_y: value.scroll_y,
         }
     }
@@ -375,9 +377,10 @@ impl Foreground {
                 self.scroll_focused_panel_menu(scroll)
             }
             ForegroundIntent::PanelBack => {
-                self.panel
+                let effects = self
+                    .panel
                     .handle(super::panel_runtime::PanelRuntimeIntent::Back);
-                Vec::new()
+                self.apply_panel_runtime_effects(effects)
             }
             ForegroundIntent::PanelEscape => {
                 let effects = self

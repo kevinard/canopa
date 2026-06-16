@@ -37,6 +37,7 @@ pub(super) struct PanelMenuSnapshot {
     pub(super) focused_index: Option<usize>,
     pub(super) show_icons: bool,
     pub(super) search_enabled: bool,
+    pub(super) can_go_back: bool,
     pub(super) hovered_index: Option<usize>,
     pub(super) entries: Arc<[PanelMenuEntry]>,
 }
@@ -156,6 +157,7 @@ impl PanelMenuSession {
             focused_index: self.focused_index,
             show_icons: self.show_icons(),
             search_enabled: self.search_enabled(),
+            can_go_back: self.can_go_back(),
             hovered_index: self.hovered_index,
             entries: self.entries(),
         }
@@ -256,6 +258,10 @@ impl PanelMenuSession {
 
     pub(super) fn entries_snapshot(&self) -> Arc<[PanelMenuEntry]> {
         self.entries()
+    }
+
+    fn can_go_back(&self) -> bool {
+        !self.menu_path.is_empty() && self.search_query.is_empty()
     }
 
     fn entries(&self) -> Arc<[PanelMenuEntry]> {
@@ -785,6 +791,20 @@ mod tests {
 
         assert_eq!(snapshot.entries.len(), 1);
         assert_eq!(snapshot.entries[0].label, "Browser");
+    }
+
+    #[test]
+    fn configured_submenu_snapshot_marks_parent_navigation_available() {
+        let mut session =
+            PanelMenuSession::open(PanelMenuSource::Configured(menu_with_apps_browser()));
+
+        let root = session.snapshot();
+        assert!(!root.can_go_back);
+
+        session.activate_index(0);
+
+        let submenu = session.snapshot();
+        assert!(submenu.can_go_back);
     }
 
     #[test]

@@ -45,6 +45,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) menu_prompt: Option<String>,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
+    pub(super) can_go_back: bool,
     pub(super) menu_scroll_id: iced::widget::Id,
     pub(super) menu_scroll_y: f32,
     pub(super) bar_style: &'a crate::config::Style,
@@ -128,6 +129,7 @@ impl App {
             menu_prompt: menu.prompt,
             search_query: menu.search_query,
             focused_index: menu.focused_index,
+            can_go_back: menu.can_go_back,
             menu_scroll_id: super::panel::panel_menu_scroll_id(window),
             menu_scroll_y: menu.scroll_y,
             bar_style: &bar.style,
@@ -701,6 +703,61 @@ mod tests {
             model.menu_entries[0].icon,
             Some("utilities-terminal".into())
         );
+    }
+
+    #[test]
+    fn panel_render_model_exposes_parent_navigation_for_submenu() {
+        let config = Config {
+            menus: vec![MenuConfig {
+                name: "main".into(),
+                show_icons: false,
+                prompt: None,
+                source: None,
+                items: vec![MenuItemConfig {
+                    label: "Apps".into(),
+                    icon: None,
+                    keywords: vec![],
+                    action: None,
+                    children: vec![MenuItemConfig {
+                        label: "Browser".into(),
+                        icon: None,
+                        keywords: vec![],
+                        action: None,
+                        children: vec![],
+                    }],
+                }],
+            }],
+            ..Default::default()
+        };
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin = test_wid();
+        let panel = test_wid();
+        open_and_register_panel(
+            &mut app,
+            panel,
+            crate::surface::panel::PanelTree {
+                origin: crate::surface::panel::PanelOrigin::Bar,
+                content: crate::surface::panel::PanelContent::Menu("main".into()),
+                origin_window: origin,
+                origin_bar_name: "main".into(),
+                origin_output_name: "DP-1".into(),
+                anchor: None,
+                screen_size: (1920, 1080),
+            },
+        );
+        assert!(
+            !app.panel_render_model(panel)
+                .expect("panel model")
+                .can_go_back
+        );
+
+        let _ = app.update(crate::app::Message::Panel(
+            crate::app::messages::PanelEvent::ActivateIndex(0),
+        ));
+
+        let model = app.panel_render_model(panel).expect("panel model");
+        assert!(model.can_go_back);
+        assert_eq!(model.menu_entries[0].label, "Browser");
     }
 
     #[test]
