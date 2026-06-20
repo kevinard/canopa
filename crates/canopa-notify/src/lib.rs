@@ -1,17 +1,15 @@
 use anyhow::Context;
 use canopa_panel_protocol::{AppPermission, InteractionEvent};
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod delivery_policy;
 mod intake;
+mod sqlite_persisted_state;
 
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
@@ -19,6 +17,7 @@ pub use delivery_policy::{
 };
 
 use intake::{NotificationIntakeResult, intake_notification};
+use sqlite_persisted_state::SqlitePersistedState;
 
 #[derive(Clone)]
 pub struct DaemonOptions {
@@ -587,8 +586,8 @@ fn banner_rank(thread: &NotificationThread) -> (u8, i64) {
 
 #[derive(Clone)]
 pub struct Daemon {
-    storage: Storage,
-    lifecycle: NotificationLifecycle<Storage>,
+    storage: SqlitePersistedState,
+    lifecycle: NotificationLifecycle<SqlitePersistedState>,
     presentation: PresentationCoordinator,
     banner_state: Arc<Mutex<NotificationBannerState>>,
     sender_events: Arc<Mutex<Vec<SenderEvent>>>,
@@ -599,12 +598,10 @@ pub struct Daemon {
 
 impl Daemon {
     pub async fn open(options: DaemonOptions) -> anyhow::Result<Self> {
-        let storage = Storage::open(
+        let storage = SqlitePersistedState::open(
             options.database_path,
-            RetentionPolicy {
-                days: options.retention_days,
-                history_limit: options.history_limit,
-            },
+            options.retention_days,
+            options.history_limit,
         )
         .await?;
         let lifecycle = NotificationLifecycle::new(storage.clone());
@@ -887,18 +884,6 @@ impl Daemon {
         let banners = self.banner_state.lock().unwrap().visible_banners();
         self.presentation.replace_visible_banners(banners)
     }
-}
-
-#[derive(Clone)]
-struct Storage {
-    pool: SqlitePool,
-    retention: RetentionPolicy,
-}
-
-#[derive(Clone, Copy)]
-struct RetentionPolicy {
-    days: i64,
-    history_limit: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1282,402 +1267,6 @@ fn receipt_from_effects(effects: &[LifecycleEffect]) -> anyhow::Result<Notificat
         .ok_or_else(|| anyhow::anyhow!("notification lifecycle did not return a sender receipt"))
 }
 
-impl Storage {
-    async fn open(path: PathBuf, retention: RetentionPolicy) -> anyhow::Result<Self> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
-            .with_context(|| format!("invalid SQLite database path {}", path.display()))?
-            .create_if_missing(true);
-
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect_with(options)
-            .await?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS daemon_metadata (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS user_rules (
-                app_identity TEXT NOT NULL,
-                urgency TEXT NOT NULL,
-                outcome TEXT NOT NULL,
-                reference TEXT NOT NULL,
-                updated_at INTEGER NOT NULL,
-                PRIMARY KEY (app_identity, urgency)
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS notification_threads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                app_identity TEXT NOT NULL,
-                app_name TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                body TEXT NOT NULL,
-                raw_body TEXT NOT NULL,
-                urgency TEXT NOT NULL,
-                status TEXT NOT NULL,
-                delivery_outcome TEXT NOT NULL,
-                rule_reference TEXT,
-                category TEXT,
-                progress INTEGER,
-                resident INTEGER NOT NULL DEFAULT 0,
-                actions_json TEXT NOT NULL DEFAULT '[]',
-                revision INTEGER NOT NULL DEFAULT 1,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                closed_at INTEGER
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await?;
-
-        Ok(Self { pool, retention })
-    }
-
-    async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, app_identity, app_name, summary, body, raw_body, urgency, status,
-                   delivery_outcome, rule_reference, category, progress, resident,
-                   actions_json, revision, created_at, updated_at, closed_at
-            FROM notification_threads
-            ORDER BY created_at DESC, id DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        let mut active = Vec::new();
-        let mut history = Vec::new();
-
-        for row in rows {
-            let thread = NotificationThread::from_row(&row)?;
-            if thread.status == NotificationStatus::Active {
-                active.push(thread.clone());
-            }
-            history.push(thread);
-        }
-
-        Ok(NotificationSnapshot { active, history })
-    }
-
-    async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, app_identity, app_name, summary, body, raw_body, urgency, status,
-                   delivery_outcome, rule_reference, category, progress, resident,
-                   actions_json, revision, created_at, updated_at, closed_at
-            FROM notification_threads
-            WHERE id = ?1
-            "#,
-        )
-        .bind(id)
-        .fetch_one(&self.pool)
-        .await?;
-
-        NotificationThread::from_row(&row)
-    }
-
-    async fn active_ids(&self) -> anyhow::Result<Vec<i64>> {
-        let ids = sqlx::query_scalar(
-            "SELECT id FROM notification_threads WHERE status = 'active' ORDER BY created_at ASC",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(ids)
-    }
-
-    async fn delete_inactive_history(&self) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM notification_threads WHERE status != 'active'")
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    async fn set_do_not_disturb(&self, enabled: bool) -> anyhow::Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO daemon_metadata (key, value)
-            VALUES ('do_not_disturb', ?1)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            "#,
-        )
-        .bind(if enabled { "true" } else { "false" })
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn do_not_disturb(&self) -> anyhow::Result<bool> {
-        let value: Option<String> =
-            sqlx::query_scalar("SELECT value FROM daemon_metadata WHERE key = 'do_not_disturb'")
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(value.as_deref() == Some("true"))
-    }
-
-    async fn upsert_user_rule(&self, rule: &UserRule) -> anyhow::Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO user_rules (app_identity, urgency, outcome, reference, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5)
-            ON CONFLICT(app_identity, urgency) DO UPDATE SET
-                outcome = excluded.outcome,
-                reference = excluded.reference,
-                updated_at = excluded.updated_at
-            "#,
-        )
-        .bind(&rule.app_identity)
-        .bind(rule.urgency_key())
-        .bind(rule.outcome.as_str())
-        .bind(&rule.reference)
-        .bind(now_millis())
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn user_rules(&self) -> anyhow::Result<Vec<UserRule>> {
-        let rows = sqlx::query(
-            "SELECT app_identity, urgency, outcome, reference FROM user_rules ORDER BY app_identity, urgency",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        rows.into_iter()
-            .map(|row| {
-                Ok(UserRule {
-                    app_identity: row.try_get("app_identity")?,
-                    urgency: urgency_from_key(&row.try_get::<String, _>("urgency")?),
-                    outcome: DeliveryOutcome::from_str(&row.try_get::<String, _>("outcome")?),
-                    reference: row.try_get("reference")?,
-                })
-            })
-            .collect()
-    }
-
-    async fn remove_user_rule(
-        &self,
-        app_identity: &str,
-        urgency: Option<Urgency>,
-    ) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM user_rules WHERE app_identity = ?1 AND urgency = ?2")
-            .bind(app_identity)
-            .bind(urgency_key(urgency))
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    async fn prune_history(&self) -> anyhow::Result<()> {
-        let cutoff = now_millis() - self.retention.days.max(0) * 24 * 60 * 60 * 1_000;
-
-        sqlx::query(
-            "DELETE FROM notification_threads WHERE status != 'active' AND updated_at < ?1",
-        )
-        .bind(cutoff)
-        .execute(&self.pool)
-        .await?;
-
-        sqlx::query(
-            r#"
-            DELETE FROM notification_threads
-            WHERE status != 'active'
-              AND id IN (
-                  SELECT id
-                  FROM notification_threads
-                  WHERE status != 'active'
-                  ORDER BY updated_at DESC, id DESC
-                  LIMIT -1 OFFSET ?1
-              )
-            "#,
-        )
-        .bind(self.retention.history_limit.max(0))
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-}
-
-impl NotificationHistory for Storage {
-    async fn create_thread(
-        &self,
-        thread: NewNotificationThread,
-    ) -> anyhow::Result<NotificationThread> {
-        let actions_json = serde_json::to_string(&thread.actions)?;
-        let id = sqlx::query(
-            r#"
-            INSERT INTO notification_threads (
-                app_identity, app_name, summary, body, raw_body, urgency, status,
-                delivery_outcome, rule_reference, category, progress, resident, created_at,
-                updated_at, actions_json
-            )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-            "#,
-        )
-        .bind(&thread.app_identity)
-        .bind(&thread.app_name)
-        .bind(&thread.summary)
-        .bind(&thread.body)
-        .bind(&thread.raw_body)
-        .bind(thread.urgency.as_str())
-        .bind(thread.status.as_str())
-        .bind(thread.delivery_outcome.as_str())
-        .bind(&thread.rule_reference)
-        .bind(&thread.category)
-        .bind(thread.progress)
-        .bind(thread.resident)
-        .bind(thread.created_at)
-        .bind(thread.updated_at)
-        .bind(actions_json)
-        .execute(&self.pool)
-        .await?
-        .last_insert_rowid();
-        self.thread(id).await
-    }
-
-    async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
-        Storage::thread(self, id).await
-    }
-
-    async fn revise_thread(
-        &self,
-        id: i64,
-        revision: ThreadRevision,
-    ) -> anyhow::Result<NotificationThread> {
-        let actions_json = serde_json::to_string(&revision.actions)?;
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET app_identity = ?2,
-                app_name = ?3,
-                summary = ?4,
-                body = ?5,
-                raw_body = ?6,
-                urgency = ?7,
-                category = ?8,
-                progress = ?9,
-                resident = ?10,
-                actions_json = ?11,
-                delivery_outcome = ?12,
-                rule_reference = ?13,
-                status = 'active',
-                revision = revision + 1,
-                updated_at = ?14,
-                closed_at = NULL
-            WHERE id = ?1
-            "#,
-        )
-        .bind(id)
-        .bind(revision.app_identity)
-        .bind(revision.app_name)
-        .bind(revision.summary)
-        .bind(revision.body)
-        .bind(revision.raw_body)
-        .bind(revision.urgency.as_str())
-        .bind(revision.category)
-        .bind(revision.progress)
-        .bind(revision.resident)
-        .bind(actions_json)
-        .bind(revision.delivery_outcome.as_str())
-        .bind(revision.rule_reference)
-        .bind(revision.updated_at)
-        .execute(&self.pool)
-        .await?;
-        self.thread(id).await
-    }
-
-    async fn transition_thread(
-        &self,
-        id: i64,
-        status: NotificationStatus,
-        updated_at: i64,
-    ) -> anyhow::Result<NotificationThread> {
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET status = ?2, updated_at = ?3, closed_at = ?3
-            WHERE id = ?1
-            "#,
-        )
-        .bind(id)
-        .bind(status.as_str())
-        .bind(updated_at)
-        .execute(&self.pool)
-        .await?;
-        self.prune_history().await?;
-        self.thread(id).await
-    }
-
-    async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
-        Ok(self.snapshot().await?.active)
-    }
-
-    async fn update_delivery(
-        &self,
-        id: i64,
-        delivery: LifecycleDelivery,
-    ) -> anyhow::Result<NotificationThread> {
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET delivery_outcome = ?2,
-                rule_reference = ?3
-            WHERE id = ?1
-            "#,
-        )
-        .bind(id)
-        .bind(delivery.outcome.as_str())
-        .bind(delivery.rule_reference)
-        .execute(&self.pool)
-        .await?;
-        self.thread(id).await
-    }
-
-    async fn mark_active_threads_stale(
-        &self,
-        updated_at: i64,
-    ) -> anyhow::Result<Vec<NotificationThread>> {
-        let ids = self.active_ids().await?;
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET status = 'stale', updated_at = ?1, closed_at = ?1
-            WHERE status = 'active'
-            "#,
-        )
-        .bind(updated_at)
-        .execute(&self.pool)
-        .await?;
-
-        let mut stale = Vec::new();
-        for id in ids {
-            stale.push(self.thread(id).await?);
-        }
-        Ok(stale)
-    }
-}
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationInput {
     pub app_name: String,
@@ -1822,34 +1411,6 @@ pub struct NotificationThread {
     pub closed_at: Option<i64>,
 }
 
-impl NotificationThread {
-    fn from_row(row: &sqlx::sqlite::SqliteRow) -> anyhow::Result<Self> {
-        Ok(Self {
-            id: row.try_get("id")?,
-            app_identity: row.try_get("app_identity")?,
-            app_name: row.try_get("app_name")?,
-            summary: row.try_get("summary")?,
-            body: row.try_get("body")?,
-            raw_body: row.try_get("raw_body")?,
-            urgency: Urgency::from_str(&row.try_get::<String, _>("urgency")?),
-            status: NotificationStatus::from_str(&row.try_get::<String, _>("status")?),
-            delivery_outcome: DeliveryOutcome::from_str(
-                &row.try_get::<String, _>("delivery_outcome")?,
-            ),
-            rule_reference: row.try_get("rule_reference")?,
-            category: row.try_get("category")?,
-            progress: row.try_get("progress")?,
-            has_image_payload: false,
-            actions: serde_json::from_str(&row.try_get::<String, _>("actions_json")?)?,
-            resident: row.try_get::<i64, _>("resident")? != 0,
-            revision: row.try_get("revision")?,
-            created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
-            closed_at: row.try_get("closed_at")?,
-        })
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationSnapshot {
     pub active: Vec<NotificationThread>,
@@ -1895,10 +1456,6 @@ impl UserRule {
             urgency: Some(urgency),
             outcome,
         }
-    }
-
-    fn urgency_key(&self) -> &'static str {
-        urgency_key(self.urgency)
     }
 }
 
