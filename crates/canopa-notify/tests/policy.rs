@@ -1,4 +1,131 @@
-use canopa_notify::{Daemon, DaemonOptions, DeliveryOutcome, NotificationInput, Urgency, UserRule};
+use canopa_notify::{
+    Daemon, DaemonOptions, DeliveryDecisionReason, DeliveryOutcome, DeliveryPolicy,
+    DeliveryPolicyFacts, DeliveryPolicyRule, LoadedDeliveryPolicyState, NotificationInput, Urgency,
+    UserRule,
+};
+
+#[test]
+fn delivery_policy_applies_user_rule_and_do_not_disturb_precedence() {
+    let policy = DeliveryPolicy::new(
+        LoadedDeliveryPolicyState::builder()
+            .do_not_disturb(true)
+            .user_rule(DeliveryPolicyRule::new(
+                "Chat",
+                None,
+                DeliveryOutcome::Shown,
+                "user:Chat:*",
+            ))
+            .user_rule(DeliveryPolicyRule::new(
+                "Build",
+                None,
+                DeliveryOutcome::Dropped,
+                "user:Build:*",
+            ))
+            .config_rule(DeliveryPolicyRule::new(
+                "Chat",
+                None,
+                DeliveryOutcome::Dropped,
+                "config-drop-chat",
+            ))
+            .build(),
+    );
+
+    let silenced_by_dnd = policy.decide(DeliveryPolicyFacts::new("Chat", Urgency::Normal));
+    assert_eq!(silenced_by_dnd.outcome, DeliveryOutcome::Silenced);
+    assert_eq!(
+        silenced_by_dnd.rule_reference.as_deref(),
+        Some("do-not-disturb")
+    );
+    assert_eq!(
+        silenced_by_dnd.log.reason,
+        DeliveryDecisionReason::DoNotDisturb
+    );
+
+    let critical_user_allow = policy.decide(DeliveryPolicyFacts::new("Chat", Urgency::Critical));
+    assert_eq!(critical_user_allow.outcome, DeliveryOutcome::Shown);
+    assert_eq!(
+        critical_user_allow.rule_reference.as_deref(),
+        Some("user:Chat:*")
+    );
+    assert_eq!(
+        critical_user_allow.log.reason,
+        DeliveryDecisionReason::UserRule
+    );
+
+    let explicit_drop = policy.decide(DeliveryPolicyFacts::new("Build", Urgency::Critical));
+    assert_eq!(explicit_drop.outcome, DeliveryOutcome::Dropped);
+    assert_eq!(
+        explicit_drop.rule_reference.as_deref(),
+        Some("user:Build:*")
+    );
+    assert_eq!(explicit_drop.log.reason, DeliveryDecisionReason::UserRule);
+}
+
+#[test]
+fn delivery_policy_owns_config_rule_matching_and_default_allow_diagnostics() {
+    let policy = DeliveryPolicy::new(
+        LoadedDeliveryPolicyState::builder()
+            .config_rule(DeliveryPolicyRule::new(
+                "Mail",
+                Some(Urgency::Normal),
+                DeliveryOutcome::Silenced,
+                "config:silence-mail-normal",
+            ))
+            .build(),
+    );
+
+    let config_decision = policy.decide(DeliveryPolicyFacts::new("Mail", Urgency::Normal));
+    assert_eq!(config_decision.outcome, DeliveryOutcome::Silenced);
+    assert_eq!(
+        config_decision.rule_reference.as_deref(),
+        Some("config:silence-mail-normal")
+    );
+    assert_eq!(
+        config_decision.log.reason,
+        DeliveryDecisionReason::ConfigRule
+    );
+
+    let default_decision = policy.decide(DeliveryPolicyFacts::new("Unknown", Urgency::Normal));
+    assert_eq!(default_decision.outcome, DeliveryOutcome::Shown);
+    assert_eq!(default_decision.rule_reference, None);
+    assert_eq!(
+        default_decision.log.reason,
+        DeliveryDecisionReason::DefaultAllow
+    );
+    assert_eq!(default_decision.log.app_identity, "Unknown");
+    assert_eq!(default_decision.log.urgency, Urgency::Normal);
+}
+
+#[test]
+fn delivery_policy_prefers_urgency_specific_user_rules() {
+    let policy = DeliveryPolicy::new(
+        LoadedDeliveryPolicyState::builder()
+            .user_rule(DeliveryPolicyRule::new(
+                "Chat",
+                None,
+                DeliveryOutcome::Silenced,
+                "user:Chat:*",
+            ))
+            .user_rule(DeliveryPolicyRule::new(
+                "Chat",
+                Some(Urgency::Critical),
+                DeliveryOutcome::Shown,
+                "user:Chat:critical",
+            ))
+            .build(),
+    );
+
+    let critical = policy.decide(DeliveryPolicyFacts::new("Chat", Urgency::Critical));
+    assert_eq!(critical.outcome, DeliveryOutcome::Shown);
+    assert_eq!(
+        critical.rule_reference.as_deref(),
+        Some("user:Chat:critical")
+    );
+
+    let normal = policy.decide(DeliveryPolicyFacts::new("Chat", Urgency::Normal));
+    assert_eq!(normal.outcome, DeliveryOutcome::Silenced);
+    assert_eq!(normal.rule_reference.as_deref(), Some("user:Chat:*"));
+}
 
 #[tokio::test]
 async fn do_not_disturb_silences_non_critical_notifications_but_allows_critical_banners() {
@@ -219,7 +346,10 @@ async fn delivery_decision_logs_redact_notification_content() {
         .await
         .unwrap();
 
-    let encoded_logs = serde_json::to_string(&daemon.delivery_decision_logs().await).unwrap();
+    let logs = daemon.delivery_decision_logs().await;
+    assert_eq!(logs[0].reason, DeliveryDecisionReason::UserRule);
+
+    let encoded_logs = serde_json::to_string(&logs).unwrap();
     assert!(encoded_logs.contains("Chat"));
     assert!(encoded_logs.contains("silenced"));
     assert!(!encoded_logs.contains("Secret subject"));

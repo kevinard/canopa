@@ -10,6 +10,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod delivery_policy;
+
+pub use delivery_policy::{
+    DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
+    DeliveryPolicyFacts, DeliveryPolicyRule, LoadedDeliveryPolicyState,
+};
+
 #[derive(Clone)]
 pub struct DaemonOptions {
     pub database_path: PathBuf,
@@ -631,8 +638,9 @@ impl Daemon {
             });
         }
 
-        let decision = self.evaluate_delivery(&app_identity, input.urgency).await?;
-        self.record_decision(&app_identity, input.urgency, &decision);
+        let policy = self.delivery_policy().await?;
+        let decision = policy.decide(DeliveryPolicyFacts::new(&app_identity, input.urgency));
+        self.record_decision(decision.log.clone());
 
         let effects = self
             .lifecycle
@@ -805,68 +813,34 @@ impl Daemon {
         self.sender_events.lock().unwrap().clone()
     }
 
-    async fn evaluate_delivery(
-        &self,
-        app_identity: &str,
-        urgency: Urgency,
-    ) -> anyhow::Result<DeliveryDecision> {
-        let user_rule = self.storage.match_user_rule(app_identity, urgency).await?;
-        if let Some(rule) = user_rule
-            .as_ref()
-            .filter(|rule| rule.outcome == DeliveryOutcome::Dropped)
-        {
-            return Ok(DeliveryDecision::new(
-                DeliveryOutcome::Dropped,
-                rule.reference.clone(),
-            ));
-        }
-
-        if self.storage.do_not_disturb().await? && urgency != Urgency::Critical {
-            return Ok(DeliveryDecision::new(
-                DeliveryOutcome::Silenced,
-                "do-not-disturb",
-            ));
-        }
-
-        if let Some(rule) = user_rule {
-            return Ok(DeliveryDecision::new(rule.outcome, rule.reference));
-        }
-
-        if let Some(rule) = self
-            .config_rules
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|rule| rule.matches(app_identity, urgency))
-            .cloned()
-        {
-            Ok(DeliveryDecision::new(rule.outcome, rule.reference))
-        } else {
-            Ok(DeliveryDecision {
-                outcome: DeliveryOutcome::Shown,
-                rule_reference: None,
-            })
-        }
+    async fn delivery_policy(&self) -> anyhow::Result<DeliveryPolicy> {
+        let config_rules = self.config_rules.lock().unwrap().clone();
+        let user_rules = self.storage.user_rules().await?;
+        let do_not_disturb = self.storage.do_not_disturb().await?;
+        let state = LoadedDeliveryPolicyState::builder()
+            .do_not_disturb(do_not_disturb)
+            .user_rules(user_rules.into_iter().map(delivery_policy_rule_from_user))
+            .config_rules(
+                config_rules
+                    .into_iter()
+                    .map(delivery_policy_rule_from_config),
+            )
+            .build();
+        Ok(DeliveryPolicy::new(state))
     }
 
-    fn record_decision(&self, app_identity: &str, urgency: Urgency, decision: &DeliveryDecision) {
-        self.decision_logs
-            .lock()
-            .unwrap()
-            .push(DeliveryDecisionLog {
-                app_identity: app_identity.to_string(),
-                urgency,
-                delivery_outcome: decision.outcome,
-                rule_reference: decision.rule_reference.clone(),
-            });
+    fn record_decision(&self, log: DeliveryDecisionLog) {
+        self.decision_logs.lock().unwrap().push(log);
     }
 
     async fn reevaluate_active_notifications(&self) -> anyhow::Result<()> {
         let active = self.snapshot().await?.active;
+        let policy = self.delivery_policy().await?;
         for thread in active {
-            let decision = self
-                .evaluate_delivery(&thread.app_identity, thread.urgency)
-                .await?;
+            let decision = policy.decide(DeliveryPolicyFacts::new(
+                &thread.app_identity,
+                thread.urgency,
+            ));
             let effects = self
                 .lifecycle
                 .apply_delivery_decision(thread.id, LifecycleDelivery::from_decision(&decision))
@@ -929,21 +903,6 @@ struct Storage {
 struct RetentionPolicy {
     days: i64,
     history_limit: i64,
-}
-
-#[derive(Clone, Debug)]
-struct DeliveryDecision {
-    outcome: DeliveryOutcome,
-    rule_reference: Option<String>,
-}
-
-impl DeliveryDecision {
-    fn new(outcome: DeliveryOutcome, rule_reference: impl Into<String>) -> Self {
-        Self {
-            outcome,
-            rule_reference: Some(rule_reference.into()),
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1520,36 +1479,6 @@ impl Storage {
             .collect()
     }
 
-    async fn match_user_rule(
-        &self,
-        app_identity: &str,
-        urgency: Urgency,
-    ) -> anyhow::Result<Option<UserRule>> {
-        let row = sqlx::query(
-            r#"
-            SELECT app_identity, urgency, outcome, reference
-            FROM user_rules
-            WHERE app_identity = ?1 AND urgency IN (?2, '*')
-            ORDER BY CASE urgency WHEN ?2 THEN 0 ELSE 1 END
-            LIMIT 1
-            "#,
-        )
-        .bind(app_identity)
-        .bind(urgency.as_str())
-        .fetch_optional(&self.pool)
-        .await?;
-
-        row.map(|row| {
-            Ok(UserRule {
-                app_identity: row.try_get("app_identity")?,
-                urgency: urgency_from_key(&row.try_get::<String, _>("urgency")?),
-                outcome: DeliveryOutcome::from_str(&row.try_get::<String, _>("outcome")?),
-                reference: row.try_get("reference")?,
-            })
-        })
-        .transpose()
-    }
-
     async fn remove_user_rule(
         &self,
         app_identity: &str,
@@ -1940,14 +1869,6 @@ pub struct SenderEvent {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DeliveryDecisionLog {
-    pub app_identity: String,
-    pub urgency: Urgency,
-    pub delivery_outcome: DeliveryOutcome,
-    pub rule_reference: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UserRule {
     pub app_identity: String,
     pub urgency: Option<Urgency>,
@@ -1993,18 +1914,26 @@ struct ConfigRule {
     reference: String,
 }
 
-impl ConfigRule {
-    fn matches(&self, app_identity: &str, urgency: Urgency) -> bool {
-        self.app_identity == app_identity
-            && self
-                .urgency
-                .map(|rule_urgency| rule_urgency == urgency)
-                .unwrap_or(true)
-    }
-}
-
 fn urgency_key(urgency: Option<Urgency>) -> &'static str {
     urgency.map(Urgency::as_str).unwrap_or("*")
+}
+
+fn delivery_policy_rule_from_user(rule: UserRule) -> DeliveryPolicyRule {
+    DeliveryPolicyRule::new(
+        rule.app_identity,
+        rule.urgency,
+        rule.outcome,
+        rule.reference,
+    )
+}
+
+fn delivery_policy_rule_from_config(rule: ConfigRule) -> DeliveryPolicyRule {
+    DeliveryPolicyRule::new(
+        rule.app_identity,
+        rule.urgency,
+        rule.outcome,
+        rule.reference,
+    )
 }
 
 fn urgency_from_key(value: &str) -> Option<Urgency> {

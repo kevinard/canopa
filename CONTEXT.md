@@ -52,6 +52,10 @@ _Avoid_: User rule key when referring to configuration-authored rules
 The policy result applied to a notification when it arrived.
 _Avoid_: Current app permission when referring to historical records
 
+**Loaded Delivery Policy State**:
+The normalized, in-memory policy facts evaluated by **Delivery Policy**, including **Do Not Disturb** and **Notification Rules** from all active rule sources.
+_Avoid_: Rule store when referring to persisted rules, notification configuration when referring to the normalized state
+
 **Delivery Decision Log**:
 A diagnostic record of how Notify classified an incoming notification for delivery policy.
 _Avoid_: Metrics when referring to per-notification debug diagnostics
@@ -227,12 +231,18 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Do Not Disturb** state persists across **Notification Daemon** restarts.
 - **Do Not Disturb** takes precedence over app allow rules for non-critical notifications.
 - **Do Not Disturb** is part of loaded **Delivery Policy** rule state.
+- **Loaded Delivery Policy State** is assembled outside **Delivery Policy** from the **User Rule Store**, **Notification Configuration**, and persisted **Do Not Disturb** state.
+- The **Delivery Policy** module may provide the builder for **Loaded Delivery Policy State**, but the **Notification Daemon** supplies already-loaded rule and **Do Not Disturb** facts.
 - A **Silenced Notification** remains visible in notification history.
 - Unknown **App Identities** are allowed unless a **Notification Rule** says otherwise.
 - Notification delivery policy uses ordered **Notification Rules** where the first decisive matching rule determines whether a notification is shown, silenced, or dropped.
 - **Delivery Policy** runs before **Notification Lifecycle** for both new and replacement notifications.
 - **Delivery Policy** decides the **Delivery Outcome**; **Notification Lifecycle** acts on that outcome, including dropped notifications.
 - **Delivery Policy** is pure over notification facts and loaded rule state; it does not query storage or configuration files directly.
+- **Delivery Policy** uses the same decision path for new notifications, replacement notifications, and **Active Notification** re-evaluation unless a future **Notification Rule** explicitly depends on that context.
+- Default allowing of unknown **App Identities** is **Delivery Policy** implementation, not a synthetic rule supplied by the **Notification Daemon**.
+- **Delivery Policy** produces the diagnostic explanation used for a **Delivery Decision Log**; the **Notification Daemon** records the log without inferring policy reasons.
+- **Delivery Policy** precedence and diagnostic behavior are tested through the **Delivery Policy** module interface; **Notification Daemon** tests cover rule loading, re-evaluation, and **Notification Lifecycle** wiring.
 - **Delivery Decision Logs** are diagnostic debug logs, not first-version metrics.
 - Normal **Delivery Decision Logs** do not include **Notification Content**.
 - Replacement notifications revise an existing **Notification Thread** instead of creating a new normal history item.
