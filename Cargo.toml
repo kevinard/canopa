@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/canopa-panel-protocol",
+    "crates/canopa-notify",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://example.invalid/canopa/notify"
+
+[workspace.dependencies]
+anyhow = "1"
+assert_cmd = "2"
+clap = { version = "4", features = ["derive"] }
+iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "wayland"] }
+iced_layershell = { version = "0.18", default-features = false }
+predicates = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+tempfile = "3"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
+wayland-client = "0.31"
+zbus = { version = "5", default-features = false, features = ["tokio"] }

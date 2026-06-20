@@ -1,0 +1,27 @@
+[package]
+name = "canopa-notify"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "canopa-notify"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+canopa-panel-protocol = { path = "../canopa-panel-protocol" }
+clap.workspace = true
+iced.workspace = true
+iced_layershell.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+wayland-client.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
