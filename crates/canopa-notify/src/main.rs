@@ -1,13 +1,13 @@
 use anyhow::Context;
 use canopa_notify::{
-    BannerInteraction, Daemon, DaemonOptions, IcedLayerShellBannerPresenter, NotificationAction,
-    NotificationInput, Urgency,
+    AppPermissionControl as ControlAppPermission, BannerInteraction, ControlCommand, ControlReply,
+    Daemon, DaemonOptions, IcedLayerShellBannerPresenter, NotificationAction,
+    NotificationCenterProjection, NotificationInput, NotifyControl, Urgency,
 };
 use canopa_panel_protocol::{
     AppPermission, PanelAction, PanelContent, PanelGroup, PanelItem, ProviderResponse,
 };
 use clap::{Parser, Subcommand};
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream as StdUnixStream;
@@ -110,6 +110,7 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
     }
     let startup = daemon_startup(mode, database)?;
     let daemon = Daemon::open(startup.options).await?;
+    let control = NotifyControl::new(daemon.clone());
     if let Some(interactions) = startup.banner_interactions {
         spawn_banner_interaction_forwarder(daemon.clone(), interactions)?;
     }
@@ -154,9 +155,9 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         tokio::select! {
             incoming = listener.accept() => {
                 let (stream, _) = incoming?;
-                let daemon = daemon.clone();
+                let control = control.clone();
                 tokio::spawn(async move {
-                    if let Err(error) = handle_control_connection(stream, daemon).await {
+                    if let Err(error) = handle_control_connection(stream, control).await {
                         eprintln!("level=warn component=control event=request_failed error={error:#}");
                     }
                 });
@@ -373,16 +374,7 @@ fn notification_actions(actions: Vec<String>) -> Vec<NotificationAction> {
 }
 
 fn run_ctl(args: CtlArgs) -> anyhow::Result<()> {
-    let request = match args.command {
-        CtlCommand::Status => "status\n".to_string(),
-        CtlCommand::Active { json } => {
-            if json {
-                "active-json\n".to_string()
-            } else {
-                "active\n".to_string()
-            }
-        }
-    };
+    let request = control_socket_request_for_ctl(&args.command);
 
     let mut stream = StdUnixStream::connect(&args.socket).map_err(|source| {
         anyhow::anyhow!(
@@ -414,7 +406,7 @@ fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
             return Ok(());
         }
     };
-    stream.write_all(b"panel-snapshot\n")?;
+    stream.write_all(SocketControlRequest::PanelSnapshot.line().as_bytes())?;
     let mut response = String::new();
     stream.read_to_string(&mut response)?;
     print!("{response}");
@@ -423,7 +415,7 @@ fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
 
 async fn handle_control_connection(
     stream: tokio::net::UnixStream,
-    daemon: Daemon,
+    control: NotifyControl,
 ) -> anyhow::Result<()> {
     let mut stream = BufReader::new(stream);
     let mut request = String::new();
@@ -431,19 +423,7 @@ async fn handle_control_connection(
     let request = request.trim();
     eprintln!("level=info component=control event=request command={request}");
 
-    let response = match request {
-        "status" => "Canopa Notify daemon available\n".to_string(),
-        "active-json" => serde_json::to_string(&daemon.snapshot().await?.active)? + "\n",
-        "active" => {
-            let snapshot = daemon.snapshot().await?;
-            format!("{} active notifications\n", snapshot.active.len())
-        }
-        "panel-snapshot" => {
-            let content = panel_content_from_snapshot(daemon.snapshot().await?);
-            serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n"
-        }
-        _ => "error unsupported control request\n".to_string(),
-    };
+    let response = control_socket_response(request, &control).await?;
 
     let stream = stream.get_mut();
     stream.write_all(response.as_bytes()).await?;
@@ -451,41 +431,120 @@ async fn handle_control_connection(
     Ok(())
 }
 
-fn panel_content_from_snapshot(snapshot: canopa_notify::NotificationSnapshot) -> PanelContent {
-    let mut grouped: BTreeMap<String, Vec<PanelItem>> = BTreeMap::new();
+fn control_socket_request_for_ctl(command: &CtlCommand) -> &'static str {
+    match command {
+        CtlCommand::Status => SocketControlRequest::Status.line(),
+        CtlCommand::Active { json: true } => SocketControlRequest::ActiveJson.line(),
+        CtlCommand::Active { json: false } => SocketControlRequest::ActiveCount.line(),
+    }
+}
 
-    for thread in snapshot.history {
-        grouped
-            .entry(thread.app_identity.clone())
-            .or_default()
-            .push(PanelItem {
-                notification_id: thread.id,
-                summary: thread.summary,
-                body: thread.body,
-                status: thread.status.as_str().to_string(),
-                delivery_outcome: thread.delivery_outcome.as_str().to_string(),
-                actions: thread
-                    .actions
-                    .into_iter()
-                    .map(|action| PanelAction {
-                        key: action.key,
-                        label: action.label,
-                    })
-                    .collect(),
-            });
+async fn control_socket_response(request: &str, control: &NotifyControl) -> anyhow::Result<String> {
+    let request = SocketControlRequest::parse(request);
+    let Some(command) = request.command() else {
+        return Ok("error unsupported control request\n".to_string());
+    };
+    request.format_reply(control.execute(command).await?)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SocketControlRequest {
+    Status,
+    ActiveJson,
+    ActiveCount,
+    PanelSnapshot,
+    Unsupported,
+}
+
+impl SocketControlRequest {
+    fn parse(request: &str) -> Self {
+        match request {
+            "status" => Self::Status,
+            "active-json" => Self::ActiveJson,
+            "active" => Self::ActiveCount,
+            "panel-snapshot" => Self::PanelSnapshot,
+            _ => Self::Unsupported,
+        }
     }
 
+    fn line(self) -> &'static str {
+        match self {
+            Self::Status => "status\n",
+            Self::ActiveJson => "active-json\n",
+            Self::ActiveCount => "active\n",
+            Self::PanelSnapshot => "panel-snapshot\n",
+            Self::Unsupported => "unsupported\n",
+        }
+    }
+
+    fn command(self) -> Option<ControlCommand> {
+        match self {
+            Self::Status => Some(ControlCommand::Status),
+            Self::ActiveJson | Self::ActiveCount => Some(ControlCommand::ActiveNotifications),
+            Self::PanelSnapshot => Some(ControlCommand::NotificationCenterProjection),
+            Self::Unsupported => None,
+        }
+    }
+
+    fn format_reply(self, reply: ControlReply) -> anyhow::Result<String> {
+        match (self, reply) {
+            (Self::Status, ControlReply::Status(_)) => {
+                Ok("Canopa Notify daemon available\n".to_string())
+            }
+            (Self::ActiveJson, ControlReply::ActiveNotifications(active)) => {
+                Ok(serde_json::to_string(&active)? + "\n")
+            }
+            (Self::ActiveCount, ControlReply::ActiveNotifications(active)) => {
+                Ok(format!("{} active notifications\n", active.len()))
+            }
+            (Self::PanelSnapshot, ControlReply::NotificationCenterProjection(projection)) => {
+                let content = panel_content_from_projection(projection);
+                Ok(serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n")
+            }
+            _ => anyhow::bail!("unexpected reply from Notify Control API"),
+        }
+    }
+}
+
+fn panel_content_from_projection(projection: NotificationCenterProjection) -> PanelContent {
     PanelContent {
         title: "Canopa Notify".to_string(),
-        groups: grouped
+        groups: projection
+            .groups
             .into_iter()
-            .map(|(app_identity, items)| PanelGroup {
-                app_identity,
-                items,
-                permission: Some(AppPermission::Allow),
+            .map(|group| PanelGroup {
+                app_identity: group.app_identity,
+                items: group
+                    .items
+                    .into_iter()
+                    .map(|item| PanelItem {
+                        notification_id: item.notification_id,
+                        summary: item.summary,
+                        body: item.body,
+                        status: item.status.as_str().to_string(),
+                        delivery_outcome: item.delivery_outcome.as_str().to_string(),
+                        actions: item
+                            .actions
+                            .into_iter()
+                            .map(|action| PanelAction {
+                                key: action.key,
+                                label: action.label,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+                permission: Some(panel_permission(group.permission)),
             })
             .collect(),
         error: None,
+    }
+}
+
+fn panel_permission(permission: ControlAppPermission) -> AppPermission {
+    match permission {
+        ControlAppPermission::Allow => AppPermission::Allow,
+        ControlAppPermission::Silence => AppPermission::Silence,
+        ControlAppPermission::Drop => AppPermission::Drop,
     }
 }
 
@@ -513,6 +572,43 @@ mod tests {
         let error = daemon_mode(&daemon_args(true, true)).unwrap_err();
 
         assert!(error.to_string().contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn ctl_commands_map_to_socket_request_lines() {
+        assert_eq!(
+            control_socket_request_for_ctl(&CtlCommand::Status),
+            "status\n"
+        );
+        assert_eq!(
+            control_socket_request_for_ctl(&CtlCommand::Active { json: false }),
+            "active\n"
+        );
+        assert_eq!(
+            control_socket_request_for_ctl(&CtlCommand::Active { json: true }),
+            "active-json\n"
+        );
+    }
+
+    #[test]
+    fn socket_request_adapter_maps_to_control_commands() {
+        assert_eq!(
+            SocketControlRequest::parse("status").command(),
+            Some(ControlCommand::Status)
+        );
+        assert_eq!(
+            SocketControlRequest::parse("active").command(),
+            Some(ControlCommand::ActiveNotifications)
+        );
+        assert_eq!(
+            SocketControlRequest::parse("active-json").command(),
+            Some(ControlCommand::ActiveNotifications)
+        );
+        assert_eq!(
+            SocketControlRequest::parse("panel-snapshot").command(),
+            Some(ControlCommand::NotificationCenterProjection)
+        );
+        assert_eq!(SocketControlRequest::parse("bogus").command(), None);
     }
 
     fn daemon_args(headless: bool, service: bool) -> DaemonArgs {

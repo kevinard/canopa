@@ -1,5 +1,4 @@
 use anyhow::Context;
-use canopa_panel_protocol::{AppPermission, InteractionEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -7,10 +6,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub mod control;
 mod delivery_policy;
 mod intake;
 mod sqlite_persisted_state;
 
+pub use control::{
+    AppPermissionControl, ControlCommand, ControlReply, ControlStatus, NotificationCenterGroup,
+    NotificationCenterItem, NotificationCenterProjection, NotifyControl,
+};
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
     DeliveryPolicyFacts, DeliveryPolicyRule, LoadedDeliveryPolicyState,
@@ -775,31 +779,6 @@ impl Daemon {
 
     pub async fn delivery_decision_logs(&self) -> Vec<DeliveryDecisionLog> {
         self.decision_logs.lock().unwrap().clone()
-    }
-
-    pub async fn handle_panel_event(&self, event: InteractionEvent) -> anyhow::Result<()> {
-        match event {
-            InteractionEvent::SetAppPermission {
-                app_identity,
-                permission,
-            } => {
-                self.upsert_user_rule(UserRule::for_app(
-                    app_identity,
-                    match permission {
-                        AppPermission::Allow => DeliveryOutcome::Shown,
-                        AppPermission::Silence => DeliveryOutcome::Silenced,
-                        AppPermission::Drop => DeliveryOutcome::Dropped,
-                    },
-                ))
-                .await
-            }
-            InteractionEvent::ClearActiveNotifications => self.clear_active_notifications().await,
-            InteractionEvent::DeleteNotificationHistory => self.delete_notification_history().await,
-            InteractionEvent::InvokeNotificationAction {
-                notification_id,
-                action_key,
-            } => self.invoke_action(notification_id, &action_key).await,
-        }
     }
 
     pub async fn sender_events(&self) -> Vec<SenderEvent> {

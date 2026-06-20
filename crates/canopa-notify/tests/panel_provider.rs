@@ -1,6 +1,5 @@
 use assert_cmd::Command;
-use canopa_notify::{Daemon, DaemonOptions, NotificationAction, NotificationInput};
-use canopa_panel_protocol::{AppPermission, InteractionEvent};
+use canopa_notify::{Daemon, DaemonOptions, NotificationInput};
 use predicates::str::contains;
 use std::process::Command as StdCommand;
 use std::thread;
@@ -79,54 +78,4 @@ fn wait_for_status(socket: &std::path::Path) {
         thread::sleep(Duration::from_millis(50));
     }
     panic!("daemon did not become available");
-}
-
-#[tokio::test]
-async fn daemon_handles_panel_interaction_events() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
-
-    let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Message".to_string(),
-            actions: vec![NotificationAction::new("open", "Open")],
-            ..NotificationInput::default()
-        })
-        .await
-        .unwrap();
-
-    daemon
-        .handle_panel_event(InteractionEvent::SetAppPermission {
-            app_identity: "Chat".to_string(),
-            permission: AppPermission::Silence,
-        })
-        .await
-        .unwrap();
-    assert_eq!(
-        daemon.snapshot().await.unwrap().active[0]
-            .delivery_outcome
-            .as_str(),
-        "silenced"
-    );
-
-    daemon
-        .handle_panel_event(InteractionEvent::InvokeNotificationAction {
-            notification_id: receipt.notification_id,
-            action_key: "open".to_string(),
-        })
-        .await
-        .unwrap();
-    assert_eq!(
-        daemon.snapshot().await.unwrap().history[0].status.as_str(),
-        "closed"
-    );
-
-    daemon
-        .handle_panel_event(InteractionEvent::DeleteNotificationHistory)
-        .await
-        .unwrap();
-    assert_eq!(daemon.snapshot().await.unwrap().history.len(), 0);
 }
