@@ -2,7 +2,7 @@ use anyhow::Context;
 use canopa_notify::{
     AppPermissionControl, BannerInteraction, ControlCommand, ControlReply, Daemon, DaemonOptions,
     IcedLayerShellBannerPresenter, NotificationAction, NotificationCenterProjection,
-    NotificationInput, NotifyControl, Urgency,
+    NotificationInput, NotificationTimeout, NotifyControl, Urgency,
 };
 use canopa_panel_protocol::{
     PanelAction, PanelContent, PanelControl, PanelControlOption, PanelItem, PanelMetadata,
@@ -277,7 +277,7 @@ impl NotificationServer {
         body: String,
         actions: Vec<String>,
         hints: HashMap<String, OwnedValue>,
-        _expire_timeout: i32,
+        expire_timeout: i32,
     ) -> zbus::fdo::Result<u32> {
         let input = NotificationInput {
             app_name,
@@ -285,6 +285,7 @@ impl NotificationServer {
             replaces_id: (replaces_id != 0).then_some(replaces_id as i64),
             summary,
             body,
+            expire_timeout: NotificationTimeout::from_freedesktop_expire_timeout(expire_timeout),
             urgency: urgency_hint(&hints),
             actions: notification_actions(actions),
             category: string_hint(&hints, "category"),

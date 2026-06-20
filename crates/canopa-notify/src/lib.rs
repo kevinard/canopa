@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 
 pub mod control;
@@ -31,6 +31,7 @@ pub struct DaemonOptions {
     pub headless: bool,
     pub retention_days: i64,
     pub history_limit: i64,
+    pub notification_timeout_defaults: NotificationTimeoutDefaults,
     banner_presenter: Arc<dyn BannerPresenter>,
 }
 
@@ -41,6 +42,7 @@ impl DaemonOptions {
             headless: true,
             retention_days: 30,
             history_limit: 1_000,
+            notification_timeout_defaults: NotificationTimeoutDefaults::default(),
             banner_presenter: Arc::new(NoopBannerPresenter),
         }
     }
@@ -54,6 +56,7 @@ impl DaemonOptions {
             headless: false,
             retention_days: 30,
             history_limit: 1_000,
+            notification_timeout_defaults: NotificationTimeoutDefaults::default(),
             banner_presenter: Arc::new(banner_presenter),
         }
     }
@@ -63,12 +66,59 @@ impl DaemonOptions {
         self
     }
 
+    pub fn with_notification_timeout_defaults(
+        mut self,
+        notification_timeout_defaults: NotificationTimeoutDefaults,
+    ) -> Self {
+        self.notification_timeout_defaults = notification_timeout_defaults;
+        self
+    }
+
     pub fn with_banner_presenter(
         mut self,
         banner_presenter: impl BannerPresenter + 'static,
     ) -> Self {
         self.banner_presenter = Arc::new(banner_presenter);
         self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NotificationTimeoutDefaults {
+    pub low: Option<Duration>,
+    pub normal: Option<Duration>,
+    pub critical: Option<Duration>,
+}
+
+impl NotificationTimeoutDefaults {
+    pub fn new(
+        low: Option<Duration>,
+        normal: Option<Duration>,
+        critical: Option<Duration>,
+    ) -> Self {
+        Self {
+            low,
+            normal,
+            critical,
+        }
+    }
+
+    fn for_urgency(self, urgency: Urgency) -> Option<Duration> {
+        match urgency {
+            Urgency::Low => self.low,
+            Urgency::Normal => self.normal,
+            Urgency::Critical => self.critical,
+        }
+    }
+}
+
+impl Default for NotificationTimeoutDefaults {
+    fn default() -> Self {
+        Self {
+            low: Some(Duration::from_secs(5)),
+            normal: Some(Duration::from_secs(5)),
+            critical: None,
+        }
     }
 }
 
@@ -602,6 +652,7 @@ pub struct Daemon {
     config_rules: Arc<Mutex<Vec<ConfigRule>>>,
     config_error: Arc<Mutex<Option<String>>>,
     decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
+    notification_timeout_defaults: NotificationTimeoutDefaults,
     state_version: Arc<AtomicU64>,
     state_changes: watch::Sender<u64>,
 }
@@ -626,6 +677,7 @@ impl Daemon {
             config_rules: Arc::new(Mutex::new(Vec::new())),
             config_error: Arc::new(Mutex::new(None)),
             decision_logs: Arc::new(Mutex::new(Vec::new())),
+            notification_timeout_defaults: options.notification_timeout_defaults,
             state_version: Arc::new(AtomicU64::new(0)),
             state_changes,
         })
@@ -635,6 +687,7 @@ impl Daemon {
         &self,
         input: NotificationInput,
     ) -> anyhow::Result<NotificationReceipt> {
+        let expire_timeout = input.expire_timeout;
         let notification = match intake_notification(input) {
             NotificationIntakeResult::Accepted(notification) => notification,
             NotificationIntakeResult::NoOpDropped(receipt) => return Ok(receipt),
@@ -648,8 +701,10 @@ impl Daemon {
             .lifecycle
             .receive(notification, LifecycleDelivery::from_decision(&decision))
             .await?;
+        let receipt = receipt_from_effects(&effects)?;
         self.apply_lifecycle_effects_and_notify(&effects).await?;
-        receipt_from_effects(&effects)
+        self.schedule_expiration_from_effects(&effects, expire_timeout);
+        Ok(receipt)
     }
 
     pub async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
@@ -883,6 +938,57 @@ impl Daemon {
     fn notify_state_changed(&self) {
         let version = self.state_version.fetch_add(1, Ordering::Relaxed) + 1;
         let _ = self.state_changes.send(version);
+    }
+
+    fn schedule_expiration_from_effects(
+        &self,
+        effects: &[LifecycleEffect],
+        expire_timeout: NotificationTimeout,
+    ) {
+        let Some(thread) = effects.iter().find_map(|effect| match effect {
+            LifecycleEffect::ThreadCreated(thread) | LifecycleEffect::ThreadRevised(thread) => {
+                Some(thread)
+            }
+            _ => None,
+        }) else {
+            return;
+        };
+
+        if thread.status != NotificationStatus::Active
+            || thread.delivery_outcome != DeliveryOutcome::Shown
+        {
+            return;
+        }
+
+        let Some(duration) = expire_timeout.duration(
+            thread.accepted_notification.urgency,
+            self.notification_timeout_defaults,
+        ) else {
+            return;
+        };
+
+        let daemon = self.clone();
+        let notification_id = thread.id;
+        let revision = thread.revision;
+        tokio::spawn(async move {
+            tokio::time::sleep(duration).await;
+            let _ = daemon
+                .expire_notification_if_current_revision(notification_id, revision)
+                .await;
+        });
+    }
+
+    async fn expire_notification_if_current_revision(
+        &self,
+        notification_id: i64,
+        revision: i64,
+    ) -> anyhow::Result<()> {
+        let thread = self.storage.thread(notification_id).await?;
+        if thread.status != NotificationStatus::Active || thread.revision != revision {
+            return Ok(());
+        }
+
+        self.expire_notification(notification_id).await
     }
 }
 
@@ -1228,12 +1334,40 @@ pub struct NotificationInput {
     pub replaces_id: Option<i64>,
     pub summary: String,
     pub body: String,
+    pub expire_timeout: NotificationTimeout,
     pub urgency: Urgency,
     pub category: Option<String>,
     pub progress: Option<i64>,
     pub image_data: Option<Vec<u8>>,
     pub actions: Vec<NotificationAction>,
     pub resident: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationTimeout {
+    #[default]
+    ServerDefault,
+    Never,
+    Milliseconds(u64),
+}
+
+impl NotificationTimeout {
+    pub fn from_freedesktop_expire_timeout(expire_timeout: i32) -> Self {
+        match expire_timeout {
+            0 => Self::Never,
+            value if value > 0 => Self::Milliseconds(value as u64),
+            _ => Self::ServerDefault,
+        }
+    }
+
+    fn duration(self, urgency: Urgency, defaults: NotificationTimeoutDefaults) -> Option<Duration> {
+        match self {
+            Self::ServerDefault => defaults.for_urgency(urgency),
+            Self::Never => None,
+            Self::Milliseconds(milliseconds) => Some(Duration::from_millis(milliseconds)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
