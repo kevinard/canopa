@@ -38,6 +38,39 @@ async fn inactive_history_is_pruned_by_count_while_active_threads_are_exempt() {
 }
 
 #[tokio::test]
+async fn inactive_history_is_pruned_by_count_at_daemon_startup() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()).with_history_limit(10))
+        .await
+        .unwrap();
+
+    for index in 0..2 {
+        let receipt = seed
+            .receive_notification(NotificationInput {
+                app_name: "App".to_string(),
+                summary: format!("Inactive {index}"),
+                ..NotificationInput::default()
+            })
+            .await
+            .unwrap();
+        seed.dismiss_notification(receipt.notification_id)
+            .await
+            .unwrap();
+    }
+    assert_eq!(seed.snapshot().await.unwrap().history.len(), 2);
+    drop(seed);
+
+    let restarted = Daemon::open(DaemonOptions::headless(database).with_history_limit(1))
+        .await
+        .unwrap();
+
+    let snapshot = restarted.snapshot().await.unwrap();
+    assert_eq!(snapshot.history.len(), 1);
+    assert!(snapshot.active.is_empty());
+}
+
+#[tokio::test]
 async fn clear_active_and_delete_history_are_separate_operations() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))

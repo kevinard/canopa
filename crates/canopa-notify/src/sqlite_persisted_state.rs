@@ -359,7 +359,7 @@ impl SqlitePersistedState {
         Ok(())
     }
 
-    pub(crate) async fn prune_history(&self) -> anyhow::Result<()> {
+    async fn prune_history(&self) -> anyhow::Result<()> {
         let cutoff = now_millis() - self.retention.days.max(0) * 24 * 60 * 60 * 1_000;
 
         sqlx::query(
@@ -387,6 +387,12 @@ impl SqlitePersistedState {
         .await?;
 
         Ok(())
+    }
+
+    // Call after fetching the write result so lifecycle effects do not depend on retention keeping the row.
+    async fn finish_history_write<T>(&self, value: T) -> anyhow::Result<T> {
+        self.prune_history().await?;
+        Ok(value)
     }
 }
 
@@ -426,7 +432,8 @@ impl NotificationHistory for SqlitePersistedState {
         .execute(&self.pool)
         .await?
         .last_insert_rowid();
-        self.thread(id).await
+        let thread = self.thread(id).await?;
+        self.finish_history_write(thread).await
     }
 
     async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
@@ -480,7 +487,8 @@ impl NotificationHistory for SqlitePersistedState {
         .bind(revision.updated_at)
         .execute(&self.pool)
         .await?;
-        self.thread(id).await
+        let thread = self.thread(id).await?;
+        self.finish_history_write(thread).await
     }
 
     async fn transition_thread(
@@ -501,8 +509,8 @@ impl NotificationHistory for SqlitePersistedState {
         .bind(updated_at)
         .execute(&self.pool)
         .await?;
-        self.prune_history().await?;
-        self.thread(id).await
+        let thread = self.thread(id).await?;
+        self.finish_history_write(thread).await
     }
 
     async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
@@ -527,7 +535,8 @@ impl NotificationHistory for SqlitePersistedState {
         .bind(delivery.rule_reference)
         .execute(&self.pool)
         .await?;
-        self.thread(id).await
+        let thread = self.thread(id).await?;
+        self.finish_history_write(thread).await
     }
 
     async fn mark_active_threads_stale(
@@ -550,6 +559,231 @@ impl NotificationHistory for SqlitePersistedState {
         for id in ids {
             stale.push(self.thread(id).await?);
         }
-        Ok(stale)
+        self.finish_history_write(stale).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn create_thread_prunes_inactive_history_after_write() {
+        let (_temp, storage) = open_history(1).await;
+        let now = now_millis();
+
+        storage
+            .create_thread(new_thread("old", NotificationStatus::Dismissed, now))
+            .await
+            .unwrap();
+        storage
+            .create_thread(new_thread("new", NotificationStatus::Dismissed, now + 1))
+            .await
+            .unwrap();
+
+        let snapshot = storage.snapshot().await.unwrap();
+        assert_eq!(summaries(&snapshot.history), vec!["new"]);
+    }
+
+    #[tokio::test]
+    async fn create_thread_prunes_inactive_history_by_age_after_write() {
+        let (_temp, storage) = open_history_with_retention(1, 10).await;
+        let now = now_millis();
+        let old = now - 2 * 24 * 60 * 60 * 1_000;
+
+        storage
+            .create_thread(new_thread("old", NotificationStatus::Dismissed, old))
+            .await
+            .unwrap();
+        storage
+            .create_thread(new_thread("new", NotificationStatus::Dismissed, now))
+            .await
+            .unwrap();
+
+        let snapshot = storage.snapshot().await.unwrap();
+        assert_eq!(summaries(&snapshot.history), vec!["new"]);
+    }
+
+    #[tokio::test]
+    async fn revise_thread_prunes_existing_inactive_history_after_write() {
+        let (_temp, storage) = open_history(10).await;
+        let now = now_millis();
+        storage
+            .create_thread(new_thread("old", NotificationStatus::Dismissed, now))
+            .await
+            .unwrap();
+        storage
+            .create_thread(new_thread("newer", NotificationStatus::Dismissed, now + 1))
+            .await
+            .unwrap();
+        let active = storage
+            .create_thread(new_thread("active", NotificationStatus::Active, now + 2))
+            .await
+            .unwrap();
+        let storage = storage.with_history_limit(1);
+
+        storage
+            .revise_thread(
+                active.id,
+                ThreadRevision {
+                    accepted_notification: accepted_notification("revised"),
+                    delivery_outcome: DeliveryOutcome::Shown,
+                    rule_reference: None,
+                    updated_at: now + 3,
+                },
+            )
+            .await
+            .unwrap();
+
+        let snapshot = storage.snapshot().await.unwrap();
+        assert_eq!(summaries(&snapshot.history), vec!["revised", "newer"]);
+    }
+
+    #[tokio::test]
+    async fn update_delivery_prunes_existing_inactive_history_after_write() {
+        let (_temp, storage) = open_history(10).await;
+        let now = now_millis();
+        storage
+            .create_thread(new_thread("old", NotificationStatus::Dismissed, now))
+            .await
+            .unwrap();
+        storage
+            .create_thread(new_thread("newer", NotificationStatus::Dismissed, now + 1))
+            .await
+            .unwrap();
+        let active = storage
+            .create_thread(new_thread("active", NotificationStatus::Active, now + 2))
+            .await
+            .unwrap();
+        let storage = storage.with_history_limit(1);
+
+        storage
+            .update_delivery(active.id, LifecycleDelivery::silenced("user:active:*"))
+            .await
+            .unwrap();
+
+        let snapshot = storage.snapshot().await.unwrap();
+        assert_eq!(summaries(&snapshot.history), vec!["active", "newer"]);
+        assert_eq!(
+            snapshot.active[0].delivery_outcome,
+            DeliveryOutcome::Silenced
+        );
+    }
+
+    #[tokio::test]
+    async fn transition_thread_returns_updated_thread_before_retention_deletes_it() {
+        let (_temp, storage) = open_history(0).await;
+        let now = now_millis();
+        let active = storage
+            .create_thread(new_thread("active", NotificationStatus::Active, now))
+            .await
+            .unwrap();
+
+        let dismissed = storage
+            .transition_thread(active.id, NotificationStatus::Dismissed, now + 1)
+            .await
+            .unwrap();
+
+        assert_eq!(dismissed.status, NotificationStatus::Dismissed);
+        assert!(storage.snapshot().await.unwrap().history.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mark_active_threads_stale_prunes_after_returning_stale_threads() {
+        let (_temp, storage) = open_history(1).await;
+        let now = now_millis();
+        storage
+            .create_thread(new_thread("old active", NotificationStatus::Active, now))
+            .await
+            .unwrap();
+        storage
+            .create_thread(new_thread(
+                "new active",
+                NotificationStatus::Active,
+                now + 1,
+            ))
+            .await
+            .unwrap();
+
+        let stale = storage.mark_active_threads_stale(now + 2).await.unwrap();
+
+        assert_eq!(stale.len(), 2);
+        assert!(
+            stale
+                .iter()
+                .all(|thread| thread.status == NotificationStatus::Stale)
+        );
+        let snapshot = storage.snapshot().await.unwrap();
+        assert_eq!(summaries(&snapshot.history), vec!["new active"]);
+    }
+
+    async fn open_history(history_limit: i64) -> (tempfile::TempDir, SqlitePersistedState) {
+        open_history_with_retention(30, history_limit).await
+    }
+
+    async fn open_history_with_retention(
+        retention_days: i64,
+        history_limit: i64,
+    ) -> (tempfile::TempDir, SqlitePersistedState) {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = SqlitePersistedState::open(
+            temp.path().join("history.db"),
+            retention_days,
+            history_limit,
+        )
+        .await
+        .unwrap();
+        (temp, storage)
+    }
+
+    impl SqlitePersistedState {
+        fn with_history_limit(&self, history_limit: i64) -> Self {
+            Self {
+                pool: self.pool.clone(),
+                retention: RetentionPolicy {
+                    days: self.retention.days,
+                    history_limit,
+                },
+            }
+        }
+    }
+
+    fn new_thread(
+        summary: &str,
+        status: NotificationStatus,
+        updated_at: i64,
+    ) -> NewNotificationThread {
+        NewNotificationThread {
+            accepted_notification: accepted_notification(summary),
+            status,
+            delivery_outcome: DeliveryOutcome::Shown,
+            rule_reference: None,
+            created_at: updated_at,
+            updated_at,
+        }
+    }
+
+    fn accepted_notification(summary: &str) -> AcceptedNotification {
+        AcceptedNotification {
+            app_identity: "App".to_string(),
+            app_name: "App".to_string(),
+            replaces_id: None,
+            summary: summary.to_string(),
+            body: String::new(),
+            raw_body: String::new(),
+            urgency: Urgency::Normal,
+            category: None,
+            progress: None,
+            has_image_payload: false,
+            actions: Vec::new(),
+            resident: false,
+        }
+    }
+
+    fn summaries(threads: &[NotificationThread]) -> Vec<&str> {
+        threads
+            .iter()
+            .map(|thread| thread.accepted_notification.summary.as_str())
+            .collect()
     }
 }

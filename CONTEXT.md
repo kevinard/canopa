@@ -267,7 +267,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - A **Silenced Notification** may remain an **Active Notification** without a visible **Notification Banner**.
 - **Notification History** persists across **Notification Daemon** restarts by default.
 - Default **Notification History** retention keeps up to 30 days and 1,000 **Notification Threads**, with either limit allowed to remove older history.
-- **Notification History** retention is pruned after writes and at daemon startup.
+- **Notification History** retention is pruned after every persisted **Notification History** mutation and at daemon startup.
 - **Active Notifications** are exempt from **Notification History** retention pruning.
 - **Notification History** does not store **Notification Banner** runtime visibility state.
 - **Notification Daemon** restart does not restore old **Notification Banners**.

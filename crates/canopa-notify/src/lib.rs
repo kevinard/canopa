@@ -616,7 +616,6 @@ impl Daemon {
         .await?;
         let lifecycle = NotificationLifecycle::new(storage.clone());
         lifecycle.mark_active_stale().await?;
-        storage.prune_history().await?;
         let (state_changes, _state_change_receiver) = watch::channel(0);
         Ok(Self {
             storage,
