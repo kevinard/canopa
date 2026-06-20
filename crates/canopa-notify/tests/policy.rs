@@ -1,6 +1,6 @@
 use canopa_notify::{
-    Daemon, DaemonOptions, DeliveryDecisionReason, DeliveryOutcome, DeliveryPolicy,
-    DeliveryPolicyFacts, DeliveryPolicyRule, LoadedDeliveryPolicyState, NotificationInput, Urgency,
+    AcceptedNotification, Daemon, DaemonOptions, DeliveryDecisionReason, DeliveryOutcome,
+    DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState, NotificationInput, Urgency,
     UserRule,
 };
 
@@ -30,7 +30,7 @@ fn delivery_policy_applies_user_rule_and_do_not_disturb_precedence() {
             .build(),
     );
 
-    let silenced_by_dnd = policy.decide(DeliveryPolicyFacts::new("Chat", Urgency::Normal));
+    let silenced_by_dnd = policy.decide(&accepted_notification("Chat", Urgency::Normal));
     assert_eq!(silenced_by_dnd.outcome, DeliveryOutcome::Silenced);
     assert_eq!(
         silenced_by_dnd.rule_reference.as_deref(),
@@ -41,7 +41,7 @@ fn delivery_policy_applies_user_rule_and_do_not_disturb_precedence() {
         DeliveryDecisionReason::DoNotDisturb
     );
 
-    let critical_user_allow = policy.decide(DeliveryPolicyFacts::new("Chat", Urgency::Critical));
+    let critical_user_allow = policy.decide(&accepted_notification("Chat", Urgency::Critical));
     assert_eq!(critical_user_allow.outcome, DeliveryOutcome::Shown);
     assert_eq!(
         critical_user_allow.rule_reference.as_deref(),
@@ -52,7 +52,7 @@ fn delivery_policy_applies_user_rule_and_do_not_disturb_precedence() {
         DeliveryDecisionReason::UserRule
     );
 
-    let explicit_drop = policy.decide(DeliveryPolicyFacts::new("Build", Urgency::Critical));
+    let explicit_drop = policy.decide(&accepted_notification("Build", Urgency::Critical));
     assert_eq!(explicit_drop.outcome, DeliveryOutcome::Dropped);
     assert_eq!(
         explicit_drop.rule_reference.as_deref(),
@@ -74,7 +74,7 @@ fn delivery_policy_owns_config_rule_matching_and_default_allow_diagnostics() {
             .build(),
     );
 
-    let config_decision = policy.decide(DeliveryPolicyFacts::new("Mail", Urgency::Normal));
+    let config_decision = policy.decide(&accepted_notification("Mail", Urgency::Normal));
     assert_eq!(config_decision.outcome, DeliveryOutcome::Silenced);
     assert_eq!(
         config_decision.rule_reference.as_deref(),
@@ -85,7 +85,7 @@ fn delivery_policy_owns_config_rule_matching_and_default_allow_diagnostics() {
         DeliveryDecisionReason::ConfigRule
     );
 
-    let default_decision = policy.decide(DeliveryPolicyFacts::new("Unknown", Urgency::Normal));
+    let default_decision = policy.decide(&accepted_notification("Unknown", Urgency::Normal));
     assert_eq!(default_decision.outcome, DeliveryOutcome::Shown);
     assert_eq!(default_decision.rule_reference, None);
     assert_eq!(
@@ -115,14 +115,14 @@ fn delivery_policy_prefers_urgency_specific_user_rules() {
             .build(),
     );
 
-    let critical = policy.decide(DeliveryPolicyFacts::new("Chat", Urgency::Critical));
+    let critical = policy.decide(&accepted_notification("Chat", Urgency::Critical));
     assert_eq!(critical.outcome, DeliveryOutcome::Shown);
     assert_eq!(
         critical.rule_reference.as_deref(),
         Some("user:Chat:critical")
     );
 
-    let normal = policy.decide(DeliveryPolicyFacts::new("Chat", Urgency::Normal));
+    let normal = policy.decide(&accepted_notification("Chat", Urgency::Normal));
     assert_eq!(normal.outcome, DeliveryOutcome::Silenced);
     assert_eq!(normal.rule_reference.as_deref(), Some("user:Chat:*"));
 }
@@ -199,6 +199,23 @@ fn thread(
         .iter()
         .find(|thread| thread.id == id)
         .unwrap()
+}
+
+fn accepted_notification(app_identity: &str, urgency: Urgency) -> AcceptedNotification {
+    AcceptedNotification {
+        app_identity: app_identity.to_string(),
+        app_name: app_identity.to_string(),
+        replaces_id: None,
+        summary: "Policy test".to_string(),
+        body: String::new(),
+        raw_body: String::new(),
+        urgency,
+        category: None,
+        progress: None,
+        has_image_payload: false,
+        actions: Vec::new(),
+        resident: false,
+    }
 }
 
 async fn is_banner_visible(daemon: &Daemon, id: i64) -> bool {
@@ -298,7 +315,9 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
         .unwrap();
     let snapshot = daemon.snapshot().await.unwrap();
     assert_eq!(
-        thread(&snapshot, original.notification_id).body,
+        thread(&snapshot, original.notification_id)
+            .accepted_notification
+            .body,
         "Silenced update"
     );
 
@@ -320,7 +339,9 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
     assert_eq!(dropped_replacement.delivery_outcome.as_str(), "dropped");
     let snapshot = daemon.snapshot().await.unwrap();
     assert_eq!(
-        thread(&snapshot, original.notification_id).body,
+        thread(&snapshot, original.notification_id)
+            .accepted_notification
+            .body,
         "Silenced update"
     );
 }

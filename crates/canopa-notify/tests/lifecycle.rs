@@ -1,6 +1,6 @@
 use canopa_notify::{
-    Daemon, DaemonOptions, DeliveryOutcome, LifecycleDelivery, LifecycleEffect,
-    LifecycleNotification, NewNotificationThread, NotificationAction, NotificationHistory,
+    AcceptedNotification, Daemon, DaemonOptions, DeliveryOutcome, LifecycleDelivery,
+    LifecycleEffect, NewNotificationThread, NotificationAction, NotificationHistory,
     NotificationInput, NotificationLifecycle, NotificationStatus, NotificationThread,
     ThreadRevision, Urgency,
 };
@@ -26,20 +26,10 @@ impl NotificationHistory for MemoryHistory {
         let id = threads.len() as i64 + 1;
         let thread = NotificationThread {
             id,
-            app_identity: thread.app_identity,
-            app_name: thread.app_name,
-            summary: thread.summary,
-            body: thread.body,
-            raw_body: thread.raw_body,
-            urgency: thread.urgency,
+            accepted_notification: thread.accepted_notification,
             status: thread.status,
             delivery_outcome: thread.delivery_outcome,
             rule_reference: thread.rule_reference,
-            category: thread.category,
-            progress: thread.progress,
-            has_image_payload: false,
-            actions: thread.actions,
-            resident: thread.resident,
             revision: 1,
             created_at: thread.created_at,
             updated_at: thread.updated_at,
@@ -69,19 +59,10 @@ impl NotificationHistory for MemoryHistory {
             .iter_mut()
             .find(|thread| thread.id == id)
             .ok_or_else(|| anyhow::anyhow!("missing thread {id}"))?;
-        thread.app_identity = revision.app_identity;
-        thread.app_name = revision.app_name;
-        thread.summary = revision.summary;
-        thread.body = revision.body;
-        thread.raw_body = revision.raw_body;
-        thread.urgency = revision.urgency;
+        thread.accepted_notification = revision.accepted_notification;
         thread.status = NotificationStatus::Active;
         thread.delivery_outcome = revision.delivery_outcome;
         thread.rule_reference = revision.rule_reference;
-        thread.category = revision.category;
-        thread.progress = revision.progress;
-        thread.resident = revision.resident;
-        thread.actions = revision.actions;
         thread.revision += 1;
         thread.updated_at = revision.updated_at;
         thread.closed_at = None;
@@ -157,7 +138,7 @@ async fn lifecycle_creates_shown_notification_through_history_and_returns_receip
 
     let effects = lifecycle
         .receive(
-            LifecycleNotification {
+            AcceptedNotification {
                 app_identity: "example-mail.desktop".to_string(),
                 app_name: "Example Mail".to_string(),
                 replaces_id: None,
@@ -167,6 +148,7 @@ async fn lifecycle_creates_shown_notification_through_history_and_returns_receip
                 urgency: Urgency::Normal,
                 category: None,
                 progress: None,
+                has_image_payload: false,
                 actions: Vec::new(),
                 resident: false,
             },
@@ -179,7 +161,7 @@ async fn lifecycle_creates_shown_notification_through_history_and_returns_receip
     assert!(effects.iter().any(|effect| matches!(
         effect,
         LifecycleEffect::ThreadCreated(thread)
-            if thread.app_identity == "example-mail.desktop"
+            if thread.accepted_notification.app_identity == "example-mail.desktop"
                 && thread.delivery_outcome == DeliveryOutcome::Shown
     )));
     assert!(effects.iter().any(|effect| matches!(
@@ -212,7 +194,7 @@ async fn lifecycle_dropped_replacement_returns_receipt_without_revising_thread()
         .unwrap();
 
     let stored = history.stored();
-    assert_eq!(stored[0].summary, "Original");
+    assert_eq!(stored[0].accepted_notification.summary, "Original");
     assert_eq!(stored[0].revision, 1);
     assert!(effects.iter().any(|effect| matches!(
         effect,
@@ -245,12 +227,14 @@ async fn lifecycle_missing_replacement_target_creates_new_thread() {
     assert!(effects.iter().any(|effect| matches!(
         effect,
         LifecycleEffect::ThreadCreated(thread)
-            if thread.id == 1 && thread.summary == "New thread"
+            if thread.id == 1
+                && thread.accepted_notification.summary == "New thread"
+                && thread.accepted_notification.replaces_id == Some(99)
     )));
 }
 
-fn lifecycle_notification(replaces_id: Option<i64>, summary: &str) -> LifecycleNotification {
-    LifecycleNotification {
+fn lifecycle_notification(replaces_id: Option<i64>, summary: &str) -> AcceptedNotification {
+    AcceptedNotification {
         app_identity: "Chat".to_string(),
         app_name: "Chat".to_string(),
         replaces_id,
@@ -260,6 +244,7 @@ fn lifecycle_notification(replaces_id: Option<i64>, summary: &str) -> LifecycleN
         urgency: Urgency::Normal,
         category: None,
         progress: None,
+        has_image_payload: false,
         actions: Vec::new(),
         resident: false,
     }

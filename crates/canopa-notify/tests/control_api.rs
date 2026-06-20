@@ -46,7 +46,7 @@ async fn notify_control_returns_active_notifications() {
 
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].id, receipt.notification_id);
-    assert_eq!(active[0].app_identity, "Mail");
+    assert_eq!(active[0].accepted_notification.app_identity, "Mail");
 }
 
 #[tokio::test]

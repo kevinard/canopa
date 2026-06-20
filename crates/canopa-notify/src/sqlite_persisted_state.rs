@@ -1,7 +1,8 @@
 use crate::{
-    DeliveryOutcome, LifecycleDelivery, NewNotificationThread, NotificationAction,
-    NotificationHistory, NotificationSnapshot, NotificationStatus, NotificationThread,
-    ThreadRevision, Urgency, UserRule, now_millis, urgency_from_key, urgency_key,
+    AcceptedNotification, DeliveryOutcome, LifecycleDelivery, NewNotificationThread,
+    NotificationAction, NotificationHistory, NotificationSnapshot, NotificationStatus,
+    NotificationThread, ThreadRevision, Urgency, UserRule, now_millis, urgency_from_key,
+    urgency_key,
 };
 use anyhow::Context;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
@@ -25,6 +26,7 @@ struct NotificationThreadRow {
     id: i64,
     app_identity: String,
     app_name: String,
+    replaces_id: Option<i64>,
     summary: String,
     body: String,
     raw_body: String,
@@ -48,6 +50,7 @@ impl NotificationThreadRow {
             id: row.try_get("id")?,
             app_identity: row.try_get("app_identity")?,
             app_name: row.try_get("app_name")?,
+            replaces_id: row.try_get("replaces_id")?,
             summary: row.try_get("summary")?,
             body: row.try_get("body")?,
             raw_body: row.try_get("raw_body")?,
@@ -71,20 +74,23 @@ impl NotificationThreadRow {
     fn into_thread(self) -> NotificationThread {
         NotificationThread {
             id: self.id,
-            app_identity: self.app_identity,
-            app_name: self.app_name,
-            summary: self.summary,
-            body: self.body,
-            raw_body: self.raw_body,
-            urgency: self.urgency,
+            accepted_notification: AcceptedNotification {
+                app_identity: self.app_identity,
+                app_name: self.app_name,
+                replaces_id: self.replaces_id,
+                summary: self.summary,
+                body: self.body,
+                raw_body: self.raw_body,
+                urgency: self.urgency,
+                category: self.category,
+                progress: self.progress,
+                has_image_payload: false,
+                actions: self.actions,
+                resident: self.resident,
+            },
             status: self.status,
             delivery_outcome: self.delivery_outcome,
             rule_reference: self.rule_reference,
-            category: self.category,
-            progress: self.progress,
-            has_image_payload: false,
-            actions: self.actions,
-            resident: self.resident,
             revision: self.revision,
             created_at: self.created_at,
             updated_at: self.updated_at,
@@ -140,6 +146,7 @@ impl SqlitePersistedState {
             .await?;
 
         Self::create_schema(&pool).await?;
+        Self::migrate_schema(&pool).await?;
 
         Ok(Self {
             pool,
@@ -183,6 +190,7 @@ impl SqlitePersistedState {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 app_identity TEXT NOT NULL,
                 app_name TEXT NOT NULL,
+                replaces_id INTEGER,
                 summary TEXT NOT NULL,
                 body TEXT NOT NULL,
                 raw_body TEXT NOT NULL,
@@ -207,10 +215,26 @@ impl SqlitePersistedState {
         Ok(())
     }
 
+    async fn migrate_schema(pool: &SqlitePool) -> anyhow::Result<()> {
+        let has_replaces_id: Option<String> = sqlx::query_scalar(
+            "SELECT name FROM pragma_table_info('notification_threads') WHERE name = 'replaces_id'",
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        if has_replaces_id.is_none() {
+            sqlx::query("ALTER TABLE notification_threads ADD COLUMN replaces_id INTEGER")
+                .execute(pool)
+                .await?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
         let rows = sqlx::query(
             r#"
-            SELECT id, app_identity, app_name, summary, body, raw_body, urgency, status,
+            SELECT id, app_identity, app_name, replaces_id, summary, body, raw_body, urgency, status,
                    delivery_outcome, rule_reference, category, progress, resident,
                    actions_json, revision, created_at, updated_at, closed_at
             FROM notification_threads
@@ -237,7 +261,7 @@ impl SqlitePersistedState {
     pub(crate) async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
         let row = sqlx::query(
             r#"
-            SELECT id, app_identity, app_name, summary, body, raw_body, urgency, status,
+            SELECT id, app_identity, app_name, replaces_id, summary, body, raw_body, urgency, status,
                    delivery_outcome, rule_reference, category, progress, resident,
                    actions_json, revision, created_at, updated_at, closed_at
             FROM notification_threads
@@ -371,29 +395,31 @@ impl NotificationHistory for SqlitePersistedState {
         &self,
         thread: NewNotificationThread,
     ) -> anyhow::Result<NotificationThread> {
-        let actions_json = serde_json::to_string(&thread.actions)?;
+        let notification = thread.accepted_notification;
+        let actions_json = serde_json::to_string(&notification.actions)?;
         let id = sqlx::query(
             r#"
             INSERT INTO notification_threads (
-                app_identity, app_name, summary, body, raw_body, urgency, status,
+                app_identity, app_name, replaces_id, summary, body, raw_body, urgency, status,
                 delivery_outcome, rule_reference, category, progress, resident, created_at,
                 updated_at, actions_json
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
             "#,
         )
-        .bind(&thread.app_identity)
-        .bind(&thread.app_name)
-        .bind(&thread.summary)
-        .bind(&thread.body)
-        .bind(&thread.raw_body)
-        .bind(thread.urgency.as_str())
+        .bind(&notification.app_identity)
+        .bind(&notification.app_name)
+        .bind(notification.replaces_id)
+        .bind(&notification.summary)
+        .bind(&notification.body)
+        .bind(&notification.raw_body)
+        .bind(notification.urgency.as_str())
         .bind(thread.status.as_str())
         .bind(thread.delivery_outcome.as_str())
         .bind(&thread.rule_reference)
-        .bind(&thread.category)
-        .bind(thread.progress)
-        .bind(thread.resident)
+        .bind(&notification.category)
+        .bind(notification.progress)
+        .bind(notification.resident)
         .bind(thread.created_at)
         .bind(thread.updated_at)
         .bind(actions_json)
@@ -412,39 +438,42 @@ impl NotificationHistory for SqlitePersistedState {
         id: i64,
         revision: ThreadRevision,
     ) -> anyhow::Result<NotificationThread> {
-        let actions_json = serde_json::to_string(&revision.actions)?;
+        let notification = revision.accepted_notification;
+        let actions_json = serde_json::to_string(&notification.actions)?;
         sqlx::query(
             r#"
             UPDATE notification_threads
             SET app_identity = ?2,
                 app_name = ?3,
-                summary = ?4,
-                body = ?5,
-                raw_body = ?6,
-                urgency = ?7,
-                category = ?8,
-                progress = ?9,
-                resident = ?10,
-                actions_json = ?11,
-                delivery_outcome = ?12,
-                rule_reference = ?13,
+                replaces_id = ?4,
+                summary = ?5,
+                body = ?6,
+                raw_body = ?7,
+                urgency = ?8,
+                category = ?9,
+                progress = ?10,
+                resident = ?11,
+                actions_json = ?12,
+                delivery_outcome = ?13,
+                rule_reference = ?14,
                 status = 'active',
                 revision = revision + 1,
-                updated_at = ?14,
+                updated_at = ?15,
                 closed_at = NULL
             WHERE id = ?1
             "#,
         )
         .bind(id)
-        .bind(revision.app_identity)
-        .bind(revision.app_name)
-        .bind(revision.summary)
-        .bind(revision.body)
-        .bind(revision.raw_body)
-        .bind(revision.urgency.as_str())
-        .bind(revision.category)
-        .bind(revision.progress)
-        .bind(revision.resident)
+        .bind(notification.app_identity)
+        .bind(notification.app_name)
+        .bind(notification.replaces_id)
+        .bind(notification.summary)
+        .bind(notification.body)
+        .bind(notification.raw_body)
+        .bind(notification.urgency.as_str())
+        .bind(notification.category)
+        .bind(notification.progress)
+        .bind(notification.resident)
         .bind(actions_json)
         .bind(revision.delivery_outcome.as_str())
         .bind(revision.rule_reference)

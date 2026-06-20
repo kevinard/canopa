@@ -1,24 +1,9 @@
-use crate::{DeliveryOutcome, NotificationAction, NotificationInput, NotificationReceipt, Urgency};
+use crate::{AcceptedNotification, DeliveryOutcome, NotificationInput, NotificationReceipt};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NotificationIntakeResult {
-    Accepted(IntakeNotification),
+    Accepted(AcceptedNotification),
     NoOpDropped(NotificationReceipt),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct IntakeNotification {
-    pub app_identity: String,
-    pub app_name: String,
-    pub replaces_id: Option<i64>,
-    pub summary: String,
-    pub body: String,
-    pub raw_body: String,
-    pub urgency: Urgency,
-    pub category: Option<String>,
-    pub progress: Option<i64>,
-    pub actions: Vec<NotificationAction>,
-    pub resident: bool,
 }
 
 pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntakeResult {
@@ -37,7 +22,7 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
         });
     }
 
-    NotificationIntakeResult::Accepted(IntakeNotification {
+    NotificationIntakeResult::Accepted(AcceptedNotification {
         app_identity,
         app_name: input.app_name,
         replaces_id: input.replaces_id,
@@ -47,6 +32,7 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
         urgency: input.urgency,
         category: input.category,
         progress: input.progress,
+        has_image_payload: false,
         actions: input.actions,
         resident: input.resident,
     })
@@ -120,6 +106,7 @@ fn decode_basic_entities(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NotificationAction;
 
     #[test]
     fn intake_derives_app_identity_from_trimmed_desktop_entry() {
@@ -208,7 +195,7 @@ mod tests {
         }
     }
 
-    fn accepted(result: NotificationIntakeResult) -> IntakeNotification {
+    fn accepted(result: NotificationIntakeResult) -> AcceptedNotification {
         match result {
             NotificationIntakeResult::Accepted(notification) => notification,
             NotificationIntakeResult::NoOpDropped(_) => panic!("expected accepted intake result"),

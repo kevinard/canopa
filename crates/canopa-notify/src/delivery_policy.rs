@@ -1,20 +1,5 @@
-use crate::{DeliveryOutcome, Urgency};
+use crate::{AcceptedNotification, DeliveryOutcome, Urgency};
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct DeliveryPolicyFacts<'a> {
-    pub app_identity: &'a str,
-    pub urgency: Urgency,
-}
-
-impl<'a> DeliveryPolicyFacts<'a> {
-    pub fn new(app_identity: &'a str, urgency: Urgency) -> Self {
-        Self {
-            app_identity,
-            urgency,
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeliveryPolicyRule {
@@ -39,11 +24,11 @@ impl DeliveryPolicyRule {
         }
     }
 
-    fn matches(&self, facts: DeliveryPolicyFacts<'_>) -> bool {
-        self.app_identity == facts.app_identity
+    fn matches(&self, notification: &AcceptedNotification) -> bool {
+        self.app_identity == notification.app_identity
             && self
                 .urgency
-                .map(|rule_urgency| rule_urgency == facts.urgency)
+                .map(|rule_urgency| rule_urgency == notification.urgency)
                 .unwrap_or(true)
     }
 }
@@ -119,15 +104,19 @@ impl DeliveryPolicy {
         Self { state }
     }
 
-    pub fn decide(&self, facts: DeliveryPolicyFacts<'_>) -> DeliveryDecision {
-        let user_rule = self.match_user_rule(facts);
+    pub fn decide(&self, notification: &AcceptedNotification) -> DeliveryDecision {
+        let user_rule = self.match_user_rule(notification);
         if let Some(rule) = user_rule.filter(|rule| rule.outcome == DeliveryOutcome::Dropped) {
-            return DeliveryDecision::from_rule(facts, rule, DeliveryDecisionReason::UserRule);
+            return DeliveryDecision::from_rule(
+                notification,
+                rule,
+                DeliveryDecisionReason::UserRule,
+            );
         }
 
-        if self.state.do_not_disturb && facts.urgency != Urgency::Critical {
+        if self.state.do_not_disturb && notification.urgency != Urgency::Critical {
             return DeliveryDecision::new(
-                facts,
+                notification,
                 DeliveryOutcome::Silenced,
                 Some("do-not-disturb".to_string()),
                 DeliveryDecisionReason::DoNotDisturb,
@@ -135,38 +124,46 @@ impl DeliveryPolicy {
         }
 
         if let Some(rule) = user_rule {
-            return DeliveryDecision::from_rule(facts, rule, DeliveryDecisionReason::UserRule);
+            return DeliveryDecision::from_rule(
+                notification,
+                rule,
+                DeliveryDecisionReason::UserRule,
+            );
         }
 
         if let Some(rule) = self
             .state
             .config_rules
             .iter()
-            .find(|rule| rule.matches(facts))
+            .find(|rule| rule.matches(notification))
         {
-            return DeliveryDecision::from_rule(facts, rule, DeliveryDecisionReason::ConfigRule);
+            return DeliveryDecision::from_rule(
+                notification,
+                rule,
+                DeliveryDecisionReason::ConfigRule,
+            );
         }
 
         DeliveryDecision::new(
-            facts,
+            notification,
             DeliveryOutcome::Shown,
             None,
             DeliveryDecisionReason::DefaultAllow,
         )
     }
 
-    fn match_user_rule(&self, facts: DeliveryPolicyFacts<'_>) -> Option<&DeliveryPolicyRule> {
+    fn match_user_rule(&self, notification: &AcceptedNotification) -> Option<&DeliveryPolicyRule> {
         self.state
             .user_rules
             .iter()
             .find(|rule| {
-                rule.app_identity == facts.app_identity && rule.urgency == Some(facts.urgency)
+                rule.app_identity == notification.app_identity
+                    && rule.urgency == Some(notification.urgency)
             })
             .or_else(|| {
-                self.state
-                    .user_rules
-                    .iter()
-                    .find(|rule| rule.app_identity == facts.app_identity && rule.urgency.is_none())
+                self.state.user_rules.iter().find(|rule| {
+                    rule.app_identity == notification.app_identity && rule.urgency.is_none()
+                })
             })
     }
 }
@@ -180,15 +177,20 @@ pub struct DeliveryDecision {
 
 impl DeliveryDecision {
     fn from_rule(
-        facts: DeliveryPolicyFacts<'_>,
+        notification: &AcceptedNotification,
         rule: &DeliveryPolicyRule,
         reason: DeliveryDecisionReason,
     ) -> Self {
-        Self::new(facts, rule.outcome, Some(rule.reference.clone()), reason)
+        Self::new(
+            notification,
+            rule.outcome,
+            Some(rule.reference.clone()),
+            reason,
+        )
     }
 
     fn new(
-        facts: DeliveryPolicyFacts<'_>,
+        notification: &AcceptedNotification,
         outcome: DeliveryOutcome,
         rule_reference: Option<String>,
         reason: DeliveryDecisionReason,
@@ -197,8 +199,8 @@ impl DeliveryDecision {
             outcome,
             rule_reference: rule_reference.clone(),
             log: DeliveryDecisionLog {
-                app_identity: facts.app_identity.to_string(),
-                urgency: facts.urgency,
+                app_identity: notification.app_identity.clone(),
+                urgency: notification.urgency,
                 delivery_outcome: outcome,
                 rule_reference,
                 reason,

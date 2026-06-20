@@ -60,8 +60,12 @@ async fn replacement_revises_existing_thread_and_can_create_banner_opportunity()
         .find(|thread| thread.id == hidden.notification_id)
         .unwrap();
     assert_eq!(thread.revision, 2);
-    assert_eq!(thread.body, "Complete");
-    assert_eq!(thread.progress, Some(100));
+    assert_eq!(
+        thread.accepted_notification.replaces_id,
+        Some(hidden.notification_id)
+    );
+    assert_eq!(thread.accepted_notification.body, "Complete");
+    assert_eq!(thread.accepted_notification.progress, Some(100));
     assert!(
         daemon
             .visible_banners()

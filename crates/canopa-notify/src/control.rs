@@ -156,16 +156,17 @@ fn projection_from_snapshot(
         .collect();
 
     for thread in snapshot.history {
+        let notification = thread.accepted_notification;
         grouped
-            .entry(thread.app_identity.clone())
+            .entry(notification.app_identity.clone())
             .or_default()
             .push(NotificationCenterItem {
                 notification_id: thread.id,
-                summary: thread.summary,
-                body: thread.body,
+                summary: notification.summary,
+                body: notification.body,
                 status: thread.status,
                 delivery_outcome: thread.delivery_outcome,
-                actions: thread.actions,
+                actions: notification.actions,
             });
     }
 

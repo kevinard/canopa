@@ -68,6 +68,10 @@ _Avoid_: Metadata when referring to app identity, urgency, IDs, or delivery outc
 The daemon-owned normalization of sender notification requests into notification facts used by **Delivery Policy** and **Notification Lifecycle**.
 _Avoid_: Notification Server API when referring to daemon-internal normalization
 
+**Accepted Notification**:
+The normalized notification shape produced by **Notification Intake** after no-op rejection, **App Identity** derivation, and **Notification Body** normalization, before **Delivery Policy** assigns a **Delivery Outcome**.
+_Avoid_: Notification Thread when lifecycle has not created or revised history
+
 **Rule Reference**:
 A lightweight reference to the rule source that produced a **Delivery Outcome**.
 _Avoid_: Rule snapshot when the full rule definition is not copied into history
@@ -109,7 +113,7 @@ The original sender-provided body text retained for protocol fidelity and debugg
 _Avoid_: Notification Body when referring to rendered/plain user-visible text
 
 **Notification Thread**:
-A user-visible notification record that may be revised by replacement notifications from the same sender. Normal history shows the latest revision of a thread.
+A user-visible notification record that retains an **Accepted Notification** plus lifecycle metadata, and may be revised by replacement notifications from the same sender. Normal history shows the latest revision of a thread.
 _Avoid_: Notification when referring specifically to the replacement-aware record
 
 **Notification History**:
@@ -222,11 +226,14 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Notify stores **Raw Notification Body** while displaying a conservative **Notification Body** representation.
 - The first **Notification Body** rendering is plain text.
 - **Notification Intake** owns first-version **App Identity** derivation and **Notification Body** normalization.
+- **Notification Intake** returns an **Accepted Notification** for sender requests that should enter **Delivery Policy** and **Notification Lifecycle**.
+- **Accepted Notification** contains normalized sender/request facts, not lifecycle timestamps.
 - Body-only notifications are valid even when **Notification Summary** is empty.
 - Notifications with no **Notification Summary**, **Notification Body**, **Notification Action**, or meaningful metadata are dropped as no-op notifications.
 - **Notification Intake** validates sender input and rejects no-op notifications before **Delivery Policy**.
 - No-op **Notification Intake** rejection has the same sender-visible **Delivery Outcome** as a **Dropped Notification**.
 - No-op **Notification Intake** rejection returns directly from intake; it does not enter **Delivery Policy** or **Notification Lifecycle**.
+- An **Accepted Notification** may carry the sender-provided replacement target, but interpreting replacement behavior belongs to **Notification Lifecycle**, not **Notification Intake**.
 - **Do Not Disturb** silences non-critical notifications while still allowing critical **Notification Banners** by default.
 - **Do Not Disturb** state persists across **Notification Daemon** restarts.
 - **Do Not Disturb** takes precedence over app allow rules for non-critical notifications.
@@ -238,7 +245,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Notification delivery policy uses ordered **Notification Rules** where the first decisive matching rule determines whether a notification is shown, silenced, or dropped.
 - **Delivery Policy** runs before **Notification Lifecycle** for both new and replacement notifications.
 - **Delivery Policy** decides the **Delivery Outcome**; **Notification Lifecycle** acts on that outcome, including dropped notifications.
-- **Delivery Policy** is pure over notification facts and loaded rule state; it does not query storage or configuration files directly.
+- **Delivery Policy** evaluates an immutable **Accepted Notification** and **Loaded Delivery Policy State**; it does not query storage or configuration files directly.
+- First-version **Delivery Policy** rules use **App Identity** and **Notification Urgency** from the **Accepted Notification**, but the module interface accepts the full shape so future rules can use additional normalized facts.
 - **Delivery Policy** uses the same decision path for new notifications, replacement notifications, and **Active Notification** re-evaluation unless a future **Notification Rule** explicitly depends on that context.
 - Default allowing of unknown **App Identities** is **Delivery Policy** implementation, not a synthetic rule supplied by the **Notification Daemon**.
 - **Delivery Policy** produces the diagnostic explanation used for a **Delivery Decision Log**; the **Notification Daemon** records the log without inferring policy reasons.
@@ -247,6 +255,10 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Normal **Delivery Decision Logs** do not include **Notification Content**.
 - Replacement notifications revise an existing **Notification Thread** instead of creating a new normal history item.
 - Replacement handling belongs to **Notification Lifecycle**, not **Notification Intake** or **Notification History**.
+- Revising a **Notification Thread** replaces its retained **Accepted Notification** facts while preserving thread identity and lifecycle metadata.
+- **Active Notification** re-evaluation uses the **Accepted Notification** retained by each **Notification Thread** instead of reconstructing a separate policy input shape.
+- **Notification Lifecycle** owns lifecycle timestamps on **Notification Threads**.
+- **Delivery Outcome** and **Rule Reference** are **Notification Thread** lifecycle metadata, not **Accepted Notification** facts.
 - Notification delivery policy applies to replacement notifications; a silenced replacement updates history and closes any visible **Notification Banner** for the thread.
 - A dropped replacement is handled by **Notification Lifecycle** without revising the existing **Notification Thread**.
 - An eligible replacement notification may create a **Notification Banner** even when the previous revision did not.

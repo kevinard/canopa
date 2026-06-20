@@ -17,7 +17,7 @@ pub use control::{
 };
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
-    DeliveryPolicyFacts, DeliveryPolicyRule, LoadedDeliveryPolicyState,
+    DeliveryPolicyRule, LoadedDeliveryPolicyState,
 };
 
 use intake::{NotificationIntakeResult, intake_notification};
@@ -459,19 +459,21 @@ pub struct BannerView {
 
 impl BannerView {
     fn from_thread(thread: NotificationThread) -> Self {
+        let notification = thread.accepted_notification;
+        let default_action_key = notification
+            .actions
+            .iter()
+            .find(|action| action.key == "default")
+            .map(|action| action.key.clone());
         Self {
             notification_id: thread.id,
-            app_identity: thread.app_identity,
-            app_name: thread.app_name,
-            summary: thread.summary,
-            body: thread.body,
-            urgency: thread.urgency,
-            progress: thread.progress,
-            default_action_key: thread
-                .actions
-                .iter()
-                .find(|action| action.key == "default")
-                .map(|action| action.key.clone()),
+            app_identity: notification.app_identity,
+            app_name: notification.app_name,
+            summary: notification.summary,
+            body: notification.body,
+            urgency: notification.urgency,
+            progress: notification.progress,
+            default_action_key,
             placement: BannerPlacement::TopRightFocusedOutputWithFallback,
             focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
         }
@@ -579,7 +581,7 @@ fn sort_banner_candidates(threads: &mut [NotificationThread]) {
 
 fn banner_rank(thread: &NotificationThread) -> (u8, i64) {
     (
-        if thread.urgency == Urgency::Critical {
+        if thread.accepted_notification.urgency == Urgency::Critical {
             1
         } else {
             0
@@ -633,30 +635,12 @@ impl Daemon {
         };
 
         let policy = self.delivery_policy().await?;
-        let decision = policy.decide(DeliveryPolicyFacts::new(
-            &notification.app_identity,
-            notification.urgency,
-        ));
+        let decision = policy.decide(&notification);
         self.record_decision(decision.log.clone());
 
         let effects = self
             .lifecycle
-            .receive(
-                LifecycleNotification {
-                    app_identity: notification.app_identity,
-                    app_name: notification.app_name,
-                    replaces_id: notification.replaces_id,
-                    summary: notification.summary,
-                    body: notification.body,
-                    raw_body: notification.raw_body,
-                    urgency: notification.urgency,
-                    category: notification.category,
-                    progress: notification.progress,
-                    actions: notification.actions,
-                    resident: notification.resident,
-                },
-                LifecycleDelivery::from_decision(&decision),
-            )
+            .receive(notification, LifecycleDelivery::from_decision(&decision))
             .await?;
         self.apply_lifecycle_effects(&effects).await?;
         receipt_from_effects(&effects)
@@ -704,6 +688,7 @@ impl Daemon {
         }
 
         let default_action_key = thread
+            .accepted_notification
             .actions
             .iter()
             .find(|action| action.key == "default")
@@ -809,10 +794,7 @@ impl Daemon {
         let active = self.snapshot().await?.active;
         let policy = self.delivery_policy().await?;
         for thread in active {
-            let decision = policy.decide(DeliveryPolicyFacts::new(
-                &thread.app_identity,
-                thread.urgency,
-            ));
+            let decision = policy.decide(&thread.accepted_notification);
             let effects = self
                 .lifecycle
                 .apply_delivery_decision(thread.id, LifecycleDelivery::from_decision(&decision))
@@ -902,53 +884,20 @@ impl LifecycleDelivery {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LifecycleNotification {
-    pub app_identity: String,
-    pub app_name: String,
-    pub replaces_id: Option<i64>,
-    pub summary: String,
-    pub body: String,
-    pub raw_body: String,
-    pub urgency: Urgency,
-    pub category: Option<String>,
-    pub progress: Option<i64>,
-    pub actions: Vec<NotificationAction>,
-    pub resident: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewNotificationThread {
-    pub app_identity: String,
-    pub app_name: String,
-    pub summary: String,
-    pub body: String,
-    pub raw_body: String,
-    pub urgency: Urgency,
+    pub accepted_notification: AcceptedNotification,
     pub status: NotificationStatus,
     pub delivery_outcome: DeliveryOutcome,
     pub rule_reference: Option<String>,
-    pub category: Option<String>,
-    pub progress: Option<i64>,
-    pub actions: Vec<NotificationAction>,
-    pub resident: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ThreadRevision {
-    pub app_identity: String,
-    pub app_name: String,
-    pub summary: String,
-    pub body: String,
-    pub raw_body: String,
-    pub urgency: Urgency,
+    pub accepted_notification: AcceptedNotification,
     pub delivery_outcome: DeliveryOutcome,
     pub rule_reference: Option<String>,
-    pub category: Option<String>,
-    pub progress: Option<i64>,
-    pub actions: Vec<NotificationAction>,
-    pub resident: bool,
     pub updated_at: i64,
 }
 
@@ -1021,7 +970,7 @@ where
 
     pub async fn receive(
         &self,
-        notification: LifecycleNotification,
+        notification: AcceptedNotification,
         delivery: LifecycleDelivery,
     ) -> anyhow::Result<Vec<LifecycleEffect>> {
         if delivery.outcome == DeliveryOutcome::Dropped {
@@ -1108,7 +1057,12 @@ where
             anyhow::bail!("notification {notification_id} is not active");
         }
 
-        if !thread.actions.iter().any(|action| action.key == action_key) {
+        if !thread
+            .accepted_notification
+            .actions
+            .iter()
+            .any(|action| action.key == action_key)
+        {
             anyhow::bail!("notification {notification_id} has no action {action_key}");
         }
 
@@ -1117,7 +1071,7 @@ where
             action_key: action_key.to_string(),
         }];
 
-        if !thread.resident {
+        if !thread.accepted_notification.resident {
             effects.extend(self.close(notification_id).await?);
         }
 
@@ -1194,22 +1148,13 @@ where
 }
 
 impl NewNotificationThread {
-    fn from_notification(notification: LifecycleNotification, delivery: LifecycleDelivery) -> Self {
+    fn from_notification(notification: AcceptedNotification, delivery: LifecycleDelivery) -> Self {
         let now = now_millis();
         Self {
-            app_identity: notification.app_identity,
-            app_name: notification.app_name,
-            summary: notification.summary,
-            body: notification.body,
-            raw_body: notification.raw_body,
-            urgency: notification.urgency,
+            accepted_notification: notification,
             status: NotificationStatus::Active,
             delivery_outcome: delivery.outcome,
             rule_reference: delivery.rule_reference,
-            category: notification.category,
-            progress: notification.progress,
-            actions: notification.actions,
-            resident: notification.resident,
             created_at: now,
             updated_at: now,
         }
@@ -1217,20 +1162,11 @@ impl NewNotificationThread {
 }
 
 impl ThreadRevision {
-    fn from_notification(notification: LifecycleNotification, delivery: LifecycleDelivery) -> Self {
+    fn from_notification(notification: AcceptedNotification, delivery: LifecycleDelivery) -> Self {
         Self {
-            app_identity: notification.app_identity,
-            app_name: notification.app_name,
-            summary: notification.summary,
-            body: notification.body,
-            raw_body: notification.raw_body,
-            urgency: notification.urgency,
+            accepted_notification: notification,
             delivery_outcome: delivery.outcome,
             rule_reference: delivery.rule_reference,
-            category: notification.category,
-            progress: notification.progress,
-            actions: notification.actions,
-            resident: notification.resident,
             updated_at: now_millis(),
         }
     }
@@ -1257,6 +1193,22 @@ pub struct NotificationInput {
     pub category: Option<String>,
     pub progress: Option<i64>,
     pub image_data: Option<Vec<u8>>,
+    pub actions: Vec<NotificationAction>,
+    pub resident: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AcceptedNotification {
+    pub app_identity: String,
+    pub app_name: String,
+    pub replaces_id: Option<i64>,
+    pub summary: String,
+    pub body: String,
+    pub raw_body: String,
+    pub urgency: Urgency,
+    pub category: Option<String>,
+    pub progress: Option<i64>,
+    pub has_image_payload: bool,
     pub actions: Vec<NotificationAction>,
     pub resident: bool,
 }
@@ -1370,20 +1322,10 @@ pub struct NotificationReceipt {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationThread {
     pub id: i64,
-    pub app_identity: String,
-    pub app_name: String,
-    pub summary: String,
-    pub body: String,
-    pub raw_body: String,
-    pub urgency: Urgency,
+    pub accepted_notification: AcceptedNotification,
     pub status: NotificationStatus,
     pub delivery_outcome: DeliveryOutcome,
     pub rule_reference: Option<String>,
-    pub category: Option<String>,
-    pub progress: Option<i64>,
-    pub has_image_payload: bool,
-    pub actions: Vec<NotificationAction>,
-    pub resident: bool,
     pub revision: i64,
     pub created_at: i64,
     pub updated_at: i64,

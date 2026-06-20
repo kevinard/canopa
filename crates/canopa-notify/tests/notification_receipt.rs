@@ -27,10 +27,13 @@ async fn default_allowed_notification_is_persisted_as_an_active_thread() {
     assert_eq!(snapshot.active.len(), 1);
     let thread = &snapshot.active[0];
     assert_eq!(thread.id, receipt.notification_id);
-    assert_eq!(thread.app_identity, "example-mail.desktop");
-    assert_eq!(thread.summary, "Inbox");
-    assert_eq!(thread.body, "One unread message");
-    assert_eq!(thread.urgency, Urgency::Normal);
+    assert_eq!(
+        thread.accepted_notification.app_identity,
+        "example-mail.desktop"
+    );
+    assert_eq!(thread.accepted_notification.summary, "Inbox");
+    assert_eq!(thread.accepted_notification.body, "One unread message");
+    assert_eq!(thread.accepted_notification.urgency, Urgency::Normal);
     assert_eq!(thread.status.as_str(), "active");
 }
 
@@ -98,7 +101,10 @@ async fn category_and_progress_are_persisted_without_image_payloads() {
 
     let snapshot = daemon.snapshot().await.unwrap();
     let thread = &snapshot.active[0];
-    assert_eq!(thread.category.as_deref(), Some("transfer"));
-    assert_eq!(thread.progress, Some(95));
-    assert!(!thread.has_image_payload);
+    assert_eq!(
+        thread.accepted_notification.category.as_deref(),
+        Some("transfer")
+    );
+    assert_eq!(thread.accepted_notification.progress, Some(95));
+    assert!(!thread.accepted_notification.has_image_payload);
 }
