@@ -1,11 +1,12 @@
 use anyhow::Context;
 use canopa_notify::{
-    AppPermissionControl as ControlAppPermission, BannerInteraction, ControlCommand, ControlReply,
-    Daemon, DaemonOptions, IcedLayerShellBannerPresenter, NotificationAction,
-    NotificationCenterProjection, NotificationInput, NotifyControl, Urgency,
+    AppPermissionControl, BannerInteraction, ControlCommand, ControlReply, Daemon, DaemonOptions,
+    IcedLayerShellBannerPresenter, NotificationAction, NotificationCenterProjection,
+    NotificationInput, NotifyControl, Urgency,
 };
 use canopa_panel_protocol::{
-    AppPermission, PanelAction, PanelContent, PanelGroup, PanelItem, ProviderResponse,
+    PanelAction, PanelContent, PanelControl, PanelControlOption, PanelItem, PanelMetadata,
+    PanelSection, ProviderResponse,
 };
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
@@ -400,6 +401,7 @@ fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
             println!(
                 "{}",
                 serde_json::to_string(&ProviderResponse::replace_content(PanelContent::error(
+                    "Canopa Notify",
                     message
                 )))?
             );
@@ -535,42 +537,76 @@ impl SocketControlRequest {
 fn panel_content_from_projection(projection: NotificationCenterProjection) -> PanelContent {
     PanelContent {
         title: "Canopa Notify".to_string(),
-        groups: projection
+        sections: projection
             .groups
             .into_iter()
-            .map(|group| PanelGroup {
-                app_identity: group.app_identity,
+            .map(|group| PanelSection {
+                id: group.app_identity.clone(),
+                title: group.app_identity,
                 items: group
                     .items
                     .into_iter()
                     .map(|item| PanelItem {
-                        notification_id: item.notification_id,
-                        summary: item.summary,
-                        body: item.body,
-                        status: item.status.as_str().to_string(),
-                        delivery_outcome: item.delivery_outcome.as_str().to_string(),
+                        id: item.notification_id.to_string(),
+                        title: item.summary,
+                        body: (!item.body.is_empty()).then_some(item.body),
+                        metadata: vec![
+                            PanelMetadata {
+                                key: "status".to_string(),
+                                label: "Status".to_string(),
+                                value: item.status.as_str().to_string(),
+                            },
+                            PanelMetadata {
+                                key: "delivery_outcome".to_string(),
+                                label: "Delivery outcome".to_string(),
+                                value: item.delivery_outcome.as_str().to_string(),
+                            },
+                        ],
                         actions: item
                             .actions
                             .into_iter()
-                            .map(|action| PanelAction {
-                                key: action.key,
-                                label: action.label,
-                            })
+                            .map(|action| PanelAction::new(action.key, action.label))
                             .collect(),
                     })
                     .collect(),
-                permission: Some(panel_permission(group.permission)),
+                controls: vec![app_permission_control(group.permission)],
             })
             .collect(),
+        actions: vec![
+            PanelAction::new("clear_active_notifications", "Clear active notifications"),
+            PanelAction::new("delete_notification_history", "Delete notification history"),
+        ],
         error: None,
     }
 }
 
-fn panel_permission(permission: ControlAppPermission) -> AppPermission {
+fn app_permission_control(permission: AppPermissionControl) -> PanelControl {
+    PanelControl {
+        key: "app_permission".to_string(),
+        label: "App permission".to_string(),
+        value: app_permission_value(permission).to_string(),
+        options: vec![
+            PanelControlOption {
+                value: "allow".to_string(),
+                label: "Allow".to_string(),
+            },
+            PanelControlOption {
+                value: "silence".to_string(),
+                label: "Silence".to_string(),
+            },
+            PanelControlOption {
+                value: "drop".to_string(),
+                label: "Drop".to_string(),
+            },
+        ],
+    }
+}
+
+fn app_permission_value(permission: AppPermissionControl) -> &'static str {
     match permission {
-        ControlAppPermission::Allow => AppPermission::Allow,
-        ControlAppPermission::Silence => AppPermission::Silence,
-        ControlAppPermission::Drop => AppPermission::Drop,
+        AppPermissionControl::Allow => "allow",
+        AppPermissionControl::Silence => "silence",
+        AppPermissionControl::Drop => "drop",
     }
 }
 

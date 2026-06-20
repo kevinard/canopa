@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use canopa_notify::{Daemon, DaemonOptions, NotificationInput};
+use canopa_panel_protocol::ProviderResponse;
 use predicates::str::contains;
 use std::io::{BufRead, BufReader};
 use std::process::{Command as StdCommand, Stdio};
@@ -60,9 +61,17 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
         .spawn()
         .unwrap();
     let line = read_provider_line(&mut provider);
+    let ProviderResponse::ReplaceContent { content, .. } =
+        serde_json::from_str::<ProviderResponse>(&line).unwrap();
 
-    assert!(line.contains("\"app_identity\":\"Mail\""));
-    assert!(line.contains("\"summary\":\"Inbox\""));
+    assert_eq!(content.sections.len(), 1);
+    assert_eq!(content.sections[0].id, "Mail");
+    assert_eq!(content.sections[0].items[0].title, "Inbox");
+    assert_eq!(
+        content.sections[0].items[0].body.as_deref(),
+        Some("One unread message")
+    );
+    assert_eq!(content.sections[0].controls[0].key, "app_permission");
     assert!(line.contains("\"protocol_version\":1"));
 
     provider.kill().ok();

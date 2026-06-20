@@ -8,4 +8,4 @@ Minimal command:
 canopa-notify panel-provider --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock"
 ```
 
-The provider emits the shared Canopa panel protocol from `canopa-panel-protocol`, including explicit protocol versioning, complete content replacement messages, grouped Notification History, App Permission Controls, and interaction events for clearing active notifications, deleting history, and invoking active notification actions.
+The provider emits the shared Canopa panel protocol from `canopa-panel-protocol`, including explicit protocol versioning and complete content replacement messages. **Panel Provider Mode** maps **Notification Center Projection** into generic panel sections, items, controls, metadata, and actions; Notify-specific meaning stays in the provider adapter.
