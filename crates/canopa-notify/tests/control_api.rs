@@ -2,6 +2,7 @@ use canopa_notify::{
     AppPermissionControl, ControlCommand, ControlReply, Daemon, DaemonOptions, DeliveryOutcome,
     NotificationAction, NotificationInput, NotifyControl,
 };
+use std::time::Duration;
 
 #[tokio::test]
 async fn notify_control_reports_daemon_status() {
@@ -104,6 +105,65 @@ async fn notify_control_builds_notification_center_projection() {
         .unwrap();
     assert_eq!(chat.permission, AppPermissionControl::Allow);
     assert_eq!(chat.items[0].summary, "Message");
+}
+
+#[tokio::test]
+async fn notify_control_subscription_emits_complete_replacement_projections() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+        .await
+        .unwrap();
+    let control = NotifyControl::new(daemon.clone());
+    let mut subscription = control.subscribe_notification_state();
+
+    let initial = subscription.next_projection().await.unwrap().unwrap();
+    assert!(initial.groups.is_empty());
+
+    daemon
+        .receive_notification(NotificationInput {
+            app_name: "Mail".to_string(),
+            summary: "Inbox".to_string(),
+            ..NotificationInput::default()
+        })
+        .await
+        .unwrap();
+
+    let projection = tokio::time::timeout(Duration::from_secs(1), subscription.next_projection())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(projection.groups.len(), 1);
+    assert_eq!(projection.groups[0].app_identity, "Mail");
+    assert_eq!(projection.groups[0].items[0].summary, "Inbox");
+
+    daemon
+        .receive_notification(NotificationInput {
+            app_name: "Chat".to_string(),
+            summary: "Message".to_string(),
+            ..NotificationInput::default()
+        })
+        .await
+        .unwrap();
+
+    let projection = tokio::time::timeout(Duration::from_secs(1), subscription.next_projection())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(projection.groups.len(), 2);
+    assert!(
+        projection
+            .groups
+            .iter()
+            .any(|group| group.app_identity == "Mail")
+    );
+    assert!(
+        projection
+            .groups
+            .iter()
+            .any(|group| group.app_identity == "Chat")
+    );
 }
 
 #[tokio::test]

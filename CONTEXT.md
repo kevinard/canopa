@@ -325,6 +325,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Panel Provider Mode** uses a **Notification State Subscription** while the **Notification Center** is open.
 - A **Notification State Subscription** is a current-state stream, not an event log.
 - The first **Notification State Subscription** sends complete replacement **Notification Center Projections**, not patches.
+- **Notification State Subscription** does not expose **Lifecycle Effects**; each emitted **Notification Center Projection** replaces the previous display state.
 - Slow **Notification State Subscription** clients may skip intermediate **Notification Center Projections** because each projection replaces previous display state.
 - **Notification Center Projections** are rebuilt from **Notification Daemon** state when emitted, not maintained as separate source state.
 - **Notification Center Projection** rebuilds on request; it does not consume **Lifecycle Effects** as state.

@@ -1,7 +1,9 @@
 use assert_cmd::Command;
 use canopa_notify::{Daemon, DaemonOptions, NotificationInput};
 use predicates::str::contains;
-use std::process::Command as StdCommand;
+use std::io::{BufRead, BufReader};
+use std::process::{Command as StdCommand, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -52,17 +54,37 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
 
     wait_for_status(&socket);
 
-    Command::cargo_bin("canopa-notify")
-        .unwrap()
+    let mut provider = StdCommand::new(assert_cmd::cargo::cargo_bin("canopa-notify"))
         .args(["panel-provider", "--socket", socket.to_str().unwrap()])
-        .assert()
-        .success()
-        .stdout(contains("\"app_identity\":\"Mail\""))
-        .stdout(contains("\"summary\":\"Inbox\""))
-        .stdout(contains("\"protocol_version\":1"));
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let line = read_provider_line(&mut provider);
 
+    assert!(line.contains("\"app_identity\":\"Mail\""));
+    assert!(line.contains("\"summary\":\"Inbox\""));
+    assert!(line.contains("\"protocol_version\":1"));
+
+    provider.kill().ok();
+    provider.wait().ok();
     daemon.kill().ok();
     daemon.wait().ok();
+}
+
+fn read_provider_line(provider: &mut std::process::Child) -> String {
+    let stdout = provider.stdout.take().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let result = reader.read_line(&mut line).map(|_| line);
+        sender.send(result).ok();
+    });
+
+    receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("panel provider did not emit an initial projection")
+        .unwrap()
 }
 
 fn wait_for_status(socket: &std::path::Path) {

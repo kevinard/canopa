@@ -4,6 +4,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use tokio::sync::watch;
 
 #[derive(Clone)]
 pub struct NotifyControl {
@@ -22,10 +23,8 @@ impl NotifyControl {
                 self.daemon.snapshot().await?.active,
             )),
             ControlCommand::NotificationCenterProjection => {
-                let snapshot = self.daemon.snapshot().await?;
-                let user_rules = self.daemon.user_rules().await?;
                 Ok(ControlReply::NotificationCenterProjection(
-                    projection_from_snapshot(snapshot, &user_rules),
+                    self.notification_center_projection().await?,
                 ))
             }
             ControlCommand::SetAppPermission {
@@ -57,6 +56,42 @@ impl NotifyControl {
                     .await?;
                 Ok(ControlReply::CommandApplied)
             }
+        }
+    }
+
+    pub fn subscribe_notification_state(&self) -> NotificationStateSubscription {
+        NotificationStateSubscription {
+            control: self.clone(),
+            changes: self.daemon.subscribe_state_changes(),
+            initial_pending: true,
+        }
+    }
+
+    async fn notification_center_projection(&self) -> anyhow::Result<NotificationCenterProjection> {
+        let snapshot = self.daemon.snapshot().await?;
+        let user_rules = self.daemon.user_rules().await?;
+        Ok(projection_from_snapshot(snapshot, &user_rules))
+    }
+}
+
+pub struct NotificationStateSubscription {
+    control: NotifyControl,
+    changes: watch::Receiver<u64>,
+    initial_pending: bool,
+}
+
+impl NotificationStateSubscription {
+    pub async fn next_projection(
+        &mut self,
+    ) -> anyhow::Result<Option<NotificationCenterProjection>> {
+        if self.initial_pending {
+            self.initial_pending = false;
+            return Ok(Some(self.control.notification_center_projection().await?));
+        }
+
+        match self.changes.changed().await {
+            Ok(()) => Ok(Some(self.control.notification_center_projection().await?)),
+            Err(_) => Ok(None),
         }
     }
 }

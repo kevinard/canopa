@@ -406,10 +406,9 @@ fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
             return Ok(());
         }
     };
-    stream.write_all(SocketControlRequest::PanelSnapshot.line().as_bytes())?;
-    let mut response = String::new();
-    stream.read_to_string(&mut response)?;
-    print!("{response}");
+    stream.write_all(SocketControlRequest::PanelSubscribe.line().as_bytes())?;
+    let mut stdout = std::io::stdout();
+    std::io::copy(&mut stream, &mut stdout)?;
     Ok(())
 }
 
@@ -422,11 +421,32 @@ async fn handle_control_connection(
     stream.read_line(&mut request).await?;
     let request = request.trim();
     eprintln!("level=info component=control event=request command={request}");
+    let request = SocketControlRequest::parse(request);
+
+    if request == SocketControlRequest::PanelSubscribe {
+        stream_projection_subscription(stream.get_mut(), control).await?;
+        return Ok(());
+    }
 
     let response = control_socket_response(request, &control).await?;
 
     let stream = stream.get_mut();
     stream.write_all(response.as_bytes()).await?;
+    stream.shutdown().await?;
+    Ok(())
+}
+
+async fn stream_projection_subscription(
+    stream: &mut tokio::net::UnixStream,
+    control: NotifyControl,
+) -> anyhow::Result<()> {
+    let mut subscription = control.subscribe_notification_state();
+    while let Some(projection) = subscription.next_projection().await? {
+        let content = panel_content_from_projection(projection);
+        let response = serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n";
+        stream.write_all(response.as_bytes()).await?;
+        stream.flush().await?;
+    }
     stream.shutdown().await?;
     Ok(())
 }
@@ -439,8 +459,10 @@ fn control_socket_request_for_ctl(command: &CtlCommand) -> &'static str {
     }
 }
 
-async fn control_socket_response(request: &str, control: &NotifyControl) -> anyhow::Result<String> {
-    let request = SocketControlRequest::parse(request);
+async fn control_socket_response(
+    request: SocketControlRequest,
+    control: &NotifyControl,
+) -> anyhow::Result<String> {
     let Some(command) = request.command() else {
         return Ok("error unsupported control request\n".to_string());
     };
@@ -453,6 +475,7 @@ enum SocketControlRequest {
     ActiveJson,
     ActiveCount,
     PanelSnapshot,
+    PanelSubscribe,
     Unsupported,
 }
 
@@ -463,6 +486,7 @@ impl SocketControlRequest {
             "active-json" => Self::ActiveJson,
             "active" => Self::ActiveCount,
             "panel-snapshot" => Self::PanelSnapshot,
+            "panel-subscribe" => Self::PanelSubscribe,
             _ => Self::Unsupported,
         }
     }
@@ -473,6 +497,7 @@ impl SocketControlRequest {
             Self::ActiveJson => "active-json\n",
             Self::ActiveCount => "active\n",
             Self::PanelSnapshot => "panel-snapshot\n",
+            Self::PanelSubscribe => "panel-subscribe\n",
             Self::Unsupported => "unsupported\n",
         }
     }
@@ -482,6 +507,7 @@ impl SocketControlRequest {
             Self::Status => Some(ControlCommand::Status),
             Self::ActiveJson | Self::ActiveCount => Some(ControlCommand::ActiveNotifications),
             Self::PanelSnapshot => Some(ControlCommand::NotificationCenterProjection),
+            Self::PanelSubscribe => None,
             Self::Unsupported => None,
         }
     }
@@ -607,6 +633,10 @@ mod tests {
         assert_eq!(
             SocketControlRequest::parse("panel-snapshot").command(),
             Some(ControlCommand::NotificationCenterProjection)
+        );
+        assert_eq!(
+            SocketControlRequest::parse("panel-subscribe").command(),
+            None
         );
         assert_eq!(SocketControlRequest::parse("bogus").command(), None);
     }

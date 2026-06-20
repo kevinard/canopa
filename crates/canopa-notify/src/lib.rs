@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::watch;
 
 pub mod control;
 mod delivery_policy;
@@ -13,7 +14,8 @@ mod sqlite_persisted_state;
 
 pub use control::{
     AppPermissionControl, ControlCommand, ControlReply, ControlStatus, NotificationCenterGroup,
-    NotificationCenterItem, NotificationCenterProjection, NotifyControl,
+    NotificationCenterItem, NotificationCenterProjection, NotificationStateSubscription,
+    NotifyControl,
 };
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
@@ -600,6 +602,8 @@ pub struct Daemon {
     config_rules: Arc<Mutex<Vec<ConfigRule>>>,
     config_error: Arc<Mutex<Option<String>>>,
     decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
+    state_version: Arc<AtomicU64>,
+    state_changes: watch::Sender<u64>,
 }
 
 impl Daemon {
@@ -613,6 +617,7 @@ impl Daemon {
         let lifecycle = NotificationLifecycle::new(storage.clone());
         lifecycle.mark_active_stale().await?;
         storage.prune_history().await?;
+        let (state_changes, _state_change_receiver) = watch::channel(0);
         Ok(Self {
             storage,
             lifecycle,
@@ -622,6 +627,8 @@ impl Daemon {
             config_rules: Arc::new(Mutex::new(Vec::new())),
             config_error: Arc::new(Mutex::new(None)),
             decision_logs: Arc::new(Mutex::new(Vec::new())),
+            state_version: Arc::new(AtomicU64::new(0)),
+            state_changes,
         })
     }
 
@@ -642,7 +649,7 @@ impl Daemon {
             .lifecycle
             .receive(notification, LifecycleDelivery::from_decision(&decision))
             .await?;
-        self.apply_lifecycle_effects(&effects).await?;
+        self.apply_lifecycle_effects_and_notify(&effects).await?;
         receipt_from_effects(&effects)
     }
 
@@ -663,22 +670,22 @@ impl Daemon {
             .lifecycle
             .invoke_action(notification_id, action_key)
             .await?;
-        self.apply_lifecycle_effects(&effects).await
+        self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
     pub async fn dismiss_notification(&self, notification_id: i64) -> anyhow::Result<()> {
         let effects = self.lifecycle.dismiss(notification_id).await?;
-        self.apply_lifecycle_effects(&effects).await
+        self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
     pub async fn expire_notification(&self, notification_id: i64) -> anyhow::Result<()> {
         let effects = self.lifecycle.expire(notification_id).await?;
-        self.apply_lifecycle_effects(&effects).await
+        self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
     pub async fn close_notification(&self, notification_id: i64) -> anyhow::Result<()> {
         let effects = self.lifecycle.close(notification_id).await?;
-        self.apply_lifecycle_effects(&effects).await
+        self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
     pub async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
@@ -704,16 +711,20 @@ impl Daemon {
 
     pub async fn clear_active_notifications(&self) -> anyhow::Result<()> {
         let effects = self.lifecycle.clear_active_notifications().await?;
-        self.apply_lifecycle_effects(&effects).await
+        self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
     pub async fn delete_notification_history(&self) -> anyhow::Result<()> {
-        self.storage.delete_inactive_history().await
+        self.storage.delete_inactive_history().await?;
+        self.notify_state_changed();
+        Ok(())
     }
 
     pub async fn set_do_not_disturb(&self, enabled: bool) -> anyhow::Result<()> {
         self.storage.set_do_not_disturb(enabled).await?;
-        self.reevaluate_active_notifications().await
+        self.reevaluate_active_notifications().await?;
+        self.notify_state_changed();
+        Ok(())
     }
 
     pub async fn do_not_disturb(&self) -> anyhow::Result<bool> {
@@ -722,7 +733,9 @@ impl Daemon {
 
     pub async fn upsert_user_rule(&self, rule: UserRule) -> anyhow::Result<()> {
         self.storage.upsert_user_rule(&rule).await?;
-        self.reevaluate_active_notifications().await
+        self.reevaluate_active_notifications().await?;
+        self.notify_state_changed();
+        Ok(())
     }
 
     pub async fn user_rules(&self) -> anyhow::Result<Vec<UserRule>> {
@@ -735,7 +748,9 @@ impl Daemon {
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
         self.storage.remove_user_rule(app_identity, urgency).await?;
-        self.reevaluate_active_notifications().await
+        self.reevaluate_active_notifications().await?;
+        self.notify_state_changed();
+        Ok(())
     }
 
     pub async fn reload_configuration_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
@@ -749,7 +764,9 @@ impl Daemon {
             Ok(rules) => {
                 *self.config_rules.lock().unwrap() = rules;
                 *self.config_error.lock().unwrap() = None;
-                self.reevaluate_active_notifications().await
+                self.reevaluate_active_notifications().await?;
+                self.notify_state_changed();
+                Ok(())
             }
             Err(error) => {
                 *self.config_error.lock().unwrap() = Some(error.to_string());
@@ -768,6 +785,10 @@ impl Daemon {
 
     pub async fn sender_events(&self) -> Vec<SenderEvent> {
         self.sender_events.lock().unwrap().clone()
+    }
+
+    pub(crate) fn subscribe_state_changes(&self) -> watch::Receiver<u64> {
+        self.state_changes.subscribe()
     }
 
     async fn delivery_policy(&self) -> anyhow::Result<DeliveryPolicy> {
@@ -793,13 +814,27 @@ impl Daemon {
     async fn reevaluate_active_notifications(&self) -> anyhow::Result<()> {
         let active = self.snapshot().await?.active;
         let policy = self.delivery_policy().await?;
+        let mut all_effects = Vec::new();
         for thread in active {
             let decision = policy.decide(&thread.accepted_notification);
             let effects = self
                 .lifecycle
                 .apply_delivery_decision(thread.id, LifecycleDelivery::from_decision(&decision))
                 .await?;
-            self.apply_lifecycle_effects(&effects).await?;
+            all_effects.extend(effects);
+        }
+        self.apply_lifecycle_effects_and_notify(&all_effects)
+            .await?;
+        Ok(())
+    }
+
+    async fn apply_lifecycle_effects_and_notify(
+        &self,
+        effects: &[LifecycleEffect],
+    ) -> anyhow::Result<()> {
+        self.apply_lifecycle_effects(effects).await?;
+        if !effects.is_empty() {
+            self.notify_state_changed();
         }
         Ok(())
     }
@@ -844,6 +879,11 @@ impl Daemon {
     async fn sync_presentation(&self) -> anyhow::Result<()> {
         let banners = self.banner_state.lock().unwrap().visible_banners();
         self.presentation.replace_visible_banners(banners)
+    }
+
+    fn notify_state_changed(&self) {
+        let version = self.state_version.fetch_add(1, Ordering::Relaxed) + 1;
+        let _ = self.state_changes.send(version);
     }
 }
 
