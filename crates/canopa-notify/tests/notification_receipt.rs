@@ -35,29 +35,6 @@ async fn default_allowed_notification_is_persisted_as_an_active_thread() {
 }
 
 #[tokio::test]
-async fn markup_body_is_rendered_as_plain_text_while_raw_body_is_retained() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
-
-    daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Message".to_string(),
-            body: "<b>Hello</b><br/>World &amp; friends".to_string(),
-            ..NotificationInput::default()
-        })
-        .await
-        .unwrap();
-
-    let snapshot = daemon.snapshot().await.unwrap();
-    let thread = &snapshot.active[0];
-    assert_eq!(thread.body, "Hello\nWorld & friends");
-    assert_eq!(thread.raw_body, "<b>Hello</b><br/>World &amp; friends");
-}
-
-#[tokio::test]
 async fn empty_noop_notifications_are_dropped_without_history() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))

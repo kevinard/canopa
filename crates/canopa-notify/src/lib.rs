@@ -11,11 +11,14 @@ use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod delivery_policy;
+mod intake;
 
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
     DeliveryPolicyFacts, DeliveryPolicyRule, LoadedDeliveryPolicyState,
 };
+
+use intake::{NotificationIntakeResult, intake_notification};
 
 #[derive(Clone)]
 pub struct DaemonOptions {
@@ -623,40 +626,33 @@ impl Daemon {
         &self,
         input: NotificationInput,
     ) -> anyhow::Result<NotificationReceipt> {
-        let app_identity = derive_app_identity(&input);
-        let body = plain_text_body(&input.body);
-
-        if input.summary.trim().is_empty()
-            && body.trim().is_empty()
-            && input.actions.is_empty()
-            && input.category.is_none()
-            && input.progress.is_none()
-        {
-            return Ok(NotificationReceipt {
-                notification_id: 0,
-                delivery_outcome: DeliveryOutcome::Dropped,
-            });
-        }
+        let notification = match intake_notification(input) {
+            NotificationIntakeResult::Accepted(notification) => notification,
+            NotificationIntakeResult::NoOpDropped(receipt) => return Ok(receipt),
+        };
 
         let policy = self.delivery_policy().await?;
-        let decision = policy.decide(DeliveryPolicyFacts::new(&app_identity, input.urgency));
+        let decision = policy.decide(DeliveryPolicyFacts::new(
+            &notification.app_identity,
+            notification.urgency,
+        ));
         self.record_decision(decision.log.clone());
 
         let effects = self
             .lifecycle
             .receive(
                 LifecycleNotification {
-                    app_identity,
-                    app_name: input.app_name,
-                    replaces_id: input.replaces_id,
-                    summary: input.summary,
-                    body,
-                    raw_body: input.body,
-                    urgency: input.urgency,
-                    category: input.category,
-                    progress: input.progress,
-                    actions: input.actions,
-                    resident: input.resident,
+                    app_identity: notification.app_identity,
+                    app_name: notification.app_name,
+                    replaces_id: notification.replaces_id,
+                    summary: notification.summary,
+                    body: notification.body,
+                    raw_body: notification.raw_body,
+                    urgency: notification.urgency,
+                    category: notification.category,
+                    progress: notification.progress,
+                    actions: notification.actions,
+                    resident: notification.resident,
                 },
                 LifecycleDelivery::from_decision(&decision),
             )
@@ -2002,70 +1998,6 @@ fn attribute_value(line: &str, name: &str) -> Option<String> {
     let rest = &line[start..];
     let end = rest.find('"')?;
     Some(rest[..end].to_string())
-}
-
-fn derive_app_identity(input: &NotificationInput) -> String {
-    input
-        .desktop_entry
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(&input.app_name)
-        .to_string()
-}
-
-fn plain_text_body(body: &str) -> String {
-    let mut output = String::new();
-    let mut chars = body.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if ch == '<' {
-            let mut tag = String::new();
-            for tag_ch in chars.by_ref() {
-                if tag_ch == '>' {
-                    break;
-                }
-                tag.push(tag_ch);
-            }
-
-            let tag_name = tag
-                .trim()
-                .trim_start_matches('/')
-                .split_whitespace()
-                .next()
-                .unwrap_or_default()
-                .trim_end_matches('/');
-
-            if matches!(tag_name.to_ascii_lowercase().as_str(), "br" | "p" | "div") {
-                push_newline(&mut output);
-            }
-            continue;
-        }
-
-        output.push(ch);
-    }
-
-    decode_basic_entities(&output)
-        .lines()
-        .map(str::trim)
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string()
-}
-
-fn push_newline(output: &mut String) {
-    if !output.ends_with('\n') {
-        output.push('\n');
-    }
-}
-
-fn decode_basic_entities(value: &str) -> String {
-    value
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
 }
 
 fn now_millis() -> i64 {
