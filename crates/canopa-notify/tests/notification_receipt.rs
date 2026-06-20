@@ -79,6 +79,27 @@ async fn empty_noop_notifications_are_dropped_without_history() {
 }
 
 #[tokio::test]
+async fn empty_noop_notifications_bypass_delivery_policy() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+        .await
+        .unwrap();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            app_name: "Blank Sender".to_string(),
+            summary: "   ".to_string(),
+            body: "\n\t".to_string(),
+            ..NotificationInput::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(receipt.delivery_outcome.as_str(), "dropped");
+    assert!(daemon.delivery_decision_logs().await.is_empty());
+}
+
+#[tokio::test]
 async fn category_and_progress_are_persisted_without_image_payloads() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))

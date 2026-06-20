@@ -1,7 +1,7 @@
 use canopa_notify::{
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPresenter,
     BannerSurfaceSpec, BannerView, Daemon, DaemonOptions, IcedLayerShellBannerPresenter,
-    NotificationAction, NotificationInput, NotificationSnapshot, Urgency,
+    NotificationAction, NotificationInput, Urgency,
 };
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer};
 use iced_layershell::settings::StartMode;
@@ -100,8 +100,41 @@ async fn headless_daemon_keeps_banner_state_without_presenting_surfaces() {
         .await
         .unwrap();
 
-    assert!(daemon.snapshot().await.unwrap().active[0].visible_banner);
+    assert_eq!(daemon.visible_banners().await.len(), 1);
     assert!(presenter.updates().is_empty());
+}
+
+#[tokio::test]
+async fn restart_persists_threads_without_restoring_runtime_banners() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let daemon = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            app_name: "Mail".to_string(),
+            summary: "Inbox".to_string(),
+            ..NotificationInput::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(daemon.visible_banners().await.len(), 1);
+    drop(daemon);
+
+    let restarted = Daemon::open(DaemonOptions::headless(database))
+        .await
+        .unwrap();
+    let snapshot = restarted.snapshot().await.unwrap();
+    let thread = snapshot
+        .history
+        .iter()
+        .find(|thread| thread.id == receipt.notification_id)
+        .unwrap();
+
+    assert_eq!(thread.status.as_str(), "stale");
+    assert!(restarted.visible_banners().await.is_empty());
 }
 
 #[tokio::test]
@@ -186,12 +219,12 @@ async fn banner_visibility_is_capped_and_hidden_notifications_are_not_promoted_l
     }
 
     let snapshot = daemon.snapshot().await.unwrap();
-    assert_eq!(visible_ids(&snapshot).len(), 3);
-    assert!(!is_visible(&snapshot, ids[3]));
+    assert_eq!(visible_ids(&daemon.visible_banners().await).len(), 3);
+    assert!(is_visible(&daemon.visible_banners().await, ids[3]));
+    assert!(!is_visible(&daemon.visible_banners().await, ids[0]));
 
-    daemon.dismiss_notification(ids[0]).await.unwrap();
-    let snapshot = daemon.snapshot().await.unwrap();
-    assert!(!is_visible(&snapshot, ids[3]));
+    daemon.dismiss_notification(ids[3]).await.unwrap();
+    assert!(!is_visible(&daemon.visible_banners().await, ids[0]));
 }
 
 #[tokio::test]
@@ -222,33 +255,25 @@ async fn critical_notifications_displace_normal_banners_when_slots_are_full() {
         .await
         .unwrap();
 
-    let snapshot = daemon.snapshot().await.unwrap();
-    assert_eq!(visible_ids(&snapshot).len(), 3);
-    assert!(is_visible(&snapshot, critical.notification_id));
+    let banners = daemon.visible_banners().await;
+    assert_eq!(visible_ids(&banners).len(), 3);
+    assert!(is_visible(&banners, critical.notification_id));
     assert_eq!(
-        snapshot
-            .active
+        banners
             .iter()
-            .filter(|thread| thread.visible_banner && thread.urgency == Urgency::Normal)
+            .filter(|banner| banner.urgency == Urgency::Normal)
             .count(),
         2
     );
 }
 
-fn visible_ids(snapshot: &NotificationSnapshot) -> Vec<i64> {
-    snapshot
-        .active
+fn visible_ids(banners: &[BannerView]) -> Vec<i64> {
+    banners
         .iter()
-        .filter(|thread| thread.visible_banner)
-        .map(|thread| thread.id)
+        .map(|banner| banner.notification_id)
         .collect()
 }
 
-fn is_visible(snapshot: &NotificationSnapshot, id: i64) -> bool {
-    snapshot
-        .active
-        .iter()
-        .find(|thread| thread.id == id)
-        .map(|thread| thread.visible_banner)
-        .unwrap_or(false)
+fn is_visible(banners: &[BannerView], id: i64) -> bool {
+    banners.iter().any(|banner| banner.notification_id == id)
 }

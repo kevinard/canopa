@@ -16,13 +16,7 @@ async fn do_not_disturb_silences_non_critical_notifications_but_allows_critical_
         })
         .await
         .unwrap();
-    assert!(
-        thread(
-            &daemon.snapshot().await.unwrap(),
-            before_dnd.notification_id
-        )
-        .visible_banner
-    );
+    assert!(is_banner_visible(&daemon, before_dnd.notification_id).await);
 
     daemon.set_do_not_disturb(true).await.unwrap();
     assert!(daemon.do_not_disturb().await.unwrap());
@@ -46,21 +40,21 @@ async fn do_not_disturb_silences_non_critical_notifications_but_allows_critical_
         .unwrap();
 
     let snapshot = daemon.snapshot().await.unwrap();
-    assert!(!thread(&snapshot, before_dnd.notification_id).visible_banner);
+    assert!(!is_banner_visible(&daemon, before_dnd.notification_id).await);
     assert_eq!(
         thread(&snapshot, normal.notification_id)
             .delivery_outcome
             .as_str(),
         "silenced"
     );
-    assert!(!thread(&snapshot, normal.notification_id).visible_banner);
+    assert!(!is_banner_visible(&daemon, normal.notification_id).await);
     assert_eq!(
         thread(&snapshot, critical.notification_id)
             .delivery_outcome
             .as_str(),
         "shown"
     );
-    assert!(thread(&snapshot, critical.notification_id).visible_banner);
+    assert!(is_banner_visible(&daemon, critical.notification_id).await);
 
     drop(daemon);
     let restarted = Daemon::open(DaemonOptions::headless(database))
@@ -78,6 +72,14 @@ fn thread(
         .iter()
         .find(|thread| thread.id == id)
         .unwrap()
+}
+
+async fn is_banner_visible(daemon: &Daemon, id: i64) -> bool {
+    daemon
+        .visible_banners()
+        .await
+        .iter()
+        .any(|banner| banner.notification_id == id)
 }
 
 #[tokio::test]
@@ -155,7 +157,7 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
             .as_str(),
         "silenced"
     );
-    assert!(!thread(&snapshot, original.notification_id).visible_banner);
+    assert!(!is_banner_visible(&daemon, original.notification_id).await);
 
     daemon
         .receive_notification(NotificationInput {

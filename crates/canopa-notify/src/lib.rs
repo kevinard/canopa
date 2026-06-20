@@ -487,10 +487,100 @@ impl PresentationCoordinator {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct NotificationBannerState {
+    visible: HashMap<i64, NotificationThread>,
+}
+
+impl NotificationBannerState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn apply_effects(&mut self, effects: &[LifecycleEffect]) {
+        for effect in effects {
+            self.apply_effect(effect);
+        }
+    }
+
+    pub fn visible_banners(&self) -> Vec<BannerView> {
+        let mut threads: Vec<_> = self.visible.values().cloned().collect();
+        sort_banner_candidates(&mut threads);
+        threads.into_iter().map(BannerView::from_thread).collect()
+    }
+
+    fn apply_effect(&mut self, effect: &LifecycleEffect) {
+        match effect {
+            LifecycleEffect::ThreadCreated(thread) | LifecycleEffect::ThreadRevised(thread) => {
+                self.consider_banner_opportunity(thread.clone());
+            }
+            LifecycleEffect::ThreadDeliveryChanged(thread) => {
+                if self.visible.contains_key(&thread.id) {
+                    self.consider_banner_opportunity(thread.clone());
+                }
+            }
+            LifecycleEffect::ThreadSilenced(thread)
+            | LifecycleEffect::ThreadDismissed(thread)
+            | LifecycleEffect::ThreadExpired(thread)
+            | LifecycleEffect::ThreadClosed(thread)
+            | LifecycleEffect::ThreadStale(thread) => {
+                self.visible.remove(&thread.id);
+            }
+            LifecycleEffect::NotificationDropped {
+                replaces_id: Some(notification_id),
+            } => {
+                self.visible.remove(notification_id);
+            }
+            LifecycleEffect::SenderReceipt(_)
+            | LifecycleEffect::NotificationDropped { replaces_id: None }
+            | LifecycleEffect::ActionInvoked { .. }
+            | LifecycleEffect::SenderClosed { .. } => {}
+        }
+    }
+
+    fn consider_banner_opportunity(&mut self, thread: NotificationThread) {
+        if thread.status != NotificationStatus::Active
+            || thread.delivery_outcome != DeliveryOutcome::Shown
+        {
+            self.visible.remove(&thread.id);
+            return;
+        }
+
+        self.visible.insert(thread.id, thread);
+        let mut threads: Vec<_> = self.visible.values().cloned().collect();
+        sort_banner_candidates(&mut threads);
+        self.visible.clear();
+        for thread in threads.into_iter().take(3) {
+            self.visible.insert(thread.id, thread);
+        }
+    }
+}
+
+fn sort_banner_candidates(threads: &mut [NotificationThread]) {
+    threads.sort_by(|left, right| {
+        banner_rank(right)
+            .cmp(&banner_rank(left))
+            .then_with(|| right.id.cmp(&left.id))
+    });
+}
+
+fn banner_rank(thread: &NotificationThread) -> (u8, i64) {
+    (
+        if thread.urgency == Urgency::Critical {
+            1
+        } else {
+            0
+        },
+        thread.updated_at,
+    )
+}
+
 #[derive(Clone)]
 pub struct Daemon {
     storage: Storage,
+    lifecycle: NotificationLifecycle<Storage>,
     presentation: PresentationCoordinator,
+    banner_state: Arc<Mutex<NotificationBannerState>>,
     sender_events: Arc<Mutex<Vec<SenderEvent>>>,
     config_rules: Arc<Mutex<Vec<ConfigRule>>>,
     config_error: Arc<Mutex<Option<String>>>,
@@ -507,11 +597,14 @@ impl Daemon {
             },
         )
         .await?;
-        storage.mark_active_stale().await?;
+        let lifecycle = NotificationLifecycle::new(storage.clone());
+        lifecycle.mark_active_stale().await?;
         storage.prune_history().await?;
         Ok(Self {
             storage,
+            lifecycle,
             presentation: PresentationCoordinator::new(!options.headless, options.banner_presenter),
+            banner_state: Arc::new(Mutex::new(NotificationBannerState::new())),
             sender_events: Arc::new(Mutex::new(Vec::new())),
             config_rules: Arc::new(Mutex::new(Vec::new())),
             config_error: Arc::new(Mutex::new(None)),
@@ -524,11 +617,7 @@ impl Daemon {
         input: NotificationInput,
     ) -> anyhow::Result<NotificationReceipt> {
         let app_identity = derive_app_identity(&input);
-        let now = now_millis();
         let body = plain_text_body(&input.body);
-        let actions_json = serde_json::to_string(&input.actions)?;
-        let decision = self.evaluate_delivery(&app_identity, input.urgency).await?;
-        self.record_decision(&app_identity, input.urgency, &decision);
 
         if input.summary.trim().is_empty()
             && body.trim().is_empty()
@@ -542,92 +631,38 @@ impl Daemon {
             });
         }
 
-        if decision.outcome == DeliveryOutcome::Dropped {
-            return Ok(NotificationReceipt {
-                notification_id: 0,
-                delivery_outcome: DeliveryOutcome::Dropped,
-            });
-        }
+        let decision = self.evaluate_delivery(&app_identity, input.urgency).await?;
+        self.record_decision(&app_identity, input.urgency, &decision);
 
-        if let Some(replaces_id) = input.replaces_id
-            && self.storage.thread(replaces_id).await.is_ok()
-        {
-            self.storage
-                .replace_notification(
-                    replaces_id,
-                    Replacement {
-                        app_identity,
-                        app_name: input.app_name,
-                        summary: input.summary,
-                        body,
-                        raw_body: input.body,
-                        urgency: input.urgency,
-                        category: input.category,
-                        progress: input.progress,
-                        resident: input.resident,
-                        actions_json,
-                        delivery_outcome: decision.outcome,
-                        rule_reference: decision.rule_reference.clone(),
-                        updated_at: now,
-                    },
-                )
-                .await?;
-            if decision.outcome == DeliveryOutcome::Shown {
-                self.storage
-                    .apply_banner_opportunity(replaces_id, input.urgency)
-                    .await?;
-            } else {
-                self.storage.hide_banner(replaces_id).await?;
-            }
-            self.sync_presentation().await?;
-            return Ok(NotificationReceipt {
-                notification_id: replaces_id,
-                delivery_outcome: decision.outcome,
-            });
-        }
-
-        let id = sqlx::query(
-            r#"
-            INSERT INTO notification_threads (
-                app_identity, app_name, summary, body, raw_body, urgency, status,
-                delivery_outcome, rule_reference, category, progress, resident, created_at,
-                updated_at, actions_json
+        let effects = self
+            .lifecycle
+            .receive(
+                LifecycleNotification {
+                    app_identity,
+                    app_name: input.app_name,
+                    replaces_id: input.replaces_id,
+                    summary: input.summary,
+                    body,
+                    raw_body: input.body,
+                    urgency: input.urgency,
+                    category: input.category,
+                    progress: input.progress,
+                    actions: input.actions,
+                    resident: input.resident,
+                },
+                LifecycleDelivery::from_decision(&decision),
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13)
-            "#,
-        )
-        .bind(&app_identity)
-        .bind(&input.app_name)
-        .bind(&input.summary)
-        .bind(&body)
-        .bind(&input.body)
-        .bind(input.urgency.as_str())
-        .bind(decision.outcome.as_str())
-        .bind(&decision.rule_reference)
-        .bind(&input.category)
-        .bind(input.progress)
-        .bind(input.resident)
-        .bind(now)
-        .bind(actions_json)
-        .execute(self.storage.pool())
-        .await?
-        .last_insert_rowid();
-
-        if decision.outcome == DeliveryOutcome::Shown {
-            self.storage
-                .apply_banner_opportunity(id, input.urgency)
-                .await?;
-            self.sync_presentation().await?;
-        }
-
-        Ok(NotificationReceipt {
-            notification_id: id,
-            delivery_outcome: decision.outcome,
-        })
+            .await?;
+        self.apply_lifecycle_effects(&effects).await?;
+        receipt_from_effects(&effects)
     }
 
     pub async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
         self.storage.snapshot().await
+    }
+
+    pub async fn visible_banners(&self) -> Vec<BannerView> {
+        self.banner_state.lock().unwrap().visible_banners()
     }
 
     pub async fn invoke_action(
@@ -635,51 +670,26 @@ impl Daemon {
         notification_id: i64,
         action_key: &str,
     ) -> anyhow::Result<()> {
-        let thread = self.storage.thread(notification_id).await?;
-        if thread.status != NotificationStatus::Active {
-            anyhow::bail!("notification {notification_id} is not active");
-        }
-
-        if !thread.actions.iter().any(|action| action.key == action_key) {
-            anyhow::bail!("notification {notification_id} has no action {action_key}");
-        }
-
-        self.sender_events.lock().unwrap().push(SenderEvent {
-            notification_id,
-            action_key: Some(action_key.to_string()),
-            closed_id: None,
-            close_reason: None,
-        });
-
-        if !thread.resident {
-            self.storage
-                .set_status(notification_id, NotificationStatus::Closed)
-                .await?;
-            self.sync_presentation().await?;
-            self.sender_events.lock().unwrap().push(SenderEvent {
-                notification_id,
-                action_key: None,
-                closed_id: Some(notification_id),
-                close_reason: Some("closed".to_string()),
-            });
-        }
-
-        Ok(())
+        let effects = self
+            .lifecycle
+            .invoke_action(notification_id, action_key)
+            .await?;
+        self.apply_lifecycle_effects(&effects).await
     }
 
     pub async fn dismiss_notification(&self, notification_id: i64) -> anyhow::Result<()> {
-        self.transition_active(notification_id, NotificationStatus::Dismissed)
-            .await
+        let effects = self.lifecycle.dismiss(notification_id).await?;
+        self.apply_lifecycle_effects(&effects).await
     }
 
     pub async fn expire_notification(&self, notification_id: i64) -> anyhow::Result<()> {
-        self.transition_active(notification_id, NotificationStatus::Expired)
-            .await
+        let effects = self.lifecycle.expire(notification_id).await?;
+        self.apply_lifecycle_effects(&effects).await
     }
 
     pub async fn close_notification(&self, notification_id: i64) -> anyhow::Result<()> {
-        self.transition_active(notification_id, NotificationStatus::Closed)
-            .await
+        let effects = self.lifecycle.close(notification_id).await?;
+        self.apply_lifecycle_effects(&effects).await
     }
 
     pub async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
@@ -703,12 +713,8 @@ impl Daemon {
     }
 
     pub async fn clear_active_notifications(&self) -> anyhow::Result<()> {
-        let ids = self.storage.active_ids().await?;
-        for id in ids {
-            self.transition_active(id, NotificationStatus::Dismissed)
-                .await?;
-        }
-        Ok(())
+        let effects = self.lifecycle.clear_active_notifications().await?;
+        self.apply_lifecycle_effects(&effects).await
     }
 
     pub async fn delete_notification_history(&self) -> anyhow::Result<()> {
@@ -861,63 +867,54 @@ impl Daemon {
             let decision = self
                 .evaluate_delivery(&thread.app_identity, thread.urgency)
                 .await?;
-            match decision.outcome {
-                DeliveryOutcome::Shown => {
-                    self.storage
-                        .set_delivery_outcome(thread.id, &decision, false)
-                        .await?;
-                }
-                DeliveryOutcome::Silenced => {
-                    self.storage
-                        .set_delivery_outcome(thread.id, &decision, true)
-                        .await?;
-                }
-                DeliveryOutcome::Dropped => {
-                    self.storage
-                        .set_delivery_outcome(thread.id, &decision, true)
-                        .await?;
-                    self.storage
-                        .set_status(thread.id, NotificationStatus::Closed)
-                        .await?;
-                }
-            }
+            let effects = self
+                .lifecycle
+                .apply_delivery_decision(thread.id, LifecycleDelivery::from_decision(&decision))
+                .await?;
+            self.apply_lifecycle_effects(&effects).await?;
         }
+        Ok(())
+    }
+
+    async fn apply_lifecycle_effects(&self, effects: &[LifecycleEffect]) -> anyhow::Result<()> {
+        {
+            let mut banner_state = self.banner_state.lock().unwrap();
+            banner_state.apply_effects(effects);
+        }
+        self.publish_sender_events(effects);
         self.sync_presentation().await?;
         Ok(())
     }
 
-    async fn transition_active(
-        &self,
-        notification_id: i64,
-        status: NotificationStatus,
-    ) -> anyhow::Result<()> {
-        let thread = self.storage.thread(notification_id).await?;
-        if thread.status != NotificationStatus::Active {
-            anyhow::bail!("notification {notification_id} is not active");
+    fn publish_sender_events(&self, effects: &[LifecycleEffect]) {
+        let mut sender_events = self.sender_events.lock().unwrap();
+        for effect in effects {
+            match effect {
+                LifecycleEffect::ActionInvoked {
+                    notification_id,
+                    action_key,
+                } => sender_events.push(SenderEvent {
+                    notification_id: *notification_id,
+                    action_key: Some(action_key.clone()),
+                    closed_id: None,
+                    close_reason: None,
+                }),
+                LifecycleEffect::SenderClosed {
+                    notification_id,
+                    reason,
+                } => sender_events.push(SenderEvent {
+                    notification_id: *notification_id,
+                    action_key: None,
+                    closed_id: Some(*notification_id),
+                    close_reason: Some(reason.as_str().to_string()),
+                }),
+                _ => {}
+            }
         }
-
-        self.storage.set_status(notification_id, status).await?;
-        self.sync_presentation().await?;
-        self.sender_events.lock().unwrap().push(SenderEvent {
-            notification_id,
-            action_key: None,
-            closed_id: Some(notification_id),
-            close_reason: Some(status.as_str().to_string()),
-        });
-        Ok(())
     }
 
     async fn sync_presentation(&self) -> anyhow::Result<()> {
-        let banners = self
-            .storage
-            .snapshot()
-            .await?
-            .active
-            .into_iter()
-            .filter(|thread| thread.visible_banner)
-            .map(BannerView::from_thread)
-            .collect();
-
+        let banners = self.banner_state.lock().unwrap().visible_banners();
         self.presentation.replace_visible_banners(banners)
     }
 }
@@ -934,22 +931,6 @@ struct RetentionPolicy {
     history_limit: i64,
 }
 
-struct Replacement {
-    app_identity: String,
-    app_name: String,
-    summary: String,
-    body: String,
-    raw_body: String,
-    urgency: Urgency,
-    category: Option<String>,
-    progress: Option<i64>,
-    resident: bool,
-    actions_json: String,
-    delivery_outcome: DeliveryOutcome,
-    rule_reference: Option<String>,
-    updated_at: i64,
-}
-
 #[derive(Clone, Debug)]
 struct DeliveryDecision {
     outcome: DeliveryOutcome,
@@ -963,6 +944,387 @@ impl DeliveryDecision {
             rule_reference: Some(rule_reference.into()),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LifecycleDelivery {
+    pub outcome: DeliveryOutcome,
+    pub rule_reference: Option<String>,
+}
+
+impl LifecycleDelivery {
+    pub fn shown() -> Self {
+        Self {
+            outcome: DeliveryOutcome::Shown,
+            rule_reference: None,
+        }
+    }
+
+    pub fn silenced(rule_reference: impl Into<String>) -> Self {
+        Self {
+            outcome: DeliveryOutcome::Silenced,
+            rule_reference: Some(rule_reference.into()),
+        }
+    }
+
+    pub fn dropped(rule_reference: impl Into<String>) -> Self {
+        Self {
+            outcome: DeliveryOutcome::Dropped,
+            rule_reference: Some(rule_reference.into()),
+        }
+    }
+
+    fn from_decision(decision: &DeliveryDecision) -> Self {
+        Self {
+            outcome: decision.outcome,
+            rule_reference: decision.rule_reference.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LifecycleNotification {
+    pub app_identity: String,
+    pub app_name: String,
+    pub replaces_id: Option<i64>,
+    pub summary: String,
+    pub body: String,
+    pub raw_body: String,
+    pub urgency: Urgency,
+    pub category: Option<String>,
+    pub progress: Option<i64>,
+    pub actions: Vec<NotificationAction>,
+    pub resident: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NewNotificationThread {
+    pub app_identity: String,
+    pub app_name: String,
+    pub summary: String,
+    pub body: String,
+    pub raw_body: String,
+    pub urgency: Urgency,
+    pub status: NotificationStatus,
+    pub delivery_outcome: DeliveryOutcome,
+    pub rule_reference: Option<String>,
+    pub category: Option<String>,
+    pub progress: Option<i64>,
+    pub actions: Vec<NotificationAction>,
+    pub resident: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThreadRevision {
+    pub app_identity: String,
+    pub app_name: String,
+    pub summary: String,
+    pub body: String,
+    pub raw_body: String,
+    pub urgency: Urgency,
+    pub delivery_outcome: DeliveryOutcome,
+    pub rule_reference: Option<String>,
+    pub category: Option<String>,
+    pub progress: Option<i64>,
+    pub actions: Vec<NotificationAction>,
+    pub resident: bool,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LifecycleEffect {
+    SenderReceipt(NotificationReceipt),
+    ThreadCreated(NotificationThread),
+    ThreadRevised(NotificationThread),
+    ThreadDeliveryChanged(NotificationThread),
+    ThreadSilenced(NotificationThread),
+    ThreadDismissed(NotificationThread),
+    ThreadExpired(NotificationThread),
+    ThreadClosed(NotificationThread),
+    ThreadStale(NotificationThread),
+    NotificationDropped {
+        replaces_id: Option<i64>,
+    },
+    ActionInvoked {
+        notification_id: i64,
+        action_key: String,
+    },
+    SenderClosed {
+        notification_id: i64,
+        reason: NotificationStatus,
+    },
+}
+
+#[allow(async_fn_in_trait)]
+pub trait NotificationHistory: Clone + Send + Sync + 'static {
+    async fn create_thread(
+        &self,
+        thread: NewNotificationThread,
+    ) -> anyhow::Result<NotificationThread>;
+    async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread>;
+    async fn revise_thread(
+        &self,
+        id: i64,
+        revision: ThreadRevision,
+    ) -> anyhow::Result<NotificationThread>;
+    async fn transition_thread(
+        &self,
+        id: i64,
+        status: NotificationStatus,
+        updated_at: i64,
+    ) -> anyhow::Result<NotificationThread>;
+    async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>>;
+    async fn update_delivery(
+        &self,
+        id: i64,
+        delivery: LifecycleDelivery,
+    ) -> anyhow::Result<NotificationThread>;
+    async fn mark_active_threads_stale(
+        &self,
+        updated_at: i64,
+    ) -> anyhow::Result<Vec<NotificationThread>>;
+}
+
+#[derive(Clone)]
+pub struct NotificationLifecycle<H> {
+    history: H,
+}
+
+impl<H> NotificationLifecycle<H>
+where
+    H: NotificationHistory,
+{
+    pub fn new(history: H) -> Self {
+        Self { history }
+    }
+
+    pub async fn receive(
+        &self,
+        notification: LifecycleNotification,
+        delivery: LifecycleDelivery,
+    ) -> anyhow::Result<Vec<LifecycleEffect>> {
+        if delivery.outcome == DeliveryOutcome::Dropped {
+            return Ok(vec![
+                LifecycleEffect::NotificationDropped {
+                    replaces_id: notification.replaces_id,
+                },
+                LifecycleEffect::SenderReceipt(NotificationReceipt {
+                    notification_id: 0,
+                    delivery_outcome: DeliveryOutcome::Dropped,
+                }),
+            ]);
+        }
+
+        if let Some(replaces_id) = notification.replaces_id
+            && self.history.thread(replaces_id).await.is_ok()
+        {
+            let thread = self
+                .history
+                .revise_thread(
+                    replaces_id,
+                    ThreadRevision::from_notification(notification, delivery.clone()),
+                )
+                .await?;
+            let mut effects = vec![LifecycleEffect::ThreadRevised(thread.clone())];
+            if delivery.outcome == DeliveryOutcome::Silenced {
+                effects.push(LifecycleEffect::ThreadSilenced(thread.clone()));
+            }
+            effects.push(LifecycleEffect::SenderReceipt(NotificationReceipt {
+                notification_id: thread.id,
+                delivery_outcome: delivery.outcome,
+            }));
+            return Ok(effects);
+        }
+
+        let thread = self
+            .history
+            .create_thread(NewNotificationThread::from_notification(
+                notification,
+                delivery.clone(),
+            ))
+            .await?;
+        let mut effects = vec![LifecycleEffect::ThreadCreated(thread.clone())];
+        if delivery.outcome == DeliveryOutcome::Silenced {
+            effects.push(LifecycleEffect::ThreadSilenced(thread.clone()));
+        }
+        effects.push(LifecycleEffect::SenderReceipt(NotificationReceipt {
+            notification_id: thread.id,
+            delivery_outcome: delivery.outcome,
+        }));
+        Ok(effects)
+    }
+
+    pub async fn dismiss(&self, notification_id: i64) -> anyhow::Result<Vec<LifecycleEffect>> {
+        self.transition_active(notification_id, NotificationStatus::Dismissed)
+            .await
+    }
+
+    pub async fn expire(&self, notification_id: i64) -> anyhow::Result<Vec<LifecycleEffect>> {
+        self.transition_active(notification_id, NotificationStatus::Expired)
+            .await
+    }
+
+    pub async fn close(&self, notification_id: i64) -> anyhow::Result<Vec<LifecycleEffect>> {
+        self.transition_active(notification_id, NotificationStatus::Closed)
+            .await
+    }
+
+    pub async fn clear_active_notifications(&self) -> anyhow::Result<Vec<LifecycleEffect>> {
+        let mut effects = Vec::new();
+        for thread in self.history.active_threads().await? {
+            effects.extend(self.dismiss(thread.id).await?);
+        }
+        Ok(effects)
+    }
+
+    pub async fn invoke_action(
+        &self,
+        notification_id: i64,
+        action_key: &str,
+    ) -> anyhow::Result<Vec<LifecycleEffect>> {
+        let thread = self.history.thread(notification_id).await?;
+        if thread.status != NotificationStatus::Active {
+            anyhow::bail!("notification {notification_id} is not active");
+        }
+
+        if !thread.actions.iter().any(|action| action.key == action_key) {
+            anyhow::bail!("notification {notification_id} has no action {action_key}");
+        }
+
+        let mut effects = vec![LifecycleEffect::ActionInvoked {
+            notification_id,
+            action_key: action_key.to_string(),
+        }];
+
+        if !thread.resident {
+            effects.extend(self.close(notification_id).await?);
+        }
+
+        Ok(effects)
+    }
+
+    pub async fn apply_delivery_decision(
+        &self,
+        notification_id: i64,
+        delivery: LifecycleDelivery,
+    ) -> anyhow::Result<Vec<LifecycleEffect>> {
+        let thread = self.history.thread(notification_id).await?;
+        if thread.status != NotificationStatus::Active {
+            anyhow::bail!("notification {notification_id} is not active");
+        }
+
+        let updated = self
+            .history
+            .update_delivery(notification_id, delivery.clone())
+            .await?;
+        let mut effects = vec![LifecycleEffect::ThreadDeliveryChanged(updated.clone())];
+
+        match delivery.outcome {
+            DeliveryOutcome::Shown => {}
+            DeliveryOutcome::Silenced => effects.push(LifecycleEffect::ThreadSilenced(updated)),
+            DeliveryOutcome::Dropped => {
+                effects.push(LifecycleEffect::NotificationDropped {
+                    replaces_id: Some(notification_id),
+                });
+                effects.extend(self.close(notification_id).await?);
+            }
+        }
+
+        Ok(effects)
+    }
+
+    pub async fn mark_active_stale(&self) -> anyhow::Result<Vec<LifecycleEffect>> {
+        let stale = self.history.mark_active_threads_stale(now_millis()).await?;
+        Ok(stale
+            .into_iter()
+            .map(LifecycleEffect::ThreadStale)
+            .collect())
+    }
+
+    async fn transition_active(
+        &self,
+        notification_id: i64,
+        status: NotificationStatus,
+    ) -> anyhow::Result<Vec<LifecycleEffect>> {
+        let thread = self.history.thread(notification_id).await?;
+        if thread.status != NotificationStatus::Active {
+            anyhow::bail!("notification {notification_id} is not active");
+        }
+
+        let thread = self
+            .history
+            .transition_thread(notification_id, status, now_millis())
+            .await?;
+        let transition = match status {
+            NotificationStatus::Dismissed => LifecycleEffect::ThreadDismissed(thread),
+            NotificationStatus::Expired => LifecycleEffect::ThreadExpired(thread),
+            NotificationStatus::Closed => LifecycleEffect::ThreadClosed(thread),
+            NotificationStatus::Stale => LifecycleEffect::ThreadStale(thread),
+            NotificationStatus::Active => unreachable!("active is not a lifecycle transition"),
+        };
+        Ok(vec![
+            transition,
+            LifecycleEffect::SenderClosed {
+                notification_id,
+                reason: status,
+            },
+        ])
+    }
+}
+
+impl NewNotificationThread {
+    fn from_notification(notification: LifecycleNotification, delivery: LifecycleDelivery) -> Self {
+        let now = now_millis();
+        Self {
+            app_identity: notification.app_identity,
+            app_name: notification.app_name,
+            summary: notification.summary,
+            body: notification.body,
+            raw_body: notification.raw_body,
+            urgency: notification.urgency,
+            status: NotificationStatus::Active,
+            delivery_outcome: delivery.outcome,
+            rule_reference: delivery.rule_reference,
+            category: notification.category,
+            progress: notification.progress,
+            actions: notification.actions,
+            resident: notification.resident,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+impl ThreadRevision {
+    fn from_notification(notification: LifecycleNotification, delivery: LifecycleDelivery) -> Self {
+        Self {
+            app_identity: notification.app_identity,
+            app_name: notification.app_name,
+            summary: notification.summary,
+            body: notification.body,
+            raw_body: notification.raw_body,
+            urgency: notification.urgency,
+            delivery_outcome: delivery.outcome,
+            rule_reference: delivery.rule_reference,
+            category: notification.category,
+            progress: notification.progress,
+            actions: notification.actions,
+            resident: notification.resident,
+            updated_at: now_millis(),
+        }
+    }
+}
+
+fn receipt_from_effects(effects: &[LifecycleEffect]) -> anyhow::Result<NotificationReceipt> {
+    effects
+        .iter()
+        .find_map(|effect| match effect {
+            LifecycleEffect::SenderReceipt(receipt) => Some(receipt.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| anyhow::anyhow!("notification lifecycle did not return a sender receipt"))
 }
 
 impl Storage {
@@ -1023,8 +1385,6 @@ impl Storage {
                 progress INTEGER,
                 resident INTEGER NOT NULL DEFAULT 0,
                 actions_json TEXT NOT NULL DEFAULT '[]',
-                presented INTEGER NOT NULL DEFAULT 0,
-                visible_banner INTEGER NOT NULL DEFAULT 0,
                 revision INTEGER NOT NULL DEFAULT 1,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
@@ -1038,17 +1398,12 @@ impl Storage {
         Ok(Self { pool, retention })
     }
 
-    fn pool(&self) -> &SqlitePool {
-        &self.pool
-    }
-
     async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
         let rows = sqlx::query(
             r#"
             SELECT id, app_identity, app_name, summary, body, raw_body, urgency, status,
                    delivery_outcome, rule_reference, category, progress, resident,
-                   actions_json, presented, visible_banner, revision, created_at,
-                   updated_at, closed_at
+                   actions_json, revision, created_at, updated_at, closed_at
             FROM notification_threads
             ORDER BY created_at DESC, id DESC
             "#,
@@ -1075,8 +1430,7 @@ impl Storage {
             r#"
             SELECT id, app_identity, app_name, summary, body, raw_body, urgency, status,
                    delivery_outcome, rule_reference, category, progress, resident,
-                   actions_json, presented, visible_banner, revision, created_at,
-                   updated_at, closed_at
+                   actions_json, revision, created_at, updated_at, closed_at
             FROM notification_threads
             WHERE id = ?1
             "#,
@@ -1086,24 +1440,6 @@ impl Storage {
         .await?;
 
         NotificationThread::from_row(&row)
-    }
-
-    async fn set_status(&self, id: i64, status: NotificationStatus) -> anyhow::Result<()> {
-        let now = now_millis();
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET status = ?2, updated_at = ?3, closed_at = ?3, visible_banner = 0
-            WHERE id = ?1
-            "#,
-        )
-        .bind(id)
-        .bind(status.as_str())
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-        self.prune_history().await?;
-        Ok(())
     }
 
     async fn active_ids(&self) -> anyhow::Result<Vec<i64>> {
@@ -1119,48 +1455,6 @@ impl Storage {
         sqlx::query("DELETE FROM notification_threads WHERE status != 'active'")
             .execute(&self.pool)
             .await?;
-        Ok(())
-    }
-
-    async fn replace_notification(&self, id: i64, replacement: Replacement) -> anyhow::Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET app_identity = ?2,
-                app_name = ?3,
-                summary = ?4,
-                body = ?5,
-                raw_body = ?6,
-                urgency = ?7,
-                category = ?8,
-                progress = ?9,
-                resident = ?10,
-                actions_json = ?11,
-                delivery_outcome = ?12,
-                rule_reference = ?13,
-                status = 'active',
-                revision = revision + 1,
-                updated_at = ?14,
-                closed_at = NULL
-            WHERE id = ?1
-            "#,
-        )
-        .bind(id)
-        .bind(replacement.app_identity)
-        .bind(replacement.app_name)
-        .bind(replacement.summary)
-        .bind(replacement.body)
-        .bind(replacement.raw_body)
-        .bind(replacement.urgency.as_str())
-        .bind(replacement.category)
-        .bind(replacement.progress)
-        .bind(replacement.resident)
-        .bind(replacement.actions_json)
-        .bind(replacement.delivery_outcome.as_str())
-        .bind(replacement.rule_reference)
-        .bind(replacement.updated_at)
-        .execute(&self.pool)
-        .await?;
         Ok(())
     }
 
@@ -1269,45 +1563,6 @@ impl Storage {
         Ok(())
     }
 
-    async fn set_delivery_outcome(
-        &self,
-        id: i64,
-        decision: &DeliveryDecision,
-        hide_banner: bool,
-    ) -> anyhow::Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET delivery_outcome = ?2,
-                rule_reference = ?3,
-                visible_banner = CASE WHEN ?4 THEN 0 ELSE visible_banner END
-            WHERE id = ?1
-            "#,
-        )
-        .bind(id)
-        .bind(decision.outcome.as_str())
-        .bind(&decision.rule_reference)
-        .bind(hide_banner)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn mark_active_stale(&self) -> anyhow::Result<()> {
-        let now = now_millis();
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET status = 'stale', updated_at = ?1, closed_at = ?1, visible_banner = 0
-            WHERE status = 'active'
-            "#,
-        )
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
     async fn prune_history(&self) -> anyhow::Result<()> {
         let cutoff = now_millis() - self.retention.days.max(0) * 24 * 60 * 60 * 1_000;
 
@@ -1337,60 +1592,164 @@ impl Storage {
 
         Ok(())
     }
+}
 
-    async fn apply_banner_opportunity(&self, id: i64, urgency: Urgency) -> anyhow::Result<()> {
-        let visible_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM notification_threads WHERE status = 'active' AND visible_banner = 1",
-        )
-        .fetch_one(&self.pool)
-        .await?;
-
-        if visible_count < 3 {
-            self.show_banner(id).await?;
-            return Ok(());
-        }
-
-        if urgency == Urgency::Critical {
-            let displaced: Option<i64> = sqlx::query_scalar(
-                r#"
-                SELECT id
-                FROM notification_threads
-                WHERE status = 'active' AND visible_banner = 1 AND urgency != 'critical'
-                ORDER BY created_at ASC, id ASC
-                LIMIT 1
-                "#,
+impl NotificationHistory for Storage {
+    async fn create_thread(
+        &self,
+        thread: NewNotificationThread,
+    ) -> anyhow::Result<NotificationThread> {
+        let actions_json = serde_json::to_string(&thread.actions)?;
+        let id = sqlx::query(
+            r#"
+            INSERT INTO notification_threads (
+                app_identity, app_name, summary, body, raw_body, urgency, status,
+                delivery_outcome, rule_reference, category, progress, resident, created_at,
+                updated_at, actions_json
             )
-            .fetch_optional(&self.pool)
-            .await?;
-
-            if let Some(displaced) = displaced {
-                sqlx::query("UPDATE notification_threads SET visible_banner = 0 WHERE id = ?1")
-                    .bind(displaced)
-                    .execute(&self.pool)
-                    .await?;
-                self.show_banner(id).await?;
-            }
-        }
-
-        Ok(())
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            "#,
+        )
+        .bind(&thread.app_identity)
+        .bind(&thread.app_name)
+        .bind(&thread.summary)
+        .bind(&thread.body)
+        .bind(&thread.raw_body)
+        .bind(thread.urgency.as_str())
+        .bind(thread.status.as_str())
+        .bind(thread.delivery_outcome.as_str())
+        .bind(&thread.rule_reference)
+        .bind(&thread.category)
+        .bind(thread.progress)
+        .bind(thread.resident)
+        .bind(thread.created_at)
+        .bind(thread.updated_at)
+        .bind(actions_json)
+        .execute(&self.pool)
+        .await?
+        .last_insert_rowid();
+        self.thread(id).await
     }
 
-    async fn show_banner(&self, id: i64) -> anyhow::Result<()> {
+    async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
+        Storage::thread(self, id).await
+    }
+
+    async fn revise_thread(
+        &self,
+        id: i64,
+        revision: ThreadRevision,
+    ) -> anyhow::Result<NotificationThread> {
+        let actions_json = serde_json::to_string(&revision.actions)?;
         sqlx::query(
-            "UPDATE notification_threads SET presented = 1, visible_banner = 1 WHERE id = ?1",
+            r#"
+            UPDATE notification_threads
+            SET app_identity = ?2,
+                app_name = ?3,
+                summary = ?4,
+                body = ?5,
+                raw_body = ?6,
+                urgency = ?7,
+                category = ?8,
+                progress = ?9,
+                resident = ?10,
+                actions_json = ?11,
+                delivery_outcome = ?12,
+                rule_reference = ?13,
+                status = 'active',
+                revision = revision + 1,
+                updated_at = ?14,
+                closed_at = NULL
+            WHERE id = ?1
+            "#,
         )
         .bind(id)
+        .bind(revision.app_identity)
+        .bind(revision.app_name)
+        .bind(revision.summary)
+        .bind(revision.body)
+        .bind(revision.raw_body)
+        .bind(revision.urgency.as_str())
+        .bind(revision.category)
+        .bind(revision.progress)
+        .bind(revision.resident)
+        .bind(actions_json)
+        .bind(revision.delivery_outcome.as_str())
+        .bind(revision.rule_reference)
+        .bind(revision.updated_at)
         .execute(&self.pool)
         .await?;
-        Ok(())
+        self.thread(id).await
     }
 
-    async fn hide_banner(&self, id: i64) -> anyhow::Result<()> {
-        sqlx::query("UPDATE notification_threads SET visible_banner = 0 WHERE id = ?1")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+    async fn transition_thread(
+        &self,
+        id: i64,
+        status: NotificationStatus,
+        updated_at: i64,
+    ) -> anyhow::Result<NotificationThread> {
+        sqlx::query(
+            r#"
+            UPDATE notification_threads
+            SET status = ?2, updated_at = ?3, closed_at = ?3
+            WHERE id = ?1
+            "#,
+        )
+        .bind(id)
+        .bind(status.as_str())
+        .bind(updated_at)
+        .execute(&self.pool)
+        .await?;
+        self.prune_history().await?;
+        self.thread(id).await
+    }
+
+    async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
+        Ok(self.snapshot().await?.active)
+    }
+
+    async fn update_delivery(
+        &self,
+        id: i64,
+        delivery: LifecycleDelivery,
+    ) -> anyhow::Result<NotificationThread> {
+        sqlx::query(
+            r#"
+            UPDATE notification_threads
+            SET delivery_outcome = ?2,
+                rule_reference = ?3
+            WHERE id = ?1
+            "#,
+        )
+        .bind(id)
+        .bind(delivery.outcome.as_str())
+        .bind(delivery.rule_reference)
+        .execute(&self.pool)
+        .await?;
+        self.thread(id).await
+    }
+
+    async fn mark_active_threads_stale(
+        &self,
+        updated_at: i64,
+    ) -> anyhow::Result<Vec<NotificationThread>> {
+        let ids = self.active_ids().await?;
+        sqlx::query(
+            r#"
+            UPDATE notification_threads
+            SET status = 'stale', updated_at = ?1, closed_at = ?1
+            WHERE status = 'active'
+            "#,
+        )
+        .bind(updated_at)
+        .execute(&self.pool)
+        .await?;
+
+        let mut stale = Vec::new();
+        for id in ids {
+            stale.push(self.thread(id).await?);
+        }
+        Ok(stale)
     }
 }
 
@@ -1532,8 +1891,6 @@ pub struct NotificationThread {
     pub has_image_payload: bool,
     pub actions: Vec<NotificationAction>,
     pub resident: bool,
-    pub presented: bool,
-    pub visible_banner: bool,
     pub revision: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -1560,8 +1917,6 @@ impl NotificationThread {
             has_image_payload: false,
             actions: serde_json::from_str(&row.try_get::<String, _>("actions_json")?)?,
             resident: row.try_get::<i64, _>("resident")? != 0,
-            presented: row.try_get::<i64, _>("presented")? != 0,
-            visible_banner: row.try_get::<i64, _>("visible_banner")? != 0,
             revision: row.try_get("revision")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,

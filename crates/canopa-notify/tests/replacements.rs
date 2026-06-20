@@ -12,6 +12,7 @@ async fn replacement_revises_existing_thread_and_can_create_banner_opportunity()
             .receive_notification(NotificationInput {
                 app_name: "Chat".to_string(),
                 summary: format!("Visible {index}"),
+                urgency: Urgency::Critical,
                 ..NotificationInput::default()
             })
             .await
@@ -30,14 +31,10 @@ async fn replacement_revises_existing_thread_and_can_create_banner_opportunity()
 
     assert!(
         !daemon
-            .snapshot()
+            .visible_banners()
             .await
-            .unwrap()
-            .active
             .iter()
-            .find(|thread| thread.id == hidden.notification_id)
-            .unwrap()
-            .visible_banner
+            .any(|banner| banner.notification_id == hidden.notification_id)
     );
 
     let replacement = daemon
@@ -65,5 +62,11 @@ async fn replacement_revises_existing_thread_and_can_create_banner_opportunity()
     assert_eq!(thread.revision, 2);
     assert_eq!(thread.body, "Complete");
     assert_eq!(thread.progress, Some(100));
-    assert!(thread.visible_banner);
+    assert!(
+        daemon
+            .visible_banners()
+            .await
+            .iter()
+            .any(|banner| banner.notification_id == hidden.notification_id)
+    );
 }

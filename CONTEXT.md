@@ -60,6 +60,10 @@ _Avoid_: Metrics when referring to per-notification debug diagnostics
 The user-visible summary, body, and other sender-provided human-readable content of a notification.
 _Avoid_: Metadata when referring to app identity, urgency, IDs, or delivery outcome
 
+**Notification Intake**:
+The daemon-owned normalization of sender notification requests into notification facts used by **Delivery Policy** and **Notification Lifecycle**.
+_Avoid_: Notification Server API when referring to daemon-internal normalization
+
 **Rule Reference**:
 A lightweight reference to the rule source that produced a **Delivery Outcome**.
 _Avoid_: Rule snapshot when the full rule definition is not copied into history
@@ -107,6 +111,14 @@ _Avoid_: Notification when referring specifically to the replacement-aware recor
 **Notification History**:
 The persisted collection of retained **Notification Threads** available after their original visible notification surfaces are gone.
 _Avoid_: Log when referring to user-visible notification records
+
+**Notification Lifecycle**:
+The daemon-owned state changes that create, revise, or move a **Notification Thread** between active, dismissed, expired, closed, and stale states and produce the corresponding **Sender Notification Lifecycle** effects.
+_Avoid_: Storage status update when referring to user-visible or sender-visible lifecycle meaning
+
+**Lifecycle Effect**:
+A **Notification Lifecycle** result that tells the **Notification Daemon** what sender-visible or presentation-visible side effects to publish after lifecycle state changes.
+_Avoid_: Sender event when referring to the lifecycle module's returned instruction rather than the published event
 
 **Active Notification**:
 A retained **Notification Thread** that has not yet been dismissed, expired, or closed by the sender.
@@ -161,12 +173,16 @@ A **Notification Center** control that changes the **Notification Rule** for one
 _Avoid_: Global rule editor when the control only affects one app
 
 **Notify Control API**:
-Notify's private per-user interface for notification center, history, rules, and command-line control.
+Notify's private per-user interface for inspecting and changing **Notification Daemon** state, including notification center, history, rules, and command-line control.
 _Avoid_: Notification server API when referring to freedesktop notification receipt
 
 **Notification State Subscription**:
 A **Notify Control API** stream that delivers notification state changes to a connected client.
 _Avoid_: Polling when referring to push updates
+
+**Notification Center Projection**:
+A derived current-state representation of **Notification Center** content produced from **Notification Daemon** state, including grouped **Active Notifications**, **Notification History**, and **App Permission Control** state.
+_Avoid_: Event log when referring to display state, Notification Snapshot when referring to display-ready content
 
 **Panel Provider Mode**:
 The `canopa-notify` mode that serves Notify-owned notification center content to Niribar.
@@ -201,18 +217,28 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Progress** is stored as metadata and may be rendered by **Notification Banners**.
 - Notify stores **Raw Notification Body** while displaying a conservative **Notification Body** representation.
 - The first **Notification Body** rendering is plain text.
+- **Notification Intake** owns first-version **App Identity** derivation and **Notification Body** normalization.
 - Body-only notifications are valid even when **Notification Summary** is empty.
 - Notifications with no **Notification Summary**, **Notification Body**, **Notification Action**, or meaningful metadata are dropped as no-op notifications.
+- **Notification Intake** validates sender input and rejects no-op notifications before **Delivery Policy**.
+- No-op **Notification Intake** rejection has the same sender-visible **Delivery Outcome** as a **Dropped Notification**.
+- No-op **Notification Intake** rejection returns directly from intake; it does not enter **Delivery Policy** or **Notification Lifecycle**.
 - **Do Not Disturb** silences non-critical notifications while still allowing critical **Notification Banners** by default.
 - **Do Not Disturb** state persists across **Notification Daemon** restarts.
 - **Do Not Disturb** takes precedence over app allow rules for non-critical notifications.
+- **Do Not Disturb** is part of loaded **Delivery Policy** rule state.
 - A **Silenced Notification** remains visible in notification history.
 - Unknown **App Identities** are allowed unless a **Notification Rule** says otherwise.
 - Notification delivery policy uses ordered **Notification Rules** where the first decisive matching rule determines whether a notification is shown, silenced, or dropped.
+- **Delivery Policy** runs before **Notification Lifecycle** for both new and replacement notifications.
+- **Delivery Policy** decides the **Delivery Outcome**; **Notification Lifecycle** acts on that outcome, including dropped notifications.
+- **Delivery Policy** is pure over notification facts and loaded rule state; it does not query storage or configuration files directly.
 - **Delivery Decision Logs** are diagnostic debug logs, not first-version metrics.
 - Normal **Delivery Decision Logs** do not include **Notification Content**.
 - Replacement notifications revise an existing **Notification Thread** instead of creating a new normal history item.
+- Replacement handling belongs to **Notification Lifecycle**, not **Notification Intake** or **Notification History**.
 - Notification delivery policy applies to replacement notifications; a silenced replacement updates history and closes any visible **Notification Banner** for the thread.
+- A dropped replacement is handled by **Notification Lifecycle** without revising the existing **Notification Thread**.
 - An eligible replacement notification may create a **Notification Banner** even when the previous revision did not.
 - A dropped replacement notification does not update **Notification History**.
 - A **Dropped Notification** is immediately closed from the **Sender Notification Lifecycle** perspective.
@@ -221,6 +247,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Default **Notification History** retention keeps up to 30 days and 1,000 **Notification Threads**, with either limit allowed to remove older history.
 - **Notification History** retention is pruned after writes and at daemon startup.
 - **Active Notifications** are exempt from **Notification History** retention pruning.
+- **Notification History** does not store **Notification Banner** runtime visibility state.
 - **Notification Daemon** restart does not restore old **Notification Banners**.
 - **Active Notifications** loaded after **Notification Daemon** restart become **Stale Notifications**.
 - Dismissing an **Active Notification** makes it a **Dismissed Notification** without removing it from **Notification History**.
@@ -235,6 +262,10 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Notify shows at most three **Notification Banners** at once by default.
 - **Notification Banner** visibility prefers critical **Active Notifications**, then newest eligible **Active Notifications**.
 - Hidden **Active Notifications** are not later promoted to **Notification Banners** solely because a banner slot opens.
+- **Notification Banner State** consumes **Lifecycle Effects** and decides banner eligibility itself.
+- **Notification Lifecycle** does not emit banner-specific effects.
+- **Notification Banner** visibility is not derived from persisted **Notification History** flags.
+- **Notification Banner** state is runtime-only and is not persisted in **Notification History**.
 - Activating a **Notification Banner** invokes its **Default Notification Action** when present and otherwise dismisses the notification.
 - The first banner placement scope is global rather than per-output.
 - If focused output cannot be determined, **Notification Banners** fall back to a configured or default output.
@@ -246,6 +277,21 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Notify supports **Wayland Sessions** only.
 - The first version supports one **Graphical User Session** per user.
 - The **Notification Daemon** enforces a single active instance per **Graphical User Session**.
+- The **Notification Daemon** is a coordinating owner over separate deep modules, not one monolithic module that owns every implementation detail directly.
+- Separate **Notification Daemon** modules should be deep enough that their interfaces concentrate lifecycle, policy, history, or presentation rules instead of leaking those rules across callers.
+- **Notification Lifecycle** is separate from **Notification History**; lifecycle rules command persistence changes rather than being owned by storage.
+- **Notification Lifecycle** returns **Lifecycle Effects**; the **Notification Daemon** publishes sender-visible events and presentation updates from those effects.
+- **Lifecycle Effects** are the primary **Notification Lifecycle** result; the **Notification Daemon** derives sender receipts and outward side effects from them.
+- A **Lifecycle Effect** may include the sender receipt for the accepted or rejected notification request.
+- **Lifecycle Effects** are fine-grained events rather than one coarse outcome struct.
+- **Notification Lifecycle** owns the domain shape of created and revised **Notification Threads**; **Notification History** persists that shape.
+- **Notification Lifecycle** may query **Notification History** directly for existing **Notification Threads**, including replacement targets.
+- **Notification Lifecycle** writes **Notification History** directly when applying lifecycle transitions.
+- **Notification History** is a storage engine behind a trait interface for **Notification Lifecycle**.
+- **Notification History** adapters store and return shared notification domain objects, not storage-specific records for other modules to adapt.
+- The **Notification Lifecycle** to **Notification History** seam is async.
+- The first **Notification Lifecycle** module is a generic struct over the **Notification History** trait, not a trait-object module.
+- Shared notification domain objects live inside the **Notification Daemon** crate for now; a separate domain crate is premature.
 - **Headless Mode** exists for development and tests, not as a normal product mode.
 - Outside **Headless Mode**, failure to connect to a **Wayland Session** is a startup failure.
 - Niri is Notify's **Primary Compositor**, not its only supported compositor.
@@ -255,6 +301,11 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Server API** identity reports product name **Canopa Notify** and vendor Canopa.
 - **Panel Provider Mode** reports a provider-visible error when the **Notification Daemon** is unavailable instead of starting it.
 - **Panel Provider Mode** uses a **Notification State Subscription** while the **Notification Center** is open.
+- A **Notification State Subscription** is a current-state stream, not an event log.
+- The first **Notification State Subscription** sends complete replacement **Notification Center Projections**, not patches.
+- Slow **Notification State Subscription** clients may skip intermediate **Notification Center Projections** because each projection replaces previous display state.
+- **Notification Center Projections** are rebuilt from **Notification Daemon** state when emitted, not maintained as separate source state.
+- **Notification Center Projection** rebuilds on request; it does not consume **Lifecycle Effects** as state.
 - Notify has one active **Notification Configuration** at a time.
 - Reloading invalid **Notification Configuration** keeps the previous valid configuration active.
 - Valid **Notification Configuration** reloads re-evaluate **Active Notifications** under the new rules.
@@ -263,6 +314,11 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - First-version **Control Commands** are diagnostic-first and do not promise stable output formats unless explicitly documented.
 - Data-returning **Control Commands** may support unstable JSON output for diagnostics and tests.
 - **Control Commands** report when the **Notification Daemon** is unavailable instead of starting it implicitly.
+- The **Notification Daemon** owns notification state, lifecycle, policy, history, and rules; the **Notification Center** is an interactive view over that daemon state.
+- The **Notify Control API** exposes all private control surfaces over **Notification Daemon** state, including diagnostic status, active notification output, **Control Commands**, **Notification Center Projection**, and **Notification State Subscription**.
+- Diagnostic **Control Commands** are adapters over the **Notify Control API** module, not a separate control path.
+- The **Notify Control API** returns domain-shaped replies; command-line text, JSON, socket frames, and panel protocol messages are adapter formatting.
+- Pre-release control command formats do not require legacy compatibility.
 - User interface changes to **Notification Rules** are saved in the **User Rule Store**, not by rewriting **Notification Configuration**.
 - **User Rule Store** rules are keyed by **App Identity** and optional **Notification Urgency**.
 - **Notification Configuration** rules may define a **Config Rule ID**; unnamed config rules use generated references.
@@ -277,6 +333,9 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - The **Notification Center** groups notifications by **App Identity**.
 - The **Notification Center** includes **App Permission Controls** for recent notification senders.
 - **App Permission Controls** show current policy; historical records may show their original **Delivery Outcome**.
+- **Notification Center** requirements must not define core **Notification Daemon** state or lifecycle rules.
+- **Notification Center Projection** is Notify-owned state and is mapped to shared panel protocol types by **Panel Provider Mode**.
+- The shared panel protocol contains generic Niribar panel infrastructure, not Notify-specific notification logic.
 - The first Niribar-hosted **Notification Center** does not require progress rendering.
 - First-version documentation includes a Niribar configuration example for opening the **Notification Center**.
 - The first **Notification Center** does not show counts for **Dropped Notifications**.
@@ -294,4 +353,5 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Inactive **Notification History** is read-only except for deletion.
 - **Stale Notification** action labels may remain as read-only history metadata.
 - Invoking a **Notification Action** closes the notification unless it is a **Resident Notification**.
+- **Notification Timeout** scheduling and expiration belong to **Notification Lifecycle**, not **Notification Banner** presentation.
 - Inline replies are outside the first version scope.
