@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use std::collections::HashMap;
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use tokio::net::UnixListener;
 use tokio::sync::broadcast;
 use zbus::object_server::SignalEmitter;
@@ -260,6 +260,7 @@ fn spawn_banner_interaction_forwarder(
 
 struct NotificationServer {
     daemon: Daemon,
+    sender_ids: NotificationSenderIds,
 }
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
@@ -276,7 +277,8 @@ impl NotificationServer {
         hints: HashMap<String, OwnedValue>,
         expire_timeout: i32,
     ) -> zbus::fdo::Result<u32> {
-        let input = NotificationServerRequest {
+        let sender_id = self.sender_ids.sender_id_for_request(replaces_id);
+        let mut input = NotificationServerRequest {
             app_name,
             replaces_id,
             app_icon,
@@ -288,19 +290,36 @@ impl NotificationServer {
         }
         .into_notification_input();
 
+        if let Some(internal_id) = sender_id.replacement_target {
+            input.replaces_id = Some(internal_id);
+        }
+
         let receipt = self
             .daemon
             .receive_notification(input)
             .await
             .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
-        Ok(receipt.notification_id.try_into().unwrap_or(0))
+
+        if receipt.notification_id > 0 {
+            self.sender_ids
+                .register(sender_id.value, receipt.notification_id, sender_id.origin);
+        }
+
+        Ok(sender_id.value)
     }
 
     async fn close_notification(&self, id: u32) -> zbus::fdo::Result<()> {
+        let Some(internal_id) = self.sender_ids.internal_id_for_sender_id(id) else {
+            return Err(empty_dbus_error());
+        };
+
         self.daemon
-            .close_notification(id as i64)
+            .close_notification(internal_id)
             .await
-            .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))
+            .map_err(|_error| {
+                self.sender_ids.unregister_sender_id(id);
+                empty_dbus_error()
+            })
     }
 
     fn get_capabilities(&self) -> Vec<String> {
@@ -312,7 +331,7 @@ impl NotificationServer {
             "Canopa Notify".to_string(),
             "Canopa".to_string(),
             env!("CARGO_PKG_VERSION").to_string(),
-            "1.2".to_string(),
+            "1.3".to_string(),
         )
     }
 
@@ -336,28 +355,33 @@ async fn start_notification_server(
     daemon: Daemon,
 ) -> anyhow::Result<zbus::Connection> {
     let sender_events = daemon.subscribe_sender_events();
+    let sender_ids = NotificationSenderIds::new();
     let connection = zbus::connection::Builder::session()?
         .name(bus_name)?
         .serve_at(
             "/org/freedesktop/Notifications",
-            NotificationServer { daemon },
+            NotificationServer {
+                daemon,
+                sender_ids: sender_ids.clone(),
+            },
         )?
         .build()
         .await?;
-    spawn_notification_signal_relay(connection.clone(), sender_events)?;
+    spawn_notification_signal_relay(connection.clone(), sender_events, sender_ids)?;
     Ok(connection)
 }
 
 fn spawn_notification_signal_relay(
     connection: zbus::Connection,
     mut sender_events: broadcast::Receiver<SenderEvent>,
+    sender_ids: NotificationSenderIds,
 ) -> anyhow::Result<()> {
     let emitter = SignalEmitter::new(&connection, "/org/freedesktop/Notifications")?.into_owned();
     tokio::spawn(async move {
         loop {
             match sender_events.recv().await {
                 Ok(event) => {
-                    if let Err(error) = emit_sender_event(&emitter, &event).await {
+                    if let Err(error) = emit_sender_event(&emitter, &sender_ids, &event).await {
                         eprintln!(
                             "level=warn component=dbus event=sender_signal_failed error={error:#}"
                         );
@@ -375,20 +399,31 @@ fn spawn_notification_signal_relay(
     Ok(())
 }
 
-async fn emit_sender_event(emitter: &SignalEmitter<'_>, event: &SenderEvent) -> zbus::Result<()> {
+async fn emit_sender_event(
+    emitter: &SignalEmitter<'_>,
+    sender_ids: &NotificationSenderIds,
+    event: &SenderEvent,
+) -> zbus::Result<()> {
     if let Some(action_key) = event.action_key.as_deref() {
-        if let Ok(notification_id) = u32::try_from(event.notification_id) {
-            emitter.action_invoked(notification_id, action_key).await?;
+        if let Some(sender_id) = sender_ids.sender_id_for_internal_id(event.notification_id) {
+            emitter.action_invoked(sender_id, action_key).await?;
         }
     }
 
-    if let Some(closed_id) = event.closed_id.and_then(|id| u32::try_from(id).ok()) {
+    if let Some(closed_id) = event
+        .closed_id
+        .and_then(|id| sender_ids.unregister_internal_id(id))
+    {
         emitter
             .notification_closed(closed_id, close_reason_code(event.close_reason.as_deref()))
             .await?;
     }
 
     Ok(())
+}
+
+fn empty_dbus_error() -> zbus::fdo::Error {
+    zbus::fdo::Error::Failed(String::new())
 }
 
 fn close_reason_code(reason: Option<&str>) -> u32 {
@@ -398,6 +433,170 @@ fn close_reason_code(reason: Option<&str>) -> u32 {
         Some("closed") => 3,
         _ => 4,
     }
+}
+
+#[derive(Clone, Debug)]
+struct NotificationSenderIds {
+    state: Arc<Mutex<NotificationSenderIdState>>,
+}
+
+impl NotificationSenderIds {
+    fn new() -> Self {
+        Self {
+            state: Arc::new(Mutex::new(NotificationSenderIdState::new())),
+        }
+    }
+
+    fn sender_id_for_request(&self, replaces_id: u32) -> SenderIdForRequest {
+        let mut state = self.state.lock().unwrap();
+        state.sender_id_for_request(replaces_id)
+    }
+
+    fn register(&self, sender_id: u32, internal_id: i64, origin: SenderIdOrigin) {
+        self.state
+            .lock()
+            .unwrap()
+            .register(sender_id, internal_id, origin);
+    }
+
+    fn internal_id_for_sender_id(&self, sender_id: u32) -> Option<i64> {
+        if sender_id == 0 {
+            return None;
+        }
+
+        self.state
+            .lock()
+            .unwrap()
+            .sender_to_internal
+            .get(&sender_id)
+            .map(|registration| registration.internal_id)
+    }
+
+    fn sender_id_for_internal_id(&self, internal_id: i64) -> Option<u32> {
+        self.state
+            .lock()
+            .unwrap()
+            .internal_to_sender
+            .get(&internal_id)
+            .copied()
+    }
+
+    fn unregister_internal_id(&self, internal_id: i64) -> Option<u32> {
+        self.state
+            .lock()
+            .unwrap()
+            .unregister_internal_id(internal_id)
+    }
+
+    fn unregister_sender_id(&self, sender_id: u32) -> Option<i64> {
+        self.state.lock().unwrap().unregister_sender_id(sender_id)
+    }
+}
+
+#[derive(Debug)]
+struct NotificationSenderIdState {
+    next_sender_id: u32,
+    sender_to_internal: HashMap<u32, SenderIdRegistration>,
+    internal_to_sender: HashMap<i64, u32>,
+}
+
+impl NotificationSenderIdState {
+    fn new() -> Self {
+        Self {
+            next_sender_id: 1,
+            sender_to_internal: HashMap::new(),
+            internal_to_sender: HashMap::new(),
+        }
+    }
+
+    fn sender_id_for_request(&mut self, replaces_id: u32) -> SenderIdForRequest {
+        if replaces_id == 0 {
+            return SenderIdForRequest {
+                value: self.allocate_sender_id(),
+                replacement_target: None,
+                origin: SenderIdOrigin::Generated,
+            };
+        }
+
+        match self.sender_to_internal.get(&replaces_id) {
+            Some(registration) if registration.origin == SenderIdOrigin::Generated => {
+                SenderIdForRequest {
+                    value: replaces_id,
+                    replacement_target: Some(registration.internal_id),
+                    origin: SenderIdOrigin::Generated,
+                }
+            }
+            _ => SenderIdForRequest {
+                value: replaces_id,
+                replacement_target: None,
+                origin: SenderIdOrigin::CallerSupplied,
+            },
+        }
+    }
+
+    fn allocate_sender_id(&mut self) -> u32 {
+        loop {
+            let sender_id = self.next_sender_id;
+            self.next_sender_id = self.next_sender_id.wrapping_add(1);
+            if self.next_sender_id == 0 {
+                self.next_sender_id = 1;
+            }
+
+            if sender_id != 0 && !self.sender_to_internal.contains_key(&sender_id) {
+                return sender_id;
+            }
+        }
+    }
+
+    fn register(&mut self, sender_id: u32, internal_id: i64, origin: SenderIdOrigin) {
+        if let Some(previous_registration) = self.sender_to_internal.remove(&sender_id) {
+            self.internal_to_sender
+                .remove(&previous_registration.internal_id);
+        }
+        if let Some(previous_sender_id) = self.internal_to_sender.remove(&internal_id) {
+            self.sender_to_internal.remove(&previous_sender_id);
+        }
+
+        self.sender_to_internal.insert(
+            sender_id,
+            SenderIdRegistration {
+                internal_id,
+                origin,
+            },
+        );
+        self.internal_to_sender.insert(internal_id, sender_id);
+    }
+
+    fn unregister_internal_id(&mut self, internal_id: i64) -> Option<u32> {
+        let sender_id = self.internal_to_sender.remove(&internal_id)?;
+        self.sender_to_internal.remove(&sender_id);
+        Some(sender_id)
+    }
+
+    fn unregister_sender_id(&mut self, sender_id: u32) -> Option<i64> {
+        let registration = self.sender_to_internal.remove(&sender_id)?;
+        self.internal_to_sender.remove(&registration.internal_id);
+        Some(registration.internal_id)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SenderIdForRequest {
+    value: u32,
+    replacement_target: Option<i64>,
+    origin: SenderIdOrigin,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SenderIdOrigin {
+    Generated,
+    CallerSupplied,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SenderIdRegistration {
+    internal_id: i64,
+    origin: SenderIdOrigin,
 }
 
 fn run_ctl(args: CtlArgs) -> anyhow::Result<()> {
