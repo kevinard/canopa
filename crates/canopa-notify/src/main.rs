@@ -1,7 +1,7 @@
 use anyhow::Context;
 use canopa_notify::{
-    BannerInteraction, Daemon, DaemonOptions, IcedLayerShellBannerPresenter, NotificationAction,
-    NotificationInput, NotificationTimeout, NotifyControl, Urgency,
+    BannerInteraction, Daemon, DaemonOptions, IcedLayerShellBannerPresenter,
+    NotificationServerRequest, NotifyControl,
 };
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
@@ -267,26 +267,24 @@ impl NotificationServer {
         &self,
         app_name: String,
         replaces_id: u32,
-        _app_icon: String,
+        app_icon: String,
         summary: String,
         body: String,
         actions: Vec<String>,
         hints: HashMap<String, OwnedValue>,
         expire_timeout: i32,
     ) -> zbus::fdo::Result<u32> {
-        let input = NotificationInput {
+        let input = NotificationServerRequest {
             app_name,
-            desktop_entry: desktop_entry_hint(&hints),
-            replaces_id: (replaces_id != 0).then_some(replaces_id as i64),
+            replaces_id,
+            app_icon,
             summary,
             body,
-            expire_timeout: NotificationTimeout::from_freedesktop_expire_timeout(expire_timeout),
-            urgency: urgency_hint(&hints),
-            actions: notification_actions(actions),
-            category: string_hint(&hints, "category"),
-            progress: progress_hint(&hints),
-            ..NotificationInput::default()
-        };
+            actions,
+            hints,
+            expire_timeout,
+        }
+        .into_notification_input();
 
         let receipt = self
             .daemon
@@ -330,44 +328,6 @@ async fn start_notification_server(
         .build()
         .await?;
     Ok(connection)
-}
-
-fn desktop_entry_hint(hints: &HashMap<String, OwnedValue>) -> Option<String> {
-    string_hint(hints, "desktop-entry")
-}
-
-fn string_hint(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
-    hints
-        .get(key)
-        .and_then(|value| value.downcast_ref::<String>().ok())
-}
-
-fn urgency_hint(hints: &HashMap<String, OwnedValue>) -> Urgency {
-    match hints
-        .get("urgency")
-        .and_then(|value| value.downcast_ref::<u8>().ok())
-    {
-        Some(0) => Urgency::Low,
-        Some(2) => Urgency::Critical,
-        _ => Urgency::Normal,
-    }
-}
-
-fn progress_hint(hints: &HashMap<String, OwnedValue>) -> Option<i64> {
-    hints
-        .get("value")
-        .and_then(|value| value.downcast_ref::<i32>().ok())
-        .map(i64::from)
-}
-
-fn notification_actions(actions: Vec<String>) -> Vec<NotificationAction> {
-    actions
-        .chunks(2)
-        .filter_map(|chunk| match chunk {
-            [key, label] => Some(NotificationAction::new(key, label)),
-            _ => None,
-        })
-        .collect()
 }
 
 fn run_ctl(args: CtlArgs) -> anyhow::Result<()> {

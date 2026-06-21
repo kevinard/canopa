@@ -11,6 +11,7 @@ mod delivery_policy;
 mod domain;
 mod intake;
 mod lifecycle;
+mod notification_server_intake;
 mod presentation;
 mod sqlite_persisted_state;
 
@@ -33,6 +34,7 @@ pub use lifecycle::{
     NewNotificationThread, NotificationHistory, NotificationLifecycle, NotificationTimeoutChange,
     PersistPrecondition,
 };
+pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
     BannerFocusBehavior, BannerInteraction, BannerKeyboardInteractivity, BannerLayer,
     BannerOutputSelection, BannerPlacement, BannerPresenter, BannerSurfaceSpec, BannerView,

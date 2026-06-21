@@ -68,6 +68,10 @@ _Avoid_: Metadata when referring to app identity, urgency, IDs, or delivery outc
 The daemon-owned normalization of sender notification requests into notification facts used by **Delivery Policy** and **Notification Lifecycle**.
 _Avoid_: Notification Server API when referring to daemon-internal normalization
 
+**Notification Server Request**:
+The raw `Notify` method values received through the **Notification Server API** before they are decoded into **Notification Intake** input.
+_Avoid_: Accepted Notification when the request has not passed through Notification Intake
+
 **Accepted Notification**:
 The normalized notification shape produced by **Notification Intake** after no-op rejection, **App Identity** derivation, and **Notification Body** normalization, before **Delivery Policy** assigns a **Delivery Outcome**.
 _Avoid_: Notification Thread when lifecycle has not created or revised history
@@ -233,6 +237,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Progress** is stored as metadata and may be rendered by **Notification Banners**.
 - Notify stores **Raw Notification Body** while displaying a conservative **Notification Body** representation.
 - The first **Notification Body** rendering is plain text.
+- **Notification Server Request** decoding maps freedesktop `Notify` method values into **Notification Intake** input.
 - **Notification Intake** owns first-version **App Identity** derivation and **Notification Body** normalization.
 - **Notification Intake** returns an **Accepted Notification** for sender requests that should enter **Delivery Policy** and **Notification Lifecycle**.
 - **Accepted Notification** contains normalized sender/request facts, not lifecycle timestamps.
