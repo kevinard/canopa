@@ -128,6 +128,14 @@ _Avoid_: Storage status update when referring to user-visible or sender-visible 
 A **Notification Lifecycle** result that tells the **Notification Daemon** what sender-visible or presentation-visible side effects to publish after lifecycle state changes.
 _Avoid_: Sender event when referring to the lifecycle module's returned instruction rather than the published event
 
+**Notification Timeout Change**:
+A **Lifecycle Effect** projection that tells the **Notification Daemon** timer adapter to schedule or cancel a **Notification Timeout**.
+_Avoid_: Timeout event when referring to the adapter instruction rather than the lifecycle meaning that produced it
+
+**Banner Lifecycle Change**:
+A **Lifecycle Effect** projection consumed by **Notification Banner State** to consider a **Notification Thread** for banner visibility or remove a visible **Notification Banner**.
+_Avoid_: Lifecycle Effect when referring only to the banner-specific projection
+
 **Active Notification**:
 A retained **Notification Thread** that has not yet been dismissed, expired, or closed by the sender.
 _Avoid_: Historical notification when the notification is still pending user attention
@@ -290,7 +298,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Notify shows at most three **Notification Banners** at once by default.
 - **Notification Banner** visibility prefers critical **Active Notifications**, then newest eligible **Active Notifications**.
 - Hidden **Active Notifications** are not later promoted to **Notification Banners** solely because a banner slot opens.
-- **Notification Banner State** consumes **Lifecycle Effects** and decides banner eligibility itself.
+- **Notification Banner State** consumes **Banner Lifecycle Changes** projected from **Lifecycle Effects** and decides banner eligibility itself.
 - **Notification Lifecycle** does not emit banner-specific effects.
 - **Notification Banner** visibility is not derived from persisted **Notification History** flags.
 - **Notification Banner** state is runtime-only and is not persisted in **Notification History**.

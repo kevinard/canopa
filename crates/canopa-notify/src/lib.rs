@@ -29,8 +29,9 @@ pub use domain::{
     NotificationTimeout, NotificationTimeoutDefaults, SenderEvent, Urgency, UserRule,
 };
 pub use lifecycle::{
-    LifecycleDelivery, LifecycleEffect, NewNotificationThread, NotificationHistory,
-    NotificationLifecycle, PersistPrecondition,
+    BannerLifecycleChange, LifecycleDelivery, LifecycleEffect, LifecycleEffects,
+    NewNotificationThread, NotificationHistory, NotificationLifecycle, NotificationTimeoutChange,
+    PersistPrecondition,
 };
 pub use presentation::{
     BannerFocusBehavior, BannerInteraction, BannerKeyboardInteractivity, BannerLayer,
@@ -41,7 +42,6 @@ pub use presentation::{
 
 use configuration::LoadedNotificationConfiguration;
 use intake::{NotificationIntakeResult, intake_notification};
-use lifecycle::receipt_from_effects;
 use presentation::PresentationCoordinator;
 use sqlite_persisted_state::SqlitePersistedState;
 
@@ -173,7 +173,7 @@ impl Daemon {
                 expire_timeout,
             )
             .await?;
-        let receipt = receipt_from_effects(&effects)?;
+        let receipt = effects.sender_receipt()?;
         self.apply_lifecycle_effects_and_notify(&effects).await?;
         Ok(receipt)
     }
@@ -323,7 +323,7 @@ impl Daemon {
     async fn reevaluate_active_notifications(&self) -> anyhow::Result<()> {
         let active = self.snapshot().await?.active;
         let policy = self.delivery_policy().await?;
-        let mut all_effects = Vec::new();
+        let mut all_effects = LifecycleEffects::empty();
         for thread in active {
             let decision = policy.decide(&thread.accepted_notification);
             let effects = self
@@ -339,7 +339,7 @@ impl Daemon {
 
     async fn apply_lifecycle_effects_and_notify(
         &self,
-        effects: &[LifecycleEffect],
+        effects: &LifecycleEffects,
     ) -> anyhow::Result<()> {
         self.apply_lifecycle_effects(effects).await?;
         if !effects.is_empty() {
@@ -348,42 +348,20 @@ impl Daemon {
         Ok(())
     }
 
-    async fn apply_lifecycle_effects(&self, effects: &[LifecycleEffect]) -> anyhow::Result<()> {
-        self.apply_notification_timeout_effects(effects);
+    async fn apply_lifecycle_effects(&self, effects: &LifecycleEffects) -> anyhow::Result<()> {
+        self.apply_notification_timeout_changes(effects.timeout_changes());
         {
             let mut banner_state = self.banner_state.lock().unwrap();
-            banner_state.apply_effects(effects);
+            banner_state.apply_changes(effects.banner_changes());
         }
-        self.publish_sender_events(effects);
+        self.publish_sender_events(effects.sender_events());
         self.sync_presentation().await?;
         Ok(())
     }
 
-    fn publish_sender_events(&self, effects: &[LifecycleEffect]) {
+    fn publish_sender_events(&self, events: impl IntoIterator<Item = SenderEvent>) {
         let mut sender_events = self.sender_events.lock().unwrap();
-        for effect in effects {
-            match effect {
-                LifecycleEffect::ActionInvoked {
-                    notification_id,
-                    action_key,
-                } => sender_events.push(SenderEvent {
-                    notification_id: *notification_id,
-                    action_key: Some(action_key.clone()),
-                    closed_id: None,
-                    close_reason: None,
-                }),
-                LifecycleEffect::SenderClosed {
-                    notification_id,
-                    reason,
-                } => sender_events.push(SenderEvent {
-                    notification_id: *notification_id,
-                    action_key: None,
-                    closed_id: Some(*notification_id),
-                    close_reason: Some(reason.as_str().to_string()),
-                }),
-                _ => {}
-            }
-        }
+        sender_events.extend(events);
     }
 
     async fn sync_presentation(&self) -> anyhow::Result<()> {
@@ -396,18 +374,20 @@ impl Daemon {
         let _ = self.state_changes.send(version);
     }
 
-    fn apply_notification_timeout_effects(&self, effects: &[LifecycleEffect]) {
-        for effect in effects {
-            match effect {
-                LifecycleEffect::NotificationTimeoutScheduled {
+    fn apply_notification_timeout_changes(
+        &self,
+        changes: impl IntoIterator<Item = NotificationTimeoutChange>,
+    ) {
+        for change in changes {
+            match change {
+                NotificationTimeoutChange::Scheduled {
                     notification_id,
                     revision,
                     duration,
-                } => self.schedule_notification_timeout(*notification_id, *revision, *duration),
-                LifecycleEffect::NotificationTimeoutCancelled { notification_id } => {
-                    self.cancel_notification_timeout(*notification_id)
+                } => self.schedule_notification_timeout(notification_id, revision, duration),
+                NotificationTimeoutChange::Cancelled { notification_id } => {
+                    self.cancel_notification_timeout(notification_id)
                 }
-                _ => {}
             }
         }
     }

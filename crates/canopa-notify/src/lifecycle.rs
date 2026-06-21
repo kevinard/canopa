@@ -2,6 +2,7 @@ use crate::clock::now_millis;
 use crate::{
     AcceptedNotification, DeliveryDecision, DeliveryOutcome, NotificationReceipt,
     NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
+    SenderEvent,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -90,6 +91,155 @@ pub enum LifecycleEffect {
     },
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LifecycleEffects {
+    effects: Vec<LifecycleEffect>,
+}
+
+impl LifecycleEffects {
+    pub(crate) fn empty() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn new(effects: Vec<LifecycleEffect>) -> Self {
+        Self { effects }
+    }
+
+    pub fn raw(&self) -> &[LifecycleEffect] {
+        &self.effects
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.effects.is_empty()
+    }
+
+    pub(crate) fn extend(&mut self, effects: LifecycleEffects) {
+        self.effects.extend(effects.effects);
+    }
+
+    pub fn sender_receipt(&self) -> anyhow::Result<NotificationReceipt> {
+        self.effects
+            .iter()
+            .find_map(|effect| match effect {
+                LifecycleEffect::SenderReceipt(receipt) => Some(receipt.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!("notification lifecycle did not return a sender receipt")
+            })
+    }
+
+    pub fn sender_events(&self) -> impl Iterator<Item = SenderEvent> + '_ {
+        self.effects.iter().filter_map(|effect| match effect {
+            LifecycleEffect::ActionInvoked {
+                notification_id,
+                action_key,
+            } => Some(SenderEvent {
+                notification_id: *notification_id,
+                action_key: Some(action_key.clone()),
+                closed_id: None,
+                close_reason: None,
+            }),
+            LifecycleEffect::SenderClosed {
+                notification_id,
+                reason,
+            } => Some(SenderEvent {
+                notification_id: *notification_id,
+                action_key: None,
+                closed_id: Some(*notification_id),
+                close_reason: Some(reason.as_str().to_string()),
+            }),
+            _ => None,
+        })
+    }
+
+    pub fn timeout_changes(&self) -> impl Iterator<Item = NotificationTimeoutChange> + '_ {
+        self.effects.iter().filter_map(|effect| match effect {
+            LifecycleEffect::NotificationTimeoutScheduled {
+                notification_id,
+                revision,
+                duration,
+            } => Some(NotificationTimeoutChange::Scheduled {
+                notification_id: *notification_id,
+                revision: *revision,
+                duration: *duration,
+            }),
+            LifecycleEffect::NotificationTimeoutCancelled { notification_id } => {
+                Some(NotificationTimeoutChange::Cancelled {
+                    notification_id: *notification_id,
+                })
+            }
+            _ => None,
+        })
+    }
+
+    pub fn banner_changes(&self) -> impl Iterator<Item = BannerLifecycleChange> + '_ {
+        self.effects.iter().filter_map(|effect| match effect {
+            LifecycleEffect::ThreadCreated(thread) | LifecycleEffect::ThreadRevised(thread) => {
+                Some(BannerLifecycleChange::ConsiderOpportunity(thread.clone()))
+            }
+            LifecycleEffect::ThreadDeliveryChanged(thread) => {
+                Some(BannerLifecycleChange::ReconsiderVisible(thread.clone()))
+            }
+            LifecycleEffect::ThreadSilenced(thread)
+            | LifecycleEffect::ThreadDismissed(thread)
+            | LifecycleEffect::ThreadExpired(thread)
+            | LifecycleEffect::ThreadClosed(thread)
+            | LifecycleEffect::ThreadStale(thread) => Some(BannerLifecycleChange::Remove {
+                notification_id: thread.id,
+            }),
+            LifecycleEffect::NotificationDropped {
+                replaces_id: Some(notification_id),
+            } => Some(BannerLifecycleChange::Remove {
+                notification_id: *notification_id,
+            }),
+            LifecycleEffect::SenderReceipt(_)
+            | LifecycleEffect::NotificationDropped { replaces_id: None }
+            | LifecycleEffect::NotificationTimeoutScheduled { .. }
+            | LifecycleEffect::NotificationTimeoutCancelled { .. }
+            | LifecycleEffect::ActionInvoked { .. }
+            | LifecycleEffect::SenderClosed { .. } => None,
+        })
+    }
+}
+
+impl IntoIterator for LifecycleEffects {
+    type Item = LifecycleEffect;
+    type IntoIter = std::vec::IntoIter<LifecycleEffect>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.effects.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a LifecycleEffects {
+    type Item = &'a LifecycleEffect;
+    type IntoIter = std::slice::Iter<'a, LifecycleEffect>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.effects.iter()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotificationTimeoutChange {
+    Scheduled {
+        notification_id: i64,
+        revision: i64,
+        duration: Duration,
+    },
+    Cancelled {
+        notification_id: i64,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BannerLifecycleChange {
+    ConsiderOpportunity(NotificationThread),
+    ReconsiderVisible(NotificationThread),
+    Remove { notification_id: i64 },
+}
+
 #[allow(async_fn_in_trait)]
 pub trait NotificationHistory: Clone + Send + Sync + 'static {
     async fn create_thread(
@@ -152,9 +302,9 @@ where
         notification: AcceptedNotification,
         delivery: LifecycleDelivery,
         timeout: NotificationTimeout,
-    ) -> anyhow::Result<Vec<LifecycleEffect>> {
+    ) -> anyhow::Result<LifecycleEffects> {
         if delivery.outcome == DeliveryOutcome::Dropped {
-            return Ok(vec![
+            return Ok(LifecycleEffects::new(vec![
                 LifecycleEffect::NotificationDropped {
                     replaces_id: notification.replaces_id,
                 },
@@ -162,7 +312,7 @@ where
                     notification_id: 0,
                     delivery_outcome: DeliveryOutcome::Dropped,
                 }),
-            ]);
+            ]));
         }
 
         if let Some(replaces_id) = notification.replaces_id
@@ -186,7 +336,7 @@ where
                 notification_id: thread.id,
                 delivery_outcome: delivery.outcome,
             }));
-            return Ok(effects);
+            return Ok(LifecycleEffects::new(effects));
         }
 
         let thread = self
@@ -202,26 +352,26 @@ where
             notification_id: thread.id,
             delivery_outcome: delivery.outcome,
         }));
-        Ok(effects)
+        Ok(LifecycleEffects::new(effects))
     }
 
-    pub async fn dismiss(&self, notification_id: i64) -> anyhow::Result<Vec<LifecycleEffect>> {
+    pub async fn dismiss(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {
         self.transition_active(notification_id, NotificationStatus::Dismissed)
             .await
     }
 
-    pub async fn expire(&self, notification_id: i64) -> anyhow::Result<Vec<LifecycleEffect>> {
+    pub async fn expire(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {
         self.transition_active(notification_id, NotificationStatus::Expired)
             .await
     }
 
-    pub async fn close(&self, notification_id: i64) -> anyhow::Result<Vec<LifecycleEffect>> {
+    pub async fn close(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {
         self.transition_active(notification_id, NotificationStatus::Closed)
             .await
     }
 
-    pub async fn clear_active_notifications(&self) -> anyhow::Result<Vec<LifecycleEffect>> {
-        let mut effects = Vec::new();
+    pub async fn clear_active_notifications(&self) -> anyhow::Result<LifecycleEffects> {
+        let mut effects = LifecycleEffects::empty();
         for thread in self.history.active_threads().await? {
             effects.extend(self.dismiss(thread.id).await?);
         }
@@ -232,7 +382,7 @@ where
         &self,
         notification_id: i64,
         action_key: &str,
-    ) -> anyhow::Result<Vec<LifecycleEffect>> {
+    ) -> anyhow::Result<LifecycleEffects> {
         let thread = self.history.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
@@ -247,10 +397,10 @@ where
             anyhow::bail!("notification {notification_id} has no action {action_key}");
         }
 
-        let mut effects = vec![LifecycleEffect::ActionInvoked {
+        let mut effects = LifecycleEffects::new(vec![LifecycleEffect::ActionInvoked {
             notification_id,
             action_key: action_key.to_string(),
-        }];
+        }]);
 
         if !thread.accepted_notification.resident {
             effects.extend(self.close(notification_id).await?);
@@ -263,7 +413,7 @@ where
         &self,
         notification_id: i64,
         delivery: LifecycleDelivery,
-    ) -> anyhow::Result<Vec<LifecycleEffect>> {
+    ) -> anyhow::Result<LifecycleEffects> {
         let thread = self.history.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
@@ -294,10 +444,10 @@ where
             }
         }
 
-        Ok(effects)
+        Ok(LifecycleEffects::new(effects))
     }
 
-    pub async fn mark_active_stale(&self) -> anyhow::Result<Vec<LifecycleEffect>> {
+    pub async fn mark_active_stale(&self) -> anyhow::Result<LifecycleEffects> {
         let mut effects = Vec::new();
         for thread in self.history.active_threads().await? {
             let notification_id = thread.id;
@@ -313,14 +463,14 @@ where
             effects.push(LifecycleEffect::ThreadStale(stale));
             effects.push(LifecycleEffect::NotificationTimeoutCancelled { notification_id });
         }
-        Ok(effects)
+        Ok(LifecycleEffects::new(effects))
     }
 
     async fn transition_active(
         &self,
         notification_id: i64,
         status: NotificationStatus,
-    ) -> anyhow::Result<Vec<LifecycleEffect>> {
+    ) -> anyhow::Result<LifecycleEffects> {
         let thread = self.history.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
@@ -342,14 +492,14 @@ where
             NotificationStatus::Stale => LifecycleEffect::ThreadStale(thread),
             NotificationStatus::Active => unreachable!("active is not a lifecycle transition"),
         };
-        Ok(vec![
+        Ok(LifecycleEffects::new(vec![
             transition,
             LifecycleEffect::NotificationTimeoutCancelled { notification_id },
             LifecycleEffect::SenderClosed {
                 notification_id,
                 reason: status,
             },
-        ])
+        ]))
     }
 
     fn new_thread(
@@ -442,16 +592,4 @@ where
             None => {}
         }
     }
-}
-
-pub(crate) fn receipt_from_effects(
-    effects: &[LifecycleEffect],
-) -> anyhow::Result<NotificationReceipt> {
-    effects
-        .iter()
-        .find_map(|effect| match effect {
-            LifecycleEffect::SenderReceipt(receipt) => Some(receipt.clone()),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow::anyhow!("notification lifecycle did not return a sender receipt"))
 }

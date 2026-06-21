@@ -2,10 +2,11 @@
 mod daemon_support;
 
 use canopa_notify::{
-    AcceptedNotification, Daemon, DaemonOptions, DeliveryOutcome, LifecycleDelivery,
-    LifecycleEffect, NewNotificationThread, NotificationAction, NotificationHistory,
-    NotificationInput, NotificationLifecycle, NotificationStatus, NotificationThread,
-    NotificationTimeout, PersistPrecondition, Urgency,
+    AcceptedNotification, BannerLifecycleChange, Daemon, DaemonOptions, DeliveryOutcome,
+    LifecycleDelivery, LifecycleEffect, NewNotificationThread, NotificationAction,
+    NotificationHistory, NotificationInput, NotificationLifecycle, NotificationStatus,
+    NotificationThread, NotificationTimeout, NotificationTimeoutChange, PersistPrecondition,
+    Urgency,
 };
 use std::sync::{
     Arc, Mutex,
@@ -139,16 +140,16 @@ async fn lifecycle_replacement_owns_thread_revision_shape() {
         history.preconditions(),
         vec![PersistPrecondition::ExpectedRevision(1)]
     );
-    assert!(effects.iter().any(|effect| {
+    assert!(effects.raw().iter().any(|effect| {
         matches!(
             effect,
             LifecycleEffect::ThreadRevised(revised) if revised.id == thread.id
         )
     }));
-    assert!(effects.iter().any(|effect| {
+    assert!(effects.banner_changes().any(|change| {
         matches!(
-            effect,
-            LifecycleEffect::ThreadSilenced(silenced) if silenced.id == thread.id
+            change,
+            BannerLifecycleChange::Remove { notification_id } if notification_id == thread.id
         )
     }));
 }
@@ -167,14 +168,14 @@ async fn lifecycle_schedules_timeout_for_shown_notification() {
         .await
         .unwrap();
 
-    assert!(effects.iter().any(|effect| {
+    assert!(effects.timeout_changes().any(|change| {
         matches!(
-            effect,
-            LifecycleEffect::NotificationTimeoutScheduled {
+            change,
+            NotificationTimeoutChange::Scheduled {
                 notification_id: 1,
                 revision: 1,
                 duration,
-            } if *duration == Duration::from_millis(42)
+            } if duration == Duration::from_millis(42)
         )
     }));
 }
@@ -202,16 +203,16 @@ async fn replacement_with_ineligible_timeout_cancels_previous_timeout() {
         .await
         .unwrap();
 
-    assert!(effects.iter().any(|effect| {
+    assert!(effects.timeout_changes().any(|change| {
         matches!(
-            effect,
-            LifecycleEffect::NotificationTimeoutCancelled { notification_id: 1 }
+            change,
+            NotificationTimeoutChange::Cancelled { notification_id: 1 }
         )
     }));
     assert!(
         !effects
-            .iter()
-            .any(|effect| matches!(effect, LifecycleEffect::NotificationTimeoutScheduled { .. }))
+            .timeout_changes()
+            .any(|change| matches!(change, NotificationTimeoutChange::Scheduled { .. }))
     );
 }
 
@@ -234,10 +235,10 @@ async fn delivery_re_evaluation_away_from_shown_cancels_timeout() {
         .await
         .unwrap();
 
-    assert!(effects.iter().any(|effect| {
+    assert!(effects.timeout_changes().any(|change| {
         matches!(
-            effect,
-            LifecycleEffect::NotificationTimeoutCancelled { notification_id: 1 }
+            change,
+            NotificationTimeoutChange::Cancelled { notification_id: 1 }
         )
     }));
 }
@@ -255,11 +256,7 @@ async fn lifecycle_transition_owns_status_timestamps_and_precondition() {
         )
         .await
         .unwrap()
-        .into_iter()
-        .find_map(|effect| match effect {
-            LifecycleEffect::SenderReceipt(receipt) => Some(receipt),
-            _ => None,
-        })
+        .sender_receipt()
         .unwrap();
 
     clock.store(300, Ordering::SeqCst);
@@ -274,18 +271,17 @@ async fn lifecycle_transition_owns_status_timestamps_and_precondition() {
         history.preconditions(),
         vec![PersistPrecondition::ExpectedActiveRevision(1)]
     );
-    assert!(effects.iter().any(|effect| {
+    assert!(effects.raw().iter().any(|effect| {
         matches!(
             effect,
             LifecycleEffect::ThreadDismissed(dismissed) if dismissed.id == thread.id
         )
     }));
-    assert!(effects.iter().any(|effect| {
-        matches!(
-            effect,
-            LifecycleEffect::SenderClosed { notification_id, reason }
-                if *notification_id == thread.id && *reason == NotificationStatus::Dismissed
-        )
+    assert!(effects.sender_events().any(|event| {
+        event.notification_id == thread.id
+            && event.action_key.is_none()
+            && event.closed_id == Some(thread.id)
+            && event.close_reason.as_deref() == Some("dismissed")
     }));
 }
 
@@ -331,8 +327,8 @@ async fn lifecycle_marks_active_threads_stale_without_history_deciding_shape() {
     );
     assert_eq!(
         effects
-            .iter()
-            .filter(|effect| matches!(effect, LifecycleEffect::ThreadStale(_)))
+            .banner_changes()
+            .filter(|change| matches!(change, BannerLifecycleChange::Remove { .. }))
             .count(),
         2
     );
@@ -366,18 +362,16 @@ async fn lifecycle_creates_shown_notification_through_history_and_returns_receip
         .unwrap();
 
     assert_eq!(history.stored().len(), 1);
-    assert!(effects.iter().any(|effect| matches!(
+    assert!(effects.raw().iter().any(|effect| matches!(
         effect,
         LifecycleEffect::ThreadCreated(thread)
             if thread.accepted_notification.app_identity == "example-mail.desktop"
                 && thread.delivery_outcome == DeliveryOutcome::Shown
     )));
-    assert!(effects.iter().any(|effect| matches!(
-        effect,
-        LifecycleEffect::SenderReceipt(receipt)
-            if receipt.notification_id == 1
-                && receipt.delivery_outcome == DeliveryOutcome::Shown
-    )));
+    assert_eq!(
+        effects.sender_receipt().unwrap().delivery_outcome,
+        DeliveryOutcome::Shown
+    );
 }
 
 #[tokio::test]
@@ -406,22 +400,20 @@ async fn lifecycle_dropped_replacement_returns_receipt_without_revising_thread()
     let stored = history.stored();
     assert_eq!(stored[0].accepted_notification.summary, "Original");
     assert_eq!(stored[0].revision, 1);
-    assert!(effects.iter().any(|effect| matches!(
+    assert!(effects.raw().iter().any(|effect| matches!(
         effect,
         LifecycleEffect::NotificationDropped {
             replaces_id: Some(1)
         }
     )));
-    assert!(effects.iter().any(|effect| matches!(
-        effect,
-        LifecycleEffect::SenderReceipt(receipt)
-            if receipt.notification_id == 0
-                && receipt.delivery_outcome == DeliveryOutcome::Dropped
-    )));
+    assert_eq!(
+        effects.sender_receipt().unwrap().delivery_outcome,
+        DeliveryOutcome::Dropped
+    );
     assert!(
         !effects
-            .iter()
-            .any(|effect| matches!(effect, LifecycleEffect::NotificationTimeoutCancelled { .. }))
+            .timeout_changes()
+            .any(|change| matches!(change, NotificationTimeoutChange::Cancelled { .. }))
     );
 }
 
@@ -440,7 +432,7 @@ async fn lifecycle_missing_replacement_target_creates_new_thread() {
         .unwrap();
 
     assert_eq!(history.stored().len(), 1);
-    assert!(effects.iter().any(|effect| matches!(
+    assert!(effects.raw().iter().any(|effect| matches!(
         effect,
         LifecycleEffect::ThreadCreated(thread)
             if thread.id == 1

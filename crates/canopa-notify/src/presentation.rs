@@ -1,4 +1,6 @@
-use crate::{DeliveryOutcome, LifecycleEffect, NotificationStatus, NotificationThread, Urgency};
+use crate::{
+    BannerLifecycleChange, DeliveryOutcome, NotificationStatus, NotificationThread, Urgency,
+};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -447,9 +449,9 @@ impl NotificationBannerState {
         Self::default()
     }
 
-    pub fn apply_effects(&mut self, effects: &[LifecycleEffect]) {
-        for effect in effects {
-            self.apply_effect(effect);
+    pub fn apply_changes(&mut self, changes: impl IntoIterator<Item = BannerLifecycleChange>) {
+        for change in changes {
+            self.apply_change(change);
         }
     }
 
@@ -459,34 +461,19 @@ impl NotificationBannerState {
         threads.into_iter().map(BannerView::from_thread).collect()
     }
 
-    fn apply_effect(&mut self, effect: &LifecycleEffect) {
-        match effect {
-            LifecycleEffect::ThreadCreated(thread) | LifecycleEffect::ThreadRevised(thread) => {
-                self.consider_banner_opportunity(thread.clone());
+    fn apply_change(&mut self, change: BannerLifecycleChange) {
+        match change {
+            BannerLifecycleChange::ConsiderOpportunity(thread) => {
+                self.consider_banner_opportunity(thread);
             }
-            LifecycleEffect::ThreadDeliveryChanged(thread) => {
+            BannerLifecycleChange::ReconsiderVisible(thread) => {
                 if self.visible.contains_key(&thread.id) {
-                    self.consider_banner_opportunity(thread.clone());
+                    self.consider_banner_opportunity(thread);
                 }
             }
-            LifecycleEffect::ThreadSilenced(thread)
-            | LifecycleEffect::ThreadDismissed(thread)
-            | LifecycleEffect::ThreadExpired(thread)
-            | LifecycleEffect::ThreadClosed(thread)
-            | LifecycleEffect::ThreadStale(thread) => {
-                self.visible.remove(&thread.id);
+            BannerLifecycleChange::Remove { notification_id } => {
+                self.visible.remove(&notification_id);
             }
-            LifecycleEffect::NotificationDropped {
-                replaces_id: Some(notification_id),
-            } => {
-                self.visible.remove(notification_id);
-            }
-            LifecycleEffect::SenderReceipt(_)
-            | LifecycleEffect::NotificationDropped { replaces_id: None }
-            | LifecycleEffect::NotificationTimeoutScheduled { .. }
-            | LifecycleEffect::NotificationTimeoutCancelled { .. }
-            | LifecycleEffect::ActionInvoked { .. }
-            | LifecycleEffect::SenderClosed { .. } => {}
         }
     }
 
