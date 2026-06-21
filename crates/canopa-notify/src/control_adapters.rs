@@ -124,57 +124,114 @@ enum SocketControlRequest {
     Unsupported,
 }
 
+struct SocketControlRequestSpec {
+    request: SocketControlRequest,
+    line: &'static str,
+    command: Option<ControlCommand>,
+    format_reply: Option<fn(ControlReply) -> anyhow::Result<String>>,
+}
+
+const SOCKET_CONTROL_REQUESTS: &[SocketControlRequestSpec] = &[
+    SocketControlRequestSpec {
+        request: SocketControlRequest::Status,
+        line: "status\n",
+        command: Some(ControlCommand::Status),
+        format_reply: Some(format_status_reply),
+    },
+    SocketControlRequestSpec {
+        request: SocketControlRequest::ActiveJson,
+        line: "active-json\n",
+        command: Some(ControlCommand::ActiveNotifications),
+        format_reply: Some(format_active_json_reply),
+    },
+    SocketControlRequestSpec {
+        request: SocketControlRequest::ActiveCount,
+        line: "active\n",
+        command: Some(ControlCommand::ActiveNotifications),
+        format_reply: Some(format_active_count_reply),
+    },
+    SocketControlRequestSpec {
+        request: SocketControlRequest::PanelSnapshot,
+        line: "panel-snapshot\n",
+        command: Some(ControlCommand::NotificationCenterProjection),
+        format_reply: Some(format_panel_snapshot_reply),
+    },
+    SocketControlRequestSpec {
+        request: SocketControlRequest::PanelSubscribe,
+        line: "panel-subscribe\n",
+        command: None,
+        format_reply: None,
+    },
+];
+
 impl SocketControlRequest {
     fn parse(request: &str) -> Self {
-        match request {
-            "status" => Self::Status,
-            "active-json" => Self::ActiveJson,
-            "active" => Self::ActiveCount,
-            "panel-snapshot" => Self::PanelSnapshot,
-            "panel-subscribe" => Self::PanelSubscribe,
-            _ => Self::Unsupported,
-        }
+        SOCKET_CONTROL_REQUESTS
+            .iter()
+            .find(|spec| spec.request_token() == request)
+            .map(|spec| spec.request)
+            .unwrap_or(Self::Unsupported)
     }
 
     fn line(self) -> &'static str {
-        match self {
-            Self::Status => "status\n",
-            Self::ActiveJson => "active-json\n",
-            Self::ActiveCount => "active\n",
-            Self::PanelSnapshot => "panel-snapshot\n",
-            Self::PanelSubscribe => "panel-subscribe\n",
-            Self::Unsupported => "unsupported\n",
-        }
+        self.spec().map(|spec| spec.line).unwrap_or("unsupported\n")
     }
 
     fn command(self) -> Option<ControlCommand> {
-        match self {
-            Self::Status => Some(ControlCommand::Status),
-            Self::ActiveJson | Self::ActiveCount => Some(ControlCommand::ActiveNotifications),
-            Self::PanelSnapshot => Some(ControlCommand::NotificationCenterProjection),
-            Self::PanelSubscribe => None,
-            Self::Unsupported => None,
-        }
+        self.spec().and_then(|spec| spec.command.clone())
     }
 
     fn format_reply(self, reply: ControlReply) -> anyhow::Result<String> {
-        match (self, reply) {
-            (Self::Status, ControlReply::Status(_)) => {
-                Ok("Canopa Notify daemon available\n".to_string())
-            }
-            (Self::ActiveJson, ControlReply::ActiveNotifications(active)) => {
-                Ok(serde_json::to_string(&active)? + "\n")
-            }
-            (Self::ActiveCount, ControlReply::ActiveNotifications(active)) => {
-                Ok(format!("{} active notifications\n", active.len()))
-            }
-            (Self::PanelSnapshot, ControlReply::NotificationCenterProjection(projection)) => {
-                let content = panel_content_from_projection(projection);
-                Ok(serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n")
-            }
-            _ => anyhow::bail!("unexpected reply from Notify Control API"),
-        }
+        let Some(format_reply) = self.spec().and_then(|spec| spec.format_reply) else {
+            return Err(unexpected_control_reply());
+        };
+        format_reply(reply)
     }
+
+    fn spec(self) -> Option<&'static SocketControlRequestSpec> {
+        SOCKET_CONTROL_REQUESTS
+            .iter()
+            .find(|spec| spec.request == self)
+    }
+}
+
+impl SocketControlRequestSpec {
+    fn request_token(&self) -> &'static str {
+        self.line.trim_end_matches('\n')
+    }
+}
+
+fn format_status_reply(reply: ControlReply) -> anyhow::Result<String> {
+    let ControlReply::Status(_) = reply else {
+        return Err(unexpected_control_reply());
+    };
+    Ok("Canopa Notify daemon available\n".to_string())
+}
+
+fn format_active_json_reply(reply: ControlReply) -> anyhow::Result<String> {
+    let ControlReply::ActiveNotifications(active) = reply else {
+        return Err(unexpected_control_reply());
+    };
+    Ok(serde_json::to_string(&active)? + "\n")
+}
+
+fn format_active_count_reply(reply: ControlReply) -> anyhow::Result<String> {
+    let ControlReply::ActiveNotifications(active) = reply else {
+        return Err(unexpected_control_reply());
+    };
+    Ok(format!("{} active notifications\n", active.len()))
+}
+
+fn format_panel_snapshot_reply(reply: ControlReply) -> anyhow::Result<String> {
+    let ControlReply::NotificationCenterProjection(projection) = reply else {
+        return Err(unexpected_control_reply());
+    };
+    let content = panel_content_from_projection(projection);
+    Ok(serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n")
+}
+
+fn unexpected_control_reply() -> anyhow::Error {
+    anyhow::anyhow!("unexpected reply from Notify Control API")
 }
 
 fn panel_content_from_projection(projection: NotificationCenterProjection) -> PanelContent {
@@ -248,6 +305,19 @@ mod tests {
         assert_eq!(CtlRequest::Status.line(), "status\n");
         assert_eq!(CtlRequest::ActiveCount.line(), "active\n");
         assert_eq!(CtlRequest::ActiveJson.line(), "active-json\n");
+    }
+
+    #[test]
+    fn socket_request_table_round_trips_lines() {
+        for spec in SOCKET_CONTROL_REQUESTS {
+            assert_eq!(
+                SocketControlRequest::parse(spec.request_token()),
+                spec.request
+            );
+            assert_eq!(spec.request.line(), spec.line);
+        }
+
+        assert_eq!(SocketControlRequest::Unsupported.line(), "unsupported\n");
     }
 
     #[test]
