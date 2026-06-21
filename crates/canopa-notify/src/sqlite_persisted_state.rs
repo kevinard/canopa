@@ -1,11 +1,14 @@
+use crate::clock::now_millis;
+use crate::domain::{urgency_from_key, urgency_key};
 use crate::{
-    AcceptedNotification, DeliveryOutcome, NewNotificationThread, NotificationAction,
-    NotificationHistory, NotificationSnapshot, NotificationStatus, NotificationThread,
-    PersistPrecondition, Urgency, UserRule, now_millis, urgency_from_key, urgency_key,
+    AcceptedNotification, DeliveryOutcome, NewNotificationThread, NotificationHistory,
+    NotificationSnapshot, NotificationStatus, NotificationThread, PersistPrecondition, Urgency,
+    UserRule,
 };
 use anyhow::Context;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
-use sqlx::{Row, SqlitePool};
+use sqlx::query::Query;
+use sqlx::sqlite::{SqliteArguments, SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
+use sqlx::{Row, Sqlite, SqlitePool};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -21,8 +24,53 @@ struct RetentionPolicy {
     history_limit: i64,
 }
 
-struct NotificationThreadRow {
-    id: i64,
+macro_rules! notification_thread_columns {
+    () => {
+        "id, app_identity, app_name, replaces_id, summary, body, raw_body, urgency, status,
+         delivery_outcome, rule_reference, category, progress, resident, actions_json, revision,
+         created_at, updated_at, closed_at"
+    };
+}
+
+macro_rules! notification_thread_write_columns {
+    () => {
+        "app_identity, app_name, replaces_id, summary, body, raw_body, urgency, status,
+         delivery_outcome, rule_reference, category, progress, resident, actions_json, revision,
+         created_at, updated_at, closed_at"
+    };
+}
+
+macro_rules! notification_thread_write_placeholders {
+    () => {
+        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18"
+    };
+}
+
+macro_rules! notification_thread_update_assignments {
+    () => {
+        "app_identity = ?2,
+         app_name = ?3,
+         replaces_id = ?4,
+         summary = ?5,
+         body = ?6,
+         raw_body = ?7,
+         urgency = ?8,
+         status = ?9,
+         delivery_outcome = ?10,
+         rule_reference = ?11,
+         category = ?12,
+         progress = ?13,
+         resident = ?14,
+         actions_json = ?15,
+         revision = ?16,
+         created_at = ?17,
+         updated_at = ?18,
+         closed_at = ?19"
+    };
+}
+
+struct NotificationThreadRecord {
+    id: Option<i64>,
     app_identity: String,
     app_name: String,
     replaces_id: Option<i64>,
@@ -35,7 +83,7 @@ struct NotificationThreadRow {
     rule_reference: Option<String>,
     category: Option<String>,
     progress: Option<i64>,
-    actions: Vec<NotificationAction>,
+    actions_json: String,
     resident: bool,
     revision: i64,
     created_at: i64,
@@ -43,10 +91,60 @@ struct NotificationThreadRow {
     closed_at: Option<i64>,
 }
 
-impl NotificationThreadRow {
+impl NotificationThreadRecord {
+    fn from_new_thread(thread: NewNotificationThread) -> anyhow::Result<Self> {
+        let notification = thread.accepted_notification;
+        Ok(Self {
+            id: None,
+            app_identity: notification.app_identity,
+            app_name: notification.app_name,
+            replaces_id: notification.replaces_id,
+            summary: notification.summary,
+            body: notification.body,
+            raw_body: notification.raw_body,
+            urgency: notification.urgency,
+            status: thread.status,
+            delivery_outcome: thread.delivery_outcome,
+            rule_reference: thread.rule_reference,
+            category: notification.category,
+            progress: notification.progress,
+            actions_json: serde_json::to_string(&notification.actions)?,
+            resident: notification.resident,
+            revision: 1,
+            created_at: thread.created_at,
+            updated_at: thread.updated_at,
+            closed_at: None,
+        })
+    }
+
+    fn from_thread(thread: NotificationThread) -> anyhow::Result<Self> {
+        let notification = thread.accepted_notification;
+        Ok(Self {
+            id: Some(thread.id),
+            app_identity: notification.app_identity,
+            app_name: notification.app_name,
+            replaces_id: notification.replaces_id,
+            summary: notification.summary,
+            body: notification.body,
+            raw_body: notification.raw_body,
+            urgency: notification.urgency,
+            status: thread.status,
+            delivery_outcome: thread.delivery_outcome,
+            rule_reference: thread.rule_reference,
+            category: notification.category,
+            progress: notification.progress,
+            actions_json: serde_json::to_string(&notification.actions)?,
+            resident: notification.resident,
+            revision: thread.revision,
+            created_at: thread.created_at,
+            updated_at: thread.updated_at,
+            closed_at: thread.closed_at,
+        })
+    }
+
     fn from_row(row: &SqliteRow) -> anyhow::Result<Self> {
         Ok(Self {
-            id: row.try_get("id")?,
+            id: Some(row.try_get("id")?),
             app_identity: row.try_get("app_identity")?,
             app_name: row.try_get("app_name")?,
             replaces_id: row.try_get("replaces_id")?,
@@ -61,7 +159,7 @@ impl NotificationThreadRow {
             rule_reference: row.try_get("rule_reference")?,
             category: row.try_get("category")?,
             progress: row.try_get("progress")?,
-            actions: serde_json::from_str(&row.try_get::<String, _>("actions_json")?)?,
+            actions_json: row.try_get("actions_json")?,
             resident: row.try_get::<i64, _>("resident")? != 0,
             revision: row.try_get("revision")?,
             created_at: row.try_get("created_at")?,
@@ -70,9 +168,61 @@ impl NotificationThreadRow {
         })
     }
 
-    fn into_thread(self) -> NotificationThread {
-        NotificationThread {
-            id: self.id,
+    fn id(&self) -> anyhow::Result<i64> {
+        self.id
+            .ok_or_else(|| anyhow::anyhow!("notification thread record has no persisted id"))
+    }
+
+    fn bind_insert<'q>(
+        &'q self,
+        query: Query<'q, Sqlite, SqliteArguments<'q>>,
+    ) -> Query<'q, Sqlite, SqliteArguments<'q>> {
+        self.bind_write_values(query)
+    }
+
+    fn bind_update<'q>(
+        &'q self,
+        query: Query<'q, Sqlite, SqliteArguments<'q>>,
+        expected_revision: i64,
+        expected_status: Option<NotificationStatus>,
+    ) -> anyhow::Result<Query<'q, Sqlite, SqliteArguments<'q>>> {
+        Ok(self
+            .bind_write_values(query.bind(self.id()?))
+            .bind(expected_revision)
+            .bind(expected_status.map(NotificationStatus::as_str)))
+    }
+
+    fn bind_write_values<'q>(
+        &'q self,
+        query: Query<'q, Sqlite, SqliteArguments<'q>>,
+    ) -> Query<'q, Sqlite, SqliteArguments<'q>> {
+        query
+            .bind(&self.app_identity)
+            .bind(&self.app_name)
+            .bind(self.replaces_id)
+            .bind(&self.summary)
+            .bind(&self.body)
+            .bind(&self.raw_body)
+            .bind(self.urgency.as_str())
+            .bind(self.status.as_str())
+            .bind(self.delivery_outcome.as_str())
+            .bind(self.rule_reference.as_deref())
+            .bind(self.category.as_deref())
+            .bind(self.progress)
+            .bind(self.resident)
+            .bind(&self.actions_json)
+            .bind(self.revision)
+            .bind(self.created_at)
+            .bind(self.updated_at)
+            .bind(self.closed_at)
+    }
+
+    fn into_thread(self) -> anyhow::Result<NotificationThread> {
+        let actions = serde_json::from_str(&self.actions_json)?;
+        Ok(NotificationThread {
+            id: self
+                .id
+                .expect("persisted notification thread record must have id"),
             accepted_notification: AcceptedNotification {
                 app_identity: self.app_identity,
                 app_name: self.app_name,
@@ -84,7 +234,7 @@ impl NotificationThreadRow {
                 category: self.category,
                 progress: self.progress,
                 has_image_payload: false,
-                actions: self.actions,
+                actions,
                 resident: self.resident,
             },
             status: self.status,
@@ -94,7 +244,7 @@ impl NotificationThreadRow {
             created_at: self.created_at,
             updated_at: self.updated_at,
             closed_at: self.closed_at,
-        }
+        })
     }
 }
 
@@ -231,15 +381,13 @@ impl SqlitePersistedState {
     }
 
     pub(crate) async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, app_identity, app_name, replaces_id, summary, body, raw_body, urgency, status,
-                   delivery_outcome, rule_reference, category, progress, resident,
-                   actions_json, revision, created_at, updated_at, closed_at
+        let rows = sqlx::query(concat!(
+            "SELECT ",
+            notification_thread_columns!(),
+            "
             FROM notification_threads
-            ORDER BY created_at DESC, id DESC
-            "#,
-        )
+            ORDER BY created_at DESC, id DESC"
+        ))
         .fetch_all(&self.pool)
         .await?;
 
@@ -247,7 +395,7 @@ impl SqlitePersistedState {
         let mut history = Vec::new();
 
         for row in rows {
-            let thread = NotificationThreadRow::from_row(&row)?.into_thread();
+            let thread = NotificationThreadRecord::from_row(&row)?.into_thread()?;
             if thread.status == NotificationStatus::Active {
                 active.push(thread.clone());
             }
@@ -258,20 +406,18 @@ impl SqlitePersistedState {
     }
 
     pub(crate) async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, app_identity, app_name, replaces_id, summary, body, raw_body, urgency, status,
-                   delivery_outcome, rule_reference, category, progress, resident,
-                   actions_json, revision, created_at, updated_at, closed_at
+        let row = sqlx::query(concat!(
+            "SELECT ",
+            notification_thread_columns!(),
+            "
             FROM notification_threads
-            WHERE id = ?1
-            "#,
-        )
+            WHERE id = ?1"
+        ))
         .bind(id)
         .fetch_one(&self.pool)
         .await?;
 
-        Ok(NotificationThreadRow::from_row(&row)?.into_thread())
+        NotificationThreadRecord::from_row(&row)?.into_thread()
     }
 
     pub(crate) async fn delete_inactive_history(&self) -> anyhow::Result<()> {
@@ -391,37 +537,19 @@ impl NotificationHistory for SqlitePersistedState {
         &self,
         thread: NewNotificationThread,
     ) -> anyhow::Result<NotificationThread> {
-        let notification = thread.accepted_notification;
-        let actions_json = serde_json::to_string(&notification.actions)?;
-        let id = sqlx::query(
-            r#"
-            INSERT INTO notification_threads (
-                app_identity, app_name, replaces_id, summary, body, raw_body, urgency, status,
-                delivery_outcome, rule_reference, category, progress, resident, created_at,
-                updated_at, actions_json
-            )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
-            "#,
-        )
-        .bind(&notification.app_identity)
-        .bind(&notification.app_name)
-        .bind(notification.replaces_id)
-        .bind(&notification.summary)
-        .bind(&notification.body)
-        .bind(&notification.raw_body)
-        .bind(notification.urgency.as_str())
-        .bind(thread.status.as_str())
-        .bind(thread.delivery_outcome.as_str())
-        .bind(&thread.rule_reference)
-        .bind(&notification.category)
-        .bind(notification.progress)
-        .bind(notification.resident)
-        .bind(thread.created_at)
-        .bind(thread.updated_at)
-        .bind(actions_json)
-        .execute(&self.pool)
-        .await?
-        .last_insert_rowid();
+        let record = NotificationThreadRecord::from_new_thread(thread)?;
+        let id = record
+            .bind_insert(sqlx::query(concat!(
+                "INSERT INTO notification_threads (",
+                notification_thread_write_columns!(),
+                ")
+                 VALUES (",
+                notification_thread_write_placeholders!(),
+                ")"
+            )))
+            .execute(&self.pool)
+            .await?
+            .last_insert_rowid();
         let thread = self.thread(id).await?;
         self.finish_history_write(thread).await
     }
@@ -435,8 +563,8 @@ impl NotificationHistory for SqlitePersistedState {
         thread: NotificationThread,
         precondition: PersistPrecondition,
     ) -> anyhow::Result<NotificationThread> {
-        let notification = thread.accepted_notification;
-        let actions_json = serde_json::to_string(&notification.actions)?;
+        let record = NotificationThreadRecord::from_thread(thread)?;
+        let thread_id = record.id()?;
         let expected_revision = match precondition {
             PersistPrecondition::ExpectedRevision(revision)
             | PersistPrecondition::ExpectedActiveRevision(revision) => revision,
@@ -445,64 +573,31 @@ impl NotificationHistory for SqlitePersistedState {
             PersistPrecondition::ExpectedRevision(_) => None,
             PersistPrecondition::ExpectedActiveRevision(_) => Some(NotificationStatus::Active),
         };
-        let result = sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET app_identity = ?2,
-                app_name = ?3,
-                replaces_id = ?4,
-                summary = ?5,
-                body = ?6,
-                raw_body = ?7,
-                urgency = ?8,
-                status = ?9,
-                delivery_outcome = ?10,
-                rule_reference = ?11,
-                category = ?12,
-                progress = ?13,
-                resident = ?14,
-                actions_json = ?15,
-                revision = ?16,
-                created_at = ?17,
-                updated_at = ?18,
-                closed_at = ?19
+        let result = record
+            .bind_update(
+                sqlx::query(concat!(
+                    "UPDATE notification_threads
+            SET ",
+                    notification_thread_update_assignments!(),
+                    "
             WHERE id = ?1
               AND revision = ?20
-              AND (?21 IS NULL OR status = ?21)
-            "#,
-        )
-        .bind(thread.id)
-        .bind(notification.app_identity)
-        .bind(notification.app_name)
-        .bind(notification.replaces_id)
-        .bind(notification.summary)
-        .bind(notification.body)
-        .bind(notification.raw_body)
-        .bind(notification.urgency.as_str())
-        .bind(thread.status.as_str())
-        .bind(thread.delivery_outcome.as_str())
-        .bind(thread.rule_reference)
-        .bind(notification.category)
-        .bind(notification.progress)
-        .bind(notification.resident)
-        .bind(actions_json)
-        .bind(thread.revision)
-        .bind(thread.created_at)
-        .bind(thread.updated_at)
-        .bind(thread.closed_at)
-        .bind(expected_revision)
-        .bind(expected_status.map(NotificationStatus::as_str))
-        .execute(&self.pool)
-        .await?;
+              AND (?21 IS NULL OR status = ?21)"
+                )),
+                expected_revision,
+                expected_status,
+            )?
+            .execute(&self.pool)
+            .await?;
 
         if result.rows_affected() == 0 {
             anyhow::bail!(
                 "failed to persist notification thread {}; persistence precondition was not met",
-                thread.id
+                thread_id
             );
         }
 
-        let thread = self.thread(thread.id).await?;
+        let thread = self.thread(thread_id).await?;
         self.finish_history_write(thread).await
     }
 

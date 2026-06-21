@@ -1,3 +1,6 @@
+#[path = "support/daemon.rs"]
+mod daemon_support;
+
 use canopa_notify::{
     AcceptedNotification, Daemon, DaemonOptions, DeliveryDecisionReason, DeliveryOutcome,
     DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState, NotificationInput, Urgency,
@@ -275,10 +278,7 @@ async fn user_rules_take_precedence_over_config_rules_and_are_persisted() {
 
 #[tokio::test]
 async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replacements() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     let original = daemon
         .receive_notification(NotificationInput {
@@ -348,10 +348,7 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
 
 #[tokio::test]
 async fn delivery_decision_logs_redact_notification_content() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     daemon
         .upsert_user_rule(UserRule::for_app("Chat", DeliveryOutcome::Silenced))

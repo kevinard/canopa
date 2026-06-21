@@ -1,16 +1,16 @@
+#[path = "support/daemon.rs"]
+mod daemon_support;
+
 use canopa_notify::{
-    AppPermissionControl, ControlCommand, ControlReply, Daemon, DaemonOptions, DeliveryOutcome,
-    NotificationAction, NotificationInput, NotifyControl,
+    AppPermissionControl, ControlCommand, ControlReply, DeliveryOutcome, NotificationAction,
+    NotificationInput, NotifyControl,
 };
 use std::time::Duration;
 
 #[tokio::test]
 async fn notify_control_reports_daemon_status() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
-    let control = NotifyControl::new(daemon);
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new(daemon.clone());
 
     let reply = control.execute(ControlCommand::Status).await.unwrap();
 
@@ -22,10 +22,7 @@ async fn notify_control_reports_daemon_status() {
 
 #[tokio::test]
 async fn notify_control_returns_active_notifications() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());
 
     let receipt = daemon
@@ -52,10 +49,7 @@ async fn notify_control_returns_active_notifications() {
 
 #[tokio::test]
 async fn notify_control_builds_notification_center_projection() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());
 
     daemon
@@ -109,10 +103,7 @@ async fn notify_control_builds_notification_center_projection() {
 
 #[tokio::test]
 async fn notify_control_subscription_emits_complete_replacement_projections() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());
     let mut subscription = control.subscribe_notification_state();
 
@@ -168,10 +159,7 @@ async fn notify_control_subscription_emits_complete_replacement_projections() {
 
 #[tokio::test]
 async fn notify_control_projects_app_permission_from_user_rule_store() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());
 
     daemon
@@ -208,10 +196,7 @@ async fn notify_control_projects_app_permission_from_user_rule_store() {
 
 #[tokio::test]
 async fn notify_control_applies_notification_center_interaction_commands() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());
 
     let receipt = daemon
@@ -266,10 +251,7 @@ async fn notify_control_applies_notification_center_interaction_commands() {
 
 #[tokio::test]
 async fn notify_control_clears_active_notifications() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());
 
     daemon

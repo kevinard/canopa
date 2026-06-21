@@ -1,3 +1,6 @@
+#[path = "support/daemon.rs"]
+mod daemon_support;
+
 use canopa_notify::{
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPresenter,
     BannerSurfaceSpec, BannerView, Daemon, DaemonOptions, IcedLayerShellBannerPresenter,
@@ -300,10 +303,7 @@ async fn restart_persists_threads_without_restoring_runtime_banners() {
 
 #[tokio::test]
 async fn activating_banner_invokes_default_notification_action_when_present() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     let receipt = daemon
         .receive_notification(NotificationInput {
@@ -329,10 +329,7 @@ async fn activating_banner_invokes_default_notification_action_when_present() {
 
 #[tokio::test]
 async fn activating_banner_without_default_action_dismisses_notification() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     let receipt = daemon
         .receive_notification(NotificationInput {
@@ -359,10 +356,7 @@ async fn activating_banner_without_default_action_dismisses_notification() {
 
 #[tokio::test]
 async fn banner_visibility_is_capped_and_hidden_notifications_are_not_promoted_later() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     let mut ids = Vec::new();
     for index in 0..4 {
@@ -379,7 +373,6 @@ async fn banner_visibility_is_capped_and_hidden_notifications_are_not_promoted_l
         );
     }
 
-    let snapshot = daemon.snapshot().await.unwrap();
     assert_eq!(visible_ids(&daemon.visible_banners().await).len(), 3);
     assert!(is_visible(&daemon.visible_banners().await, ids[3]));
     assert!(!is_visible(&daemon.visible_banners().await, ids[0]));
@@ -390,10 +383,7 @@ async fn banner_visibility_is_capped_and_hidden_notifications_are_not_promoted_l
 
 #[tokio::test]
 async fn critical_notifications_displace_normal_banners_when_slots_are_full() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     for index in 0..3 {
         daemon

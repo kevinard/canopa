@@ -16,6 +16,7 @@ assert_cmd = "2"
 clap = { version = "4", features = ["derive"] }
 iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "wayland"] }
 iced_layershell = { version = "0.18", default-features = false }
+kdl = "6.5.0"
 predicates = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

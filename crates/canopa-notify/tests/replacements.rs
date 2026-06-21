@@ -1,11 +1,11 @@
-use canopa_notify::{Daemon, DaemonOptions, NotificationInput, Urgency};
+#[path = "support/daemon.rs"]
+mod daemon_support;
+
+use canopa_notify::{NotificationInput, Urgency};
 
 #[tokio::test]
 async fn replacement_revises_existing_thread_and_can_create_banner_opportunity() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     for index in 0..3 {
         daemon

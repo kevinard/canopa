@@ -1,12 +1,11 @@
-use canopa_notify::{Daemon, DaemonOptions, NotificationInput, Urgency};
+#[path = "support/daemon.rs"]
+mod daemon_support;
+
+use canopa_notify::{NotificationInput, Urgency};
 
 #[tokio::test]
 async fn default_allowed_notification_is_persisted_as_an_active_thread() {
-    let temp = tempfile::tempdir().unwrap();
-    let database = temp.path().join("history.db");
-    let daemon = Daemon::open(DaemonOptions::headless(database.clone()))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     let receipt = daemon
         .receive_notification(NotificationInput {
@@ -39,10 +38,7 @@ async fn default_allowed_notification_is_persisted_as_an_active_thread() {
 
 #[tokio::test]
 async fn empty_noop_notifications_are_dropped_without_history() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     let receipt = daemon
         .receive_notification(NotificationInput {
@@ -60,10 +56,7 @@ async fn empty_noop_notifications_are_dropped_without_history() {
 
 #[tokio::test]
 async fn empty_noop_notifications_bypass_delivery_policy() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     let receipt = daemon
         .receive_notification(NotificationInput {
@@ -81,10 +74,7 @@ async fn empty_noop_notifications_bypass_delivery_policy() {
 
 #[tokio::test]
 async fn category_and_progress_are_persisted_without_image_payloads() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     daemon
         .receive_notification(NotificationInput {

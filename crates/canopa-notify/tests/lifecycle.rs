@@ -1,3 +1,6 @@
+#[path = "support/daemon.rs"]
+mod daemon_support;
+
 use canopa_notify::{
     AcceptedNotification, Daemon, DaemonOptions, DeliveryOutcome, LifecycleDelivery,
     LifecycleEffect, NewNotificationThread, NotificationAction, NotificationHistory,
@@ -368,10 +371,7 @@ fn lifecycle_with_clock(
 
 #[tokio::test]
 async fn actions_close_non_resident_notifications_but_resident_notifications_stay_active() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     let non_resident = daemon
         .receive_notification(NotificationInput {

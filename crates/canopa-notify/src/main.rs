@@ -1,22 +1,17 @@
 use anyhow::Context;
 use canopa_notify::{
-    AppPermissionControl, BannerInteraction, ControlCommand, ControlReply, Daemon, DaemonOptions,
-    IcedLayerShellBannerPresenter, NotificationAction, NotificationCenterProjection,
+    BannerInteraction, Daemon, DaemonOptions, IcedLayerShellBannerPresenter, NotificationAction,
     NotificationInput, NotificationTimeout, NotifyControl, Urgency,
-};
-use canopa_panel_protocol::{
-    PanelAction, PanelContent, PanelControl, PanelControlOption, PanelItem, PanelMetadata,
-    PanelSection, ProviderResponse,
 };
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
-use std::io::{Read, Write};
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::PathBuf;
 use std::sync::mpsc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use zbus::zvariant::OwnedValue;
+
+mod control_adapters;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DaemonMode {
@@ -158,7 +153,7 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
                 let (stream, _) = incoming?;
                 let control = control.clone();
                 tokio::spawn(async move {
-                    if let Err(error) = handle_control_connection(stream, control).await {
+                    if let Err(error) = control_adapters::handle_connection(stream, control).await {
                         eprintln!("level=warn component=control event=request_failed error={error:#}");
                     }
                 });
@@ -376,238 +371,18 @@ fn notification_actions(actions: Vec<String>) -> Vec<NotificationAction> {
 }
 
 fn run_ctl(args: CtlArgs) -> anyhow::Result<()> {
-    let request = control_socket_request_for_ctl(&args.command);
-
-    let mut stream = StdUnixStream::connect(&args.socket).map_err(|source| {
-        anyhow::anyhow!(
-            "Canopa Notify daemon unavailable at {}: {source}",
-            args.socket.display()
-        )
-    })?;
-    stream.write_all(request.as_bytes())?;
-    let mut response = String::new();
-    stream.read_to_string(&mut response)?;
-    print!("{response}");
-    Ok(())
+    control_adapters::run_ctl(&args.socket, control_request_for_ctl(&args.command))
 }
 
 fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
-    let mut stream = match StdUnixStream::connect(&args.socket) {
-        Ok(stream) => stream,
-        Err(source) => {
-            let message = format!(
-                "Canopa Notify daemon unavailable at {}: {source}",
-                args.socket.display()
-            );
-            println!(
-                "{}",
-                serde_json::to_string(&ProviderResponse::replace_content(PanelContent::error(
-                    "Canopa Notify",
-                    message
-                )))?
-            );
-            return Ok(());
-        }
-    };
-    stream.write_all(SocketControlRequest::PanelSubscribe.line().as_bytes())?;
-    let mut stdout = std::io::stdout();
-    std::io::copy(&mut stream, &mut stdout)?;
-    Ok(())
+    control_adapters::run_panel_provider(&args.socket)
 }
 
-async fn handle_control_connection(
-    stream: tokio::net::UnixStream,
-    control: NotifyControl,
-) -> anyhow::Result<()> {
-    let mut stream = BufReader::new(stream);
-    let mut request = String::new();
-    stream.read_line(&mut request).await?;
-    let request = request.trim();
-    eprintln!("level=info component=control event=request command={request}");
-    let request = SocketControlRequest::parse(request);
-
-    if request == SocketControlRequest::PanelSubscribe {
-        stream_projection_subscription(stream.get_mut(), control).await?;
-        return Ok(());
-    }
-
-    let response = control_socket_response(request, &control).await?;
-
-    let stream = stream.get_mut();
-    stream.write_all(response.as_bytes()).await?;
-    stream.shutdown().await?;
-    Ok(())
-}
-
-async fn stream_projection_subscription(
-    stream: &mut tokio::net::UnixStream,
-    control: NotifyControl,
-) -> anyhow::Result<()> {
-    let mut subscription = control.subscribe_notification_state();
-    while let Some(projection) = subscription.next_projection().await? {
-        let content = panel_content_from_projection(projection);
-        let response = serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n";
-        stream.write_all(response.as_bytes()).await?;
-        stream.flush().await?;
-    }
-    stream.shutdown().await?;
-    Ok(())
-}
-
-fn control_socket_request_for_ctl(command: &CtlCommand) -> &'static str {
+fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest {
     match command {
-        CtlCommand::Status => SocketControlRequest::Status.line(),
-        CtlCommand::Active { json: true } => SocketControlRequest::ActiveJson.line(),
-        CtlCommand::Active { json: false } => SocketControlRequest::ActiveCount.line(),
-    }
-}
-
-async fn control_socket_response(
-    request: SocketControlRequest,
-    control: &NotifyControl,
-) -> anyhow::Result<String> {
-    let Some(command) = request.command() else {
-        return Ok("error unsupported control request\n".to_string());
-    };
-    request.format_reply(control.execute(command).await?)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SocketControlRequest {
-    Status,
-    ActiveJson,
-    ActiveCount,
-    PanelSnapshot,
-    PanelSubscribe,
-    Unsupported,
-}
-
-impl SocketControlRequest {
-    fn parse(request: &str) -> Self {
-        match request {
-            "status" => Self::Status,
-            "active-json" => Self::ActiveJson,
-            "active" => Self::ActiveCount,
-            "panel-snapshot" => Self::PanelSnapshot,
-            "panel-subscribe" => Self::PanelSubscribe,
-            _ => Self::Unsupported,
-        }
-    }
-
-    fn line(self) -> &'static str {
-        match self {
-            Self::Status => "status\n",
-            Self::ActiveJson => "active-json\n",
-            Self::ActiveCount => "active\n",
-            Self::PanelSnapshot => "panel-snapshot\n",
-            Self::PanelSubscribe => "panel-subscribe\n",
-            Self::Unsupported => "unsupported\n",
-        }
-    }
-
-    fn command(self) -> Option<ControlCommand> {
-        match self {
-            Self::Status => Some(ControlCommand::Status),
-            Self::ActiveJson | Self::ActiveCount => Some(ControlCommand::ActiveNotifications),
-            Self::PanelSnapshot => Some(ControlCommand::NotificationCenterProjection),
-            Self::PanelSubscribe => None,
-            Self::Unsupported => None,
-        }
-    }
-
-    fn format_reply(self, reply: ControlReply) -> anyhow::Result<String> {
-        match (self, reply) {
-            (Self::Status, ControlReply::Status(_)) => {
-                Ok("Canopa Notify daemon available\n".to_string())
-            }
-            (Self::ActiveJson, ControlReply::ActiveNotifications(active)) => {
-                Ok(serde_json::to_string(&active)? + "\n")
-            }
-            (Self::ActiveCount, ControlReply::ActiveNotifications(active)) => {
-                Ok(format!("{} active notifications\n", active.len()))
-            }
-            (Self::PanelSnapshot, ControlReply::NotificationCenterProjection(projection)) => {
-                let content = panel_content_from_projection(projection);
-                Ok(serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n")
-            }
-            _ => anyhow::bail!("unexpected reply from Notify Control API"),
-        }
-    }
-}
-
-fn panel_content_from_projection(projection: NotificationCenterProjection) -> PanelContent {
-    PanelContent {
-        title: "Canopa Notify".to_string(),
-        sections: projection
-            .groups
-            .into_iter()
-            .map(|group| PanelSection {
-                id: group.app_identity.clone(),
-                title: group.app_identity,
-                items: group
-                    .items
-                    .into_iter()
-                    .map(|item| PanelItem {
-                        id: item.notification_id.to_string(),
-                        title: item.summary,
-                        body: (!item.body.is_empty()).then_some(item.body),
-                        metadata: vec![
-                            PanelMetadata {
-                                key: "status".to_string(),
-                                label: "Status".to_string(),
-                                value: item.status.as_str().to_string(),
-                            },
-                            PanelMetadata {
-                                key: "delivery_outcome".to_string(),
-                                label: "Delivery outcome".to_string(),
-                                value: item.delivery_outcome.as_str().to_string(),
-                            },
-                        ],
-                        actions: item
-                            .actions
-                            .into_iter()
-                            .map(|action| PanelAction::new(action.key, action.label))
-                            .collect(),
-                    })
-                    .collect(),
-                controls: vec![app_permission_control(group.permission)],
-            })
-            .collect(),
-        actions: vec![
-            PanelAction::new("clear_active_notifications", "Clear active notifications"),
-            PanelAction::new("delete_notification_history", "Delete notification history"),
-        ],
-        error: None,
-    }
-}
-
-fn app_permission_control(permission: AppPermissionControl) -> PanelControl {
-    PanelControl {
-        key: "app_permission".to_string(),
-        label: "App permission".to_string(),
-        value: app_permission_value(permission).to_string(),
-        options: vec![
-            PanelControlOption {
-                value: "allow".to_string(),
-                label: "Allow".to_string(),
-            },
-            PanelControlOption {
-                value: "silence".to_string(),
-                label: "Silence".to_string(),
-            },
-            PanelControlOption {
-                value: "drop".to_string(),
-                label: "Drop".to_string(),
-            },
-        ],
-    }
-}
-
-fn app_permission_value(permission: AppPermissionControl) -> &'static str {
-    match permission {
-        AppPermissionControl::Allow => "allow",
-        AppPermissionControl::Silence => "silence",
-        AppPermissionControl::Drop => "drop",
+        CtlCommand::Status => control_adapters::CtlRequest::Status,
+        CtlCommand::Active { json: true } => control_adapters::CtlRequest::ActiveJson,
+        CtlCommand::Active { json: false } => control_adapters::CtlRequest::ActiveCount,
     }
 }
 
@@ -635,47 +410,6 @@ mod tests {
         let error = daemon_mode(&daemon_args(true, true)).unwrap_err();
 
         assert!(error.to_string().contains("mutually exclusive"));
-    }
-
-    #[test]
-    fn ctl_commands_map_to_socket_request_lines() {
-        assert_eq!(
-            control_socket_request_for_ctl(&CtlCommand::Status),
-            "status\n"
-        );
-        assert_eq!(
-            control_socket_request_for_ctl(&CtlCommand::Active { json: false }),
-            "active\n"
-        );
-        assert_eq!(
-            control_socket_request_for_ctl(&CtlCommand::Active { json: true }),
-            "active-json\n"
-        );
-    }
-
-    #[test]
-    fn socket_request_adapter_maps_to_control_commands() {
-        assert_eq!(
-            SocketControlRequest::parse("status").command(),
-            Some(ControlCommand::Status)
-        );
-        assert_eq!(
-            SocketControlRequest::parse("active").command(),
-            Some(ControlCommand::ActiveNotifications)
-        );
-        assert_eq!(
-            SocketControlRequest::parse("active-json").command(),
-            Some(ControlCommand::ActiveNotifications)
-        );
-        assert_eq!(
-            SocketControlRequest::parse("panel-snapshot").command(),
-            Some(ControlCommand::NotificationCenterProjection)
-        );
-        assert_eq!(
-            SocketControlRequest::parse("panel-subscribe").command(),
-            None
-        );
-        assert_eq!(SocketControlRequest::parse("bogus").command(), None);
     }
 
     fn daemon_args(headless: bool, service: bool) -> DaemonArgs {

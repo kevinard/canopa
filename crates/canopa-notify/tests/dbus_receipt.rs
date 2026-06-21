@@ -1,8 +1,7 @@
+mod support;
+
 use assert_cmd::Command;
 use std::collections::HashMap;
-use std::process::Command as StdCommand;
-use std::thread;
-use std::time::{Duration, Instant};
 use zbus::zvariant::{OwnedValue, Value};
 use zbus::{Connection, Proxy};
 
@@ -13,21 +12,18 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
     let database = temp.path().join("history.db");
     let bus_name = format!("org.canopa.NotifyTest{}", std::process::id());
 
-    let mut daemon = StdCommand::new(assert_cmd::cargo::cargo_bin("canopa-notify"))
-        .args([
-            "daemon",
-            "--headless",
-            "--socket",
-            socket.to_str().unwrap(),
-            "--database",
-            database.to_str().unwrap(),
-            "--dev-bus-name",
-            &bus_name,
-        ])
-        .spawn()
-        .unwrap();
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
 
-    wait_for_status(&socket);
+    support::wait_for_status_with_child(&socket, &mut daemon);
 
     let connection = Connection::session().await.unwrap();
     let proxy = Proxy::new(
@@ -74,7 +70,7 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
         .args([
             "ctl",
             "--socket",
-            socket.to_str().unwrap(),
+            support::path_arg(&socket),
             "active",
             "--json",
         ])
@@ -87,19 +83,4 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
 
     daemon.kill().ok();
     daemon.wait().ok();
-}
-
-fn wait_for_status(socket: &std::path::Path) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        let assertion = Command::cargo_bin("canopa-notify")
-            .unwrap()
-            .args(["ctl", "--socket", socket.to_str().unwrap(), "status"])
-            .assert();
-        if assertion.get_output().status.success() {
-            return;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    panic!("daemon did not become available");
 }

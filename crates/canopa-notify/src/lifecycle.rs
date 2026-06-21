@@ -1,6 +1,7 @@
+use crate::clock::now_millis;
 use crate::{
     AcceptedNotification, DeliveryDecision, DeliveryOutcome, NotificationReceipt,
-    NotificationStatus, NotificationThread, now_millis,
+    NotificationStatus, NotificationThread,
 };
 use std::sync::Arc;
 

@@ -1,3 +1,6 @@
+#[path = "support/daemon.rs"]
+mod daemon_support;
+
 use canopa_notify::{Daemon, DaemonOptions, NotificationInput};
 
 #[tokio::test]
@@ -72,10 +75,7 @@ async fn inactive_history_is_pruned_by_count_at_daemon_startup() {
 
 #[tokio::test]
 async fn clear_active_and_delete_history_are_separate_operations() {
-    let temp = tempfile::tempdir().unwrap();
-    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
-        .await
-        .unwrap();
+    let daemon = daemon_support::open_headless_daemon().await;
 
     daemon
         .receive_notification(NotificationInput {

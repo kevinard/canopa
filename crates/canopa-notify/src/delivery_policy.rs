@@ -1,4 +1,4 @@
-use crate::{AcceptedNotification, DeliveryOutcome, Urgency};
+use crate::{AcceptedNotification, DeliveryOutcome, Urgency, UserRule};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,6 +30,17 @@ impl DeliveryPolicyRule {
                 .urgency
                 .map(|rule_urgency| rule_urgency == notification.urgency)
                 .unwrap_or(true)
+    }
+}
+
+impl From<UserRule> for DeliveryPolicyRule {
+    fn from(rule: UserRule) -> Self {
+        Self::new(
+            rule.app_identity,
+            rule.urgency,
+            rule.outcome,
+            rule.reference,
+        )
     }
 }
 

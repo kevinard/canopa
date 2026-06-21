@@ -1,12 +1,14 @@
+mod support;
+
 use assert_cmd::Command;
 use canopa_notify::{Daemon, DaemonOptions, NotificationInput};
 use canopa_panel_protocol::ProviderResponse;
 use predicates::str::contains;
 use std::io::{BufRead, BufReader};
-use std::process::{Command as StdCommand, Stdio};
+use std::process::Stdio;
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[test]
 fn panel_provider_returns_provider_visible_error_when_daemon_is_unavailable() {
@@ -15,7 +17,7 @@ fn panel_provider_returns_provider_visible_error_when_daemon_is_unavailable() {
 
     Command::cargo_bin("canopa-notify")
         .unwrap()
-        .args(["panel-provider", "--socket", socket.to_str().unwrap()])
+        .args(["panel-provider", "--socket", support::path_arg(&socket)])
         .assert()
         .success()
         .stdout(contains("Canopa Notify daemon unavailable"))
@@ -41,22 +43,19 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
     .unwrap();
     drop(seed);
 
-    let mut daemon = StdCommand::new(assert_cmd::cargo::cargo_bin("canopa-notify"))
-        .args([
-            "daemon",
-            "--headless",
-            "--socket",
-            socket.to_str().unwrap(),
-            "--database",
-            database.to_str().unwrap(),
-        ])
-        .spawn()
-        .unwrap();
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+    ]);
 
-    wait_for_status(&socket);
+    support::wait_for_status_with_child(&socket, &mut daemon);
 
-    let mut provider = StdCommand::new(assert_cmd::cargo::cargo_bin("canopa-notify"))
-        .args(["panel-provider", "--socket", socket.to_str().unwrap()])
+    let mut provider = support::canopa_notify_command()
+        .args(["panel-provider", "--socket", support::path_arg(&socket)])
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
@@ -94,19 +93,4 @@ fn read_provider_line(provider: &mut std::process::Child) -> String {
         .recv_timeout(Duration::from_secs(5))
         .expect("panel provider did not emit an initial projection")
         .unwrap()
-}
-
-fn wait_for_status(socket: &std::path::Path) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        let assertion = Command::cargo_bin("canopa-notify")
-            .unwrap()
-            .args(["ctl", "--socket", socket.to_str().unwrap(), "status"])
-            .assert();
-        if assertion.get_output().status.success() {
-            return;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    panic!("daemon did not become available");
 }
