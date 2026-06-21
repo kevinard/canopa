@@ -34,8 +34,8 @@ pub use lifecycle::{
 pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
     BannerFocusBehavior, BannerInteraction, BannerKeyboardInteractivity, BannerLayer,
-    BannerOutputSelection, BannerPlacement, BannerPresenter, BannerSurfaceSpec, BannerView,
-    IcedLayerShellBannerPresenter, NoopBannerPresenter, NotificationBannerState,
+    BannerOutputSelection, BannerPlacement, BannerPresentation, BannerPresenter, BannerSurfaceSpec,
+    BannerView, IcedLayerShellBannerPresenter, NoopBannerPresenter, NotificationBannerState,
     StructuredLogBannerPresenter,
 };
 pub use runtime::NotificationStateSubscription;

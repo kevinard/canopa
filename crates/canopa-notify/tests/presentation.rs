@@ -4,8 +4,8 @@ mod daemon_support;
 mod notifications;
 
 use canopa_notify::{
-    BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPresenter,
-    BannerSurfaceSpec, BannerView, Daemon, DaemonOptions, DeliveryOutcome,
+    BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPresentation,
+    BannerPresenter, BannerSurfaceSpec, BannerView, Daemon, DaemonOptions, DeliveryOutcome,
     IcedLayerShellBannerPresenter, NotificationAction, NotificationInput, NotificationTimeout,
     NotificationTimeoutDefaults, Urgency, UserRule,
 };
@@ -17,18 +17,35 @@ use std::time::Duration;
 
 #[derive(Clone, Default)]
 struct RecordingPresenter {
-    updates: Arc<Mutex<Vec<Vec<BannerView>>>>,
+    updates: Arc<Mutex<Vec<BannerPresentation>>>,
 }
 
 impl RecordingPresenter {
     fn updates(&self) -> Vec<Vec<BannerView>> {
+        self.updates
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|update| update.banners.clone())
+            .collect()
+    }
+
+    fn presentation_updates(&self) -> Vec<BannerPresentation> {
         self.updates.lock().unwrap().clone()
     }
 }
 
 impl BannerPresenter for RecordingPresenter {
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()> {
-        self.updates.lock().unwrap().push(banners);
+        self.updates
+            .lock()
+            .unwrap()
+            .push(BannerPresentation::visible_banners(banners));
+        Ok(())
+    }
+
+    fn replace_banner_presentation(&self, presentation: BannerPresentation) -> anyhow::Result<()> {
+        self.updates.lock().unwrap().push(presentation);
         Ok(())
     }
 }
@@ -388,6 +405,38 @@ async fn banner_visibility_is_capped_and_hidden_notifications_are_not_promoted_l
 
     daemon.dismiss_notification(ids[3]).await.unwrap();
     assert!(!is_visible(&daemon.visible_banners().await, ids[0]));
+}
+
+#[tokio::test]
+async fn presentation_reports_overflow_count_without_expanding_visible_banner_set() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    for index in 0..5 {
+        daemon
+            .receive_notification(notification("Chat", format!("Message {index}")))
+            .await
+            .unwrap();
+    }
+
+    let updates = presenter.presentation_updates();
+    let presentation = updates.last().unwrap();
+    assert_eq!(presentation.banners.len(), 3);
+    assert_eq!(presentation.overflow_count, 2);
+
+    let dismissed = presentation.banners[0].notification_id;
+    daemon.dismiss_notification(dismissed).await.unwrap();
+
+    let updates = presenter.presentation_updates();
+    let presentation = updates.last().unwrap();
+    assert_eq!(presentation.banners.len(), 2);
+    assert_eq!(presentation.overflow_count, 2);
 }
 
 #[tokio::test]

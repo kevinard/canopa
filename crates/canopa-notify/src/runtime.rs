@@ -284,8 +284,8 @@ impl NotificationRuntime {
     }
 
     async fn sync_presentation(&self) -> anyhow::Result<()> {
-        let banners = self.banner_state.lock().unwrap().visible_banners();
-        self.presentation.replace_visible_banners(banners)
+        let presentation = self.banner_state.lock().unwrap().banner_presentation();
+        self.presentation.replace_banner_presentation(presentation)
     }
 
     fn notify_state_changed(&self) {

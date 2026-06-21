@@ -9,6 +9,25 @@ use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
 pub trait BannerPresenter: Send + Sync {
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()>;
+
+    fn replace_banner_presentation(&self, presentation: BannerPresentation) -> anyhow::Result<()> {
+        self.replace_visible_banners(presentation.banners)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BannerPresentation {
+    pub banners: Vec<BannerView>,
+    pub overflow_count: usize,
+}
+
+impl BannerPresentation {
+    pub fn visible_banners(banners: Vec<BannerView>) -> Self {
+        Self {
+            banners,
+            overflow_count: 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,10 +115,14 @@ impl IcedLayerShellBannerPresenter {
 
 impl BannerPresenter for IcedLayerShellBannerPresenter {
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()> {
+        self.replace_banner_presentation(BannerPresentation::visible_banners(banners))
+    }
+
+    fn replace_banner_presentation(&self, presentation: BannerPresentation) -> anyhow::Result<()> {
         self.updates
             .lock()
             .unwrap()
-            .try_send(BannerRuntimeInput::Replace(banners))
+            .try_send(BannerRuntimeInput::Replace(presentation))
             .map_err(|error| anyhow::anyhow!("failed to send banner update to renderer: {error}"))
     }
 }
@@ -113,13 +136,13 @@ static BANNER_UPDATE_RECEIVERS: OnceLock<Mutex<HashMap<u64, BannerUpdateReceiver
 
 #[derive(Clone, Debug)]
 enum BannerRuntimeInput {
-    Replace(Vec<BannerView>),
+    Replace(BannerPresentation),
 }
 
 #[derive(Clone)]
 struct BannerUiState {
     runtime_id: u64,
-    banners: Vec<BannerView>,
+    presentation: BannerPresentation,
     interactions: mpsc::Sender<BannerInteraction>,
 }
 
@@ -188,7 +211,7 @@ fn run_banner_ui(
     iced_layershell::daemon(
         move || BannerUiState {
             runtime_id,
-            banners: Vec::new(),
+            presentation: BannerPresentation::default(),
             interactions: interactions.clone(),
         },
         || "Canopa Notify Notification Banners".to_string(),
@@ -217,9 +240,9 @@ fn banner_ui_update(
     message: BannerUiMessage,
 ) -> iced::Task<BannerUiMessage> {
     match message {
-        BannerUiMessage::Runtime(BannerRuntimeInput::Replace(banners)) => {
-            let size = banner_surface_size(banners.len());
-            state.banners = banners;
+        BannerUiMessage::Runtime(BannerRuntimeInput::Replace(presentation)) => {
+            let size = banner_surface_size(presentation.banners.len(), presentation.overflow_count);
+            state.presentation = presentation;
             iced::Task::done(BannerUiMessage::SizeChange(size))
         }
         BannerUiMessage::Activate(notification_id) => {
@@ -280,8 +303,13 @@ fn banner_ui_view(
         .spacing(8)
         .width(Length::Fill)
         .align_x(Alignment::End);
-    for banner in &state.banners {
+    for banner in &state.presentation.banners {
         stack = stack.push(notification_banner_widget(banner));
+    }
+    if state.presentation.overflow_count > 0 {
+        stack = stack.push(overflow_count_banner_widget(
+            state.presentation.overflow_count,
+        ));
     }
 
     container(stack)
@@ -291,35 +319,275 @@ fn banner_ui_view(
 }
 
 fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
-    use iced::widget::{button, column, container, row, text};
+    use iced::widget::{button, column, container, progress_bar, row, text};
     use iced::{Alignment, Length};
 
-    let title = if banner.summary.trim().is_empty() {
+    let content = column![
+        text(banner_title(banner))
+            .size(15)
+            .width(Length::Fill)
+            .height(22)
+            .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
+        text(&banner.body)
+            .size(13)
+            .width(Length::Fill)
+            .height(34)
+            .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
+            .style(subdued_text_style),
+        text(&banner.app_name)
+            .size(11)
+            .width(Length::Fill)
+            .style(metadata_text_style),
+    ]
+    .spacing(1)
+    .width(Length::Fill);
+
+    let activate = button(container(content).width(Length::Fill).clip(true))
+        .padding(0)
+        .width(Length::Fill)
+        .style(content_button_style)
+        .on_press(BannerUiMessage::Activate(banner.notification_id));
+    let dismiss = close_button(banner.notification_id);
+
+    let mut card = column![
+        row![
+            app_badge(&banner.app_name, banner.urgency),
+            activate,
+            dismiss
+        ]
+        .spacing(10)
+        .align_y(Alignment::Start)
+    ]
+    .spacing(8)
+    .width(Length::Fill);
+
+    if let Some(progress) = banner.progress {
+        card = card.push(
+            progress_bar(0.0..=100.0, progress as f32)
+                .girth(3)
+                .style(iced::widget::progress_bar::primary),
+        );
+    }
+
+    container(card)
+        .padding(10)
+        .width(Length::Fill)
+        .height(FULL_BANNER_HEIGHT)
+        .clip(true)
+        .style(card_container_style)
+        .into()
+}
+
+fn overflow_count_banner_widget(count: usize) -> iced::Element<'static, BannerUiMessage> {
+    use iced::widget::{container, row, text};
+    use iced::{Alignment, Length};
+
+    let label = if count == 1 {
+        "+1 more notification".to_string()
+    } else {
+        format!("+{count} more notifications")
+    };
+    let badge = container(text("+").size(13))
+        .center(26)
+        .style(|theme| app_badge_style(theme, Urgency::Normal));
+
+    container(
+        row![
+            badge,
+            text(label)
+                .size(14)
+                .width(Length::Fill)
+                .style(metadata_text_style)
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+    )
+    .padding(8)
+    .width(Length::Fill)
+    .height(DENSE_BANNER_HEIGHT)
+    .clip(true)
+    .style(stacked_card_container_style)
+    .into()
+}
+
+fn banner_title(banner: &BannerView) -> &str {
+    if banner.summary.trim().is_empty() {
         banner.app_name.as_str()
     } else {
         banner.summary.as_str()
+    }
+}
+
+fn app_initial(app_name: &str) -> String {
+    app_name
+        .trim()
+        .chars()
+        .next()
+        .map(|character| character.to_ascii_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_string())
+}
+
+fn app_badge(app_name: &str, urgency: Urgency) -> iced::Element<'_, BannerUiMessage> {
+    use iced::widget::{container, text};
+
+    container(text(app_initial(app_name)).size(15))
+        .center(34)
+        .style(move |theme| app_badge_style(theme, urgency))
+        .into()
+}
+
+fn close_button(notification_id: i64) -> iced::widget::Button<'static, BannerUiMessage> {
+    use iced::widget::{button, text};
+
+    button(text("x").size(14))
+        .padding(0)
+        .width(28)
+        .height(28)
+        .style(close_button_style)
+        .on_press(BannerUiMessage::Dismiss(notification_id))
+}
+
+fn card_container_style(theme: &iced::Theme) -> iced::widget::container::Style {
+    let palette = theme.extended_palette();
+
+    iced::widget::container::Style {
+        background: Some(palette.background.base.color.into()),
+        text_color: Some(palette.background.base.text),
+        border: iced::Border {
+            width: 1.0,
+            radius: 8.0.into(),
+            color: palette.background.weak.color,
+        },
+        shadow: banner_shadow(),
+        ..Default::default()
+    }
+}
+
+fn stacked_card_container_style(theme: &iced::Theme) -> iced::widget::container::Style {
+    let palette = theme.extended_palette();
+
+    iced::widget::container::Style {
+        background: Some(palette.background.weakest.color.into()),
+        text_color: Some(palette.background.weakest.text),
+        border: iced::Border {
+            width: 1.0,
+            radius: 8.0.into(),
+            color: palette.background.weak.color.scale_alpha(0.8),
+        },
+        shadow: iced::Shadow {
+            color: iced::Color::from_rgba8(0, 0, 0, 0.12),
+            offset: iced::Vector::new(0.0, 2.0),
+            blur_radius: 10.0,
+        },
+        ..Default::default()
+    }
+}
+
+fn app_badge_style(theme: &iced::Theme, urgency: Urgency) -> iced::widget::container::Style {
+    let accent = urgency_accent_color(theme, urgency);
+
+    iced::widget::container::Style {
+        background: Some(accent.scale_alpha(0.18).into()),
+        text_color: Some(accent),
+        border: iced::Border {
+            width: 1.0,
+            radius: 7.0.into(),
+            color: accent.scale_alpha(0.55),
+        },
+        ..Default::default()
+    }
+}
+
+fn content_button_style(
+    theme: &iced::Theme,
+    status: iced::widget::button::Status,
+) -> iced::widget::button::Style {
+    let palette = theme.extended_palette();
+    let background = match status {
+        iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed => {
+            Some(palette.background.weakest.color.scale_alpha(0.55).into())
+        }
+        _ => None,
     };
 
-    let content = column![
-        text(title).size(16),
-        text(&banner.body).size(14),
-        text(&banner.app_name).size(12),
-    ]
-    .spacing(4)
-    .width(Length::Fill);
+    iced::widget::button::Style {
+        background,
+        text_color: palette.background.base.text,
+        border: iced::Border {
+            radius: 6.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
 
-    let activate = button(container(content).width(Length::Fill))
-        .width(Length::Fill)
-        .on_press(BannerUiMessage::Activate(banner.notification_id));
-    let dismiss = button(text("x"))
-        .width(32)
-        .on_press(BannerUiMessage::Dismiss(banner.notification_id));
+fn close_button_style(
+    theme: &iced::Theme,
+    status: iced::widget::button::Status,
+) -> iced::widget::button::Style {
+    let palette = theme.extended_palette();
+    let hovered = matches!(
+        status,
+        iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed
+    );
 
-    container(row![activate, dismiss].spacing(8).align_y(Alignment::Start))
-        .padding(10)
-        .width(Length::Fill)
-        .style(container::rounded_box)
-        .into()
+    iced::widget::button::Style {
+        background: hovered.then(|| palette.danger.weak.color.scale_alpha(0.4).into()),
+        text_color: if hovered {
+            palette.danger.base.color
+        } else {
+            palette.background.base.text.scale_alpha(0.58)
+        },
+        border: iced::Border {
+            radius: 6.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+fn subdued_text_style(theme: &iced::Theme) -> iced::widget::text::Style {
+    iced::widget::text::Style {
+        color: Some(
+            theme
+                .extended_palette()
+                .background
+                .base
+                .text
+                .scale_alpha(0.72),
+        ),
+    }
+}
+
+fn metadata_text_style(theme: &iced::Theme) -> iced::widget::text::Style {
+    iced::widget::text::Style {
+        color: Some(
+            theme
+                .extended_palette()
+                .background
+                .base
+                .text
+                .scale_alpha(0.54),
+        ),
+    }
+}
+
+fn urgency_accent_color(theme: &iced::Theme, urgency: Urgency) -> iced::Color {
+    let palette = theme.extended_palette();
+
+    match urgency {
+        Urgency::Low => palette.secondary.base.color,
+        Urgency::Normal => palette.primary.base.color,
+        Urgency::Critical => palette.danger.base.color,
+    }
+}
+
+fn banner_shadow() -> iced::Shadow {
+    iced::Shadow {
+        color: iced::Color::from_rgba8(0, 0, 0, 0.18),
+        offset: iced::Vector::new(0.0, 4.0),
+        blur_radius: 16.0,
+    }
 }
 
 fn banner_ui_style(_state: &BannerUiState, theme: &iced::Theme) -> iced::theme::Style {
@@ -329,11 +597,23 @@ fn banner_ui_style(_state: &BannerUiState, theme: &iced::Theme) -> iced::theme::
     }
 }
 
-fn banner_surface_size(count: usize) -> (u32, u32) {
-    if count == 0 {
+const FULL_BANNER_HEIGHT: u32 = 104;
+const DENSE_BANNER_HEIGHT: u32 = 60;
+const BANNER_STACK_SPACING: u32 = 8;
+
+fn banner_surface_size(count: usize, overflow_count: usize) -> (u32, u32) {
+    if count == 0 && overflow_count == 0 {
         (1, 1)
     } else {
-        (360, (count.min(3) as u32 * 108).max(108))
+        let count = count.min(3) as u32;
+        let mut height =
+            count * FULL_BANNER_HEIGHT + count.saturating_sub(1) * BANNER_STACK_SPACING;
+        if overflow_count > 0 {
+            let spacing = if count > 0 { BANNER_STACK_SPACING } else { 0 };
+            height += spacing + DENSE_BANNER_HEIGHT;
+        }
+
+        (360, height.max(FULL_BANNER_HEIGHT))
     }
 }
 
@@ -351,11 +631,16 @@ pub struct StructuredLogBannerPresenter;
 
 impl BannerPresenter for StructuredLogBannerPresenter {
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()> {
+        self.replace_banner_presentation(BannerPresentation::visible_banners(banners))
+    }
+
+    fn replace_banner_presentation(&self, presentation: BannerPresentation) -> anyhow::Result<()> {
         eprintln!(
-            "level=info component=presentation event=replace_visible_banners count={}",
-            banners.len()
+            "level=info component=presentation event=replace_visible_banners count={} overflow_count={}",
+            presentation.banners.len(),
+            presentation.overflow_count
         );
-        for banner in banners {
+        for banner in presentation.banners {
             eprintln!(
                 "level=info component=presentation event=visible_banner notification_id={} app_identity={} urgency={} summary={:?}",
                 banner.notification_id,
@@ -431,9 +716,13 @@ impl PresentationCoordinator {
         }
     }
 
-    pub(crate) fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()> {
+    pub(crate) fn replace_banner_presentation(
+        &self,
+        presentation: BannerPresentation,
+    ) -> anyhow::Result<()> {
         if self.enabled {
-            self.banner_presenter.replace_visible_banners(banners)?;
+            self.banner_presenter
+                .replace_banner_presentation(presentation)?;
         }
         Ok(())
     }
@@ -442,6 +731,7 @@ impl PresentationCoordinator {
 #[derive(Clone, Default)]
 pub struct NotificationBannerState {
     visible: HashMap<i64, NotificationThread>,
+    overflow: HashMap<i64, NotificationThread>,
 }
 
 impl NotificationBannerState {
@@ -461,6 +751,13 @@ impl NotificationBannerState {
         threads.into_iter().map(BannerView::from_thread).collect()
     }
 
+    pub fn banner_presentation(&self) -> BannerPresentation {
+        BannerPresentation {
+            banners: self.visible_banners(),
+            overflow_count: self.overflow.len(),
+        }
+    }
+
     fn apply_change(&mut self, change: BannerLifecycleChange) {
         match change {
             BannerLifecycleChange::ConsiderOpportunity(thread) => {
@@ -469,28 +766,43 @@ impl NotificationBannerState {
             BannerLifecycleChange::ReconsiderVisible(thread) => {
                 if self.visible.contains_key(&thread.id) {
                     self.consider_banner_opportunity(thread);
+                } else if self.overflow.contains_key(&thread.id) {
+                    self.reconsider_overflow(thread);
                 }
             }
             BannerLifecycleChange::Remove { notification_id } => {
                 self.visible.remove(&notification_id);
+                self.overflow.remove(&notification_id);
             }
         }
     }
 
     fn consider_banner_opportunity(&mut self, thread: NotificationThread) {
-        if thread.status != NotificationStatus::Active
-            || thread.delivery_outcome != DeliveryOutcome::Shown
-        {
+        if !is_banner_eligible(&thread) {
             self.visible.remove(&thread.id);
+            self.overflow.remove(&thread.id);
             return;
         }
 
+        self.overflow.remove(&thread.id);
         self.visible.insert(thread.id, thread);
         let mut threads: Vec<_> = self.visible.values().cloned().collect();
         sort_banner_candidates(&mut threads);
         self.visible.clear();
-        for thread in threads.into_iter().take(3) {
-            self.visible.insert(thread.id, thread);
+        for (index, thread) in threads.into_iter().enumerate() {
+            if index < 3 {
+                self.visible.insert(thread.id, thread);
+            } else {
+                self.overflow.insert(thread.id, thread);
+            }
+        }
+    }
+
+    fn reconsider_overflow(&mut self, thread: NotificationThread) {
+        if is_banner_eligible(&thread) {
+            self.overflow.insert(thread.id, thread);
+        } else {
+            self.overflow.remove(&thread.id);
         }
     }
 }
@@ -512,4 +824,8 @@ fn banner_rank(thread: &NotificationThread) -> (u8, i64) {
         },
         thread.updated_at,
     )
+}
+
+fn is_banner_eligible(thread: &NotificationThread) -> bool {
+    thread.status == NotificationStatus::Active && thread.delivery_outcome == DeliveryOutcome::Shown
 }

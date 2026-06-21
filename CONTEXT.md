@@ -8,6 +8,10 @@ Notify is a desktop notification system for Linux. It receives notifications, de
 The long-running owner of desktop notification state. It receives notification requests, applies user policy, displays allowed notifications, and keeps notification records.
 _Avoid_: Applet, bar module, plugin
 
+**Notification Runtime**:
+The stateful core inside the **Notification Daemon** that owns loaded policy state, **Notification Lifecycle**, **Notification History** access, **User Rule Store** changes, **Do Not Disturb**, **Lifecycle Effect** application, timers, **Notification Banner State**, sender-visible lifecycle publication, and **Notification State Subscription** publication.
+_Avoid_: Tokio runtime, edge adapter, daemon shell
+
 **Canopa Notify**:
 The product and installed service identity for this notification system.
 _Avoid_: notify when referring to public binary, service, or package identity
@@ -357,6 +361,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Center Projection** rebuilds on request; it does not consume **Lifecycle Effects** as state.
 - Notify has one active **Notification Configuration** at a time.
 - Reloading invalid **Notification Configuration** keeps the previous valid configuration active.
+- The configuration module validates the full **Notification Configuration** before dispatching normalized configuration slices to runtime or presentation modules.
+- Only a valid **Notification Configuration** is dispatched; partial configuration slice application is not a successful reload.
 - Valid **Notification Configuration** reloads re-evaluate **Active Notifications** under the new rules.
 - **Notification Daemon** and configuration errors are reported through logs and control surfaces, not self-notifications.
 - The first version includes minimal **Control Commands** for daemon status, active notifications, **Do Not Disturb**, and configuration reload.
