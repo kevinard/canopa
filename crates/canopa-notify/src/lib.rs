@@ -1,8 +1,5 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use tokio::sync::watch;
 
 mod clock;
 mod configuration;
@@ -13,12 +10,12 @@ mod intake;
 mod lifecycle;
 mod notification_server_intake;
 mod presentation;
+mod runtime;
 mod sqlite_persisted_state;
 
 pub use control::{
     AppPermissionControl, ControlCommand, ControlReply, ControlStatus, NotificationCenterGroup,
-    NotificationCenterItem, NotificationCenterProjection, NotificationStateSubscription,
-    NotifyControl,
+    NotificationCenterItem, NotificationCenterProjection, NotifyControl,
 };
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
@@ -41,10 +38,11 @@ pub use presentation::{
     IcedLayerShellBannerPresenter, NoopBannerPresenter, NotificationBannerState,
     StructuredLogBannerPresenter,
 };
+pub use runtime::NotificationStateSubscription;
 
 use configuration::LoadedNotificationConfiguration;
 use intake::{NotificationIntakeResult, intake_notification};
-use presentation::PresentationCoordinator;
+use runtime::NotificationRuntime;
 use sqlite_persisted_state::SqlitePersistedState;
 
 #[derive(Clone)]
@@ -107,21 +105,8 @@ impl DaemonOptions {
 
 #[derive(Clone)]
 pub struct Daemon {
-    storage: SqlitePersistedState,
-    lifecycle: NotificationLifecycle<SqlitePersistedState>,
-    presentation: PresentationCoordinator,
-    banner_state: Arc<Mutex<NotificationBannerState>>,
-    sender_events: Arc<Mutex<Vec<SenderEvent>>>,
+    runtime: NotificationRuntime,
     configuration: Arc<Mutex<LoadedNotificationConfiguration>>,
-    decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
-    timeout_tasks: Arc<Mutex<HashMap<i64, TimeoutTask>>>,
-    state_version: Arc<AtomicU64>,
-    state_changes: watch::Sender<u64>,
-}
-
-struct TimeoutTask {
-    revision: i64,
-    handle: tokio::task::JoinHandle<()>,
 }
 
 impl Daemon {
@@ -132,24 +117,16 @@ impl Daemon {
             options.history_limit,
         )
         .await?;
-        let lifecycle = NotificationLifecycle::with_timeout_defaults(
-            storage.clone(),
-            options.notification_timeout_defaults,
-        );
-        lifecycle.mark_active_stale().await?;
-        storage.prune_history().await?;
-        let (state_changes, _state_change_receiver) = watch::channel(0);
-        Ok(Self {
+        let runtime = NotificationRuntime::new(
             storage,
-            lifecycle,
-            presentation: PresentationCoordinator::new(!options.headless, options.banner_presenter),
-            banner_state: Arc::new(Mutex::new(NotificationBannerState::new())),
-            sender_events: Arc::new(Mutex::new(Vec::new())),
+            options.headless,
+            options.notification_timeout_defaults,
+            options.banner_presenter,
+        )
+        .await?;
+        Ok(Self {
+            runtime,
             configuration: Arc::new(Mutex::new(LoadedNotificationConfiguration::empty())),
-            decision_logs: Arc::new(Mutex::new(Vec::new())),
-            timeout_tasks: Arc::new(Mutex::new(HashMap::new())),
-            state_version: Arc::new(AtomicU64::new(0)),
-            state_changes,
         })
     }
 
@@ -163,29 +140,17 @@ impl Daemon {
             NotificationIntakeResult::NoOpDropped(receipt) => return Ok(receipt),
         };
 
-        let policy = self.delivery_policy().await?;
-        let decision = policy.decide(&notification);
-        self.record_decision(decision.log.clone());
-
-        let effects = self
-            .lifecycle
-            .receive(
-                notification,
-                LifecycleDelivery::from_decision(&decision),
-                expire_timeout,
-            )
-            .await?;
-        let receipt = effects.sender_receipt()?;
-        self.apply_lifecycle_effects_and_notify(&effects).await?;
-        Ok(receipt)
+        self.runtime
+            .receive_notification(notification, expire_timeout)
+            .await
     }
 
     pub async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
-        self.storage.snapshot().await
+        self.runtime.snapshot().await
     }
 
     pub async fn visible_banners(&self) -> Vec<BannerView> {
-        self.banner_state.lock().unwrap().visible_banners()
+        self.runtime.visible_banners().await
     }
 
     pub async fn invoke_action(
@@ -193,80 +158,49 @@ impl Daemon {
         notification_id: i64,
         action_key: &str,
     ) -> anyhow::Result<()> {
-        let effects = self
-            .lifecycle
+        self.runtime
             .invoke_action(notification_id, action_key)
-            .await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+            .await
     }
 
     pub async fn dismiss_notification(&self, notification_id: i64) -> anyhow::Result<()> {
-        let effects = self.lifecycle.dismiss(notification_id).await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.runtime.dismiss_notification(notification_id).await
     }
 
     pub async fn expire_notification(&self, notification_id: i64) -> anyhow::Result<()> {
-        let effects = self.lifecycle.expire(notification_id).await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.runtime.expire_notification(notification_id).await
     }
 
     pub async fn close_notification(&self, notification_id: i64) -> anyhow::Result<()> {
-        let effects = self.lifecycle.close(notification_id).await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.runtime.close_notification(notification_id).await
     }
 
     pub async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
-        let thread = self.storage.thread(notification_id).await?;
-        if thread.status != NotificationStatus::Active {
-            anyhow::bail!("notification {notification_id} is not active");
-        }
-
-        let default_action_key = thread
-            .accepted_notification
-            .actions
-            .iter()
-            .find(|action| action.key == "default")
-            .map(|action| action.key.clone());
-
-        if let Some(default_action_key) = default_action_key {
-            self.invoke_action(notification_id, &default_action_key)
-                .await
-        } else {
-            self.dismiss_notification(notification_id).await
-        }
+        self.runtime.activate_banner(notification_id).await
     }
 
     pub async fn clear_active_notifications(&self) -> anyhow::Result<()> {
-        let effects = self.lifecycle.clear_active_notifications().await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.runtime.clear_active_notifications().await
     }
 
     pub async fn delete_notification_history(&self) -> anyhow::Result<()> {
-        self.storage.delete_inactive_history().await?;
-        self.notify_state_changed();
-        Ok(())
+        self.runtime.delete_notification_history().await
     }
 
     pub async fn set_do_not_disturb(&self, enabled: bool) -> anyhow::Result<()> {
-        self.storage.set_do_not_disturb(enabled).await?;
-        self.reevaluate_active_notifications().await?;
-        self.notify_state_changed();
-        Ok(())
+        self.runtime.set_do_not_disturb(enabled).await
     }
 
     pub async fn do_not_disturb(&self) -> anyhow::Result<bool> {
-        self.storage.do_not_disturb().await
+        self.runtime.do_not_disturb().await
     }
 
     pub async fn upsert_user_rule(&self, rule: UserRule) -> anyhow::Result<()> {
-        self.storage.upsert_user_rule(&rule).await?;
-        self.reevaluate_active_notifications().await?;
-        self.notify_state_changed();
-        Ok(())
+        self.runtime.upsert_user_rule(rule).await
     }
 
     pub async fn user_rules(&self) -> anyhow::Result<Vec<UserRule>> {
-        self.storage.user_rules().await
+        self.runtime.user_rules().await
     }
 
     pub async fn remove_user_rule(
@@ -274,20 +208,16 @@ impl Daemon {
         app_identity: &str,
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
-        self.storage.remove_user_rule(app_identity, urgency).await?;
-        self.reevaluate_active_notifications().await?;
-        self.notify_state_changed();
-        Ok(())
+        self.runtime.remove_user_rule(app_identity, urgency).await
     }
 
     pub async fn reload_configuration_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
-        {
+        let rules = {
             let mut configuration = self.configuration.lock().unwrap();
             configuration.reload_file(path)?;
-        }
-        self.reevaluate_active_notifications().await?;
-        self.notify_state_changed();
-        Ok(())
+            configuration.delivery_policy_rules()
+        };
+        self.runtime.install_config_rules(rules).await
     }
 
     pub async fn configuration_error(&self) -> Option<String> {
@@ -295,155 +225,20 @@ impl Daemon {
     }
 
     pub async fn delivery_decision_logs(&self) -> Vec<DeliveryDecisionLog> {
-        self.decision_logs.lock().unwrap().clone()
+        self.runtime.delivery_decision_logs().await
     }
 
     pub async fn sender_events(&self) -> Vec<SenderEvent> {
-        self.sender_events.lock().unwrap().clone()
+        self.runtime.sender_events().await
     }
 
-    pub(crate) fn subscribe_state_changes(&self) -> watch::Receiver<u64> {
-        self.state_changes.subscribe()
-    }
-
-    async fn delivery_policy(&self) -> anyhow::Result<DeliveryPolicy> {
-        let config_rules = self.configuration.lock().unwrap().delivery_policy_rules();
-        let user_rules = self.storage.user_rules().await?;
-        let do_not_disturb = self.storage.do_not_disturb().await?;
-        let state = LoadedDeliveryPolicyState::builder()
-            .do_not_disturb(do_not_disturb)
-            .user_rules(user_rules.into_iter().map(DeliveryPolicyRule::from))
-            .config_rules(config_rules)
-            .build();
-        Ok(DeliveryPolicy::new(state))
-    }
-
-    fn record_decision(&self, log: DeliveryDecisionLog) {
-        self.decision_logs.lock().unwrap().push(log);
-    }
-
-    async fn reevaluate_active_notifications(&self) -> anyhow::Result<()> {
-        let active = self.snapshot().await?.active;
-        let policy = self.delivery_policy().await?;
-        let mut all_effects = LifecycleEffects::empty();
-        for thread in active {
-            let decision = policy.decide(&thread.accepted_notification);
-            let effects = self
-                .lifecycle
-                .apply_delivery_decision(thread.id, LifecycleDelivery::from_decision(&decision))
-                .await?;
-            all_effects.extend(effects);
-        }
-        self.apply_lifecycle_effects_and_notify(&all_effects)
-            .await?;
-        Ok(())
-    }
-
-    async fn apply_lifecycle_effects_and_notify(
+    pub(crate) async fn notification_center_projection(
         &self,
-        effects: &LifecycleEffects,
-    ) -> anyhow::Result<()> {
-        self.apply_lifecycle_effects(effects).await?;
-        if !effects.is_empty() {
-            self.notify_state_changed();
-        }
-        Ok(())
+    ) -> anyhow::Result<NotificationCenterProjection> {
+        self.runtime.notification_center_projection().await
     }
 
-    async fn apply_lifecycle_effects(&self, effects: &LifecycleEffects) -> anyhow::Result<()> {
-        self.apply_notification_timeout_changes(effects.timeout_changes());
-        {
-            let mut banner_state = self.banner_state.lock().unwrap();
-            banner_state.apply_changes(effects.banner_changes());
-        }
-        self.publish_sender_events(effects.sender_events());
-        self.sync_presentation().await?;
-        Ok(())
-    }
-
-    fn publish_sender_events(&self, events: impl IntoIterator<Item = SenderEvent>) {
-        let mut sender_events = self.sender_events.lock().unwrap();
-        sender_events.extend(events);
-    }
-
-    async fn sync_presentation(&self) -> anyhow::Result<()> {
-        let banners = self.banner_state.lock().unwrap().visible_banners();
-        self.presentation.replace_visible_banners(banners)
-    }
-
-    fn notify_state_changed(&self) {
-        let version = self.state_version.fetch_add(1, Ordering::Relaxed) + 1;
-        let _ = self.state_changes.send(version);
-    }
-
-    fn apply_notification_timeout_changes(
-        &self,
-        changes: impl IntoIterator<Item = NotificationTimeoutChange>,
-    ) {
-        for change in changes {
-            match change {
-                NotificationTimeoutChange::Scheduled {
-                    notification_id,
-                    revision,
-                    duration,
-                } => self.schedule_notification_timeout(notification_id, revision, duration),
-                NotificationTimeoutChange::Cancelled { notification_id } => {
-                    self.cancel_notification_timeout(notification_id)
-                }
-            }
-        }
-    }
-
-    fn schedule_notification_timeout(
-        &self,
-        notification_id: i64,
-        revision: i64,
-        duration: std::time::Duration,
-    ) {
-        self.cancel_notification_timeout(notification_id);
-
-        let daemon = self.clone();
-        let handle = tokio::spawn(async move {
-            tokio::time::sleep(duration).await;
-            daemon.forget_notification_timeout_if_current_revision(notification_id, revision);
-            let _ = daemon
-                .expire_notification_if_current_revision(notification_id, revision)
-                .await;
-        });
-
-        self.timeout_tasks
-            .lock()
-            .unwrap()
-            .insert(notification_id, TimeoutTask { revision, handle });
-    }
-
-    fn cancel_notification_timeout(&self, notification_id: i64) {
-        if let Some(task) = self.timeout_tasks.lock().unwrap().remove(&notification_id) {
-            task.handle.abort();
-        }
-    }
-
-    fn forget_notification_timeout_if_current_revision(&self, notification_id: i64, revision: i64) {
-        let mut timeout_tasks = self.timeout_tasks.lock().unwrap();
-        if timeout_tasks
-            .get(&notification_id)
-            .map(|task| task.revision == revision)
-            .unwrap_or(false)
-        {
-            timeout_tasks.remove(&notification_id);
-        }
-    }
-
-    async fn expire_notification_if_current_revision(
-        &self,
-        notification_id: i64,
-        revision: i64,
-    ) -> anyhow::Result<()> {
-        let thread = self.storage.thread(notification_id).await?;
-        if thread.status != NotificationStatus::Active || thread.revision != revision {
-            return Ok(());
-        }
-
-        self.expire_notification(notification_id).await
+    pub(crate) fn subscribe_notification_state(&self) -> NotificationStateSubscription {
+        self.runtime.subscribe_notification_state()
     }
 }

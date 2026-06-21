@@ -365,6 +365,20 @@ where
             .await
     }
 
+    pub async fn expire_timeout_if_current_revision(
+        &self,
+        notification_id: i64,
+        revision: i64,
+    ) -> anyhow::Result<LifecycleEffects> {
+        let thread = self.history.thread(notification_id).await?;
+        if thread.status != NotificationStatus::Active || thread.revision != revision {
+            return Ok(LifecycleEffects::empty());
+        }
+
+        self.transition_active(notification_id, NotificationStatus::Expired)
+            .await
+    }
+
     pub async fn close(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {
         self.transition_active(notification_id, NotificationStatus::Closed)
             .await

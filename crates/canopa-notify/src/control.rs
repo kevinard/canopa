@@ -1,10 +1,8 @@
 use crate::{
-    Daemon, DeliveryOutcome, NotificationAction, NotificationSnapshot, NotificationStatus,
+    Daemon, DeliveryOutcome, NotificationAction, NotificationStateSubscription, NotificationStatus,
     NotificationThread, UserRule,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
-use tokio::sync::watch;
 
 #[derive(Clone)]
 pub struct NotifyControl {
@@ -60,39 +58,11 @@ impl NotifyControl {
     }
 
     pub fn subscribe_notification_state(&self) -> NotificationStateSubscription {
-        NotificationStateSubscription {
-            control: self.clone(),
-            changes: self.daemon.subscribe_state_changes(),
-            initial_pending: true,
-        }
+        self.daemon.subscribe_notification_state()
     }
 
     async fn notification_center_projection(&self) -> anyhow::Result<NotificationCenterProjection> {
-        let snapshot = self.daemon.snapshot().await?;
-        let user_rules = self.daemon.user_rules().await?;
-        Ok(projection_from_snapshot(snapshot, &user_rules))
-    }
-}
-
-pub struct NotificationStateSubscription {
-    control: NotifyControl,
-    changes: watch::Receiver<u64>,
-    initial_pending: bool,
-}
-
-impl NotificationStateSubscription {
-    pub async fn next_projection(
-        &mut self,
-    ) -> anyhow::Result<Option<NotificationCenterProjection>> {
-        if self.initial_pending {
-            self.initial_pending = false;
-            return Ok(Some(self.control.notification_center_projection().await?));
-        }
-
-        match self.changes.changed().await {
-            Ok(()) => Ok(Some(self.control.notification_center_projection().await?)),
-            Err(_) => Ok(None),
-        }
+        self.daemon.notification_center_projection().await
     }
 }
 
@@ -191,57 +161,11 @@ impl AppPermissionControl {
         }
     }
 
-    fn from_delivery_outcome(outcome: DeliveryOutcome) -> Self {
+    pub(crate) fn from_delivery_outcome(outcome: DeliveryOutcome) -> Self {
         match outcome {
             DeliveryOutcome::Shown => Self::Allow,
             DeliveryOutcome::Silenced => Self::Silence,
             DeliveryOutcome::Dropped => Self::Drop,
         }
-    }
-}
-
-fn projection_from_snapshot(
-    snapshot: NotificationSnapshot,
-    user_rules: &[UserRule],
-) -> NotificationCenterProjection {
-    let mut grouped: BTreeMap<String, Vec<NotificationCenterItem>> = BTreeMap::new();
-    let app_permissions: HashMap<_, _> = user_rules
-        .iter()
-        .filter(|rule| rule.urgency.is_none())
-        .map(|rule| {
-            (
-                rule.app_identity.as_str(),
-                AppPermissionControl::from_delivery_outcome(rule.outcome),
-            )
-        })
-        .collect();
-
-    for thread in snapshot.history {
-        let notification = thread.accepted_notification;
-        grouped
-            .entry(notification.app_identity.clone())
-            .or_default()
-            .push(NotificationCenterItem {
-                notification_id: thread.id,
-                summary: notification.summary,
-                body: notification.body,
-                status: thread.status,
-                delivery_outcome: thread.delivery_outcome,
-                actions: notification.actions,
-            });
-    }
-
-    NotificationCenterProjection {
-        groups: grouped
-            .into_iter()
-            .map(|(app_identity, items)| NotificationCenterGroup {
-                permission: app_permissions
-                    .get(app_identity.as_str())
-                    .copied()
-                    .unwrap_or(AppPermissionControl::Allow),
-                app_identity,
-                items,
-            })
-            .collect(),
     }
 }

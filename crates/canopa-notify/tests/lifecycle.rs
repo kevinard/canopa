@@ -184,6 +184,100 @@ async fn lifecycle_schedules_timeout_for_shown_notification() {
 }
 
 #[tokio::test]
+async fn lifecycle_expires_timeout_when_revision_matches() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history.clone());
+
+    lifecycle
+        .receive(
+            lifecycle_notification(None, "Timed"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+
+    let effects = lifecycle
+        .expire_timeout_if_current_revision(1, 1)
+        .await
+        .unwrap();
+
+    let stored = history.stored();
+    assert_eq!(stored[0].status, NotificationStatus::Expired);
+    assert_eq!(
+        history.preconditions(),
+        vec![PersistPrecondition::ExpectedActiveRevision(1)]
+    );
+    assert!(effects.raw().iter().any(|effect| {
+        matches!(
+            effect,
+            LifecycleEffect::ThreadExpired(thread) if thread.id == 1
+        )
+    }));
+    assert!(effects.timeout_changes().any(|change| {
+        matches!(
+            change,
+            NotificationTimeoutChange::Cancelled { notification_id: 1 }
+        )
+    }));
+    assert!(effects.sender_events().any(|event| {
+        event.closed_id == Some(1) && event.close_reason.as_deref() == Some("expired")
+    }));
+}
+
+#[tokio::test]
+async fn lifecycle_ignores_timeout_when_revision_is_stale() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history.clone());
+
+    lifecycle
+        .receive(
+            lifecycle_notification(None, "Timed"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+
+    let effects = lifecycle
+        .expire_timeout_if_current_revision(1, 2)
+        .await
+        .unwrap();
+
+    let stored = history.stored();
+    assert_eq!(stored[0].status, NotificationStatus::Active);
+    assert!(effects.is_empty());
+    assert!(history.preconditions().is_empty());
+}
+
+#[tokio::test]
+async fn lifecycle_ignores_timeout_when_thread_is_inactive() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history.clone());
+
+    lifecycle
+        .receive(
+            lifecycle_notification(None, "Timed"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+    lifecycle.dismiss(1).await.unwrap();
+    let preconditions_before_timeout = history.preconditions();
+
+    let effects = lifecycle
+        .expire_timeout_if_current_revision(1, 1)
+        .await
+        .unwrap();
+
+    let stored = history.stored();
+    assert_eq!(stored[0].status, NotificationStatus::Dismissed);
+    assert!(effects.is_empty());
+    assert_eq!(history.preconditions(), preconditions_before_timeout);
+}
+
+#[tokio::test]
 async fn replacement_with_ineligible_timeout_cancels_previous_timeout() {
     let history = MemoryHistory::default();
     let lifecycle = NotificationLifecycle::new(history);
