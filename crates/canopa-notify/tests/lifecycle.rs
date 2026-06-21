@@ -2,18 +2,26 @@ use canopa_notify::{
     AcceptedNotification, Daemon, DaemonOptions, DeliveryOutcome, LifecycleDelivery,
     LifecycleEffect, NewNotificationThread, NotificationAction, NotificationHistory,
     NotificationInput, NotificationLifecycle, NotificationStatus, NotificationThread,
-    ThreadRevision, Urgency,
+    PersistPrecondition, Urgency,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicI64, Ordering},
+};
 
 #[derive(Clone, Default)]
 struct MemoryHistory {
     threads: Arc<Mutex<Vec<NotificationThread>>>,
+    preconditions: Arc<Mutex<Vec<PersistPrecondition>>>,
 }
 
 impl MemoryHistory {
     fn stored(&self) -> Vec<NotificationThread> {
         self.threads.lock().unwrap().clone()
+    }
+
+    fn preconditions(&self) -> Vec<PersistPrecondition> {
+        self.preconditions.lock().unwrap().clone()
     }
 }
 
@@ -49,41 +57,31 @@ impl NotificationHistory for MemoryHistory {
             .ok_or_else(|| anyhow::anyhow!("missing thread {id}"))
     }
 
-    async fn revise_thread(
+    async fn persist_thread(
         &self,
-        id: i64,
-        revision: ThreadRevision,
+        thread: NotificationThread,
+        precondition: PersistPrecondition,
     ) -> anyhow::Result<NotificationThread> {
+        self.preconditions.lock().unwrap().push(precondition);
         let mut threads = self.threads.lock().unwrap();
-        let thread = threads
+        let stored = threads
             .iter_mut()
-            .find(|thread| thread.id == id)
-            .ok_or_else(|| anyhow::anyhow!("missing thread {id}"))?;
-        thread.accepted_notification = revision.accepted_notification;
-        thread.status = NotificationStatus::Active;
-        thread.delivery_outcome = revision.delivery_outcome;
-        thread.rule_reference = revision.rule_reference;
-        thread.revision += 1;
-        thread.updated_at = revision.updated_at;
-        thread.closed_at = None;
-        Ok(thread.clone())
-    }
-
-    async fn transition_thread(
-        &self,
-        id: i64,
-        status: NotificationStatus,
-        updated_at: i64,
-    ) -> anyhow::Result<NotificationThread> {
-        let mut threads = self.threads.lock().unwrap();
-        let thread = threads
-            .iter_mut()
-            .find(|thread| thread.id == id)
-            .ok_or_else(|| anyhow::anyhow!("missing thread {id}"))?;
-        thread.status = status;
-        thread.updated_at = updated_at;
-        thread.closed_at = Some(updated_at);
-        Ok(thread.clone())
+            .find(|stored| stored.id == thread.id)
+            .ok_or_else(|| anyhow::anyhow!("missing thread {}", thread.id))?;
+        let expected_revision = match precondition {
+            PersistPrecondition::ExpectedRevision(revision)
+            | PersistPrecondition::ExpectedActiveRevision(revision) => revision,
+        };
+        if stored.revision != expected_revision {
+            anyhow::bail!("persistence precondition failed for thread {}", thread.id);
+        }
+        if matches!(precondition, PersistPrecondition::ExpectedActiveRevision(_))
+            && stored.status != NotificationStatus::Active
+        {
+            anyhow::bail!("persistence precondition failed for thread {}", thread.id);
+        }
+        *stored = thread;
+        Ok(stored.clone())
     }
 
     async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
@@ -96,39 +94,150 @@ impl NotificationHistory for MemoryHistory {
             .cloned()
             .collect())
     }
+}
 
-    async fn update_delivery(
-        &self,
-        id: i64,
-        delivery: LifecycleDelivery,
-    ) -> anyhow::Result<NotificationThread> {
-        let mut threads = self.threads.lock().unwrap();
-        let thread = threads
-            .iter_mut()
-            .find(|thread| thread.id == id)
-            .ok_or_else(|| anyhow::anyhow!("missing thread {id}"))?;
-        thread.delivery_outcome = delivery.outcome;
-        thread.rule_reference = delivery.rule_reference;
-        Ok(thread.clone())
-    }
+#[tokio::test]
+async fn lifecycle_replacement_owns_thread_revision_shape() {
+    let history = MemoryHistory::default();
+    let clock = Arc::new(AtomicI64::new(100));
+    let lifecycle = lifecycle_with_clock(history.clone(), clock.clone());
 
-    async fn mark_active_threads_stale(
-        &self,
-        updated_at: i64,
-    ) -> anyhow::Result<Vec<NotificationThread>> {
-        let mut stale = Vec::new();
-        let mut threads = self.threads.lock().unwrap();
-        for thread in threads
-            .iter_mut()
-            .filter(|thread| thread.status == NotificationStatus::Active)
-        {
-            thread.status = NotificationStatus::Stale;
-            thread.updated_at = updated_at;
-            thread.closed_at = Some(updated_at);
-            stale.push(thread.clone());
-        }
-        Ok(stale)
-    }
+    lifecycle
+        .receive(
+            lifecycle_notification(None, "Original"),
+            LifecycleDelivery::shown(),
+        )
+        .await
+        .unwrap();
+
+    clock.store(250, Ordering::SeqCst);
+    let effects = lifecycle
+        .receive(
+            lifecycle_notification(Some(1), "Replacement"),
+            LifecycleDelivery::silenced("user:Chat:*"),
+        )
+        .await
+        .unwrap();
+
+    let stored = history.stored();
+    let thread = &stored[0];
+    assert_eq!(thread.accepted_notification.summary, "Replacement");
+    assert_eq!(thread.status, NotificationStatus::Active);
+    assert_eq!(thread.delivery_outcome, DeliveryOutcome::Silenced);
+    assert_eq!(thread.rule_reference.as_deref(), Some("user:Chat:*"));
+    assert_eq!(thread.revision, 2);
+    assert_eq!(thread.created_at, 100);
+    assert_eq!(thread.updated_at, 250);
+    assert_eq!(thread.closed_at, None);
+    assert_eq!(
+        history.preconditions(),
+        vec![PersistPrecondition::ExpectedRevision(1)]
+    );
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            LifecycleEffect::ThreadRevised(revised) if revised.id == thread.id
+        )
+    }));
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            LifecycleEffect::ThreadSilenced(silenced) if silenced.id == thread.id
+        )
+    }));
+}
+
+#[tokio::test]
+async fn lifecycle_transition_owns_status_timestamps_and_precondition() {
+    let history = MemoryHistory::default();
+    let clock = Arc::new(AtomicI64::new(100));
+    let lifecycle = lifecycle_with_clock(history.clone(), clock.clone());
+    let receipt = lifecycle
+        .receive(
+            lifecycle_notification(None, "Original"),
+            LifecycleDelivery::shown(),
+        )
+        .await
+        .unwrap()
+        .into_iter()
+        .find_map(|effect| match effect {
+            LifecycleEffect::SenderReceipt(receipt) => Some(receipt),
+            _ => None,
+        })
+        .unwrap();
+
+    clock.store(300, Ordering::SeqCst);
+    let effects = lifecycle.dismiss(receipt.notification_id).await.unwrap();
+
+    let stored = history.stored();
+    let thread = &stored[0];
+    assert_eq!(thread.status, NotificationStatus::Dismissed);
+    assert_eq!(thread.updated_at, 300);
+    assert_eq!(thread.closed_at, Some(300));
+    assert_eq!(
+        history.preconditions(),
+        vec![PersistPrecondition::ExpectedActiveRevision(1)]
+    );
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            LifecycleEffect::ThreadDismissed(dismissed) if dismissed.id == thread.id
+        )
+    }));
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            LifecycleEffect::SenderClosed { notification_id, reason }
+                if *notification_id == thread.id && *reason == NotificationStatus::Dismissed
+        )
+    }));
+}
+
+#[tokio::test]
+async fn lifecycle_marks_active_threads_stale_without_history_deciding_shape() {
+    let history = MemoryHistory::default();
+    let clock = Arc::new(AtomicI64::new(100));
+    let lifecycle = lifecycle_with_clock(history.clone(), clock.clone());
+
+    lifecycle
+        .receive(
+            lifecycle_notification(None, "One"),
+            LifecycleDelivery::shown(),
+        )
+        .await
+        .unwrap();
+    lifecycle
+        .receive(
+            lifecycle_notification(None, "Two"),
+            LifecycleDelivery::shown(),
+        )
+        .await
+        .unwrap();
+
+    clock.store(400, Ordering::SeqCst);
+    let effects = lifecycle.mark_active_stale().await.unwrap();
+
+    let stored = history.stored();
+    assert_eq!(stored.len(), 2);
+    assert!(stored.iter().all(|thread| {
+        thread.status == NotificationStatus::Stale
+            && thread.updated_at == 400
+            && thread.closed_at == Some(400)
+    }));
+    assert_eq!(
+        history.preconditions(),
+        vec![
+            PersistPrecondition::ExpectedActiveRevision(1),
+            PersistPrecondition::ExpectedActiveRevision(1)
+        ]
+    );
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|effect| matches!(effect, LifecycleEffect::ThreadStale(_)))
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -248,6 +357,13 @@ fn lifecycle_notification(replaces_id: Option<i64>, summary: &str) -> AcceptedNo
         actions: Vec::new(),
         resident: false,
     }
+}
+
+fn lifecycle_with_clock(
+    history: MemoryHistory,
+    clock: Arc<AtomicI64>,
+) -> NotificationLifecycle<MemoryHistory> {
+    NotificationLifecycle::with_clock(history, move || clock.load(Ordering::SeqCst))
 }
 
 #[tokio::test]

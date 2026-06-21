@@ -258,6 +258,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Revising a **Notification Thread** replaces its retained **Accepted Notification** facts while preserving thread identity and lifecycle metadata.
 - **Active Notification** re-evaluation uses the **Accepted Notification** retained by each **Notification Thread** instead of reconstructing a separate policy input shape.
 - **Notification Lifecycle** owns lifecycle timestamps on **Notification Threads**.
+- **Notification Lifecycle** may use an internal clock seam so lifecycle timestamp behavior is testable without moving timestamp ownership into **Notification History**.
 - **Delivery Outcome** and **Rule Reference** are **Notification Thread** lifecycle metadata, not **Accepted Notification** facts.
 - Notification delivery policy applies to replacement notifications; a silenced replacement updates history and closes any visible **Notification Banner** for the thread.
 - A dropped replacement is handled by **Notification Lifecycle** without revising the existing **Notification Thread**.
@@ -268,10 +269,12 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification History** persists across **Notification Daemon** restarts by default.
 - Default **Notification History** retention keeps up to 30 days and 1,000 **Notification Threads**, with either limit allowed to remove older history.
 - **Notification History** retention is pruned after every persisted **Notification History** mutation and at daemon startup.
+- **Notification History** retention pruning is persistence policy owned by **Notification History**, not **Notification Lifecycle** meaning.
 - **Active Notifications** are exempt from **Notification History** retention pruning.
 - **Notification History** does not store **Notification Banner** runtime visibility state.
 - **Notification Daemon** restart does not restore old **Notification Banners**.
 - **Active Notifications** loaded after **Notification Daemon** restart become **Stale Notifications**.
+- Marking restart-loaded **Active Notifications** as **Stale Notifications** is **Notification Lifecycle** meaning; **Notification History** may query active threads but must not decide the stale thread shape.
 - Dismissing an **Active Notification** makes it a **Dismissed Notification** without removing it from **Notification History**.
 - User dismissal has the same **Sender Notification Lifecycle** effect whether it starts from a **Notification Banner** or the **Notification Center**.
 - Expiring an **Active Notification** makes it an **Expired Notification** without removing it from **Notification History**.
@@ -310,7 +313,13 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Lifecycle** may query **Notification History** directly for existing **Notification Threads**, including replacement targets.
 - **Notification Lifecycle** writes **Notification History** directly when applying lifecycle transitions.
 - **Notification History** is a storage engine behind a trait interface for **Notification Lifecycle**.
+- **Notification History** adapters persist complete **Notification Thread** changes requested by **Notification Lifecycle**; they do not infer lifecycle transitions such as replacement revision increments, active resets, or closed timestamp resets.
+- **Notification History** adapters may enforce generic persistence preconditions, such as expected **Notification Thread** revision or status, to prevent stale writes without deciding lifecycle meaning.
+- **Notification Lifecycle** writes to existing **Notification Threads** should use a persistence precondition by default; unconditional history writes are reserved for explicit storage maintenance or repair paths.
+- **Notification History** adapters may allocate storage-owned **Notification Thread** identifiers and return the persisted **Notification Thread** shape, but lifecycle metadata in that returned shape must come from **Notification Lifecycle**.
+- After **Notification Thread** creation, the **Notification Lifecycle** to **Notification History** seam should use a generic persist operation for complete thread changes rather than lifecycle-specific persistence methods such as revise, transition, or update delivery.
 - **Notification History** adapters store and return shared notification domain objects, not storage-specific records for other modules to adapt.
+- **Notification Lifecycle** tests may use an in-memory **Notification History** adapter, but that adapter should model persistence semantics only and must not duplicate lifecycle transition rules.
 - The **Notification Lifecycle** to **Notification History** seam is async.
 - The first **Notification Lifecycle** module is a generic struct over the **Notification History** trait, not a trait-object module.
 - Shared notification domain objects live inside the **Notification Daemon** crate for now; a separate domain crate is premature.

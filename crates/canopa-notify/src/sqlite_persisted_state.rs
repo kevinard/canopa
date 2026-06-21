@@ -1,8 +1,7 @@
 use crate::{
-    AcceptedNotification, DeliveryOutcome, LifecycleDelivery, NewNotificationThread,
-    NotificationAction, NotificationHistory, NotificationSnapshot, NotificationStatus,
-    NotificationThread, ThreadRevision, Urgency, UserRule, now_millis, urgency_from_key,
-    urgency_key,
+    AcceptedNotification, DeliveryOutcome, NewNotificationThread, NotificationAction,
+    NotificationHistory, NotificationSnapshot, NotificationStatus, NotificationThread,
+    PersistPrecondition, Urgency, UserRule, now_millis, urgency_from_key, urgency_key,
 };
 use anyhow::Context;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
@@ -275,15 +274,6 @@ impl SqlitePersistedState {
         Ok(NotificationThreadRow::from_row(&row)?.into_thread())
     }
 
-    async fn active_ids(&self) -> anyhow::Result<Vec<i64>> {
-        let ids = sqlx::query_scalar(
-            "SELECT id FROM notification_threads WHERE status = 'active' ORDER BY created_at ASC",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(ids)
-    }
-
     pub(crate) async fn delete_inactive_history(&self) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM notification_threads WHERE status != 'active'")
             .execute(&self.pool)
@@ -359,7 +349,7 @@ impl SqlitePersistedState {
         Ok(())
     }
 
-    async fn prune_history(&self) -> anyhow::Result<()> {
+    pub(crate) async fn prune_history(&self) -> anyhow::Result<()> {
         let cutoff = now_millis() - self.retention.days.max(0) * 24 * 60 * 60 * 1_000;
 
         sqlx::query(
@@ -440,14 +430,22 @@ impl NotificationHistory for SqlitePersistedState {
         SqlitePersistedState::thread(self, id).await
     }
 
-    async fn revise_thread(
+    async fn persist_thread(
         &self,
-        id: i64,
-        revision: ThreadRevision,
+        thread: NotificationThread,
+        precondition: PersistPrecondition,
     ) -> anyhow::Result<NotificationThread> {
-        let notification = revision.accepted_notification;
+        let notification = thread.accepted_notification;
         let actions_json = serde_json::to_string(&notification.actions)?;
-        sqlx::query(
+        let expected_revision = match precondition {
+            PersistPrecondition::ExpectedRevision(revision)
+            | PersistPrecondition::ExpectedActiveRevision(revision) => revision,
+        };
+        let expected_status = match precondition {
+            PersistPrecondition::ExpectedRevision(_) => None,
+            PersistPrecondition::ExpectedActiveRevision(_) => Some(NotificationStatus::Active),
+        };
+        let result = sqlx::query(
             r#"
             UPDATE notification_threads
             SET app_identity = ?2,
@@ -457,20 +455,23 @@ impl NotificationHistory for SqlitePersistedState {
                 body = ?6,
                 raw_body = ?7,
                 urgency = ?8,
-                category = ?9,
-                progress = ?10,
-                resident = ?11,
-                actions_json = ?12,
-                delivery_outcome = ?13,
-                rule_reference = ?14,
-                status = 'active',
-                revision = revision + 1,
-                updated_at = ?15,
-                closed_at = NULL
+                status = ?9,
+                delivery_outcome = ?10,
+                rule_reference = ?11,
+                category = ?12,
+                progress = ?13,
+                resident = ?14,
+                actions_json = ?15,
+                revision = ?16,
+                created_at = ?17,
+                updated_at = ?18,
+                closed_at = ?19
             WHERE id = ?1
+              AND revision = ?20
+              AND (?21 IS NULL OR status = ?21)
             "#,
         )
-        .bind(id)
+        .bind(thread.id)
         .bind(notification.app_identity)
         .bind(notification.app_name)
         .bind(notification.replaces_id)
@@ -478,88 +479,35 @@ impl NotificationHistory for SqlitePersistedState {
         .bind(notification.body)
         .bind(notification.raw_body)
         .bind(notification.urgency.as_str())
+        .bind(thread.status.as_str())
+        .bind(thread.delivery_outcome.as_str())
+        .bind(thread.rule_reference)
         .bind(notification.category)
         .bind(notification.progress)
         .bind(notification.resident)
         .bind(actions_json)
-        .bind(revision.delivery_outcome.as_str())
-        .bind(revision.rule_reference)
-        .bind(revision.updated_at)
+        .bind(thread.revision)
+        .bind(thread.created_at)
+        .bind(thread.updated_at)
+        .bind(thread.closed_at)
+        .bind(expected_revision)
+        .bind(expected_status.map(NotificationStatus::as_str))
         .execute(&self.pool)
         .await?;
-        let thread = self.thread(id).await?;
-        self.finish_history_write(thread).await
-    }
 
-    async fn transition_thread(
-        &self,
-        id: i64,
-        status: NotificationStatus,
-        updated_at: i64,
-    ) -> anyhow::Result<NotificationThread> {
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET status = ?2, updated_at = ?3, closed_at = ?3
-            WHERE id = ?1
-            "#,
-        )
-        .bind(id)
-        .bind(status.as_str())
-        .bind(updated_at)
-        .execute(&self.pool)
-        .await?;
-        let thread = self.thread(id).await?;
+        if result.rows_affected() == 0 {
+            anyhow::bail!(
+                "failed to persist notification thread {}; persistence precondition was not met",
+                thread.id
+            );
+        }
+
+        let thread = self.thread(thread.id).await?;
         self.finish_history_write(thread).await
     }
 
     async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
         Ok(self.snapshot().await?.active)
-    }
-
-    async fn update_delivery(
-        &self,
-        id: i64,
-        delivery: LifecycleDelivery,
-    ) -> anyhow::Result<NotificationThread> {
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET delivery_outcome = ?2,
-                rule_reference = ?3
-            WHERE id = ?1
-            "#,
-        )
-        .bind(id)
-        .bind(delivery.outcome.as_str())
-        .bind(delivery.rule_reference)
-        .execute(&self.pool)
-        .await?;
-        let thread = self.thread(id).await?;
-        self.finish_history_write(thread).await
-    }
-
-    async fn mark_active_threads_stale(
-        &self,
-        updated_at: i64,
-    ) -> anyhow::Result<Vec<NotificationThread>> {
-        let ids = self.active_ids().await?;
-        sqlx::query(
-            r#"
-            UPDATE notification_threads
-            SET status = 'stale', updated_at = ?1, closed_at = ?1
-            WHERE status = 'active'
-            "#,
-        )
-        .bind(updated_at)
-        .execute(&self.pool)
-        .await?;
-
-        let mut stale = Vec::new();
-        for id in ids {
-            stale.push(self.thread(id).await?);
-        }
-        self.finish_history_write(stale).await
     }
 }
 
@@ -605,7 +553,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn revise_thread_prunes_existing_inactive_history_after_write() {
+    async fn persist_thread_prunes_existing_inactive_history_after_write() {
         let (_temp, storage) = open_history(10).await;
         let now = now_millis();
         storage
@@ -622,15 +570,14 @@ mod tests {
             .unwrap();
         let storage = storage.with_history_limit(1);
 
+        let mut revised = active.clone();
+        revised.accepted_notification = accepted_notification("revised");
+        revised.revision += 1;
+        revised.updated_at = now + 3;
         storage
-            .revise_thread(
-                active.id,
-                ThreadRevision {
-                    accepted_notification: accepted_notification("revised"),
-                    delivery_outcome: DeliveryOutcome::Shown,
-                    rule_reference: None,
-                    updated_at: now + 3,
-                },
+            .persist_thread(
+                revised,
+                PersistPrecondition::ExpectedRevision(active.revision),
             )
             .await
             .unwrap();
@@ -640,7 +587,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_delivery_prunes_existing_inactive_history_after_write() {
+    async fn persist_delivery_change_prunes_existing_inactive_history_after_write() {
         let (_temp, storage) = open_history(10).await;
         let now = now_millis();
         storage
@@ -657,8 +604,14 @@ mod tests {
             .unwrap();
         let storage = storage.with_history_limit(1);
 
+        let mut silenced = active.clone();
+        silenced.delivery_outcome = DeliveryOutcome::Silenced;
+        silenced.rule_reference = Some("user:active:*".to_string());
         storage
-            .update_delivery(active.id, LifecycleDelivery::silenced("user:active:*"))
+            .persist_thread(
+                silenced,
+                PersistPrecondition::ExpectedActiveRevision(active.revision),
+            )
             .await
             .unwrap();
 
@@ -671,7 +624,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transition_thread_returns_updated_thread_before_retention_deletes_it() {
+    async fn persist_transition_returns_updated_thread_before_retention_deletes_it() {
         let (_temp, storage) = open_history(0).await;
         let now = now_millis();
         let active = storage
@@ -679,8 +632,15 @@ mod tests {
             .await
             .unwrap();
 
+        let mut dismissed = active.clone();
+        dismissed.status = NotificationStatus::Dismissed;
+        dismissed.updated_at = now + 1;
+        dismissed.closed_at = Some(now + 1);
         let dismissed = storage
-            .transition_thread(active.id, NotificationStatus::Dismissed, now + 1)
+            .persist_thread(
+                dismissed,
+                PersistPrecondition::ExpectedActiveRevision(active.revision),
+            )
             .await
             .unwrap();
 
@@ -689,7 +649,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mark_active_threads_stale_prunes_after_returning_stale_threads() {
+    async fn persist_stale_threads_prunes_after_returning_stale_threads() {
         let (_temp, storage) = open_history(1).await;
         let now = now_millis();
         storage
@@ -705,7 +665,22 @@ mod tests {
             .await
             .unwrap();
 
-        let stale = storage.mark_active_threads_stale(now + 2).await.unwrap();
+        let mut stale = Vec::new();
+        for thread in storage.active_threads().await.unwrap() {
+            let mut stale_thread = thread.clone();
+            stale_thread.status = NotificationStatus::Stale;
+            stale_thread.updated_at = now + 2;
+            stale_thread.closed_at = Some(now + 2);
+            stale.push(
+                storage
+                    .persist_thread(
+                        stale_thread,
+                        PersistPrecondition::ExpectedActiveRevision(thread.revision),
+                    )
+                    .await
+                    .unwrap(),
+            );
+        }
 
         assert_eq!(stale.len(), 2);
         assert!(
@@ -715,6 +690,37 @@ mod tests {
         );
         let snapshot = storage.snapshot().await.unwrap();
         assert_eq!(summaries(&snapshot.history), vec!["new active"]);
+    }
+
+    #[tokio::test]
+    async fn persist_thread_rejects_stale_revision() {
+        let (_temp, storage) = open_history(10).await;
+        let now = now_millis();
+        let active = storage
+            .create_thread(new_thread("active", NotificationStatus::Active, now))
+            .await
+            .unwrap();
+        let mut changed = active.clone();
+        changed.accepted_notification = accepted_notification("changed");
+
+        let error = storage
+            .persist_thread(
+                changed,
+                PersistPrecondition::ExpectedRevision(active.revision + 1),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("precondition"));
+        assert_eq!(
+            storage
+                .thread(active.id)
+                .await
+                .unwrap()
+                .accepted_notification
+                .summary,
+            "active"
+        );
     }
 
     async fn open_history(history_limit: i64) -> (tempfile::TempDir, SqlitePersistedState) {
