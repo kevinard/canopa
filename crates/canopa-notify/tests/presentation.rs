@@ -1,5 +1,7 @@
 #[path = "support/daemon.rs"]
 mod daemon_support;
+#[path = "support/notifications.rs"]
+mod notifications;
 
 use canopa_notify::{
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPresenter,
@@ -9,6 +11,7 @@ use canopa_notify::{
 };
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer};
 use iced_layershell::settings::StartMode;
+use notifications::{notification, notification_with_body};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -68,12 +71,11 @@ async fn non_headless_daemon_presents_visible_banner_content() {
     .unwrap();
 
     let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Example Mail".to_string(),
-            summary: "Inbox".to_string(),
-            body: "<b>One</b><br/>unread message".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification_with_body(
+            "Example Mail",
+            "Inbox",
+            "<b>One</b><br/>unread message",
+        ))
         .await
         .unwrap();
 
@@ -97,11 +99,7 @@ async fn headless_daemon_keeps_banner_state_without_presenting_surfaces() {
     .unwrap();
 
     daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Stored but not rendered".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Stored but not rendered"))
         .await
         .unwrap();
 
@@ -125,11 +123,7 @@ async fn visible_normal_banners_expire_after_configured_timeout() {
     .unwrap();
 
     let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Calendar".to_string(),
-            summary: "Soon".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Calendar", "Soon"))
         .await
         .unwrap();
 
@@ -165,10 +159,8 @@ async fn sender_requested_timeout_expires_banner_even_when_default_is_never() {
 
     let receipt = daemon
         .receive_notification(NotificationInput {
-            app_name: "Calendar".to_string(),
-            summary: "Sender timeout".to_string(),
             expire_timeout: NotificationTimeout::Milliseconds(10),
-            ..NotificationInput::default()
+            ..notification("Calendar", "Sender timeout")
         })
         .await
         .unwrap();
@@ -193,21 +185,17 @@ async fn old_timeout_does_not_expire_replacement_revision() {
 
     let first = daemon
         .receive_notification(NotificationInput {
-            app_name: "Calendar".to_string(),
-            summary: "Original".to_string(),
             expire_timeout: NotificationTimeout::Milliseconds(10),
-            ..NotificationInput::default()
+            ..notification("Calendar", "Original")
         })
         .await
         .unwrap();
 
     daemon
         .receive_notification(NotificationInput {
-            app_name: "Calendar".to_string(),
             replaces_id: Some(first.notification_id),
-            summary: "Replacement".to_string(),
             expire_timeout: NotificationTimeout::Never,
-            ..NotificationInput::default()
+            ..notification("Calendar", "Replacement")
         })
         .await
         .unwrap();
@@ -244,11 +232,7 @@ async fn silencing_active_notification_cancels_pending_timeout() {
     .unwrap();
 
     let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Visible briefly".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Visible briefly"))
         .await
         .unwrap();
 
@@ -286,10 +270,8 @@ async fn critical_banners_do_not_expire_by_default() {
 
     let receipt = daemon
         .receive_notification(NotificationInput {
-            app_name: "Power".to_string(),
-            summary: "Battery critical".to_string(),
             urgency: Urgency::Critical,
-            ..NotificationInput::default()
+            ..notification("Power", "Battery critical")
         })
         .await
         .unwrap();
@@ -318,11 +300,7 @@ async fn restart_persists_threads_without_restoring_runtime_banners() {
         .unwrap();
 
     let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Mail".to_string(),
-            summary: "Inbox".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Mail", "Inbox"))
         .await
         .unwrap();
     assert_eq!(daemon.visible_banners().await.len(), 1);
@@ -348,10 +326,8 @@ async fn activating_banner_invokes_default_notification_action_when_present() {
 
     let receipt = daemon
         .receive_notification(NotificationInput {
-            app_name: "Mail".to_string(),
-            summary: "Inbox".to_string(),
             actions: vec![NotificationAction::new("default", "Open")],
-            ..NotificationInput::default()
+            ..notification("Mail", "Inbox")
         })
         .await
         .unwrap();
@@ -373,11 +349,7 @@ async fn activating_banner_without_default_action_dismisses_notification() {
     let daemon = daemon_support::open_headless_daemon().await;
 
     let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Calendar".to_string(),
-            summary: "Standup".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Calendar", "Standup"))
         .await
         .unwrap();
 
@@ -403,11 +375,7 @@ async fn banner_visibility_is_capped_and_hidden_notifications_are_not_promoted_l
     for index in 0..4 {
         ids.push(
             daemon
-                .receive_notification(NotificationInput {
-                    app_name: "Chat".to_string(),
-                    summary: format!("Message {index}"),
-                    ..NotificationInput::default()
-                })
+                .receive_notification(notification("Chat", format!("Message {index}")))
                 .await
                 .unwrap()
                 .notification_id,
@@ -428,21 +396,15 @@ async fn critical_notifications_displace_normal_banners_when_slots_are_full() {
 
     for index in 0..3 {
         daemon
-            .receive_notification(NotificationInput {
-                app_name: "Chat".to_string(),
-                summary: format!("Normal {index}"),
-                ..NotificationInput::default()
-            })
+            .receive_notification(notification("Chat", format!("Normal {index}")))
             .await
             .unwrap();
     }
 
     let critical = daemon
         .receive_notification(NotificationInput {
-            app_name: "Alarm".to_string(),
-            summary: "Battery critical".to_string(),
             urgency: Urgency::Critical,
-            ..NotificationInput::default()
+            ..notification("Alarm", "Battery critical")
         })
         .await
         .unwrap();

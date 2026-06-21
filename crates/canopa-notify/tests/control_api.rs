@@ -1,10 +1,13 @@
 #[path = "support/daemon.rs"]
 mod daemon_support;
+#[path = "support/notifications.rs"]
+mod notifications;
 
 use canopa_notify::{
     AppPermissionControl, ControlCommand, ControlReply, DeliveryOutcome, NotificationAction,
     NotificationInput, NotifyControl,
 };
+use notifications::{notification, notification_with_body};
 use std::time::Duration;
 
 #[tokio::test]
@@ -26,11 +29,7 @@ async fn notify_control_returns_active_notifications() {
     let control = NotifyControl::new(daemon.clone());
 
     let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Mail".to_string(),
-            summary: "Inbox".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Mail", "Inbox"))
         .await
         .unwrap();
 
@@ -54,20 +53,13 @@ async fn notify_control_builds_notification_center_projection() {
 
     daemon
         .receive_notification(NotificationInput {
-            app_name: "Mail".to_string(),
-            summary: "Inbox".to_string(),
-            body: "One unread message".to_string(),
             actions: vec![NotificationAction::new("open", "Open")],
-            ..NotificationInput::default()
+            ..notification_with_body("Mail", "Inbox", "One unread message")
         })
         .await
         .unwrap();
     daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Message".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Message"))
         .await
         .unwrap();
 
@@ -111,11 +103,7 @@ async fn notify_control_subscription_emits_complete_replacement_projections() {
     assert!(initial.groups.is_empty());
 
     daemon
-        .receive_notification(NotificationInput {
-            app_name: "Mail".to_string(),
-            summary: "Inbox".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Mail", "Inbox"))
         .await
         .unwrap();
 
@@ -129,11 +117,7 @@ async fn notify_control_subscription_emits_complete_replacement_projections() {
     assert_eq!(projection.groups[0].items[0].summary, "Inbox");
 
     daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Message".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Message"))
         .await
         .unwrap();
 
@@ -163,11 +147,7 @@ async fn notify_control_projects_app_permission_from_user_rule_store() {
     let control = NotifyControl::new(daemon.clone());
 
     daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Message".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Message"))
         .await
         .unwrap();
     control
@@ -201,10 +181,8 @@ async fn notify_control_applies_notification_center_interaction_commands() {
 
     let receipt = daemon
         .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Message".to_string(),
             actions: vec![NotificationAction::new("open", "Open")],
-            ..NotificationInput::default()
+            ..notification("Chat", "Message")
         })
         .await
         .unwrap();
@@ -255,11 +233,7 @@ async fn notify_control_clears_active_notifications() {
     let control = NotifyControl::new(daemon.clone());
 
     daemon
-        .receive_notification(NotificationInput {
-            app_name: "Mail".to_string(),
-            summary: "Inbox".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Mail", "Inbox"))
         .await
         .unwrap();
 

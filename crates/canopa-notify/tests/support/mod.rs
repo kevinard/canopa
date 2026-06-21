@@ -5,6 +5,8 @@ use std::process::{Child, Command as StdCommand};
 use std::thread;
 use std::time::{Duration, Instant};
 
+pub mod notifications;
+
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const STATUS_POLL_INTERVAL: Duration = Duration::from_millis(50);
 

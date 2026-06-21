@@ -1,7 +1,10 @@
 #[path = "support/daemon.rs"]
 mod daemon_support;
+#[path = "support/notifications.rs"]
+mod notifications;
 
 use canopa_notify::{NotificationInput, Urgency};
+use notifications::notification;
 
 #[tokio::test]
 async fn replacement_revises_existing_thread_and_can_create_banner_opportunity() {
@@ -10,10 +13,8 @@ async fn replacement_revises_existing_thread_and_can_create_banner_opportunity()
     for index in 0..3 {
         daemon
             .receive_notification(NotificationInput {
-                app_name: "Chat".to_string(),
-                summary: format!("Visible {index}"),
                 urgency: Urgency::Critical,
-                ..NotificationInput::default()
+                ..notification("Chat", format!("Visible {index}"))
             })
             .await
             .unwrap();
@@ -21,10 +22,8 @@ async fn replacement_revises_existing_thread_and_can_create_banner_opportunity()
 
     let hidden = daemon
         .receive_notification(NotificationInput {
-            app_name: "Downloader".to_string(),
-            summary: "Download".to_string(),
             progress: Some(10),
-            ..NotificationInput::default()
+            ..notification("Downloader", "Download")
         })
         .await
         .unwrap();
@@ -39,13 +38,11 @@ async fn replacement_revises_existing_thread_and_can_create_banner_opportunity()
 
     let replacement = daemon
         .receive_notification(NotificationInput {
-            app_name: "Downloader".to_string(),
             replaces_id: Some(hidden.notification_id),
-            summary: "Download".to_string(),
             body: "Complete".to_string(),
             progress: Some(100),
             urgency: Urgency::Critical,
-            ..NotificationInput::default()
+            ..notification("Downloader", "Download")
         })
         .await
         .unwrap();

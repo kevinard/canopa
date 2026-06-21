@@ -1,7 +1,10 @@
 #[path = "support/daemon.rs"]
 mod daemon_support;
+#[path = "support/notifications.rs"]
+mod notifications;
 
 use canopa_notify::{NotificationInput, Urgency};
+use notifications::{blank_notification, notification_with_body};
 
 #[tokio::test]
 async fn default_allowed_notification_is_persisted_as_an_active_thread() {
@@ -9,12 +12,9 @@ async fn default_allowed_notification_is_persisted_as_an_active_thread() {
 
     let receipt = daemon
         .receive_notification(NotificationInput {
-            app_name: "Example Mail".to_string(),
             desktop_entry: Some("example-mail.desktop".to_string()),
-            summary: "Inbox".to_string(),
-            body: "One unread message".to_string(),
             urgency: Urgency::Normal,
-            ..NotificationInput::default()
+            ..notification_with_body("Example Mail", "Inbox", "One unread message")
         })
         .await
         .unwrap();
@@ -41,12 +41,7 @@ async fn empty_noop_notifications_are_dropped_without_history() {
     let daemon = daemon_support::open_headless_daemon().await;
 
     let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Blank Sender".to_string(),
-            summary: "   ".to_string(),
-            body: "\n\t".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(blank_notification("Blank Sender"))
         .await
         .unwrap();
 
@@ -59,12 +54,7 @@ async fn empty_noop_notifications_bypass_delivery_policy() {
     let daemon = daemon_support::open_headless_daemon().await;
 
     let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Blank Sender".to_string(),
-            summary: "   ".to_string(),
-            body: "\n\t".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(blank_notification("Blank Sender"))
         .await
         .unwrap();
 
@@ -78,13 +68,10 @@ async fn category_and_progress_are_persisted_without_image_payloads() {
 
     daemon
         .receive_notification(NotificationInput {
-            app_name: "Downloader".to_string(),
-            summary: "Download".to_string(),
-            body: "Almost done".to_string(),
             category: Some("transfer".to_string()),
             progress: Some(95),
             image_data: Some(vec![1, 2, 3, 4]),
-            ..NotificationInput::default()
+            ..notification_with_body("Downloader", "Download", "Almost done")
         })
         .await
         .unwrap();

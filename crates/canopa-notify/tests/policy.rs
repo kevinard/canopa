@@ -1,11 +1,14 @@
 #[path = "support/daemon.rs"]
 mod daemon_support;
+#[path = "support/notifications.rs"]
+mod notifications;
 
 use canopa_notify::{
     AcceptedNotification, Daemon, DaemonOptions, DeliveryDecisionReason, DeliveryOutcome,
     DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState, NotificationInput, Urgency,
     UserRule,
 };
+use notifications::{notification, notification_with_body};
 
 #[test]
 fn delivery_policy_applies_user_rule_and_do_not_disturb_precedence() {
@@ -139,11 +142,7 @@ async fn do_not_disturb_silences_non_critical_notifications_but_allows_critical_
         .unwrap();
 
     let before_dnd = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Visible before DND".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Visible before DND"))
         .await
         .unwrap();
     assert!(is_banner_visible(&daemon, before_dnd.notification_id).await);
@@ -152,19 +151,13 @@ async fn do_not_disturb_silences_non_critical_notifications_but_allows_critical_
     assert!(daemon.do_not_disturb().await.unwrap());
 
     let normal = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Quiet please".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Quiet please"))
         .await
         .unwrap();
     let critical = daemon
         .receive_notification(NotificationInput {
-            app_name: "Battery".to_string(),
-            summary: "Critical battery".to_string(),
             urgency: Urgency::Critical,
-            ..NotificationInput::default()
+            ..notification("Battery", "Critical battery")
         })
         .await
         .unwrap();
@@ -242,11 +235,7 @@ async fn user_rules_take_precedence_over_config_rules_and_are_persisted() {
     daemon.reload_configuration_file(&config).await.unwrap();
 
     let dropped = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Config drops this".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Config drops this"))
         .await
         .unwrap();
     assert_eq!(dropped.delivery_outcome.as_str(), "dropped");
@@ -263,11 +252,7 @@ async fn user_rules_take_precedence_over_config_rules_and_are_persisted() {
         .unwrap();
     restarted.reload_configuration_file(&config).await.unwrap();
     let shown = restarted
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "User allows this".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "User allows this"))
         .await
         .unwrap();
 
@@ -281,12 +266,7 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
     let daemon = daemon_support::open_headless_daemon().await;
 
     let original = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Original".to_string(),
-            body: "Visible".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification_with_body("Chat", "Original", "Visible"))
         .await
         .unwrap();
 
@@ -305,11 +285,8 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
 
     daemon
         .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
             replaces_id: Some(original.notification_id),
-            summary: "Original".to_string(),
-            body: "Silenced update".to_string(),
-            ..NotificationInput::default()
+            ..notification_with_body("Chat", "Original", "Silenced update")
         })
         .await
         .unwrap();
@@ -327,11 +304,8 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
         .unwrap();
     let dropped_replacement = daemon
         .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
             replaces_id: Some(original.notification_id),
-            summary: "Original".to_string(),
-            body: "Should not overwrite".to_string(),
-            ..NotificationInput::default()
+            ..notification_with_body("Chat", "Original", "Should not overwrite")
         })
         .await
         .unwrap();
@@ -355,12 +329,11 @@ async fn delivery_decision_logs_redact_notification_content() {
         .await
         .unwrap();
     daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Secret subject".to_string(),
-            body: "Secret body".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification_with_body(
+            "Chat",
+            "Secret subject",
+            "Secret body",
+        ))
         .await
         .unwrap();
 
@@ -394,11 +367,7 @@ async fn invalid_configuration_reload_keeps_previous_valid_rules() {
     assert!(daemon.configuration_error().await.is_some());
 
     let receipt = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Still silenced".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Still silenced"))
         .await
         .unwrap();
     assert_eq!(receipt.delivery_outcome.as_str(), "silenced");

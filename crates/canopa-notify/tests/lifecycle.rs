@@ -1,5 +1,7 @@
 #[path = "support/daemon.rs"]
 mod daemon_support;
+#[path = "support/notifications.rs"]
+mod notifications;
 
 use canopa_notify::{
     AcceptedNotification, BannerLifecycleChange, Daemon, DaemonOptions, DeliveryOutcome,
@@ -8,6 +10,7 @@ use canopa_notify::{
     NotificationThread, NotificationTimeout, NotificationTimeoutChange, PersistPrecondition,
     Urgency,
 };
+use notifications::notification;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicI64, Ordering},
@@ -471,10 +474,8 @@ async fn actions_close_non_resident_notifications_but_resident_notifications_sta
 
     let non_resident = daemon
         .receive_notification(NotificationInput {
-            app_name: "Calendar".to_string(),
-            summary: "Standup".to_string(),
             actions: vec![NotificationAction::new("open", "Open")],
-            ..NotificationInput::default()
+            ..notification("Calendar", "Standup")
         })
         .await
         .unwrap();
@@ -486,11 +487,9 @@ async fn actions_close_non_resident_notifications_but_resident_notifications_sta
 
     let resident = daemon
         .receive_notification(NotificationInput {
-            app_name: "Music".to_string(),
-            summary: "Playing".to_string(),
             resident: true,
             actions: vec![NotificationAction::new("pause", "Pause")],
-            ..NotificationInput::default()
+            ..notification("Music", "Playing")
         })
         .await
         .unwrap();
@@ -537,35 +536,19 @@ async fn active_notifications_can_be_dismissed_expired_closed_and_marked_stale_a
         .unwrap();
 
     let dismissed = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Mail".to_string(),
-            summary: "Dismiss me".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Mail", "Dismiss me"))
         .await
         .unwrap();
     let expired = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Timer".to_string(),
-            summary: "Expire me".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Timer", "Expire me"))
         .await
         .unwrap();
     let closed = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Chat".to_string(),
-            summary: "Close me".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Chat", "Close me"))
         .await
         .unwrap();
     let stale = daemon
-        .receive_notification(NotificationInput {
-            app_name: "Build".to_string(),
-            summary: "Still active".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Build", "Still active"))
         .await
         .unwrap();
 

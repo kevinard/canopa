@@ -1,7 +1,10 @@
 #[path = "support/daemon.rs"]
 mod daemon_support;
+#[path = "support/notifications.rs"]
+mod notifications;
 
-use canopa_notify::{Daemon, DaemonOptions, NotificationInput};
+use canopa_notify::{Daemon, DaemonOptions};
+use notifications::notification;
 
 #[tokio::test]
 async fn inactive_history_is_pruned_by_count_while_active_threads_are_exempt() {
@@ -13,11 +16,7 @@ async fn inactive_history_is_pruned_by_count_while_active_threads_are_exempt() {
     for index in 0..3 {
         ids.push(
             daemon
-                .receive_notification(NotificationInput {
-                    app_name: "App".to_string(),
-                    summary: format!("Active {index}"),
-                    ..NotificationInput::default()
-                })
+                .receive_notification(notification("App", format!("Active {index}")))
                 .await
                 .unwrap()
                 .notification_id,
@@ -50,11 +49,7 @@ async fn inactive_history_is_pruned_by_count_at_daemon_startup() {
 
     for index in 0..2 {
         let receipt = seed
-            .receive_notification(NotificationInput {
-                app_name: "App".to_string(),
-                summary: format!("Inactive {index}"),
-                ..NotificationInput::default()
-            })
+            .receive_notification(notification("App", format!("Inactive {index}")))
             .await
             .unwrap();
         seed.dismiss_notification(receipt.notification_id)
@@ -78,11 +73,7 @@ async fn clear_active_and_delete_history_are_separate_operations() {
     let daemon = daemon_support::open_headless_daemon().await;
 
     daemon
-        .receive_notification(NotificationInput {
-            app_name: "Mail".to_string(),
-            summary: "Keep as history".to_string(),
-            ..NotificationInput::default()
-        })
+        .receive_notification(notification("Mail", "Keep as history"))
         .await
         .unwrap();
 

@@ -1,7 +1,7 @@
 mod support;
 
 use assert_cmd::Command;
-use canopa_notify::{Daemon, DaemonOptions, NotificationInput};
+use canopa_notify::{Daemon, DaemonOptions};
 use canopa_panel_protocol::ProviderResponse;
 use predicates::str::contains;
 use std::io::{BufRead, BufReader};
@@ -9,6 +9,7 @@ use std::process::Stdio;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use support::notifications::notification_with_body;
 
 #[test]
 fn panel_provider_returns_provider_visible_error_when_daemon_is_unavailable() {
@@ -33,12 +34,11 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
     let seed = Daemon::open(DaemonOptions::headless(database.clone()))
         .await
         .unwrap();
-    seed.receive_notification(NotificationInput {
-        app_name: "Mail".to_string(),
-        summary: "Inbox".to_string(),
-        body: "One unread message".to_string(),
-        ..NotificationInput::default()
-    })
+    seed.receive_notification(notification_with_body(
+        "Mail",
+        "Inbox",
+        "One unread message",
+    ))
     .await
     .unwrap();
     drop(seed);
