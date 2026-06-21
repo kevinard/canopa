@@ -264,6 +264,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - A dropped replacement is handled by **Notification Lifecycle** without revising the existing **Notification Thread**.
 - An eligible replacement notification may create a **Notification Banner** even when the previous revision did not.
 - A dropped replacement notification does not update **Notification History**.
+- A replacement notification whose **Notification Timeout** makes expiration ineligible explicitly cancels any pending expiration for the revised **Notification Thread**.
+- Re-evaluating an **Active Notification** from shown to silenced or dropped explicitly cancels any pending **Notification Timeout** expiration for that **Notification Thread**.
 - A **Dropped Notification** is immediately closed from the **Sender Notification Lifecycle** perspective.
 - A **Silenced Notification** may remain an **Active Notification** without a visible **Notification Banner**.
 - **Notification History** persists across **Notification Daemon** restarts by default.
@@ -279,6 +281,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - User dismissal has the same **Sender Notification Lifecycle** effect whether it starts from a **Notification Banner** or the **Notification Center**.
 - Expiring an **Active Notification** makes it an **Expired Notification** without removing it from **Notification History**.
 - Sender-closing an **Active Notification** makes it a **Closed Notification** without removing it from **Notification History**.
+- Moving an **Active Notification** to dismissed, expired, closed, or stale explicitly cancels any pending **Notification Timeout** expiration for that **Notification Thread**.
 - Critical **Active Notifications** do not expire automatically by default.
 - First-version **Notification Timeout** configuration is global with per-urgency defaults, not per-app.
 - Sender-requested **Notification Timeout** values are respected within user-configured bounds.
@@ -308,6 +311,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Lifecycle** returns **Lifecycle Effects**; the **Notification Daemon** publishes sender-visible events and presentation updates from those effects.
 - **Lifecycle Effects** are the primary **Notification Lifecycle** result; the **Notification Daemon** derives sender receipts and outward side effects from them.
 - A **Lifecycle Effect** may include the sender receipt for the accepted or rejected notification request.
+- **Lifecycle Effects** include **Notification Timeout** scheduling and cancellation instructions; timer adapters perform waiting but do not decide timeout meaning.
 - **Lifecycle Effects** are fine-grained events rather than one coarse outcome struct.
 - **Notification Lifecycle** owns the domain shape of created and revised **Notification Threads**; **Notification History** persists that shape.
 - **Notification Lifecycle** may query **Notification History** directly for existing **Notification Threads**, including replacement targets.

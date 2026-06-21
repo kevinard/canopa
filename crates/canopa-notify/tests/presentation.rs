@@ -3,9 +3,9 @@ mod daemon_support;
 
 use canopa_notify::{
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPresenter,
-    BannerSurfaceSpec, BannerView, Daemon, DaemonOptions, IcedLayerShellBannerPresenter,
-    NotificationAction, NotificationInput, NotificationTimeout, NotificationTimeoutDefaults,
-    Urgency,
+    BannerSurfaceSpec, BannerView, Daemon, DaemonOptions, DeliveryOutcome,
+    IcedLayerShellBannerPresenter, NotificationAction, NotificationInput, NotificationTimeout,
+    NotificationTimeoutDefaults, Urgency, UserRule,
 };
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer};
 use iced_layershell::settings::StartMode;
@@ -226,6 +226,47 @@ async fn old_timeout_does_not_expire_replacement_revision() {
         .unwrap();
     assert_eq!(thread.status.as_str(), "active");
     assert_eq!(thread.accepted_notification.summary, "Replacement");
+}
+
+#[tokio::test]
+async fn silencing_active_notification_cancels_pending_timeout() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(
+        DaemonOptions::headless(temp.path().join("history.db")).with_notification_timeout_defaults(
+            NotificationTimeoutDefaults::new(
+                Some(Duration::from_millis(200)),
+                Some(Duration::from_millis(200)),
+                None,
+            ),
+        ),
+    )
+    .await
+    .unwrap();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            app_name: "Chat".to_string(),
+            summary: "Visible briefly".to_string(),
+            ..NotificationInput::default()
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .upsert_user_rule(UserRule::for_app("Chat", DeliveryOutcome::Silenced))
+        .await
+        .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    let thread = snapshot
+        .history
+        .iter()
+        .find(|thread| thread.id == receipt.notification_id)
+        .unwrap();
+    assert_eq!(thread.status.as_str(), "active");
+    assert_eq!(thread.delivery_outcome, DeliveryOutcome::Silenced);
 }
 
 #[tokio::test]

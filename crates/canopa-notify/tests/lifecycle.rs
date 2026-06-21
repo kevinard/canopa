@@ -5,12 +5,13 @@ use canopa_notify::{
     AcceptedNotification, Daemon, DaemonOptions, DeliveryOutcome, LifecycleDelivery,
     LifecycleEffect, NewNotificationThread, NotificationAction, NotificationHistory,
     NotificationInput, NotificationLifecycle, NotificationStatus, NotificationThread,
-    PersistPrecondition, Urgency,
+    NotificationTimeout, PersistPrecondition, Urgency,
 };
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicI64, Ordering},
 };
+use std::time::Duration;
 
 #[derive(Clone, Default)]
 struct MemoryHistory {
@@ -109,6 +110,7 @@ async fn lifecycle_replacement_owns_thread_revision_shape() {
         .receive(
             lifecycle_notification(None, "Original"),
             LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
         )
         .await
         .unwrap();
@@ -118,6 +120,7 @@ async fn lifecycle_replacement_owns_thread_revision_shape() {
         .receive(
             lifecycle_notification(Some(1), "Replacement"),
             LifecycleDelivery::silenced("user:Chat:*"),
+            NotificationTimeout::Never,
         )
         .await
         .unwrap();
@@ -151,6 +154,95 @@ async fn lifecycle_replacement_owns_thread_revision_shape() {
 }
 
 #[tokio::test]
+async fn lifecycle_schedules_timeout_for_shown_notification() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history);
+
+    let effects = lifecycle
+        .receive(
+            lifecycle_notification(None, "Timed"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Milliseconds(42),
+        )
+        .await
+        .unwrap();
+
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            LifecycleEffect::NotificationTimeoutScheduled {
+                notification_id: 1,
+                revision: 1,
+                duration,
+            } if *duration == Duration::from_millis(42)
+        )
+    }));
+}
+
+#[tokio::test]
+async fn replacement_with_ineligible_timeout_cancels_previous_timeout() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history);
+
+    lifecycle
+        .receive(
+            lifecycle_notification(None, "Original"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Milliseconds(42),
+        )
+        .await
+        .unwrap();
+
+    let effects = lifecycle
+        .receive(
+            lifecycle_notification(Some(1), "Replacement"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            LifecycleEffect::NotificationTimeoutCancelled { notification_id: 1 }
+        )
+    }));
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, LifecycleEffect::NotificationTimeoutScheduled { .. }))
+    );
+}
+
+#[tokio::test]
+async fn delivery_re_evaluation_away_from_shown_cancels_timeout() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history);
+
+    lifecycle
+        .receive(
+            lifecycle_notification(None, "Original"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Milliseconds(42),
+        )
+        .await
+        .unwrap();
+
+    let effects = lifecycle
+        .apply_delivery_decision(1, LifecycleDelivery::silenced("user:Chat:*"))
+        .await
+        .unwrap();
+
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            LifecycleEffect::NotificationTimeoutCancelled { notification_id: 1 }
+        )
+    }));
+}
+
+#[tokio::test]
 async fn lifecycle_transition_owns_status_timestamps_and_precondition() {
     let history = MemoryHistory::default();
     let clock = Arc::new(AtomicI64::new(100));
@@ -159,6 +251,7 @@ async fn lifecycle_transition_owns_status_timestamps_and_precondition() {
         .receive(
             lifecycle_notification(None, "Original"),
             LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
         )
         .await
         .unwrap()
@@ -206,6 +299,7 @@ async fn lifecycle_marks_active_threads_stale_without_history_deciding_shape() {
         .receive(
             lifecycle_notification(None, "One"),
             LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
         )
         .await
         .unwrap();
@@ -213,6 +307,7 @@ async fn lifecycle_marks_active_threads_stale_without_history_deciding_shape() {
         .receive(
             lifecycle_notification(None, "Two"),
             LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
         )
         .await
         .unwrap();
@@ -265,6 +360,7 @@ async fn lifecycle_creates_shown_notification_through_history_and_returns_receip
                 resident: false,
             },
             LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
         )
         .await
         .unwrap();
@@ -293,6 +389,7 @@ async fn lifecycle_dropped_replacement_returns_receipt_without_revising_thread()
         .receive(
             lifecycle_notification(None, "Original"),
             LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
         )
         .await
         .unwrap();
@@ -301,6 +398,7 @@ async fn lifecycle_dropped_replacement_returns_receipt_without_revising_thread()
         .receive(
             lifecycle_notification(Some(1), "Should not overwrite"),
             LifecycleDelivery::dropped("user:Chat:*"),
+            NotificationTimeout::Never,
         )
         .await
         .unwrap();
@@ -320,6 +418,11 @@ async fn lifecycle_dropped_replacement_returns_receipt_without_revising_thread()
             if receipt.notification_id == 0
                 && receipt.delivery_outcome == DeliveryOutcome::Dropped
     )));
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, LifecycleEffect::NotificationTimeoutCancelled { .. }))
+    );
 }
 
 #[tokio::test]
@@ -331,6 +434,7 @@ async fn lifecycle_missing_replacement_target_creates_new_thread() {
         .receive(
             lifecycle_notification(Some(99), "New thread"),
             LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
         )
         .await
         .unwrap();

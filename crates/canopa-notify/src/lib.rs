@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -111,9 +112,14 @@ pub struct Daemon {
     sender_events: Arc<Mutex<Vec<SenderEvent>>>,
     configuration: Arc<Mutex<LoadedNotificationConfiguration>>,
     decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
-    notification_timeout_defaults: NotificationTimeoutDefaults,
+    timeout_tasks: Arc<Mutex<HashMap<i64, TimeoutTask>>>,
     state_version: Arc<AtomicU64>,
     state_changes: watch::Sender<u64>,
+}
+
+struct TimeoutTask {
+    revision: i64,
+    handle: tokio::task::JoinHandle<()>,
 }
 
 impl Daemon {
@@ -124,7 +130,10 @@ impl Daemon {
             options.history_limit,
         )
         .await?;
-        let lifecycle = NotificationLifecycle::new(storage.clone());
+        let lifecycle = NotificationLifecycle::with_timeout_defaults(
+            storage.clone(),
+            options.notification_timeout_defaults,
+        );
         lifecycle.mark_active_stale().await?;
         storage.prune_history().await?;
         let (state_changes, _state_change_receiver) = watch::channel(0);
@@ -136,7 +145,7 @@ impl Daemon {
             sender_events: Arc::new(Mutex::new(Vec::new())),
             configuration: Arc::new(Mutex::new(LoadedNotificationConfiguration::empty())),
             decision_logs: Arc::new(Mutex::new(Vec::new())),
-            notification_timeout_defaults: options.notification_timeout_defaults,
+            timeout_tasks: Arc::new(Mutex::new(HashMap::new())),
             state_version: Arc::new(AtomicU64::new(0)),
             state_changes,
         })
@@ -158,11 +167,14 @@ impl Daemon {
 
         let effects = self
             .lifecycle
-            .receive(notification, LifecycleDelivery::from_decision(&decision))
+            .receive(
+                notification,
+                LifecycleDelivery::from_decision(&decision),
+                expire_timeout,
+            )
             .await?;
         let receipt = receipt_from_effects(&effects)?;
         self.apply_lifecycle_effects_and_notify(&effects).await?;
-        self.schedule_expiration_from_effects(&effects, expire_timeout);
         Ok(receipt)
     }
 
@@ -337,6 +349,7 @@ impl Daemon {
     }
 
     async fn apply_lifecycle_effects(&self, effects: &[LifecycleEffect]) -> anyhow::Result<()> {
+        self.apply_notification_timeout_effects(effects);
         {
             let mut banner_state = self.banner_state.lock().unwrap();
             banner_state.apply_effects(effects);
@@ -383,42 +396,60 @@ impl Daemon {
         let _ = self.state_changes.send(version);
     }
 
-    fn schedule_expiration_from_effects(
-        &self,
-        effects: &[LifecycleEffect],
-        expire_timeout: NotificationTimeout,
-    ) {
-        let Some(thread) = effects.iter().find_map(|effect| match effect {
-            LifecycleEffect::ThreadCreated(thread) | LifecycleEffect::ThreadRevised(thread) => {
-                Some(thread)
+    fn apply_notification_timeout_effects(&self, effects: &[LifecycleEffect]) {
+        for effect in effects {
+            match effect {
+                LifecycleEffect::NotificationTimeoutScheduled {
+                    notification_id,
+                    revision,
+                    duration,
+                } => self.schedule_notification_timeout(*notification_id, *revision, *duration),
+                LifecycleEffect::NotificationTimeoutCancelled { notification_id } => {
+                    self.cancel_notification_timeout(*notification_id)
+                }
+                _ => {}
             }
-            _ => None,
-        }) else {
-            return;
-        };
-
-        if thread.status != NotificationStatus::Active
-            || thread.delivery_outcome != DeliveryOutcome::Shown
-        {
-            return;
         }
+    }
 
-        let Some(duration) = expire_timeout.duration(
-            thread.accepted_notification.urgency,
-            self.notification_timeout_defaults,
-        ) else {
-            return;
-        };
+    fn schedule_notification_timeout(
+        &self,
+        notification_id: i64,
+        revision: i64,
+        duration: std::time::Duration,
+    ) {
+        self.cancel_notification_timeout(notification_id);
 
         let daemon = self.clone();
-        let notification_id = thread.id;
-        let revision = thread.revision;
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             tokio::time::sleep(duration).await;
+            daemon.forget_notification_timeout_if_current_revision(notification_id, revision);
             let _ = daemon
                 .expire_notification_if_current_revision(notification_id, revision)
                 .await;
         });
+
+        self.timeout_tasks
+            .lock()
+            .unwrap()
+            .insert(notification_id, TimeoutTask { revision, handle });
+    }
+
+    fn cancel_notification_timeout(&self, notification_id: i64) {
+        if let Some(task) = self.timeout_tasks.lock().unwrap().remove(&notification_id) {
+            task.handle.abort();
+        }
+    }
+
+    fn forget_notification_timeout_if_current_revision(&self, notification_id: i64, revision: i64) {
+        let mut timeout_tasks = self.timeout_tasks.lock().unwrap();
+        if timeout_tasks
+            .get(&notification_id)
+            .map(|task| task.revision == revision)
+            .unwrap_or(false)
+        {
+            timeout_tasks.remove(&notification_id);
+        }
     }
 
     async fn expire_notification_if_current_revision(

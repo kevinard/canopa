@@ -1,9 +1,10 @@
 use crate::clock::now_millis;
 use crate::{
     AcceptedNotification, DeliveryDecision, DeliveryOutcome, NotificationReceipt,
-    NotificationStatus, NotificationThread,
+    NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
 };
 use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LifecycleDelivery {
@@ -71,6 +72,14 @@ pub enum LifecycleEffect {
     NotificationDropped {
         replaces_id: Option<i64>,
     },
+    NotificationTimeoutScheduled {
+        notification_id: i64,
+        revision: i64,
+        duration: Duration,
+    },
+    NotificationTimeoutCancelled {
+        notification_id: i64,
+    },
     ActionInvoked {
         notification_id: i64,
         action_key: String,
@@ -100,6 +109,7 @@ pub trait NotificationHistory: Clone + Send + Sync + 'static {
 pub struct NotificationLifecycle<H> {
     history: H,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    timeout_defaults: NotificationTimeoutDefaults,
 }
 
 impl<H> NotificationLifecycle<H>
@@ -110,10 +120,30 @@ where
         Self::with_clock(history, now_millis)
     }
 
+    pub fn with_timeout_defaults(
+        history: H,
+        timeout_defaults: NotificationTimeoutDefaults,
+    ) -> Self {
+        Self::with_clock_and_timeout_defaults(history, now_millis, timeout_defaults)
+    }
+
     pub fn with_clock(history: H, clock: impl Fn() -> i64 + Send + Sync + 'static) -> Self {
+        Self::with_clock_and_timeout_defaults(
+            history,
+            clock,
+            NotificationTimeoutDefaults::default(),
+        )
+    }
+
+    pub fn with_clock_and_timeout_defaults(
+        history: H,
+        clock: impl Fn() -> i64 + Send + Sync + 'static,
+        timeout_defaults: NotificationTimeoutDefaults,
+    ) -> Self {
         Self {
             history,
             clock: Arc::new(clock),
+            timeout_defaults,
         }
     }
 
@@ -121,6 +151,7 @@ where
         &self,
         notification: AcceptedNotification,
         delivery: LifecycleDelivery,
+        timeout: NotificationTimeout,
     ) -> anyhow::Result<Vec<LifecycleEffect>> {
         if delivery.outcome == DeliveryOutcome::Dropped {
             return Ok(vec![
@@ -150,6 +181,7 @@ where
             if delivery.outcome == DeliveryOutcome::Silenced {
                 effects.push(LifecycleEffect::ThreadSilenced(thread.clone()));
             }
+            self.push_timeout_effect(&mut effects, &thread, timeout, true);
             effects.push(LifecycleEffect::SenderReceipt(NotificationReceipt {
                 notification_id: thread.id,
                 delivery_outcome: delivery.outcome,
@@ -165,6 +197,7 @@ where
         if delivery.outcome == DeliveryOutcome::Silenced {
             effects.push(LifecycleEffect::ThreadSilenced(thread.clone()));
         }
+        self.push_timeout_effect(&mut effects, &thread, timeout, false);
         effects.push(LifecycleEffect::SenderReceipt(NotificationReceipt {
             notification_id: thread.id,
             delivery_outcome: delivery.outcome,
@@ -249,7 +282,10 @@ where
 
         match delivery.outcome {
             DeliveryOutcome::Shown => {}
-            DeliveryOutcome::Silenced => effects.push(LifecycleEffect::ThreadSilenced(updated)),
+            DeliveryOutcome::Silenced => {
+                effects.push(LifecycleEffect::ThreadSilenced(updated.clone()));
+                effects.push(LifecycleEffect::NotificationTimeoutCancelled { notification_id });
+            }
             DeliveryOutcome::Dropped => {
                 effects.push(LifecycleEffect::NotificationDropped {
                     replaces_id: Some(notification_id),
@@ -264,6 +300,7 @@ where
     pub async fn mark_active_stale(&self) -> anyhow::Result<Vec<LifecycleEffect>> {
         let mut effects = Vec::new();
         for thread in self.history.active_threads().await? {
+            let notification_id = thread.id;
             let expected_revision = thread.revision;
             let stale = self.transitioned_thread(thread, NotificationStatus::Stale);
             let stale = self
@@ -274,6 +311,7 @@ where
                 )
                 .await?;
             effects.push(LifecycleEffect::ThreadStale(stale));
+            effects.push(LifecycleEffect::NotificationTimeoutCancelled { notification_id });
         }
         Ok(effects)
     }
@@ -306,6 +344,7 @@ where
         };
         Ok(vec![
             transition,
+            LifecycleEffect::NotificationTimeoutCancelled { notification_id },
             LifecycleEffect::SenderClosed {
                 notification_id,
                 reason: status,
@@ -369,6 +408,39 @@ where
 
     fn now_millis(&self) -> i64 {
         (self.clock)()
+    }
+
+    fn push_timeout_effect(
+        &self,
+        effects: &mut Vec<LifecycleEffect>,
+        thread: &NotificationThread,
+        timeout: NotificationTimeout,
+        replace_existing: bool,
+    ) {
+        if thread.status != NotificationStatus::Active
+            || thread.delivery_outcome != DeliveryOutcome::Shown
+        {
+            if replace_existing {
+                effects.push(LifecycleEffect::NotificationTimeoutCancelled {
+                    notification_id: thread.id,
+                });
+            }
+            return;
+        }
+
+        match timeout.duration(thread.accepted_notification.urgency, self.timeout_defaults) {
+            Some(duration) => effects.push(LifecycleEffect::NotificationTimeoutScheduled {
+                notification_id: thread.id,
+                revision: thread.revision,
+                duration,
+            }),
+            None if replace_existing => {
+                effects.push(LifecycleEffect::NotificationTimeoutCancelled {
+                    notification_id: thread.id,
+                });
+            }
+            None => {}
+        }
     }
 }
 

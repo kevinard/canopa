@@ -483,6 +483,8 @@ impl NotificationBannerState {
             }
             LifecycleEffect::SenderReceipt(_)
             | LifecycleEffect::NotificationDropped { replaces_id: None }
+            | LifecycleEffect::NotificationTimeoutScheduled { .. }
+            | LifecycleEffect::NotificationTimeoutCancelled { .. }
             | LifecycleEffect::ActionInvoked { .. }
             | LifecycleEffect::SenderClosed { .. } => {}
         }
