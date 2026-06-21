@@ -143,6 +143,7 @@ enum BannerRuntimeInput {
 struct BannerUiState {
     runtime_id: u64,
     presentation: BannerPresentation,
+    surface_size: (u32, u32),
     interactions: mpsc::Sender<BannerInteraction>,
 }
 
@@ -212,6 +213,7 @@ fn run_banner_ui(
         move || BannerUiState {
             runtime_id,
             presentation: BannerPresentation::default(),
+            surface_size: banner_surface_size(0, 0),
             interactions: interactions.clone(),
         },
         || "Canopa Notify Notification Banners".to_string(),
@@ -241,9 +243,12 @@ fn banner_ui_update(
 ) -> iced::Task<BannerUiMessage> {
     match message {
         BannerUiMessage::Runtime(BannerRuntimeInput::Replace(presentation)) => {
-            let size = banner_surface_size(presentation.banners.len(), presentation.overflow_count);
+            let size = banner_surface_resize(&mut state.surface_size, &presentation);
             state.presentation = presentation;
-            iced::Task::done(BannerUiMessage::SizeChange(size))
+            match size {
+                Some(size) => iced::Task::done(BannerUiMessage::SizeChange(size)),
+                None => iced::Task::none(),
+            }
         }
         BannerUiMessage::Activate(notification_id) => {
             state
@@ -290,32 +295,81 @@ mod tests {
             "banner UI thread must enter the daemon Tokio runtime before invoking iced/layer-shell"
         );
     }
+
+    #[test]
+    fn same_size_banner_replacement_does_not_request_layer_shell_resize() {
+        let mut current_size = banner_surface_size(1, 0);
+        let replacement = BannerPresentation::visible_banners(vec![banner_view(42, "Complete")]);
+
+        assert_eq!(banner_surface_resize(&mut current_size, &replacement), None);
+        assert_eq!(current_size, banner_surface_size(1, 0));
+    }
+
+    #[test]
+    fn banner_stack_identity_uses_notification_id() {
+        let first = banner_view(42, "Starting");
+        let replacement = banner_view(42, "Complete");
+
+        assert_eq!(
+            banner_stack_item_key(&replacement),
+            banner_stack_item_key(&first)
+        );
+    }
+
+    fn banner_view(notification_id: i64, body: &str) -> BannerView {
+        BannerView {
+            notification_id,
+            app_identity: "downloader".to_string(),
+            app_name: "Downloader".to_string(),
+            summary: "Download".to_string(),
+            body: body.to_string(),
+            urgency: Urgency::Normal,
+            progress: None,
+            default_action_key: None,
+            placement: BannerPlacement::TopRightFocusedOutputWithFallback,
+            focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
+        }
+    }
 }
 
 fn banner_ui_view(
     state: &BannerUiState,
     _window: iced::window::Id,
 ) -> iced::Element<'_, BannerUiMessage> {
-    use iced::widget::{column, container};
+    use iced::widget::{container, keyed_column};
     use iced::{Alignment, Length};
 
-    let mut stack = column![]
+    let mut stack = keyed_column![]
         .spacing(8)
         .width(Length::Fill)
-        .align_x(Alignment::End);
+        .align_items(Alignment::End);
     for banner in &state.presentation.banners {
-        stack = stack.push(notification_banner_widget(banner));
+        stack = stack.push(
+            banner_stack_item_key(banner),
+            notification_banner_widget(banner),
+        );
     }
     if state.presentation.overflow_count > 0 {
-        stack = stack.push(overflow_count_banner_widget(
-            state.presentation.overflow_count,
-        ));
+        stack = stack.push(
+            BannerStackItemKey::Overflow,
+            overflow_count_banner_widget(state.presentation.overflow_count),
+        );
     }
 
     container(stack)
         .width(Length::Fill)
         .height(Length::Shrink)
         .into()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BannerStackItemKey {
+    Notification(i64),
+    Overflow,
+}
+
+fn banner_stack_item_key(banner: &BannerView) -> BannerStackItemKey {
+    BannerStackItemKey::Notification(banner.notification_id)
 }
 
 fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
@@ -617,6 +671,19 @@ fn banner_surface_size(count: usize, overflow_count: usize) -> (u32, u32) {
     }
 }
 
+fn banner_surface_resize(
+    current_size: &mut (u32, u32),
+    presentation: &BannerPresentation,
+) -> Option<(u32, u32)> {
+    let next_size = banner_surface_size(presentation.banners.len(), presentation.overflow_count);
+    if *current_size == next_size {
+        None
+    } else {
+        *current_size = next_size;
+        Some(next_size)
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct NoopBannerPresenter;
 
@@ -731,6 +798,7 @@ impl PresentationCoordinator {
 #[derive(Clone, Default)]
 pub struct NotificationBannerState {
     visible: HashMap<i64, NotificationThread>,
+    visible_order: Vec<i64>,
     overflow: HashMap<i64, NotificationThread>,
 }
 
@@ -746,9 +814,11 @@ impl NotificationBannerState {
     }
 
     pub fn visible_banners(&self) -> Vec<BannerView> {
-        let mut threads: Vec<_> = self.visible.values().cloned().collect();
-        sort_banner_candidates(&mut threads);
-        threads.into_iter().map(BannerView::from_thread).collect()
+        self.visible_order
+            .iter()
+            .filter_map(|id| self.visible.get(id).cloned())
+            .map(BannerView::from_thread)
+            .collect()
     }
 
     pub fn banner_presentation(&self) -> BannerPresentation {
@@ -765,22 +835,25 @@ impl NotificationBannerState {
             }
             BannerLifecycleChange::ReconsiderVisible(thread) => {
                 if self.visible.contains_key(&thread.id) {
-                    self.consider_banner_opportunity(thread);
+                    self.update_visible_banner(thread);
                 } else if self.overflow.contains_key(&thread.id) {
                     self.reconsider_overflow(thread);
                 }
             }
             BannerLifecycleChange::Remove { notification_id } => {
-                self.visible.remove(&notification_id);
-                self.overflow.remove(&notification_id);
+                self.remove_banner(notification_id);
             }
         }
     }
 
     fn consider_banner_opportunity(&mut self, thread: NotificationThread) {
         if !is_banner_eligible(&thread) {
-            self.visible.remove(&thread.id);
-            self.overflow.remove(&thread.id);
+            self.remove_banner(thread.id);
+            return;
+        }
+
+        if self.visible.contains_key(&thread.id) {
+            self.update_visible_banner(thread);
             return;
         }
 
@@ -789,8 +862,10 @@ impl NotificationBannerState {
         let mut threads: Vec<_> = self.visible.values().cloned().collect();
         sort_banner_candidates(&mut threads);
         self.visible.clear();
+        self.visible_order.clear();
         for (index, thread) in threads.into_iter().enumerate() {
             if index < 3 {
+                self.visible_order.push(thread.id);
                 self.visible.insert(thread.id, thread);
             } else {
                 self.overflow.insert(thread.id, thread);
@@ -804,6 +879,23 @@ impl NotificationBannerState {
         } else {
             self.overflow.remove(&thread.id);
         }
+    }
+
+    fn update_visible_banner(&mut self, thread: NotificationThread) {
+        if is_banner_eligible(&thread) {
+            if !self.visible_order.contains(&thread.id) {
+                self.visible_order.push(thread.id);
+            }
+            self.visible.insert(thread.id, thread);
+        } else {
+            self.remove_banner(thread.id);
+        }
+    }
+
+    fn remove_banner(&mut self, notification_id: i64) {
+        self.visible.remove(&notification_id);
+        self.overflow.remove(&notification_id);
+        self.visible_order.retain(|id| *id != notification_id);
     }
 }
 

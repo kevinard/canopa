@@ -71,3 +71,43 @@ async fn replacement_revises_existing_thread_and_can_create_banner_opportunity()
             .any(|banner| banner.notification_id == hidden.notification_id)
     );
 }
+
+#[tokio::test]
+async fn repeated_fixed_replacement_id_updates_prior_thread() {
+    let daemon = daemon_support::open_headless_daemon().await;
+
+    let first = daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(9999),
+            body: "0%".to_string(),
+            progress: Some(0),
+            ..notification("notify-send", "Test Progress")
+        })
+        .await
+        .unwrap();
+
+    let replacement = daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(9999),
+            body: "5%".to_string(),
+            progress: Some(5),
+            ..notification("notify-send", "Test Progress")
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(replacement.notification_id, first.notification_id);
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(snapshot.history.len(), 1);
+    assert_eq!(snapshot.active.len(), 1);
+    assert_eq!(snapshot.active[0].revision, 2);
+    assert_eq!(snapshot.active[0].accepted_notification.body, "5%");
+    assert_eq!(snapshot.active[0].accepted_notification.progress, Some(5));
+
+    let banners = daemon.visible_banners().await;
+    assert_eq!(banners.len(), 1);
+    assert_eq!(banners[0].notification_id, first.notification_id);
+    assert_eq!(banners[0].body, "5%");
+    assert_eq!(banners[0].progress, Some(5));
+}

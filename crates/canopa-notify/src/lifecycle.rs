@@ -315,9 +315,7 @@ where
             ]));
         }
 
-        if let Some(replaces_id) = notification.replaces_id
-            && let Ok(existing) = self.history.thread(replaces_id).await
-        {
+        if let Some(existing) = self.replacement_target_thread(&notification).await? {
             let expected_revision = existing.revision;
             let thread = self.revised_thread(existing, notification, delivery.clone());
             let thread = self
@@ -353,6 +351,30 @@ where
             delivery_outcome: delivery.outcome,
         }));
         Ok(LifecycleEffects::new(effects))
+    }
+
+    async fn replacement_target_thread(
+        &self,
+        notification: &AcceptedNotification,
+    ) -> anyhow::Result<Option<NotificationThread>> {
+        let Some(replaces_id) = notification.replaces_id else {
+            return Ok(None);
+        };
+
+        if let Ok(existing) = self.history.thread(replaces_id).await {
+            return Ok(Some(existing));
+        }
+
+        Ok(self
+            .history
+            .active_threads()
+            .await?
+            .into_iter()
+            .filter(|thread| {
+                thread.accepted_notification.replaces_id == Some(replaces_id)
+                    && thread.accepted_notification.app_identity == notification.app_identity
+            })
+            .max_by_key(|thread| (thread.updated_at, thread.id)))
     }
 
     pub async fn dismiss(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {

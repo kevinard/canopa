@@ -105,6 +105,90 @@ async fn non_headless_daemon_presents_visible_banner_content() {
 }
 
 #[tokio::test]
+async fn non_headless_daemon_replaces_visible_banner_content_in_place() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let first = daemon
+        .receive_notification(notification_with_body("Downloader", "Download", "Starting"))
+        .await
+        .unwrap();
+
+    let replacement = daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(first.notification_id),
+            progress: Some(100),
+            ..notification_with_body("Downloader", "Download", "Complete")
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(replacement.notification_id, first.notification_id);
+
+    let updates = presenter.updates();
+    let banners = updates.last().unwrap();
+    assert_eq!(banners.len(), 1);
+    assert_eq!(banners[0].notification_id, first.notification_id);
+    assert_eq!(banners[0].summary, "Download");
+    assert_eq!(banners[0].body, "Complete");
+    assert_eq!(banners[0].progress, Some(100));
+}
+
+#[tokio::test]
+async fn replacement_updates_existing_visible_banner_without_reordering_stack() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let first = daemon
+        .receive_notification(notification("Chat", "Message 1"))
+        .await
+        .unwrap();
+    daemon
+        .receive_notification(notification("Chat", "Message 2"))
+        .await
+        .unwrap();
+    daemon
+        .receive_notification(notification("Chat", "Message 3"))
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let before_ids = visible_ids(updates.last().unwrap());
+
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(first.notification_id),
+            ..notification("Chat", "Message 1 edited")
+        })
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banners = updates.last().unwrap();
+    assert_eq!(visible_ids(banners), before_ids);
+    assert_eq!(
+        banners
+            .iter()
+            .find(|banner| banner.notification_id == first.notification_id)
+            .unwrap()
+            .summary,
+        "Message 1 edited"
+    );
+}
+
+#[tokio::test]
 async fn headless_daemon_keeps_banner_state_without_presenting_surfaces() {
     let temp = tempfile::tempdir().unwrap();
     let presenter = RecordingPresenter::default();

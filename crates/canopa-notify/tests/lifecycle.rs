@@ -538,6 +538,40 @@ async fn lifecycle_missing_replacement_target_creates_new_thread() {
     )));
 }
 
+#[tokio::test]
+async fn lifecycle_fixed_replacement_token_revises_active_thread_created_for_that_token() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history.clone());
+
+    lifecycle
+        .receive(
+            lifecycle_notification(Some(9999), "0%"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+
+    let effects = lifecycle
+        .receive(
+            lifecycle_notification(Some(9999), "5%"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+
+    let stored = history.stored();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].id, 1);
+    assert_eq!(stored[0].revision, 2);
+    assert_eq!(stored[0].accepted_notification.summary, "5%");
+    assert!(effects.raw().iter().any(|effect| matches!(
+        effect,
+        LifecycleEffect::ThreadRevised(thread) if thread.id == 1
+    )));
+}
+
 fn lifecycle_notification(replaces_id: Option<i64>, summary: &str) -> AcceptedNotification {
     AcceptedNotification {
         app_identity: "Chat".to_string(),
