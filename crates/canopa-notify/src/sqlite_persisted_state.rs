@@ -195,9 +195,9 @@ impl NotificationThreadRecord {
             summary: row.try_get("summary")?,
             body: row.try_get("body")?,
             raw_body: row.try_get("raw_body")?,
-            urgency: Urgency::from_str(&row.try_get::<String, _>("urgency")?),
-            status: NotificationStatus::from_str(&row.try_get::<String, _>("status")?),
-            delivery_outcome: DeliveryOutcome::from_str(
+            urgency: Urgency::from_persisted_str(&row.try_get::<String, _>("urgency")?),
+            status: NotificationStatus::from_persisted_str(&row.try_get::<String, _>("status")?),
+            delivery_outcome: DeliveryOutcome::from_persisted_str(
                 &row.try_get::<String, _>("delivery_outcome")?,
             ),
             rule_reference: row.try_get("rule_reference")?,
@@ -304,7 +304,7 @@ impl UserRuleRow {
         Ok(Self {
             app_identity: row.try_get("app_identity")?,
             urgency: urgency_from_key(&row.try_get::<String, _>("urgency")?),
-            outcome: DeliveryOutcome::from_str(&row.try_get::<String, _>("outcome")?),
+            outcome: DeliveryOutcome::from_persisted_str(&row.try_get::<String, _>("outcome")?),
             reference: row.try_get("reference")?,
         })
     }

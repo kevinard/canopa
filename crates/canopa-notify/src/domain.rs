@@ -136,11 +136,20 @@ impl Urgency {
         }
     }
 
-    pub(crate) fn from_str(value: &str) -> Self {
+    pub(crate) fn from_persisted_str(value: &str) -> Self {
         match value {
             "low" => Urgency::Low,
             "critical" => Urgency::Critical,
             _ => Urgency::Normal,
+        }
+    }
+
+    pub(crate) fn parse_config_value(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "low" => Ok(Urgency::Low),
+            "normal" => Ok(Urgency::Normal),
+            "critical" => Ok(Urgency::Critical),
+            _ => anyhow::bail!("unknown notification urgency {value:?}"),
         }
     }
 }
@@ -153,7 +162,7 @@ pub(crate) fn urgency_from_key(value: &str) -> Option<Urgency> {
     if value == "*" {
         None
     } else {
-        Some(Urgency::from_str(value))
+        Some(Urgency::from_persisted_str(value))
     }
 }
 
@@ -174,11 +183,20 @@ impl DeliveryOutcome {
         }
     }
 
-    pub(crate) fn from_str(value: &str) -> Self {
+    pub(crate) fn from_persisted_str(value: &str) -> Self {
         match value {
             "silenced" => DeliveryOutcome::Silenced,
             "dropped" => DeliveryOutcome::Dropped,
             _ => DeliveryOutcome::Shown,
+        }
+    }
+
+    pub(crate) fn parse_config_value(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "allow" | "shown" => Ok(DeliveryOutcome::Shown),
+            "silence" | "silenced" => Ok(DeliveryOutcome::Silenced),
+            "drop" | "dropped" => Ok(DeliveryOutcome::Dropped),
+            _ => anyhow::bail!("unknown delivery outcome {value:?}"),
         }
     }
 }
@@ -204,7 +222,7 @@ impl NotificationStatus {
         }
     }
 
-    pub(crate) fn from_str(value: &str) -> Self {
+    pub(crate) fn from_persisted_str(value: &str) -> Self {
         match value {
             "dismissed" => NotificationStatus::Dismissed,
             "expired" => NotificationStatus::Expired,
@@ -212,6 +230,102 @@ impl NotificationStatus {
             "stale" => NotificationStatus::Stale,
             _ => NotificationStatus::Active,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_strict_configuration_values() {
+        assert_eq!(Urgency::parse_config_value("low").unwrap(), Urgency::Low);
+        assert_eq!(
+            Urgency::parse_config_value("normal").unwrap(),
+            Urgency::Normal
+        );
+        assert_eq!(
+            Urgency::parse_config_value("critical").unwrap(),
+            Urgency::Critical
+        );
+
+        assert_eq!(
+            DeliveryOutcome::parse_config_value("allow").unwrap(),
+            DeliveryOutcome::Shown
+        );
+        assert_eq!(
+            DeliveryOutcome::parse_config_value("shown").unwrap(),
+            DeliveryOutcome::Shown
+        );
+        assert_eq!(
+            DeliveryOutcome::parse_config_value("silence").unwrap(),
+            DeliveryOutcome::Silenced
+        );
+        assert_eq!(
+            DeliveryOutcome::parse_config_value("silenced").unwrap(),
+            DeliveryOutcome::Silenced
+        );
+        assert_eq!(
+            DeliveryOutcome::parse_config_value("drop").unwrap(),
+            DeliveryOutcome::Dropped
+        );
+        assert_eq!(
+            DeliveryOutcome::parse_config_value("dropped").unwrap(),
+            DeliveryOutcome::Dropped
+        );
+
+        assert!(Urgency::parse_config_value("urgent").is_err());
+        assert!(DeliveryOutcome::parse_config_value("mute").is_err());
+    }
+
+    #[test]
+    fn persisted_values_keep_legacy_defaulting_behavior() {
+        assert_eq!(Urgency::from_persisted_str("low"), Urgency::Low);
+        assert_eq!(Urgency::from_persisted_str("normal"), Urgency::Normal);
+        assert_eq!(Urgency::from_persisted_str("critical"), Urgency::Critical);
+        assert_eq!(Urgency::from_persisted_str("unknown"), Urgency::Normal);
+
+        assert_eq!(
+            DeliveryOutcome::from_persisted_str("shown"),
+            DeliveryOutcome::Shown
+        );
+        assert_eq!(
+            DeliveryOutcome::from_persisted_str("silenced"),
+            DeliveryOutcome::Silenced
+        );
+        assert_eq!(
+            DeliveryOutcome::from_persisted_str("dropped"),
+            DeliveryOutcome::Dropped
+        );
+        assert_eq!(
+            DeliveryOutcome::from_persisted_str("unknown"),
+            DeliveryOutcome::Shown
+        );
+
+        assert_eq!(
+            NotificationStatus::from_persisted_str("active"),
+            NotificationStatus::Active
+        );
+        assert_eq!(
+            NotificationStatus::from_persisted_str("dismissed"),
+            NotificationStatus::Dismissed
+        );
+        assert_eq!(
+            NotificationStatus::from_persisted_str("expired"),
+            NotificationStatus::Expired
+        );
+        assert_eq!(
+            NotificationStatus::from_persisted_str("closed"),
+            NotificationStatus::Closed
+        );
+        assert_eq!(
+            NotificationStatus::from_persisted_str("stale"),
+            NotificationStatus::Stale
+        );
+        assert_eq!(
+            NotificationStatus::from_persisted_str("unknown"),
+            NotificationStatus::Active
+        );
     }
 }
 

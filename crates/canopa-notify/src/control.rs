@@ -156,7 +156,33 @@ pub enum AppPermissionControl {
     Drop,
 }
 
+const APP_PERMISSION_CONTROL_OPTIONS: [AppPermissionControl; 3] = [
+    AppPermissionControl::Allow,
+    AppPermissionControl::Silence,
+    AppPermissionControl::Drop,
+];
+
 impl AppPermissionControl {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Allow => "allow",
+            Self::Silence => "silence",
+            Self::Drop => "drop",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Allow => "Allow",
+            Self::Silence => "Silence",
+            Self::Drop => "Drop",
+        }
+    }
+
+    pub fn options() -> &'static [Self] {
+        &APP_PERMISSION_CONTROL_OPTIONS
+    }
+
     fn delivery_outcome(self) -> DeliveryOutcome {
         match self {
             Self::Allow => DeliveryOutcome::Shown,

@@ -107,10 +107,14 @@ fn parse_rule(node: &KdlNode, rule_number: usize) -> anyhow::Result<Notification
     if app_identity.trim().is_empty() {
         anyhow::bail!("rule {rule_number} app must not be empty");
     }
-    let outcome = parse_outcome(&required_property(entries.outcome, "outcome", rule_number)?)?;
+    let outcome = DeliveryOutcome::parse_config_value(&required_property(
+        entries.outcome,
+        "outcome",
+        rule_number,
+    )?)?;
     let urgency = entries
         .urgency
-        .map(|value| parse_urgency(&value))
+        .map(|value| Urgency::parse_config_value(&value))
         .transpose()?;
     let reference = entries
         .rule_id
@@ -196,24 +200,6 @@ fn required_property(
     rule_number: usize,
 ) -> anyhow::Result<String> {
     value.ok_or_else(|| anyhow::anyhow!("rule {rule_number} is missing {name}"))
-}
-
-fn parse_outcome(value: &str) -> anyhow::Result<DeliveryOutcome> {
-    match value {
-        "allow" | "shown" => Ok(DeliveryOutcome::Shown),
-        "silence" | "silenced" => Ok(DeliveryOutcome::Silenced),
-        "drop" | "dropped" => Ok(DeliveryOutcome::Dropped),
-        _ => anyhow::bail!("unknown delivery outcome {value:?}"),
-    }
-}
-
-fn parse_urgency(value: &str) -> anyhow::Result<Urgency> {
-    match value {
-        "low" => Ok(Urgency::Low),
-        "normal" => Ok(Urgency::Normal),
-        "critical" => Ok(Urgency::Critical),
-        _ => anyhow::bail!("unknown notification urgency {value:?}"),
-    }
 }
 
 #[cfg(test)]

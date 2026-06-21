@@ -227,29 +227,15 @@ fn app_permission_control(permission: AppPermissionControl) -> PanelControl {
     PanelControl {
         key: "app_permission".to_string(),
         label: "App permission".to_string(),
-        value: app_permission_value(permission).to_string(),
-        options: vec![
-            PanelControlOption {
-                value: "allow".to_string(),
-                label: "Allow".to_string(),
-            },
-            PanelControlOption {
-                value: "silence".to_string(),
-                label: "Silence".to_string(),
-            },
-            PanelControlOption {
-                value: "drop".to_string(),
-                label: "Drop".to_string(),
-            },
-        ],
-    }
-}
-
-fn app_permission_value(permission: AppPermissionControl) -> &'static str {
-    match permission {
-        AppPermissionControl::Allow => "allow",
-        AppPermissionControl::Silence => "silence",
-        AppPermissionControl::Drop => "drop",
+        value: permission.as_str().to_string(),
+        options: AppPermissionControl::options()
+            .iter()
+            .copied()
+            .map(|permission| PanelControlOption {
+                value: permission.as_str().to_string(),
+                label: permission.label().to_string(),
+            })
+            .collect(),
     }
 }
 
@@ -262,6 +248,21 @@ mod tests {
         assert_eq!(CtlRequest::Status.line(), "status\n");
         assert_eq!(CtlRequest::ActiveCount.line(), "active\n");
         assert_eq!(CtlRequest::ActiveJson.line(), "active-json\n");
+    }
+
+    #[test]
+    fn app_permission_control_uses_permission_values_and_labels() {
+        let control = app_permission_control(AppPermissionControl::Silence);
+
+        assert_eq!(control.value, "silence");
+        assert_eq!(
+            control
+                .options
+                .iter()
+                .map(|option| (option.value.as_str(), option.label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("allow", "Allow"), ("silence", "Silence"), ("drop", "Drop")]
+        );
     }
 
     #[test]
