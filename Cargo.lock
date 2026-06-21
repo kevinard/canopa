@@ -411,6 +411,7 @@ dependencies = [
  "assert_cmd",
  "canopa-panel-protocol",
  "clap",
+ "futures-util",
  "iced",
  "iced_layershell",
  "kdl",

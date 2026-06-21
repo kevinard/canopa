@@ -1,6 +1,7 @@
 mod support;
 
 use assert_cmd::Command;
+use futures_util::StreamExt;
 use std::collections::HashMap;
 use zbus::zvariant::{OwnedValue, Value};
 use zbus::{Connection, Proxy};
@@ -252,6 +253,71 @@ async fn dev_dbus_notify_fixed_replacement_token_updates_prior_notification() {
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains("5%"));
     assert!(!json.contains("0%"));
+
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
+async fn dev_dbus_close_notification_emits_notification_closed_signal() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = test_bus_name("CloseSignal");
+
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let mut closed_signals = proxy.receive_signal("NotificationClosed").await.unwrap();
+
+    let id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Calendar",
+                0u32,
+                "",
+                "Meeting",
+                "Starting soon",
+                Vec::<String>::new(),
+                HashMap::<String, OwnedValue>::new(),
+                -1i32,
+            ),
+        )
+        .await
+        .unwrap();
+
+    proxy
+        .call::<_, _, ()>("CloseNotification", &(id))
+        .await
+        .unwrap();
+
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(1), closed_signals.next())
+        .await
+        .unwrap()
+        .unwrap();
+    let (closed_id, reason): (u32, u32) = signal.body().deserialize().unwrap();
+    assert_eq!(closed_id, id);
+    assert_eq!(reason, 3);
 
     daemon.kill().ok();
     daemon.wait().ok();

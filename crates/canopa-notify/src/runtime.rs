@@ -19,7 +19,7 @@ use crate::sqlite_persisted_state::SqlitePersistedState;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 
 #[derive(Clone)]
 pub(crate) struct NotificationRuntime {
@@ -28,6 +28,7 @@ pub(crate) struct NotificationRuntime {
     presentation: PresentationCoordinator,
     banner_state: Arc<Mutex<NotificationBannerState>>,
     sender_events: Arc<Mutex<Vec<SenderEvent>>>,
+    sender_event_changes: broadcast::Sender<SenderEvent>,
     decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
     timeout_tasks: Arc<Mutex<HashMap<i64, TimeoutTask>>>,
     config_rules: Arc<Mutex<Vec<DeliveryPolicyRule>>>,
@@ -52,6 +53,7 @@ impl NotificationRuntime {
         lifecycle.mark_active_stale().await?;
         storage.prune_history().await?;
         let (state_changes, _state_change_receiver) = watch::channel(0);
+        let (sender_event_changes, _sender_event_receiver) = broadcast::channel(128);
 
         Ok(Self {
             storage,
@@ -59,6 +61,7 @@ impl NotificationRuntime {
             presentation: PresentationCoordinator::new(!headless, banner_presenter),
             banner_state: Arc::new(Mutex::new(NotificationBannerState::new())),
             sender_events: Arc::new(Mutex::new(Vec::new())),
+            sender_event_changes,
             decision_logs: Arc::new(Mutex::new(Vec::new())),
             timeout_tasks: Arc::new(Mutex::new(HashMap::new())),
             config_rules: Arc::new(Mutex::new(Vec::new())),
@@ -207,6 +210,10 @@ impl NotificationRuntime {
         self.sender_events.lock().unwrap().clone()
     }
 
+    pub(crate) fn subscribe_sender_events(&self) -> broadcast::Receiver<SenderEvent> {
+        self.sender_event_changes.subscribe()
+    }
+
     pub(crate) async fn notification_center_projection(
         &self,
     ) -> anyhow::Result<NotificationCenterProjection> {
@@ -280,7 +287,10 @@ impl NotificationRuntime {
 
     fn publish_sender_events(&self, events: impl IntoIterator<Item = SenderEvent>) {
         let mut sender_events = self.sender_events.lock().unwrap();
-        sender_events.extend(events);
+        for event in events {
+            sender_events.push(event.clone());
+            let _ = self.sender_event_changes.send(event);
+        }
     }
 
     async fn sync_presentation(&self) -> anyhow::Result<()> {

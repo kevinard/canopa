@@ -228,6 +228,38 @@ async fn notify_control_applies_notification_center_interaction_commands() {
 }
 
 #[tokio::test]
+async fn sender_event_subscription_receives_action_invocation_events() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let mut events = daemon.subscribe_sender_events();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("Chat", "Message")
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .invoke_action(receipt.notification_id, "open")
+        .await
+        .unwrap();
+
+    let action_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(action_event.notification_id, receipt.notification_id);
+    assert_eq!(action_event.action_key.as_deref(), Some("open"));
+
+    let close_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(close_event.closed_id, Some(receipt.notification_id));
+}
+
+#[tokio::test]
 async fn notify_control_clears_active_notifications() {
     let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());

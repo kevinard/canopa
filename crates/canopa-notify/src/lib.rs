@@ -232,6 +232,10 @@ impl Daemon {
         self.runtime.sender_events().await
     }
 
+    pub fn subscribe_sender_events(&self) -> tokio::sync::broadcast::Receiver<SenderEvent> {
+        self.runtime.subscribe_sender_events()
+    }
+
     pub(crate) async fn notification_center_projection(
         &self,
     ) -> anyhow::Result<NotificationCenterProjection> {

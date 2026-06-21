@@ -1,7 +1,7 @@
 use anyhow::Context;
 use canopa_notify::{
     BannerInteraction, Daemon, DaemonOptions, IcedLayerShellBannerPresenter,
-    NotificationServerRequest, NotifyControl,
+    NotificationServerRequest, NotifyControl, SenderEvent,
 };
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
@@ -9,6 +9,8 @@ use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use tokio::net::UnixListener;
+use tokio::sync::broadcast;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedValue;
 
 mod control_adapters;
@@ -313,12 +315,27 @@ impl NotificationServer {
             "1.2".to_string(),
         )
     }
+
+    #[zbus(signal)]
+    async fn action_invoked(
+        emitter: &SignalEmitter<'_>,
+        id: u32,
+        action_key: &str,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn notification_closed(
+        emitter: &SignalEmitter<'_>,
+        id: u32,
+        reason: u32,
+    ) -> zbus::Result<()>;
 }
 
 async fn start_notification_server(
     bus_name: String,
     daemon: Daemon,
 ) -> anyhow::Result<zbus::Connection> {
+    let sender_events = daemon.subscribe_sender_events();
     let connection = zbus::connection::Builder::session()?
         .name(bus_name)?
         .serve_at(
@@ -327,7 +344,60 @@ async fn start_notification_server(
         )?
         .build()
         .await?;
+    spawn_notification_signal_relay(connection.clone(), sender_events)?;
     Ok(connection)
+}
+
+fn spawn_notification_signal_relay(
+    connection: zbus::Connection,
+    mut sender_events: broadcast::Receiver<SenderEvent>,
+) -> anyhow::Result<()> {
+    let emitter = SignalEmitter::new(&connection, "/org/freedesktop/Notifications")?.into_owned();
+    tokio::spawn(async move {
+        loop {
+            match sender_events.recv().await {
+                Ok(event) => {
+                    if let Err(error) = emit_sender_event(&emitter, &event).await {
+                        eprintln!(
+                            "level=warn component=dbus event=sender_signal_failed error={error:#}"
+                        );
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    eprintln!(
+                        "level=warn component=dbus event=sender_signal_lagged skipped={skipped}"
+                    );
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+    Ok(())
+}
+
+async fn emit_sender_event(emitter: &SignalEmitter<'_>, event: &SenderEvent) -> zbus::Result<()> {
+    if let Some(action_key) = event.action_key.as_deref() {
+        if let Ok(notification_id) = u32::try_from(event.notification_id) {
+            emitter.action_invoked(notification_id, action_key).await?;
+        }
+    }
+
+    if let Some(closed_id) = event.closed_id.and_then(|id| u32::try_from(id).ok()) {
+        emitter
+            .notification_closed(closed_id, close_reason_code(event.close_reason.as_deref()))
+            .await?;
+    }
+
+    Ok(())
+}
+
+fn close_reason_code(reason: Option<&str>) -> u32 {
+    match reason {
+        Some("expired") => 1,
+        Some("dismissed") => 2,
+        Some("closed") => 3,
+        _ => 4,
+    }
 }
 
 fn run_ctl(args: CtlArgs) -> anyhow::Result<()> {
