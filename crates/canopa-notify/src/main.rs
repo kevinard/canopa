@@ -323,7 +323,11 @@ impl NotificationServer {
     }
 
     fn get_capabilities(&self) -> Vec<String> {
-        vec!["actions".to_string(), "body".to_string()]
+        vec![
+            "actions".to_string(),
+            "body".to_string(),
+            "icon-static".to_string(),
+        ]
     }
 
     fn get_server_information(&self) -> (String, String, String, String) {

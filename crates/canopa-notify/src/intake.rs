@@ -1,18 +1,29 @@
-use crate::{AcceptedNotification, DeliveryOutcome, NotificationInput, NotificationReceipt};
+use crate::{
+    AcceptedNotification, DeliveryOutcome, NotificationImageData, NotificationInput,
+    NotificationReceipt,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NotificationIntakeResult {
-    Accepted(AcceptedNotification),
+    Accepted(AcceptedNotificationInput),
     NoOpDropped(NotificationReceipt),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AcceptedNotificationInput {
+    pub notification: AcceptedNotification,
+    pub image_data: Option<NotificationImageData>,
 }
 
 pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntakeResult {
     let app_identity = derive_app_identity(&input);
     let body = plain_text_body(&input.body);
+    let has_image = input.image_data.is_some() || input.image_reference.is_some();
 
     if input.summary.trim().is_empty()
         && body.trim().is_empty()
         && input.actions.is_empty()
+        && !has_image
         && input.category.is_none()
         && input.progress.is_none()
     {
@@ -22,19 +33,24 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
         });
     }
 
-    NotificationIntakeResult::Accepted(AcceptedNotification {
-        app_identity,
-        app_name: input.app_name,
-        replaces_id: input.replaces_id,
-        summary: input.summary,
-        body,
-        raw_body: input.body,
-        urgency: input.urgency,
-        category: input.category,
-        progress: input.progress,
-        has_image_payload: false,
-        actions: input.actions,
-        resident: input.resident,
+    NotificationIntakeResult::Accepted(AcceptedNotificationInput {
+        notification: AcceptedNotification {
+            app_identity,
+            app_name: input.app_name,
+            replaces_id: input.replaces_id,
+            app_icon: input.app_icon,
+            summary: input.summary,
+            body,
+            raw_body: input.body,
+            urgency: input.urgency,
+            category: input.category,
+            progress: input.progress,
+            image_reference: input.image_reference,
+            has_image_payload: false,
+            actions: input.actions,
+            resident: input.resident,
+        },
+        image_data: input.image_data,
     })
 }
 
@@ -151,12 +167,30 @@ mod tests {
     }
 
     #[test]
-    fn intake_rejects_blank_image_only_notifications_as_no_op() {
+    fn intake_accepts_blank_notification_image_notifications() {
         let result = intake_notification(NotificationInput {
             app_name: "Blank Sender".to_string(),
             summary: "   ".to_string(),
             body: "\n\t".to_string(),
-            image_data: Some(vec![1, 2, 3, 4]),
+            image_data: Some(test_image_data()),
+            ..NotificationInput::default()
+        });
+
+        match result {
+            NotificationIntakeResult::Accepted(input) => {
+                assert_eq!(input.notification.summary, "   ");
+                assert!(!input.notification.has_image_payload);
+                assert!(input.image_data.is_some());
+            }
+            NotificationIntakeResult::NoOpDropped(_) => panic!("expected accepted intake result"),
+        }
+    }
+
+    #[test]
+    fn intake_rejects_blank_app_icon_only_notifications_as_no_op() {
+        let result = intake_notification(NotificationInput {
+            app_name: "Blank Sender".to_string(),
+            app_icon: crate::NotificationVisualReference::icon_name("mail-unread"),
             ..NotificationInput::default()
         });
 
@@ -197,8 +231,12 @@ mod tests {
 
     fn accepted(result: NotificationIntakeResult) -> AcceptedNotification {
         match result {
-            NotificationIntakeResult::Accepted(notification) => notification,
+            NotificationIntakeResult::Accepted(input) => input.notification,
             NotificationIntakeResult::NoOpDropped(_) => panic!("expected accepted intake result"),
         }
+    }
+
+    fn test_image_data() -> NotificationImageData {
+        NotificationImageData::from_freedesktop(1, 1, 4, true, 8, 4, vec![255, 0, 0, 255]).unwrap()
     }
 }

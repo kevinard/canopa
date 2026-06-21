@@ -3,7 +3,9 @@ mod daemon_support;
 #[path = "support/notifications.rs"]
 mod notifications;
 
-use canopa_notify::{NotificationInput, Urgency};
+use canopa_notify::{
+    NotificationImageData, NotificationInput, NotificationVisualReference, Urgency,
+};
 use notifications::{blank_notification, notification_with_body};
 
 #[tokio::test]
@@ -70,7 +72,7 @@ async fn category_and_progress_are_persisted_without_image_payloads() {
         .receive_notification(NotificationInput {
             category: Some("transfer".to_string()),
             progress: Some(95),
-            image_data: Some(vec![1, 2, 3, 4]),
+            image_data: Some(test_image_data()),
             ..notification_with_body("Downloader", "Download", "Almost done")
         })
         .await
@@ -84,4 +86,56 @@ async fn category_and_progress_are_persisted_without_image_payloads() {
     );
     assert_eq!(thread.accepted_notification.progress, Some(95));
     assert!(!thread.accepted_notification.has_image_payload);
+}
+
+#[tokio::test]
+async fn image_only_raw_notifications_are_accepted_without_persisting_payloads() {
+    let daemon = daemon_support::open_headless_daemon().await;
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            app_name: "Photos".to_string(),
+            image_data: Some(test_image_data()),
+            ..NotificationInput::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(receipt.delivery_outcome.as_str(), "shown");
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(snapshot.active.len(), 1);
+    assert_eq!(
+        snapshot.active[0].accepted_notification.app_identity,
+        "Photos"
+    );
+    assert!(!snapshot.active[0].accepted_notification.has_image_payload);
+}
+
+#[tokio::test]
+async fn visual_references_are_persisted_as_accepted_notification_facts() {
+    let daemon = daemon_support::open_headless_daemon().await;
+
+    daemon
+        .receive_notification(NotificationInput {
+            app_icon: NotificationVisualReference::icon_name("mail-unread"),
+            image_reference: NotificationVisualReference::local_path("/tmp/screenshot.jpg"),
+            ..notification_with_body("Mail", "Inbox", "One unread message")
+        })
+        .await
+        .unwrap();
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    let notification = &snapshot.active[0].accepted_notification;
+    assert_eq!(
+        notification.app_icon,
+        NotificationVisualReference::icon_name("mail-unread")
+    );
+    assert_eq!(
+        notification.image_reference,
+        NotificationVisualReference::local_path("/tmp/screenshot.jpg")
+    );
+}
+
+fn test_image_data() -> NotificationImageData {
+    NotificationImageData::from_freedesktop(1, 1, 4, true, 8, 4, vec![255, 0, 0, 255]).unwrap()
 }

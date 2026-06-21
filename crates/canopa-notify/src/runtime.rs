@@ -6,14 +6,17 @@ use crate::delivery_policy::{
     DeliveryDecisionLog, DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState,
 };
 use crate::domain::{
-    AcceptedNotification, NotificationReceipt, NotificationSnapshot, NotificationStatus,
-    NotificationTimeout, NotificationTimeoutDefaults, SenderEvent, Urgency, UserRule,
+    AcceptedNotification, NotificationImageData, NotificationReceipt, NotificationSnapshot,
+    NotificationStatus, NotificationTimeout, NotificationTimeoutDefaults, SenderEvent, Urgency,
+    UserRule,
 };
 use crate::lifecycle::{
-    LifecycleDelivery, LifecycleEffects, NotificationLifecycle, NotificationTimeoutChange,
+    LifecycleDelivery, LifecycleEffect, LifecycleEffects, NotificationLifecycle,
+    NotificationTimeoutChange,
 };
 use crate::presentation::{
-    BannerPresenter, BannerView, NotificationBannerState, PresentationCoordinator,
+    BannerPresentation, BannerPresenter, BannerView, NotificationBannerState,
+    PresentationCoordinator,
 };
 use crate::sqlite_persisted_state::SqlitePersistedState;
 use std::collections::{BTreeMap, HashMap};
@@ -27,6 +30,7 @@ pub(crate) struct NotificationRuntime {
     lifecycle: NotificationLifecycle<SqlitePersistedState>,
     presentation: PresentationCoordinator,
     banner_state: Arc<Mutex<NotificationBannerState>>,
+    runtime_images: Arc<Mutex<RuntimeImageStore>>,
     sender_events: Arc<Mutex<Vec<SenderEvent>>>,
     sender_event_changes: broadcast::Sender<SenderEvent>,
     decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
@@ -34,6 +38,47 @@ pub(crate) struct NotificationRuntime {
     config_rules: Arc<Mutex<Vec<DeliveryPolicyRule>>>,
     state_version: Arc<AtomicU64>,
     state_changes: watch::Sender<u64>,
+}
+
+#[derive(Clone, Debug)]
+struct RuntimeImageEntry {
+    revision: i64,
+    image: NotificationImageData,
+}
+
+#[derive(Clone, Debug, Default)]
+struct RuntimeImageStore {
+    images: HashMap<i64, RuntimeImageEntry>,
+}
+
+impl RuntimeImageStore {
+    fn replace(
+        &mut self,
+        notification_id: i64,
+        revision: i64,
+        image: Option<NotificationImageData>,
+    ) {
+        match image {
+            Some(image) => {
+                self.images
+                    .insert(notification_id, RuntimeImageEntry { revision, image });
+            }
+            None => {
+                self.images.remove(&notification_id);
+            }
+        }
+    }
+
+    fn remove(&mut self, notification_id: i64) {
+        self.images.remove(&notification_id);
+    }
+
+    fn image_for(&self, notification_id: i64, revision: i64) -> Option<NotificationImageData> {
+        self.images
+            .get(&notification_id)
+            .filter(|entry| entry.revision == revision)
+            .map(|entry| entry.image.clone())
+    }
 }
 
 struct TimeoutTask {
@@ -60,6 +105,7 @@ impl NotificationRuntime {
             lifecycle,
             presentation: PresentationCoordinator::new(!headless, banner_presenter),
             banner_state: Arc::new(Mutex::new(NotificationBannerState::new())),
+            runtime_images: Arc::new(Mutex::new(RuntimeImageStore::default())),
             sender_events: Arc::new(Mutex::new(Vec::new())),
             sender_event_changes,
             decision_logs: Arc::new(Mutex::new(Vec::new())),
@@ -73,6 +119,7 @@ impl NotificationRuntime {
     pub(crate) async fn receive_notification(
         &self,
         notification: AcceptedNotification,
+        image_data: Option<NotificationImageData>,
         expire_timeout: NotificationTimeout,
     ) -> anyhow::Result<NotificationReceipt> {
         let policy = self.delivery_policy().await?;
@@ -88,6 +135,7 @@ impl NotificationRuntime {
             )
             .await?;
         let receipt = effects.sender_receipt()?;
+        self.apply_request_images(&effects, image_data);
         self.apply_lifecycle_effects_and_notify(&effects).await?;
         Ok(receipt)
     }
@@ -97,7 +145,7 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn visible_banners(&self) -> Vec<BannerView> {
-        self.banner_state.lock().unwrap().visible_banners()
+        self.banner_presentation().banners
     }
 
     pub(crate) async fn invoke_action(
@@ -275,6 +323,7 @@ impl NotificationRuntime {
     }
 
     async fn apply_lifecycle_effects(&self, effects: &LifecycleEffects) -> anyhow::Result<()> {
+        self.remove_runtime_images_for_terminal_effects(effects);
         self.apply_notification_timeout_changes(effects.timeout_changes());
         {
             let mut banner_state = self.banner_state.lock().unwrap();
@@ -294,8 +343,90 @@ impl NotificationRuntime {
     }
 
     async fn sync_presentation(&self) -> anyhow::Result<()> {
-        let presentation = self.banner_state.lock().unwrap().banner_presentation();
+        let presentation = self.banner_presentation();
         self.presentation.replace_banner_presentation(presentation)
+    }
+
+    fn banner_presentation(&self) -> BannerPresentation {
+        let (threads, overflow_count) = {
+            let banner_state = self.banner_state.lock().unwrap();
+            (
+                banner_state.visible_threads(),
+                banner_state.overflow_count(),
+            )
+        };
+        let runtime_images = self.runtime_images.lock().unwrap();
+        BannerPresentation {
+            banners: threads
+                .into_iter()
+                .map(|thread| {
+                    let image = runtime_images.image_for(thread.id, thread.revision);
+                    BannerView::from_thread(thread, image)
+                })
+                .collect(),
+            overflow_count,
+        }
+    }
+
+    fn apply_request_images(
+        &self,
+        effects: &LifecycleEffects,
+        image_data: Option<NotificationImageData>,
+    ) {
+        let mut runtime_images = self.runtime_images.lock().unwrap();
+        for effect in effects {
+            match effect {
+                LifecycleEffect::ThreadCreated(thread) | LifecycleEffect::ThreadRevised(thread) => {
+                    runtime_images.replace(thread.id, thread.revision, image_data.clone());
+                }
+                LifecycleEffect::NotificationDropped {
+                    replaces_id: Some(notification_id),
+                } => {
+                    runtime_images.remove(*notification_id);
+                }
+                LifecycleEffect::SenderReceipt(_)
+                | LifecycleEffect::ThreadDeliveryChanged(_)
+                | LifecycleEffect::ThreadSilenced(_)
+                | LifecycleEffect::ThreadDismissed(_)
+                | LifecycleEffect::ThreadExpired(_)
+                | LifecycleEffect::ThreadClosed(_)
+                | LifecycleEffect::ThreadStale(_)
+                | LifecycleEffect::NotificationDropped { replaces_id: None }
+                | LifecycleEffect::NotificationTimeoutScheduled { .. }
+                | LifecycleEffect::NotificationTimeoutCancelled { .. }
+                | LifecycleEffect::ActionInvoked { .. }
+                | LifecycleEffect::SenderClosed { .. } => {}
+            }
+        }
+    }
+
+    fn remove_runtime_images_for_terminal_effects(&self, effects: &LifecycleEffects) {
+        let mut runtime_images = self.runtime_images.lock().unwrap();
+        for effect in effects {
+            match effect {
+                LifecycleEffect::ThreadSilenced(thread)
+                | LifecycleEffect::ThreadDismissed(thread)
+                | LifecycleEffect::ThreadExpired(thread)
+                | LifecycleEffect::ThreadClosed(thread)
+                | LifecycleEffect::ThreadStale(thread) => {
+                    runtime_images.remove(thread.id);
+                }
+                LifecycleEffect::NotificationDropped {
+                    replaces_id: Some(notification_id),
+                } => {
+                    runtime_images.remove(*notification_id);
+                }
+                LifecycleEffect::SenderReceipt(_)
+                | LifecycleEffect::ThreadCreated(_)
+                | LifecycleEffect::ThreadRevised(_)
+                | LifecycleEffect::ThreadDeliveryChanged(_)
+                | LifecycleEffect::NotificationDropped { replaces_id: None }
+                | LifecycleEffect::NotificationTimeoutScheduled { .. }
+                | LifecycleEffect::NotificationTimeoutCancelled { .. }
+                | LifecycleEffect::ActionInvoked { .. }
+                | LifecycleEffect::SenderClosed { .. } => {}
+            }
+        }
     }
 
     fn notify_state_changed(&self) {

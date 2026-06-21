@@ -22,9 +22,10 @@ pub use delivery_policy::{
     DeliveryPolicyRule, LoadedDeliveryPolicyState,
 };
 pub use domain::{
-    AcceptedNotification, DeliveryOutcome, NotificationAction, NotificationInput,
-    NotificationReceipt, NotificationSnapshot, NotificationStatus, NotificationThread,
-    NotificationTimeout, NotificationTimeoutDefaults, SenderEvent, Urgency, UserRule,
+    AcceptedNotification, DeliveryOutcome, NotificationAction, NotificationImageData,
+    NotificationInput, NotificationReceipt, NotificationSnapshot, NotificationStatus,
+    NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
+    NotificationVisualReference, SenderEvent, Urgency, UserRule,
 };
 pub use lifecycle::{
     BannerLifecycleChange, LifecycleDelivery, LifecycleEffect, LifecycleEffects,
@@ -35,8 +36,8 @@ pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
     BannerFocusBehavior, BannerInteraction, BannerKeyboardInteractivity, BannerLayer,
     BannerOutputSelection, BannerPlacement, BannerPresentation, BannerPresenter, BannerSurfaceSpec,
-    BannerView, IcedLayerShellBannerPresenter, NoopBannerPresenter, NotificationBannerState,
-    StructuredLogBannerPresenter,
+    BannerView, BannerVisual, IcedLayerShellBannerPresenter, NoopBannerPresenter,
+    NotificationBannerState, StructuredLogBannerPresenter,
 };
 pub use runtime::NotificationStateSubscription;
 
@@ -135,13 +136,13 @@ impl Daemon {
         input: NotificationInput,
     ) -> anyhow::Result<NotificationReceipt> {
         let expire_timeout = input.expire_timeout;
-        let notification = match intake_notification(input) {
-            NotificationIntakeResult::Accepted(notification) => notification,
+        let accepted = match intake_notification(input) {
+            NotificationIntakeResult::Accepted(accepted) => accepted,
             NotificationIntakeResult::NoOpDropped(receipt) => return Ok(receipt),
         };
 
         self.runtime
-            .receive_notification(notification, expire_timeout)
+            .receive_notification(accepted.notification, accepted.image_data, expire_timeout)
             .await
     }
 

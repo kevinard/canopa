@@ -67,6 +67,29 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
     assert_eq!(vendor, "Canopa");
     assert_eq!(spec_version, "1.3");
 
+    let capabilities: Vec<String> = proxy.call("GetCapabilities", &()).await.unwrap();
+    assert!(
+        capabilities
+            .iter()
+            .any(|capability| capability == "actions")
+    );
+    assert!(capabilities.iter().any(|capability| capability == "body"));
+    assert!(
+        capabilities
+            .iter()
+            .any(|capability| capability == "icon-static")
+    );
+    assert!(
+        !capabilities
+            .iter()
+            .any(|capability| capability == "body-images")
+    );
+    assert!(
+        !capabilities
+            .iter()
+            .any(|capability| capability == "icon-multi")
+    );
+
     let output = Command::cargo_bin("canopa-notify")
         .unwrap()
         .args([

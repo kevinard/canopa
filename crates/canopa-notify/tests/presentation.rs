@@ -6,8 +6,9 @@ mod notifications;
 use canopa_notify::{
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPresentation,
     BannerPresenter, BannerSurfaceSpec, BannerView, Daemon, DaemonOptions, DeliveryOutcome,
-    IcedLayerShellBannerPresenter, NotificationAction, NotificationInput, NotificationTimeout,
-    NotificationTimeoutDefaults, Urgency, UserRule,
+    IcedLayerShellBannerPresenter, NotificationAction, NotificationImageData, NotificationInput,
+    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference, Urgency,
+    UserRule,
 };
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer};
 use iced_layershell::settings::StartMode;
@@ -102,6 +103,111 @@ async fn non_headless_daemon_presents_visible_banner_content() {
     assert_eq!(banners[0].notification_id, receipt.notification_id);
     assert_eq!(banners[0].summary, "Inbox");
     assert_eq!(banners[0].body, "One\nunread message");
+}
+
+#[tokio::test]
+async fn non_headless_daemon_presents_runtime_notification_image_data_without_persisting_payload() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    daemon
+        .receive_notification(NotificationInput {
+            image_data: Some(test_image_data()),
+            ..notification("Photos", "Screenshot")
+        })
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banner = &updates.last().unwrap()[0];
+    let canopa_notify::BannerVisual::Rgba {
+        width,
+        height,
+        pixels,
+    } = banner.image.as_ref().unwrap()
+    else {
+        panic!("expected raw image visual");
+    };
+    assert_eq!((*width, *height), (1, 1));
+    assert_eq!(pixels, &[255, 0, 0, 255]);
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert!(!snapshot.active[0].accepted_notification.has_image_payload);
+}
+
+#[tokio::test]
+async fn replacement_without_visuals_clears_previous_runtime_image() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let first = daemon
+        .receive_notification(NotificationInput {
+            image_data: Some(test_image_data()),
+            ..notification("Photos", "Screenshot")
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(first.notification_id),
+            ..notification("Photos", "Screenshot updated")
+        })
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banner = &updates.last().unwrap()[0];
+    assert_eq!(banner.notification_id, first.notification_id);
+    assert!(banner.image.is_none());
+}
+
+#[tokio::test]
+async fn non_headless_daemon_presents_local_visual_references() {
+    let temp = tempfile::tempdir().unwrap();
+    let app_icon_path = temp.path().join("app.png");
+    let image_path = temp.path().join("photo.jpg");
+    std::fs::write(&app_icon_path, [0_u8]).unwrap();
+    std::fs::write(&image_path, [0_u8]).unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    daemon
+        .receive_notification(NotificationInput {
+            app_icon: NotificationVisualReference::local_path(path_string(&app_icon_path)),
+            image_reference: NotificationVisualReference::local_path(path_string(&image_path)),
+            ..notification("Photos", "Local image")
+        })
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banner = &updates.last().unwrap()[0];
+    assert!(matches!(
+        banner.app_icon.as_ref(),
+        Some(canopa_notify::BannerVisual::LocalPath { path }) if path == &path_string(&app_icon_path)
+    ));
+    assert!(matches!(
+        banner.image.as_ref(),
+        Some(canopa_notify::BannerVisual::LocalPath { path }) if path == &path_string(&image_path)
+    ));
 }
 
 #[tokio::test]
@@ -563,4 +669,12 @@ fn visible_ids(banners: &[BannerView]) -> Vec<i64> {
 
 fn is_visible(banners: &[BannerView], id: i64) -> bool {
     banners.iter().any(|banner| banner.notification_id == id)
+}
+
+fn test_image_data() -> NotificationImageData {
+    NotificationImageData::from_freedesktop(1, 1, 4, true, 8, 4, vec![255, 0, 0, 255]).unwrap()
+}
+
+fn path_string(path: &std::path::Path) -> String {
+    path.to_str().unwrap().to_string()
 }

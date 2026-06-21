@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+const MAX_NOTIFICATION_IMAGE_DIMENSION: u32 = 4096;
+const MAX_NOTIFICATION_IMAGE_BYTES: usize = 16 * 1024 * 1024;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NotificationTimeoutDefaults {
     pub low: Option<Duration>,
@@ -45,13 +48,15 @@ pub struct NotificationInput {
     pub app_name: String,
     pub desktop_entry: Option<String>,
     pub replaces_id: Option<i64>,
+    pub app_icon: Option<NotificationVisualReference>,
     pub summary: String,
     pub body: String,
     pub expire_timeout: NotificationTimeout,
     pub urgency: Urgency,
     pub category: Option<String>,
     pub progress: Option<i64>,
-    pub image_data: Option<Vec<u8>>,
+    pub image_data: Option<NotificationImageData>,
+    pub image_reference: Option<NotificationVisualReference>,
     pub actions: Vec<NotificationAction>,
     pub resident: bool,
 }
@@ -92,15 +97,186 @@ pub struct AcceptedNotification {
     pub app_identity: String,
     pub app_name: String,
     pub replaces_id: Option<i64>,
+    pub app_icon: Option<NotificationVisualReference>,
     pub summary: String,
     pub body: String,
     pub raw_body: String,
     pub urgency: Urgency,
     pub category: Option<String>,
     pub progress: Option<i64>,
+    pub image_reference: Option<NotificationVisualReference>,
     pub has_image_payload: bool,
     pub actions: Vec<NotificationAction>,
     pub resident: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+pub enum NotificationVisualReference {
+    IconName(String),
+    LocalPath(String),
+}
+
+impl NotificationVisualReference {
+    pub fn icon_name(value: impl Into<String>) -> Option<Self> {
+        let value = value.into();
+        let value = value.trim();
+        (!value.is_empty()).then(|| Self::IconName(value.to_string()))
+    }
+
+    pub fn local_path(value: impl Into<String>) -> Option<Self> {
+        let value = value.into();
+        let value = value.trim();
+        (!value.is_empty()).then(|| Self::LocalPath(value.to_string()))
+    }
+
+    pub(crate) fn from_sender_reference(value: &str) -> Option<Self> {
+        let value = value.trim();
+        if value.is_empty() {
+            return None;
+        }
+
+        if let Some((scheme, rest)) = value.split_once(':') {
+            if is_uri_scheme(scheme) {
+                return (scheme.eq_ignore_ascii_case("file"))
+                    .then(|| local_path_from_file_uri(rest))
+                    .flatten();
+            }
+        }
+
+        if value.starts_with('/')
+            || value.starts_with("./")
+            || value.starts_with("../")
+            || value.starts_with('~')
+            || value.contains('/')
+            || has_static_raster_extension(value)
+        {
+            Self::local_path(value)
+        } else {
+            Self::icon_name(value)
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationImageData {
+    pub width: u32,
+    pub height: u32,
+    pub rowstride: u32,
+    pub has_alpha: bool,
+    pub channels: u8,
+    pub data: Vec<u8>,
+}
+
+impl NotificationImageData {
+    pub fn from_freedesktop(
+        width: i32,
+        height: i32,
+        rowstride: i32,
+        has_alpha: bool,
+        bits_per_sample: i32,
+        channels: i32,
+        data: Vec<u8>,
+    ) -> Option<Self> {
+        if width <= 0 || height <= 0 || rowstride <= 0 || bits_per_sample != 8 {
+            return None;
+        }
+
+        let width = width as u32;
+        let height = height as u32;
+        let rowstride = rowstride as u32;
+        let channels = channels as u8;
+        let expected_channels = if has_alpha { 4 } else { 3 };
+        if channels != expected_channels {
+            return None;
+        }
+
+        if width > MAX_NOTIFICATION_IMAGE_DIMENSION
+            || height > MAX_NOTIFICATION_IMAGE_DIMENSION
+            || data.len() > MAX_NOTIFICATION_IMAGE_BYTES
+        {
+            return None;
+        }
+
+        let row_bytes = width.checked_mul(channels as u32)?;
+        if rowstride < row_bytes {
+            return None;
+        }
+
+        let required = (height.saturating_sub(1) as usize)
+            .checked_mul(rowstride as usize)?
+            .checked_add(row_bytes as usize)?;
+        if data.len() < required {
+            return None;
+        }
+
+        Some(Self {
+            width,
+            height,
+            rowstride,
+            has_alpha,
+            channels,
+            data,
+        })
+    }
+
+    pub fn rgba_pixels(&self) -> Vec<u8> {
+        let mut output = Vec::with_capacity(self.width as usize * self.height as usize * 4);
+        for y in 0..self.height as usize {
+            let row_start = y * self.rowstride as usize;
+            for x in 0..self.width as usize {
+                let index = row_start + x * self.channels as usize;
+                output.push(self.data[index]);
+                output.push(self.data[index + 1]);
+                output.push(self.data[index + 2]);
+                output.push(if self.has_alpha {
+                    self.data[index + 3]
+                } else {
+                    255
+                });
+            }
+        }
+        output
+    }
+}
+
+pub(crate) fn has_static_raster_extension(value: &str) -> bool {
+    let value = value.to_ascii_lowercase();
+    value.ends_with(".png") || value.ends_with(".jpg") || value.ends_with(".jpeg")
+}
+
+fn is_uri_scheme(value: &str) -> bool {
+    let mut chars = value.chars();
+    matches!(chars.next(), Some(ch) if ch.is_ascii_alphabetic())
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.'))
+}
+
+fn local_path_from_file_uri(rest: &str) -> Option<NotificationVisualReference> {
+    let path = rest
+        .strip_prefix("//localhost")
+        .or_else(|| rest.strip_prefix("//"))
+        .unwrap_or(rest);
+    NotificationVisualReference::local_path(percent_decode_path(path))
+}
+
+fn percent_decode_path(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[index + 1..index + 3]) {
+                if let Ok(decoded) = u8::from_str_radix(hex, 16) {
+                    output.push(decoded);
+                    index += 3;
+                    continue;
+                }
+            }
+        }
+        output.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8(output).unwrap_or_else(|_| value.to_string())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

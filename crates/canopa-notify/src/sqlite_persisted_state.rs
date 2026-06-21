@@ -25,10 +25,11 @@ struct RetentionPolicy {
 }
 
 const NOTIFICATION_THREAD_ID_COLUMN: &str = "id";
-const NOTIFICATION_THREAD_WRITE_COLUMNS: [&str; 18] = [
+const NOTIFICATION_THREAD_WRITE_COLUMNS: [&str; 20] = [
     "app_identity",
     "app_name",
     "replaces_id",
+    "app_icon_json",
     "summary",
     "body",
     "raw_body",
@@ -38,6 +39,7 @@ const NOTIFICATION_THREAD_WRITE_COLUMNS: [&str; 18] = [
     "rule_reference",
     "category",
     "progress",
+    "image_reference_json",
     "resident",
     "actions_json",
     "revision",
@@ -106,6 +108,7 @@ struct NotificationThreadRecord {
     app_identity: String,
     app_name: String,
     replaces_id: Option<i64>,
+    app_icon_json: Option<String>,
     summary: String,
     body: String,
     raw_body: String,
@@ -115,6 +118,7 @@ struct NotificationThreadRecord {
     rule_reference: Option<String>,
     category: Option<String>,
     progress: Option<i64>,
+    image_reference_json: Option<String>,
     actions_json: String,
     resident: bool,
     revision: i64,
@@ -168,6 +172,11 @@ impl NotificationThreadRecord {
             app_identity: notification.app_identity,
             app_name: notification.app_name,
             replaces_id: notification.replaces_id,
+            app_icon_json: notification
+                .app_icon
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
             summary: notification.summary,
             body: notification.body,
             raw_body: notification.raw_body,
@@ -177,6 +186,11 @@ impl NotificationThreadRecord {
             rule_reference,
             category: notification.category,
             progress: notification.progress,
+            image_reference_json: notification
+                .image_reference
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
             actions_json: serde_json::to_string(&notification.actions)?,
             resident: notification.resident,
             revision,
@@ -192,6 +206,7 @@ impl NotificationThreadRecord {
             app_identity: row.try_get("app_identity")?,
             app_name: row.try_get("app_name")?,
             replaces_id: row.try_get("replaces_id")?,
+            app_icon_json: row.try_get("app_icon_json")?,
             summary: row.try_get("summary")?,
             body: row.try_get("body")?,
             raw_body: row.try_get("raw_body")?,
@@ -203,6 +218,7 @@ impl NotificationThreadRecord {
             rule_reference: row.try_get("rule_reference")?,
             category: row.try_get("category")?,
             progress: row.try_get("progress")?,
+            image_reference_json: row.try_get("image_reference_json")?,
             actions_json: row.try_get("actions_json")?,
             resident: row.try_get::<i64, _>("resident")? != 0,
             revision: row.try_get("revision")?,
@@ -244,6 +260,7 @@ impl NotificationThreadRecord {
             .bind(&self.app_identity)
             .bind(&self.app_name)
             .bind(self.replaces_id)
+            .bind(self.app_icon_json.as_deref())
             .bind(&self.summary)
             .bind(&self.body)
             .bind(&self.raw_body)
@@ -253,6 +270,7 @@ impl NotificationThreadRecord {
             .bind(self.rule_reference.as_deref())
             .bind(self.category.as_deref())
             .bind(self.progress)
+            .bind(self.image_reference_json.as_deref())
             .bind(self.resident)
             .bind(&self.actions_json)
             .bind(self.revision)
@@ -263,6 +281,16 @@ impl NotificationThreadRecord {
 
     fn into_thread(self) -> anyhow::Result<NotificationThread> {
         let actions = serde_json::from_str(&self.actions_json)?;
+        let app_icon = self
+            .app_icon_json
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?;
+        let image_reference = self
+            .image_reference_json
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?;
         Ok(NotificationThread {
             id: self
                 .id
@@ -271,12 +299,14 @@ impl NotificationThreadRecord {
                 app_identity: self.app_identity,
                 app_name: self.app_name,
                 replaces_id: self.replaces_id,
+                app_icon,
                 summary: self.summary,
                 body: self.body,
                 raw_body: self.raw_body,
                 urgency: self.urgency,
                 category: self.category,
                 progress: self.progress,
+                image_reference,
                 has_image_payload: false,
                 actions,
                 resident: self.resident,
@@ -384,6 +414,7 @@ impl SqlitePersistedState {
                 app_identity TEXT NOT NULL,
                 app_name TEXT NOT NULL,
                 replaces_id INTEGER,
+                app_icon_json TEXT,
                 summary TEXT NOT NULL,
                 body TEXT NOT NULL,
                 raw_body TEXT NOT NULL,
@@ -393,6 +424,7 @@ impl SqlitePersistedState {
                 rule_reference TEXT,
                 category TEXT,
                 progress INTEGER,
+                image_reference_json TEXT,
                 resident INTEGER NOT NULL DEFAULT 0,
                 actions_json TEXT NOT NULL DEFAULT '[]',
                 revision INTEGER NOT NULL DEFAULT 1,
@@ -409,16 +441,31 @@ impl SqlitePersistedState {
     }
 
     async fn migrate_schema(pool: &SqlitePool) -> anyhow::Result<()> {
-        let has_replaces_id: Option<String> = sqlx::query_scalar(
-            "SELECT name FROM pragma_table_info('notification_threads') WHERE name = 'replaces_id'",
+        Self::add_nullable_column_if_missing(pool, "replaces_id", "INTEGER").await?;
+        Self::add_nullable_column_if_missing(pool, "app_icon_json", "TEXT").await?;
+        Self::add_nullable_column_if_missing(pool, "image_reference_json", "TEXT").await?;
+
+        Ok(())
+    }
+
+    async fn add_nullable_column_if_missing(
+        pool: &SqlitePool,
+        column: &str,
+        sql_type: &str,
+    ) -> anyhow::Result<()> {
+        let existing: Option<String> = sqlx::query_scalar(
+            "SELECT name FROM pragma_table_info('notification_threads') WHERE name = ?1",
         )
+        .bind(column)
         .fetch_optional(pool)
         .await?;
 
-        if has_replaces_id.is_none() {
-            sqlx::query("ALTER TABLE notification_threads ADD COLUMN replaces_id INTEGER")
-                .execute(pool)
-                .await?;
+        if existing.is_none() {
+            sqlx::query(&format!(
+                "ALTER TABLE notification_threads ADD COLUMN {column} {sql_type}"
+            ))
+            .execute(pool)
+            .await?;
         }
 
         Ok(())
@@ -881,12 +928,14 @@ mod tests {
             app_identity: "App".to_string(),
             app_name: "App".to_string(),
             replaces_id: None,
+            app_icon: None,
             summary: summary.to_string(),
             body: String::new(),
             raw_body: String::new(),
             urgency: Urgency::Normal,
             category: None,
             progress: None,
+            image_reference: None,
             has_image_payload: false,
             actions: Vec::new(),
             resident: false,

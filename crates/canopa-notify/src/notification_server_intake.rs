@@ -1,4 +1,7 @@
-use crate::{NotificationAction, NotificationInput, NotificationTimeout, Urgency};
+use crate::{
+    NotificationAction, NotificationImageData, NotificationInput, NotificationTimeout,
+    NotificationVisualReference, Urgency,
+};
 use std::collections::HashMap;
 use zbus::zvariant::OwnedValue;
 
@@ -19,18 +22,20 @@ impl NotificationServerRequest {
         let Self {
             app_name,
             replaces_id,
-            app_icon: _,
+            app_icon,
             summary,
             body,
             actions,
             hints,
             expire_timeout,
         } = self;
+        let (image_data, image_reference) = notification_image(&hints);
 
         NotificationInput {
             app_name,
             desktop_entry: desktop_entry_hint(&hints),
             replaces_id: (replaces_id != 0).then_some(replaces_id as i64),
+            app_icon: NotificationVisualReference::from_sender_reference(&app_icon),
             summary,
             body,
             expire_timeout: NotificationTimeout::from_freedesktop_expire_timeout(expire_timeout),
@@ -38,6 +43,8 @@ impl NotificationServerRequest {
             actions: notification_actions(actions),
             category: string_hint(&hints, "category"),
             progress: progress_hint(&hints),
+            image_data,
+            image_reference,
             ..NotificationInput::default()
         }
     }
@@ -71,6 +78,61 @@ fn progress_hint(hints: &HashMap<String, OwnedValue>) -> Option<i64> {
         .map(i64::from)
 }
 
+fn notification_image(
+    hints: &HashMap<String, OwnedValue>,
+) -> (
+    Option<NotificationImageData>,
+    Option<NotificationVisualReference>,
+) {
+    if let Some(image_data) = raw_image_hint(hints, &["image-data", "image_data"]) {
+        return (Some(image_data), None);
+    }
+
+    if let Some(image_reference) = image_reference_hint(hints) {
+        return (None, Some(image_reference));
+    }
+
+    (raw_image_hint(hints, &["icon_data"]), None)
+}
+
+fn raw_image_hint(
+    hints: &HashMap<String, OwnedValue>,
+    keys: &[&str],
+) -> Option<NotificationImageData> {
+    for key in keys {
+        let Some(value) = hints.get(*key) else {
+            continue;
+        };
+        let Ok((width, height, rowstride, has_alpha, bits_per_sample, channels, data)) =
+            value.downcast_ref::<(i32, i32, i32, bool, i32, i32, Vec<u8>)>()
+        else {
+            continue;
+        };
+
+        if let Some(image) = NotificationImageData::from_freedesktop(
+            width,
+            height,
+            rowstride,
+            has_alpha,
+            bits_per_sample,
+            channels,
+            data,
+        ) {
+            return Some(image);
+        }
+    }
+
+    None
+}
+
+fn image_reference_hint(
+    hints: &HashMap<String, OwnedValue>,
+) -> Option<NotificationVisualReference> {
+    string_hint(hints, "image-path")
+        .or_else(|| string_hint(hints, "image_path"))
+        .and_then(|value| NotificationVisualReference::from_sender_reference(&value))
+}
+
 fn notification_actions(actions: Vec<String>) -> Vec<NotificationAction> {
     actions
         .chunks(2)
@@ -84,7 +146,7 @@ fn notification_actions(actions: Vec<String>) -> Vec<NotificationAction> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zbus::zvariant::Value;
+    use zbus::zvariant::{Structure, Value};
 
     #[test]
     fn maps_freedesktop_request_into_notification_input() {
@@ -127,6 +189,10 @@ mod tests {
         assert_eq!(input.category.as_deref(), Some("email"));
         assert_eq!(input.progress, Some(73));
         assert_eq!(
+            input.app_icon,
+            NotificationVisualReference::icon_name("mail-unread")
+        );
+        assert_eq!(
             input
                 .actions
                 .iter()
@@ -156,7 +222,72 @@ mod tests {
         assert_eq!(input.urgency, Urgency::Normal);
         assert_eq!(input.category, None);
         assert_eq!(input.progress, None);
+        assert_eq!(input.app_icon, None);
         assert!(input.actions.is_empty());
+    }
+
+    #[test]
+    fn maps_freedesktop_visual_hints_into_notification_input() {
+        let input = NotificationServerRequest {
+            app_name: "Photos".to_string(),
+            replaces_id: 0,
+            app_icon: "file:///tmp/photos.png".to_string(),
+            summary: "Screenshot".to_string(),
+            body: String::new(),
+            actions: Vec::new(),
+            hints: HashMap::from([
+                (
+                    "image-data".to_string(),
+                    OwnedValue::try_from(Value::from(Structure::from((
+                        1_i32,
+                        1_i32,
+                        4_i32,
+                        true,
+                        8_i32,
+                        4_i32,
+                        vec![1_u8, 2, 3, 4],
+                    ))))
+                    .unwrap(),
+                ),
+                (
+                    "image-path".to_string(),
+                    string_value("file:///tmp/fallback.jpg"),
+                ),
+            ]),
+            expire_timeout: -1,
+        }
+        .into_notification_input();
+
+        assert_eq!(
+            input.app_icon,
+            NotificationVisualReference::local_path("/tmp/photos.png")
+        );
+        assert!(input.image_data.is_some());
+        assert_eq!(input.image_reference, None);
+    }
+
+    #[test]
+    fn maps_image_path_when_raw_image_data_is_missing() {
+        let input = NotificationServerRequest {
+            app_name: "Photos".to_string(),
+            replaces_id: 0,
+            app_icon: String::new(),
+            summary: "Screenshot".to_string(),
+            body: String::new(),
+            actions: Vec::new(),
+            hints: HashMap::from([(
+                "image_path".to_string(),
+                string_value("file:///tmp/screenshot.jpg"),
+            )]),
+            expire_timeout: -1,
+        }
+        .into_notification_input();
+
+        assert_eq!(input.image_data, None);
+        assert_eq!(
+            input.image_reference,
+            NotificationVisualReference::local_path("/tmp/screenshot.jpg")
+        );
     }
 
     fn string_value(value: &'static str) -> OwnedValue {

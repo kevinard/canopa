@@ -15,7 +15,7 @@ anyhow = "1"
 assert_cmd = "2"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
-iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "wayland"] }
+iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "wayland", "image"] }
 iced_layershell = { version = "0.18", default-features = false }
 kdl = "6.5.0"
 predicates = "3"

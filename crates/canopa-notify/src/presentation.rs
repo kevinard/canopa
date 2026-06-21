@@ -1,11 +1,16 @@
+use crate::domain::has_static_raster_extension;
 use crate::{
-    BannerLifecycleChange, DeliveryOutcome, NotificationStatus, NotificationThread, Urgency,
+    BannerLifecycleChange, DeliveryOutcome, NotificationImageData, NotificationStatus,
+    NotificationThread, NotificationVisualReference, Urgency,
 };
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
+
+const MAX_FILE_BACKED_VISUAL_BYTES: u64 = 16 * 1024 * 1024;
 
 pub trait BannerPresenter: Send + Sync {
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()>;
@@ -321,10 +326,12 @@ mod tests {
             notification_id,
             app_identity: "downloader".to_string(),
             app_name: "Downloader".to_string(),
+            app_icon: None,
             summary: "Download".to_string(),
             body: body.to_string(),
             urgency: Urgency::Normal,
             progress: None,
+            image: None,
             default_action_key: None,
             placement: BannerPlacement::TopRightFocusedOutputWithFallback,
             focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
@@ -403,17 +410,15 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
         .on_press(BannerUiMessage::Activate(banner.notification_id));
     let dismiss = close_button(banner.notification_id);
 
-    let mut card = column![
-        row![
-            app_badge(&banner.app_name, banner.urgency),
-            activate,
-            dismiss
-        ]
+    let mut header = row![app_identity_visual(banner),]
         .spacing(10)
-        .align_y(Alignment::Start)
-    ]
-    .spacing(8)
-    .width(Length::Fill);
+        .align_y(Alignment::Start);
+    if let Some(image) = &banner.image {
+        header = header.push(notification_image_visual(image));
+    }
+    header = header.push(activate).push(dismiss);
+
+    let mut card = column![header].spacing(8).width(Length::Fill);
 
     if let Some(progress) = banner.progress {
         card = card.push(
@@ -490,7 +495,38 @@ fn app_badge(app_name: &str, urgency: Urgency) -> iced::Element<'_, BannerUiMess
         .into()
 }
 
-fn close_button(notification_id: i64) -> iced::widget::Button<'static, BannerUiMessage> {
+fn app_identity_visual(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
+    match &banner.app_icon {
+        Some(icon) => visual_image(icon, 34),
+        None => app_badge(&banner.app_name, banner.urgency),
+    }
+}
+
+fn notification_image_visual(image: &BannerVisual) -> iced::Element<'_, BannerUiMessage> {
+    visual_image(image, 58)
+}
+
+fn visual_image(visual: &BannerVisual, size: u16) -> iced::Element<'_, BannerUiMessage> {
+    use iced::widget::{container, image};
+
+    let handle = match visual {
+        BannerVisual::Rgba {
+            width,
+            height,
+            pixels,
+        } => image::Handle::from_rgba(*width, *height, pixels.clone()),
+        BannerVisual::LocalPath { path } => image::Handle::from_path(path),
+    };
+
+    let size = u32::from(size);
+    container(image(handle).width(size).height(size))
+        .center(size)
+        .clip(true)
+        .style(visual_image_container_style)
+        .into()
+}
+
+fn close_button<'a>(notification_id: i64) -> iced::widget::Button<'a, BannerUiMessage> {
     use iced::widget::{button, text};
 
     button(text("x").size(14))
@@ -547,6 +583,20 @@ fn app_badge_style(theme: &iced::Theme, urgency: Urgency) -> iced::widget::conta
             width: 1.0,
             radius: 7.0.into(),
             color: accent.scale_alpha(0.55),
+        },
+        ..Default::default()
+    }
+}
+
+fn visual_image_container_style(theme: &iced::Theme) -> iced::widget::container::Style {
+    let palette = theme.extended_palette();
+
+    iced::widget::container::Style {
+        background: Some(palette.background.weakest.color.into()),
+        border: iced::Border {
+            width: 1.0,
+            radius: 7.0.into(),
+            color: palette.background.weak.color,
         },
         ..Default::default()
     }
@@ -737,17 +787,55 @@ pub struct BannerView {
     pub notification_id: i64,
     pub app_identity: String,
     pub app_name: String,
+    pub app_icon: Option<BannerVisual>,
     pub summary: String,
     pub body: String,
     pub urgency: Urgency,
     pub progress: Option<i64>,
+    pub image: Option<BannerVisual>,
     pub default_action_key: Option<String>,
     pub placement: BannerPlacement,
     pub focus_behavior: BannerFocusBehavior,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum BannerVisual {
+    Rgba {
+        width: u32,
+        height: u32,
+        pixels: Vec<u8>,
+    },
+    LocalPath {
+        path: String,
+    },
+}
+
+impl BannerVisual {
+    pub(crate) fn from_image_data(image: &NotificationImageData) -> Self {
+        Self::Rgba {
+            width: image.width,
+            height: image.height,
+            pixels: image.rgba_pixels(),
+        }
+    }
+
+    fn from_reference(reference: &NotificationVisualReference) -> Option<Self> {
+        match reference {
+            NotificationVisualReference::LocalPath(path) if supported_local_image_path(path) => {
+                Some(Self::LocalPath { path: path.clone() })
+            }
+            NotificationVisualReference::LocalPath(_)
+            | NotificationVisualReference::IconName(_) => None,
+        }
+    }
+}
+
 impl BannerView {
-    fn from_thread(thread: NotificationThread) -> Self {
+    pub(crate) fn from_thread(
+        thread: NotificationThread,
+        image_data: Option<NotificationImageData>,
+    ) -> Self {
         let notification = thread.accepted_notification;
         let default_action_key = notification
             .actions
@@ -758,15 +846,35 @@ impl BannerView {
             notification_id: thread.id,
             app_identity: notification.app_identity,
             app_name: notification.app_name,
+            app_icon: notification
+                .app_icon
+                .as_ref()
+                .and_then(BannerVisual::from_reference),
             summary: notification.summary,
             body: notification.body,
             urgency: notification.urgency,
             progress: notification.progress,
+            image: image_data
+                .as_ref()
+                .map(BannerVisual::from_image_data)
+                .or_else(|| {
+                    notification
+                        .image_reference
+                        .as_ref()
+                        .and_then(BannerVisual::from_reference)
+                }),
             default_action_key,
             placement: BannerPlacement::TopRightFocusedOutputWithFallback,
             focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
         }
     }
+}
+
+fn supported_local_image_path(path: &str) -> bool {
+    has_static_raster_extension(path)
+        && std::fs::metadata(Path::new(path))
+            .map(|metadata| metadata.is_file() && metadata.len() <= MAX_FILE_BACKED_VISUAL_BYTES)
+            .unwrap_or(false)
 }
 
 #[derive(Clone)]
@@ -814,17 +922,27 @@ impl NotificationBannerState {
     }
 
     pub fn visible_banners(&self) -> Vec<BannerView> {
+        self.visible_threads()
+            .into_iter()
+            .map(|thread| BannerView::from_thread(thread, None))
+            .collect()
+    }
+
+    pub(crate) fn visible_threads(&self) -> Vec<NotificationThread> {
         self.visible_order
             .iter()
             .filter_map(|id| self.visible.get(id).cloned())
-            .map(BannerView::from_thread)
             .collect()
+    }
+
+    pub(crate) fn overflow_count(&self) -> usize {
+        self.overflow.len()
     }
 
     pub fn banner_presentation(&self) -> BannerPresentation {
         BannerPresentation {
             banners: self.visible_banners(),
-            overflow_count: self.overflow.len(),
+            overflow_count: self.overflow_count(),
         }
     }
 

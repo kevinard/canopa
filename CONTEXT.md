@@ -108,6 +108,14 @@ _Avoid_: Rule category when notification rules do not match categories
 Sender-provided progress metadata for an in-progress operation represented by a notification.
 _Avoid_: Category when referring to operation completion percentage
 
+**Notification App Icon**:
+A visual identifier for the application that sent a notification, distinct from any visual content attached to the notification itself.
+_Avoid_: Notification Image when referring to the sending application's visual identity
+
+**Notification Image**:
+Sender-provided visual content attached to a specific notification.
+_Avoid_: Notification App Icon when referring to notification-specific visual content
+
 **Notification Body**:
 The user-visible message content of a notification, interpreted from sender-provided body text.
 _Avoid_: Raw body when referring to text shown to the user
@@ -239,6 +247,16 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - An explicit drop **Notification Rule** applies even to critical notifications.
 - **Notification Category** is stored as metadata but has no first-version category-specific UI.
 - **Notification Progress** is stored as metadata and may be rendered by **Notification Banners**.
+- **Notification App Icon** and **Notification Image** are distinct sender-provided visuals.
+- A surface that can render both a **Notification App Icon** and a **Notification Image** should keep those visuals distinct.
+- A surface that can render only one notification visual should choose the visual using freedesktop notification image priority.
+- **Notification Server Request** decoding recognizes standard freedesktop visual sources for **Notification App Icon** and **Notification Image**.
+- Invalid or unresolvable sender-provided visuals do not make an otherwise meaningful notification a **Dropped Notification**.
+- Invalid raw **Notification Image** data does not make an otherwise no-op notification meaningful.
+- Oversized sender-provided visuals degrade like invalid sender-provided visuals.
+- Sender-provided visual references are resolved only as local file references or icon-theme names.
+- An **Accepted Notification** may retain sender-provided **Notification App Icon** references.
+- An **Accepted Notification** may retain sender-provided **Notification Image** references, but not raw **Notification Image** payloads.
 - Notify stores **Raw Notification Body** while displaying a conservative **Notification Body** representation.
 - The first **Notification Body** rendering is plain text.
 - **Notification Server Request** decoding maps freedesktop `Notify` method values into **Notification Intake** input.
@@ -246,7 +264,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Intake** returns an **Accepted Notification** for sender requests that should enter **Delivery Policy** and **Notification Lifecycle**.
 - **Accepted Notification** contains normalized sender/request facts, not lifecycle timestamps.
 - Body-only notifications are valid even when **Notification Summary** is empty.
-- Notifications with no **Notification Summary**, **Notification Body**, **Notification Action**, or meaningful metadata are dropped as no-op notifications.
+- Notifications with no **Notification Summary**, **Notification Body**, **Notification Action**, **Notification Image**, or meaningful metadata are dropped as no-op notifications.
 - **Notification Intake** validates sender input and rejects no-op notifications before **Delivery Policy**.
 - No-op **Notification Intake** rejection has the same sender-visible **Delivery Outcome** as a **Dropped Notification**.
 - No-op **Notification Intake** rejection returns directly from intake; it does not enter **Delivery Policy** or **Notification Lifecycle**.
@@ -270,9 +288,11 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Delivery Policy** precedence and diagnostic behavior are tested through the **Delivery Policy** module interface; **Notification Daemon** tests cover rule loading, re-evaluation, and **Notification Lifecycle** wiring.
 - **Delivery Decision Logs** are diagnostic debug logs, not first-version metrics.
 - Normal **Delivery Decision Logs** do not include **Notification Content**.
+- Normal diagnostics for invalid or unrenderable sender-provided visuals do not expose raw visual payloads or full sender-provided visual references.
 - Replacement notifications revise an existing **Notification Thread** instead of creating a new normal history item.
 - Replacement handling belongs to **Notification Lifecycle**, not **Notification Intake** or **Notification History**.
 - Revising a **Notification Thread** replaces its retained **Accepted Notification** facts while preserving thread identity and lifecycle metadata.
+- Revising a **Notification Thread** does not inherit omitted **Notification App Icon** or **Notification Image** facts from the previous revision.
 - **Active Notification** re-evaluation uses the **Accepted Notification** retained by each **Notification Thread** instead of reconstructing a separate policy input shape.
 - **Notification Lifecycle** owns lifecycle timestamps on **Notification Threads**.
 - **Notification Lifecycle** may use an internal clock seam so lifecycle timestamp behavior is testable without moving timestamp ownership into **Notification History**.
@@ -304,6 +324,9 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Sender-requested **Notification Timeout** values are respected within user-configured bounds.
 - **Notification Banners** appear at the top right of the focused output by default.
 - **Notification Banners** are owned by the **Notification Daemon**, not by Niribar.
+- First-version **Notification Image** and **Notification App Icon** rendering starts with **Notification Banners**.
+- First-version **Notification Banner** visual rendering does not require full freedesktop icon-theme lookup.
+- First-version **Notification Banner** file-backed visual rendering supports common static raster image formats before vector or animated image formats.
 - Notify shows at most three **Notification Banners** at once by default.
 - **Notification Banner** visibility prefers critical **Active Notifications**, then newest eligible **Active Notifications**.
 - Hidden **Active Notifications** are not later promoted to **Notification Banners** solely because a banner slot opens.
@@ -351,6 +374,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - The first **Notification Server API** scope is freedesktop compatibility, not Dunst compatibility.
 - Dunst configuration import is outside the first version scope.
 - **Notification Server API** identity reports product name **Canopa Notify** and vendor Canopa.
+- **Notification Server API** capabilities report only visual features that Notify can render.
+- Static notification visuals may be advertised without advertising body-embedded images or animated notification visuals.
 - **Panel Provider Mode** reports a provider-visible error when the **Notification Daemon** is unavailable instead of starting it.
 - **Panel Provider Mode** uses a **Notification State Subscription** while the **Notification Center** is open.
 - A **Notification State Subscription** is a current-state stream, not an event log.
@@ -382,7 +407,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Changes to **Notification Rules** re-evaluate **Active Notifications** without changing inactive **Notification History** records.
 - Rule re-evaluation may close existing **Notification Banners** but does not create late banners for older active notifications.
 - **Notification History** may store a **Rule Reference** for the rule that produced a historical **Delivery Outcome**.
-- **Notification History** does not persist arbitrary notification image payloads by default.
+- **Notification History** does not persist raw **Notification Image** payloads by default.
+- **Notification History** may retain sender-provided **Notification Image** references.
 - **Notification History** is not app-level encrypted in the first version.
 - The **Notification Center** shows both **Active Notifications** and recent **Notification History**.
 - The **Notification Center** groups notifications by **App Identity**.
@@ -392,6 +418,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Center Projection** is Notify-owned state and is mapped to shared panel protocol types by **Panel Provider Mode**.
 - The shared panel protocol contains generic Niribar panel infrastructure, not Notify-specific notification logic.
 - The first Niribar-hosted **Notification Center** does not require progress rendering.
+- The first Niribar-hosted **Notification Center** does not require **Notification Image** or **Notification App Icon** rendering.
 - First-version documentation includes a Niribar configuration example for opening the **Notification Center**.
 - The first **Notification Center** does not show counts for **Dropped Notifications**.
 - Full-text **Notification History** search is outside the first **Notification Center** scope.
