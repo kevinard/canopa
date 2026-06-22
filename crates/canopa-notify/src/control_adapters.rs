@@ -1,9 +1,10 @@
 use canopa_notify::{
-    AppPermissionControl, ControlCommand, ControlReply, NotificationCenterProjection, NotifyControl,
+    AppPermissionControl, ControlCommand, ControlReply, NotificationBodyMarkup,
+    NotificationCenterProjection, NotifyControl,
 };
 use canopa_panel_protocol::{
     PanelAction, PanelContent, PanelControl, PanelControlOption, PanelItem, PanelMetadata,
-    PanelSection, ProviderResponse,
+    PanelSection, ProviderResponse, StyledText, StyledTextRun, StyledTextStyle,
 };
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream as StdUnixStream;
@@ -250,6 +251,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                         id: item.notification_id.to_string(),
                         title: item.summary,
                         body: (!item.body.is_empty()).then_some(item.body),
+                        styled_body: styled_text_from_body_markup(item.body_markup),
                         metadata: vec![
                             PanelMetadata {
                                 key: "status".to_string(),
@@ -278,6 +280,25 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
         ],
         error: None,
     }
+}
+
+fn styled_text_from_body_markup(body_markup: NotificationBodyMarkup) -> Option<StyledText> {
+    let styled = StyledText {
+        runs: body_markup
+            .runs
+            .into_iter()
+            .map(|run| StyledTextRun {
+                text: run.text,
+                style: StyledTextStyle {
+                    bold: run.style.bold,
+                    italic: run.style.italic,
+                    underline: run.style.underline,
+                },
+            })
+            .collect(),
+    };
+
+    (!styled.is_empty()).then_some(styled)
 }
 
 fn app_permission_control(permission: AppPermissionControl) -> PanelControl {

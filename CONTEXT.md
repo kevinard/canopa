@@ -120,6 +120,10 @@ _Avoid_: Notification App Icon when referring to notification-specific visual co
 The user-visible message content of a notification, interpreted from sender-provided body text.
 _Avoid_: Raw body when referring to text shown to the user
 
+**Notification Body Markup**:
+Sender-provided lightweight presentation hints in a **Raw Notification Body** that may affect how the **Notification Body** is shown without changing its plain-text meaning.
+_Avoid_: HTML, rich text, hyperlink support when the link is not actionable
+
 **Notification Summary**:
 The sender-provided short title or headline of a notification.
 _Avoid_: Required title when the sender provides an empty summary
@@ -258,13 +262,31 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - An **Accepted Notification** may retain sender-provided **Notification App Icon** references.
 - An **Accepted Notification** may retain sender-provided **Notification Image** references, but not raw **Notification Image** payloads.
 - Notify stores **Raw Notification Body** while displaying a conservative **Notification Body** representation.
-- The first **Notification Body** rendering is plain text.
+- Existing plain **Notification Body** fields remain the visible plain-text fallback when interpreted **Notification Body Markup** is added.
+- The first **Notification Body Markup** scope adds inline bold, italic, and underline emphasis while preserving a safe plain-text **Notification Body** fallback.
+- Initial **Notification Body Markup** support recognizes freedesktop-relevant body tags and tolerated line-break tags, not arbitrary HTML or CSS.
+- **Notification Body Markup** tag and attribute names are interpreted case-insensitively.
+- Nested **Notification Body Markup** emphasis accumulates in the shown **Notification Body**.
+- Interpreted **Notification Body Markup** should not preserve parser-only text run boundaries.
+- Unsupported **Notification Body Markup** does not remove its enclosed text from the **Notification Body**.
+- Line-break markup contributes line breaks to the shown **Notification Body**.
+- **Notification Body** normalization trims line edges and the overall body while preserving interior text spacing.
+- **Notification Body** normalization decodes XML basic entities and numeric character references.
+- Named HTML entities beyond XML basic entities are outside initial **Notification Body Markup** support.
+- Malformed **Notification Body Markup** does not reject an otherwise meaningful notification.
+- Malformed **Notification Body Markup** should degrade to visible text without exposing raw markup syntax when possible.
+- Excessively complex **Notification Body Markup** should degrade to safe visible text rather than reject an otherwise meaningful notification.
+- Hyperlink activation and body-embedded images are separate feature boundaries from initial **Notification Body Markup** support.
+- Initial **Notification Body Markup** support keeps hyperlink text but does not retain hyperlink targets.
+- Initial **Notification Body Markup** support may include body-embedded image alternative text, but does not retain the body-embedded image reference.
+- **Notification Body Markup** does not apply to **Notification Summary**.
 - **Notification Server Request** decoding maps freedesktop `Notify` method values into **Notification Intake** input.
-- **Notification Intake** owns first-version **App Identity** derivation and **Notification Body** normalization.
+- **Notification Intake** owns first-version **App Identity** derivation, **Notification Body** normalization, and **Notification Body Markup** interpretation.
 - **Notification Intake** returns an **Accepted Notification** for sender requests that should enter **Delivery Policy** and **Notification Lifecycle**.
 - **Accepted Notification** contains normalized sender/request facts, not lifecycle timestamps.
 - Body-only notifications are valid even when **Notification Summary** is empty.
 - Notifications with no **Notification Summary**, **Notification Body**, **Notification Action**, **Notification Image**, or meaningful metadata are dropped as no-op notifications.
+- No-op detection uses the visible **Notification Body** fallback produced from interpreted **Notification Body Markup**, not the raw sender body text.
 - **Notification Intake** validates sender input and rejects no-op notifications before **Delivery Policy**.
 - No-op **Notification Intake** rejection has the same sender-visible **Delivery Outcome** as a **Dropped Notification**.
 - No-op **Notification Intake** rejection returns directly from intake; it does not enter **Delivery Policy** or **Notification Lifecycle**.
@@ -282,12 +304,14 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Delivery Policy** decides the **Delivery Outcome**; **Notification Lifecycle** acts on that outcome, including dropped notifications.
 - **Delivery Policy** evaluates an immutable **Accepted Notification** and **Loaded Delivery Policy State**; it does not query storage or configuration files directly.
 - First-version **Delivery Policy** rules use **App Identity** and **Notification Urgency** from the **Accepted Notification**, but the module interface accepts the full shape so future rules can use additional normalized facts.
+- Initial **Notification Body Markup** styles do not affect **Delivery Policy** decisions.
 - **Delivery Policy** uses the same decision path for new notifications, replacement notifications, and **Active Notification** re-evaluation unless a future **Notification Rule** explicitly depends on that context.
 - Default allowing of unknown **App Identities** is **Delivery Policy** implementation, not a synthetic rule supplied by the **Notification Daemon**.
 - **Delivery Policy** produces the diagnostic explanation used for a **Delivery Decision Log**; the **Notification Daemon** records the log without inferring policy reasons.
 - **Delivery Policy** precedence and diagnostic behavior are tested through the **Delivery Policy** module interface; **Notification Daemon** tests cover rule loading, re-evaluation, and **Notification Lifecycle** wiring.
 - **Delivery Decision Logs** are diagnostic debug logs, not first-version metrics.
 - Normal **Delivery Decision Logs** do not include **Notification Content**.
+- Normal diagnostics for **Notification Body Markup** degradation do not include **Raw Notification Body**, body text snippets, or sender-provided body attribute values.
 - Normal diagnostics for invalid or unrenderable sender-provided visuals do not expose raw visual payloads or full sender-provided visual references.
 - Replacement notifications revise an existing **Notification Thread** instead of creating a new normal history item.
 - Replacement handling belongs to **Notification Lifecycle**, not **Notification Intake** or **Notification History**.
@@ -376,6 +400,9 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Server API** identity reports product name **Canopa Notify** and vendor Canopa.
 - **Notification Server API** capabilities report only visual features that Notify can render.
 - Static notification visuals may be advertised without advertising body-embedded images or animated notification visuals.
+- **Notification Server API** advertises **Notification Body Markup** only when Notify-owned body-display surfaces can preserve or render the interpreted markup semantics.
+- Parser-only **Notification Body Markup** support is not enough to advertise **Notification Body Markup** through the **Notification Server API**.
+- Initial **Notification Body Markup** rendering is not controlled by a separate user configuration switch.
 - **Panel Provider Mode** reports a provider-visible error when the **Notification Daemon** is unavailable instead of starting it.
 - **Panel Provider Mode** uses a **Notification State Subscription** while the **Notification Center** is open.
 - A **Notification State Subscription** is a current-state stream, not an event log.
@@ -393,6 +420,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - The first version includes minimal **Control Commands** for daemon status, active notifications, **Do Not Disturb**, and configuration reload.
 - First-version **Control Commands** are diagnostic-first and do not promise stable output formats unless explicitly documented.
 - Data-returning **Control Commands** may support unstable JSON output for diagnostics and tests.
+- JSON **Control Command** output that includes **Notification Body** may also include interpreted **Notification Body Markup**; human-readable **Control Command** output may remain plain text.
 - **Control Commands** report when the **Notification Daemon** is unavailable instead of starting it implicitly.
 - The **Notification Daemon** owns notification state, lifecycle, policy, history, and rules; the **Notification Center** is an interactive view over that daemon state.
 - The **Notify Control API** exposes all private control surfaces over **Notification Daemon** state, including diagnostic status, active notification output, **Control Commands**, **Notification Center Projection**, and **Notification State Subscription**.
@@ -409,6 +437,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification History** may store a **Rule Reference** for the rule that produced a historical **Delivery Outcome**.
 - **Notification History** does not persist raw **Notification Image** payloads by default.
 - **Notification History** may retain sender-provided **Notification Image** references.
+- **Notification History** persists interpreted **Notification Body Markup** for new and revised **Notification Threads**.
+- Legacy **Notification History** may derive interpreted **Notification Body Markup** from **Raw Notification Body** during migration, but normal history reads should not reinterpret **Raw Notification Body**.
 - **Notification History** is not app-level encrypted in the first version.
 - The **Notification Center** shows both **Active Notifications** and recent **Notification History**.
 - The **Notification Center** groups notifications by **App Identity**.
@@ -416,7 +446,10 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **App Permission Controls** show current policy; historical records may show their original **Delivery Outcome**.
 - **Notification Center** requirements must not define core **Notification Daemon** state or lifecycle rules.
 - **Notification Center Projection** is Notify-owned state and is mapped to shared panel protocol types by **Panel Provider Mode**.
+- **Notification Center Projection** preserves interpreted **Notification Body Markup** in addition to the plain **Notification Body** fallback.
 - The shared panel protocol contains generic Niribar panel infrastructure, not Notify-specific notification logic.
+- Shared panel protocol styled text is generic inline presentation data, not raw freedesktop notification markup.
+- Shared panel protocol shape changes for generic styled text should advance the panel protocol version.
 - The first Niribar-hosted **Notification Center** does not require progress rendering.
 - The first Niribar-hosted **Notification Center** does not require **Notification Image** or **Notification App Icon** rendering.
 - First-version documentation includes a Niribar configuration example for opening the **Notification Center**.

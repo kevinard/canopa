@@ -6,9 +6,9 @@ mod notifications;
 use canopa_notify::{
     AcceptedNotification, BannerLifecycleChange, Daemon, DaemonOptions, DeliveryOutcome,
     LifecycleDelivery, LifecycleEffect, NewNotificationThread, NotificationAction,
-    NotificationHistory, NotificationInput, NotificationLifecycle, NotificationStatus,
-    NotificationThread, NotificationTimeout, NotificationTimeoutChange, PersistPrecondition,
-    Urgency,
+    NotificationBodyMarkup, NotificationHistory, NotificationInput, NotificationLifecycle,
+    NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutChange,
+    PersistPrecondition, Urgency,
 };
 use notifications::notification;
 use std::sync::{
@@ -445,6 +445,7 @@ async fn lifecycle_creates_shown_notification_through_history_and_returns_receip
                 app_icon: None,
                 summary: "Inbox".to_string(),
                 body: "One unread message".to_string(),
+                body_markup: NotificationBodyMarkup::plain("One unread message"),
                 raw_body: "<b>One unread message</b>".to_string(),
                 urgency: Urgency::Normal,
                 category: None,
@@ -582,6 +583,7 @@ fn lifecycle_notification(replaces_id: Option<i64>, summary: &str) -> AcceptedNo
         app_icon: None,
         summary: summary.to_string(),
         body: String::new(),
+        body_markup: NotificationBodyMarkup::default(),
         raw_body: String::new(),
         urgency: Urgency::Normal,
         category: None,

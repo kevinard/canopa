@@ -103,6 +103,7 @@ async fn non_headless_daemon_presents_visible_banner_content() {
     assert_eq!(banners[0].notification_id, receipt.notification_id);
     assert_eq!(banners[0].summary, "Inbox");
     assert_eq!(banners[0].body, "One\nunread message");
+    assert!(banners[0].body_markup.runs[0].style.bold);
 }
 
 #[tokio::test]

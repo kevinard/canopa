@@ -552,6 +552,7 @@ fn projection_from_snapshot(
                 notification_id: thread.id,
                 summary: notification.summary,
                 body: notification.body,
+                body_markup: notification.body_markup,
                 status: thread.status,
                 delivery_outcome: thread.delivery_outcome,
                 actions: notification.actions,

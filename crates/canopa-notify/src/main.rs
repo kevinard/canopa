@@ -326,6 +326,7 @@ impl NotificationServer {
         vec![
             "actions".to_string(),
             "body".to_string(),
+            "body-markup".to_string(),
             "icon-static".to_string(),
         ]
     }

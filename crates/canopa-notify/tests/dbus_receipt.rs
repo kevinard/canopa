@@ -50,7 +50,7 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
                 0u32,
                 "",
                 "Inbox",
-                "One unread message",
+                "<b>One</b> unread message",
                 Vec::<String>::new(),
                 hints,
                 -1i32,
@@ -77,7 +77,17 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
     assert!(
         capabilities
             .iter()
+            .any(|capability| capability == "body-markup")
+    );
+    assert!(
+        capabilities
+            .iter()
             .any(|capability| capability == "icon-static")
+    );
+    assert!(
+        !capabilities
+            .iter()
+            .any(|capability| capability == "body-hyperlinks")
     );
     assert!(
         !capabilities
@@ -105,6 +115,9 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains("example-mail.desktop"));
     assert!(json.contains("Inbox"));
+    assert!(json.contains("\"body\":\"One unread message\""));
+    assert!(json.contains("\"body_markup\""));
+    assert!(json.contains("\"bold\":true"));
 
     daemon.kill().ok();
     daemon.wait().ok();

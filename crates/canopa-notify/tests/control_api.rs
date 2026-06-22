@@ -54,7 +54,7 @@ async fn notify_control_builds_notification_center_projection() {
     daemon
         .receive_notification(NotificationInput {
             actions: vec![NotificationAction::new("open", "Open")],
-            ..notification_with_body("Mail", "Inbox", "One unread message")
+            ..notification_with_body("Mail", "Inbox", "<b>One</b> unread message")
         })
         .await
         .unwrap();
@@ -82,6 +82,7 @@ async fn notify_control_builds_notification_center_projection() {
     assert_eq!(mail.items.len(), 1);
     assert_eq!(mail.items[0].summary, "Inbox");
     assert_eq!(mail.items[0].body, "One unread message");
+    assert!(mail.items[0].body_markup.runs[0].style.bold);
     assert_eq!(mail.items[0].actions[0].key, "open");
 
     let chat = projection

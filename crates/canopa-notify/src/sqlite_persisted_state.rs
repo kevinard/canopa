@@ -1,9 +1,10 @@
 use crate::clock::now_millis;
 use crate::domain::{urgency_from_key, urgency_key};
+use crate::intake::interpreted_body_markup;
 use crate::{
-    AcceptedNotification, DeliveryOutcome, NewNotificationThread, NotificationHistory,
-    NotificationSnapshot, NotificationStatus, NotificationThread, PersistPrecondition, Urgency,
-    UserRule,
+    AcceptedNotification, DeliveryOutcome, NewNotificationThread, NotificationBodyMarkup,
+    NotificationHistory, NotificationSnapshot, NotificationStatus, NotificationThread,
+    PersistPrecondition, Urgency, UserRule,
 };
 use anyhow::Context;
 use sqlx::query::Query;
@@ -25,13 +26,14 @@ struct RetentionPolicy {
 }
 
 const NOTIFICATION_THREAD_ID_COLUMN: &str = "id";
-const NOTIFICATION_THREAD_WRITE_COLUMNS: [&str; 20] = [
+const NOTIFICATION_THREAD_WRITE_COLUMNS: [&str; 21] = [
     "app_identity",
     "app_name",
     "replaces_id",
     "app_icon_json",
     "summary",
     "body",
+    "body_markup_json",
     "raw_body",
     "urgency",
     "status",
@@ -111,6 +113,7 @@ struct NotificationThreadRecord {
     app_icon_json: Option<String>,
     summary: String,
     body: String,
+    body_markup_json: Option<String>,
     raw_body: String,
     urgency: Urgency,
     status: NotificationStatus,
@@ -179,6 +182,7 @@ impl NotificationThreadRecord {
                 .transpose()?,
             summary: notification.summary,
             body: notification.body,
+            body_markup_json: Some(serde_json::to_string(&notification.body_markup)?),
             raw_body: notification.raw_body,
             urgency: notification.urgency,
             status,
@@ -209,6 +213,7 @@ impl NotificationThreadRecord {
             app_icon_json: row.try_get("app_icon_json")?,
             summary: row.try_get("summary")?,
             body: row.try_get("body")?,
+            body_markup_json: row.try_get("body_markup_json")?,
             raw_body: row.try_get("raw_body")?,
             urgency: Urgency::from_persisted_str(&row.try_get::<String, _>("urgency")?),
             status: NotificationStatus::from_persisted_str(&row.try_get::<String, _>("status")?),
@@ -263,6 +268,7 @@ impl NotificationThreadRecord {
             .bind(self.app_icon_json.as_deref())
             .bind(&self.summary)
             .bind(&self.body)
+            .bind(self.body_markup_json.as_deref())
             .bind(&self.raw_body)
             .bind(self.urgency.as_str())
             .bind(self.status.as_str())
@@ -291,6 +297,13 @@ impl NotificationThreadRecord {
             .as_deref()
             .map(serde_json::from_str)
             .transpose()?;
+        let body_markup = self
+            .body_markup_json
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(serde_json::from_str)
+            .transpose()?
+            .unwrap_or_else(|| NotificationBodyMarkup::plain(self.body.clone()));
         Ok(NotificationThread {
             id: self
                 .id
@@ -302,6 +315,7 @@ impl NotificationThreadRecord {
                 app_icon,
                 summary: self.summary,
                 body: self.body,
+                body_markup,
                 raw_body: self.raw_body,
                 urgency: self.urgency,
                 category: self.category,
@@ -417,6 +431,7 @@ impl SqlitePersistedState {
                 app_icon_json TEXT,
                 summary TEXT NOT NULL,
                 body TEXT NOT NULL,
+                body_markup_json TEXT,
                 raw_body TEXT NOT NULL,
                 urgency TEXT NOT NULL,
                 status TEXT NOT NULL,
@@ -444,6 +459,29 @@ impl SqlitePersistedState {
         Self::add_nullable_column_if_missing(pool, "replaces_id", "INTEGER").await?;
         Self::add_nullable_column_if_missing(pool, "app_icon_json", "TEXT").await?;
         Self::add_nullable_column_if_missing(pool, "image_reference_json", "TEXT").await?;
+        Self::add_nullable_column_if_missing(pool, "body_markup_json", "TEXT").await?;
+        Self::backfill_body_markup(pool).await?;
+
+        Ok(())
+    }
+
+    async fn backfill_body_markup(pool: &SqlitePool) -> anyhow::Result<()> {
+        let rows = sqlx::query(
+            "SELECT id, raw_body FROM notification_threads WHERE body_markup_json IS NULL OR body_markup_json = ''",
+        )
+        .fetch_all(pool)
+        .await?;
+
+        for row in rows {
+            let id: i64 = row.try_get("id")?;
+            let raw_body: String = row.try_get("raw_body")?;
+            let body_markup_json = serde_json::to_string(&interpreted_body_markup(&raw_body))?;
+            sqlx::query("UPDATE notification_threads SET body_markup_json = ?1 WHERE id = ?2")
+                .bind(body_markup_json)
+                .bind(id)
+                .execute(pool)
+                .await?;
+        }
 
         Ok(())
     }
@@ -741,6 +779,81 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn open_backfills_body_markup_for_legacy_rows() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+        let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", database.display()))
+            .unwrap()
+            .create_if_missing(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+            CREATE TABLE notification_threads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                app_identity TEXT NOT NULL,
+                app_name TEXT NOT NULL,
+                replaces_id INTEGER,
+                app_icon_json TEXT,
+                summary TEXT NOT NULL,
+                body TEXT NOT NULL,
+                raw_body TEXT NOT NULL,
+                urgency TEXT NOT NULL,
+                status TEXT NOT NULL,
+                delivery_outcome TEXT NOT NULL,
+                rule_reference TEXT,
+                category TEXT,
+                progress INTEGER,
+                image_reference_json TEXT,
+                resident INTEGER NOT NULL DEFAULT 0,
+                actions_json TEXT NOT NULL DEFAULT '[]',
+                revision INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                closed_at INTEGER
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            INSERT INTO notification_threads (
+                app_identity,
+                app_name,
+                summary,
+                body,
+                raw_body,
+                urgency,
+                status,
+                delivery_outcome,
+                revision,
+                created_at,
+                updated_at
+            )
+            VALUES ('Legacy', 'Legacy', 'Inbox', 'One unread', '<b>One</b> unread', 'normal', 'active', 'shown', 1, 1, 1)
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        drop(pool);
+
+        let storage = SqlitePersistedState::open(database, 30, 1_000)
+            .await
+            .unwrap();
+        let snapshot = storage.snapshot().await.unwrap();
+        let body_markup = &snapshot.active[0].accepted_notification.body_markup;
+
+        assert_eq!(body_markup.plain_text(), "One unread");
+        assert!(body_markup.runs[0].style.bold);
+    }
+
+    #[tokio::test]
     async fn persist_delivery_change_prunes_existing_inactive_history_after_write() {
         let (_temp, storage) = open_history(10).await;
         let now = now_millis();
@@ -931,6 +1044,7 @@ mod tests {
             app_icon: None,
             summary: summary.to_string(),
             body: String::new(),
+            body_markup: NotificationBodyMarkup::default(),
             raw_body: String::new(),
             urgency: Urgency::Normal,
             category: None,

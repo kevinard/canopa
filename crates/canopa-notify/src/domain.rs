@@ -100,6 +100,7 @@ pub struct AcceptedNotification {
     pub app_icon: Option<NotificationVisualReference>,
     pub summary: String,
     pub body: String,
+    pub body_markup: NotificationBodyMarkup,
     pub raw_body: String,
     pub urgency: Urgency,
     pub category: Option<String>,
@@ -108,6 +109,80 @@ pub struct AcceptedNotification {
     pub has_image_payload: bool,
     pub actions: Vec<NotificationAction>,
     pub resident: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationBodyMarkup {
+    pub runs: Vec<NotificationBodyRun>,
+}
+
+impl NotificationBodyMarkup {
+    pub fn plain(text: impl Into<String>) -> Self {
+        let text = text.into();
+        if text.is_empty() {
+            Self::default()
+        } else {
+            Self {
+                runs: vec![NotificationBodyRun::plain(text)],
+            }
+        }
+    }
+
+    pub fn plain_text(&self) -> String {
+        self.runs
+            .iter()
+            .map(|run| run.text.as_str())
+            .collect::<String>()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.runs.iter().all(|run| run.text.is_empty())
+    }
+
+    pub(crate) fn from_runs(runs: Vec<NotificationBodyRun>) -> Self {
+        let mut normalized: Vec<NotificationBodyRun> = Vec::new();
+        for run in runs {
+            if run.text.is_empty() {
+                continue;
+            }
+
+            match normalized.last_mut() {
+                Some(previous) if previous.style == run.style => previous.text.push_str(&run.text),
+                _ => normalized.push(run),
+            }
+        }
+
+        Self { runs: normalized }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationBodyRun {
+    pub text: String,
+    pub style: NotificationBodyStyle,
+}
+
+impl NotificationBodyRun {
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            style: NotificationBodyStyle::default(),
+        }
+    }
+
+    pub fn styled(text: impl Into<String>, style: NotificationBodyStyle) -> Self {
+        Self {
+            text: text.into(),
+            style,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationBodyStyle {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

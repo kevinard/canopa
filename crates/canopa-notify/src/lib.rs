@@ -22,10 +22,11 @@ pub use delivery_policy::{
     DeliveryPolicyRule, LoadedDeliveryPolicyState,
 };
 pub use domain::{
-    AcceptedNotification, DeliveryOutcome, NotificationAction, NotificationImageData,
-    NotificationInput, NotificationReceipt, NotificationSnapshot, NotificationStatus,
-    NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
-    NotificationVisualReference, SenderEvent, Urgency, UserRule,
+    AcceptedNotification, DeliveryOutcome, NotificationAction, NotificationBodyMarkup,
+    NotificationBodyRun, NotificationBodyStyle, NotificationImageData, NotificationInput,
+    NotificationReceipt, NotificationSnapshot, NotificationStatus, NotificationThread,
+    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference, SenderEvent,
+    Urgency, UserRule,
 };
 pub use lifecycle::{
     BannerLifecycleChange, LifecycleDelivery, LifecycleEffect, LifecycleEffects,

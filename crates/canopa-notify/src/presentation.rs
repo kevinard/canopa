@@ -1,7 +1,7 @@
 use crate::domain::has_static_raster_extension;
 use crate::{
-    BannerLifecycleChange, DeliveryOutcome, NotificationImageData, NotificationStatus,
-    NotificationThread, NotificationVisualReference, Urgency,
+    BannerLifecycleChange, DeliveryOutcome, NotificationBodyMarkup, NotificationImageData,
+    NotificationStatus, NotificationThread, NotificationVisualReference, Urgency,
 };
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -329,6 +329,7 @@ mod tests {
             app_icon: None,
             summary: "Download".to_string(),
             body: body.to_string(),
+            body_markup: NotificationBodyMarkup::plain(body),
             urgency: Urgency::Normal,
             progress: None,
             image: None,
@@ -389,12 +390,7 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
             .width(Length::Fill)
             .height(22)
             .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
-        text(&banner.body)
-            .size(13)
-            .width(Length::Fill)
-            .height(34)
-            .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
-            .style(subdued_text_style),
+        notification_body_widget(banner),
         text(&banner.app_name)
             .size(11)
             .width(Length::Fill)
@@ -434,6 +430,57 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
         .height(FULL_BANNER_HEIGHT)
         .clip(true)
         .style(card_container_style)
+        .into()
+}
+
+fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
+    use iced::widget::{rich_text, span, text};
+    use iced::{Font, Length, font};
+
+    if banner.body_markup.is_empty() {
+        return text(&banner.body)
+            .size(13)
+            .width(Length::Fill)
+            .height(34)
+            .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
+            .style(subdued_text_style)
+            .into();
+    }
+
+    let spans: Vec<iced::widget::text::Span<'_, (), iced::Font>> = banner
+        .body_markup
+        .runs
+        .iter()
+        .map(|run| {
+            let mut body_span = span(run.text.as_str());
+            if run.style.bold || run.style.italic {
+                body_span = body_span.font(Font {
+                    weight: if run.style.bold {
+                        font::Weight::Bold
+                    } else {
+                        font::Weight::Normal
+                    },
+                    style: if run.style.italic {
+                        font::Style::Italic
+                    } else {
+                        font::Style::Normal
+                    },
+                    ..Font::default()
+                });
+            }
+            if run.style.underline {
+                body_span = body_span.underline(true);
+            }
+            body_span
+        })
+        .collect();
+
+    rich_text(spans)
+        .size(13)
+        .width(Length::Fill)
+        .height(34)
+        .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
+        .style(subdued_text_style)
         .into()
 }
 
@@ -790,6 +837,7 @@ pub struct BannerView {
     pub app_icon: Option<BannerVisual>,
     pub summary: String,
     pub body: String,
+    pub body_markup: NotificationBodyMarkup,
     pub urgency: Urgency,
     pub progress: Option<i64>,
     pub image: Option<BannerVisual>,
@@ -852,6 +900,7 @@ impl BannerView {
                 .and_then(BannerVisual::from_reference),
             summary: notification.summary,
             body: notification.body,
+            body_markup: notification.body_markup,
             urgency: notification.urgency,
             progress: notification.progress,
             image: image_data

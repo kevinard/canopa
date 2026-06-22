@@ -22,7 +22,7 @@ fn panel_provider_returns_provider_visible_error_when_daemon_is_unavailable() {
         .assert()
         .success()
         .stdout(contains("Canopa Notify daemon unavailable"))
-        .stdout(contains("\"protocol_version\":1"));
+        .stdout(contains("\"protocol_version\":2"));
 }
 
 #[tokio::test]
@@ -37,7 +37,7 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
     seed.receive_notification(notification_with_body(
         "Mail",
         "Inbox",
-        "One unread message",
+        "<b>One</b> unread message",
     ))
     .await
     .unwrap();
@@ -70,8 +70,26 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
         content.sections[0].items[0].body.as_deref(),
         Some("One unread message")
     );
+    assert_eq!(
+        content.sections[0].items[0]
+            .styled_body
+            .as_ref()
+            .unwrap()
+            .runs[0]
+            .text,
+        "One"
+    );
+    assert!(
+        content.sections[0].items[0]
+            .styled_body
+            .as_ref()
+            .unwrap()
+            .runs[0]
+            .style
+            .bold
+    );
     assert_eq!(content.sections[0].controls[0].key, "app_permission");
-    assert!(line.contains("\"protocol_version\":1"));
+    assert!(line.contains("\"protocol_version\":2"));
 
     provider.kill().ok();
     provider.wait().ok();
