@@ -7,11 +7,14 @@ use crate::{
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
 const MAX_FILE_BACKED_VISUAL_BYTES: u64 = 16 * 1024 * 1024;
+const ICON_SEARCH_MAX_DEPTH: usize = 8;
+const STATIC_ICON_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
 
 pub trait BannerPresenter: Send + Sync {
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()>;
@@ -337,6 +340,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn static_icon_names_resolve_from_icon_search_roots() {
+        let temp = tempfile::tempdir().unwrap();
+        let icon_root = temp.path().join("icons");
+        let icon_path = icon_root
+            .join("hicolor")
+            .join("48x48")
+            .join("actions")
+            .join("mail-reply-sender.png");
+        std::fs::create_dir_all(icon_path.parent().unwrap()).unwrap();
+        std::fs::write(&icon_path, [0_u8]).unwrap();
+
+        assert_eq!(
+            find_static_icon_in_roots("mail-reply-sender", vec![icon_root]),
+            Some(icon_path)
+        );
+        assert_eq!(
+            find_static_icon_in_roots("../mail-reply-sender", vec![temp.path().join("icons")]),
+            None
+        );
+    }
+
+    #[test]
+    fn banner_actions_resolve_sender_action_icons() {
+        let temp = tempfile::tempdir().unwrap();
+        let icon_path = temp.path().join("reply.png");
+        std::fs::write(&icon_path, [0_u8]).unwrap();
+        let icon_path_string = icon_path.to_string_lossy().into_owned();
+        let action = NotificationAction::new("reply", "Reply")
+            .with_icon(NotificationVisualReference::local_path(icon_path_string.clone()).unwrap());
+
+        let action = banner_action_from_notification_action(&action);
+
+        assert_eq!(action.key, "reply");
+        assert_eq!(action.label, "Reply");
+        assert!(matches!(
+            action.icon,
+            Some(BannerVisual::LocalPath { path }) if path == icon_path_string
+        ));
+    }
+
     fn banner_view(notification_id: i64, body: &str) -> BannerView {
         BannerView {
             notification_id,
@@ -453,7 +497,7 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
 }
 
 fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
-    use iced::widget::{button, container, row, text};
+    use iced::widget::{button, container, row};
     use iced::{Alignment, Length};
 
     let mut actions = row![]
@@ -464,23 +508,37 @@ fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessa
 
     for action in &banner.actions {
         actions = actions.push(
-            button(
-                text(action.label.as_str())
-                    .size(12)
-                    .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
-            )
-            .padding([4, 8])
-            .height(28)
-            .width(Length::Fill)
-            .style(content_button_style)
-            .on_press(BannerUiMessage::InvokeAction(
-                banner.notification_id,
-                action.key.clone(),
-            )),
+            button(banner_action_content(action))
+                .padding([4, 8])
+                .height(28)
+                .width(Length::Fill)
+                .style(content_button_style)
+                .on_press(BannerUiMessage::InvokeAction(
+                    banner.notification_id,
+                    action.key.clone(),
+                )),
         );
     }
 
     container(actions).height(28).width(Length::Fill).into()
+}
+
+fn banner_action_content(action: &BannerAction) -> iced::Element<'_, BannerUiMessage> {
+    use iced::widget::{row, text};
+    use iced::{Alignment, Length};
+
+    let label = text(action.label.as_str())
+        .size(12)
+        .wrapping(iced::widget::text::Wrapping::WordOrGlyph);
+
+    match &action.icon {
+        Some(icon) => row![visual_image(icon, 16), label]
+            .spacing(5)
+            .align_y(Alignment::Center)
+            .width(Length::Fill)
+            .into(),
+        None => label.into(),
+    }
 }
 
 fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
@@ -892,9 +950,16 @@ pub struct BannerView {
     pub progress: Option<i64>,
     pub image: Option<BannerVisual>,
     pub default_action_key: Option<String>,
-    pub actions: Vec<NotificationAction>,
+    pub actions: Vec<BannerAction>,
     pub placement: BannerPlacement,
     pub focus_behavior: BannerFocusBehavior,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BannerAction {
+    pub key: String,
+    pub label: String,
+    pub icon: Option<BannerVisual>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -924,8 +989,10 @@ impl BannerVisual {
             NotificationVisualReference::LocalPath(path) if supported_local_image_path(path) => {
                 Some(Self::LocalPath { path: path.clone() })
             }
-            NotificationVisualReference::LocalPath(_)
-            | NotificationVisualReference::IconName(_) => None,
+            NotificationVisualReference::IconName(icon_name) => {
+                resolve_static_icon_name(icon_name).map(|path| Self::LocalPath { path })
+            }
+            NotificationVisualReference::LocalPath(_) => None,
         }
     }
 }
@@ -946,7 +1013,7 @@ impl BannerView {
             .iter()
             .filter(|action| action.key != "default")
             .take(2)
-            .cloned()
+            .map(banner_action_from_notification_action)
             .collect();
         Self {
             notification_id: thread.id,
@@ -978,11 +1045,123 @@ impl BannerView {
     }
 }
 
+fn banner_action_from_notification_action(action: &NotificationAction) -> BannerAction {
+    BannerAction {
+        key: action.key.clone(),
+        label: action.label.clone(),
+        icon: action.icon.as_ref().and_then(BannerVisual::from_reference),
+    }
+}
+
 fn supported_local_image_path(path: &str) -> bool {
     has_static_raster_extension(path)
         && std::fs::metadata(Path::new(path))
             .map(|metadata| metadata.is_file() && metadata.len() <= MAX_FILE_BACKED_VISUAL_BYTES)
             .unwrap_or(false)
+}
+
+fn resolve_static_icon_name(icon_name: &str) -> Option<String> {
+    find_static_icon_in_roots(icon_name, icon_search_roots())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+fn find_static_icon_in_roots(
+    icon_name: &str,
+    roots: impl IntoIterator<Item = PathBuf>,
+) -> Option<PathBuf> {
+    let icon_name = icon_name.trim();
+    if icon_name.is_empty() || icon_name.contains('/') || icon_name.contains('\\') {
+        return None;
+    }
+
+    for root in roots {
+        if let Some(path) = find_static_icon_in_root(&root, icon_name) {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+fn find_static_icon_in_root(root: &Path, icon_name: &str) -> Option<PathBuf> {
+    let file_names = STATIC_ICON_EXTENSIONS
+        .iter()
+        .map(|extension| format!("{icon_name}.{extension}"))
+        .collect::<Vec<_>>();
+    let mut stack = vec![(root.to_path_buf(), 0_usize)];
+
+    while let Some((directory, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+
+        let mut child_directories = Vec::new();
+        for entry in entries {
+            let path = entry.path();
+            let file_name = entry.file_name();
+            if file_names
+                .iter()
+                .any(|expected| file_name == OsStr::new(expected))
+                && supported_local_image_path(path.to_string_lossy().as_ref())
+            {
+                return Some(path);
+            }
+
+            if depth < ICON_SEARCH_MAX_DEPTH
+                && entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
+            {
+                child_directories.push(path);
+            }
+        }
+
+        child_directories.sort();
+        for child in child_directories.into_iter().rev() {
+            stack.push((child, depth + 1));
+        }
+    }
+
+    None
+}
+
+fn icon_search_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
+    if let Some(data_home) = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from) {
+        push_data_dir_icon_roots(&mut roots, data_home);
+    } else if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        push_data_dir_icon_roots(&mut roots, home.join(".local/share"));
+    }
+
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        push_unique_path(&mut roots, home.join(".icons"));
+    }
+
+    let data_dirs = std::env::var_os("XDG_DATA_DIRS")
+        .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+        .unwrap_or_else(|| {
+            vec![
+                PathBuf::from("/usr/local/share"),
+                PathBuf::from("/usr/share"),
+            ]
+        });
+    for data_dir in data_dirs {
+        push_data_dir_icon_roots(&mut roots, data_dir);
+    }
+
+    roots
+}
+
+fn push_data_dir_icon_roots(roots: &mut Vec<PathBuf>, data_dir: PathBuf) {
+    push_unique_path(roots, data_dir.join("icons"));
+    push_unique_path(roots, data_dir.join("pixmaps"));
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
 }
 
 #[derive(Clone)]

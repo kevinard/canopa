@@ -84,6 +84,11 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
             .iter()
             .any(|capability| capability == "actions")
     );
+    assert!(
+        capabilities
+            .iter()
+            .any(|capability| capability == "action-icons")
+    );
     assert!(capabilities.iter().any(|capability| capability == "body"));
     assert!(
         capabilities
@@ -114,11 +119,6 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
         !capabilities
             .iter()
             .any(|capability| capability == "persistence")
-    );
-    assert!(
-        !capabilities
-            .iter()
-            .any(|capability| capability == "action-icons")
     );
     assert!(
         !capabilities
@@ -154,6 +154,80 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
     assert!(json.contains("\"label\":\"Open inbox\""));
     assert!(!json.contains("Empty key"));
     assert!(!json.contains("Second open"));
+
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
+async fn dev_dbus_action_icons_hint_preserves_action_icon_names() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = test_bus_name("ActionIcons");
+
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let hints = HashMap::from([("action-icons".to_string(), OwnedValue::from(true))]);
+
+    proxy
+        .call::<_, _, u32>(
+            "Notify",
+            &(
+                "Example Mail",
+                0u32,
+                "",
+                "Inbox",
+                "One unread message",
+                vec![
+                    "mail-reply-sender".to_string(),
+                    "Reply".to_string(),
+                    "mail-archive".to_string(),
+                    "Archive".to_string(),
+                ],
+                hints,
+                -1i32,
+            ),
+        )
+        .await
+        .unwrap();
+
+    let output = Command::cargo_bin("canopa-notify")
+        .unwrap()
+        .args([
+            "ctl",
+            "--socket",
+            support::path_arg(&socket),
+            "active",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains("\"key\":\"mail-reply-sender\""));
+    assert!(json.contains("\"label\":\"Reply\""));
+    assert!(json.contains("\"icon\":{\"kind\":\"icon_name\",\"value\":\"mail-reply-sender\"}"));
 
     daemon.kill().ok();
     daemon.wait().ok();

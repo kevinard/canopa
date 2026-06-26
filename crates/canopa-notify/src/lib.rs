@@ -24,9 +24,9 @@ pub use delivery_policy::{
 pub use domain::{
     AcceptedNotification, DeliveryOutcome, NotificationAction, NotificationBodyMarkup,
     NotificationBodyRun, NotificationBodyStyle, NotificationImageData, NotificationInput,
-    NotificationReceipt, NotificationSnapshot, NotificationStatus, NotificationThread,
-    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference, SenderEvent,
-    Urgency, UserRule,
+    NotificationPosition, NotificationReceipt, NotificationSnapshot, NotificationSound,
+    NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
+    NotificationVisualReference, SenderEvent, Urgency, UserRule,
 };
 pub use lifecycle::{
     BannerLifecycleChange, LifecycleDelivery, LifecycleEffect, LifecycleEffects,
@@ -35,7 +35,7 @@ pub use lifecycle::{
 };
 pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
-    BannerFocusBehavior, BannerInteraction, BannerKeyboardInteractivity, BannerLayer,
+    BannerAction, BannerFocusBehavior, BannerInteraction, BannerKeyboardInteractivity, BannerLayer,
     BannerOutputSelection, BannerPlacement, BannerPresentation, BannerPresenter, BannerSurfaceSpec,
     BannerView, BannerVisual, IcedLayerShellBannerPresenter, NoopBannerPresenter,
     NotificationBannerState, StructuredLogBannerPresenter,

@@ -1,6 +1,6 @@
 use crate::{
-    NotificationAction, NotificationImageData, NotificationInput, NotificationTimeout,
-    NotificationVisualReference, Urgency,
+    NotificationAction, NotificationImageData, NotificationInput, NotificationPosition,
+    NotificationSound, NotificationTimeout, NotificationVisualReference, Urgency,
 };
 use std::collections::{HashMap, HashSet};
 use zbus::zvariant::OwnedValue;
@@ -30,6 +30,7 @@ impl NotificationServerRequest {
             expire_timeout,
         } = self;
         let (image_data, image_reference) = notification_image(&hints);
+        let action_icons = bool_hint(&hints, "action-icons");
 
         NotificationInput {
             app_name,
@@ -40,10 +41,14 @@ impl NotificationServerRequest {
             body,
             expire_timeout: NotificationTimeout::from_freedesktop_expire_timeout(expire_timeout),
             urgency: urgency_hint(&hints),
-            actions: notification_actions(actions),
+            actions: notification_actions(actions, action_icons),
             category: string_hint(&hints, "category"),
             progress: progress_hint(&hints),
             resident: resident_hint(&hints),
+            transient: bool_hint(&hints, "transient"),
+            suppress_sound: bool_hint(&hints, "suppress-sound"),
+            sound: sound_hint(&hints),
+            requested_position: requested_position_hint(&hints),
             image_data,
             image_reference,
             ..NotificationInput::default()
@@ -80,10 +85,30 @@ fn progress_hint(hints: &HashMap<String, OwnedValue>) -> Option<i64> {
 }
 
 fn resident_hint(hints: &HashMap<String, OwnedValue>) -> bool {
+    bool_hint(hints, "resident")
+}
+
+fn bool_hint(hints: &HashMap<String, OwnedValue>, key: &str) -> bool {
     hints
-        .get("resident")
+        .get(key)
         .and_then(|value| value.downcast_ref::<bool>().ok())
         .unwrap_or(false)
+}
+
+fn sound_hint(hints: &HashMap<String, OwnedValue>) -> Option<NotificationSound> {
+    string_hint(hints, "sound-file")
+        .and_then(NotificationSound::file)
+        .or_else(|| string_hint(hints, "sound-name").and_then(NotificationSound::name))
+}
+
+fn requested_position_hint(hints: &HashMap<String, OwnedValue>) -> Option<NotificationPosition> {
+    let x = hints
+        .get("x")
+        .and_then(|value| value.downcast_ref::<i32>().ok())?;
+    let y = hints
+        .get("y")
+        .and_then(|value| value.downcast_ref::<i32>().ok())?;
+    Some(NotificationPosition { x, y })
 }
 
 fn notification_image(
@@ -141,7 +166,7 @@ fn image_reference_hint(
         .and_then(|value| NotificationVisualReference::from_sender_reference(&value))
 }
 
-fn notification_actions(actions: Vec<String>) -> Vec<NotificationAction> {
+fn notification_actions(actions: Vec<String>, action_icons: bool) -> Vec<NotificationAction> {
     let mut normalized = Vec::new();
     let mut seen = HashSet::new();
 
@@ -154,7 +179,13 @@ fn notification_actions(actions: Vec<String>) -> Vec<NotificationAction> {
             continue;
         }
 
-        normalized.push(NotificationAction::new(key, label));
+        let mut action = NotificationAction::new(key, label);
+        if action_icons {
+            if let Some(icon) = NotificationVisualReference::icon_name(key) {
+                action = action.with_icon(icon);
+            }
+        }
+        normalized.push(action);
     }
 
     normalized
@@ -256,6 +287,35 @@ mod tests {
     }
 
     #[test]
+    fn maps_action_icons_hint_to_action_icon_references() {
+        let input = NotificationServerRequest {
+            app_name: "Example Mail".to_string(),
+            replaces_id: 0,
+            app_icon: String::new(),
+            summary: "Inbox".to_string(),
+            body: String::new(),
+            actions: vec![
+                "mail-reply-sender".to_string(),
+                "Reply".to_string(),
+                "mail-archive".to_string(),
+                "Archive".to_string(),
+            ],
+            hints: HashMap::from([("action-icons".to_string(), OwnedValue::from(true))]),
+            expire_timeout: -1,
+        }
+        .into_notification_input();
+
+        assert_eq!(
+            input.actions[0].icon,
+            NotificationVisualReference::icon_name("mail-reply-sender")
+        );
+        assert_eq!(
+            input.actions[1].icon,
+            NotificationVisualReference::icon_name("mail-archive")
+        );
+    }
+
+    #[test]
     fn applies_freedesktop_default_values() {
         let input = NotificationServerRequest {
             app_name: "Calendar".to_string(),
@@ -302,6 +362,32 @@ mod tests {
                 string_value("true")
             )]))
             .resident
+        );
+    }
+
+    #[test]
+    fn decodes_optional_behavior_hints_without_requiring_presentation_support() {
+        let input = request_with_hints(HashMap::from([
+            ("transient".to_string(), OwnedValue::from(true)),
+            ("suppress-sound".to_string(), OwnedValue::from(true)),
+            (
+                "sound-name".to_string(),
+                string_value("message-new-instant"),
+            ),
+            ("sound-file".to_string(), string_value("/tmp/message.oga")),
+            ("x".to_string(), OwnedValue::from(32_i32)),
+            ("y".to_string(), OwnedValue::from(64_i32)),
+        ]));
+
+        assert!(input.transient);
+        assert!(input.suppress_sound);
+        assert_eq!(
+            input.sound,
+            Some(NotificationSound::File("/tmp/message.oga".to_string()))
+        );
+        assert_eq!(
+            input.requested_position,
+            Some(NotificationPosition { x: 32, y: 64 })
         );
     }
 

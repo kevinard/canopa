@@ -59,6 +59,14 @@ pub struct NotificationInput {
     pub image_reference: Option<NotificationVisualReference>,
     pub actions: Vec<NotificationAction>,
     pub resident: bool,
+    #[serde(default)]
+    pub transient: bool,
+    #[serde(default)]
+    pub suppress_sound: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sound: Option<NotificationSound>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_position: Option<NotificationPosition>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -358,6 +366,8 @@ fn percent_decode_path(value: &str) -> String {
 pub struct NotificationAction {
     pub key: String,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<NotificationVisualReference>,
 }
 
 impl NotificationAction {
@@ -365,8 +375,41 @@ impl NotificationAction {
         Self {
             key: key.into(),
             label: label.into(),
+            icon: None,
         }
     }
+
+    pub fn with_icon(mut self, icon: NotificationVisualReference) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+pub enum NotificationSound {
+    Name(String),
+    File(String),
+}
+
+impl NotificationSound {
+    pub fn name(value: impl Into<String>) -> Option<Self> {
+        let value = value.into();
+        let value = value.trim();
+        (!value.is_empty()).then(|| Self::Name(value.to_string()))
+    }
+
+    pub fn file(value: impl Into<String>) -> Option<Self> {
+        let value = value.into();
+        let value = value.trim();
+        (!value.is_empty()).then(|| Self::File(value.to_string()))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationPosition {
+    pub x: i32,
+    pub y: i32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

@@ -409,6 +409,9 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Server API** advertises **Notification Body Markup** only when Notify-owned body-display surfaces can preserve or render the interpreted markup semantics.
 - Parser-only **Notification Body Markup** support is not enough to advertise **Notification Body Markup** through the **Notification Server API**.
 - Honoring **Resident Notification** behavior does not by itself mean the **Notification Server API** advertises freedesktop notification persistence.
+- The freedesktop notification compliance matrix is the source of truth for advertised, decoded-neutral, ignored, and planned **Notification Server API** behavior.
+- A freedesktop capability is advertised only after sender-visible D-Bus behavior and Notify-owned presentation or lifecycle behavior are both covered by tests.
+- **Notification Action** icon support treats sender action keys as static icon names only when the sender sets the freedesktop `action-icons` hint.
 - Initial **Notification Body Markup** rendering is not controlled by a separate user configuration switch.
 - **Panel Provider Mode** reports a provider-visible error when the **Notification Daemon** is unavailable instead of starting it.
 - **Panel Provider Mode** uses a **Notification State Subscription** while the **Notification Center** is open.
