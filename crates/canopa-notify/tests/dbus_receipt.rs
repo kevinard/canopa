@@ -3,6 +3,8 @@ mod support;
 use assert_cmd::Command;
 use futures_util::StreamExt;
 use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use zbus::zvariant::{OwnedValue, Value};
 use zbus::{Connection, Proxy};
 
@@ -41,6 +43,7 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
         "desktop-entry".to_string(),
         OwnedValue::try_from(Value::from("example-mail.desktop")).unwrap(),
     );
+    hints.insert("resident".to_string(), OwnedValue::from(true));
 
     let id: u32 = proxy
         .call(
@@ -51,7 +54,15 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
                 "",
                 "Inbox",
                 "<b>One</b> unread message",
-                Vec::<String>::new(),
+                vec![
+                    "".to_string(),
+                    "Empty key".to_string(),
+                    "open".to_string(),
+                    "  Open inbox  ".to_string(),
+                    "open".to_string(),
+                    "Second open".to_string(),
+                    "tail".to_string(),
+                ],
                 hints,
                 -1i32,
             ),
@@ -99,6 +110,26 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
             .iter()
             .any(|capability| capability == "icon-multi")
     );
+    assert!(
+        !capabilities
+            .iter()
+            .any(|capability| capability == "persistence")
+    );
+    assert!(
+        !capabilities
+            .iter()
+            .any(|capability| capability == "action-icons")
+    );
+    assert!(
+        !capabilities
+            .iter()
+            .any(|capability| capability == "activation-token")
+    );
+    assert!(
+        !capabilities
+            .iter()
+            .any(|capability| capability == "inline-reply")
+    );
 
     let output = Command::cargo_bin("canopa-notify")
         .unwrap()
@@ -118,6 +149,11 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
     assert!(json.contains("\"body\":\"One unread message\""));
     assert!(json.contains("\"body_markup\""));
     assert!(json.contains("\"bold\":true"));
+    assert!(json.contains("\"resident\":true"));
+    assert!(json.contains("\"key\":\"open\""));
+    assert!(json.contains("\"label\":\"Open inbox\""));
+    assert!(!json.contains("Empty key"));
+    assert!(!json.contains("Second open"));
 
     daemon.kill().ok();
     daemon.wait().ok();
@@ -444,6 +480,80 @@ async fn dev_dbus_close_notification_emits_notification_closed_signal() {
 }
 
 #[tokio::test]
+async fn dev_dbus_action_invocation_signal_precedes_dismissal_close_signal() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = test_bus_name("ActionSignal");
+
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let mut action_signals = proxy.receive_signal("ActionInvoked").await.unwrap();
+    let mut closed_signals = proxy.receive_signal("NotificationClosed").await.unwrap();
+
+    let id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Calendar",
+                0u32,
+                "",
+                "Meeting",
+                "Starting soon",
+                vec!["open".to_string(), "Open".to_string()],
+                HashMap::<String, OwnedValue>::new(),
+                -1i32,
+            ),
+        )
+        .await
+        .unwrap();
+
+    let response = control_socket_round_trip(&socket, &format!("invoke-action {id} open\n"));
+    assert_eq!(response, "ok\n");
+
+    let action_signal =
+        tokio::time::timeout(std::time::Duration::from_secs(1), action_signals.next())
+            .await
+            .unwrap()
+            .unwrap();
+    let (action_id, action_key): (u32, String) = action_signal.body().deserialize().unwrap();
+    assert_eq!(action_id, id);
+    assert_eq!(action_key, "open");
+
+    let closed_signal =
+        tokio::time::timeout(std::time::Duration::from_secs(1), closed_signals.next())
+            .await
+            .unwrap()
+            .unwrap();
+    let (closed_id, reason): (u32, u32) = closed_signal.body().deserialize().unwrap();
+    assert_eq!(closed_id, id);
+    assert_eq!(reason, 2);
+
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
 async fn dev_dbus_close_missing_notification_returns_empty_dbus_error() {
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("control.sock");
@@ -488,4 +598,12 @@ async fn dev_dbus_close_missing_notification_returns_empty_dbus_error() {
 
 fn test_bus_name(suffix: &str) -> String {
     format!("org.canopa.NotifyTest{}{}", std::process::id(), suffix)
+}
+
+fn control_socket_round_trip(socket: &std::path::Path, request: &str) -> String {
+    let mut stream = UnixStream::connect(socket).unwrap();
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    response
 }

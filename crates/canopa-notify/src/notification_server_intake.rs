@@ -2,7 +2,7 @@ use crate::{
     NotificationAction, NotificationImageData, NotificationInput, NotificationTimeout,
     NotificationVisualReference, Urgency,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use zbus::zvariant::OwnedValue;
 
 #[derive(Clone, Debug)]
@@ -43,6 +43,7 @@ impl NotificationServerRequest {
             actions: notification_actions(actions),
             category: string_hint(&hints, "category"),
             progress: progress_hint(&hints),
+            resident: resident_hint(&hints),
             image_data,
             image_reference,
             ..NotificationInput::default()
@@ -76,6 +77,13 @@ fn progress_hint(hints: &HashMap<String, OwnedValue>) -> Option<i64> {
         .get("value")
         .and_then(|value| value.downcast_ref::<i32>().ok())
         .map(i64::from)
+}
+
+fn resident_hint(hints: &HashMap<String, OwnedValue>) -> bool {
+    hints
+        .get("resident")
+        .and_then(|value| value.downcast_ref::<bool>().ok())
+        .unwrap_or(false)
 }
 
 fn notification_image(
@@ -134,13 +142,22 @@ fn image_reference_hint(
 }
 
 fn notification_actions(actions: Vec<String>) -> Vec<NotificationAction> {
-    actions
-        .chunks(2)
-        .filter_map(|chunk| match chunk {
-            [key, label] => Some(NotificationAction::new(key, label)),
-            _ => None,
-        })
-        .collect()
+    let mut normalized = Vec::new();
+    let mut seen = HashSet::new();
+
+    for chunk in actions.chunks(2) {
+        let [key, label] = chunk else {
+            continue;
+        };
+        let label = label.trim();
+        if key.is_empty() || label.is_empty() || !seen.insert(key.clone()) {
+            continue;
+        }
+
+        normalized.push(NotificationAction::new(key, label));
+    }
+
+    normalized
 }
 
 #[cfg(test)]
@@ -203,6 +220,42 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_freedesktop_action_pairs_into_valid_first_seen_actions() {
+        let input = NotificationServerRequest {
+            app_name: "Example Mail".to_string(),
+            replaces_id: 0,
+            app_icon: String::new(),
+            summary: "Inbox".to_string(),
+            body: String::new(),
+            actions: vec![
+                "".to_string(),
+                "Empty key".to_string(),
+                "open".to_string(),
+                "  Open   now  ".to_string(),
+                "reply".to_string(),
+                "   ".to_string(),
+                "open".to_string(),
+                "Second open label".to_string(),
+                "Open".to_string(),
+                "Case distinct key".to_string(),
+                "tail".to_string(),
+            ],
+            hints: HashMap::new(),
+            expire_timeout: -1,
+        }
+        .into_notification_input();
+
+        assert_eq!(
+            input
+                .actions
+                .iter()
+                .map(|action| (action.key.as_str(), action.label.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("open", "Open   now"), ("Open", "Case distinct key")]
+        );
+    }
+
+    #[test]
     fn applies_freedesktop_default_values() {
         let input = NotificationServerRequest {
             app_name: "Calendar".to_string(),
@@ -224,6 +277,32 @@ mod tests {
         assert_eq!(input.progress, None);
         assert_eq!(input.app_icon, None);
         assert!(input.actions.is_empty());
+    }
+
+    #[test]
+    fn decodes_only_boolean_true_resident_hint() {
+        assert!(
+            request_with_hints(HashMap::from([(
+                "resident".to_string(),
+                OwnedValue::from(true)
+            )]))
+            .resident
+        );
+        assert!(
+            !request_with_hints(HashMap::from([(
+                "resident".to_string(),
+                OwnedValue::from(false)
+            )]))
+            .resident
+        );
+        assert!(!request_with_hints(HashMap::new()).resident);
+        assert!(
+            !request_with_hints(HashMap::from([(
+                "resident".to_string(),
+                string_value("true")
+            )]))
+            .resident
+        );
     }
 
     #[test]
@@ -288,6 +367,20 @@ mod tests {
             input.image_reference,
             NotificationVisualReference::local_path("/tmp/screenshot.jpg")
         );
+    }
+
+    fn request_with_hints(hints: HashMap<String, OwnedValue>) -> NotificationInput {
+        NotificationServerRequest {
+            app_name: "Calendar".to_string(),
+            replaces_id: 0,
+            app_icon: String::new(),
+            summary: "Meeting".to_string(),
+            body: String::new(),
+            actions: Vec::new(),
+            hints,
+            expire_timeout: -1,
+        }
+        .into_notification_input()
     }
 
     fn string_value(value: &'static str) -> OwnedValue {

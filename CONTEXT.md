@@ -255,6 +255,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - A surface that can render both a **Notification App Icon** and a **Notification Image** should keep those visuals distinct.
 - A surface that can render only one notification visual should choose the visual using freedesktop notification image priority.
 - **Notification Server Request** decoding recognizes standard freedesktop visual sources for **Notification App Icon** and **Notification Image**.
+- **Notification Server Request** decoding recognizes a boolean true freedesktop resident hint as **Resident Notification** behavior.
 - Invalid or unresolvable sender-provided visuals do not make an otherwise meaningful notification a **Dropped Notification**.
 - Invalid raw **Notification Image** data does not make an otherwise no-op notification meaningful.
 - Oversized sender-provided visuals degrade like invalid sender-provided visuals.
@@ -284,6 +285,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Intake** owns first-version **App Identity** derivation, **Notification Body** normalization, and **Notification Body Markup** interpretation.
 - **Notification Intake** returns an **Accepted Notification** for sender requests that should enter **Delivery Policy** and **Notification Lifecycle**.
 - **Accepted Notification** contains normalized sender/request facts, not lifecycle timestamps.
+- **Notification Intake** trims **Notification Action** labels, ignores malformed **Notification Action** pairs, and keeps only the first action for each action key.
+- **Notification Action** keys are opaque case-sensitive sender-defined values.
 - Body-only notifications are valid even when **Notification Summary** is empty.
 - Notifications with no **Notification Summary**, **Notification Body**, **Notification Action**, **Notification Image**, or meaningful metadata are dropped as no-op notifications.
 - No-op detection uses the visible **Notification Body** fallback produced from interpreted **Notification Body Markup**, not the raw sender body text.
@@ -359,6 +362,9 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Banner** visibility is not derived from persisted **Notification History** flags.
 - **Notification Banner** state is runtime-only and is not persisted in **Notification History**.
 - Activating a **Notification Banner** invokes its **Default Notification Action** when present and otherwise dismisses the notification.
+- **Default Notification Actions** are invoked by activating the notification itself, not shown as separate named action controls.
+- First-version **Notification Banners** expose at most two visible named **Notification Action** controls for an **Active Notification**.
+- The **Notification Center** remains the complete action surface for named **Notification Actions** on **Active Notifications**.
 - The first banner placement scope is global rather than per-output.
 - If focused output cannot be determined, **Notification Banners** fall back to a configured or default output.
 - First-version **Notification Banner** styling configuration is minimal.
@@ -402,6 +408,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Static notification visuals may be advertised without advertising body-embedded images or animated notification visuals.
 - **Notification Server API** advertises **Notification Body Markup** only when Notify-owned body-display surfaces can preserve or render the interpreted markup semantics.
 - Parser-only **Notification Body Markup** support is not enough to advertise **Notification Body Markup** through the **Notification Server API**.
+- Honoring **Resident Notification** behavior does not by itself mean the **Notification Server API** advertises freedesktop notification persistence.
 - Initial **Notification Body Markup** rendering is not controlled by a separate user configuration switch.
 - **Panel Provider Mode** reports a provider-visible error when the **Notification Daemon** is unavailable instead of starting it.
 - **Panel Provider Mode** uses a **Notification State Subscription** while the **Notification Center** is open.
@@ -447,6 +454,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Center** requirements must not define core **Notification Daemon** state or lifecycle rules.
 - **Notification Center Projection** is Notify-owned state and is mapped to shared panel protocol types by **Panel Provider Mode**.
 - **Notification Center Projection** preserves interpreted **Notification Body Markup** in addition to the plain **Notification Body** fallback.
+- **Notification Center** item activation invokes the **Default Notification Action** when present and otherwise dismisses the notification.
+- **Notification Center** adapter-owned controls must not collide with sender-provided **Notification Action** keys.
 - The shared panel protocol contains generic Niribar panel infrastructure, not Notify-specific notification logic.
 - Shared panel protocol styled text is generic inline presentation data, not raw freedesktop notification markup.
 - Shared panel protocol shape changes for generic styled text should advance the panel protocol version.
@@ -463,10 +472,12 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - The first **Notification Center** must be keyboard navigable.
 - An open **Notification Center** updates live as notification state changes.
 - **Clear Active Notifications** and **Delete Notification History** are separate actions.
-- **Notification Actions** are invokable only while their **Notification Thread** is active.
+- **Notification Actions** may be invoked from **Notification Banners** and the **Notification Center** while their **Notification Thread** is active.
 - **Notification Actions** remain invokable for silenced **Active Notifications** shown in the **Notification Center**.
 - Inactive **Notification History** is read-only except for deletion.
+- Inactive **Notification History** entries do not expose invokable **Notification Action** controls.
 - **Stale Notification** action labels may remain as read-only history metadata.
-- Invoking a **Notification Action** closes the notification unless it is a **Resident Notification**.
+- Invoking a **Notification Action** dismisses the notification unless it is a **Resident Notification**.
+- Non-resident **Notification Action** invocation publishes the sender-visible action event before the sender-visible dismissal event.
 - **Notification Timeout** scheduling and expiration belong to **Notification Lifecycle**, not **Notification Banner** presentation.
 - Inline replies are outside the first version scope.

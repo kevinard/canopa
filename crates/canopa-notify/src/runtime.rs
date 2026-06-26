@@ -175,7 +175,7 @@ impl NotificationRuntime {
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
-    pub(crate) async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub(crate) async fn activate_notification(&self, notification_id: i64) -> anyhow::Result<()> {
         let thread = self.storage.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
@@ -194,6 +194,10 @@ impl NotificationRuntime {
         } else {
             self.dismiss_notification(notification_id).await
         }
+    }
+
+    pub(crate) async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
+        self.activate_notification(notification_id).await
     }
 
     pub(crate) async fn clear_active_notifications(&self) -> anyhow::Result<()> {
@@ -545,6 +549,16 @@ fn projection_from_snapshot(
 
     for thread in snapshot.history {
         let notification = thread.accepted_notification;
+        let actions = if thread.status == NotificationStatus::Active {
+            notification
+                .actions
+                .iter()
+                .filter(|action| action.key != "default")
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
         grouped
             .entry(notification.app_identity.clone())
             .or_default()
@@ -555,7 +569,7 @@ fn projection_from_snapshot(
                 body_markup: notification.body_markup,
                 status: thread.status,
                 delivery_outcome: thread.delivery_outcome,
-                actions: notification.actions,
+                actions,
             });
     }
 

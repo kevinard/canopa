@@ -246,6 +246,10 @@ fn spawn_banner_interaction_forwarder(
                         BannerInteraction::Dismiss(notification_id) => {
                             daemon.dismiss_notification(notification_id).await
                         }
+                        BannerInteraction::InvokeAction {
+                            notification_id,
+                            action_key,
+                        } => daemon.invoke_action(notification_id, &action_key).await,
                     };
                     if let Err(error) = result {
                         eprintln!(
@@ -644,6 +648,41 @@ mod tests {
         let error = daemon_mode(&daemon_args(true, true)).unwrap_err();
 
         assert!(error.to_string().contains("mutually exclusive"));
+    }
+
+    #[tokio::test]
+    async fn banner_action_interactions_invoke_notification_actions() {
+        let temp = tempfile::tempdir().unwrap();
+        let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+            .await
+            .unwrap();
+        let (interactions, interaction_receiver) = mpsc::channel();
+        spawn_banner_interaction_forwarder(daemon.clone(), interaction_receiver).unwrap();
+
+        let receipt = daemon
+            .receive_notification(canopa_notify::NotificationInput {
+                app_name: "Mail".to_string(),
+                summary: "Inbox".to_string(),
+                actions: vec![canopa_notify::NotificationAction::new("reply", "Reply")],
+                ..canopa_notify::NotificationInput::default()
+            })
+            .await
+            .unwrap();
+
+        let mut events = daemon.subscribe_sender_events();
+        interactions
+            .send(BannerInteraction::InvokeAction {
+                notification_id: receipt.notification_id,
+                action_key: "reply".to_string(),
+            })
+            .unwrap();
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.notification_id, receipt.notification_id);
+        assert_eq!(event.action_key.as_deref(), Some("reply"));
     }
 
     fn daemon_args(headless: bool, service: bool) -> DaemonArgs {

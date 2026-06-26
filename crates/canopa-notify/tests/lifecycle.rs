@@ -603,7 +603,7 @@ fn lifecycle_with_clock(
 }
 
 #[tokio::test]
-async fn actions_close_non_resident_notifications_but_resident_notifications_stay_active() {
+async fn actions_dismiss_non_resident_notifications_but_resident_notifications_stay_active() {
     let daemon = daemon_support::open_headless_daemon().await;
 
     let non_resident = daemon
@@ -618,6 +618,24 @@ async fn actions_close_non_resident_notifications_but_resident_notifications_sta
         .invoke_action(non_resident.notification_id, "open")
         .await
         .unwrap();
+
+    let non_resident_events = daemon.sender_events().await;
+    assert_eq!(
+        non_resident_events
+            .iter()
+            .map(|event| {
+                (
+                    event.action_key.as_deref(),
+                    event.closed_id,
+                    event.close_reason.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            (Some("open"), None, None),
+            (None, Some(non_resident.notification_id), Some("dismissed"))
+        ]
+    );
 
     let resident = daemon
         .receive_notification(NotificationInput {
@@ -634,7 +652,7 @@ async fn actions_close_non_resident_notifications_but_resident_notifications_sta
         .unwrap();
 
     let snapshot = daemon.snapshot().await.unwrap();
-    let closed = snapshot
+    let dismissed = snapshot
         .history
         .iter()
         .find(|thread| thread.id == non_resident.notification_id)
@@ -645,19 +663,19 @@ async fn actions_close_non_resident_notifications_but_resident_notifications_sta
         .find(|thread| thread.id == resident.notification_id)
         .unwrap();
 
-    assert_eq!(closed.status.as_str(), "closed");
+    assert_eq!(dismissed.status.as_str(), "dismissed");
     assert_eq!(still_active.status.as_str(), "active");
 
     let events = daemon.sender_events().await;
+    assert!(events.iter().any(|event| {
+        event.notification_id == resident.notification_id
+            && event.action_key.as_deref() == Some("pause")
+            && event.closed_id.is_none()
+    }));
     assert!(
-        events
+        !events
             .iter()
-            .any(|event| event.action_key.as_deref() == Some("open"))
-    );
-    assert!(
-        events
-            .iter()
-            .any(|event| event.closed_id == Some(non_resident.notification_id))
+            .any(|event| event.closed_id == Some(resident.notification_id))
     );
 }
 

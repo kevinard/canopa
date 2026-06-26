@@ -553,6 +553,35 @@ async fn activating_banner_invokes_default_notification_action_when_present() {
 }
 
 #[tokio::test]
+async fn visible_banner_projects_two_non_default_actions_in_sender_order() {
+    let daemon = daemon_support::open_headless_daemon().await;
+
+    daemon
+        .receive_notification(NotificationInput {
+            actions: vec![
+                NotificationAction::new("default", "Open"),
+                NotificationAction::new("reply", "Reply"),
+                NotificationAction::new("archive", "Archive"),
+                NotificationAction::new("mark_read", "Mark read"),
+            ],
+            ..notification("Mail", "Inbox")
+        })
+        .await
+        .unwrap();
+
+    let banners = daemon.visible_banners().await;
+    assert_eq!(
+        banners[0]
+            .actions
+            .iter()
+            .map(|action| (action.key.as_str(), action.label.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("reply", "Reply"), ("archive", "Archive")]
+    );
+    assert_eq!(banners[0].default_action_key.as_deref(), Some("default"));
+}
+
+#[tokio::test]
 async fn activating_banner_without_default_action_dismisses_notification() {
     let daemon = daemon_support::open_headless_daemon().await;
 

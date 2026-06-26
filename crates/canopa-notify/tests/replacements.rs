@@ -3,7 +3,9 @@ mod daemon_support;
 #[path = "support/notifications.rs"]
 mod notifications;
 
-use canopa_notify::{NotificationInput, Urgency};
+use canopa_notify::{
+    ControlCommand, ControlReply, NotificationAction, NotificationInput, NotifyControl, Urgency,
+};
 use notifications::notification;
 
 #[tokio::test]
@@ -110,4 +112,101 @@ async fn repeated_fixed_replacement_id_updates_prior_thread() {
     assert_eq!(banners[0].notification_id, first.notification_id);
     assert_eq!(banners[0].body, "5%");
     assert_eq!(banners[0].progress, Some(5));
+}
+
+#[tokio::test]
+async fn replacement_replaces_actions_and_rejects_stale_surface_invocations() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new(daemon.clone());
+
+    let first = daemon
+        .receive_notification(NotificationInput {
+            actions: vec![
+                NotificationAction::new("open", "Open"),
+                NotificationAction::new("archive", "Archive"),
+            ],
+            ..notification("Mail", "Inbox")
+        })
+        .await
+        .unwrap();
+
+    let replacement = daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(first.notification_id),
+            actions: vec![NotificationAction::new("reply", "Open")],
+            ..notification("Mail", "Inbox updated")
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(replacement.notification_id, first.notification_id);
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    let thread = snapshot
+        .active
+        .iter()
+        .find(|thread| thread.id == first.notification_id)
+        .unwrap();
+    assert_eq!(
+        thread
+            .accepted_notification
+            .actions
+            .iter()
+            .map(|action| action.key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["reply"]
+    );
+    assert_eq!(
+        daemon.visible_banners().await[0]
+            .actions
+            .iter()
+            .map(|action| (action.key.as_str(), action.label.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("reply", "Open")]
+    );
+
+    let ControlReply::NotificationCenterProjection(projection) = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap()
+    else {
+        panic!("expected notification center projection reply");
+    };
+    assert_eq!(
+        projection.groups[0].items[0]
+            .actions
+            .iter()
+            .map(|action| (action.key.as_str(), action.label.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("reply", "Open")]
+    );
+
+    assert!(
+        control
+            .execute(ControlCommand::InvokeNotificationAction {
+                notification_id: first.notification_id,
+                action_key: "open".to_string(),
+            })
+            .await
+            .is_err()
+    );
+    assert!(
+        control
+            .execute(ControlCommand::InvokeNotificationAction {
+                notification_id: first.notification_id,
+                action_key: "Open".to_string(),
+            })
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        control
+            .execute(ControlCommand::InvokeNotificationAction {
+                notification_id: first.notification_id,
+                action_key: "reply".to_string(),
+            })
+            .await
+            .unwrap(),
+        ControlReply::CommandApplied
+    );
 }

@@ -54,6 +54,10 @@ impl NotifyControl {
                     .await?;
                 Ok(ControlReply::CommandApplied)
             }
+            ControlCommand::ActivateNotification { notification_id } => {
+                self.daemon.activate_notification(notification_id).await?;
+                Ok(ControlReply::CommandApplied)
+            }
         }
     }
 
@@ -80,6 +84,9 @@ pub enum ControlCommand {
     InvokeNotificationAction {
         notification_id: i64,
         action_key: String,
+    },
+    ActivateNotification {
+        notification_id: i64,
     },
 }
 

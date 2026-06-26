@@ -95,6 +95,90 @@ async fn notify_control_builds_notification_center_projection() {
 }
 
 #[tokio::test]
+async fn notification_center_projects_actions_only_for_active_items() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new(daemon.clone());
+
+    daemon
+        .receive_notification(NotificationInput {
+            actions: vec![
+                NotificationAction::new("default", "Open"),
+                NotificationAction::new("reply", "Reply"),
+                NotificationAction::new("archive", "Archive"),
+                NotificationAction::new("mark_read", "Mark read"),
+            ],
+            ..notification("Mail", "Inbox")
+        })
+        .await
+        .unwrap();
+
+    control
+        .execute(ControlCommand::SetAppPermission {
+            app_identity: "Chat".to_string(),
+            permission: AppPermissionControl::Silence,
+        })
+        .await
+        .unwrap();
+    daemon
+        .receive_notification(NotificationInput {
+            actions: vec![NotificationAction::new("reply", "Reply")],
+            ..notification("Chat", "Message")
+        })
+        .await
+        .unwrap();
+
+    let inactive = daemon
+        .receive_notification(NotificationInput {
+            actions: vec![NotificationAction::new("snooze", "Snooze")],
+            ..notification("Calendar", "Standup")
+        })
+        .await
+        .unwrap();
+    daemon
+        .dismiss_notification(inactive.notification_id)
+        .await
+        .unwrap();
+
+    let reply = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap();
+    let ControlReply::NotificationCenterProjection(projection) = reply else {
+        panic!("expected notification center projection reply");
+    };
+
+    let mail = projection
+        .groups
+        .iter()
+        .find(|group| group.app_identity == "Mail")
+        .unwrap();
+    assert_eq!(
+        mail.items[0]
+            .actions
+            .iter()
+            .map(|action| action.key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["reply", "archive", "mark_read"]
+    );
+
+    let chat = projection
+        .groups
+        .iter()
+        .find(|group| group.app_identity == "Chat")
+        .unwrap();
+    assert_eq!(chat.items[0].delivery_outcome, DeliveryOutcome::Silenced);
+    assert_eq!(chat.items[0].actions[0].key, "reply");
+
+    let calendar = projection
+        .groups
+        .iter()
+        .find(|group| group.app_identity == "Calendar")
+        .unwrap();
+    assert_eq!(calendar.items[0].status.as_str(), "dismissed");
+    assert!(calendar.items[0].actions.is_empty());
+}
+
+#[tokio::test]
 async fn notify_control_subscription_emits_complete_replacement_projections() {
     let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());
@@ -215,7 +299,7 @@ async fn notify_control_applies_notification_center_interaction_commands() {
     );
     assert_eq!(
         daemon.snapshot().await.unwrap().history[0].status.as_str(),
-        "closed"
+        "dismissed"
     );
 
     assert_eq!(
@@ -226,6 +310,68 @@ async fn notify_control_applies_notification_center_interaction_commands() {
         ControlReply::CommandApplied
     );
     assert_eq!(daemon.snapshot().await.unwrap().history.len(), 0);
+}
+
+#[tokio::test]
+async fn notify_control_activates_notification_center_items() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new(daemon.clone());
+    let mut events = daemon.subscribe_sender_events();
+
+    let with_default = daemon
+        .receive_notification(NotificationInput {
+            actions: vec![NotificationAction::new("default", "Open")],
+            ..notification("Mail", "Inbox")
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        control
+            .execute(ControlCommand::ActivateNotification {
+                notification_id: with_default.notification_id,
+            })
+            .await
+            .unwrap(),
+        ControlReply::CommandApplied
+    );
+    let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event.action_key.as_deref(), Some("default"));
+
+    let without_default = daemon
+        .receive_notification(notification("Calendar", "Standup"))
+        .await
+        .unwrap();
+    assert_eq!(
+        control
+            .execute(ControlCommand::ActivateNotification {
+                notification_id: without_default.notification_id,
+            })
+            .await
+            .unwrap(),
+        ControlReply::CommandApplied
+    );
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    let dismissed = snapshot
+        .history
+        .iter()
+        .find(|thread| thread.id == without_default.notification_id)
+        .unwrap();
+    assert_eq!(dismissed.status.as_str(), "dismissed");
+    assert!(
+        !daemon
+            .sender_events()
+            .await
+            .iter()
+            .any(
+                |event| event.notification_id == without_default.notification_id
+                    && event.action_key.is_some()
+            )
+    );
 }
 
 #[tokio::test]

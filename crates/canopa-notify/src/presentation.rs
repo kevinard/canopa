@@ -1,7 +1,8 @@
 use crate::domain::has_static_raster_extension;
 use crate::{
-    BannerLifecycleChange, DeliveryOutcome, NotificationBodyMarkup, NotificationImageData,
-    NotificationStatus, NotificationThread, NotificationVisualReference, Urgency,
+    BannerLifecycleChange, DeliveryOutcome, NotificationAction, NotificationBodyMarkup,
+    NotificationImageData, NotificationStatus, NotificationThread, NotificationVisualReference,
+    Urgency,
 };
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -73,6 +74,10 @@ impl BannerSurfaceSpec {
 pub enum BannerInteraction {
     Activate(i64),
     Dismiss(i64),
+    InvokeAction {
+        notification_id: i64,
+        action_key: String,
+    },
 }
 
 #[derive(Clone)]
@@ -158,6 +163,7 @@ enum BannerUiMessage {
     Runtime(BannerRuntimeInput),
     Activate(i64),
     Dismiss(i64),
+    InvokeAction(i64, String),
 }
 
 fn register_banner_update_receiver(runtime_id: u64, receiver: BannerUpdateReceiver) {
@@ -269,6 +275,16 @@ fn banner_ui_update(
                 .ok();
             iced::Task::none()
         }
+        BannerUiMessage::InvokeAction(notification_id, action_key) => {
+            state
+                .interactions
+                .send(BannerInteraction::InvokeAction {
+                    notification_id,
+                    action_key,
+                })
+                .ok();
+            iced::Task::none()
+        }
         _ => iced::Task::none(),
     }
 }
@@ -334,6 +350,7 @@ mod tests {
             progress: None,
             image: None,
             default_action_key: None,
+            actions: Vec::new(),
             placement: BannerPlacement::TopRightFocusedOutputWithFallback,
             focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
         }
@@ -414,7 +431,9 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
     }
     header = header.push(activate).push(dismiss);
 
-    let mut card = column![header].spacing(8).width(Length::Fill);
+    let mut card = column![header, banner_actions_widget(banner)]
+        .spacing(8)
+        .width(Length::Fill);
 
     if let Some(progress) = banner.progress {
         card = card.push(
@@ -431,6 +450,37 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
         .clip(true)
         .style(card_container_style)
         .into()
+}
+
+fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
+    use iced::widget::{button, container, row, text};
+    use iced::{Alignment, Length};
+
+    let mut actions = row![]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .width(Length::Fill)
+        .height(28);
+
+    for action in &banner.actions {
+        actions = actions.push(
+            button(
+                text(action.label.as_str())
+                    .size(12)
+                    .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
+            )
+            .padding([4, 8])
+            .height(28)
+            .width(Length::Fill)
+            .style(content_button_style)
+            .on_press(BannerUiMessage::InvokeAction(
+                banner.notification_id,
+                action.key.clone(),
+            )),
+        );
+    }
+
+    container(actions).height(28).width(Length::Fill).into()
 }
 
 fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
@@ -748,7 +798,7 @@ fn banner_ui_style(_state: &BannerUiState, theme: &iced::Theme) -> iced::theme::
     }
 }
 
-const FULL_BANNER_HEIGHT: u32 = 104;
+const FULL_BANNER_HEIGHT: u32 = 140;
 const DENSE_BANNER_HEIGHT: u32 = 60;
 const BANNER_STACK_SPACING: u32 = 8;
 
@@ -842,6 +892,7 @@ pub struct BannerView {
     pub progress: Option<i64>,
     pub image: Option<BannerVisual>,
     pub default_action_key: Option<String>,
+    pub actions: Vec<NotificationAction>,
     pub placement: BannerPlacement,
     pub focus_behavior: BannerFocusBehavior,
 }
@@ -890,6 +941,13 @@ impl BannerView {
             .iter()
             .find(|action| action.key == "default")
             .map(|action| action.key.clone());
+        let actions = notification
+            .actions
+            .iter()
+            .filter(|action| action.key != "default")
+            .take(2)
+            .cloned()
+            .collect();
         Self {
             notification_id: thread.id,
             app_identity: notification.app_identity,
@@ -913,6 +971,7 @@ impl BannerView {
                         .and_then(BannerVisual::from_reference)
                 }),
             default_action_key,
+            actions,
             placement: BannerPlacement::TopRightFocusedOutputWithFallback,
             focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
         }

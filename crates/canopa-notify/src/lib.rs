@@ -181,6 +181,10 @@ impl Daemon {
         self.runtime.activate_banner(notification_id).await
     }
 
+    pub async fn activate_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+        self.runtime.activate_notification(notification_id).await
+    }
+
     pub async fn clear_active_notifications(&self) -> anyhow::Result<()> {
         self.runtime.clear_active_notifications().await
     }

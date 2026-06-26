@@ -88,7 +88,10 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
             .style
             .bold
     );
-    assert_eq!(content.sections[0].controls[0].key, "app_permission");
+    assert_eq!(
+        content.sections[0].controls[0].key,
+        "canopa-notify:app-permission"
+    );
     assert!(line.contains("\"protocol_version\":2"));
 
     provider.kill().ok();

@@ -3,13 +3,21 @@ use canopa_notify::{
     NotificationCenterProjection, NotifyControl,
 };
 use canopa_panel_protocol::{
-    PanelAction, PanelContent, PanelControl, PanelControlOption, PanelItem, PanelMetadata,
-    PanelSection, ProviderResponse, StyledText, StyledTextRun, StyledTextStyle,
+    InteractionEvent, InteractionTarget, PanelAction, PanelContent, PanelControl,
+    PanelControlOption, PanelItem, PanelMetadata, PanelSection, ProviderResponse, StyledText,
+    StyledTextRun, StyledTextStyle,
 };
-use std::io::{Read, Write};
+use std::io::{BufRead, Read, Write};
 use std::os::unix::net::UnixStream as StdUnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::thread;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+const PANEL_NOTIFICATION_ACTION_KEY: &str = "canopa-notify:notification-action";
+const PANEL_ACTIVATE_ITEM_KEY: &str = "canopa-notify:activate-item";
+const PANEL_APP_PERMISSION_KEY: &str = "canopa-notify:app-permission";
+const PANEL_CLEAR_ACTIVE_KEY: &str = "canopa-notify:clear-active";
+const PANEL_DELETE_HISTORY_KEY: &str = "canopa-notify:delete-history";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CtlRequest {
@@ -61,9 +69,49 @@ pub(crate) fn run_panel_provider(socket: &Path) -> anyhow::Result<()> {
         }
     };
     stream.write_all(SocketControlRequest::PanelSubscribe.line().as_bytes())?;
+    spawn_panel_interaction_forwarder(socket.to_path_buf())?;
     let mut stdout = std::io::stdout();
     std::io::copy(&mut stream, &mut stdout)?;
     Ok(())
+}
+
+fn spawn_panel_interaction_forwarder(socket: PathBuf) -> anyhow::Result<()> {
+    thread::Builder::new()
+        .name("canopa-notify-panel-interactions".to_string())
+        .spawn(move || {
+            let stdin = std::io::stdin();
+            for line in stdin.lock().lines() {
+                let result = line
+                    .map_err(anyhow::Error::from)
+                    .and_then(|line| send_panel_interaction(&socket, &line));
+                if let Err(error) = result {
+                    eprintln!(
+                        "level=warn component=panel_provider event=interaction_failed error={error:#}"
+                    );
+                }
+            }
+        })?;
+    Ok(())
+}
+
+fn send_panel_interaction(socket: &Path, event_json: &str) -> anyhow::Result<()> {
+    let Some(request) = panel_interaction_request_line(event_json) else {
+        return Ok(());
+    };
+    let mut stream = StdUnixStream::connect(socket)?;
+    stream.write_all(request.as_bytes())?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response)?;
+    if response == "ok\n" {
+        Ok(())
+    } else {
+        anyhow::bail!("panel interaction was rejected: {}", response.trim());
+    }
+}
+
+fn panel_interaction_request_line(event_json: &str) -> Option<String> {
+    let event_json = event_json.trim_end_matches(['\r', '\n']);
+    (!event_json.trim().is_empty()).then(|| format!("panel-interaction {event_json}\n"))
 }
 
 pub(crate) async fn handle_connection(
@@ -73,11 +121,11 @@ pub(crate) async fn handle_connection(
     let mut stream = BufReader::new(stream);
     let mut request = String::new();
     stream.read_line(&mut request).await?;
-    let request = request.trim();
+    let request = request.trim_end_matches(['\r', '\n']);
     eprintln!("level=info component=control event=request command={request}");
     let request = SocketControlRequest::parse(request);
 
-    if request == SocketControlRequest::PanelSubscribe {
+    if matches!(request, SocketControlRequest::PanelSubscribe) {
         stream_projection_subscription(stream.get_mut(), control).await?;
         return Ok(());
     }
@@ -115,13 +163,18 @@ async fn control_socket_response(
     request.format_reply(control.execute(command).await?)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum SocketControlRequest {
     Status,
     ActiveJson,
     ActiveCount,
     PanelSnapshot,
     PanelSubscribe,
+    InvokeNotificationAction {
+        notification_id: i64,
+        action_key: String,
+    },
+    PanelInteraction(ControlCommand),
     Unsupported,
 }
 
@@ -167,33 +220,71 @@ const SOCKET_CONTROL_REQUESTS: &[SocketControlRequestSpec] = &[
 
 impl SocketControlRequest {
     fn parse(request: &str) -> Self {
+        if let Some(rest) = request.strip_prefix("invoke-action ") {
+            return parse_invoke_action_request(rest).unwrap_or(Self::Unsupported);
+        }
+        if let Some(json) = request.strip_prefix("panel-interaction ") {
+            return parse_panel_interaction_request(json).unwrap_or(Self::Unsupported);
+        }
+
         SOCKET_CONTROL_REQUESTS
             .iter()
             .find(|spec| spec.request_token() == request)
-            .map(|spec| spec.request)
+            .map(|spec| spec.request.clone())
             .unwrap_or(Self::Unsupported)
     }
 
-    fn line(self) -> &'static str {
+    fn line(&self) -> &'static str {
         self.spec().map(|spec| spec.line).unwrap_or("unsupported\n")
     }
 
-    fn command(self) -> Option<ControlCommand> {
-        self.spec().and_then(|spec| spec.command.clone())
+    fn command(&self) -> Option<ControlCommand> {
+        match self {
+            Self::InvokeNotificationAction {
+                notification_id,
+                action_key,
+            } => Some(ControlCommand::InvokeNotificationAction {
+                notification_id: *notification_id,
+                action_key: action_key.clone(),
+            }),
+            Self::PanelInteraction(command) => Some(command.clone()),
+            _ => self.spec().and_then(|spec| spec.command.clone()),
+        }
     }
 
-    fn format_reply(self, reply: ControlReply) -> anyhow::Result<String> {
+    fn format_reply(&self, reply: ControlReply) -> anyhow::Result<String> {
+        if matches!(
+            self,
+            Self::InvokeNotificationAction { .. } | Self::PanelInteraction(_)
+        ) {
+            return format_command_applied_reply(reply);
+        }
+
         let Some(format_reply) = self.spec().and_then(|spec| spec.format_reply) else {
             return Err(unexpected_control_reply());
         };
         format_reply(reply)
     }
 
-    fn spec(self) -> Option<&'static SocketControlRequestSpec> {
+    fn spec(&self) -> Option<&'static SocketControlRequestSpec> {
         SOCKET_CONTROL_REQUESTS
             .iter()
-            .find(|spec| spec.request == self)
+            .find(|spec| &spec.request == self)
     }
+}
+
+fn parse_invoke_action_request(rest: &str) -> Option<SocketControlRequest> {
+    let (notification_id, action_key) = rest.split_once(' ')?;
+    let notification_id = notification_id.parse().ok()?;
+    (!action_key.is_empty()).then(|| SocketControlRequest::InvokeNotificationAction {
+        notification_id,
+        action_key: action_key.to_string(),
+    })
+}
+
+fn parse_panel_interaction_request(json: &str) -> Option<SocketControlRequest> {
+    let event = serde_json::from_str(json).ok()?;
+    control_command_from_panel_interaction(event).map(SocketControlRequest::PanelInteraction)
 }
 
 impl SocketControlRequestSpec {
@@ -229,6 +320,13 @@ fn format_panel_snapshot_reply(reply: ControlReply) -> anyhow::Result<String> {
     };
     let content = panel_content_from_projection(projection);
     Ok(serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n")
+}
+
+fn format_command_applied_reply(reply: ControlReply) -> anyhow::Result<String> {
+    let ControlReply::CommandApplied = reply else {
+        return Err(unexpected_control_reply());
+    };
+    Ok("ok\n".to_string())
 }
 
 fn unexpected_control_reply() -> anyhow::Error {
@@ -267,7 +365,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                         actions: item
                             .actions
                             .into_iter()
-                            .map(|action| PanelAction::new(action.key, action.label))
+                            .map(|action| panel_sender_action(action.key, action.label))
                             .collect(),
                     })
                     .collect(),
@@ -275,10 +373,18 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
             })
             .collect(),
         actions: vec![
-            PanelAction::new("clear_active_notifications", "Clear active notifications"),
-            PanelAction::new("delete_notification_history", "Delete notification history"),
+            PanelAction::new(PANEL_CLEAR_ACTIVE_KEY, "Clear active notifications"),
+            PanelAction::new(PANEL_DELETE_HISTORY_KEY, "Delete notification history"),
         ],
         error: None,
+    }
+}
+
+fn panel_sender_action(action_key: String, label: String) -> PanelAction {
+    PanelAction {
+        key: PANEL_NOTIFICATION_ACTION_KEY.to_string(),
+        label,
+        value: Some(action_key),
     }
 }
 
@@ -303,7 +409,7 @@ fn styled_text_from_body_markup(body_markup: NotificationBodyMarkup) -> Option<S
 
 fn app_permission_control(permission: AppPermissionControl) -> PanelControl {
     PanelControl {
-        key: "app_permission".to_string(),
+        key: PANEL_APP_PERMISSION_KEY.to_string(),
         label: "App permission".to_string(),
         value: permission.as_str().to_string(),
         options: AppPermissionControl::options()
@@ -314,6 +420,52 @@ fn app_permission_control(permission: AppPermissionControl) -> PanelControl {
                 label: permission.label().to_string(),
             })
             .collect(),
+    }
+}
+
+fn control_command_from_panel_interaction(event: InteractionEvent) -> Option<ControlCommand> {
+    match event {
+        InteractionEvent::Invoke {
+            target,
+            action_key,
+            value,
+        } => match target {
+            InteractionTarget::Item { id } if action_key == PANEL_NOTIFICATION_ACTION_KEY => {
+                Some(ControlCommand::InvokeNotificationAction {
+                    notification_id: id.parse().ok()?,
+                    action_key: value?,
+                })
+            }
+            InteractionTarget::Item { id } if action_key == PANEL_ACTIVATE_ITEM_KEY => {
+                Some(ControlCommand::ActivateNotification {
+                    notification_id: id.parse().ok()?,
+                })
+            }
+            InteractionTarget::Section { id } if action_key == PANEL_APP_PERMISSION_KEY => {
+                Some(ControlCommand::SetAppPermission {
+                    app_identity: id,
+                    permission: app_permission_from_panel_value(value.as_deref()?)?,
+                })
+            }
+            InteractionTarget::Content if action_key == PANEL_CLEAR_ACTIVE_KEY => {
+                Some(ControlCommand::ClearActiveNotifications)
+            }
+            InteractionTarget::Content if action_key == PANEL_DELETE_HISTORY_KEY => {
+                Some(ControlCommand::DeleteNotificationHistory)
+            }
+            InteractionTarget::Content
+            | InteractionTarget::Section { .. }
+            | InteractionTarget::Item { .. } => None,
+        },
+    }
+}
+
+fn app_permission_from_panel_value(value: &str) -> Option<AppPermissionControl> {
+    match value {
+        "allow" => Some(AppPermissionControl::Allow),
+        "silence" => Some(AppPermissionControl::Silence),
+        "drop" => Some(AppPermissionControl::Drop),
+        _ => None,
     }
 }
 
@@ -342,9 +494,19 @@ mod tests {
     }
 
     #[test]
+    fn panel_provider_wraps_stdin_events_as_panel_interaction_requests() {
+        assert_eq!(
+            panel_interaction_request_line(r#"{"type":"invoke"}"#).as_deref(),
+            Some("panel-interaction {\"type\":\"invoke\"}\n")
+        );
+        assert_eq!(panel_interaction_request_line("\n"), None);
+    }
+
+    #[test]
     fn app_permission_control_uses_permission_values_and_labels() {
         let control = app_permission_control(AppPermissionControl::Silence);
 
+        assert_eq!(control.key, "canopa-notify:app-permission");
         assert_eq!(control.value, "silence");
         assert_eq!(
             control
@@ -353,6 +515,109 @@ mod tests {
                 .map(|option| (option.value.as_str(), option.label.as_str()))
                 .collect::<Vec<_>>(),
             vec![("allow", "Allow"), ("silence", "Silence"), ("drop", "Drop")]
+        );
+    }
+
+    #[test]
+    fn panel_content_uses_provider_owned_keys_for_controls_and_sender_actions() {
+        let content = panel_content_from_projection(canopa_notify::NotificationCenterProjection {
+            groups: vec![canopa_notify::NotificationCenterGroup {
+                app_identity: "Mail".to_string(),
+                permission: AppPermissionControl::Allow,
+                items: vec![canopa_notify::NotificationCenterItem {
+                    notification_id: 42,
+                    summary: "Inbox".to_string(),
+                    body: String::new(),
+                    body_markup: NotificationBodyMarkup::default(),
+                    status: canopa_notify::NotificationStatus::Active,
+                    delivery_outcome: canopa_notify::DeliveryOutcome::Shown,
+                    actions: vec![canopa_notify::NotificationAction::new(
+                        "canopa-notify:notification-action",
+                        "Sender action",
+                    )],
+                }],
+            }],
+        });
+
+        let item_action = &content.sections[0].items[0].actions[0];
+        assert_eq!(item_action.key, "canopa-notify:notification-action");
+        assert_eq!(
+            item_action.value.as_deref(),
+            Some("canopa-notify:notification-action")
+        );
+        assert_eq!(
+            content.sections[0].controls[0].key,
+            "canopa-notify:app-permission"
+        );
+        assert_eq!(content.actions[0].key, "canopa-notify:clear-active");
+        assert_eq!(content.actions[1].key, "canopa-notify:delete-history");
+    }
+
+    #[test]
+    fn panel_interactions_map_to_notify_control_commands() {
+        assert_eq!(
+            control_command_from_panel_interaction(InteractionEvent::Invoke {
+                target: InteractionTarget::Item {
+                    id: "42".to_string()
+                },
+                action_key: PANEL_NOTIFICATION_ACTION_KEY.to_string(),
+                value: Some("reply".to_string()),
+            }),
+            Some(ControlCommand::InvokeNotificationAction {
+                notification_id: 42,
+                action_key: "reply".to_string(),
+            })
+        );
+        assert_eq!(
+            control_command_from_panel_interaction(InteractionEvent::Invoke {
+                target: InteractionTarget::Item {
+                    id: "42".to_string()
+                },
+                action_key: PANEL_ACTIVATE_ITEM_KEY.to_string(),
+                value: None,
+            }),
+            Some(ControlCommand::ActivateNotification {
+                notification_id: 42,
+            })
+        );
+        assert_eq!(
+            control_command_from_panel_interaction(InteractionEvent::Invoke {
+                target: InteractionTarget::Section {
+                    id: "Mail".to_string()
+                },
+                action_key: PANEL_APP_PERMISSION_KEY.to_string(),
+                value: Some("silence".to_string()),
+            }),
+            Some(ControlCommand::SetAppPermission {
+                app_identity: "Mail".to_string(),
+                permission: AppPermissionControl::Silence,
+            })
+        );
+        assert_eq!(
+            control_command_from_panel_interaction(InteractionEvent::Invoke {
+                target: InteractionTarget::Content,
+                action_key: PANEL_CLEAR_ACTIVE_KEY.to_string(),
+                value: None,
+            }),
+            Some(ControlCommand::ClearActiveNotifications)
+        );
+        assert_eq!(
+            control_command_from_panel_interaction(InteractionEvent::Invoke {
+                target: InteractionTarget::Content,
+                action_key: PANEL_DELETE_HISTORY_KEY.to_string(),
+                value: None,
+            }),
+            Some(ControlCommand::DeleteNotificationHistory)
+        );
+        assert_eq!(
+            control_command_from_panel_interaction(InteractionEvent::Invoke {
+                target: InteractionTarget::Item {
+                    id: "42".to_string()
+                },
+                action_key: "reply".to_string(),
+                value: None,
+            }),
+            None
         );
     }
 
@@ -377,6 +642,29 @@ mod tests {
         assert_eq!(
             SocketControlRequest::parse("panel-subscribe").command(),
             None
+        );
+        assert_eq!(
+            SocketControlRequest::parse("invoke-action 42 Open action").command(),
+            Some(ControlCommand::InvokeNotificationAction {
+                notification_id: 42,
+                action_key: "Open action".to_string(),
+            })
+        );
+        let panel_interaction = serde_json::to_string(&InteractionEvent::Invoke {
+            target: InteractionTarget::Item {
+                id: "42".to_string(),
+            },
+            action_key: PANEL_NOTIFICATION_ACTION_KEY.to_string(),
+            value: Some("reply".to_string()),
+        })
+        .unwrap();
+        assert_eq!(
+            SocketControlRequest::parse(&format!("panel-interaction {panel_interaction}"))
+                .command(),
+            Some(ControlCommand::InvokeNotificationAction {
+                notification_id: 42,
+                action_key: "reply".to_string(),
+            })
         );
         assert_eq!(SocketControlRequest::parse("bogus").command(), None);
     }

@@ -439,7 +439,7 @@ where
         }]);
 
         if !thread.accepted_notification.resident {
-            effects.extend(self.close(notification_id).await?);
+            effects.extend(self.dismiss(notification_id).await?);
         }
 
         Ok(effects)
