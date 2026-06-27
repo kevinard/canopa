@@ -16,6 +16,8 @@ use std::sync::{Arc, Mutex, OnceLock, mpsc};
 const MAX_FILE_BACKED_VISUAL_BYTES: u64 = 16 * 1024 * 1024;
 const ICON_SEARCH_MAX_DEPTH: usize = 8;
 const STATIC_ICON_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
+const APP_ICON_VISUAL_SIZE: u16 = 34;
+const NOTIFICATION_IMAGE_VISUAL_SIZE: u16 = 58;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
 pub trait BannerPresenter: Send + Sync {
@@ -505,6 +507,14 @@ mod tests {
     }
 
     #[test]
+    fn image_only_primary_visual_uses_app_icon_size() {
+        assert_eq!(
+            primary_banner_visual_size(BannerPrimaryVisual::NotificationImage),
+            APP_ICON_VISUAL_SIZE
+        );
+    }
+
+    #[test]
     fn static_icon_names_resolve_from_icon_search_roots() {
         let temp = tempfile::tempdir().unwrap();
         let icon_root = temp.path().join("icons");
@@ -566,6 +576,58 @@ mod tests {
             resolve_static_icon_name_in_roots("calendar", missing_icon_root_set),
             None
         );
+    }
+
+    #[test]
+    fn app_identity_icon_is_used_when_notification_has_no_app_icon() {
+        clear_static_icon_index_cache_for_tests();
+
+        let temp = tempfile::tempdir().unwrap();
+        let icon_root = temp.path().join("icons");
+        let icon_path = icon_root
+            .join("hicolor")
+            .join("48x48")
+            .join("apps")
+            .join("org.example.Mail.png");
+        std::fs::create_dir_all(icon_path.parent().unwrap()).unwrap();
+        std::fs::write(&icon_path, [0_u8]).unwrap();
+
+        assert!(matches!(
+            banner_app_icon_visual_in_roots(
+                None,
+                "org.example.Mail.desktop",
+                vec![icon_root],
+            ),
+            Some(BannerVisual::LocalPath { path }) if path == icon_path.to_string_lossy()
+        ));
+    }
+
+    #[test]
+    fn specified_app_icon_takes_priority_over_app_identity_icon() {
+        clear_static_icon_index_cache_for_tests();
+
+        let temp = tempfile::tempdir().unwrap();
+        let explicit_icon_path = temp.path().join("explicit.png");
+        std::fs::write(&explicit_icon_path, [0_u8]).unwrap();
+        let icon_root = temp.path().join("icons");
+        let identity_icon_path = icon_root
+            .join("hicolor")
+            .join("48x48")
+            .join("apps")
+            .join("org.example.Mail.png");
+        std::fs::create_dir_all(identity_icon_path.parent().unwrap()).unwrap();
+        std::fs::write(identity_icon_path, [0_u8]).unwrap();
+        let explicit_icon_path = explicit_icon_path.to_string_lossy().into_owned();
+        let explicit_icon = NotificationVisualReference::local_path(explicit_icon_path.clone());
+
+        assert!(matches!(
+            banner_app_icon_visual_in_roots(
+                explicit_icon.as_ref(),
+                "org.example.Mail.desktop",
+                vec![icon_root],
+            ),
+            Some(BannerVisual::LocalPath { path }) if path == explicit_icon_path
+        ));
     }
 
     #[test]
@@ -905,23 +967,32 @@ fn primary_banner_visual(
     banner: &BannerView,
     primary: BannerPrimaryVisual,
 ) -> iced::Element<'_, BannerUiMessage> {
+    let size = primary_banner_visual_size(primary);
     match primary {
         BannerPrimaryVisual::AppBadge => app_badge(&banner.app_name, banner.urgency),
         BannerPrimaryVisual::AppIcon => banner
             .app_icon
             .as_ref()
-            .map(|icon| visual_image(icon, 34))
+            .map(|icon| visual_image(icon, size))
             .unwrap_or_else(|| app_badge(&banner.app_name, banner.urgency)),
         BannerPrimaryVisual::NotificationImage => banner
             .image
             .as_ref()
-            .map(notification_image_visual)
+            .map(|image| visual_image(image, size))
             .unwrap_or_else(|| app_badge(&banner.app_name, banner.urgency)),
     }
 }
 
+fn primary_banner_visual_size(primary: BannerPrimaryVisual) -> u16 {
+    match primary {
+        BannerPrimaryVisual::AppBadge
+        | BannerPrimaryVisual::AppIcon
+        | BannerPrimaryVisual::NotificationImage => APP_ICON_VISUAL_SIZE,
+    }
+}
+
 fn notification_image_visual(image: &BannerVisual) -> iced::Element<'_, BannerUiMessage> {
-    visual_image(image, 58)
+    visual_image(image, NOTIFICATION_IMAGE_VISUAL_SIZE)
 }
 
 fn visual_image(visual: &BannerVisual, size: u16) -> iced::Element<'_, BannerUiMessage> {
@@ -1278,14 +1349,13 @@ impl BannerView {
             .take(2)
             .map(banner_action_from_notification_action)
             .collect();
+        let app_icon =
+            banner_app_icon_visual(notification.app_icon.as_ref(), &notification.app_identity);
         Self {
             notification_id: thread.id,
             app_identity: notification.app_identity,
             app_name: notification.app_name,
-            app_icon: notification
-                .app_icon
-                .as_ref()
-                .and_then(BannerVisual::from_reference),
+            app_icon,
             summary: notification.summary,
             body: notification.body,
             body_markup: notification.body_markup,
@@ -1306,6 +1376,57 @@ impl BannerView {
             focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
         }
     }
+}
+
+fn banner_app_icon_visual(
+    app_icon: Option<&NotificationVisualReference>,
+    app_identity: &str,
+) -> Option<BannerVisual> {
+    banner_app_icon_visual_in_roots(app_icon, app_identity, icon_search_roots())
+}
+
+fn banner_app_icon_visual_in_roots(
+    app_icon: Option<&NotificationVisualReference>,
+    app_identity: &str,
+    roots: Vec<PathBuf>,
+) -> Option<BannerVisual> {
+    match app_icon {
+        Some(app_icon) => BannerVisual::from_reference(app_icon),
+        None => app_identity_icon_visual_in_roots(app_identity, roots),
+    }
+}
+
+fn app_identity_icon_visual_in_roots(
+    app_identity: &str,
+    roots: Vec<PathBuf>,
+) -> Option<BannerVisual> {
+    let index = cached_static_icon_index(roots);
+    app_identity_icon_name_candidates(app_identity)
+        .into_iter()
+        .find_map(|icon_name| {
+            index
+                .resolve(&icon_name)
+                .map(|path| BannerVisual::LocalPath {
+                    path: path.to_string_lossy().into_owned(),
+                })
+        })
+}
+
+fn app_identity_icon_name_candidates(app_identity: &str) -> Vec<String> {
+    let Some(app_identity) = normalize_static_icon_name(app_identity) else {
+        return Vec::new();
+    };
+    let mut candidates = vec![app_identity.clone()];
+    let suffix = ".desktop";
+    if app_identity.to_ascii_lowercase().ends_with(suffix) {
+        let stripped = app_identity[..app_identity.len() - suffix.len()].trim();
+        if let Some(stripped) = normalize_static_icon_name(stripped)
+            && stripped != app_identity
+        {
+            candidates.push(stripped);
+        }
+    }
+    candidates
 }
 
 fn banner_action_from_notification_action(action: &NotificationAction) -> BannerAction {
