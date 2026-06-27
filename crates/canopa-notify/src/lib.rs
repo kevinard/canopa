@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+mod activation;
 mod clock;
 mod configuration;
 pub mod control;
@@ -13,6 +14,10 @@ mod presentation;
 mod runtime;
 mod sqlite_persisted_state;
 
+pub use activation::{
+    ActivationTokenFuture, ActivationTokenProvider, NoopActivationTokenProvider,
+    WaylandActivationTokenProvider,
+};
 pub use control::{
     AppPermissionControl, ControlCommand, ControlReply, ControlStatus, NotificationCenterGroup,
     NotificationCenterItem, NotificationCenterProjection, NotifyControl,
@@ -55,6 +60,7 @@ pub struct DaemonOptions {
     pub history_limit: i64,
     pub notification_timeout_defaults: NotificationTimeoutDefaults,
     banner_presenter: Arc<dyn BannerPresenter>,
+    activation_token_provider: Arc<dyn ActivationTokenProvider>,
 }
 
 impl DaemonOptions {
@@ -66,6 +72,7 @@ impl DaemonOptions {
             history_limit: 1_000,
             notification_timeout_defaults: NotificationTimeoutDefaults::default(),
             banner_presenter: Arc::new(NoopBannerPresenter),
+            activation_token_provider: Arc::new(NoopActivationTokenProvider),
         }
     }
 
@@ -80,6 +87,7 @@ impl DaemonOptions {
             history_limit: 1_000,
             notification_timeout_defaults: NotificationTimeoutDefaults::default(),
             banner_presenter: Arc::new(banner_presenter),
+            activation_token_provider: Arc::new(NoopActivationTokenProvider),
         }
     }
 
@@ -103,6 +111,14 @@ impl DaemonOptions {
         self.banner_presenter = Arc::new(banner_presenter);
         self
     }
+
+    pub fn with_activation_token_provider(
+        mut self,
+        activation_token_provider: impl ActivationTokenProvider + 'static,
+    ) -> Self {
+        self.activation_token_provider = Arc::new(activation_token_provider);
+        self
+    }
 }
 
 #[derive(Clone)]
@@ -124,6 +140,7 @@ impl Daemon {
             options.headless,
             options.notification_timeout_defaults,
             options.banner_presenter,
+            options.activation_token_provider,
         )
         .await?;
         Ok(Self {
@@ -240,6 +257,10 @@ impl Daemon {
 
     pub fn subscribe_sender_events(&self) -> tokio::sync::broadcast::Receiver<SenderEvent> {
         self.runtime.subscribe_sender_events()
+    }
+
+    pub fn supports_activation_tokens(&self) -> bool {
+        self.runtime.supports_activation_tokens()
     }
 
     pub(crate) async fn notification_center_projection(

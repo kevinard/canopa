@@ -1,7 +1,7 @@
 use anyhow::Context;
 use canopa_notify::{
     BannerInteraction, Daemon, DaemonOptions, IcedLayerShellBannerPresenter,
-    NotificationServerRequest, NotifyControl, SenderEvent,
+    NotificationServerRequest, NotifyControl, SenderEvent, WaylandActivationTokenProvider,
 };
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
@@ -211,7 +211,8 @@ fn graphical_daemon_startup(
     banner_interactions: Option<mpsc::Receiver<BannerInteraction>>,
 ) -> DaemonStartup {
     DaemonStartup {
-        options: DaemonOptions::graphical(database, banner_presenter),
+        options: DaemonOptions::graphical(database, banner_presenter)
+            .with_activation_token_provider(WaylandActivationTokenProvider::connect_to_env()),
         banner_interactions,
     }
 }
@@ -327,13 +328,17 @@ impl NotificationServer {
     }
 
     fn get_capabilities(&self) -> Vec<String> {
-        vec![
+        let mut capabilities = vec![
             "actions".to_string(),
             "action-icons".to_string(),
             "body".to_string(),
             "body-markup".to_string(),
             "icon-static".to_string(),
-        ]
+        ];
+        if self.daemon.supports_activation_tokens() {
+            capabilities.push("activation-token".to_string());
+        }
+        capabilities
     }
 
     fn get_server_information(&self) -> (String, String, String, String) {
@@ -350,6 +355,13 @@ impl NotificationServer {
         emitter: &SignalEmitter<'_>,
         id: u32,
         action_key: &str,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn activation_token(
+        emitter: &SignalEmitter<'_>,
+        id: u32,
+        activation_token: &str,
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]
@@ -414,19 +426,35 @@ async fn emit_sender_event(
     sender_ids: &NotificationSenderIds,
     event: &SenderEvent,
 ) -> zbus::Result<()> {
-    if let Some(action_key) = event.action_key.as_deref() {
-        if let Some(sender_id) = sender_ids.sender_id_for_internal_id(event.notification_id) {
-            emitter.action_invoked(sender_id, action_key).await?;
+    match event {
+        SenderEvent::ActivationToken {
+            notification_id,
+            activation_token,
+        } => {
+            if let Some(sender_id) = sender_ids.sender_id_for_internal_id(*notification_id) {
+                emitter
+                    .activation_token(sender_id, activation_token)
+                    .await?;
+            }
         }
-    }
-
-    if let Some(closed_id) = event
-        .closed_id
-        .and_then(|id| sender_ids.unregister_internal_id(id))
-    {
-        emitter
-            .notification_closed(closed_id, close_reason_code(event.close_reason.as_deref()))
-            .await?;
+        SenderEvent::ActionInvoked {
+            notification_id,
+            action_key,
+        } => {
+            if let Some(sender_id) = sender_ids.sender_id_for_internal_id(*notification_id) {
+                emitter.action_invoked(sender_id, action_key).await?;
+            }
+        }
+        SenderEvent::NotificationClosed {
+            notification_id,
+            reason,
+        } => {
+            if let Some(closed_id) = sender_ids.unregister_internal_id(*notification_id) {
+                emitter
+                    .notification_closed(closed_id, close_reason_code(*reason))
+                    .await?;
+            }
+        }
     }
 
     Ok(())
@@ -436,11 +464,11 @@ fn empty_dbus_error() -> zbus::fdo::Error {
     zbus::fdo::Error::Failed(String::new())
 }
 
-fn close_reason_code(reason: Option<&str>) -> u32 {
+fn close_reason_code(reason: canopa_notify::NotificationStatus) -> u32 {
     match reason {
-        Some("expired") => 1,
-        Some("dismissed") => 2,
-        Some("closed") => 3,
+        canopa_notify::NotificationStatus::Expired => 1,
+        canopa_notify::NotificationStatus::Dismissed => 2,
+        canopa_notify::NotificationStatus::Closed => 3,
         _ => 4,
     }
 }
@@ -628,6 +656,33 @@ fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest
 #[cfg(test)]
 mod tests {
     use super::*;
+    use canopa_notify::{ActivationTokenFuture, ActivationTokenProvider};
+    use futures_util::StreamExt;
+    use std::collections::VecDeque;
+
+    #[derive(Clone, Debug)]
+    struct FakeActivationTokenProvider {
+        tokens: Arc<Mutex<VecDeque<String>>>,
+    }
+
+    impl FakeActivationTokenProvider {
+        fn new(tokens: impl IntoIterator<Item = impl Into<String>>) -> Self {
+            Self {
+                tokens: Arc::new(Mutex::new(tokens.into_iter().map(Into::into).collect())),
+            }
+        }
+    }
+
+    impl ActivationTokenProvider for FakeActivationTokenProvider {
+        fn available(&self) -> bool {
+            true
+        }
+
+        fn activation_token(&self, _app_identity: String) -> ActivationTokenFuture {
+            let token = self.tokens.lock().unwrap().pop_front();
+            Box::pin(async move { token })
+        }
+    }
 
     #[test]
     fn service_mode_uses_non_headless_daemon_options() {
@@ -682,8 +737,84 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(event.notification_id, receipt.notification_id);
-        assert_eq!(event.action_key.as_deref(), Some("reply"));
+        assert!(matches!(
+            event,
+            SenderEvent::ActionInvoked {
+                notification_id,
+                action_key,
+            } if notification_id == receipt.notification_id && action_key == "reply"
+        ));
+    }
+
+    #[tokio::test]
+    async fn notification_server_emits_activation_token_before_action_invoked() {
+        let temp = tempfile::tempdir().unwrap();
+        let bus_name = test_bus_name("ActivationToken");
+        let daemon = Daemon::open(
+            DaemonOptions::headless(temp.path().join("history.db"))
+                .with_activation_token_provider(FakeActivationTokenProvider::new(["token-1"])),
+        )
+        .await
+        .unwrap();
+        let _connection = start_notification_server(bus_name.clone(), daemon.clone())
+            .await
+            .unwrap();
+        let connection = zbus::Connection::session().await.unwrap();
+        let proxy = zbus::Proxy::new(
+            &connection,
+            bus_name.as_str(),
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        )
+        .await
+        .unwrap();
+        let capabilities: Vec<String> = proxy.call("GetCapabilities", &()).await.unwrap();
+        assert!(
+            capabilities
+                .iter()
+                .any(|capability| capability == "activation-token")
+        );
+        let mut token_signals = proxy.receive_signal("ActivationToken").await.unwrap();
+        let mut action_signals = proxy.receive_signal("ActionInvoked").await.unwrap();
+
+        let sender_id: u32 = proxy
+            .call(
+                "Notify",
+                &(
+                    "Calendar",
+                    0u32,
+                    "",
+                    "Meeting",
+                    "Starting soon",
+                    vec!["open".to_string(), "Open".to_string()],
+                    HashMap::<String, OwnedValue>::new(),
+                    -1i32,
+                ),
+            )
+            .await
+            .unwrap();
+        let notification_id = daemon.snapshot().await.unwrap().active[0].id;
+
+        daemon.invoke_action(notification_id, "open").await.unwrap();
+
+        let token_signal =
+            tokio::time::timeout(std::time::Duration::from_secs(1), token_signals.next())
+                .await
+                .unwrap()
+                .unwrap();
+        let (token_id, activation_token): (u32, String) =
+            token_signal.body().deserialize().unwrap();
+        assert_eq!(token_id, sender_id);
+        assert_eq!(activation_token, "token-1");
+
+        let action_signal =
+            tokio::time::timeout(std::time::Duration::from_secs(1), action_signals.next())
+                .await
+                .unwrap()
+                .unwrap();
+        let (action_id, action_key): (u32, String) = action_signal.body().deserialize().unwrap();
+        assert_eq!(action_id, sender_id);
+        assert_eq!(action_key, "open");
     }
 
     fn daemon_args(headless: bool, service: bool) -> DaemonArgs {
@@ -694,5 +825,9 @@ mod tests {
             dev_bus_name: None,
             service,
         }
+    }
+
+    fn test_bus_name(suffix: &str) -> String {
+        format!("org.canopa.NotifyUnitTest{}{}", std::process::id(), suffix)
     }
 }

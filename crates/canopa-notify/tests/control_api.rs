@@ -4,11 +4,71 @@ mod daemon_support;
 mod notifications;
 
 use canopa_notify::{
-    AppPermissionControl, ControlCommand, ControlReply, DeliveryOutcome, NotificationAction,
-    NotificationInput, NotifyControl,
+    ActivationTokenFuture, ActivationTokenProvider, AppPermissionControl, ControlCommand,
+    ControlReply, Daemon, DaemonOptions, DeliveryOutcome, NotificationAction, NotificationInput,
+    NotifyControl, SenderEvent,
 };
 use notifications::{notification, notification_with_body};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+#[derive(Clone, Debug)]
+struct FakeActivationTokenProvider {
+    tokens: Arc<Mutex<VecDeque<String>>>,
+    requested_app_identities: Arc<Mutex<Vec<String>>>,
+    available: bool,
+}
+
+impl FakeActivationTokenProvider {
+    fn new(tokens: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            tokens: Arc::new(Mutex::new(tokens.into_iter().map(Into::into).collect())),
+            requested_app_identities: Arc::new(Mutex::new(Vec::new())),
+            available: true,
+        }
+    }
+
+    fn unavailable() -> Self {
+        Self {
+            tokens: Arc::new(Mutex::new(VecDeque::new())),
+            requested_app_identities: Arc::new(Mutex::new(Vec::new())),
+            available: false,
+        }
+    }
+
+    fn requested_app_identities(&self) -> Vec<String> {
+        self.requested_app_identities.lock().unwrap().clone()
+    }
+}
+
+impl ActivationTokenProvider for FakeActivationTokenProvider {
+    fn available(&self) -> bool {
+        self.available
+    }
+
+    fn activation_token(&self, app_identity: String) -> ActivationTokenFuture {
+        self.requested_app_identities
+            .lock()
+            .unwrap()
+            .push(app_identity);
+        let token = self.tokens.lock().unwrap().pop_front();
+        Box::pin(async move { token })
+    }
+}
+
+async fn open_daemon_with_activation_provider(
+    provider: FakeActivationTokenProvider,
+) -> (tempfile::TempDir, Daemon) {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(
+        DaemonOptions::headless(temp.path().join("history.db"))
+            .with_activation_token_provider(provider),
+    )
+    .await
+    .unwrap();
+    (temp, daemon)
+}
 
 #[tokio::test]
 async fn notify_control_reports_daemon_status() {
@@ -339,7 +399,13 @@ async fn notify_control_activates_notification_center_items() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(event.action_key.as_deref(), Some("default"));
+    assert!(matches!(
+        event,
+        SenderEvent::ActionInvoked {
+            action_key,
+            ..
+        } if action_key == "default"
+    ));
 
     let without_default = daemon
         .receive_notification(notification("Calendar", "Standup"))
@@ -362,16 +428,13 @@ async fn notify_control_activates_notification_center_items() {
         .find(|thread| thread.id == without_default.notification_id)
         .unwrap();
     assert_eq!(dismissed.status.as_str(), "dismissed");
-    assert!(
-        !daemon
-            .sender_events()
-            .await
-            .iter()
-            .any(
-                |event| event.notification_id == without_default.notification_id
-                    && event.action_key.is_some()
-            )
-    );
+    assert!(!daemon.sender_events().await.iter().any(|event| matches!(
+        event,
+        SenderEvent::ActionInvoked {
+            notification_id,
+            ..
+        } if *notification_id == without_default.notification_id
+    )));
 }
 
 #[tokio::test]
@@ -396,14 +459,206 @@ async fn sender_event_subscription_receives_action_invocation_events() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(action_event.notification_id, receipt.notification_id);
-    assert_eq!(action_event.action_key.as_deref(), Some("open"));
+    assert!(matches!(
+        action_event,
+        SenderEvent::ActionInvoked {
+            notification_id,
+            action_key,
+        } if notification_id == receipt.notification_id && action_key == "open"
+    ));
 
     let close_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(close_event.closed_id, Some(receipt.notification_id));
+    assert!(matches!(
+        close_event,
+        SenderEvent::NotificationClosed {
+            notification_id,
+            ..
+        } if notification_id == receipt.notification_id
+    ));
+}
+
+#[tokio::test]
+async fn action_invocation_emits_activation_token_before_action_and_close() {
+    let provider = FakeActivationTokenProvider::new(["token-1"]);
+    let (_temp, daemon) = open_daemon_with_activation_provider(provider.clone()).await;
+    let mut events = daemon.subscribe_sender_events();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            desktop_entry: Some("chat.desktop".to_string()),
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("Chat", "Message")
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .invoke_action(receipt.notification_id, "open")
+        .await
+        .unwrap();
+
+    let activation_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        activation_event,
+        SenderEvent::ActivationToken {
+            notification_id,
+            activation_token,
+        } if notification_id == receipt.notification_id && activation_token == "token-1"
+    ));
+
+    let action_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        action_event,
+        SenderEvent::ActionInvoked {
+            notification_id,
+            action_key,
+        } if notification_id == receipt.notification_id && action_key == "open"
+    ));
+
+    let closed_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        closed_event,
+        SenderEvent::NotificationClosed {
+            notification_id,
+            ..
+        } if notification_id == receipt.notification_id
+    ));
+    assert_eq!(
+        provider.requested_app_identities(),
+        vec!["chat.desktop".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn empty_activation_token_is_skipped_without_blocking_action() {
+    let provider = FakeActivationTokenProvider::new([""]);
+    let (_temp, daemon) = open_daemon_with_activation_provider(provider).await;
+    let mut events = daemon.subscribe_sender_events();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("Chat", "Message")
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .invoke_action(receipt.notification_id, "open")
+        .await
+        .unwrap();
+
+    let action_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        action_event,
+        SenderEvent::ActionInvoked {
+            notification_id,
+            action_key,
+        } if notification_id == receipt.notification_id && action_key == "open"
+    ));
+}
+
+#[tokio::test]
+async fn resident_notification_gets_fresh_activation_token_per_invocation() {
+    let provider = FakeActivationTokenProvider::new(["token-1", "token-2"]);
+    let (_temp, daemon) = open_daemon_with_activation_provider(provider).await;
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            resident: true,
+            actions: vec![NotificationAction::new("pause", "Pause")],
+            ..notification("Music", "Playing")
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .invoke_action(receipt.notification_id, "pause")
+        .await
+        .unwrap();
+    daemon
+        .invoke_action(receipt.notification_id, "pause")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        daemon
+            .sender_events()
+            .await
+            .iter()
+            .filter_map(|event| match event {
+                SenderEvent::ActivationToken {
+                    activation_token, ..
+                } => Some(activation_token.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec!["token-1", "token-2"]
+    );
+}
+
+#[tokio::test]
+async fn activation_token_uses_current_replacement_revision_app_identity() {
+    let provider = FakeActivationTokenProvider::new(["token-1"]);
+    let (_temp, daemon) = open_daemon_with_activation_provider(provider.clone()).await;
+
+    let original = daemon
+        .receive_notification(NotificationInput {
+            desktop_entry: Some("old.desktop".to_string()),
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("Old", "Original")
+        })
+        .await
+        .unwrap();
+    let replacement = daemon
+        .receive_notification(NotificationInput {
+            desktop_entry: Some("new.desktop".to_string()),
+            replaces_id: Some(original.notification_id),
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("New", "Replacement")
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .invoke_action(replacement.notification_id, "open")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        provider.requested_app_identities(),
+        vec!["new.desktop".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn activation_token_capability_is_provider_availability_at_open() {
+    let available = FakeActivationTokenProvider::new(["token-1"]);
+    let (_available_temp, available_daemon) = open_daemon_with_activation_provider(available).await;
+    assert!(available_daemon.supports_activation_tokens());
+
+    let unavailable = FakeActivationTokenProvider::unavailable();
+    let (_unavailable_temp, unavailable_daemon) =
+        open_daemon_with_activation_provider(unavailable).await;
+    assert!(!unavailable_daemon.supports_activation_tokens());
+
+    let default_daemon = daemon_support::open_headless_daemon().await;
+    assert!(!default_daemon.supports_activation_tokens());
 }
 
 #[tokio::test]

@@ -84,6 +84,7 @@ pub enum LifecycleEffect {
     ActionInvoked {
         notification_id: i64,
         action_key: String,
+        app_identity: String,
     },
     SenderClosed {
         notification_id: i64,
@@ -134,20 +135,17 @@ impl LifecycleEffects {
             LifecycleEffect::ActionInvoked {
                 notification_id,
                 action_key,
-            } => Some(SenderEvent {
+                ..
+            } => Some(SenderEvent::ActionInvoked {
                 notification_id: *notification_id,
-                action_key: Some(action_key.clone()),
-                closed_id: None,
-                close_reason: None,
+                action_key: action_key.clone(),
             }),
             LifecycleEffect::SenderClosed {
                 notification_id,
                 reason,
-            } => Some(SenderEvent {
+            } => Some(SenderEvent::NotificationClosed {
                 notification_id: *notification_id,
-                action_key: None,
-                closed_id: Some(*notification_id),
-                close_reason: Some(reason.as_str().to_string()),
+                reason: *reason,
             }),
             _ => None,
         })
@@ -436,6 +434,7 @@ where
         let mut effects = LifecycleEffects::new(vec![LifecycleEffect::ActionInvoked {
             notification_id,
             action_key: action_key.to_string(),
+            app_identity: thread.accepted_notification.app_identity.clone(),
         }]);
 
         if !thread.accepted_notification.resident {

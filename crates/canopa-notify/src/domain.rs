@@ -649,11 +649,20 @@ pub struct NotificationSnapshot {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SenderEvent {
-    pub notification_id: i64,
-    pub action_key: Option<String>,
-    pub closed_id: Option<i64>,
-    pub close_reason: Option<String>,
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum SenderEvent {
+    ActivationToken {
+        notification_id: i64,
+        activation_token: String,
+    },
+    ActionInvoked {
+        notification_id: i64,
+        action_key: String,
+    },
+    NotificationClosed {
+        notification_id: i64,
+        reason: NotificationStatus,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

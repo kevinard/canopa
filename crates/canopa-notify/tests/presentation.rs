@@ -7,8 +7,8 @@ use canopa_notify::{
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPresentation,
     BannerPresenter, BannerSurfaceSpec, BannerView, Daemon, DaemonOptions, DeliveryOutcome,
     IcedLayerShellBannerPresenter, NotificationAction, NotificationImageData, NotificationInput,
-    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference, Urgency,
-    UserRule,
+    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference, SenderEvent,
+    Urgency, UserRule,
 };
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer};
 use iced_layershell::settings::StartMode;
@@ -547,8 +547,13 @@ async fn activating_banner_invokes_default_notification_action_when_present() {
 
     let events = daemon.sender_events().await;
     assert!(events.iter().any(|event| {
-        event.notification_id == receipt.notification_id
-            && event.action_key.as_deref() == Some("default")
+        matches!(
+            event,
+            SenderEvent::ActionInvoked {
+                notification_id,
+                action_key,
+            } if *notification_id == receipt.notification_id && action_key == "default"
+        )
     }));
 }
 

@@ -1,3 +1,4 @@
+use crate::activation::ActivationTokenProvider;
 use crate::control::{
     AppPermissionControl, NotificationCenterGroup, NotificationCenterItem,
     NotificationCenterProjection,
@@ -22,7 +23,10 @@ use crate::sqlite_persisted_state::SqlitePersistedState;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::{broadcast, watch};
+
+const ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_millis(100);
 
 #[derive(Clone)]
 pub(crate) struct NotificationRuntime {
@@ -31,6 +35,8 @@ pub(crate) struct NotificationRuntime {
     presentation: PresentationCoordinator,
     banner_state: Arc<Mutex<NotificationBannerState>>,
     runtime_images: Arc<Mutex<RuntimeImageStore>>,
+    activation_token_provider: Arc<dyn ActivationTokenProvider>,
+    activation_token_capable: bool,
     sender_events: Arc<Mutex<Vec<SenderEvent>>>,
     sender_event_changes: broadcast::Sender<SenderEvent>,
     decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
@@ -92,6 +98,7 @@ impl NotificationRuntime {
         headless: bool,
         timeout_defaults: NotificationTimeoutDefaults,
         banner_presenter: Arc<dyn BannerPresenter>,
+        activation_token_provider: Arc<dyn ActivationTokenProvider>,
     ) -> anyhow::Result<Self> {
         let lifecycle =
             NotificationLifecycle::with_timeout_defaults(storage.clone(), timeout_defaults);
@@ -99,6 +106,7 @@ impl NotificationRuntime {
         storage.prune_history().await?;
         let (state_changes, _state_change_receiver) = watch::channel(0);
         let (sender_event_changes, _sender_event_receiver) = broadcast::channel(128);
+        let activation_token_capable = activation_token_provider.available();
 
         Ok(Self {
             storage,
@@ -106,6 +114,8 @@ impl NotificationRuntime {
             presentation: PresentationCoordinator::new(!headless, banner_presenter),
             banner_state: Arc::new(Mutex::new(NotificationBannerState::new())),
             runtime_images: Arc::new(Mutex::new(RuntimeImageStore::default())),
+            activation_token_provider,
+            activation_token_capable,
             sender_events: Arc::new(Mutex::new(Vec::new())),
             sender_event_changes,
             decision_logs: Arc::new(Mutex::new(Vec::new())),
@@ -266,6 +276,10 @@ impl NotificationRuntime {
         self.sender_event_changes.subscribe()
     }
 
+    pub(crate) fn supports_activation_tokens(&self) -> bool {
+        self.activation_token_capable
+    }
+
     pub(crate) async fn notification_center_projection(
         &self,
     ) -> anyhow::Result<NotificationCenterProjection> {
@@ -333,17 +347,80 @@ impl NotificationRuntime {
             let mut banner_state = self.banner_state.lock().unwrap();
             banner_state.apply_changes(effects.banner_changes());
         }
-        self.publish_sender_events(effects.sender_events());
+        self.publish_sender_events(effects).await;
         self.sync_presentation().await?;
         Ok(())
     }
 
-    fn publish_sender_events(&self, events: impl IntoIterator<Item = SenderEvent>) {
+    async fn publish_sender_events(&self, effects: &LifecycleEffects) {
+        let events = self.sender_events_for_effects(effects).await;
         let mut sender_events = self.sender_events.lock().unwrap();
         for event in events {
             sender_events.push(event.clone());
             let _ = self.sender_event_changes.send(event);
         }
+    }
+
+    async fn sender_events_for_effects(&self, effects: &LifecycleEffects) -> Vec<SenderEvent> {
+        let mut events = Vec::new();
+        for effect in effects {
+            match effect {
+                LifecycleEffect::ActionInvoked {
+                    notification_id,
+                    action_key,
+                    app_identity,
+                } => {
+                    if let Some(activation_token) =
+                        self.activation_token(app_identity.clone()).await
+                    {
+                        events.push(SenderEvent::ActivationToken {
+                            notification_id: *notification_id,
+                            activation_token,
+                        });
+                    }
+                    events.push(SenderEvent::ActionInvoked {
+                        notification_id: *notification_id,
+                        action_key: action_key.clone(),
+                    });
+                }
+                LifecycleEffect::SenderClosed {
+                    notification_id,
+                    reason,
+                } => events.push(SenderEvent::NotificationClosed {
+                    notification_id: *notification_id,
+                    reason: *reason,
+                }),
+                LifecycleEffect::SenderReceipt(_)
+                | LifecycleEffect::ThreadCreated(_)
+                | LifecycleEffect::ThreadRevised(_)
+                | LifecycleEffect::ThreadDeliveryChanged(_)
+                | LifecycleEffect::ThreadSilenced(_)
+                | LifecycleEffect::ThreadDismissed(_)
+                | LifecycleEffect::ThreadExpired(_)
+                | LifecycleEffect::ThreadClosed(_)
+                | LifecycleEffect::ThreadStale(_)
+                | LifecycleEffect::NotificationDropped { .. }
+                | LifecycleEffect::NotificationTimeoutScheduled { .. }
+                | LifecycleEffect::NotificationTimeoutCancelled { .. } => {}
+            }
+        }
+        events
+    }
+
+    async fn activation_token(&self, app_identity: String) -> Option<String> {
+        if !self.activation_token_capable {
+            return None;
+        }
+
+        tokio::time::timeout(
+            ACTIVATION_TOKEN_TIMEOUT,
+            self.activation_token_provider
+                .activation_token(app_identity),
+        )
+        .await
+        .ok()
+        .flatten()
+        .filter(|token| !token.is_empty())
     }
 
     async fn sync_presentation(&self) -> anyhow::Result<()> {
@@ -460,7 +537,7 @@ impl NotificationRuntime {
         &self,
         notification_id: i64,
         revision: i64,
-        duration: std::time::Duration,
+        duration: Duration,
     ) {
         self.cancel_notification_timeout(notification_id);
 

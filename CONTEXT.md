@@ -196,6 +196,10 @@ _Avoid_: Button when referring to the sender callback rather than its visual con
 The sender-provided action invoked when the user activates the notification itself rather than a named action control.
 _Avoid_: Open notification center
 
+**Activation Token**:
+A sender-visible activation grant associated with a user interaction on an **Active Notification**, emitted before the sender is told which action was invoked.
+_Avoid_: Focus request, action token
+
 **Resident Notification**:
 A notification whose sender requests that it remain active after action invocation.
 _Avoid_: Persistent notification when referring specifically to post-action behavior
@@ -380,6 +384,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Lifecycle** is separate from **Notification History**; lifecycle rules command persistence changes rather than being owned by storage.
 - **Notification Lifecycle** returns **Lifecycle Effects**; the **Notification Daemon** publishes sender-visible events and presentation updates from those effects.
 - **Lifecycle Effects** are the primary **Notification Lifecycle** result; the **Notification Daemon** derives sender receipts and outward side effects from them.
+- **Activation Token** generation is a sender-visible publication side effect of the **Notification Daemon**, not **Notification Lifecycle** meaning.
 - A **Lifecycle Effect** may include the sender receipt for the accepted or rejected notification request.
 - **Lifecycle Effects** include **Notification Timeout** scheduling and cancellation instructions; timer adapters perform waiting but do not decide timeout meaning.
 - **Lifecycle Effects** are fine-grained events rather than one coarse outcome struct.
@@ -405,6 +410,9 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Dunst configuration import is outside the first version scope.
 - **Notification Server API** identity reports product name **Canopa Notify** and vendor Canopa.
 - **Notification Server API** capabilities report only visual features that Notify can render.
+- **Notification Server API** advertises **Activation Token** support only when the running **Notification Daemon** can request activation tokens from the **Wayland Session**.
+- **Activation Token** support does not require every user interaction path to provide a compositor input serial.
+- **Activation Token** support is enabled whenever the running **Notification Daemon** has an activation-token provider; it is not controlled by separate user configuration.
 - Static notification visuals may be advertised without advertising body-embedded images or animated notification visuals.
 - **Notification Server API** advertises **Notification Body Markup** only when Notify-owned body-display surfaces can preserve or render the interpreted markup semantics.
 - Parser-only **Notification Body Markup** support is not enough to advertise **Notification Body Markup** through the **Notification Server API**.
@@ -433,9 +441,12 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - JSON **Control Command** output that includes **Notification Body** may also include interpreted **Notification Body Markup**; human-readable **Control Command** output may remain plain text.
 - **Control Commands** report when the **Notification Daemon** is unavailable instead of starting it implicitly.
 - The **Notification Daemon** owns notification state, lifecycle, policy, history, and rules; the **Notification Center** is an interactive view over that daemon state.
+- The **Notification Daemon** owns **Activation Token** generation independently of **Notification Banner** presentation.
 - The **Notify Control API** exposes all private control surfaces over **Notification Daemon** state, including diagnostic status, active notification output, **Control Commands**, **Notification Center Projection**, and **Notification State Subscription**.
 - Diagnostic **Control Commands** are adapters over the **Notify Control API** module, not a separate control path.
 - The **Notify Control API** returns domain-shaped replies; command-line text, JSON, socket frames, and panel protocol messages are adapter formatting.
+- **Activation Token** behavior is the same across **Notify Control API** adapters that invoke a sender-provided **Notification Action**.
+- The **Notify Control API** and panel protocol do not expose **Activation Tokens**; the **Notification Daemon** publishes them through the **Notification Server API**.
 - Pre-release control command formats do not require legacy compatibility.
 - User interface changes to **Notification Rules** are saved in the **User Rule Store**, not by rewriting **Notification Configuration**.
 - **User Rule Store** rules are keyed by **App Identity** and optional **Notification Urgency**.
@@ -477,6 +488,15 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Clear Active Notifications** and **Delete Notification History** are separate actions.
 - **Notification Actions** may be invoked from **Notification Banners** and the **Notification Center** while their **Notification Thread** is active.
 - **Notification Actions** remain invokable for silenced **Active Notifications** shown in the **Notification Center**.
+- **Control Commands** that activate or invoke an **Active Notification** are user-originated notification interactions for **Activation Token** purposes.
+- **Activation Tokens** are emitted for any invoked sender-provided **Notification Action** when token generation succeeds.
+- **Activation Tokens** identify their target application using the notification's **App Identity**.
+- After a replacement, **Activation Tokens** use the current revision's **App Identity**.
+- Failure to obtain an **Activation Token** does not prevent the requested **Notification Action** from being invoked.
+- **Activation Token** generation is bounded; the **Notification Daemon** does not hold a **Notification Action** indefinitely while waiting for a token.
+- **Activation Token** generation is attempted only after **Notification Lifecycle** accepts a **Notification Action** invocation.
+- When an **Activation Token** is emitted for a non-resident **Notification Action**, sender-visible signal order is **Activation Token**, action invocation, then dismissal.
+- Each **Notification Action** invocation on a **Resident Notification** gets its own **Activation Token** opportunity.
 - Inactive **Notification History** is read-only except for deletion.
 - Inactive **Notification History** entries do not expose invokable **Notification Action** controls.
 - **Stale Notification** action labels may remain as read-only history metadata.

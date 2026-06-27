@@ -14,7 +14,7 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 | `GetServerInformation` | Implemented | Reports spec version `1.3`. |
 | `NotificationClosed` | Implemented | Emits reasons for expired, dismissed, closed, and unknown terminal states. |
 | `ActionInvoked` | Implemented | Preserves opaque, case-sensitive sender action keys. |
-| `ActivationToken` | Planned | Requires Wayland activation-token integration before advertising `activation-token`. |
+| `ActivationToken` | Implemented | Emits before `ActionInvoked` when a user-originated notification interaction can obtain a Wayland activation token. |
 
 ## Capabilities
 
@@ -30,7 +30,7 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 | `icon-multi` | Not implemented | Animated or multi-frame icons are not supported. |
 | `persistence` | Not advertised | Notify persists local history, but does not yet promise freedesktop persistence semantics to senders. |
 | `sound` | Not advertised | Sound hints are decoded but no playback adapter is present. |
-| `activation-token` | Not advertised | See `ActivationToken` above. |
+| `activation-token` | Runtime advertised | Advertised only when the running daemon can request Wayland activation tokens. |
 | `inline-reply` | Not implemented | Requires keyboard-interactive reply UI and sender reply signaling semantics. |
 
 ## Standard hints
@@ -54,4 +54,9 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 
 - `GetCapabilities` tests must assert both advertised and intentionally unadvertised capabilities.
 - Adding a new advertised capability requires a D-Bus-level test and at least one presentation or lifecycle test for the behavior.
+- Activation-token behavior should be tested through a replaceable daemon activation-token provider, with compositor-specific integration kept outside lifecycle tests.
+- `activation-token` capability advertisement follows activation-token provider availability; normal `--headless` startup does not install a provider.
+- `activation-token` capability advertisement is stable for the daemon lifetime; individual token requests remain best-effort.
+- The initial activation-token generation budget is a fixed 100 ms daemon-side timeout.
+- Empty activation-token provider results are treated as unavailable tokens; `ActionInvoked` still proceeds without an `ActivationToken` signal.
 - Decoding a hint without acting on it must be documented here as `Decoded, neutral` or `Decoded, ignored`.

@@ -8,7 +8,7 @@ use canopa_notify::{
     LifecycleDelivery, LifecycleEffect, NewNotificationThread, NotificationAction,
     NotificationBodyMarkup, NotificationHistory, NotificationInput, NotificationLifecycle,
     NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutChange,
-    PersistPrecondition, Urgency,
+    PersistPrecondition, SenderEvent, Urgency,
 };
 use notifications::notification;
 use std::sync::{
@@ -221,7 +221,13 @@ async fn lifecycle_expires_timeout_when_revision_matches() {
         )
     }));
     assert!(effects.sender_events().any(|event| {
-        event.closed_id == Some(1) && event.close_reason.as_deref() == Some("expired")
+        matches!(
+            event,
+            SenderEvent::NotificationClosed {
+                notification_id: 1,
+                reason: NotificationStatus::Expired
+            }
+        )
     }));
 }
 
@@ -375,10 +381,13 @@ async fn lifecycle_transition_owns_status_timestamps_and_precondition() {
         )
     }));
     assert!(effects.sender_events().any(|event| {
-        event.notification_id == thread.id
-            && event.action_key.is_none()
-            && event.closed_id == Some(thread.id)
-            && event.close_reason.as_deref() == Some("dismissed")
+        matches!(
+            event,
+            SenderEvent::NotificationClosed {
+                notification_id,
+                reason: NotificationStatus::Dismissed
+            } if notification_id == thread.id
+        )
     }));
 }
 
@@ -623,17 +632,21 @@ async fn actions_dismiss_non_resident_notifications_but_resident_notifications_s
     assert_eq!(
         non_resident_events
             .iter()
-            .map(|event| {
-                (
-                    event.action_key.as_deref(),
-                    event.closed_id,
-                    event.close_reason.as_deref(),
-                )
+            .map(|event| match event {
+                SenderEvent::ActionInvoked {
+                    notification_id,
+                    action_key,
+                } => (Some(action_key.as_str()), *notification_id, None),
+                SenderEvent::NotificationClosed {
+                    notification_id,
+                    reason,
+                } => (None, *notification_id, Some(reason.as_str())),
+                SenderEvent::ActivationToken { .. } => unreachable!(),
             })
             .collect::<Vec<_>>(),
         vec![
-            (Some("open"), None, None),
-            (None, Some(non_resident.notification_id), Some("dismissed"))
+            (Some("open"), non_resident.notification_id, None),
+            (None, non_resident.notification_id, Some("dismissed"))
         ]
     );
 
@@ -668,15 +681,21 @@ async fn actions_dismiss_non_resident_notifications_but_resident_notifications_s
 
     let events = daemon.sender_events().await;
     assert!(events.iter().any(|event| {
-        event.notification_id == resident.notification_id
-            && event.action_key.as_deref() == Some("pause")
-            && event.closed_id.is_none()
+        matches!(
+            event,
+            SenderEvent::ActionInvoked {
+                notification_id,
+                action_key,
+            } if *notification_id == resident.notification_id && action_key == "pause"
+        )
     }));
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.closed_id == Some(resident.notification_id))
-    );
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        SenderEvent::NotificationClosed {
+            notification_id,
+            ..
+        } if *notification_id == resident.notification_id
+    )));
 }
 
 #[tokio::test]
