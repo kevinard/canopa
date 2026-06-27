@@ -7,6 +7,7 @@ use crate::{
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(test)]
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -475,6 +476,35 @@ mod tests {
     }
 
     #[test]
+    fn notification_image_without_app_icon_replaces_initials_visual() {
+        let mut banner = banner_view(42, "Screenshot");
+        banner.image = Some(test_banner_visual());
+
+        assert_eq!(
+            banner_header_visual_layout(&banner),
+            BannerHeaderVisualLayout {
+                primary: BannerPrimaryVisual::NotificationImage,
+                has_secondary_notification_image: false,
+            }
+        );
+    }
+
+    #[test]
+    fn app_icon_and_notification_image_stay_distinct() {
+        let mut banner = banner_view(42, "Screenshot");
+        banner.app_icon = Some(test_banner_visual());
+        banner.image = Some(test_banner_visual());
+
+        assert_eq!(
+            banner_header_visual_layout(&banner),
+            BannerHeaderVisualLayout {
+                primary: BannerPrimaryVisual::AppIcon,
+                has_secondary_notification_image: true,
+            }
+        );
+    }
+
+    #[test]
     fn static_icon_names_resolve_from_icon_search_roots() {
         let temp = tempfile::tempdir().unwrap();
         let icon_root = temp.path().join("icons");
@@ -492,6 +522,48 @@ mod tests {
         );
         assert_eq!(
             find_static_icon_in_roots("../mail-reply-sender", vec![temp.path().join("icons")]),
+            None
+        );
+    }
+
+    #[test]
+    fn static_icon_name_resolution_reuses_cached_index_for_roots() {
+        clear_static_icon_index_cache_for_tests();
+
+        let temp = tempfile::tempdir().unwrap();
+        let icon_root = temp.path().join("icons");
+        let icon_path = icon_root
+            .join("hicolor")
+            .join("48x48")
+            .join("apps")
+            .join("mail-client.png");
+        std::fs::create_dir_all(icon_path.parent().unwrap()).unwrap();
+        std::fs::write(&icon_path, [0_u8]).unwrap();
+
+        let icon_root_set = vec![icon_root.clone()];
+        assert_eq!(
+            resolve_static_icon_name_in_roots("mail-client", icon_root_set.clone()),
+            Some(icon_path.to_string_lossy().into_owned())
+        );
+
+        std::fs::remove_file(&icon_path).unwrap();
+        assert_eq!(
+            resolve_static_icon_name_in_roots("mail-client", icon_root_set),
+            Some(icon_path.to_string_lossy().into_owned())
+        );
+
+        let missing_icon_root = temp.path().join("missing-icons");
+        let missing_icon_path = missing_icon_root.join("hicolor/48x48/apps/calendar.png");
+        std::fs::create_dir_all(missing_icon_path.parent().unwrap()).unwrap();
+        let missing_icon_root_set = vec![missing_icon_root];
+        assert_eq!(
+            resolve_static_icon_name_in_roots("calendar", missing_icon_root_set.clone()),
+            None
+        );
+
+        std::fs::write(&missing_icon_path, [0_u8]).unwrap();
+        assert_eq!(
+            resolve_static_icon_name_in_roots("calendar", missing_icon_root_set),
             None
         );
     }
@@ -531,6 +603,14 @@ mod tests {
             actions: Vec::new(),
             placement: BannerPlacement::TopRightFocusedOutputWithFallback,
             focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
+        }
+    }
+
+    fn test_banner_visual() -> BannerVisual {
+        BannerVisual::Rgba {
+            width: 1,
+            height: 1,
+            pixels: vec![255, 0, 0, 255],
         }
     }
 }
@@ -601,10 +681,13 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
         .on_press(BannerUiMessage::ActivateRequested(banner.notification_id));
     let dismiss = close_button(banner.notification_id);
 
-    let mut header = row![app_identity_visual(banner),]
+    let visual_layout = banner_header_visual_layout(banner);
+    let mut header = row![primary_banner_visual(banner, visual_layout.primary),]
         .spacing(10)
         .align_y(Alignment::Start);
-    if let Some(image) = &banner.image {
+    if visual_layout.has_secondary_notification_image
+        && let Some(image) = &banner.image
+    {
         header = header.push(notification_image_visual(image));
     }
     header = header.push(activate).push(dismiss);
@@ -784,10 +867,56 @@ fn app_badge(app_name: &str, urgency: Urgency) -> iced::Element<'_, BannerUiMess
         .into()
 }
 
-fn app_identity_visual(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
-    match &banner.app_icon {
-        Some(icon) => visual_image(icon, 34),
-        None => app_badge(&banner.app_name, banner.urgency),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BannerPrimaryVisual {
+    AppBadge,
+    AppIcon,
+    NotificationImage,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BannerHeaderVisualLayout {
+    primary: BannerPrimaryVisual,
+    has_secondary_notification_image: bool,
+}
+
+fn banner_header_visual_layout(banner: &BannerView) -> BannerHeaderVisualLayout {
+    match (&banner.app_icon, &banner.image) {
+        (Some(_), Some(_)) => BannerHeaderVisualLayout {
+            primary: BannerPrimaryVisual::AppIcon,
+            has_secondary_notification_image: true,
+        },
+        (Some(_), None) => BannerHeaderVisualLayout {
+            primary: BannerPrimaryVisual::AppIcon,
+            has_secondary_notification_image: false,
+        },
+        (None, Some(_)) => BannerHeaderVisualLayout {
+            primary: BannerPrimaryVisual::NotificationImage,
+            has_secondary_notification_image: false,
+        },
+        (None, None) => BannerHeaderVisualLayout {
+            primary: BannerPrimaryVisual::AppBadge,
+            has_secondary_notification_image: false,
+        },
+    }
+}
+
+fn primary_banner_visual(
+    banner: &BannerView,
+    primary: BannerPrimaryVisual,
+) -> iced::Element<'_, BannerUiMessage> {
+    match primary {
+        BannerPrimaryVisual::AppBadge => app_badge(&banner.app_name, banner.urgency),
+        BannerPrimaryVisual::AppIcon => banner
+            .app_icon
+            .as_ref()
+            .map(|icon| visual_image(icon, 34))
+            .unwrap_or_else(|| app_badge(&banner.app_name, banner.urgency)),
+        BannerPrimaryVisual::NotificationImage => banner
+            .image
+            .as_ref()
+            .map(notification_image_visual)
+            .unwrap_or_else(|| app_badge(&banner.app_name, banner.urgency)),
     }
 }
 
@@ -1195,21 +1324,25 @@ fn supported_local_image_path(path: &str) -> bool {
 }
 
 fn resolve_static_icon_name(icon_name: &str) -> Option<String> {
-    find_static_icon_in_roots(icon_name, icon_search_roots())
+    resolve_static_icon_name_in_roots(icon_name, icon_search_roots())
+}
+
+fn resolve_static_icon_name_in_roots(icon_name: &str, roots: Vec<PathBuf>) -> Option<String> {
+    let icon_name = normalize_static_icon_name(icon_name)?;
+    cached_static_icon_index(roots)
+        .resolve(&icon_name)
         .map(|path| path.to_string_lossy().into_owned())
 }
 
+#[cfg(test)]
 fn find_static_icon_in_roots(
     icon_name: &str,
     roots: impl IntoIterator<Item = PathBuf>,
 ) -> Option<PathBuf> {
-    let icon_name = icon_name.trim();
-    if icon_name.is_empty() || icon_name.contains('/') || icon_name.contains('\\') {
-        return None;
-    }
+    let icon_name = normalize_static_icon_name(icon_name)?;
 
     for root in roots {
-        if let Some(path) = find_static_icon_in_root(&root, icon_name) {
+        if let Some(path) = find_static_icon_in_root(&root, &icon_name) {
             return Some(path);
         }
     }
@@ -1217,6 +1350,103 @@ fn find_static_icon_in_roots(
     None
 }
 
+fn normalize_static_icon_name(icon_name: &str) -> Option<String> {
+    let icon_name = icon_name.trim();
+    if icon_name.is_empty() || icon_name.contains('/') || icon_name.contains('\\') {
+        None
+    } else {
+        Some(icon_name.to_string())
+    }
+}
+
+#[derive(Debug, Default)]
+struct StaticIconIndex {
+    paths_by_name: HashMap<String, PathBuf>,
+}
+
+impl StaticIconIndex {
+    fn from_roots(roots: &[PathBuf]) -> Self {
+        let mut index = Self::default();
+        for root in roots {
+            index.add_root(root);
+        }
+        index
+    }
+
+    fn resolve(&self, icon_name: &str) -> Option<PathBuf> {
+        self.paths_by_name.get(icon_name).cloned()
+    }
+
+    fn add_root(&mut self, root: &Path) {
+        let mut stack = vec![(root.to_path_buf(), 0_usize)];
+
+        while let Some((directory, depth)) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&directory) else {
+                continue;
+            };
+            let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
+            entries.sort_by_key(|entry| entry.file_name());
+
+            let mut child_directories = Vec::new();
+            for entry in entries {
+                let path = entry.path();
+                if let Some(icon_name) = supported_static_icon_file_name(&path)
+                    && supported_local_image_path(path.to_string_lossy().as_ref())
+                {
+                    self.paths_by_name
+                        .entry(icon_name)
+                        .or_insert_with(|| path.clone());
+                }
+
+                if depth < ICON_SEARCH_MAX_DEPTH
+                    && entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
+                {
+                    child_directories.push(path);
+                }
+            }
+
+            child_directories.sort();
+            for child in child_directories.into_iter().rev() {
+                stack.push((child, depth + 1));
+            }
+        }
+    }
+}
+
+fn supported_static_icon_file_name(path: &Path) -> Option<String> {
+    let extension = path.extension()?.to_str()?;
+    if !STATIC_ICON_EXTENSIONS
+        .iter()
+        .any(|supported| extension.eq_ignore_ascii_case(supported))
+    {
+        return None;
+    }
+
+    path.file_stem()?.to_str().map(str::to_string)
+}
+
+fn cached_static_icon_index(roots: Vec<PathBuf>) -> Arc<StaticIconIndex> {
+    let cache = static_icon_index_cache();
+    if let Some(index) = cache.lock().unwrap().get(&roots).cloned() {
+        return index;
+    }
+
+    let index = Arc::new(StaticIconIndex::from_roots(&roots));
+    let mut cache = cache.lock().unwrap();
+    Arc::clone(cache.entry(roots).or_insert(index))
+}
+
+fn static_icon_index_cache() -> &'static Mutex<HashMap<Vec<PathBuf>, Arc<StaticIconIndex>>> {
+    static CACHE: OnceLock<Mutex<HashMap<Vec<PathBuf>, Arc<StaticIconIndex>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(test)]
+fn clear_static_icon_index_cache_for_tests() {
+    static_icon_index_cache().lock().unwrap().clear();
+}
+
+#[cfg(test)]
 fn find_static_icon_in_root(root: &Path, icon_name: &str) -> Option<PathBuf> {
     let file_names = STATIC_ICON_EXTENSIONS
         .iter()
