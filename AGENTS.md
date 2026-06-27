@@ -1,5 +1,3 @@
-@/home/kevinard/.codex/RTK.md
-
 ## Agent skills
 
 ### Issue tracker
@@ -13,4 +11,3 @@ Triage labels use the default skill vocabulary. See `docs/agents/triage-labels.m
 ### Domain docs
 
 This is a single-context repo with root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
-
