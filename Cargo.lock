@@ -1821,8 +1821,6 @@ dependencies = [
 [[package]]
 name = "iced_layershell"
 version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79bb5126427f0d16c37f0336a4c2c800b428c3438e244e75322de8e671b51a5d"
 dependencies = [
  "enumflags2",
  "futures",
@@ -2301,8 +2299,6 @@ dependencies = [
 [[package]]
 name = "layershellev"
 version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88f48eaa0c702d491d6411620eca91eae3beecc018e79402708f97e1cc948ad8"
 dependencies = [
  "calloop 0.14.4",
  "calloop-wayland-source 0.4.1",

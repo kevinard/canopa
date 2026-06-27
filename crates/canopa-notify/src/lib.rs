@@ -182,6 +182,17 @@ impl Daemon {
             .await
     }
 
+    pub async fn invoke_action_with_activation_token(
+        &self,
+        notification_id: i64,
+        action_key: &str,
+        activation_token: Option<String>,
+    ) -> anyhow::Result<()> {
+        self.runtime
+            .invoke_action_with_activation_token(notification_id, action_key, activation_token)
+            .await
+    }
+
     pub async fn dismiss_notification(&self, notification_id: i64) -> anyhow::Result<()> {
         self.runtime.dismiss_notification(notification_id).await
     }
@@ -196,6 +207,16 @@ impl Daemon {
 
     pub async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
         self.runtime.activate_banner(notification_id).await
+    }
+
+    pub async fn activate_banner_with_activation_token(
+        &self,
+        notification_id: i64,
+        activation_token: Option<String>,
+    ) -> anyhow::Result<()> {
+        self.runtime
+            .activate_banner_with_activation_token(notification_id, activation_token)
+            .await
     }
 
     pub async fn activate_notification(&self, notification_id: i64) -> anyhow::Result<()> {

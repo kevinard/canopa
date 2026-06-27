@@ -4,6 +4,10 @@ members = [
     "crates/canopa-panel-protocol",
     "crates/canopa-notify",
 ]
+exclude = [
+    "vendor/iced_layershell",
+    "vendor/layershellev",
+]
 
 [workspace.package]
 edition = "2024"
@@ -27,3 +31,7 @@ tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-threa
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+
+[patch.crates-io]
+iced_layershell = { path = "vendor/iced_layershell" }
+layershellev = { path = "vendor/layershellev" }

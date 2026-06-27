@@ -43,3 +43,14 @@ notify-send "Canopa Notify" "Minimal banner smoke check"
 ```
 
 Expected result: a non-focus-stealing Notification Banner appears in the Wayland Session, and `ctl active --json` reports the active notification.
+
+For repeatable manual checks, use the scripts under `scripts/manual/`:
+
+```bash
+scripts/manual/run-service-daemon.sh
+scripts/manual/notify-send-scenarios.sh smoke
+scripts/manual/notify-send-scenarios.sh actions
+scripts/manual/watch-notification-signals.sh
+```
+
+Run the signal watcher in a second terminal while using the `actions` scenario to confirm `ActivationToken` is emitted before `ActionInvoked` when the compositor provides a token.

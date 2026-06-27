@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex, OnceLock, mpsc};
 const MAX_FILE_BACKED_VISUAL_BYTES: u64 = 16 * 1024 * 1024;
 const ICON_SEARCH_MAX_DEPTH: usize = 8;
 const STATIC_ICON_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
+const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
 pub trait BannerPresenter: Send + Sync {
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()>;
@@ -75,11 +76,15 @@ impl BannerSurfaceSpec {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BannerInteraction {
-    Activate(i64),
+    Activate {
+        notification_id: i64,
+        activation_token: Option<String>,
+    },
     Dismiss(i64),
     InvokeAction {
         notification_id: i64,
         action_key: String,
+        activation_token: Option<String>,
     },
 }
 
@@ -160,13 +165,54 @@ struct BannerUiState {
     interactions: mpsc::Sender<BannerInteraction>,
 }
 
-#[iced_layershell::to_layer_message]
 #[derive(Clone, Debug)]
 enum BannerUiMessage {
     Runtime(BannerRuntimeInput),
-    Activate(i64),
+    ActivateRequested(i64),
+    Activate {
+        notification_id: i64,
+        activation_token: Option<String>,
+    },
     Dismiss(i64),
-    InvokeAction(i64, String),
+    InvokeActionRequested(i64, String),
+    InvokeAction {
+        notification_id: i64,
+        action_key: String,
+        activation_token: Option<String>,
+    },
+    RequestActivationToken {
+        app_identity: String,
+        callback: iced_layershell::actions::ActivationTokenCallback,
+    },
+    SizeChange((u32, u32)),
+}
+
+impl TryInto<iced_layershell::actions::LayerShellCustomActionWithId> for BannerUiMessage {
+    type Error = Self;
+
+    fn try_into(
+        self,
+    ) -> Result<iced_layershell::actions::LayerShellCustomActionWithId, Self::Error> {
+        use iced_layershell::actions::{LayerShellCustomAction, LayerShellCustomActionWithId};
+
+        match self {
+            Self::RequestActivationToken {
+                app_identity,
+                callback,
+            } => Ok(LayerShellCustomActionWithId::new(
+                None,
+                LayerShellCustomAction::RequestActivationToken {
+                    app_id: app_identity,
+                    callback,
+                },
+            )),
+            Self::SizeChange(size) => Ok(LayerShellCustomActionWithId::new(
+                None,
+                LayerShellCustomAction::SizeChange(size),
+            )),
+            message => Err(message),
+        }
+    }
 }
 
 fn register_banner_update_receiver(runtime_id: u64, receiver: BannerUpdateReceiver) {
@@ -264,10 +310,34 @@ fn banner_ui_update(
                 None => iced::Task::none(),
             }
         }
-        BannerUiMessage::Activate(notification_id) => {
+        BannerUiMessage::ActivateRequested(notification_id) => {
+            let Some(app_identity) = banner_app_identity(state, notification_id) else {
+                state
+                    .interactions
+                    .send(BannerInteraction::Activate {
+                        notification_id,
+                        activation_token: None,
+                    })
+                    .ok();
+                return iced::Task::none();
+            };
+            activation_token_task(app_identity, move |activation_token| {
+                BannerUiMessage::Activate {
+                    notification_id,
+                    activation_token,
+                }
+            })
+        }
+        BannerUiMessage::Activate {
+            notification_id,
+            activation_token,
+        } => {
             state
                 .interactions
-                .send(BannerInteraction::Activate(notification_id))
+                .send(BannerInteraction::Activate {
+                    notification_id,
+                    activation_token,
+                })
                 .ok();
             iced::Task::none()
         }
@@ -278,18 +348,82 @@ fn banner_ui_update(
                 .ok();
             iced::Task::none()
         }
-        BannerUiMessage::InvokeAction(notification_id, action_key) => {
+        BannerUiMessage::InvokeActionRequested(notification_id, action_key) => {
+            let Some(app_identity) = banner_app_identity(state, notification_id) else {
+                state
+                    .interactions
+                    .send(BannerInteraction::InvokeAction {
+                        notification_id,
+                        action_key,
+                        activation_token: None,
+                    })
+                    .ok();
+                return iced::Task::none();
+            };
+            activation_token_task(app_identity, move |activation_token| {
+                BannerUiMessage::InvokeAction {
+                    notification_id,
+                    action_key,
+                    activation_token,
+                }
+            })
+        }
+        BannerUiMessage::InvokeAction {
+            notification_id,
+            action_key,
+            activation_token,
+        } => {
             state
                 .interactions
                 .send(BannerInteraction::InvokeAction {
                     notification_id,
                     action_key,
+                    activation_token,
                 })
                 .ok();
             iced::Task::none()
         }
         _ => iced::Task::none(),
     }
+}
+
+fn banner_app_identity(state: &BannerUiState, notification_id: i64) -> Option<String> {
+    state
+        .presentation
+        .banners
+        .iter()
+        .find(|banner| banner.notification_id == notification_id)
+        .map(|banner| banner.app_identity.clone())
+}
+
+fn activation_token_task(
+    app_identity: String,
+    on_token: impl FnOnce(Option<String>) -> BannerUiMessage + Send + 'static,
+) -> iced::Task<BannerUiMessage> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let sender = Arc::new(Mutex::new(Some(sender)));
+    let callback =
+        iced_layershell::actions::ActivationTokenCallback::new(move |activation_token| {
+            if let Some(sender) = sender.lock().unwrap().take() {
+                let _ = sender.send(activation_token);
+            }
+        });
+
+    iced::Task::batch([
+        iced::Task::done(BannerUiMessage::RequestActivationToken {
+            app_identity,
+            callback,
+        }),
+        iced::Task::perform(
+            async move {
+                receiver
+                    .recv_timeout(BANNER_ACTIVATION_TOKEN_TIMEOUT)
+                    .ok()
+                    .flatten()
+            },
+            on_token,
+        ),
+    ])
 }
 
 #[cfg(test)]
@@ -464,7 +598,7 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
         .padding(0)
         .width(Length::Fill)
         .style(content_button_style)
-        .on_press(BannerUiMessage::Activate(banner.notification_id));
+        .on_press(BannerUiMessage::ActivateRequested(banner.notification_id));
     let dismiss = close_button(banner.notification_id);
 
     let mut header = row![app_identity_visual(banner),]
@@ -513,7 +647,7 @@ fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessa
                 .height(28)
                 .width(Length::Fill)
                 .style(content_button_style)
-                .on_press(BannerUiMessage::InvokeAction(
+                .on_press(BannerUiMessage::InvokeActionRequested(
                     banner.notification_id,
                     action.key.clone(),
                 )),

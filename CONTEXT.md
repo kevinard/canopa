@@ -441,7 +441,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - JSON **Control Command** output that includes **Notification Body** may also include interpreted **Notification Body Markup**; human-readable **Control Command** output may remain plain text.
 - **Control Commands** report when the **Notification Daemon** is unavailable instead of starting it implicitly.
 - The **Notification Daemon** owns notification state, lifecycle, policy, history, and rules; the **Notification Center** is an interactive view over that daemon state.
-- The **Notification Daemon** owns **Activation Token** generation independently of **Notification Banner** presentation.
+- The **Notification Daemon** owns **Activation Token** publication; **Notification Banner** presentation may supply a compositor-contextual token for the user interaction that produced the action.
 - The **Notify Control API** exposes all private control surfaces over **Notification Daemon** state, including diagnostic status, active notification output, **Control Commands**, **Notification Center Projection**, and **Notification State Subscription**.
 - Diagnostic **Control Commands** are adapters over the **Notify Control API** module, not a separate control path.
 - The **Notify Control API** returns domain-shaped replies; command-line text, JSON, socket frames, and panel protocol messages are adapter formatting.
@@ -491,6 +491,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Control Commands** that activate or invoke an **Active Notification** are user-originated notification interactions for **Activation Token** purposes.
 - **Activation Tokens** are emitted for any invoked sender-provided **Notification Action** when token generation succeeds.
 - **Activation Tokens** identify their target application using the notification's **App Identity**.
+- **Notification Banner** interactions request **Activation Tokens** with the Wayland input serial and banner surface when that click context is available, then fall back to the daemon activation-token provider.
 - After a replacement, **Activation Tokens** use the current revision's **App Identity**.
 - Failure to obtain an **Activation Token** does not prevent the requested **Notification Action** from being invoked.
 - **Activation Token** generation is bounded; the **Notification Daemon** does not hold a **Notification Action** indefinitely while waiting for a token.

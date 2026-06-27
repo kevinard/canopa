@@ -241,8 +241,16 @@ fn spawn_banner_interaction_forwarder(
                 let daemon = daemon.clone();
                 handle.spawn(async move {
                     let result = match interaction {
-                        BannerInteraction::Activate(notification_id) => {
-                            daemon.activate_banner(notification_id).await
+                        BannerInteraction::Activate {
+                            notification_id,
+                            activation_token,
+                        } => {
+                            daemon
+                                .activate_banner_with_activation_token(
+                                    notification_id,
+                                    activation_token,
+                                )
+                                .await
                         }
                         BannerInteraction::Dismiss(notification_id) => {
                             daemon.dismiss_notification(notification_id).await
@@ -250,7 +258,16 @@ fn spawn_banner_interaction_forwarder(
                         BannerInteraction::InvokeAction {
                             notification_id,
                             action_key,
-                        } => daemon.invoke_action(notification_id, &action_key).await,
+                            activation_token,
+                        } => {
+                            daemon
+                                .invoke_action_with_activation_token(
+                                    notification_id,
+                                    &action_key,
+                                    activation_token,
+                                )
+                                .await
+                        }
                     };
                     if let Err(error) = result {
                         eprintln!(
@@ -730,6 +747,7 @@ mod tests {
             .send(BannerInteraction::InvokeAction {
                 notification_id: receipt.notification_id,
                 action_key: "reply".to_string(),
+                activation_token: None,
             })
             .unwrap();
 
@@ -739,6 +757,59 @@ mod tests {
             .unwrap();
         assert!(matches!(
             event,
+            SenderEvent::ActionInvoked {
+                notification_id,
+                action_key,
+            } if notification_id == receipt.notification_id && action_key == "reply"
+        ));
+    }
+
+    #[tokio::test]
+    async fn banner_action_interactions_forward_supplied_activation_tokens() {
+        let temp = tempfile::tempdir().unwrap();
+        let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+            .await
+            .unwrap();
+        let (interactions, interaction_receiver) = mpsc::channel();
+        spawn_banner_interaction_forwarder(daemon.clone(), interaction_receiver).unwrap();
+
+        let receipt = daemon
+            .receive_notification(canopa_notify::NotificationInput {
+                app_name: "Mail".to_string(),
+                summary: "Inbox".to_string(),
+                actions: vec![canopa_notify::NotificationAction::new("reply", "Reply")],
+                ..canopa_notify::NotificationInput::default()
+            })
+            .await
+            .unwrap();
+
+        let mut events = daemon.subscribe_sender_events();
+        interactions
+            .send(BannerInteraction::InvokeAction {
+                notification_id: receipt.notification_id,
+                action_key: "reply".to_string(),
+                activation_token: Some("banner-token".to_string()),
+            })
+            .unwrap();
+
+        let token_event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            token_event,
+            SenderEvent::ActivationToken {
+                notification_id,
+                activation_token,
+            } if notification_id == receipt.notification_id && activation_token == "banner-token"
+        ));
+
+        let action_event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            action_event,
             SenderEvent::ActionInvoked {
                 notification_id,
                 action_key,

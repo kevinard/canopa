@@ -55,6 +55,7 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 - `GetCapabilities` tests must assert both advertised and intentionally unadvertised capabilities.
 - Adding a new advertised capability requires a D-Bus-level test and at least one presentation or lifecycle test for the behavior.
 - Activation-token behavior should be tested through a replaceable daemon activation-token provider, with compositor-specific integration kept outside lifecycle tests.
+- Banner interactions first try a Wayland `xdg_activation_v1` token using the click's input serial and banner surface; if unavailable or empty, sender-visible publication falls back to the daemon activation-token provider.
 - `activation-token` capability advertisement follows activation-token provider availability; normal `--headless` startup does not install a provider.
 - `activation-token` capability advertisement is stable for the daemon lifetime; individual token requests remain best-effort.
 - The initial activation-token generation budget is a fixed 100 ms daemon-side timeout.

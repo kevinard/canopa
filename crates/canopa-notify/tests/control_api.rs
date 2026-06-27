@@ -542,6 +542,142 @@ async fn action_invocation_emits_activation_token_before_action_and_close() {
 }
 
 #[tokio::test]
+async fn action_invocation_prefers_supplied_activation_token() {
+    let provider = FakeActivationTokenProvider::new(["provider-token"]);
+    let (_temp, daemon) = open_daemon_with_activation_provider(provider.clone()).await;
+    let mut events = daemon.subscribe_sender_events();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            desktop_entry: Some("chat.desktop".to_string()),
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("Chat", "Message")
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .invoke_action_with_activation_token(
+            receipt.notification_id,
+            "open",
+            Some("banner-token".to_string()),
+        )
+        .await
+        .unwrap();
+
+    let activation_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        activation_event,
+        SenderEvent::ActivationToken {
+            notification_id,
+            activation_token,
+        } if notification_id == receipt.notification_id && activation_token == "banner-token"
+    ));
+
+    let action_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        action_event,
+        SenderEvent::ActionInvoked {
+            notification_id,
+            action_key,
+        } if notification_id == receipt.notification_id && action_key == "open"
+    ));
+    assert!(provider.requested_app_identities().is_empty());
+}
+
+#[tokio::test]
+async fn empty_supplied_activation_token_falls_back_to_provider() {
+    let provider = FakeActivationTokenProvider::new(["provider-token"]);
+    let (_temp, daemon) = open_daemon_with_activation_provider(provider.clone()).await;
+    let mut events = daemon.subscribe_sender_events();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            desktop_entry: Some("chat.desktop".to_string()),
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("Chat", "Message")
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .invoke_action_with_activation_token(receipt.notification_id, "open", Some(String::new()))
+        .await
+        .unwrap();
+
+    let activation_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        activation_event,
+        SenderEvent::ActivationToken {
+            notification_id,
+            activation_token,
+        } if notification_id == receipt.notification_id && activation_token == "provider-token"
+    ));
+    assert_eq!(
+        provider.requested_app_identities(),
+        vec!["chat.desktop".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn banner_activation_prefers_supplied_activation_token_for_default_action() {
+    let provider = FakeActivationTokenProvider::new(["provider-token"]);
+    let (_temp, daemon) = open_daemon_with_activation_provider(provider.clone()).await;
+    let mut events = daemon.subscribe_sender_events();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            desktop_entry: Some("mail.desktop".to_string()),
+            actions: vec![NotificationAction::new("default", "Open")],
+            ..notification("Mail", "Inbox")
+        })
+        .await
+        .unwrap();
+
+    daemon
+        .activate_banner_with_activation_token(
+            receipt.notification_id,
+            Some("banner-token".to_string()),
+        )
+        .await
+        .unwrap();
+
+    let activation_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        activation_event,
+        SenderEvent::ActivationToken {
+            notification_id,
+            activation_token,
+        } if notification_id == receipt.notification_id && activation_token == "banner-token"
+    ));
+
+    let action_event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        action_event,
+        SenderEvent::ActionInvoked {
+            notification_id,
+            action_key,
+        } if notification_id == receipt.notification_id && action_key == "default"
+    ));
+    assert!(provider.requested_app_identities().is_empty());
+}
+
+#[tokio::test]
 async fn empty_activation_token_is_skipped_without_blocking_action() {
     let provider = FakeActivationTokenProvider::new([""]);
     let (_temp, daemon) = open_daemon_with_activation_provider(provider).await;

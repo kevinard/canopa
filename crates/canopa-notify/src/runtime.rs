@@ -163,11 +163,22 @@ impl NotificationRuntime {
         notification_id: i64,
         action_key: &str,
     ) -> anyhow::Result<()> {
+        self.invoke_action_with_activation_token(notification_id, action_key, None)
+            .await
+    }
+
+    pub(crate) async fn invoke_action_with_activation_token(
+        &self,
+        notification_id: i64,
+        action_key: &str,
+        activation_token: Option<String>,
+    ) -> anyhow::Result<()> {
         let effects = self
             .lifecycle
             .invoke_action(notification_id, action_key)
             .await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.apply_lifecycle_effects_and_notify_with_activation_token(&effects, activation_token)
+            .await
     }
 
     pub(crate) async fn dismiss_notification(&self, notification_id: i64) -> anyhow::Result<()> {
@@ -186,6 +197,15 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn activate_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+        self.activate_notification_with_activation_token(notification_id, None)
+            .await
+    }
+
+    async fn activate_notification_with_activation_token(
+        &self,
+        notification_id: i64,
+        activation_token: Option<String>,
+    ) -> anyhow::Result<()> {
         let thread = self.storage.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
@@ -199,15 +219,29 @@ impl NotificationRuntime {
             .map(|action| action.key.clone());
 
         if let Some(default_action_key) = default_action_key {
-            self.invoke_action(notification_id, &default_action_key)
-                .await
+            self.invoke_action_with_activation_token(
+                notification_id,
+                &default_action_key,
+                activation_token,
+            )
+            .await
         } else {
             self.dismiss_notification(notification_id).await
         }
     }
 
     pub(crate) async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
-        self.activate_notification(notification_id).await
+        self.activate_banner_with_activation_token(notification_id, None)
+            .await
+    }
+
+    pub(crate) async fn activate_banner_with_activation_token(
+        &self,
+        notification_id: i64,
+        activation_token: Option<String>,
+    ) -> anyhow::Result<()> {
+        self.activate_notification_with_activation_token(notification_id, activation_token)
+            .await
     }
 
     pub(crate) async fn clear_active_notifications(&self) -> anyhow::Result<()> {
@@ -333,27 +367,52 @@ impl NotificationRuntime {
         &self,
         effects: &LifecycleEffects,
     ) -> anyhow::Result<()> {
-        self.apply_lifecycle_effects(effects).await?;
+        self.apply_lifecycle_effects_with_activation_token(effects, None)
+            .await?;
         if !effects.is_empty() {
             self.notify_state_changed();
         }
         Ok(())
     }
 
-    async fn apply_lifecycle_effects(&self, effects: &LifecycleEffects) -> anyhow::Result<()> {
+    async fn apply_lifecycle_effects_and_notify_with_activation_token(
+        &self,
+        effects: &LifecycleEffects,
+        activation_token: Option<String>,
+    ) -> anyhow::Result<()> {
+        self.apply_lifecycle_effects_with_activation_token(effects, activation_token)
+            .await?;
+        if !effects.is_empty() {
+            self.notify_state_changed();
+        }
+        Ok(())
+    }
+
+    async fn apply_lifecycle_effects_with_activation_token(
+        &self,
+        effects: &LifecycleEffects,
+        activation_token: Option<String>,
+    ) -> anyhow::Result<()> {
         self.remove_runtime_images_for_terminal_effects(effects);
         self.apply_notification_timeout_changes(effects.timeout_changes());
         {
             let mut banner_state = self.banner_state.lock().unwrap();
             banner_state.apply_changes(effects.banner_changes());
         }
-        self.publish_sender_events(effects).await;
+        self.publish_sender_events_with_activation_token(effects, activation_token)
+            .await;
         self.sync_presentation().await?;
         Ok(())
     }
 
-    async fn publish_sender_events(&self, effects: &LifecycleEffects) {
-        let events = self.sender_events_for_effects(effects).await;
+    async fn publish_sender_events_with_activation_token(
+        &self,
+        effects: &LifecycleEffects,
+        activation_token: Option<String>,
+    ) {
+        let events = self
+            .sender_events_for_effects(effects, activation_token)
+            .await;
         let mut sender_events = self.sender_events.lock().unwrap();
         for event in events {
             sender_events.push(event.clone());
@@ -361,8 +420,13 @@ impl NotificationRuntime {
         }
     }
 
-    async fn sender_events_for_effects(&self, effects: &LifecycleEffects) -> Vec<SenderEvent> {
+    async fn sender_events_for_effects(
+        &self,
+        effects: &LifecycleEffects,
+        activation_token: Option<String>,
+    ) -> Vec<SenderEvent> {
         let mut events = Vec::new();
+        let mut activation_token = activation_token.filter(|token| !token.is_empty());
         for effect in effects {
             match effect {
                 LifecycleEffect::ActionInvoked {
@@ -370,9 +434,11 @@ impl NotificationRuntime {
                     action_key,
                     app_identity,
                 } => {
-                    if let Some(activation_token) =
-                        self.activation_token(app_identity.clone()).await
-                    {
+                    let activation_token = match activation_token.take() {
+                        Some(activation_token) => Some(activation_token),
+                        None => self.activation_token(app_identity.clone()).await,
+                    };
+                    if let Some(activation_token) = activation_token {
                         events.push(SenderEvent::ActivationToken {
                             notification_id: *notification_id,
                             activation_token,
