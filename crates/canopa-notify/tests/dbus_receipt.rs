@@ -120,6 +120,7 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
             .iter()
             .any(|capability| capability == "persistence")
     );
+    assert!(!capabilities.iter().any(|capability| capability == "sound"));
     assert!(
         !capabilities
             .iter()

@@ -1,7 +1,8 @@
 use anyhow::Context;
 use canopa_notify::{
     BannerInteraction, Daemon, DaemonOptions, IcedLayerShellBannerPresenter,
-    NotificationServerRequest, NotifyControl, SenderEvent, WaylandActivationTokenProvider,
+    NotificationServerRequest, NotifyControl, RodioSoundPresenter, SenderEvent,
+    WaylandActivationTokenProvider,
 };
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
@@ -212,7 +213,8 @@ fn graphical_daemon_startup(
 ) -> DaemonStartup {
     DaemonStartup {
         options: DaemonOptions::graphical(database, banner_presenter)
-            .with_activation_token_provider(WaylandActivationTokenProvider::connect_to_env()),
+            .with_activation_token_provider(WaylandActivationTokenProvider::connect_to_env())
+            .with_sound_presenter(RodioSoundPresenter::start()),
         banner_interactions,
     }
 }
@@ -354,6 +356,9 @@ impl NotificationServer {
         ];
         if self.daemon.supports_activation_tokens() {
             capabilities.push("activation-token".to_string());
+        }
+        if self.daemon.supports_sound() {
+            capabilities.push("sound".to_string());
         }
         capabilities
     }
@@ -673,7 +678,10 @@ fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest
 #[cfg(test)]
 mod tests {
     use super::*;
-    use canopa_notify::{ActivationTokenFuture, ActivationTokenProvider};
+    use canopa_notify::{
+        ActivationTokenFuture, ActivationTokenProvider, NotificationSoundPlayback,
+        NotificationSoundSettings, SoundPresenter,
+    };
     use futures_util::StreamExt;
     use std::collections::VecDeque;
 
@@ -698,6 +706,28 @@ mod tests {
         fn activation_token(&self, _app_identity: String) -> ActivationTokenFuture {
             let token = self.tokens.lock().unwrap().pop_front();
             Box::pin(async move { token })
+        }
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct AvailableSoundPresenter;
+
+    impl SoundPresenter for AvailableSoundPresenter {
+        fn apply_sound_settings(&self, _settings: NotificationSoundSettings) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn play_notification_sound(
+            &self,
+            _playback: NotificationSoundPlayback,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop_all_sounds(&self) {}
+
+        fn supports_sound(&self) -> bool {
+            true
         }
     }
 
@@ -886,6 +916,37 @@ mod tests {
         let (action_id, action_key): (u32, String) = action_signal.body().deserialize().unwrap();
         assert_eq!(action_id, sender_id);
         assert_eq!(action_key, "open");
+    }
+
+    #[tokio::test]
+    async fn notification_server_advertises_sound_when_runtime_supports_sound() {
+        let temp = tempfile::tempdir().unwrap();
+        let bus_name = test_bus_name("SoundCapability");
+        let daemon = Daemon::open(
+            DaemonOptions::graphical(
+                temp.path().join("history.db"),
+                canopa_notify::NoopBannerPresenter,
+            )
+            .with_sound_presenter(AvailableSoundPresenter),
+        )
+        .await
+        .unwrap();
+        let _connection = start_notification_server(bus_name.clone(), daemon)
+            .await
+            .unwrap();
+        let connection = zbus::Connection::session().await.unwrap();
+        let proxy = zbus::Proxy::new(
+            &connection,
+            bus_name.as_str(),
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        )
+        .await
+        .unwrap();
+
+        let capabilities: Vec<String> = proxy.call("GetCapabilities", &()).await.unwrap();
+
+        assert!(capabilities.iter().any(|capability| capability == "sound"));
     }
 
     fn daemon_args(headless: bool, service: bool) -> DaemonArgs {

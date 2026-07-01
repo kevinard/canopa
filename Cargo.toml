@@ -23,6 +23,7 @@ iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-s
 iced_layershell = { version = "0.18", default-features = false }
 kdl = "6.5.0"
 predicates = "3"
+rodio = "0.22.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }

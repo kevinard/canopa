@@ -12,6 +12,7 @@ mod lifecycle;
 mod notification_server_intake;
 mod presentation;
 mod runtime;
+mod sound;
 mod sqlite_persisted_state;
 
 pub use activation::{
@@ -27,11 +28,13 @@ pub use delivery_policy::{
     DeliveryPolicyRule, LoadedDeliveryPolicyState,
 };
 pub use domain::{
-    AcceptedNotification, DeliveryOutcome, NotificationAction, NotificationBodyMarkup,
-    NotificationBodyRun, NotificationBodyStyle, NotificationImageData, NotificationInput,
-    NotificationPosition, NotificationReceipt, NotificationSnapshot, NotificationSound,
-    NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
-    NotificationVisualReference, SenderEvent, Urgency, UserRule,
+    AcceptedNotification, DEFAULT_NOTIFICATION_SOUND_NAME, DEFAULT_NOTIFICATION_SOUND_THEME,
+    DeliveryOutcome, NotificationAction, NotificationBodyMarkup, NotificationBodyRun,
+    NotificationBodyStyle, NotificationImageData, NotificationInput, NotificationPosition,
+    NotificationReceipt, NotificationSnapshot, NotificationSound, NotificationSoundPlayback,
+    NotificationSoundRequest, NotificationSoundSettings, NotificationStatus, NotificationThread,
+    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference, SenderEvent,
+    Urgency, UserRule,
 };
 pub use lifecycle::{
     BannerLifecycleChange, LifecycleDelivery, LifecycleEffect, LifecycleEffects,
@@ -46,6 +49,7 @@ pub use presentation::{
     NotificationBannerState, StructuredLogBannerPresenter,
 };
 pub use runtime::NotificationStateSubscription;
+pub use sound::{NoopSoundPresenter, RodioSoundPresenter, SoundPresenter};
 
 use configuration::LoadedNotificationConfiguration;
 use intake::{NotificationIntakeResult, intake_notification};
@@ -61,6 +65,7 @@ pub struct DaemonOptions {
     pub notification_timeout_defaults: NotificationTimeoutDefaults,
     banner_presenter: Arc<dyn BannerPresenter>,
     activation_token_provider: Arc<dyn ActivationTokenProvider>,
+    sound_presenter: Arc<dyn SoundPresenter>,
 }
 
 impl DaemonOptions {
@@ -73,6 +78,7 @@ impl DaemonOptions {
             notification_timeout_defaults: NotificationTimeoutDefaults::default(),
             banner_presenter: Arc::new(NoopBannerPresenter),
             activation_token_provider: Arc::new(NoopActivationTokenProvider),
+            sound_presenter: Arc::new(NoopSoundPresenter),
         }
     }
 
@@ -88,6 +94,7 @@ impl DaemonOptions {
             notification_timeout_defaults: NotificationTimeoutDefaults::default(),
             banner_presenter: Arc::new(banner_presenter),
             activation_token_provider: Arc::new(NoopActivationTokenProvider),
+            sound_presenter: Arc::new(NoopSoundPresenter),
         }
     }
 
@@ -119,6 +126,11 @@ impl DaemonOptions {
         self.activation_token_provider = Arc::new(activation_token_provider);
         self
     }
+
+    pub fn with_sound_presenter(mut self, sound_presenter: impl SoundPresenter + 'static) -> Self {
+        self.sound_presenter = Arc::new(sound_presenter);
+        self
+    }
 }
 
 #[derive(Clone)]
@@ -141,6 +153,7 @@ impl Daemon {
             options.notification_timeout_defaults,
             options.banner_presenter,
             options.activation_token_provider,
+            options.sound_presenter,
         )
         .await?;
         Ok(Self {
@@ -155,12 +168,17 @@ impl Daemon {
     ) -> anyhow::Result<NotificationReceipt> {
         let expire_timeout = input.expire_timeout;
         let accepted = match intake_notification(input) {
-            NotificationIntakeResult::Accepted(accepted) => accepted,
+            NotificationIntakeResult::Accepted(accepted) => *accepted,
             NotificationIntakeResult::NoOpDropped(receipt) => return Ok(receipt),
         };
 
         self.runtime
-            .receive_notification(accepted.notification, accepted.image_data, expire_timeout)
+            .receive_notification(
+                accepted.notification,
+                accepted.image_data,
+                expire_timeout,
+                accepted.sound,
+            )
             .await
     }
 
@@ -256,12 +274,17 @@ impl Daemon {
     }
 
     pub async fn reload_configuration_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
-        let rules = {
+        let (rules, sound_settings) = {
             let mut configuration = self.configuration.lock().unwrap();
             configuration.reload_file(path)?;
-            configuration.delivery_policy_rules()
+            (
+                configuration.delivery_policy_rules(),
+                configuration.sound_settings(),
+            )
         };
-        self.runtime.install_config_rules(rules).await
+        self.runtime
+            .install_configuration(rules, sound_settings)
+            .await
     }
 
     pub async fn configuration_error(&self) -> Option<String> {
@@ -282,6 +305,10 @@ impl Daemon {
 
     pub fn supports_activation_tokens(&self) -> bool {
         self.runtime.supports_activation_tokens()
+    }
+
+    pub fn supports_sound(&self) -> bool {
+        self.runtime.supports_sound()
     }
 
     pub(crate) async fn notification_center_projection(

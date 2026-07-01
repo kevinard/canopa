@@ -15,14 +15,16 @@ Scenarios:
   actions     Send a notification with default and named actions; click it.
   replace     Send a notification, then replace it using notify-send -p/-r.
   progress    Replace one notification several times using the value hint.
+  sound       Send default, named, file-backed, and suppressed sound notifications.
   burst       Send a small stack of notifications.
-  all         Run smoke, replace, progress, and burst.
+  all         Run smoke, replace, progress, sound, and burst.
 
 Environment:
   CANOPA_NOTIFY_APP_NAME   App name sent via notify-send. Default: $APP_NAME
   CANOPA_NOTIFY_SOCKET     Control socket for optional ctl output. Default: $SOCKET
   CANOPA_NOTIFY_BIN        canopa-notify binary for optional ctl output. Default: $CANOPA_BIN
   CANOPA_NOTIFY_EXPIRE_MS  Expire timeout passed to notify-send. Default: $DEFAULT_EXPIRE_MS
+  CANOPA_NOTIFY_SOUND_FILE Local sound file for the sound-file case.
 
 For ActivationToken / ActionInvoked validation, run this in another terminal:
   scripts/manual/watch-notification-signals.sh
@@ -179,6 +181,51 @@ send_progress() {
     control_active
 }
 
+send_sound() {
+    if ! notify_supports "--hint"; then
+        echo "This notify-send does not advertise --hint support." >&2
+        exit 1
+    fi
+
+    local sound_file="${CANOPA_NOTIFY_SOUND_FILE:-/usr/share/sounds/freedesktop/stereo/message-new-instant.oga}"
+
+    echo "Expected: the first three notifications play a sound; the fourth is silent."
+    notify-send \
+        --app-name="$APP_NAME" \
+        --expire-time="$DEFAULT_EXPIRE_MS" \
+        "Canopa sound default" \
+        "Expected: default notification sound."
+    sleep 1
+
+    notify-send \
+        --app-name="$APP_NAME" \
+        --expire-time="$DEFAULT_EXPIRE_MS" \
+        --hint=string:sound-name:message-new-instant \
+        "Canopa sound name" \
+        "Expected: message-new-instant from the active sound theme."
+    sleep 1
+
+    if [[ -f "$sound_file" ]]; then
+        notify-send \
+            --app-name="$APP_NAME" \
+            --expire-time="$DEFAULT_EXPIRE_MS" \
+            --hint=string:sound-file:"$sound_file" \
+            "Canopa sound file" \
+            "Expected: local sound-file playback from $sound_file."
+        sleep 1
+    else
+        echo "Skipping sound-file case; file does not exist: $sound_file" >&2
+    fi
+
+    notify-send \
+        --app-name="$APP_NAME" \
+        --expire-time="$DEFAULT_EXPIRE_MS" \
+        --hint=boolean:suppress-sound:true \
+        "Canopa suppress sound" \
+        "Expected: visible notification with no notification sound."
+    control_active
+}
+
 send_burst() {
     local i
     for i in 1 2 3 4; do
@@ -208,6 +255,9 @@ main() {
         progress)
             send_progress
             ;;
+        sound)
+            send_sound
+            ;;
         burst)
             send_burst
             ;;
@@ -215,6 +265,7 @@ main() {
             send_smoke
             send_replace
             send_progress
+            send_sound
             send_burst
             ;;
         -h|--help|"")

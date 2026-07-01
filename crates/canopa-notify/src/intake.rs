@@ -1,13 +1,14 @@
 use crate::{
     AcceptedNotification, DeliveryOutcome, NotificationBodyMarkup, NotificationBodyRun,
     NotificationBodyStyle, NotificationImageData, NotificationInput, NotificationReceipt,
+    NotificationSoundRequest,
 };
 
 const MAX_BODY_MARKUP_RUNS: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NotificationIntakeResult {
-    Accepted(AcceptedNotificationInput),
+    Accepted(Box<AcceptedNotificationInput>),
     NoOpDropped(NotificationReceipt),
 }
 
@@ -15,6 +16,7 @@ pub(crate) enum NotificationIntakeResult {
 pub(crate) struct AcceptedNotificationInput {
     pub notification: AcceptedNotification,
     pub image_data: Option<NotificationImageData>,
+    pub sound: NotificationSoundRequest,
 }
 
 pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntakeResult {
@@ -36,7 +38,7 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
         });
     }
 
-    NotificationIntakeResult::Accepted(AcceptedNotificationInput {
+    NotificationIntakeResult::Accepted(Box::new(AcceptedNotificationInput {
         notification: AcceptedNotification {
             app_identity,
             app_name: input.app_name,
@@ -55,7 +57,11 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
             resident: input.resident,
         },
         image_data: input.image_data,
-    })
+        sound: NotificationSoundRequest {
+            suppress: input.suppress_sound,
+            sound: input.sound,
+        },
+    }))
 }
 
 fn derive_app_identity(input: &NotificationInput) -> String {
@@ -223,7 +229,7 @@ impl<'a> BodyMarkupParser<'a> {
     }
 
     fn push_newline(&mut self) {
-        if !self.output.last().is_some_and(|ch| ch.ch == '\n') {
+        if self.output.last().is_none_or(|ch| ch.ch != '\n') {
             self.output.push(StyledChar {
                 ch: '\n',
                 style: NotificationBodyStyle::default(),
@@ -344,15 +350,15 @@ fn decode_xml_entities(value: &str) -> String {
 
     while index < value.len() {
         let ch = value[index..].chars().next().unwrap();
-        if ch == '&' {
-            if let Some(end) = value[index + 1..].find(';') {
-                let entity_end = index + 1 + end;
-                let entity = &value[index + 1..entity_end];
-                if let Some(decoded) = decode_xml_entity(entity) {
-                    output.push(decoded);
-                    index = entity_end + ';'.len_utf8();
-                    continue;
-                }
+        if ch == '&'
+            && let Some(end) = value[index + 1..].find(';')
+        {
+            let entity_end = index + 1 + end;
+            let entity = &value[index + 1..entity_end];
+            if let Some(decoded) = decode_xml_entity(entity) {
+                output.push(decoded);
+                index = entity_end + ';'.len_utf8();
+                continue;
             }
         }
 

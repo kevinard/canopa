@@ -29,7 +29,7 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 | `body-images` | Not implemented | Body-embedded image markup may contribute alt text only. |
 | `icon-multi` | Not implemented | Animated or multi-frame icons are not supported. |
 | `persistence` | Not advertised | Notify persists local history, but does not yet promise freedesktop persistence semantics to senders. |
-| `sound` | Not advertised | Sound hints are decoded but no playback adapter is present. |
+| `sound` | Runtime advertised | Advertised when graphical notification sound support is enabled and the audio backend initialized successfully. Not advertised in headless mode or when sound is disabled. |
 | `activation-token` | Runtime advertised | Advertised only when the running daemon can request Wayland activation tokens. |
 | `inline-reply` | Not implemented | Requires keyboard-interactive reply UI and sender reply signaling semantics. |
 
@@ -43,8 +43,8 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 | `image-data`, `image_data`, `icon_data` | Implemented | Raw static image payloads are validated and rendered at runtime without persisting payload bytes. |
 | `image-path`, `image_path` | Implemented | Local static raster paths are rendered when resolvable. |
 | `resident` | Implemented | Action invocation keeps resident notifications active. |
-| `sound-file`, `sound-name` | Decoded, neutral | Request facts are decoded, but sound is not played until a sound adapter exists. |
-| `suppress-sound` | Decoded, neutral | Stored on request input for future sound adapter behavior. |
+| `sound-file`, `sound-name` | Implemented | Shown notifications play requested local files or themed sound names, with `sound-file` taking precedence and default sound fallback when explicit sounds are unavailable. |
+| `suppress-sound` | Implemented | Suppresses default, named, and file-backed notification sounds for the request. |
 | `transient` | Decoded, neutral | Does not yet change notification history retention. |
 | `urgency` | Implemented | Maps `0`, `1`, and `2` into low, normal, and critical behavior. |
 | `value` | Implemented | Stored and rendered as notification progress. |
@@ -58,6 +58,8 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 - Banner interactions first try a Wayland `xdg_activation_v1` token using the click's input serial and banner surface; if unavailable or empty, sender-visible publication falls back to the daemon activation-token provider.
 - `activation-token` capability advertisement follows activation-token provider availability; normal `--headless` startup does not install a provider.
 - `activation-token` capability advertisement is stable for the daemon lifetime; individual token requests remain best-effort.
+- `sound` capability advertisement follows runtime sound support; normal `--headless` startup does not enable sound, and valid configuration reloads may change sound capability for future requests.
+- Sound playback is a best-effort presentation side effect. Playback failure must not change the sender-visible `Notify` result or the persisted delivery outcome.
 - The initial activation-token generation budget is a fixed 100 ms daemon-side timeout.
 - Empty activation-token provider results are treated as unavailable tokens; `ActionInvoked` still proceeds without an `ActivationToken` signal.
 - Decoding a hint without acting on it must be documented here as `Decoded, neutral` or `Decoded, ignored`.

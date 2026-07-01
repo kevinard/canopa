@@ -3,6 +3,8 @@ use std::time::Duration;
 
 const MAX_NOTIFICATION_IMAGE_DIMENSION: u32 = 4096;
 const MAX_NOTIFICATION_IMAGE_BYTES: usize = 16 * 1024 * 1024;
+pub const DEFAULT_NOTIFICATION_SOUND_THEME: &str = "freedesktop";
+pub const DEFAULT_NOTIFICATION_SOUND_NAME: &str = "message-new-instant";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NotificationTimeoutDefaults {
@@ -67,6 +69,57 @@ pub struct NotificationInput {
     pub sound: Option<NotificationSound>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requested_position: Option<NotificationPosition>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NotificationSoundRequest {
+    pub suppress: bool,
+    pub sound: Option<NotificationSound>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NotificationSoundPlayback {
+    pub notification_id: i64,
+    pub app_identity: String,
+    pub summary: String,
+    pub requested_sound: Option<NotificationSound>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationSoundSettings {
+    pub enabled: bool,
+    pub theme: String,
+    pub default_sound: String,
+}
+
+impl Default for NotificationSoundSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            theme: DEFAULT_NOTIFICATION_SOUND_THEME.to_string(),
+            default_sound: DEFAULT_NOTIFICATION_SOUND_NAME.to_string(),
+        }
+    }
+}
+
+impl NotificationSoundSettings {
+    pub fn new(
+        enabled: bool,
+        theme: impl Into<String>,
+        default_sound: impl Into<String>,
+    ) -> anyhow::Result<Self> {
+        let theme = valid_sound_theme(theme)?;
+        let Some(NotificationSound::Name(default_sound)) = NotificationSound::name(default_sound)
+        else {
+            anyhow::bail!("default notification sound must be a sound name");
+        };
+
+        Ok(Self {
+            enabled,
+            theme,
+            default_sound,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -219,12 +272,12 @@ impl NotificationVisualReference {
             return None;
         }
 
-        if let Some((scheme, rest)) = value.split_once(':') {
-            if is_uri_scheme(scheme) {
-                return (scheme.eq_ignore_ascii_case("file"))
-                    .then(|| local_path_from_file_uri(rest))
-                    .flatten();
-            }
+        if let Some((scheme, rest)) = value.split_once(':')
+            && is_uri_scheme(scheme)
+        {
+            return (scheme.eq_ignore_ascii_case("file"))
+                .then(|| local_path_from_file_uri(rest))
+                .flatten();
         }
 
         if value.starts_with('/')
@@ -335,11 +388,21 @@ fn is_uri_scheme(value: &str) -> bool {
 }
 
 fn local_path_from_file_uri(rest: &str) -> Option<NotificationVisualReference> {
-    let path = rest
-        .strip_prefix("//localhost")
-        .or_else(|| rest.strip_prefix("//"))
-        .unwrap_or(rest);
-    NotificationVisualReference::local_path(percent_decode_path(path))
+    NotificationVisualReference::local_path(local_path_string_from_file_uri(rest)?)
+}
+
+fn local_path_string_from_file_uri(rest: &str) -> Option<String> {
+    let path = if let Some(path) = rest.strip_prefix("//localhost") {
+        path
+    } else if rest.starts_with("///") {
+        rest.strip_prefix("//").unwrap_or(rest)
+    } else if rest.starts_with("//") {
+        return None;
+    } else {
+        rest
+    };
+    let path = percent_decode_path(path);
+    (!path.trim().is_empty()).then_some(path)
 }
 
 fn percent_decode_path(value: &str) -> String {
@@ -347,14 +410,14 @@ fn percent_decode_path(value: &str) -> String {
     let mut output = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            if let Ok(hex) = std::str::from_utf8(&bytes[index + 1..index + 3]) {
-                if let Ok(decoded) = u8::from_str_radix(hex, 16) {
-                    output.push(decoded);
-                    index += 3;
-                    continue;
-                }
-            }
+        if bytes[index] == b'%'
+            && index + 2 < bytes.len()
+            && let Ok(hex) = std::str::from_utf8(&bytes[index + 1..index + 3])
+            && let Ok(decoded) = u8::from_str_radix(hex, 16)
+        {
+            output.push(decoded);
+            index += 3;
+            continue;
         }
         output.push(bytes[index]);
         index += 1;
@@ -396,14 +459,54 @@ impl NotificationSound {
     pub fn name(value: impl Into<String>) -> Option<Self> {
         let value = value.into();
         let value = value.trim();
-        (!value.is_empty()).then(|| Self::Name(value.to_string()))
+        if value.is_empty() || value.contains('/') {
+            return None;
+        }
+
+        if let Some((scheme, _rest)) = value.split_once(':')
+            && is_uri_scheme(scheme)
+        {
+            return None;
+        }
+
+        Some(Self::Name(value.to_string()))
     }
 
     pub fn file(value: impl Into<String>) -> Option<Self> {
         let value = value.into();
         let value = value.trim();
-        (!value.is_empty()).then(|| Self::File(value.to_string()))
+        if value.is_empty() {
+            return None;
+        }
+
+        if let Some((scheme, rest)) = value.split_once(':')
+            && is_uri_scheme(scheme)
+        {
+            return scheme
+                .eq_ignore_ascii_case("file")
+                .then(|| local_path_string_from_file_uri(rest))
+                .flatten()
+                .and_then(Self::file);
+        }
+
+        Some(Self::File(value.to_string()))
     }
+}
+
+pub(crate) fn valid_sound_theme(value: impl Into<String>) -> anyhow::Result<String> {
+    let value = value.into();
+    let value = value.trim();
+    if value.is_empty() || value.contains('/') {
+        anyhow::bail!("notification sound theme must be a non-empty theme name");
+    }
+
+    if let Some((scheme, _rest)) = value.split_once(':')
+        && is_uri_scheme(scheme)
+    {
+        anyhow::bail!("notification sound theme must not be a URI");
+    }
+
+    Ok(value.to_string())
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -570,6 +673,29 @@ mod tests {
 
         assert!(Urgency::parse_config_value("urgent").is_err());
         assert!(DeliveryOutcome::parse_config_value("mute").is_err());
+    }
+
+    #[test]
+    fn notification_sound_names_and_files_keep_distinct_reference_shapes() {
+        assert_eq!(
+            NotificationSound::name(" message-new-instant "),
+            Some(NotificationSound::Name("message-new-instant".to_string()))
+        );
+        assert_eq!(
+            NotificationSound::file(" file:///tmp/message%20new.oga "),
+            Some(NotificationSound::File("/tmp/message new.oga".to_string()))
+        );
+
+        assert_eq!(NotificationSound::name("/tmp/message.oga"), None);
+        assert_eq!(NotificationSound::name("http://example.test/sound"), None);
+        assert_eq!(
+            NotificationSound::file("http://example.test/sound.oga"),
+            None
+        );
+        assert_eq!(
+            NotificationSound::file("file://example.test/sound.oga"),
+            None
+        );
     }
 
     #[test]

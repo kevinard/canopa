@@ -51,7 +51,6 @@ impl NotificationServerRequest {
             requested_position: requested_position_hint(&hints),
             image_data,
             image_reference,
-            ..NotificationInput::default()
         }
     }
 }
@@ -180,10 +179,8 @@ fn notification_actions(actions: Vec<String>, action_icons: bool) -> Vec<Notific
         }
 
         let mut action = NotificationAction::new(key, label);
-        if action_icons {
-            if let Some(icon) = NotificationVisualReference::icon_name(key) {
-                action = action.with_icon(icon);
-            }
+        if action_icons && let Some(icon) = NotificationVisualReference::icon_name(key) {
+            action = action.with_icon(icon);
         }
         normalized.push(action);
     }

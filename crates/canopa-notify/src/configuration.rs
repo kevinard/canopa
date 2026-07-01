@@ -1,4 +1,4 @@
-use crate::{DeliveryOutcome, DeliveryPolicyRule, Urgency};
+use crate::{DeliveryOutcome, DeliveryPolicyRule, NotificationSoundSettings, Urgency};
 use anyhow::Context;
 use kdl::{KdlDocument, KdlEntry, KdlNode};
 use std::path::Path;
@@ -32,6 +32,10 @@ impl LoadedNotificationConfiguration {
         self.active.delivery_policy_rules()
     }
 
+    pub(crate) fn sound_settings(&self) -> NotificationSoundSettings {
+        self.active.sound_settings()
+    }
+
     pub(crate) fn error(&self) -> Option<String> {
         self.last_error.clone()
     }
@@ -40,6 +44,7 @@ impl LoadedNotificationConfiguration {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct NotificationConfiguration {
     rules: Vec<NotificationConfigurationRule>,
+    sound: NotificationSoundSettings,
 }
 
 impl NotificationConfiguration {
@@ -63,19 +68,29 @@ impl NotificationConfiguration {
             .parse()
             .context("failed to parse Notification Configuration as KDL")?;
         let mut rules = Vec::new();
+        let mut sound = None;
 
         for node in doc.nodes() {
-            if node.name().value() != "rule" {
-                anyhow::bail!(
-                    "invalid Notification Configuration node {:?}: expected rule",
-                    node.name().value()
-                );
+            match node.name().value() {
+                "rule" => rules.push(parse_rule(node, rules.len() + 1)?),
+                "sound" => {
+                    if sound.is_some() {
+                        anyhow::bail!("Notification Configuration has duplicate sound nodes");
+                    }
+                    sound = Some(parse_sound(node)?);
+                }
+                name => {
+                    anyhow::bail!(
+                        "invalid Notification Configuration node {name:?}: expected rule or sound"
+                    );
+                }
             }
-
-            rules.push(parse_rule(node, rules.len() + 1)?);
         }
 
-        Ok(Self { rules })
+        Ok(Self {
+            rules,
+            sound: sound.unwrap_or_default(),
+        })
     }
 
     fn delivery_policy_rules(&self) -> Vec<DeliveryPolicyRule> {
@@ -90,6 +105,10 @@ impl NotificationConfiguration {
                 )
             })
             .collect()
+    }
+
+    fn sound_settings(&self) -> NotificationSoundSettings {
+        self.sound.clone()
     }
 }
 
@@ -128,6 +147,51 @@ fn parse_rule(node: &KdlNode, rule_number: usize) -> anyhow::Result<Notification
     })
 }
 
+fn parse_sound(node: &KdlNode) -> anyhow::Result<NotificationSoundSettings> {
+    let entries = SoundEntries::from_node(node)?;
+    NotificationSoundSettings::new(
+        entries.enabled.unwrap_or(true),
+        entries
+            .theme
+            .unwrap_or_else(|| NotificationSoundSettings::default().theme),
+        entries
+            .default_sound
+            .unwrap_or_else(|| NotificationSoundSettings::default().default_sound),
+    )
+}
+
+#[derive(Default)]
+struct SoundEntries {
+    enabled: Option<bool>,
+    theme: Option<String>,
+    default_sound: Option<String>,
+}
+
+impl SoundEntries {
+    fn from_node(node: &KdlNode) -> anyhow::Result<Self> {
+        if node.children().is_some() {
+            anyhow::bail!("sound must not have child nodes");
+        }
+
+        let mut entries = Self::default();
+        for entry in node.entries() {
+            match entry.name().map(|name| name.value()) {
+                None => anyhow::bail!("sound must not have positional values"),
+                Some("enabled") => {
+                    set_bool_property(&mut entries.enabled, entry, "enabled", "sound")?
+                }
+                Some("theme") => set_string_property(&mut entries.theme, entry, "theme", "sound")?,
+                Some("default") => {
+                    set_string_property(&mut entries.default_sound, entry, "default", "sound")?
+                }
+                Some(name) => anyhow::bail!("sound has unknown property {name:?}"),
+            }
+        }
+
+        Ok(entries)
+    }
+}
+
 #[derive(Default)]
 struct RuleEntries {
     rule_id: Option<String>,
@@ -147,13 +211,13 @@ impl RuleEntries {
             match entry.name().map(|name| name.value()) {
                 None => entries.set_rule_id(entry, rule_number)?,
                 Some("app") => {
-                    set_string_property(&mut entries.app_identity, entry, "app", rule_number)?
+                    set_rule_string_property(&mut entries.app_identity, entry, "app", rule_number)?
                 }
                 Some("outcome") => {
-                    set_string_property(&mut entries.outcome, entry, "outcome", rule_number)?
+                    set_rule_string_property(&mut entries.outcome, entry, "outcome", rule_number)?
                 }
                 Some("urgency") => {
-                    set_string_property(&mut entries.urgency, entry, "urgency", rule_number)?
+                    set_rule_string_property(&mut entries.urgency, entry, "urgency", rule_number)?
                 }
                 Some(name) => anyhow::bail!("rule {rule_number} has unknown property {name:?}"),
             }
@@ -178,19 +242,44 @@ impl RuleEntries {
     }
 }
 
-fn set_string_property(
+fn set_rule_string_property(
     slot: &mut Option<String>,
     entry: &KdlEntry,
     name: &str,
     rule_number: usize,
 ) -> anyhow::Result<()> {
+    set_string_property(slot, entry, name, &format!("rule {rule_number}"))
+}
+
+fn set_string_property(
+    slot: &mut Option<String>,
+    entry: &KdlEntry,
+    name: &str,
+    owner: &str,
+) -> anyhow::Result<()> {
     if slot.is_some() {
-        anyhow::bail!("rule {rule_number} has duplicate {name} properties");
+        anyhow::bail!("{owner} has duplicate {name} properties");
     }
     let Some(value) = entry.value().as_string() else {
-        anyhow::bail!("rule {rule_number} property {name} must be a string");
+        anyhow::bail!("{owner} property {name} must be a string");
     };
     *slot = Some(value.to_string());
+    Ok(())
+}
+
+fn set_bool_property(
+    slot: &mut Option<bool>,
+    entry: &KdlEntry,
+    name: &str,
+    owner: &str,
+) -> anyhow::Result<()> {
+    if slot.is_some() {
+        anyhow::bail!("{owner} has duplicate {name} properties");
+    }
+    let Some(value) = entry.value().as_bool() else {
+        anyhow::bail!("{owner} property {name} must be a boolean");
+    };
+    *slot = Some(value);
     Ok(())
 }
 
@@ -225,6 +314,43 @@ mod tests {
         assert_eq!(rules[1].urgency, Some(Urgency::Critical));
         assert_eq!(rules[1].outcome, DeliveryOutcome::Dropped);
         assert_eq!(rules[1].reference, "config-rule-2");
+    }
+
+    #[test]
+    fn parses_top_level_sound_settings() {
+        let configuration = NotificationConfiguration::parse(
+            r#"
+            sound enabled=#false theme="freedesktop" default="message-new-instant"
+            rule "quiet-chat" app="Chat" outcome="silenced"
+            "#,
+        )
+        .unwrap();
+
+        let sound = configuration.sound_settings();
+        assert!(!sound.enabled);
+        assert_eq!(sound.theme, "freedesktop");
+        assert_eq!(sound.default_sound, "message-new-instant");
+    }
+
+    #[test]
+    fn rejects_invalid_sound_settings() {
+        let duplicate_error = NotificationConfiguration::parse(
+            r#"sound enabled=#true
+            sound enabled=#false"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(duplicate_error.contains("duplicate sound"));
+
+        let empty_theme_error = NotificationConfiguration::parse(r#"sound theme="""#)
+            .unwrap_err()
+            .to_string();
+        assert!(empty_theme_error.contains("sound theme"));
+
+        let path_default_error = NotificationConfiguration::parse(r#"sound default="/tmp/a.oga""#)
+            .unwrap_err()
+            .to_string();
+        assert!(path_default_error.contains("default notification sound"));
     }
 
     #[test]

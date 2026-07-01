@@ -164,6 +164,22 @@ _Avoid_: Historical notification when the notification is still pending user att
 The transient on-screen presentation of an **Active Notification** outside the **Notification Center**.
 _Avoid_: Popup when referring to Notify's user-visible notification presentation
 
+**Notification Sound**:
+A transient audible cue associated with a notification being shown to the user in a **Graphical User Session**. It is part of notification presentation, not retained notification history, and is resolved from local audio resources.
+_Avoid_: Alert sound, history sound
+
+**Default Notification Sound**:
+The **Notification Sound** used when a shown notification does not request a specific sound.
+_Avoid_: Fallback file, system bell
+
+**Notification Sound Theme**:
+The named desktop sound theme used to resolve sender-provided sound names and the **Default Notification Sound**.
+_Avoid_: Audio backend, media player
+
+**Notification Sound Suppression**:
+A sender request that no **Notification Sound** be played for a notification. It does not by itself silence, drop, or hide the notification.
+_Avoid_: Silenced Notification, Do Not Disturb
+
 **Dismissed Notification**:
 A retained **Notification Thread** that is no longer active because the user dismissed it.
 _Avoid_: Deleted notification, cleared notification
@@ -374,7 +390,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - First-version **Notification Banner** styling configuration is minimal.
 - First-version **Notification Banner** keyboard interaction is minimal.
 - **Notification Banners** do not steal keyboard focus.
-- Notification sounds are outside the first version scope.
+- **Notification Sounds** are one-shot presentation behavior for shown notifications and are not retained in **Notification History**.
 - Hiding notification body content for privacy-sensitive display states belongs to **Compositor Privacy Mode**, not Notify.
 - Notify supports **Wayland Sessions** only.
 - The first version supports one **Graphical User Session** per user.

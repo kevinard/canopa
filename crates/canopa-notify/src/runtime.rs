@@ -7,9 +7,10 @@ use crate::delivery_policy::{
     DeliveryDecisionLog, DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState,
 };
 use crate::domain::{
-    AcceptedNotification, NotificationImageData, NotificationReceipt, NotificationSnapshot,
-    NotificationStatus, NotificationTimeout, NotificationTimeoutDefaults, SenderEvent, Urgency,
-    UserRule,
+    AcceptedNotification, DeliveryOutcome, NotificationImageData, NotificationReceipt,
+    NotificationSnapshot, NotificationSoundPlayback, NotificationSoundRequest,
+    NotificationSoundSettings, NotificationStatus, NotificationTimeout,
+    NotificationTimeoutDefaults, SenderEvent, Urgency, UserRule,
 };
 use crate::lifecycle::{
     LifecycleDelivery, LifecycleEffect, LifecycleEffects, NotificationLifecycle,
@@ -19,6 +20,7 @@ use crate::presentation::{
     BannerPresentation, BannerPresenter, BannerView, NotificationBannerState,
     PresentationCoordinator,
 };
+use crate::sound::SoundPresenter;
 use crate::sqlite_persisted_state::SqlitePersistedState;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,6 +38,8 @@ pub(crate) struct NotificationRuntime {
     banner_state: Arc<Mutex<NotificationBannerState>>,
     runtime_images: Arc<Mutex<RuntimeImageStore>>,
     activation_token_provider: Arc<dyn ActivationTokenProvider>,
+    sound_presenter: Arc<dyn SoundPresenter>,
+    headless: bool,
     activation_token_capable: bool,
     sender_events: Arc<Mutex<Vec<SenderEvent>>>,
     sender_event_changes: broadcast::Sender<SenderEvent>,
@@ -99,6 +103,7 @@ impl NotificationRuntime {
         timeout_defaults: NotificationTimeoutDefaults,
         banner_presenter: Arc<dyn BannerPresenter>,
         activation_token_provider: Arc<dyn ActivationTokenProvider>,
+        sound_presenter: Arc<dyn SoundPresenter>,
     ) -> anyhow::Result<Self> {
         let lifecycle =
             NotificationLifecycle::with_timeout_defaults(storage.clone(), timeout_defaults);
@@ -115,6 +120,8 @@ impl NotificationRuntime {
             banner_state: Arc::new(Mutex::new(NotificationBannerState::new())),
             runtime_images: Arc::new(Mutex::new(RuntimeImageStore::default())),
             activation_token_provider,
+            sound_presenter,
+            headless,
             activation_token_capable,
             sender_events: Arc::new(Mutex::new(Vec::new())),
             sender_event_changes,
@@ -131,10 +138,13 @@ impl NotificationRuntime {
         notification: AcceptedNotification,
         image_data: Option<NotificationImageData>,
         expire_timeout: NotificationTimeout,
+        sound_request: NotificationSoundRequest,
     ) -> anyhow::Result<NotificationReceipt> {
         let policy = self.delivery_policy().await?;
         let decision = policy.decide(&notification);
         self.record_decision(decision.log.clone());
+        let sound_app_identity = notification.app_identity.clone();
+        let sound_summary = notification.summary.clone();
 
         let effects = self
             .lifecycle
@@ -146,7 +156,15 @@ impl NotificationRuntime {
             .await?;
         let receipt = effects.sender_receipt()?;
         self.apply_request_images(&effects, image_data);
-        self.apply_lifecycle_effects_and_notify(&effects).await?;
+        let sound = (decision.outcome == DeliveryOutcome::Shown && !sound_request.suppress)
+            .then_some(NotificationSoundPlayback {
+                notification_id: receipt.notification_id,
+                app_identity: sound_app_identity,
+                summary: sound_summary,
+                requested_sound: sound_request.sound,
+            });
+        self.apply_lifecycle_effects_and_notify_with_sound(&effects, sound)
+            .await?;
         Ok(receipt)
     }
 
@@ -288,11 +306,18 @@ impl NotificationRuntime {
         Ok(())
     }
 
-    pub(crate) async fn install_config_rules(
+    pub(crate) async fn install_configuration(
         &self,
         rules: Vec<DeliveryPolicyRule>,
+        sound_settings: NotificationSoundSettings,
     ) -> anyhow::Result<()> {
         *self.config_rules.lock().unwrap() = rules;
+        if !self.headless {
+            if !sound_settings.enabled {
+                self.sound_presenter.stop_all_sounds();
+            }
+            self.sound_presenter.apply_sound_settings(sound_settings)?;
+        }
         self.reevaluate_active_notifications().await?;
         self.notify_state_changed();
         Ok(())
@@ -312,6 +337,10 @@ impl NotificationRuntime {
 
     pub(crate) fn supports_activation_tokens(&self) -> bool {
         self.activation_token_capable
+    }
+
+    pub(crate) fn supports_sound(&self) -> bool {
+        !self.headless && self.sound_presenter.supports_sound()
     }
 
     pub(crate) async fn notification_center_projection(
@@ -380,7 +409,24 @@ impl NotificationRuntime {
         effects: &LifecycleEffects,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
-        self.apply_lifecycle_effects_with_activation_token(effects, activation_token)
+        self.apply_lifecycle_effects_with_activation_token_and_sound(
+            effects,
+            activation_token,
+            None,
+        )
+        .await?;
+        if !effects.is_empty() {
+            self.notify_state_changed();
+        }
+        Ok(())
+    }
+
+    async fn apply_lifecycle_effects_and_notify_with_sound(
+        &self,
+        effects: &LifecycleEffects,
+        sound: Option<NotificationSoundPlayback>,
+    ) -> anyhow::Result<()> {
+        self.apply_lifecycle_effects_with_activation_token_and_sound(effects, None, sound)
             .await?;
         if !effects.is_empty() {
             self.notify_state_changed();
@@ -393,6 +439,20 @@ impl NotificationRuntime {
         effects: &LifecycleEffects,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
+        self.apply_lifecycle_effects_with_activation_token_and_sound(
+            effects,
+            activation_token,
+            None,
+        )
+        .await
+    }
+
+    async fn apply_lifecycle_effects_with_activation_token_and_sound(
+        &self,
+        effects: &LifecycleEffects,
+        activation_token: Option<String>,
+        sound: Option<NotificationSoundPlayback>,
+    ) -> anyhow::Result<()> {
         self.remove_runtime_images_for_terminal_effects(effects);
         self.apply_notification_timeout_changes(effects.timeout_changes());
         {
@@ -401,8 +461,25 @@ impl NotificationRuntime {
         }
         self.publish_sender_events_with_activation_token(effects, activation_token)
             .await;
+        if let Some(sound) = sound {
+            self.play_notification_sound(sound);
+        }
         self.sync_presentation().await?;
         Ok(())
+    }
+
+    fn play_notification_sound(&self, sound: NotificationSoundPlayback) {
+        if self.headless {
+            return;
+        }
+
+        if !self.sound_presenter.supports_sound() {
+            return;
+        }
+
+        if let Err(error) = self.sound_presenter.play_notification_sound(sound) {
+            eprintln!("level=warn component=sound event=request_failed error={error:#}");
+        }
     }
 
     async fn publish_sender_events_with_activation_token(
