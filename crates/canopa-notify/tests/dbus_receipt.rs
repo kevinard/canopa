@@ -148,7 +148,7 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
     assert!(json.contains("example-mail.desktop"));
     assert!(json.contains("Inbox"));
     assert!(json.contains("\"body\":\"One unread message\""));
-    assert!(json.contains("\"body_markup\""));
+    assert!(json.contains("\"body_content\""));
     assert!(json.contains("\"bold\":true"));
     assert!(json.contains("\"resident\":true"));
     assert!(json.contains("\"key\":\"open\""));
@@ -229,6 +229,97 @@ async fn dev_dbus_action_icons_hint_preserves_action_icon_names() {
     assert!(json.contains("\"key\":\"mail-reply-sender\""));
     assert!(json.contains("\"label\":\"Reply\""));
     assert!(json.contains("\"icon\":{\"kind\":\"icon_name\",\"value\":\"mail-reply-sender\"}"));
+
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
+async fn dev_dbus_notify_accepts_body_image_markup_without_advertising_capability() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let body_image_path = temp.path().join("chart.png");
+    let bus_name = test_bus_name("BodyImages");
+
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+
+    let capabilities: Vec<String> = proxy.call("GetCapabilities", &()).await.unwrap();
+    assert!(
+        capabilities
+            .iter()
+            .any(|capability| capability == "body-markup")
+    );
+    assert!(
+        !capabilities
+            .iter()
+            .any(|capability| capability == "body-images")
+    );
+
+    let id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Reporter",
+                0u32,
+                "",
+                "Report",
+                format!(
+                    r#"<b>See</b> <img src="{}" alt="chart"/>"#,
+                    support::path_arg(&body_image_path)
+                ),
+                Vec::<String>::new(),
+                HashMap::<String, OwnedValue>::new(),
+                -1i32,
+            ),
+        )
+        .await
+        .unwrap();
+
+    assert!(id > 0);
+
+    let output = Command::cargo_bin("canopa-notify")
+        .unwrap()
+        .args([
+            "ctl",
+            "--socket",
+            support::path_arg(&socket),
+            "active",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json = String::from_utf8(output.stdout).unwrap();
+
+    assert!(json.contains("\"body\":\"See chart\""));
+    assert!(json.contains("\"body_content\""));
+    assert!(json.contains("\"kind\":\"image\""));
+    assert!(json.contains("\"kind\":\"local_path\""));
+    assert!(json.contains(support::path_arg(&body_image_path)));
+    assert!(json.contains("\"alt\":\"chart\""));
+    assert!(json.contains("\"bold\":true"));
 
     daemon.kill().ok();
     daemon.wait().ok();

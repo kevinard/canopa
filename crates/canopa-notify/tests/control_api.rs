@@ -5,7 +5,8 @@ mod notifications;
 
 use canopa_notify::{
     ActivationTokenFuture, ActivationTokenProvider, AppPermissionControl, ControlCommand,
-    ControlReply, Daemon, DaemonOptions, DeliveryOutcome, NotificationAction, NotificationInput,
+    ControlReply, Daemon, DaemonOptions, DeliveryOutcome, NotificationAction,
+    NotificationBodyContent, NotificationBodyImage, NotificationBodySegment, NotificationInput,
     NotifyControl, SenderEvent,
 };
 use notifications::{notification, notification_with_body};
@@ -142,7 +143,7 @@ async fn notify_control_builds_notification_center_projection() {
     assert_eq!(mail.items.len(), 1);
     assert_eq!(mail.items[0].summary, "Inbox");
     assert_eq!(mail.items[0].body, "One unread message");
-    assert!(mail.items[0].body_markup.runs[0].style.bold);
+    assert!(mail.items[0].body_content.text_runs()[0].style.bold);
     assert_eq!(mail.items[0].actions[0].key, "open");
 
     let chat = projection
@@ -152,6 +153,52 @@ async fn notify_control_builds_notification_center_projection() {
         .unwrap();
     assert_eq!(chat.permission, AppPermissionControl::Allow);
     assert_eq!(chat.items[0].summary, "Message");
+}
+
+#[tokio::test]
+async fn notify_control_exposes_structured_body_content_with_plain_fallback() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new(daemon.clone());
+    let expected_body_content = NotificationBodyContent::from_segments(vec![
+        NotificationBodySegment::plain_text("Open "),
+        NotificationBodySegment::body_image(NotificationBodyImage::local_path(
+            "/tmp/canopa-chart.png",
+            Some("chart".to_string()),
+        )),
+    ]);
+
+    daemon
+        .receive_notification(notification_with_body(
+            "Reporter",
+            "Report",
+            r#"Open <img src="/tmp/canopa-chart.png" alt="chart"/>"#,
+        ))
+        .await
+        .unwrap();
+
+    let reply = control
+        .execute(ControlCommand::ActiveNotifications)
+        .await
+        .unwrap();
+    let ControlReply::ActiveNotifications(active) = reply else {
+        panic!("expected active notifications reply");
+    };
+    assert_eq!(active[0].accepted_notification.body, "Open chart");
+    assert_eq!(
+        active[0].accepted_notification.body_content,
+        expected_body_content
+    );
+
+    let reply = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap();
+    let ControlReply::NotificationCenterProjection(projection) = reply else {
+        panic!("expected notification center projection reply");
+    };
+    let item = &projection.groups[0].items[0];
+    assert_eq!(item.body, "Open chart");
+    assert_eq!(item.body_content, expected_body_content);
 }
 
 #[tokio::test]

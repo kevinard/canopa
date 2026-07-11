@@ -4,11 +4,11 @@ mod daemon_support;
 mod notifications;
 
 use canopa_notify::{
-    BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPresentation,
-    BannerPresenter, BannerSurfaceSpec, BannerView, Daemon, DaemonOptions, DeliveryOutcome,
-    IcedLayerShellBannerPresenter, NotificationAction, NotificationImageData, NotificationInput,
-    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference, SenderEvent,
-    Urgency, UserRule,
+    BannerBodySegment, BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection,
+    BannerPresentation, BannerPresenter, BannerSurfaceSpec, BannerView, BannerVisual, Daemon,
+    DaemonOptions, DeliveryOutcome, IcedLayerShellBannerPresenter, NotificationAction,
+    NotificationImageData, NotificationInput, NotificationTimeout, NotificationTimeoutDefaults,
+    NotificationVisualReference, SenderEvent, Urgency, UserRule,
 };
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer};
 use iced_layershell::settings::StartMode;
@@ -103,7 +103,252 @@ async fn non_headless_daemon_presents_visible_banner_content() {
     assert_eq!(banners[0].notification_id, receipt.notification_id);
     assert_eq!(banners[0].summary, "Inbox");
     assert_eq!(banners[0].body, "One\nunread message");
-    assert!(banners[0].body_markup.runs[0].style.bold);
+    assert!(banners[0].body_content.text_runs()[0].style.bold);
+}
+
+#[tokio::test]
+async fn non_headless_daemon_presents_ordered_body_image_segments() {
+    let temp = tempfile::tempdir().unwrap();
+    let body_image_path = temp.path().join("chart.png");
+    std::fs::write(&body_image_path, test_png_bytes()).unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    daemon
+        .receive_notification(notification_with_body(
+            "Reporter",
+            "Report",
+            format!(
+                r#"Before <img src="{}" alt="chart"/> after"#,
+                path_string(&body_image_path)
+            ),
+        ))
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banner = &updates.last().unwrap()[0];
+
+    assert!(banner.image.is_none());
+    assert_eq!(banner.body, "Before chart after");
+    assert_eq!(
+        banner.body_segments,
+        vec![
+            BannerBodySegment::plain_text("Before "),
+            BannerBodySegment::image(BannerVisual::LocalPath {
+                path: path_string(&body_image_path),
+            }),
+            BannerBodySegment::plain_text(" after"),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn non_headless_daemon_uses_body_image_alt_when_local_file_cannot_render() {
+    let temp = tempfile::tempdir().unwrap();
+    let missing_body_image_path = temp.path().join("missing.png");
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    daemon
+        .receive_notification(notification_with_body(
+            "Reporter",
+            "Report",
+            format!(
+                r#"Before <img src="{}" alt="missing chart"/> after"#,
+                path_string(&missing_body_image_path)
+            ),
+        ))
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banner = &updates.last().unwrap()[0];
+
+    assert_eq!(banner.body, "Before missing chart after");
+    assert_eq!(
+        banner.body_segments,
+        vec![BannerBodySegment::plain_text("Before missing chart after")]
+    );
+}
+
+#[tokio::test]
+async fn non_headless_daemon_uses_body_image_alt_for_resource_unsafe_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let oversized_body_image_path = temp.path().join("oversized.png");
+    std::fs::File::create(&oversized_body_image_path)
+        .unwrap()
+        .set_len(16 * 1024 * 1024 + 1)
+        .unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    daemon
+        .receive_notification(notification_with_body(
+            "Reporter",
+            "Report",
+            format!(
+                r#"<img src="{}" alt="oversized chart"/>"#,
+                path_string(&oversized_body_image_path)
+            ),
+        ))
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banner = &updates.last().unwrap()[0];
+
+    assert_eq!(banner.body, "oversized chart");
+    assert_eq!(
+        banner.body_segments,
+        vec![BannerBodySegment::plain_text("oversized chart")]
+    );
+}
+
+#[tokio::test]
+async fn non_headless_daemon_presents_body_image_only_banner_without_alt() {
+    let temp = tempfile::tempdir().unwrap();
+    let body_image_path = temp.path().join("chart.jpg");
+    std::fs::write(&body_image_path, test_png_bytes()).unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    daemon
+        .receive_notification(notification_with_body(
+            "Reporter",
+            "   ",
+            format!(r#"<img src="file://{}"/>"#, path_string(&body_image_path)),
+        ))
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banner = &updates.last().unwrap()[0];
+
+    assert_eq!(banner.body, "");
+    assert_eq!(
+        banner.body_segments,
+        vec![BannerBodySegment::image(BannerVisual::LocalPath {
+            path: path_string(&body_image_path),
+        })]
+    );
+}
+
+#[tokio::test]
+async fn body_embedded_images_do_not_replace_notification_visual_slots() {
+    let temp = tempfile::tempdir().unwrap();
+    let app_icon_path = temp.path().join("app.png");
+    let notification_image_path = temp.path().join("photo.jpg");
+    let body_image_path = temp.path().join("chart.png");
+    std::fs::write(&app_icon_path, test_png_bytes()).unwrap();
+    std::fs::write(&notification_image_path, test_png_bytes()).unwrap();
+    std::fs::write(&body_image_path, test_png_bytes()).unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    daemon
+        .receive_notification(NotificationInput {
+            app_icon: NotificationVisualReference::local_path(path_string(&app_icon_path)),
+            image_reference: NotificationVisualReference::local_path(path_string(
+                &notification_image_path,
+            )),
+            ..notification_with_body(
+                "Reporter",
+                "Report",
+                format!(
+                    r#"<img src="{}" alt="chart"/>"#,
+                    path_string(&body_image_path)
+                ),
+            )
+        })
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banner = &updates.last().unwrap()[0];
+
+    assert!(matches!(
+        banner.app_icon.as_ref(),
+        Some(BannerVisual::LocalPath { path }) if path == &path_string(&app_icon_path)
+    ));
+    assert!(matches!(
+        banner.image.as_ref(),
+        Some(BannerVisual::LocalPath { path }) if path == &path_string(&notification_image_path)
+    ));
+    assert_eq!(
+        banner.body_segments,
+        vec![BannerBodySegment::image(BannerVisual::LocalPath {
+            path: path_string(&body_image_path),
+        })]
+    );
+}
+
+#[tokio::test]
+async fn replacement_without_body_images_clears_previous_body_image_segments() {
+    let temp = tempfile::tempdir().unwrap();
+    let body_image_path = temp.path().join("chart.png");
+    std::fs::write(&body_image_path, test_png_bytes()).unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let first = daemon
+        .receive_notification(notification_with_body(
+            "Reporter",
+            "Report",
+            format!(
+                r#"<img src="{}" alt="chart"/>"#,
+                path_string(&body_image_path)
+            ),
+        ))
+        .await
+        .unwrap();
+
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(first.notification_id),
+            ..notification_with_body("Reporter", "Report", "Text only")
+        })
+        .await
+        .unwrap();
+
+    let updates = presenter.updates();
+    let banner = &updates.last().unwrap()[0];
+
+    assert_eq!(banner.notification_id, first.notification_id);
+    assert_eq!(
+        banner.body_segments,
+        vec![BannerBodySegment::plain_text("Text only")]
+    );
 }
 
 #[tokio::test]
@@ -708,6 +953,14 @@ fn is_visible(banners: &[BannerView], id: i64) -> bool {
 
 fn test_image_data() -> NotificationImageData {
     NotificationImageData::from_freedesktop(1, 1, 4, true, 8, 4, vec![255, 0, 0, 255]).unwrap()
+}
+
+fn test_png_bytes() -> &'static [u8] {
+    &[
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6,
+        0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 248, 207, 192, 240,
+        31, 0, 5, 0, 1, 255, 137, 153, 61, 29, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ]
 }
 
 fn path_string(path: &std::path::Path) -> String {

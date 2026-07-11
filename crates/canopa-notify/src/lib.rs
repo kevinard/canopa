@@ -29,7 +29,8 @@ pub use delivery_policy::{
 };
 pub use domain::{
     AcceptedNotification, DEFAULT_NOTIFICATION_SOUND_NAME, DEFAULT_NOTIFICATION_SOUND_THEME,
-    DeliveryOutcome, NotificationAction, NotificationBodyMarkup, NotificationBodyRun,
+    DeliveryOutcome, NotificationAction, NotificationBodyContent, NotificationBodyImage,
+    NotificationBodyImageSource, NotificationBodyRun, NotificationBodySegment,
     NotificationBodyStyle, NotificationImageData, NotificationInput, NotificationPosition,
     NotificationReceipt, NotificationSnapshot, NotificationSound, NotificationSoundPlayback,
     NotificationSoundRequest, NotificationSoundSettings, NotificationStatus, NotificationThread,
@@ -43,10 +44,11 @@ pub use lifecycle::{
 };
 pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
-    BannerAction, BannerFocusBehavior, BannerInteraction, BannerKeyboardInteractivity, BannerLayer,
-    BannerOutputSelection, BannerPlacement, BannerPresentation, BannerPresenter, BannerSurfaceSpec,
-    BannerView, BannerVisual, IcedLayerShellBannerPresenter, NoopBannerPresenter,
-    NotificationBannerState, StructuredLogBannerPresenter,
+    BannerAction, BannerBodySegment, BannerFocusBehavior, BannerInteraction,
+    BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPlacement,
+    BannerPresentation, BannerPresenter, BannerSurfaceSpec, BannerView, BannerVisual,
+    IcedLayerShellBannerPresenter, NoopBannerPresenter, NotificationBannerState,
+    StructuredLogBannerPresenter,
 };
 pub use runtime::NotificationStateSubscription;
 pub use sound::{NoopSoundPresenter, RodioSoundPresenter, SoundPresenter};

@@ -1,5 +1,5 @@
 use crate::{
-    Daemon, DeliveryOutcome, NotificationAction, NotificationBodyMarkup,
+    Daemon, DeliveryOutcome, NotificationAction, NotificationBodyContent,
     NotificationStateSubscription, NotificationStatus, NotificationThread, UserRule,
 };
 use serde::{Deserialize, Serialize};
@@ -120,7 +120,7 @@ pub struct NotificationCenterItem {
     pub notification_id: i64,
     pub summary: String,
     pub body: String,
-    pub body_markup: NotificationBodyMarkup,
+    pub body_content: NotificationBodyContent,
     pub status: NotificationStatus,
     pub delivery_outcome: DeliveryOutcome,
     pub actions: Vec<NotificationAction>,

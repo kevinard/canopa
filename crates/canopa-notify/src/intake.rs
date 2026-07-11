@@ -1,10 +1,10 @@
 use crate::{
-    AcceptedNotification, DeliveryOutcome, NotificationBodyMarkup, NotificationBodyRun,
-    NotificationBodyStyle, NotificationImageData, NotificationInput, NotificationReceipt,
-    NotificationSoundRequest,
+    AcceptedNotification, DeliveryOutcome, NotificationBodyContent, NotificationBodyImage,
+    NotificationBodyImageSource, NotificationBodySegment, NotificationBodyStyle,
+    NotificationImageData, NotificationInput, NotificationReceipt, NotificationSoundRequest,
 };
 
-const MAX_BODY_MARKUP_RUNS: usize = 256;
+const MAX_BODY_CONTENT_SEGMENTS: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NotificationIntakeResult {
@@ -21,12 +21,12 @@ pub(crate) struct AcceptedNotificationInput {
 
 pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntakeResult {
     let app_identity = derive_app_identity(&input);
-    let body_markup = interpreted_body_markup(&input.body);
-    let body = body_markup.plain_text();
+    let body_content = interpreted_body_content(&input.body);
+    let body = body_content.plain_text();
     let has_image = input.image_data.is_some() || input.image_reference.is_some();
 
     if input.summary.trim().is_empty()
-        && body.trim().is_empty()
+        && !body_content.has_meaningful_content()
         && input.actions.is_empty()
         && !has_image
         && input.category.is_none()
@@ -46,7 +46,7 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
             app_icon: input.app_icon,
             summary: input.summary,
             body,
-            body_markup,
+            body_content,
             raw_body: input.body,
             urgency: input.urgency,
             category: input.category,
@@ -74,16 +74,15 @@ fn derive_app_identity(input: &NotificationInput) -> String {
         .to_string()
 }
 
-pub(crate) fn interpreted_body_markup(body: &str) -> NotificationBodyMarkup {
+pub(crate) fn interpreted_body_content(body: &str) -> NotificationBodyContent {
     let mut parser = BodyMarkupParser::new(body);
     parser.parse();
-    let runs = styled_chars_to_runs(parser.output);
-    let markup = NotificationBodyMarkup::from_runs(runs);
+    let content = parsed_body_nodes_to_content(parser.output);
 
-    if markup.runs.len() > MAX_BODY_MARKUP_RUNS {
-        NotificationBodyMarkup::plain(markup.plain_text())
+    if content.segments.len() > MAX_BODY_CONTENT_SEGMENTS {
+        NotificationBodyContent::plain(content.plain_text())
     } else {
-        markup
+        content
     }
 }
 
@@ -128,10 +127,16 @@ struct StyledChar {
     style: NotificationBodyStyle,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ParsedBodyNode {
+    Text(StyledChar),
+    Image(NotificationBodyImage),
+}
+
 struct BodyMarkupParser<'a> {
     input: &'a str,
     index: usize,
-    output: Vec<StyledChar>,
+    output: Vec<ParsedBodyNode>,
     style: StyleCounts,
 }
 
@@ -213,7 +218,14 @@ impl<'a> BodyMarkupParser<'a> {
             "br" => self.push_newline(),
             "p" | "div" => self.push_newline(),
             "img" if !closing => {
-                if let Some(alt) = attribute_value(tag_without_direction, "alt") {
+                let alt = attribute_value(tag_without_direction, "alt");
+                let image_source = attribute_value(tag_without_direction, "src")
+                    .and_then(|src| NotificationBodyImageSource::from_body_image_src(&src));
+
+                if let Some(source) = image_source {
+                    self.output
+                        .push(ParsedBodyNode::Image(NotificationBodyImage { source, alt }));
+                } else if let Some(alt) = alt {
                     self.push_text(&alt);
                 }
             }
@@ -224,16 +236,22 @@ impl<'a> BodyMarkupParser<'a> {
 
     fn push_text(&mut self, text: &str) {
         let style = self.style.style();
-        self.output
-            .extend(text.chars().map(|ch| StyledChar { ch, style }));
+        self.output.extend(
+            text.chars()
+                .map(|ch| ParsedBodyNode::Text(StyledChar { ch, style })),
+        );
     }
 
     fn push_newline(&mut self) {
-        if self.output.last().is_none_or(|ch| ch.ch != '\n') {
-            self.output.push(StyledChar {
+        let last_is_newline = matches!(
+            self.output.last(),
+            Some(ParsedBodyNode::Text(StyledChar { ch: '\n', .. }))
+        );
+        if !last_is_newline {
+            self.output.push(ParsedBodyNode::Text(StyledChar {
                 ch: '\n',
                 style: NotificationBodyStyle::default(),
-            });
+            }));
         }
     }
 }
@@ -395,83 +413,95 @@ fn decode_numeric_entity(entity: &str) -> Option<char> {
     char::from_u32(value)
 }
 
-fn styled_chars_to_runs(chars: Vec<StyledChar>) -> Vec<NotificationBodyRun> {
-    let mut lines: Vec<Vec<StyledChar>> = vec![Vec::new()];
-    for styled in chars {
-        if styled.ch == '\n' {
+fn parsed_body_nodes_to_content(nodes: Vec<ParsedBodyNode>) -> NotificationBodyContent {
+    let mut lines: Vec<Vec<ParsedBodyNode>> = vec![Vec::new()];
+    for node in nodes {
+        if matches!(node, ParsedBodyNode::Text(StyledChar { ch: '\n', .. })) {
             lines.push(Vec::new());
         } else if let Some(line) = lines.last_mut() {
-            line.push(styled);
+            line.push(node);
         }
     }
 
     let mut normalized = Vec::new();
     for (index, line) in lines.into_iter().enumerate() {
         if index > 0 {
-            normalized.push(StyledChar {
+            normalized.push(ParsedBodyNode::Text(StyledChar {
                 ch: '\n',
                 style: NotificationBodyStyle::default(),
-            });
+            }));
         }
 
         let start = line
             .iter()
-            .position(|styled| !styled.ch.is_whitespace())
+            .position(|node| !is_whitespace_text_node(node))
             .unwrap_or(line.len());
         let end = line
             .iter()
-            .rposition(|styled| !styled.ch.is_whitespace())
+            .rposition(|node| !is_whitespace_text_node(node))
             .map(|index| index + 1)
             .unwrap_or(start);
         normalized.extend_from_slice(&line[start..end]);
     }
 
-    while normalized
-        .first()
-        .is_some_and(|styled| styled.ch.is_whitespace())
-    {
+    while normalized.first().is_some_and(is_whitespace_text_node) {
         normalized.remove(0);
     }
-    while normalized
-        .last()
-        .is_some_and(|styled| styled.ch.is_whitespace())
-    {
+    while normalized.last().is_some_and(is_whitespace_text_node) {
         normalized.pop();
     }
 
-    let mut runs = Vec::new();
+    let mut segments = Vec::new();
     let mut current_text = String::new();
     let mut current_style: Option<NotificationBodyStyle> = None;
 
-    for styled in normalized {
-        match current_style {
-            Some(style) if style == styled.style => current_text.push(styled.ch),
-            Some(style) => {
-                runs.push(NotificationBodyRun::styled(
-                    std::mem::take(&mut current_text),
-                    style,
-                ));
-                current_text.push(styled.ch);
-                current_style = Some(styled.style);
-            }
-            None => {
-                current_text.push(styled.ch);
-                current_style = Some(styled.style);
+    for node in normalized {
+        match node {
+            ParsedBodyNode::Text(styled) => match current_style {
+                Some(style) if style == styled.style => current_text.push(styled.ch),
+                Some(style) => {
+                    segments.push(NotificationBodySegment::styled_text(
+                        std::mem::take(&mut current_text),
+                        style,
+                    ));
+                    current_text.push(styled.ch);
+                    current_style = Some(styled.style);
+                }
+                None => {
+                    current_text.push(styled.ch);
+                    current_style = Some(styled.style);
+                }
+            },
+            ParsedBodyNode::Image(image) => {
+                if let Some(style) = current_style.take() {
+                    segments.push(NotificationBodySegment::styled_text(
+                        std::mem::take(&mut current_text),
+                        style,
+                    ));
+                }
+                segments.push(NotificationBodySegment::body_image(image));
             }
         }
     }
 
     if let Some(style) = current_style {
-        runs.push(NotificationBodyRun::styled(current_text, style));
+        segments.push(NotificationBodySegment::styled_text(current_text, style));
     }
 
-    runs
+    NotificationBodyContent::from_segments(segments)
+}
+
+fn is_whitespace_text_node(node: &ParsedBodyNode) -> bool {
+    match node {
+        ParsedBodyNode::Text(styled) => styled.ch.is_whitespace(),
+        ParsedBodyNode::Image(_) => false,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::NotificationAction;
+    use crate::{NotificationAction, NotificationBodyRun};
 
     #[test]
     fn intake_derives_app_identity_from_trimmed_desktop_entry() {
@@ -513,8 +543,8 @@ mod tests {
         let accepted = accepted(result);
         assert_eq!(accepted.body, "Hello\nWorld & friends");
         assert_eq!(
-            accepted.body_markup,
-            NotificationBodyMarkup::from_runs(vec![
+            accepted.body_content,
+            NotificationBodyContent::from_text_runs(vec![
                 NotificationBodyRun::styled(
                     "Hello",
                     NotificationBodyStyle {
@@ -539,7 +569,7 @@ mod tests {
 
         assert_eq!(accepted.body, "Bold both under");
         assert_eq!(
-            accepted.body_markup.runs,
+            accepted.body_content.text_runs(),
             vec![
                 NotificationBodyRun::styled(
                     "Bold ",
@@ -578,18 +608,107 @@ mod tests {
 
         assert_eq!(accepted.body, "Open chart & notes");
         assert_eq!(
-            accepted.body_markup,
-            NotificationBodyMarkup::plain("Open chart & notes")
+            accepted.body_content,
+            NotificationBodyContent::plain("Open chart & notes")
         );
         assert!(
-            !serde_json::to_string(&accepted.body_markup)
+            !serde_json::to_string(&accepted.body_content)
                 .unwrap()
                 .contains("example.invalid")
         );
         assert!(
-            !serde_json::to_string(&accepted.body_markup)
+            !serde_json::to_string(&accepted.body_content)
                 .unwrap()
                 .contains("secret.png")
+        );
+    }
+
+    #[test]
+    fn intake_preserves_local_body_image_segments_in_order() {
+        let accepted = accepted(intake_notification(NotificationInput {
+            app_name: "Reporter".to_string(),
+            summary: "Report".to_string(),
+            body: r#"Open <img src="/tmp/canopa-chart.png" ALT="chart &amp; notes"/>"#.to_string(),
+            ..NotificationInput::default()
+        }));
+
+        assert_eq!(accepted.body, "Open chart & notes");
+        assert_eq!(
+            accepted.body_content,
+            NotificationBodyContent::from_segments(vec![
+                NotificationBodySegment::plain_text("Open "),
+                NotificationBodySegment::body_image(NotificationBodyImage::local_path(
+                    "/tmp/canopa-chart.png",
+                    Some("chart & notes".to_string()),
+                ))
+            ])
+        );
+    }
+
+    #[test]
+    fn intake_preserves_multiple_text_and_body_image_segments_in_sender_order() {
+        let accepted = accepted(intake_notification(NotificationInput {
+            app_name: "Reporter".to_string(),
+            summary: "Report".to_string(),
+            body: r#"A <img src="/tmp/one.png" alt="one"/> B <img src="file:///tmp/two%20chart.jpg" alt="two"/> C"#.to_string(),
+            ..NotificationInput::default()
+        }));
+
+        assert_eq!(accepted.body, "A one B two C");
+        assert_eq!(
+            accepted.body_content,
+            NotificationBodyContent::from_segments(vec![
+                NotificationBodySegment::plain_text("A "),
+                NotificationBodySegment::body_image(NotificationBodyImage::local_path(
+                    "/tmp/one.png",
+                    Some("one".to_string()),
+                )),
+                NotificationBodySegment::plain_text(" B "),
+                NotificationBodySegment::body_image(NotificationBodyImage::local_path(
+                    "/tmp/two chart.jpg",
+                    Some("two".to_string()),
+                )),
+                NotificationBodySegment::plain_text(" C"),
+            ])
+        );
+    }
+
+    #[test]
+    fn intake_rejects_unsupported_body_image_references_but_keeps_alt_fallback() {
+        let accepted = accepted(intake_notification(NotificationInput {
+            app_name: "Reporter".to_string(),
+            summary: "Report".to_string(),
+            body: r#"<img src="https://example.invalid/chart.png" alt="remote"/> <img src="relative.png" alt="relative"/> <img src="mail-unread" alt="icon"/> <img src="/tmp/vector.svg" alt="vector"/>"#.to_string(),
+            ..NotificationInput::default()
+        }));
+
+        assert_eq!(accepted.body, "remote relative icon vector");
+        assert_eq!(
+            accepted.body_content,
+            NotificationBodyContent::plain("remote relative icon vector")
+        );
+        let body_content_json = serde_json::to_string(&accepted.body_content).unwrap();
+        assert!(!body_content_json.contains("example.invalid"));
+        assert!(!body_content_json.contains("relative.png"));
+        assert!(!body_content_json.contains("mail-unread"));
+        assert!(!body_content_json.contains("/tmp/vector.svg"));
+    }
+
+    #[test]
+    fn intake_accepts_blank_notification_with_local_body_image_without_alt() {
+        let result = intake_notification(NotificationInput {
+            app_name: "Blank Sender".to_string(),
+            body: r#"<img src="/tmp/canopa-chart.png"/>"#.to_string(),
+            ..NotificationInput::default()
+        });
+
+        let accepted = accepted(result);
+        assert_eq!(accepted.body, "");
+        assert_eq!(
+            accepted.body_content,
+            NotificationBodyContent::from_segments(vec![NotificationBodySegment::body_image(
+                NotificationBodyImage::local_path("/tmp/canopa-chart.png", None)
+            )])
         );
     }
 
@@ -616,7 +735,7 @@ mod tests {
 
         assert_eq!(accepted.body, "Hello friend");
         assert_eq!(
-            accepted.body_markup.runs,
+            accepted.body_content.text_runs(),
             vec![NotificationBodyRun::styled(
                 "Hello friend",
                 NotificationBodyStyle {

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::time::Duration;
 
 const MAX_NOTIFICATION_IMAGE_DIMENSION: u32 = 4096;
@@ -161,7 +162,7 @@ pub struct AcceptedNotification {
     pub app_icon: Option<NotificationVisualReference>,
     pub summary: String,
     pub body: String,
-    pub body_markup: NotificationBodyMarkup,
+    pub body_content: NotificationBodyContent,
     pub raw_body: String,
     pub urgency: Urgency,
     pub category: Option<String>,
@@ -173,47 +174,168 @@ pub struct AcceptedNotification {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct NotificationBodyMarkup {
-    pub runs: Vec<NotificationBodyRun>,
+pub struct NotificationBodyContent {
+    pub segments: Vec<NotificationBodySegment>,
 }
 
-impl NotificationBodyMarkup {
+impl NotificationBodyContent {
     pub fn plain(text: impl Into<String>) -> Self {
         let text = text.into();
         if text.is_empty() {
             Self::default()
         } else {
-            Self {
-                runs: vec![NotificationBodyRun::plain(text)],
-            }
+            Self::from_segments(vec![NotificationBodySegment::plain_text(text)])
         }
     }
 
     pub fn plain_text(&self) -> String {
-        self.runs
-            .iter()
-            .map(|run| run.text.as_str())
-            .collect::<String>()
+        let mut text = String::new();
+        for segment in &self.segments {
+            match segment {
+                NotificationBodySegment::Text { text: segment, .. } => text.push_str(segment),
+                NotificationBodySegment::Image {
+                    image: NotificationBodyImage { alt: Some(alt), .. },
+                } => text.push_str(alt),
+                NotificationBodySegment::Image { .. } => {}
+            }
+        }
+        text
     }
 
     pub fn is_empty(&self) -> bool {
-        self.runs.iter().all(|run| run.text.is_empty())
+        self.segments.is_empty()
     }
 
-    pub(crate) fn from_runs(runs: Vec<NotificationBodyRun>) -> Self {
-        let mut normalized: Vec<NotificationBodyRun> = Vec::new();
-        for run in runs {
-            if run.text.is_empty() {
-                continue;
-            }
+    pub fn text_runs(&self) -> Vec<NotificationBodyRun> {
+        self.segments
+            .iter()
+            .filter_map(|segment| match segment {
+                NotificationBodySegment::Text { text, style } => {
+                    Some(NotificationBodyRun::styled(text.clone(), *style))
+                }
+                NotificationBodySegment::Image { .. } => None,
+            })
+            .collect()
+    }
 
-            match normalized.last_mut() {
-                Some(previous) if previous.style == run.style => previous.text.push_str(&run.text),
-                _ => normalized.push(run),
+    pub fn from_text_runs(runs: Vec<NotificationBodyRun>) -> Self {
+        Self::from_segments(
+            runs.into_iter()
+                .map(|run| NotificationBodySegment::styled_text(run.text, run.style))
+                .collect(),
+        )
+    }
+
+    pub fn from_segments(segments: Vec<NotificationBodySegment>) -> Self {
+        let mut normalized: Vec<NotificationBodySegment> = Vec::new();
+        for segment in segments {
+            match segment {
+                NotificationBodySegment::Text { text, .. } if text.is_empty() => {}
+                NotificationBodySegment::Text { text, style } => match normalized.last_mut() {
+                    Some(NotificationBodySegment::Text {
+                        text: previous_text,
+                        style: previous_style,
+                    }) if *previous_style == style => previous_text.push_str(&text),
+                    _ => normalized.push(NotificationBodySegment::Text { text, style }),
+                },
+                NotificationBodySegment::Image { image } => {
+                    normalized.push(NotificationBodySegment::Image { image });
+                }
             }
         }
 
-        Self { runs: normalized }
+        Self {
+            segments: normalized,
+        }
+    }
+
+    pub(crate) fn has_meaningful_content(&self) -> bool {
+        !self.plain_text().trim().is_empty()
+            || self
+                .segments
+                .iter()
+                .any(|segment| matches!(segment, NotificationBodySegment::Image { .. }))
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum NotificationBodySegment {
+    Text {
+        text: String,
+        style: NotificationBodyStyle,
+    },
+    Image {
+        image: NotificationBodyImage,
+    },
+}
+
+impl NotificationBodySegment {
+    pub fn plain_text(text: impl Into<String>) -> Self {
+        Self::styled_text(text, NotificationBodyStyle::default())
+    }
+
+    pub fn styled_text(text: impl Into<String>, style: NotificationBodyStyle) -> Self {
+        Self::Text {
+            text: text.into(),
+            style,
+        }
+    }
+
+    pub fn body_image(image: NotificationBodyImage) -> Self {
+        Self::Image { image }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationBodyImage {
+    pub source: NotificationBodyImageSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
+}
+
+impl NotificationBodyImage {
+    pub fn local_path(path: impl Into<String>, alt: Option<String>) -> Self {
+        Self {
+            source: NotificationBodyImageSource::local_path(path),
+            alt,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum NotificationBodyImageSource {
+    LocalPath { path: String },
+}
+
+impl NotificationBodyImageSource {
+    pub fn local_path(path: impl Into<String>) -> Self {
+        Self::LocalPath { path: path.into() }
+    }
+
+    pub(crate) fn from_body_image_src(value: &str) -> Option<Self> {
+        let value = value.trim();
+        if value.is_empty() {
+            return None;
+        }
+
+        let path = if let Some((scheme, rest)) = value.split_once(':')
+            && is_uri_scheme(scheme)
+        {
+            scheme
+                .eq_ignore_ascii_case("file")
+                .then(|| local_path_string_from_file_uri(rest))
+                .flatten()?
+        } else {
+            value.to_string()
+        };
+
+        if Path::new(&path).is_absolute() && has_static_raster_extension(&path) {
+            Some(Self::local_path(path))
+        } else {
+            None
+        }
     }
 }
 

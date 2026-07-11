@@ -1,11 +1,13 @@
 use canopa_notify::{
-    AppPermissionControl, ControlCommand, ControlReply, NotificationBodyMarkup,
+    AppPermissionControl, ControlCommand, ControlReply, NotificationBodyContent,
+    NotificationBodyImage, NotificationBodyImageSource, NotificationBodySegment,
     NotificationCenterProjection, NotifyControl,
 };
 use canopa_panel_protocol::{
     InteractionEvent, InteractionTarget, PanelAction, PanelContent, PanelControl,
-    PanelControlOption, PanelItem, PanelMetadata, PanelSection, ProviderResponse, StyledText,
-    StyledTextRun, StyledTextStyle,
+    PanelControlOption, PanelItem, PanelMetadata, PanelSection, ProviderResponse, RichBody,
+    RichBodyImage, RichBodyImageSource, RichBodySegment, StyledText, StyledTextRun,
+    StyledTextStyle,
 };
 use std::io::{BufRead, Read, Write};
 use std::os::unix::net::UnixStream as StdUnixStream;
@@ -349,7 +351,8 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                         id: item.notification_id.to_string(),
                         title: item.summary,
                         body: (!item.body.is_empty()).then_some(item.body),
-                        styled_body: styled_text_from_body_markup(item.body_markup),
+                        styled_body: styled_text_from_body_content(item.body_content.clone()),
+                        rich_body: rich_body_from_body_content(item.body_content),
                         metadata: vec![
                             PanelMetadata {
                                 key: "status".to_string(),
@@ -388,10 +391,10 @@ fn panel_sender_action(action_key: String, label: String) -> PanelAction {
     }
 }
 
-fn styled_text_from_body_markup(body_markup: NotificationBodyMarkup) -> Option<StyledText> {
+fn styled_text_from_body_content(body_content: NotificationBodyContent) -> Option<StyledText> {
     let styled = StyledText {
-        runs: body_markup
-            .runs
+        runs: body_content
+            .text_runs()
             .into_iter()
             .map(|run| StyledTextRun {
                 text: run.text,
@@ -405,6 +408,49 @@ fn styled_text_from_body_markup(body_markup: NotificationBodyMarkup) -> Option<S
     };
 
     (!styled.is_empty()).then_some(styled)
+}
+
+fn rich_body_from_body_content(body_content: NotificationBodyContent) -> Option<RichBody> {
+    let rich_body = RichBody {
+        segments: body_content
+            .segments
+            .into_iter()
+            .map(rich_body_segment_from_notification_segment)
+            .collect(),
+    };
+
+    (!rich_body.is_empty()).then_some(rich_body)
+}
+
+fn rich_body_segment_from_notification_segment(
+    segment: NotificationBodySegment,
+) -> RichBodySegment {
+    match segment {
+        NotificationBodySegment::Text { text, style } => RichBodySegment::Text {
+            text,
+            style: StyledTextStyle {
+                bold: style.bold,
+                italic: style.italic,
+                underline: style.underline,
+            },
+        },
+        NotificationBodySegment::Image {
+            image: NotificationBodyImage { source, alt },
+        } => RichBodySegment::Image {
+            image: RichBodyImage {
+                source: rich_body_image_source_from_notification_source(source),
+                alt,
+            },
+        },
+    }
+}
+
+fn rich_body_image_source_from_notification_source(
+    source: NotificationBodyImageSource,
+) -> RichBodyImageSource {
+    match source {
+        NotificationBodyImageSource::LocalPath { path } => RichBodyImageSource::LocalPath { path },
+    }
 }
 
 fn app_permission_control(permission: AppPermissionControl) -> PanelControl {
@@ -528,7 +574,7 @@ mod tests {
                     notification_id: 42,
                     summary: "Inbox".to_string(),
                     body: String::new(),
-                    body_markup: NotificationBodyMarkup::default(),
+                    body_content: NotificationBodyContent::default(),
                     status: canopa_notify::NotificationStatus::Active,
                     delivery_outcome: canopa_notify::DeliveryOutcome::Shown,
                     actions: vec![canopa_notify::NotificationAction::new(

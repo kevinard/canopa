@@ -5,7 +5,7 @@ mod notifications;
 
 use canopa_notify::{
     AcceptedNotification, Daemon, DaemonOptions, DeliveryDecisionReason, DeliveryOutcome,
-    DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState, NotificationBodyMarkup,
+    DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState, NotificationBodyContent,
     NotificationInput, Urgency, UserRule,
 };
 use notifications::{notification, notification_with_body};
@@ -213,7 +213,7 @@ fn accepted_notification(app_identity: &str, urgency: Urgency) -> AcceptedNotifi
         app_icon: None,
         summary: "Policy test".to_string(),
         body: String::new(),
-        body_markup: NotificationBodyMarkup::default(),
+        body_content: NotificationBodyContent::default(),
         raw_body: String::new(),
         urgency,
         category: None,

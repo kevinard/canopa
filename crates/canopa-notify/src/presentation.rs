@@ -1,8 +1,9 @@
 use crate::domain::has_static_raster_extension;
 use crate::{
-    BannerLifecycleChange, DeliveryOutcome, NotificationAction, NotificationBodyMarkup,
-    NotificationImageData, NotificationStatus, NotificationThread, NotificationVisualReference,
-    Urgency,
+    BannerLifecycleChange, DeliveryOutcome, NotificationAction, NotificationBodyContent,
+    NotificationBodyImageSource, NotificationBodyRun, NotificationBodySegment,
+    NotificationBodyStyle, NotificationImageData, NotificationStatus, NotificationThread,
+    NotificationVisualReference, Urgency,
 };
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,9 @@ const ICON_SEARCH_MAX_DEPTH: usize = 8;
 const STATIC_ICON_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
 const APP_ICON_VISUAL_SIZE: u16 = 34;
 const NOTIFICATION_IMAGE_VISUAL_SIZE: u16 = 58;
+const BODY_IMAGE_VISUAL_HEIGHT: u32 = 48;
+const BODY_CONTENT_TEXT_HEIGHT: u32 = 34;
+const BODY_CONTENT_RICH_HEIGHT: u32 = 70;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
 pub trait BannerPresenter: Send + Sync {
@@ -657,7 +661,8 @@ mod tests {
             app_icon: None,
             summary: "Download".to_string(),
             body: body.to_string(),
-            body_markup: NotificationBodyMarkup::plain(body),
+            body_content: NotificationBodyContent::plain(body),
+            body_segments: vec![BannerBodySegment::plain_text(body)],
             urgency: Urgency::Normal,
             progress: None,
             image: None,
@@ -821,25 +826,90 @@ fn banner_action_content(action: &BannerAction) -> iced::Element<'_, BannerUiMes
 }
 
 fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
-    use iced::widget::{rich_text, span, text};
-    use iced::{Font, Length, font};
+    use iced::Length;
+    use iced::widget::{column, container, text};
 
-    if banner.body_markup.is_empty() {
+    if banner.body_segments.is_empty() {
         return text(&banner.body)
             .size(13)
             .width(Length::Fill)
-            .height(34)
+            .height(BODY_CONTENT_TEXT_HEIGHT)
             .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
             .style(subdued_text_style)
             .into();
     }
 
-    let spans: Vec<iced::widget::text::Span<'_, (), iced::Font>> = banner
-        .body_markup
-        .runs
+    if !banner
+        .body_segments
         .iter()
+        .any(|segment| matches!(segment, BannerBodySegment::Image { .. }))
+    {
+        return banner_body_text_widget(
+            banner_body_text_runs(&banner.body_segments),
+            BODY_CONTENT_TEXT_HEIGHT,
+        );
+    }
+
+    let mut body = column![]
+        .spacing(4)
+        .width(Length::Fill)
+        .height(BODY_CONTENT_RICH_HEIGHT);
+    let mut pending_text = Vec::new();
+
+    for segment in &banner.body_segments {
+        match segment {
+            BannerBodySegment::Text { text, style } => {
+                pending_text.push(NotificationBodyRun::styled(text.clone(), *style));
+            }
+            BannerBodySegment::Image { image } => {
+                if !pending_text.is_empty() {
+                    body = body.push(banner_body_text_widget(
+                        std::mem::take(&mut pending_text),
+                        BODY_CONTENT_TEXT_HEIGHT,
+                    ));
+                }
+                body = body.push(body_image_visual(image));
+            }
+        }
+    }
+
+    if !pending_text.is_empty() {
+        body = body.push(banner_body_text_widget(
+            pending_text,
+            BODY_CONTENT_TEXT_HEIGHT,
+        ));
+    }
+
+    container(body)
+        .width(Length::Fill)
+        .height(BODY_CONTENT_RICH_HEIGHT)
+        .clip(true)
+        .into()
+}
+
+fn banner_body_text_runs(segments: &[BannerBodySegment]) -> Vec<NotificationBodyRun> {
+    segments
+        .iter()
+        .filter_map(|segment| match segment {
+            BannerBodySegment::Text { text, style } => {
+                Some(NotificationBodyRun::styled(text.clone(), *style))
+            }
+            BannerBodySegment::Image { .. } => None,
+        })
+        .collect()
+}
+
+fn banner_body_text_widget(
+    runs: Vec<NotificationBodyRun>,
+    height: u32,
+) -> iced::Element<'static, BannerUiMessage> {
+    use iced::widget::{rich_text, span};
+    use iced::{Font, Length, font};
+
+    let spans: Vec<iced::widget::text::Span<'static, (), iced::Font>> = runs
+        .into_iter()
         .map(|run| {
-            let mut body_span = span(run.text.as_str());
+            let mut body_span = span(run.text);
             if run.style.bold || run.style.italic {
                 body_span = body_span.font(Font {
                     weight: if run.style.bold {
@@ -865,10 +935,28 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
     rich_text(spans)
         .size(13)
         .width(Length::Fill)
-        .height(34)
+        .height(height)
         .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
         .style(subdued_text_style)
         .into()
+}
+
+fn body_image_visual(visual: &BannerVisual) -> iced::Element<'_, BannerUiMessage> {
+    use iced::widget::{container, image};
+    use iced::{ContentFit, Length};
+
+    let height = BODY_IMAGE_VISUAL_HEIGHT;
+    container(
+        image(banner_visual_handle(visual))
+            .width(Length::Fill)
+            .height(height)
+            .content_fit(ContentFit::Contain),
+    )
+    .width(Length::Fill)
+    .height(height)
+    .clip(true)
+    .style(visual_image_container_style)
+    .into()
 }
 
 fn overflow_count_banner_widget(count: usize) -> iced::Element<'static, BannerUiMessage> {
@@ -998,21 +1086,23 @@ fn notification_image_visual(image: &BannerVisual) -> iced::Element<'_, BannerUi
 fn visual_image(visual: &BannerVisual, size: u16) -> iced::Element<'_, BannerUiMessage> {
     use iced::widget::{container, image};
 
-    let handle = match visual {
-        BannerVisual::Rgba {
-            width,
-            height,
-            pixels,
-        } => image::Handle::from_rgba(*width, *height, pixels.clone()),
-        BannerVisual::LocalPath { path } => image::Handle::from_path(path),
-    };
-
     let size = u32::from(size);
-    container(image(handle).width(size).height(size))
+    container(image(banner_visual_handle(visual)).width(size).height(size))
         .center(size)
         .clip(true)
         .style(visual_image_container_style)
         .into()
+}
+
+fn banner_visual_handle(visual: &BannerVisual) -> iced::widget::image::Handle {
+    match visual {
+        BannerVisual::Rgba {
+            width,
+            height,
+            pixels,
+        } => iced::widget::image::Handle::from_rgba(*width, *height, pixels.clone()),
+        BannerVisual::LocalPath { path } => iced::widget::image::Handle::from_path(path),
+    }
 }
 
 fn close_button<'a>(notification_id: i64) -> iced::widget::Button<'a, BannerUiMessage> {
@@ -1279,7 +1369,8 @@ pub struct BannerView {
     pub app_icon: Option<BannerVisual>,
     pub summary: String,
     pub body: String,
-    pub body_markup: NotificationBodyMarkup,
+    pub body_content: NotificationBodyContent,
+    pub body_segments: Vec<BannerBodySegment>,
     pub urgency: Urgency,
     pub progress: Option<i64>,
     pub image: Option<BannerVisual>,
@@ -1309,6 +1400,35 @@ pub enum BannerVisual {
     },
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum BannerBodySegment {
+    Text {
+        text: String,
+        style: NotificationBodyStyle,
+    },
+    Image {
+        image: BannerVisual,
+    },
+}
+
+impl BannerBodySegment {
+    pub fn plain_text(text: impl Into<String>) -> Self {
+        Self::styled_text(text, NotificationBodyStyle::default())
+    }
+
+    pub fn styled_text(text: impl Into<String>, style: NotificationBodyStyle) -> Self {
+        Self::Text {
+            text: text.into(),
+            style,
+        }
+    }
+
+    pub fn image(image: BannerVisual) -> Self {
+        Self::Image { image }
+    }
+}
+
 impl BannerVisual {
     pub(crate) fn from_image_data(image: &NotificationImageData) -> Self {
         Self::Rgba {
@@ -1328,6 +1448,60 @@ impl BannerVisual {
             }
             NotificationVisualReference::LocalPath(_) => None,
         }
+    }
+
+    fn from_body_image_source(source: &NotificationBodyImageSource) -> Option<Self> {
+        match source {
+            NotificationBodyImageSource::LocalPath { path } if supported_local_image_path(path) => {
+                Some(Self::LocalPath { path: path.clone() })
+            }
+            NotificationBodyImageSource::LocalPath { .. } => None,
+        }
+    }
+}
+
+fn banner_body_segments_from_body_content(
+    body_content: &NotificationBodyContent,
+) -> Vec<BannerBodySegment> {
+    let mut banner_segments = Vec::new();
+
+    for segment in &body_content.segments {
+        match segment {
+            NotificationBodySegment::Text { text, style } => {
+                push_banner_body_text_segment(&mut banner_segments, text, *style);
+            }
+            NotificationBodySegment::Image { image } => {
+                if let Some(visual) = BannerVisual::from_body_image_source(&image.source) {
+                    banner_segments.push(BannerBodySegment::image(visual));
+                } else if let Some(alt) = &image.alt {
+                    push_banner_body_text_segment(
+                        &mut banner_segments,
+                        alt,
+                        NotificationBodyStyle::default(),
+                    );
+                }
+            }
+        }
+    }
+
+    banner_segments
+}
+
+fn push_banner_body_text_segment(
+    segments: &mut Vec<BannerBodySegment>,
+    text: &str,
+    style: NotificationBodyStyle,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    match segments.last_mut() {
+        Some(BannerBodySegment::Text {
+            text: previous_text,
+            style: previous_style,
+        }) if *previous_style == style => previous_text.push_str(text),
+        _ => segments.push(BannerBodySegment::styled_text(text, style)),
     }
 }
 
@@ -1358,7 +1532,8 @@ impl BannerView {
             app_icon,
             summary: notification.summary,
             body: notification.body,
-            body_markup: notification.body_markup,
+            body_segments: banner_body_segments_from_body_content(&notification.body_content),
+            body_content: notification.body_content,
             urgency: notification.urgency,
             progress: notification.progress,
             image: image_data

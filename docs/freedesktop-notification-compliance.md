@@ -26,7 +26,7 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 | `body-markup` | Advertised | Bold, italic, underline, tolerated line breaks, and safe text fallback are supported. |
 | `icon-static` | Advertised | Raw image data, local static raster files, and static raster icon-theme names are supported. |
 | `body-hyperlinks` | Not implemented | Link text is preserved, but targets are not retained or actionable. |
-| `body-images` | Not implemented | Body-embedded image markup may contribute alt text only. |
+| `body-images` | Not advertised | Body-embedded image markup may be decoded and carried before all Notify-owned body-display surfaces render it. |
 | `icon-multi` | Not implemented | Animated or multi-frame icons are not supported. |
 | `persistence` | Not advertised | Notify persists local history, but does not yet promise freedesktop persistence semantics to senders. |
 | `sound` | Runtime advertised | Advertised when graphical notification sound support is enabled and the audio backend initialized successfully. Not advertised in headless mode or when sound is disabled. |

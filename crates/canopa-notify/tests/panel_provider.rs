@@ -2,7 +2,7 @@ mod support;
 
 use assert_cmd::Command;
 use canopa_notify::{Daemon, DaemonOptions};
-use canopa_panel_protocol::ProviderResponse;
+use canopa_panel_protocol::{ProviderResponse, RichBodyImageSource, RichBodySegment};
 use predicates::str::contains;
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
@@ -22,7 +22,7 @@ fn panel_provider_returns_provider_visible_error_when_daemon_is_unavailable() {
         .assert()
         .success()
         .stdout(contains("Canopa Notify daemon unavailable"))
-        .stdout(contains("\"protocol_version\":2"));
+        .stdout(contains("\"protocol_version\":3"));
 }
 
 #[tokio::test]
@@ -60,8 +60,12 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
         .spawn()
         .unwrap();
     let line = read_provider_line(&mut provider);
-    let ProviderResponse::ReplaceContent { content, .. } =
-        serde_json::from_str::<ProviderResponse>(&line).unwrap();
+    let ProviderResponse::ReplaceContent {
+        protocol_version,
+        content,
+    } = serde_json::from_str::<ProviderResponse>(&line).unwrap();
+
+    assert_eq!(protocol_version, 3);
 
     assert_eq!(content.sections.len(), 1);
     assert_eq!(content.sections[0].id, "Mail");
@@ -92,7 +96,78 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
         content.sections[0].controls[0].key,
         "canopa-notify:app-permission"
     );
-    assert!(line.contains("\"protocol_version\":2"));
+    assert!(line.contains("\"protocol_version\":3"));
+
+    provider.kill().ok();
+    provider.wait().ok();
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
+async fn panel_provider_exports_rich_body_content_from_daemon_snapshot() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let body_image_path = temp.path().join("chart.png");
+
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    seed.receive_notification(notification_with_body(
+        "Reports",
+        "Daily report",
+        format!(
+            r#"<b>Open</b> <img src="{}" alt="chart"/> done"#,
+            support::path_arg(&body_image_path)
+        ),
+    ))
+    .await
+    .unwrap();
+    drop(seed);
+
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+    ]);
+
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let mut provider = support::canopa_notify_command()
+        .args(["panel-provider", "--socket", support::path_arg(&socket)])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let line = read_provider_line(&mut provider);
+    let ProviderResponse::ReplaceContent {
+        protocol_version,
+        content,
+    } = serde_json::from_str::<ProviderResponse>(&line).unwrap();
+
+    let item = &content.sections[0].items[0];
+    let rich_body = item.rich_body.as_ref().expect("expected rich body");
+
+    assert_eq!(protocol_version, 3);
+    assert_eq!(item.body.as_deref(), Some("Open chart done"));
+    assert_eq!(rich_body.segments.len(), 4);
+    assert!(matches!(
+        &rich_body.segments[0],
+        RichBodySegment::Text { text, style } if text == "Open" && style.bold
+    ));
+    assert!(matches!(
+        &rich_body.segments[2],
+        RichBodySegment::Image { image }
+            if image.alt.as_deref() == Some("chart")
+                && matches!(
+                    &image.source,
+                    RichBodyImageSource::LocalPath { path } if path == &support::path_arg(&body_image_path)
+                )
+    ));
+    assert!(!line.contains("<img"));
 
     provider.kill().ok();
     provider.wait().ok();

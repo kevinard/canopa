@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderHandshake {
@@ -79,8 +79,45 @@ pub struct PanelItem {
     pub title: String,
     pub body: Option<String>,
     pub styled_body: Option<StyledText>,
+    pub rich_body: Option<RichBody>,
     pub metadata: Vec<PanelMetadata>,
     pub actions: Vec<PanelAction>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RichBody {
+    pub segments: Vec<RichBodySegment>,
+}
+
+impl RichBody {
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum RichBodySegment {
+    Text {
+        text: String,
+        style: StyledTextStyle,
+    },
+    Image {
+        image: RichBodyImage,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RichBodyImage {
+    pub source: RichBodyImageSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum RichBodyImageSource {
+    LocalPath { path: String },
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -194,7 +231,7 @@ mod tests {
             "provider unavailable",
         ));
         let encoded = serde_json::to_string(&message).unwrap();
-        assert!(encoded.contains("\"protocol_version\":2"));
+        assert!(encoded.contains("\"protocol_version\":3"));
         assert!(encoded.contains("provider unavailable"));
     }
 
@@ -213,6 +250,7 @@ mod tests {
                     },
                 }],
             }),
+            rich_body: None,
             metadata: Vec::new(),
             actions: Vec::new(),
         };
@@ -220,5 +258,45 @@ mod tests {
         let encoded = serde_json::to_string(&item).unwrap();
         assert!(encoded.contains("\"styled_body\""));
         assert!(encoded.contains("\"bold\":true"));
+    }
+
+    #[test]
+    fn panel_items_can_carry_ordered_rich_body_content() {
+        let item = PanelItem {
+            id: "1".to_string(),
+            title: "Report".to_string(),
+            body: Some("Open chart".to_string()),
+            styled_body: None,
+            rich_body: Some(RichBody {
+                segments: vec![
+                    RichBodySegment::Text {
+                        text: "Open ".to_string(),
+                        style: StyledTextStyle {
+                            bold: true,
+                            ..StyledTextStyle::default()
+                        },
+                    },
+                    RichBodySegment::Image {
+                        image: RichBodyImage {
+                            source: RichBodyImageSource::LocalPath {
+                                path: "/tmp/chart.png".to_string(),
+                            },
+                            alt: Some("chart".to_string()),
+                        },
+                    },
+                ],
+            }),
+            metadata: Vec::new(),
+            actions: Vec::new(),
+        };
+
+        let encoded = serde_json::to_string(&item).unwrap();
+
+        assert!(encoded.contains("\"rich_body\""));
+        assert!(encoded.contains("\"kind\":\"text\""));
+        assert!(encoded.contains("\"bold\":true"));
+        assert!(encoded.contains("\"kind\":\"image\""));
+        assert!(encoded.contains("\"path\":\"/tmp/chart.png\""));
+        assert!(!encoded.contains("<img"));
     }
 }
