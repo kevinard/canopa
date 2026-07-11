@@ -47,7 +47,7 @@ This table is the complete capability vocabulary defined by Desktop Notification
 | `resident` | Implemented | Action invocation keeps resident notifications active. |
 | `sound-file`, `sound-name` | Implemented | Shown notifications play requested local files or themed sound names, with `sound-file` taking precedence and default sound fallback when explicit sounds are unavailable. |
 | `suppress-sound` | Implemented | Suppresses default, named, and file-backed notification sounds for the request. |
-| `transient` | Decoded, neutral | Does not yet change notification history retention. |
+| `transient` | Implemented | New transient notifications retain runtime presentation, actions, timeouts, sound, and sender lifecycle while remaining absent from persisted Notification History and the first Notification Center. A thread's initial request fixes retention across replacements. |
 | `urgency` | Implemented | Maps `0`, `1`, and `2` into low, normal, and critical behavior. |
 | `x`, `y` | Decoded, ignored | Wayland banner placement is daemon-owned; sender coordinates are not honored. |
 

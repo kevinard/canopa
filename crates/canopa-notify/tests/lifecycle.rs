@@ -436,6 +436,7 @@ async fn lifecycle_creates_shown_notification_through_history_and_returns_receip
                 has_image_payload: false,
                 actions: Vec::new(),
                 resident: false,
+                transient: false,
             },
             LifecycleDelivery::shown(),
             NotificationTimeout::Never,
@@ -532,6 +533,94 @@ async fn lifecycle_new_drop_gets_ephemeral_receipt_and_undefined_terminal_event(
 }
 
 #[tokio::test]
+async fn transient_thread_stays_runtime_only_across_replacement_and_action() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history.clone());
+    let mut notification = lifecycle_notification(None, "Transient");
+    notification.transient = true;
+    notification.actions = vec![NotificationAction::new("open", "Open")];
+
+    let created = lifecycle
+        .receive(
+            notification,
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+    let notification_id = created.sender_receipt().unwrap().notification_id;
+    assert!(notification_id < 0);
+    assert!(history.stored().is_empty());
+
+    let mut replacement = lifecycle_notification(Some(notification_id), "Replacement");
+    replacement.transient = false;
+    replacement.actions = vec![NotificationAction::new("open", "Open")];
+    let revised = lifecycle
+        .receive(
+            replacement,
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        revised.sender_receipt().unwrap().notification_id,
+        notification_id
+    );
+    let current = lifecycle.thread(notification_id).await.unwrap();
+    assert_eq!(current.accepted_notification.summary, "Replacement");
+    assert!(current.accepted_notification.transient);
+    assert_eq!(current.revision, 2);
+    assert!(history.stored().is_empty());
+
+    let invoked = lifecycle
+        .invoke_action(notification_id, "open")
+        .await
+        .unwrap();
+    assert!(invoked.raw().iter().any(|effect| matches!(
+        effect,
+        LifecycleEffect::ActionInvoked { notification_id: id, action_key, .. }
+            if *id == notification_id && action_key == "open"
+    )));
+    assert!(lifecycle.thread(notification_id).await.is_err());
+    assert!(history.stored().is_empty());
+}
+
+#[tokio::test]
+async fn retained_thread_cannot_be_weakened_by_transient_replacement_hint() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history.clone());
+    let original = lifecycle
+        .receive(
+            lifecycle_notification(None, "Retained"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap()
+        .sender_receipt()
+        .unwrap();
+    let mut replacement = lifecycle_notification(Some(original.notification_id), "Still retained");
+    replacement.transient = true;
+
+    lifecycle
+        .receive(
+            replacement,
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+
+    let stored = history.stored();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].accepted_notification.summary, "Still retained");
+    assert!(!stored[0].accepted_notification.transient);
+    assert_eq!(stored[0].revision, 2);
+}
+
+#[tokio::test]
 async fn lifecycle_missing_replacement_target_creates_new_thread() {
     let history = MemoryHistory::default();
     let lifecycle = NotificationLifecycle::new(history.clone());
@@ -606,6 +695,7 @@ fn lifecycle_notification(replaces_id: Option<i64>, summary: &str) -> AcceptedNo
         has_image_payload: false,
         actions: Vec::new(),
         resident: false,
+        transient: false,
     }
 }
 

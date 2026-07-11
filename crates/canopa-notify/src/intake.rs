@@ -58,6 +58,7 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
             has_image_payload: false,
             actions: input.actions,
             resident: input.resident,
+            transient: input.transient,
         },
         image_data: input.image_data,
         sound: NotificationSoundRequest {

@@ -324,6 +324,7 @@ impl NotificationThreadRecord {
                 has_image_payload: false,
                 actions,
                 resident: self.resident,
+                transient: false,
             },
             status: self.status,
             delivery_outcome: self.delivery_outcome,
@@ -651,6 +652,9 @@ impl NotificationHistory for SqlitePersistedState {
         &self,
         thread: NewNotificationThread,
     ) -> anyhow::Result<NotificationThread> {
+        if thread.accepted_notification.transient {
+            anyhow::bail!("transient notifications cannot be written to persisted history");
+        }
         let record = NotificationThreadRecord::from_new_thread(thread)?;
         let sql = notification_thread_insert_sql();
         let id = record
@@ -671,6 +675,9 @@ impl NotificationHistory for SqlitePersistedState {
         thread: NotificationThread,
         precondition: PersistPrecondition,
     ) -> anyhow::Result<NotificationThread> {
+        if thread.accepted_notification.transient {
+            anyhow::bail!("transient notifications cannot be written to persisted history");
+        }
         let record = NotificationThreadRecord::from_thread(thread)?;
         let thread_id = record.id()?;
         let expected_revision = match precondition {
@@ -707,6 +714,16 @@ impl NotificationHistory for SqlitePersistedState {
 mod tests {
     use super::*;
     use crate::{NotificationBodyImage, NotificationBodySegment, NotificationBodyStyle};
+
+    #[tokio::test]
+    async fn persisted_history_rejects_transient_threads() {
+        let (_temp, storage) = open_history(10).await;
+        let mut thread = new_thread("runtime only", NotificationStatus::Active, now_millis());
+        thread.accepted_notification.transient = true;
+
+        assert!(storage.create_thread(thread).await.is_err());
+        assert!(storage.snapshot().await.unwrap().history.is_empty());
+    }
 
     #[tokio::test]
     async fn create_thread_prunes_inactive_history_after_write() {
@@ -1127,6 +1144,7 @@ mod tests {
             has_image_payload: false,
             actions: Vec::new(),
             resident: false,
+            transient: false,
         }
     }
 

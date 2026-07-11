@@ -254,7 +254,7 @@ impl NotificationRuntime {
         notification_id: i64,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
-        let thread = self.storage.thread(notification_id).await?;
+        let thread = self.lifecycle.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
         }

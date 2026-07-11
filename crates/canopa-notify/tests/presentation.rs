@@ -107,6 +107,42 @@ async fn non_headless_daemon_presents_visible_banner_content() {
 }
 
 #[tokio::test]
+async fn transient_notification_uses_banner_runtime_without_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter,
+    ))
+    .await
+    .unwrap();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            expire_timeout: NotificationTimeout::Never,
+            image_data: Some(test_image_data()),
+            ..notification_with_body("Screenshot", "Captured", "Runtime preview")
+        })
+        .await
+        .unwrap();
+
+    assert!(is_visible(
+        &daemon.visible_banners().await,
+        receipt.notification_id
+    ));
+    assert!(daemon.visible_banners().await[0].image.is_some());
+    assert!(daemon.snapshot().await.unwrap().history.is_empty());
+
+    daemon
+        .dismiss_notification(receipt.notification_id)
+        .await
+        .unwrap();
+    assert!(daemon.visible_banners().await.is_empty());
+    assert!(daemon.snapshot().await.unwrap().history.is_empty());
+}
+
+#[tokio::test]
 async fn non_headless_daemon_presents_ordered_body_image_segments() {
     let temp = tempfile::tempdir().unwrap();
     let body_image_path = temp.path().join("chart.png");

@@ -108,6 +108,40 @@ async fn notify_control_returns_active_notifications() {
 }
 
 #[tokio::test]
+async fn notification_center_omits_transient_runtime_notifications() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new(daemon.clone());
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("Preview", "Runtime only")
+        })
+        .await
+        .unwrap();
+
+    let projection = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap();
+    assert_eq!(
+        projection,
+        ControlReply::NotificationCenterProjection(canopa_notify::NotificationCenterProjection {
+            groups: vec![]
+        })
+    );
+
+    control
+        .execute(ControlCommand::InvokeNotificationAction {
+            notification_id: receipt.notification_id,
+            action_key: "open".to_string(),
+        })
+        .await
+        .unwrap();
+    assert!(daemon.snapshot().await.unwrap().history.is_empty());
+}
+
+#[tokio::test]
 async fn notify_control_builds_notification_center_projection() {
     let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());

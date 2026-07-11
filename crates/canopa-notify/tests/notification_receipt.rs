@@ -4,8 +4,8 @@ mod daemon_support;
 mod notifications;
 
 use canopa_notify::{
-    NotificationImageData, NotificationInput, NotificationVisualReference, SenderCloseReason,
-    SenderEvent, Urgency,
+    Daemon, DaemonOptions, NotificationImageData, NotificationInput, NotificationTimeout,
+    NotificationVisualReference, SenderCloseReason, SenderEvent, Urgency,
 };
 use notifications::{blank_notification, notification_with_body};
 
@@ -72,6 +72,46 @@ async fn empty_noop_notifications_bypass_delivery_policy() {
 
     assert_eq!(receipt.delivery_outcome.as_str(), "dropped");
     assert!(daemon.delivery_decision_logs().await.is_empty());
+}
+
+#[tokio::test]
+async fn transient_notification_never_enters_history_or_survives_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let daemon = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    let mut events = daemon.subscribe_sender_events();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            expire_timeout: NotificationTimeout::Never,
+            ..notification_with_body("Transient App", "Status", "Runtime only")
+        })
+        .await
+        .unwrap();
+
+    assert!(receipt.notification_id < 0);
+    assert!(daemon.snapshot().await.unwrap().active.is_empty());
+    assert!(daemon.snapshot().await.unwrap().history.is_empty());
+    daemon
+        .close_notification(receipt.notification_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        events.recv().await.unwrap(),
+        SenderEvent::NotificationClosed {
+            notification_id: receipt.notification_id,
+            reason: SenderCloseReason::Closed,
+        }
+    );
+    drop(daemon);
+
+    let restarted = Daemon::open(DaemonOptions::headless(database))
+        .await
+        .unwrap();
+    assert!(restarted.snapshot().await.unwrap().history.is_empty());
 }
 
 #[tokio::test]

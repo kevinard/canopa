@@ -550,6 +550,100 @@ async fn dev_dbus_noop_notification_returns_nonzero_sender_id_without_history() 
 }
 
 #[tokio::test]
+async fn dev_dbus_transient_notification_expires_without_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = test_bus_name("Transient");
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let mut closed_signals = proxy.receive_signal("NotificationClosed").await.unwrap();
+    let hints = HashMap::from([("transient".to_string(), OwnedValue::from(true))]);
+
+    let id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Screenshot",
+                0u32,
+                "",
+                "Captured",
+                "Runtime only",
+                Vec::<String>::new(),
+                hints,
+                0i32,
+            ),
+        )
+        .await
+        .unwrap();
+    let replacement_id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Screenshot",
+                id,
+                "",
+                "Captured again",
+                "Still runtime only",
+                Vec::<String>::new(),
+                HashMap::from([("transient".to_string(), OwnedValue::from(true))]),
+                50i32,
+            ),
+        )
+        .await
+        .unwrap();
+    assert_eq!(replacement_id, id);
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(1), closed_signals.next())
+        .await
+        .unwrap()
+        .unwrap();
+    let (closed_id, reason): (u32, u32) = signal.body().deserialize().unwrap();
+    assert_eq!((closed_id, reason), (id, 1));
+
+    let output = Command::cargo_bin("canopa-notify")
+        .unwrap()
+        .args([
+            "ctl",
+            "--socket",
+            support::path_arg(&socket),
+            "active",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(
+        !String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("Captured")
+    );
+    let close_result: zbus::Result<()> = proxy.call("CloseNotification", &(id,)).await;
+    assert!(close_result.is_err());
+
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
 async fn dev_dbus_policy_drop_closes_reserved_sender_id_without_history() {
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("control.sock");

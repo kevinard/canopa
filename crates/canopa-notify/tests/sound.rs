@@ -97,6 +97,23 @@ async fn shown_notification_plays_default_sound_once() {
 }
 
 #[tokio::test]
+async fn transient_notification_plays_sound_without_entering_history() {
+    let sound = RecordingSoundPresenter::available();
+    let daemon = open_graphical_daemon(sound.clone()).await;
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            ..notification("Chat", "Typing")
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(sound.playback()[0].notification_id, receipt.notification_id);
+    assert!(daemon.snapshot().await.unwrap().history.is_empty());
+}
+
+#[tokio::test]
 async fn suppress_sound_prevents_default_and_requested_sound() {
     let sound = RecordingSoundPresenter::available();
     let daemon = open_graphical_daemon(sound.clone()).await;

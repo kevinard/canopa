@@ -222,6 +222,7 @@ fn accepted_notification(app_identity: &str, urgency: Urgency) -> AcceptedNotifi
         has_image_payload: false,
         actions: Vec::new(),
         resident: false,
+        transient: false,
     }
 }
 

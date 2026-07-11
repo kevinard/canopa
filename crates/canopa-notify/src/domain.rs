@@ -171,6 +171,8 @@ pub struct AcceptedNotification {
     pub has_image_payload: bool,
     pub actions: Vec<NotificationAction>,
     pub resident: bool,
+    #[serde(default)]
+    pub transient: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

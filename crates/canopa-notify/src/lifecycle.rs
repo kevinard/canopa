@@ -4,7 +4,9 @@ use crate::{
     NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
     SenderCloseReason, SenderEvent,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
@@ -249,7 +251,8 @@ pub struct NotificationLifecycle<H> {
     history: H,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     timeout_defaults: NotificationTimeoutDefaults,
-    next_dropped_notification_id: Arc<AtomicI64>,
+    transient_threads: Arc<Mutex<HashMap<i64, NotificationThread>>>,
+    next_ephemeral_notification_id: Arc<AtomicI64>,
 }
 
 impl<H> NotificationLifecycle<H>
@@ -284,7 +287,8 @@ where
             history,
             clock: Arc::new(clock),
             timeout_defaults,
-            next_dropped_notification_id: Arc::new(AtomicI64::new(-1)),
+            transient_threads: Arc::new(Mutex::new(HashMap::new())),
+            next_ephemeral_notification_id: Arc::new(AtomicI64::new(-1)),
         }
     }
 
@@ -304,7 +308,6 @@ where
             let expected_revision = existing.revision;
             let thread = self.revised_thread(existing, notification, delivery.clone());
             let thread = self
-                .history
                 .persist_thread(
                     thread,
                     PersistPrecondition::ExpectedRevision(expected_revision),
@@ -322,10 +325,12 @@ where
             return Ok(LifecycleEffects::new(effects));
         }
 
-        let thread = self
-            .history
-            .create_thread(self.new_thread(notification, delivery.clone()))
-            .await?;
+        let new_thread = self.new_thread(notification, delivery.clone());
+        let thread = if new_thread.accepted_notification.transient {
+            self.create_transient_thread(new_thread)
+        } else {
+            self.history.create_thread(new_thread).await?
+        };
         let mut effects = vec![LifecycleEffect::ThreadCreated(thread.clone())];
         if delivery.outcome == DeliveryOutcome::Silenced {
             effects.push(LifecycleEffect::ThreadSilenced(thread.clone()));
@@ -357,7 +362,7 @@ where
         }
 
         let notification_id = self
-            .next_dropped_notification_id
+            .next_ephemeral_notification_id
             .fetch_sub(1, Ordering::Relaxed);
         Ok(LifecycleEffects::new(vec![
             LifecycleEffect::NotificationDropped { replaces_id: None },
@@ -389,12 +394,11 @@ where
             return Ok(None);
         };
 
-        if let Ok(existing) = self.history.thread(replaces_id).await {
+        if let Ok(existing) = self.thread(replaces_id).await {
             return Ok(Some(existing));
         }
 
         Ok(self
-            .history
             .active_threads()
             .await?
             .into_iter()
@@ -420,7 +424,7 @@ where
         notification_id: i64,
         revision: i64,
     ) -> anyhow::Result<LifecycleEffects> {
-        let thread = self.history.thread(notification_id).await?;
+        let thread = self.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active || thread.revision != revision {
             return Ok(LifecycleEffects::empty());
         }
@@ -436,7 +440,7 @@ where
 
     pub async fn clear_active_notifications(&self) -> anyhow::Result<LifecycleEffects> {
         let mut effects = LifecycleEffects::empty();
-        for thread in self.history.active_threads().await? {
+        for thread in self.active_threads().await? {
             effects.extend(self.dismiss(thread.id).await?);
         }
         Ok(effects)
@@ -447,7 +451,7 @@ where
         notification_id: i64,
         action_key: &str,
     ) -> anyhow::Result<LifecycleEffects> {
-        let thread = self.history.thread(notification_id).await?;
+        let thread = self.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
         }
@@ -498,7 +502,7 @@ where
         notification_id: i64,
         status: NotificationStatus,
     ) -> anyhow::Result<LifecycleEffects> {
-        let thread = self.history.thread(notification_id).await?;
+        let thread = self.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
         }
@@ -506,7 +510,6 @@ where
         let expected_revision = thread.revision;
         let thread = self.transitioned_thread(thread, status);
         let thread = self
-            .history
             .persist_thread(
                 thread,
                 PersistPrecondition::ExpectedActiveRevision(expected_revision),
@@ -548,9 +551,10 @@ where
     fn revised_thread(
         &self,
         mut thread: NotificationThread,
-        notification: AcceptedNotification,
+        mut notification: AcceptedNotification,
         delivery: LifecycleDelivery,
     ) -> NotificationThread {
+        notification.transient = thread.accepted_notification.transient;
         thread.accepted_notification = notification;
         thread.status = NotificationStatus::Active;
         thread.delivery_outcome = delivery.outcome;
@@ -575,6 +579,91 @@ where
 
     fn now_millis(&self) -> i64 {
         (self.clock)()
+    }
+
+    pub async fn thread(&self, notification_id: i64) -> anyhow::Result<NotificationThread> {
+        if let Some(thread) = self
+            .transient_threads
+            .lock()
+            .unwrap()
+            .get(&notification_id)
+            .cloned()
+        {
+            return Ok(thread);
+        }
+
+        self.history.thread(notification_id).await
+    }
+
+    async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
+        let mut threads = self.history.active_threads().await?;
+        threads.extend(
+            self.transient_threads
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|thread| thread.status == NotificationStatus::Active)
+                .cloned(),
+        );
+        Ok(threads)
+    }
+
+    fn create_transient_thread(&self, thread: NewNotificationThread) -> NotificationThread {
+        let id = self
+            .next_ephemeral_notification_id
+            .fetch_sub(1, Ordering::Relaxed);
+        let thread = NotificationThread {
+            id,
+            accepted_notification: thread.accepted_notification,
+            status: thread.status,
+            delivery_outcome: thread.delivery_outcome,
+            rule_reference: thread.rule_reference,
+            revision: 1,
+            created_at: thread.created_at,
+            updated_at: thread.updated_at,
+            closed_at: None,
+        };
+        self.transient_threads
+            .lock()
+            .unwrap()
+            .insert(id, thread.clone());
+        thread
+    }
+
+    async fn persist_thread(
+        &self,
+        thread: NotificationThread,
+        precondition: PersistPrecondition,
+    ) -> anyhow::Result<NotificationThread> {
+        if !thread.accepted_notification.transient {
+            return self.history.persist_thread(thread, precondition).await;
+        }
+
+        let mut transient_threads = self.transient_threads.lock().unwrap();
+        let current = transient_threads
+            .get(&thread.id)
+            .ok_or_else(|| anyhow::anyhow!("transient notification {} is not active", thread.id))?;
+        let expected_revision = match precondition {
+            PersistPrecondition::ExpectedRevision(revision)
+            | PersistPrecondition::ExpectedActiveRevision(revision) => revision,
+        };
+        let requires_active =
+            matches!(precondition, PersistPrecondition::ExpectedActiveRevision(_));
+        if current.revision != expected_revision
+            || (requires_active && current.status != NotificationStatus::Active)
+        {
+            anyhow::bail!(
+                "failed to update transient notification {}; lifecycle precondition was not met",
+                thread.id
+            );
+        }
+
+        if thread.status == NotificationStatus::Active {
+            transient_threads.insert(thread.id, thread.clone());
+        } else {
+            transient_threads.remove(&thread.id);
+        }
+        Ok(thread)
     }
 
     fn push_timeout_effect(
