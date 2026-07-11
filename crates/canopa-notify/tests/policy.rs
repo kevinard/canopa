@@ -9,6 +9,8 @@ use canopa_notify::{
     NotificationInput, Urgency, UserRule,
 };
 use notifications::{notification, notification_with_body};
+use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::{Connection, Executor, SqliteConnection};
 
 #[test]
 fn delivery_policy_applies_user_rule_and_do_not_disturb_precedence() {
@@ -163,7 +165,13 @@ async fn do_not_disturb_silences_non_critical_notifications_but_allows_critical_
         .unwrap();
 
     let snapshot = daemon.snapshot().await.unwrap();
-    assert!(!is_banner_visible(&daemon, before_dnd.notification_id).await);
+    assert_eq!(
+        thread(&snapshot, before_dnd.notification_id)
+            .delivery_outcome
+            .as_str(),
+        "shown"
+    );
+    assert!(is_banner_visible(&daemon, before_dnd.notification_id).await);
     assert_eq!(
         thread(&snapshot, normal.notification_id)
             .delivery_outcome
@@ -265,7 +273,7 @@ async fn user_rules_take_precedence_over_config_rules_and_are_persisted() {
 }
 
 #[tokio::test]
-async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replacements() {
+async fn user_rule_changes_leave_existing_threads_unchanged_and_apply_to_replacements() {
     let daemon = daemon_support::open_headless_daemon().await;
 
     let original = daemon
@@ -282,9 +290,9 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
         thread(&snapshot, original.notification_id)
             .delivery_outcome
             .as_str(),
-        "silenced"
+        "shown"
     );
-    assert!(!is_banner_visible(&daemon, original.notification_id).await);
+    assert!(is_banner_visible(&daemon, original.notification_id).await);
 
     daemon
         .receive_notification(NotificationInput {
@@ -300,6 +308,13 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
             .body,
         "Silenced update"
     );
+    assert_eq!(
+        thread(&snapshot, original.notification_id)
+            .delivery_outcome
+            .as_str(),
+        "silenced"
+    );
+    assert!(!is_banner_visible(&daemon, original.notification_id).await);
 
     daemon
         .upsert_user_rule(UserRule::for_app("Chat", DeliveryOutcome::Dropped))
@@ -321,6 +336,82 @@ async fn silenced_and_dropped_user_rules_affect_active_notifications_and_replace
             .body,
         "Silenced update"
     );
+}
+
+#[tokio::test]
+async fn loaded_policy_state_is_not_reloaded_from_sqlite_per_request() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    seed.set_do_not_disturb(true).await.unwrap();
+    seed.upsert_user_rule(UserRule::for_app("Chat", DeliveryOutcome::Dropped))
+        .await
+        .unwrap();
+    drop(seed);
+
+    let daemon = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    let options = SqliteConnectOptions::new().filename(&database);
+    let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
+    connection
+        .execute("UPDATE daemon_metadata SET value = 'false' WHERE key = 'do_not_disturb'")
+        .await
+        .unwrap();
+    connection.execute("DELETE FROM user_rules").await.unwrap();
+
+    assert!(daemon.do_not_disturb().await.unwrap());
+    assert_eq!(daemon.user_rules().await.unwrap().len(), 1);
+
+    let dropped = daemon
+        .receive_notification(NotificationInput {
+            urgency: Urgency::Critical,
+            ..notification("Chat", "Still dropped by loaded rule")
+        })
+        .await
+        .unwrap();
+    assert_eq!(dropped.delivery_outcome, DeliveryOutcome::Dropped);
+
+    let silenced = daemon
+        .receive_notification(notification("Unknown", "Still silenced by loaded DND"))
+        .await
+        .unwrap();
+    assert_eq!(silenced.delivery_outcome, DeliveryOutcome::Silenced);
+}
+
+#[tokio::test]
+async fn configuration_rule_changes_apply_only_to_subsequent_requests() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+        .await
+        .unwrap();
+    let config = temp.path().join("notify.kdl");
+    let existing = daemon
+        .receive_notification(notification("Chat", "Already visible"))
+        .await
+        .unwrap();
+
+    std::fs::write(
+        &config,
+        r#"rule "silence-chat" app="Chat" outcome="silenced""#,
+    )
+    .unwrap();
+    daemon.reload_configuration_file(&config).await.unwrap();
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(
+        thread(&snapshot, existing.notification_id).delivery_outcome,
+        DeliveryOutcome::Shown
+    );
+    assert!(is_banner_visible(&daemon, existing.notification_id).await);
+
+    let subsequent = daemon
+        .receive_notification(notification("Chat", "Now silenced"))
+        .await
+        .unwrap();
+    assert_eq!(subsequent.delivery_outcome, DeliveryOutcome::Silenced);
 }
 
 #[tokio::test]

@@ -320,33 +320,6 @@ async fn replacement_with_ineligible_timeout_cancels_previous_timeout() {
 }
 
 #[tokio::test]
-async fn delivery_re_evaluation_away_from_shown_cancels_timeout() {
-    let history = MemoryHistory::default();
-    let lifecycle = NotificationLifecycle::new(history);
-
-    lifecycle
-        .receive(
-            lifecycle_notification(None, "Original"),
-            LifecycleDelivery::shown(),
-            NotificationTimeout::Milliseconds(42),
-        )
-        .await
-        .unwrap();
-
-    let effects = lifecycle
-        .apply_delivery_decision(1, LifecycleDelivery::silenced("user:Chat:*"))
-        .await
-        .unwrap();
-
-    assert!(effects.timeout_changes().any(|change| {
-        matches!(
-            change,
-            NotificationTimeoutChange::Cancelled { notification_id: 1 }
-        )
-    }));
-}
-
-#[tokio::test]
 async fn lifecycle_transition_owns_status_timestamps_and_precondition() {
     let history = MemoryHistory::default();
     let clock = Arc::new(AtomicI64::new(100));

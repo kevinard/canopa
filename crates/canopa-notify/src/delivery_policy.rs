@@ -55,6 +55,57 @@ impl LoadedDeliveryPolicyState {
     pub fn builder() -> LoadedDeliveryPolicyStateBuilder {
         LoadedDeliveryPolicyStateBuilder::default()
     }
+
+    pub(crate) fn do_not_disturb(&self) -> bool {
+        self.do_not_disturb
+    }
+
+    pub(crate) fn user_rules(&self) -> &[DeliveryPolicyRule] {
+        &self.user_rules
+    }
+
+    pub(crate) fn with_do_not_disturb(mut self, enabled: bool) -> Self {
+        self.do_not_disturb = enabled;
+        self
+    }
+
+    pub(crate) fn with_user_rule(mut self, rule: DeliveryPolicyRule) -> Self {
+        match self.user_rules.iter_mut().find(|existing| {
+            existing.app_identity == rule.app_identity && existing.urgency == rule.urgency
+        }) {
+            Some(existing) => *existing = rule,
+            None => self.user_rules.push(rule),
+        }
+        self.sort_user_rules();
+        self
+    }
+
+    pub(crate) fn without_user_rule(
+        mut self,
+        app_identity: &str,
+        urgency: Option<Urgency>,
+    ) -> Self {
+        self.user_rules
+            .retain(|rule| rule.app_identity != app_identity || rule.urgency != urgency);
+        self
+    }
+
+    pub(crate) fn with_config_rules(mut self, rules: Vec<DeliveryPolicyRule>) -> Self {
+        self.config_rules = rules;
+        self
+    }
+
+    fn sort_user_rules(&mut self) {
+        self.user_rules.sort_by(|left, right| {
+            left.app_identity
+                .cmp(&right.app_identity)
+                .then_with(|| urgency_sort_key(left.urgency).cmp(urgency_sort_key(right.urgency)))
+        });
+    }
+}
+
+fn urgency_sort_key(urgency: Option<Urgency>) -> &'static str {
+    urgency.map(Urgency::as_str).unwrap_or("*")
 }
 
 #[derive(Clone, Debug, Default)]

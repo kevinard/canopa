@@ -1723,13 +1723,6 @@ impl NotificationBannerState {
             BannerLifecycleChange::ConsiderOpportunity(thread) => {
                 self.consider_banner_opportunity(thread);
             }
-            BannerLifecycleChange::ReconsiderVisible(thread) => {
-                if self.visible.contains_key(&thread.id) {
-                    self.update_visible_banner(thread);
-                } else if self.overflow.contains_key(&thread.id) {
-                    self.reconsider_overflow(thread);
-                }
-            }
             BannerLifecycleChange::Remove { notification_id } => {
                 self.remove_banner(notification_id);
             }
@@ -1760,14 +1753,6 @@ impl NotificationBannerState {
             } else {
                 self.overflow.insert(thread.id, thread);
             }
-        }
-    }
-
-    fn reconsider_overflow(&mut self, thread: NotificationThread) {
-        if is_banner_eligible(&thread) {
-            self.overflow.insert(thread.id, thread);
-        } else {
-            self.overflow.remove(&thread.id);
         }
     }
 

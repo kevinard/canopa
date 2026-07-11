@@ -64,7 +64,6 @@ pub enum LifecycleEffect {
     SenderReceipt(NotificationReceipt),
     ThreadCreated(NotificationThread),
     ThreadRevised(NotificationThread),
-    ThreadDeliveryChanged(NotificationThread),
     ThreadSilenced(NotificationThread),
     ThreadDismissed(NotificationThread),
     ThreadExpired(NotificationThread),
@@ -176,9 +175,6 @@ impl LifecycleEffects {
             LifecycleEffect::ThreadCreated(thread) | LifecycleEffect::ThreadRevised(thread) => {
                 Some(BannerLifecycleChange::ConsiderOpportunity(thread.clone()))
             }
-            LifecycleEffect::ThreadDeliveryChanged(thread) => {
-                Some(BannerLifecycleChange::ReconsiderVisible(thread.clone()))
-            }
             LifecycleEffect::ThreadSilenced(thread)
             | LifecycleEffect::ThreadDismissed(thread)
             | LifecycleEffect::ThreadExpired(thread)
@@ -234,7 +230,6 @@ pub enum NotificationTimeoutChange {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BannerLifecycleChange {
     ConsiderOpportunity(NotificationThread),
-    ReconsiderVisible(NotificationThread),
     Remove { notification_id: i64 },
 }
 
@@ -444,44 +439,6 @@ where
         Ok(effects)
     }
 
-    pub async fn apply_delivery_decision(
-        &self,
-        notification_id: i64,
-        delivery: LifecycleDelivery,
-    ) -> anyhow::Result<LifecycleEffects> {
-        let thread = self.history.thread(notification_id).await?;
-        if thread.status != NotificationStatus::Active {
-            anyhow::bail!("notification {notification_id} is not active");
-        }
-
-        let expected_revision = thread.revision;
-        let updated = self.delivery_changed_thread(thread, delivery.clone());
-        let updated = self
-            .history
-            .persist_thread(
-                updated,
-                PersistPrecondition::ExpectedActiveRevision(expected_revision),
-            )
-            .await?;
-        let mut effects = vec![LifecycleEffect::ThreadDeliveryChanged(updated.clone())];
-
-        match delivery.outcome {
-            DeliveryOutcome::Shown => {}
-            DeliveryOutcome::Silenced => {
-                effects.push(LifecycleEffect::ThreadSilenced(updated.clone()));
-                effects.push(LifecycleEffect::NotificationTimeoutCancelled { notification_id });
-            }
-            DeliveryOutcome::Dropped => {
-                effects.push(LifecycleEffect::NotificationDropped {
-                    replaces_id: Some(notification_id),
-                });
-                effects.extend(self.close(notification_id).await?);
-            }
-        }
-
-        Ok(LifecycleEffects::new(effects))
-    }
-
     pub async fn mark_active_stale(&self) -> anyhow::Result<LifecycleEffects> {
         let mut effects = Vec::new();
         for thread in self.history.active_threads().await? {
@@ -566,16 +523,6 @@ where
         thread.revision += 1;
         thread.updated_at = self.now_millis();
         thread.closed_at = None;
-        thread
-    }
-
-    fn delivery_changed_thread(
-        &self,
-        mut thread: NotificationThread,
-        delivery: LifecycleDelivery,
-    ) -> NotificationThread {
-        thread.delivery_outcome = delivery.outcome;
-        thread.rule_reference = delivery.rule_reference;
         thread
     }
 

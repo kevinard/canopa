@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{Mutex as AsyncMutex, broadcast, watch};
 
 const ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -45,7 +45,8 @@ pub(crate) struct NotificationRuntime {
     sender_event_changes: broadcast::Sender<SenderEvent>,
     decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
     timeout_tasks: Arc<Mutex<HashMap<i64, TimeoutTask>>>,
-    config_rules: Arc<Mutex<Vec<DeliveryPolicyRule>>>,
+    loaded_policy_state: Arc<Mutex<LoadedDeliveryPolicyState>>,
+    policy_changes: Arc<AsyncMutex<()>>,
     state_version: Arc<AtomicU64>,
     state_changes: watch::Sender<u64>,
 }
@@ -109,6 +110,16 @@ impl NotificationRuntime {
             NotificationLifecycle::with_timeout_defaults(storage.clone(), timeout_defaults);
         lifecycle.mark_active_stale().await?;
         storage.prune_history().await?;
+        let loaded_policy_state = LoadedDeliveryPolicyState::builder()
+            .do_not_disturb(storage.do_not_disturb().await?)
+            .user_rules(
+                storage
+                    .user_rules()
+                    .await?
+                    .into_iter()
+                    .map(DeliveryPolicyRule::from),
+            )
+            .build();
         let (state_changes, _state_change_receiver) = watch::channel(0);
         let (sender_event_changes, _sender_event_receiver) = broadcast::channel(128);
         let activation_token_capable = activation_token_provider.available();
@@ -127,7 +138,8 @@ impl NotificationRuntime {
             sender_event_changes,
             decision_logs: Arc::new(Mutex::new(Vec::new())),
             timeout_tasks: Arc::new(Mutex::new(HashMap::new())),
-            config_rules: Arc::new(Mutex::new(Vec::new())),
+            loaded_policy_state: Arc::new(Mutex::new(loaded_policy_state)),
+            policy_changes: Arc::new(AsyncMutex::new(())),
             state_version: Arc::new(AtomicU64::new(0)),
             state_changes,
         })
@@ -140,7 +152,7 @@ impl NotificationRuntime {
         expire_timeout: NotificationTimeout,
         sound_request: NotificationSoundRequest,
     ) -> anyhow::Result<NotificationReceipt> {
-        let policy = self.delivery_policy().await?;
+        let policy = self.delivery_policy();
         let decision = policy.decide(&notification);
         self.record_decision(decision.log.clone());
         let sound_app_identity = notification.app_identity.clone();
@@ -274,25 +286,42 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn set_do_not_disturb(&self, enabled: bool) -> anyhow::Result<()> {
+        let _change = self.policy_changes.lock().await;
         self.storage.set_do_not_disturb(enabled).await?;
-        self.reevaluate_active_notifications().await?;
+        self.replace_loaded_policy_state(|state| state.with_do_not_disturb(enabled));
         self.notify_state_changed();
         Ok(())
     }
 
     pub(crate) async fn do_not_disturb(&self) -> anyhow::Result<bool> {
-        self.storage.do_not_disturb().await
+        Ok(self.loaded_policy_state.lock().unwrap().do_not_disturb())
     }
 
     pub(crate) async fn upsert_user_rule(&self, rule: UserRule) -> anyhow::Result<()> {
+        let _change = self.policy_changes.lock().await;
         self.storage.upsert_user_rule(&rule).await?;
-        self.reevaluate_active_notifications().await?;
+        self.replace_loaded_policy_state(|state| {
+            state.with_user_rule(DeliveryPolicyRule::from(rule))
+        });
         self.notify_state_changed();
         Ok(())
     }
 
     pub(crate) async fn user_rules(&self) -> anyhow::Result<Vec<UserRule>> {
-        self.storage.user_rules().await
+        Ok(self
+            .loaded_policy_state
+            .lock()
+            .unwrap()
+            .user_rules()
+            .iter()
+            .cloned()
+            .map(|rule| UserRule {
+                app_identity: rule.app_identity,
+                urgency: rule.urgency,
+                outcome: rule.outcome,
+                reference: rule.reference,
+            })
+            .collect())
     }
 
     pub(crate) async fn remove_user_rule(
@@ -300,8 +329,9 @@ impl NotificationRuntime {
         app_identity: &str,
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
+        let _change = self.policy_changes.lock().await;
         self.storage.remove_user_rule(app_identity, urgency).await?;
-        self.reevaluate_active_notifications().await?;
+        self.replace_loaded_policy_state(|state| state.without_user_rule(app_identity, urgency));
         self.notify_state_changed();
         Ok(())
     }
@@ -311,14 +341,14 @@ impl NotificationRuntime {
         rules: Vec<DeliveryPolicyRule>,
         sound_settings: NotificationSoundSettings,
     ) -> anyhow::Result<()> {
-        *self.config_rules.lock().unwrap() = rules;
+        let _change = self.policy_changes.lock().await;
         if !self.headless {
             if !sound_settings.enabled {
                 self.sound_presenter.stop_all_sounds();
             }
             self.sound_presenter.apply_sound_settings(sound_settings)?;
         }
-        self.reevaluate_active_notifications().await?;
+        self.replace_loaded_policy_state(|state| state.with_config_rules(rules));
         self.notify_state_changed();
         Ok(())
     }
@@ -359,37 +389,20 @@ impl NotificationRuntime {
         }
     }
 
-    async fn delivery_policy(&self) -> anyhow::Result<DeliveryPolicy> {
-        let config_rules = self.config_rules.lock().unwrap().clone();
-        let user_rules = self.storage.user_rules().await?;
-        let do_not_disturb = self.storage.do_not_disturb().await?;
-        let state = LoadedDeliveryPolicyState::builder()
-            .do_not_disturb(do_not_disturb)
-            .user_rules(user_rules.into_iter().map(DeliveryPolicyRule::from))
-            .config_rules(config_rules)
-            .build();
-        Ok(DeliveryPolicy::new(state))
+    fn delivery_policy(&self) -> DeliveryPolicy {
+        DeliveryPolicy::new(self.loaded_policy_state.lock().unwrap().clone())
     }
 
     fn record_decision(&self, log: DeliveryDecisionLog) {
         self.decision_logs.lock().unwrap().push(log);
     }
 
-    async fn reevaluate_active_notifications(&self) -> anyhow::Result<()> {
-        let active = self.snapshot().await?.active;
-        let policy = self.delivery_policy().await?;
-        let mut all_effects = LifecycleEffects::empty();
-        for thread in active {
-            let decision = policy.decide(&thread.accepted_notification);
-            let effects = self
-                .lifecycle
-                .apply_delivery_decision(thread.id, LifecycleDelivery::from_decision(&decision))
-                .await?;
-            all_effects.extend(effects);
-        }
-        self.apply_lifecycle_effects_and_notify(&all_effects)
-            .await?;
-        Ok(())
+    fn replace_loaded_policy_state(
+        &self,
+        replace: impl FnOnce(LoadedDeliveryPolicyState) -> LoadedDeliveryPolicyState,
+    ) {
+        let mut state = self.loaded_policy_state.lock().unwrap();
+        *state = replace(state.clone());
     }
 
     async fn apply_lifecycle_effects_and_notify(
@@ -536,7 +549,6 @@ impl NotificationRuntime {
                 LifecycleEffect::SenderReceipt(_)
                 | LifecycleEffect::ThreadCreated(_)
                 | LifecycleEffect::ThreadRevised(_)
-                | LifecycleEffect::ThreadDeliveryChanged(_)
                 | LifecycleEffect::ThreadSilenced(_)
                 | LifecycleEffect::ThreadDismissed(_)
                 | LifecycleEffect::ThreadExpired(_)
@@ -609,7 +621,6 @@ impl NotificationRuntime {
                     runtime_images.remove(*notification_id);
                 }
                 LifecycleEffect::SenderReceipt(_)
-                | LifecycleEffect::ThreadDeliveryChanged(_)
                 | LifecycleEffect::ThreadSilenced(_)
                 | LifecycleEffect::ThreadDismissed(_)
                 | LifecycleEffect::ThreadExpired(_)
@@ -643,7 +654,6 @@ impl NotificationRuntime {
                 LifecycleEffect::SenderReceipt(_)
                 | LifecycleEffect::ThreadCreated(_)
                 | LifecycleEffect::ThreadRevised(_)
-                | LifecycleEffect::ThreadDeliveryChanged(_)
                 | LifecycleEffect::NotificationDropped { replaces_id: None }
                 | LifecycleEffect::NotificationTimeoutScheduled { .. }
                 | LifecycleEffect::NotificationTimeoutCancelled { .. }

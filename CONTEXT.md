@@ -320,18 +320,29 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Do Not Disturb** is part of loaded **Delivery Policy** rule state.
 - **Loaded Delivery Policy State** is assembled outside **Delivery Policy** from the **User Rule Store**, **Notification Configuration**, and persisted **Do Not Disturb** state.
 - The **Delivery Policy** module may provide the builder for **Loaded Delivery Policy State**, but the **Notification Daemon** supplies already-loaded rule and **Do Not Disturb** facts.
+- The **Notification Daemon** does not accept notifications until persisted **Do Not Disturb** and **User Rule Store** state has hydrated **Loaded Delivery Policy State**; failure to load persisted policy state aborts startup.
+- After **Notification Daemon** startup, **Delivery Policy** uses **Loaded Delivery Policy State** without querying the **User Rule Store**, **Notification Configuration**, or persisted **Do Not Disturb** state while handling a **Notification Server Request**.
+- **Loaded Delivery Policy State** changes by atomic replacement of a complete immutable snapshot. A **Delivery Policy** decision observes one complete snapshot, never a partial change from one rule source.
+- Policy-source changes are serialized so concurrent **Do Not Disturb**, **User Rule Store**, and **Notification Configuration** changes cannot overwrite one another.
+- A valid **Notification Configuration** reload replaces its complete rule slice in **Loaded Delivery Policy State**; partial configuration slices never become visible.
+- **Do Not Disturb** and **User Rule Store** changes are persisted before replacing **Loaded Delivery Policy State**; persistence failure leaves the loaded state unchanged.
+- Failures before a policy change commit point reject the operation and leave **Loaded Delivery Policy State** unchanged.
+- After startup, policy reads such as **Do Not Disturb**, **User Rule Store** rules, and diagnostic policy inspection come from one **Loaded Delivery Policy State** snapshot rather than querying persisted sources.
+- A committed policy change is immediately visible through policy reads and applies to subsequently handled **Notification Server Requests**.
 - A **Silenced Notification** remains visible in notification history.
 - Unknown **App Identities** are allowed unless a **Notification Rule** says otherwise.
 - Notification delivery policy uses ordered **Notification Rules** where the first decisive matching rule determines whether a notification is shown, silenced, or dropped.
 - **Delivery Policy** runs before **Notification Lifecycle** for both new and replacement notifications.
 - **Delivery Policy** decides the **Delivery Outcome**; **Notification Lifecycle** acts on that outcome, including dropped notifications.
 - **Delivery Policy** evaluates an immutable **Accepted Notification** and **Loaded Delivery Policy State**; it does not query storage or configuration files directly.
+- The **Notification Runtime** owns the complete **Loaded Delivery Policy State** workflow: startup hydration, immutable snapshot ownership, policy reads, persisted policy changes, configuration rule-slice replacement, and policy-change serialization.
+- **Delivery Policy** remains a pure module that evaluates an **Accepted Notification** against one immutable **Loaded Delivery Policy State** snapshot; it does not own loading or mutation workflows.
 - First-version **Delivery Policy** rules use **App Identity** and **Notification Urgency** from the **Accepted Notification**, but the module interface accepts the full shape so future rules can use additional normalized facts.
 - Initial **Notification Body Markup** styles do not affect **Delivery Policy** decisions.
-- **Delivery Policy** uses the same decision path for new notifications, replacement notifications, and **Active Notification** re-evaluation unless a future **Notification Rule** explicitly depends on that context.
+- **Delivery Policy** uses the same decision path for new and replacement notifications unless a future **Notification Rule** explicitly depends on that context.
 - Default allowing of unknown **App Identities** is **Delivery Policy** implementation, not a synthetic rule supplied by the **Notification Daemon**.
 - **Delivery Policy** produces the diagnostic explanation used for a **Delivery Decision Log**; the **Notification Daemon** records the log without inferring policy reasons.
-- **Delivery Policy** precedence and diagnostic behavior are tested through the **Delivery Policy** module interface; **Notification Daemon** tests cover rule loading, re-evaluation, and **Notification Lifecycle** wiring.
+- **Delivery Policy** precedence and diagnostic behavior are tested through the **Delivery Policy** module interface; **Notification Daemon** tests cover rule loading, atomic snapshot replacement, and **Notification Lifecycle** wiring.
 - **Delivery Decision Logs** are diagnostic debug logs, not first-version metrics.
 - Normal **Delivery Decision Logs** do not include **Notification Content**.
 - Normal diagnostics for **Notification Body Markup** degradation do not include **Raw Notification Body**, body text snippets, or sender-provided body attribute values.
@@ -340,7 +351,6 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Replacement handling belongs to **Notification Lifecycle**, not **Notification Intake** or **Notification History**.
 - Revising a **Notification Thread** replaces its retained **Accepted Notification** facts while preserving thread identity and lifecycle metadata.
 - Revising a **Notification Thread** does not inherit omitted **Notification App Icon** or **Notification Image** facts from the previous revision.
-- **Active Notification** re-evaluation uses the **Accepted Notification** retained by each **Notification Thread** instead of reconstructing a separate policy input shape.
 - **Notification Lifecycle** owns lifecycle timestamps on **Notification Threads**.
 - **Notification Lifecycle** may use an internal clock seam so lifecycle timestamp behavior is testable without moving timestamp ownership into **Notification History**.
 - **Delivery Outcome** and **Rule Reference** are **Notification Thread** lifecycle metadata, not **Accepted Notification** facts.
@@ -449,7 +459,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Reloading invalid **Notification Configuration** keeps the previous valid configuration active.
 - The configuration module validates the full **Notification Configuration** before dispatching normalized configuration slices to runtime or presentation modules.
 - Only a valid **Notification Configuration** is dispatched; partial configuration slice application is not a successful reload.
-- Valid **Notification Configuration** reloads re-evaluate **Active Notifications** under the new rules.
+- A committed **Notification Configuration** rule slice applies to subsequently handled **Notification Server Requests** without re-evaluating **Active Notifications**.
 - **Notification Daemon** and configuration errors are reported through logs and control surfaces, not self-notifications.
 - The first version includes minimal **Control Commands** for daemon status, active notifications, **Do Not Disturb**, and configuration reload.
 - First-version **Control Commands** are diagnostic-first and do not promise stable output formats unless explicitly documented.
@@ -469,8 +479,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Configuration** rules may define a **Config Rule ID**; unnamed config rules use generated references.
 - **Notification Rules** from the **User Rule Store** take precedence over rules from **Notification Configuration**.
 - Changes to **Notification Rules** affect future notifications and do not retroactively delete or reclassify **Notification History**.
-- Changes to **Notification Rules** re-evaluate **Active Notifications** without changing inactive **Notification History** records.
-- Rule re-evaluation may close existing **Notification Banners** but does not create late banners for older active notifications.
+- Changes to **Notification Rules** and **Do Not Disturb** do not re-evaluate **Active Notifications**. Existing **Notification Threads** keep their **Delivery Outcome** and **Notification Banner** state.
+- A replacement **Notification Server Request** is evaluated under the current **Loaded Delivery Policy State**, even when it revises a **Notification Thread** created under an older policy snapshot.
 - **Notification History** may store a **Rule Reference** for the rule that produced a historical **Delivery Outcome**.
 - **Notification History** does not persist raw **Notification Image** payloads by default.
 - **Notification History** may retain sender-provided **Notification Image** references.

@@ -425,7 +425,7 @@ async fn old_timeout_does_not_expire_replacement_revision() {
 }
 
 #[tokio::test]
-async fn silencing_active_notification_cancels_pending_timeout() {
+async fn policy_change_does_not_reclassify_or_cancel_existing_timeout() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(
         DaemonOptions::headless(temp.path().join("history.db")).with_notification_timeout_defaults(
@@ -457,8 +457,8 @@ async fn silencing_active_notification_cancels_pending_timeout() {
         .iter()
         .find(|thread| thread.id == receipt.notification_id)
         .unwrap();
-    assert_eq!(thread.status.as_str(), "active");
-    assert_eq!(thread.delivery_outcome, DeliveryOutcome::Silenced);
+    assert_eq!(thread.status.as_str(), "expired");
+    assert_eq!(thread.delivery_outcome, DeliveryOutcome::Shown);
 }
 
 #[tokio::test]

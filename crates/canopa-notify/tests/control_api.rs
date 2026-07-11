@@ -342,10 +342,21 @@ async fn notify_control_applies_notification_center_interaction_commands() {
             .unwrap(),
         ControlReply::CommandApplied
     );
+    let snapshot = daemon.snapshot().await.unwrap();
     assert_eq!(
-        daemon.snapshot().await.unwrap().active[0].delivery_outcome,
-        DeliveryOutcome::Silenced
+        snapshot
+            .active
+            .iter()
+            .find(|thread| thread.id == receipt.notification_id)
+            .unwrap()
+            .delivery_outcome,
+        DeliveryOutcome::Shown
     );
+    let subsequent = daemon
+        .receive_notification(notification("Chat", "Subsequent message"))
+        .await
+        .unwrap();
+    assert_eq!(subsequent.delivery_outcome, DeliveryOutcome::Silenced);
 
     assert_eq!(
         control
@@ -357,8 +368,15 @@ async fn notify_control_applies_notification_center_interaction_commands() {
             .unwrap(),
         ControlReply::CommandApplied
     );
+    let snapshot = daemon.snapshot().await.unwrap();
     assert_eq!(
-        daemon.snapshot().await.unwrap().history[0].status.as_str(),
+        snapshot
+            .history
+            .iter()
+            .find(|thread| thread.id == receipt.notification_id)
+            .unwrap()
+            .status
+            .as_str(),
         "dismissed"
     );
 
@@ -369,7 +387,9 @@ async fn notify_control_applies_notification_center_interaction_commands() {
             .unwrap(),
         ControlReply::CommandApplied
     );
-    assert_eq!(daemon.snapshot().await.unwrap().history.len(), 0);
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(snapshot.history.len(), 1);
+    assert_eq!(snapshot.history[0].id, subsequent.notification_id);
 }
 
 #[tokio::test]
