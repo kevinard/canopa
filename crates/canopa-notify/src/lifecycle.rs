@@ -2,9 +2,10 @@ use crate::clock::now_millis;
 use crate::{
     AcceptedNotification, DeliveryDecision, DeliveryOutcome, NotificationReceipt,
     NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
-    SenderEvent,
+    SenderCloseReason, SenderEvent,
 };
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,7 +88,7 @@ pub enum LifecycleEffect {
     },
     SenderClosed {
         notification_id: i64,
-        reason: NotificationStatus,
+        reason: SenderCloseReason,
     },
 }
 
@@ -182,13 +183,8 @@ impl LifecycleEffects {
             | LifecycleEffect::ThreadStale(thread) => Some(BannerLifecycleChange::Remove {
                 notification_id: thread.id,
             }),
-            LifecycleEffect::NotificationDropped {
-                replaces_id: Some(notification_id),
-            } => Some(BannerLifecycleChange::Remove {
-                notification_id: *notification_id,
-            }),
             LifecycleEffect::SenderReceipt(_)
-            | LifecycleEffect::NotificationDropped { replaces_id: None }
+            | LifecycleEffect::NotificationDropped { .. }
             | LifecycleEffect::NotificationTimeoutScheduled { .. }
             | LifecycleEffect::NotificationTimeoutCancelled { .. }
             | LifecycleEffect::ActionInvoked { .. }
@@ -253,6 +249,7 @@ pub struct NotificationLifecycle<H> {
     history: H,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     timeout_defaults: NotificationTimeoutDefaults,
+    next_dropped_notification_id: Arc<AtomicI64>,
 }
 
 impl<H> NotificationLifecycle<H>
@@ -287,6 +284,7 @@ where
             history,
             clock: Arc::new(clock),
             timeout_defaults,
+            next_dropped_notification_id: Arc::new(AtomicI64::new(-1)),
         }
     }
 
@@ -297,15 +295,9 @@ where
         timeout: NotificationTimeout,
     ) -> anyhow::Result<LifecycleEffects> {
         if delivery.outcome == DeliveryOutcome::Dropped {
-            return Ok(LifecycleEffects::new(vec![
-                LifecycleEffect::NotificationDropped {
-                    replaces_id: notification.replaces_id,
-                },
-                LifecycleEffect::SenderReceipt(NotificationReceipt {
-                    notification_id: 0,
-                    delivery_outcome: DeliveryOutcome::Dropped,
-                }),
-            ]));
+            return self
+                .drop_notification(&notification.app_identity, notification.replaces_id)
+                .await;
         }
 
         if let Some(existing) = self.replacement_target_thread(&notification).await? {
@@ -346,11 +338,54 @@ where
         Ok(LifecycleEffects::new(effects))
     }
 
+    pub async fn drop_notification(
+        &self,
+        app_identity: &str,
+        replaces_id: Option<i64>,
+    ) -> anyhow::Result<LifecycleEffects> {
+        let replacement_target = self.replacement_target(app_identity, replaces_id).await?;
+        if let Some(existing) = replacement_target {
+            return Ok(LifecycleEffects::new(vec![
+                LifecycleEffect::NotificationDropped {
+                    replaces_id: Some(existing.id),
+                },
+                LifecycleEffect::SenderReceipt(NotificationReceipt {
+                    notification_id: existing.id,
+                    delivery_outcome: DeliveryOutcome::Dropped,
+                }),
+            ]));
+        }
+
+        let notification_id = self
+            .next_dropped_notification_id
+            .fetch_sub(1, Ordering::Relaxed);
+        Ok(LifecycleEffects::new(vec![
+            LifecycleEffect::NotificationDropped { replaces_id: None },
+            LifecycleEffect::SenderReceipt(NotificationReceipt {
+                notification_id,
+                delivery_outcome: DeliveryOutcome::Dropped,
+            }),
+            LifecycleEffect::SenderClosed {
+                notification_id,
+                reason: SenderCloseReason::Undefined,
+            },
+        ]))
+    }
+
     async fn replacement_target_thread(
         &self,
         notification: &AcceptedNotification,
     ) -> anyhow::Result<Option<NotificationThread>> {
-        let Some(replaces_id) = notification.replaces_id else {
+        self.replacement_target(&notification.app_identity, notification.replaces_id)
+            .await
+    }
+
+    async fn replacement_target(
+        &self,
+        app_identity: &str,
+        replaces_id: Option<i64>,
+    ) -> anyhow::Result<Option<NotificationThread>> {
+        let Some(replaces_id) = replaces_id else {
             return Ok(None);
         };
 
@@ -365,7 +400,7 @@ where
             .into_iter()
             .filter(|thread| {
                 thread.accepted_notification.replaces_id == Some(replaces_id)
-                    && thread.accepted_notification.app_identity == notification.app_identity
+                    && thread.accepted_notification.app_identity == app_identity
             })
             .max_by_key(|thread| (thread.updated_at, thread.id)))
     }
@@ -489,7 +524,7 @@ where
             LifecycleEffect::NotificationTimeoutCancelled { notification_id },
             LifecycleEffect::SenderClosed {
                 notification_id,
-                reason: status,
+                reason: status.into(),
             },
         ]))
     }

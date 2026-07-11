@@ -4,7 +4,8 @@ mod daemon_support;
 mod notifications;
 
 use canopa_notify::{
-    NotificationImageData, NotificationInput, NotificationVisualReference, Urgency,
+    NotificationImageData, NotificationInput, NotificationVisualReference, SenderCloseReason,
+    SenderEvent, Urgency,
 };
 use notifications::{blank_notification, notification_with_body};
 
@@ -41,6 +42,7 @@ async fn default_allowed_notification_is_persisted_as_an_active_thread() {
 #[tokio::test]
 async fn empty_noop_notifications_are_dropped_without_history() {
     let daemon = daemon_support::open_headless_daemon().await;
+    let mut events = daemon.subscribe_sender_events();
 
     let receipt = daemon
         .receive_notification(blank_notification("Blank Sender"))
@@ -48,6 +50,14 @@ async fn empty_noop_notifications_are_dropped_without_history() {
         .unwrap();
 
     assert_eq!(receipt.delivery_outcome.as_str(), "dropped");
+    assert_ne!(receipt.notification_id, 0);
+    assert_eq!(
+        events.recv().await.unwrap(),
+        SenderEvent::NotificationClosed {
+            notification_id: receipt.notification_id,
+            reason: SenderCloseReason::Undefined,
+        }
+    );
     assert_eq!(daemon.snapshot().await.unwrap().history.len(), 0);
 }
 

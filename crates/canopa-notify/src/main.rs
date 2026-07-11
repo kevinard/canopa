@@ -318,16 +318,18 @@ impl NotificationServer {
             input.replaces_id = Some(internal_id);
         }
 
-        let receipt = self
-            .daemon
-            .receive_notification(input)
+        self.daemon
+            .receive_notification_with_receipt_hook(input, |receipt| {
+                if receipt.notification_id != 0 {
+                    self.sender_ids.register(
+                        sender_id.value,
+                        receipt.notification_id,
+                        sender_id.origin,
+                    );
+                }
+            })
             .await
             .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
-
-        if receipt.notification_id > 0 {
-            self.sender_ids
-                .register(sender_id.value, receipt.notification_id, sender_id.origin);
-        }
 
         Ok(sender_id.value)
     }
@@ -486,12 +488,12 @@ fn empty_dbus_error() -> zbus::fdo::Error {
     zbus::fdo::Error::Failed(String::new())
 }
 
-fn close_reason_code(reason: canopa_notify::NotificationStatus) -> u32 {
+fn close_reason_code(reason: canopa_notify::SenderCloseReason) -> u32 {
     match reason {
-        canopa_notify::NotificationStatus::Expired => 1,
-        canopa_notify::NotificationStatus::Dismissed => 2,
-        canopa_notify::NotificationStatus::Closed => 3,
-        _ => 4,
+        canopa_notify::SenderCloseReason::Expired => 1,
+        canopa_notify::SenderCloseReason::Dismissed => 2,
+        canopa_notify::SenderCloseReason::Closed => 3,
+        canopa_notify::SenderCloseReason::Undefined => 4,
     }
 }
 

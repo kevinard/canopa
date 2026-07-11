@@ -730,6 +730,37 @@ pub enum NotificationStatus {
     Stale,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SenderCloseReason {
+    Expired,
+    Dismissed,
+    Closed,
+    Undefined,
+}
+
+impl SenderCloseReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Expired => "expired",
+            Self::Dismissed => "dismissed",
+            Self::Closed => "closed",
+            Self::Undefined => "undefined",
+        }
+    }
+}
+
+impl From<NotificationStatus> for SenderCloseReason {
+    fn from(status: NotificationStatus) -> Self {
+        match status {
+            NotificationStatus::Expired => Self::Expired,
+            NotificationStatus::Dismissed => Self::Dismissed,
+            NotificationStatus::Closed => Self::Closed,
+            NotificationStatus::Active | NotificationStatus::Stale => Self::Undefined,
+        }
+    }
+}
+
 impl NotificationStatus {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -909,7 +940,7 @@ pub enum SenderEvent {
     },
     NotificationClosed {
         notification_id: i64,
-        reason: NotificationStatus,
+        reason: SenderCloseReason,
     },
 }
 

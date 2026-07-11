@@ -1,7 +1,7 @@
 use crate::{
-    AcceptedNotification, DeliveryOutcome, NotificationBodyContent, NotificationBodyImage,
+    AcceptedNotification, NotificationBodyContent, NotificationBodyImage,
     NotificationBodyImageSource, NotificationBodySegment, NotificationBodyStyle,
-    NotificationImageData, NotificationInput, NotificationReceipt, NotificationSoundRequest,
+    NotificationImageData, NotificationInput, NotificationSoundRequest,
 };
 
 const MAX_BODY_CONTENT_SEGMENTS: usize = 256;
@@ -9,7 +9,10 @@ const MAX_BODY_CONTENT_SEGMENTS: usize = 256;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NotificationIntakeResult {
     Accepted(Box<AcceptedNotificationInput>),
-    NoOpDropped(NotificationReceipt),
+    NoOpDropped {
+        app_identity: String,
+        replaces_id: Option<i64>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,10 +35,10 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
         && input.category.is_none()
         && input.progress.is_none()
     {
-        return NotificationIntakeResult::NoOpDropped(NotificationReceipt {
-            notification_id: 0,
-            delivery_outcome: DeliveryOutcome::Dropped,
-        });
+        return NotificationIntakeResult::NoOpDropped {
+            app_identity,
+            replaces_id: input.replaces_id,
+        };
     }
 
     NotificationIntakeResult::Accepted(Box::new(AcceptedNotificationInput {
@@ -762,7 +765,9 @@ mod tests {
                 assert!(!input.notification.has_image_payload);
                 assert!(input.image_data.is_some());
             }
-            NotificationIntakeResult::NoOpDropped(_) => panic!("expected accepted intake result"),
+            NotificationIntakeResult::NoOpDropped { .. } => {
+                panic!("expected accepted intake result")
+            }
         }
     }
 
@@ -776,10 +781,10 @@ mod tests {
 
         assert_eq!(
             result,
-            NotificationIntakeResult::NoOpDropped(NotificationReceipt {
-                notification_id: 0,
-                delivery_outcome: DeliveryOutcome::Dropped,
-            })
+            NotificationIntakeResult::NoOpDropped {
+                app_identity: "Blank Sender".to_string(),
+                replaces_id: None,
+            }
         );
     }
 
@@ -817,10 +822,10 @@ mod tests {
                 body: r#"<b></b><img src="ignored.png"/>"#.to_string(),
                 ..NotificationInput::default()
             }),
-            NotificationIntakeResult::NoOpDropped(NotificationReceipt {
-                notification_id: 0,
-                delivery_outcome: DeliveryOutcome::Dropped,
-            })
+            NotificationIntakeResult::NoOpDropped {
+                app_identity: "No Visible Body".to_string(),
+                replaces_id: None,
+            }
         );
 
         assert!(matches!(
@@ -844,7 +849,9 @@ mod tests {
     fn accepted(result: NotificationIntakeResult) -> AcceptedNotification {
         match result {
             NotificationIntakeResult::Accepted(input) => input.notification,
-            NotificationIntakeResult::NoOpDropped(_) => panic!("expected accepted intake result"),
+            NotificationIntakeResult::NoOpDropped { .. } => {
+                panic!("expected accepted intake result")
+            }
         }
     }
 

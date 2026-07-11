@@ -327,7 +327,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - No-op detection uses the visible **Notification Body** fallback produced from interpreted **Notification Body Markup**, not the raw sender body text.
 - **Notification Intake** validates sender input and rejects no-op notifications before **Delivery Policy**.
 - No-op **Notification Intake** rejection has the same sender-visible **Delivery Outcome** as a **Dropped Notification**.
-- No-op **Notification Intake** rejection returns directly from intake; it does not enter **Delivery Policy** or **Notification Lifecycle**.
+- No-op **Notification Intake** rejection bypasses **Delivery Policy** but enters **Notification Lifecycle** as a dropped request so sender-visible closure is consistent.
 - An **Accepted Notification** may carry the sender-provided replacement target, but interpreting replacement behavior belongs to **Notification Lifecycle**, not **Notification Intake**.
 - **Do Not Disturb** silences non-critical notifications while still allowing critical **Notification Banners** by default.
 - **Do Not Disturb** state persists across **Notification Daemon** restarts.
@@ -371,11 +371,13 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Delivery Outcome** and **Rule Reference** are **Notification Thread** lifecycle metadata, not **Accepted Notification** facts.
 - Notification delivery policy applies to replacement notifications; a silenced replacement updates history and closes any visible **Notification Banner** for the thread.
 - A dropped replacement is handled by **Notification Lifecycle** without revising the existing **Notification Thread**.
+- A dropped replacement leaves the existing **Notification Banner**, runtime image, **Notification Timeout**, and sender-visible notification ID unchanged.
 - An eligible replacement notification may create a **Notification Banner** even when the previous revision did not.
 - A dropped replacement notification does not update **Notification History**.
 - A replacement notification whose **Notification Timeout** makes expiration ineligible explicitly cancels any pending expiration for the revised **Notification Thread**.
 - Re-evaluating an **Active Notification** from shown to silenced or dropped explicitly cancels any pending **Notification Timeout** expiration for that **Notification Thread**.
-- A **Dropped Notification** is immediately closed from the **Sender Notification Lifecycle** perspective.
+- A new **Dropped Notification** receives a valid nonzero sender-visible ID and is immediately closed from the **Sender Notification Lifecycle** perspective with freedesktop reason `4`; its internal ephemeral ID is never a **Notification Thread** ID.
+- A dropped replacement does not close the **Sender Notification Lifecycle** of the existing **Active Notification**; a later `CloseNotification` for its sender-visible ID still closes that original thread normally.
 - A **Silenced Notification** may remain an **Active Notification** without a visible **Notification Banner**.
 - **Notification History** persists across **Notification Daemon** restarts by default.
 - Default **Notification History** retention keeps up to 30 days and 1,000 **Notification Threads**, with either limit allowed to remove older history.

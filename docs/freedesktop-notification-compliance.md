@@ -12,7 +12,7 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 | `CloseNotification` | Implemented | Closes active notifications and emits `NotificationClosed` with reason `3`. |
 | `GetCapabilities` | Implemented | Advertises only the capabilities listed below. |
 | `GetServerInformation` | Implemented | Reports spec version `1.3`. |
-| `NotificationClosed` | Implemented | Emits reasons for expired, dismissed, closed, and unknown terminal states. |
+| `NotificationClosed` | Implemented | Emits reasons for expired, dismissed, sender-closed, and undefined terminal states. New no-op and policy-dropped requests return a nonzero ID and then emit reason `4`; a dropped replacement preserves the existing notification lifecycle. |
 | `ActionInvoked` | Implemented | Preserves opaque, case-sensitive sender action keys. |
 | `ActivationToken` | Implemented | Emits before `ActionInvoked` when a user-originated notification interaction can obtain a Wayland activation token. |
 

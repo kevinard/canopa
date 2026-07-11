@@ -145,12 +145,13 @@ impl NotificationRuntime {
         })
     }
 
-    pub(crate) async fn receive_notification(
+    pub(crate) async fn receive_notification_with_receipt_hook(
         &self,
         notification: AcceptedNotification,
         image_data: Option<NotificationImageData>,
         expire_timeout: NotificationTimeout,
         sound_request: NotificationSoundRequest,
+        on_receipt: impl FnOnce(&NotificationReceipt),
     ) -> anyhow::Result<NotificationReceipt> {
         let policy = self.delivery_policy();
         let decision = policy.decide(&notification);
@@ -167,6 +168,7 @@ impl NotificationRuntime {
             )
             .await?;
         let receipt = effects.sender_receipt()?;
+        on_receipt(&receipt);
         self.apply_request_images(&effects, image_data);
         let sound = (decision.outcome == DeliveryOutcome::Shown && !sound_request.suppress)
             .then_some(NotificationSoundPlayback {
@@ -177,6 +179,22 @@ impl NotificationRuntime {
             });
         self.apply_lifecycle_effects_and_notify_with_sound(&effects, sound)
             .await?;
+        Ok(receipt)
+    }
+
+    pub(crate) async fn drop_notification(
+        &self,
+        app_identity: String,
+        replaces_id: Option<i64>,
+        on_receipt: impl FnOnce(&NotificationReceipt),
+    ) -> anyhow::Result<NotificationReceipt> {
+        let effects = self
+            .lifecycle
+            .drop_notification(&app_identity, replaces_id)
+            .await?;
+        let receipt = effects.sender_receipt()?;
+        on_receipt(&receipt);
+        self.apply_lifecycle_effects_and_notify(&effects).await?;
         Ok(receipt)
     }
 
@@ -615,18 +633,13 @@ impl NotificationRuntime {
                 LifecycleEffect::ThreadCreated(thread) | LifecycleEffect::ThreadRevised(thread) => {
                     runtime_images.replace(thread.id, thread.revision, image_data.clone());
                 }
-                LifecycleEffect::NotificationDropped {
-                    replaces_id: Some(notification_id),
-                } => {
-                    runtime_images.remove(*notification_id);
-                }
                 LifecycleEffect::SenderReceipt(_)
                 | LifecycleEffect::ThreadSilenced(_)
                 | LifecycleEffect::ThreadDismissed(_)
                 | LifecycleEffect::ThreadExpired(_)
                 | LifecycleEffect::ThreadClosed(_)
                 | LifecycleEffect::ThreadStale(_)
-                | LifecycleEffect::NotificationDropped { replaces_id: None }
+                | LifecycleEffect::NotificationDropped { .. }
                 | LifecycleEffect::NotificationTimeoutScheduled { .. }
                 | LifecycleEffect::NotificationTimeoutCancelled { .. }
                 | LifecycleEffect::ActionInvoked { .. }
@@ -646,15 +659,10 @@ impl NotificationRuntime {
                 | LifecycleEffect::ThreadStale(thread) => {
                     runtime_images.remove(thread.id);
                 }
-                LifecycleEffect::NotificationDropped {
-                    replaces_id: Some(notification_id),
-                } => {
-                    runtime_images.remove(*notification_id);
-                }
                 LifecycleEffect::SenderReceipt(_)
                 | LifecycleEffect::ThreadCreated(_)
                 | LifecycleEffect::ThreadRevised(_)
-                | LifecycleEffect::NotificationDropped { replaces_id: None }
+                | LifecycleEffect::NotificationDropped { .. }
                 | LifecycleEffect::NotificationTimeoutScheduled { .. }
                 | LifecycleEffect::NotificationTimeoutCancelled { .. }
                 | LifecycleEffect::ActionInvoked { .. }

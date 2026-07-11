@@ -34,8 +34,8 @@ pub use domain::{
     NotificationBodyStyle, NotificationImageData, NotificationInput, NotificationPosition,
     NotificationReceipt, NotificationSnapshot, NotificationSound, NotificationSoundPlayback,
     NotificationSoundRequest, NotificationSoundSettings, NotificationStatus, NotificationThread,
-    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference, SenderEvent,
-    Urgency, UserRule,
+    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference,
+    SenderCloseReason, SenderEvent, Urgency, UserRule,
 };
 pub use lifecycle::{
     BannerLifecycleChange, LifecycleDelivery, LifecycleEffect, LifecycleEffects,
@@ -168,18 +168,36 @@ impl Daemon {
         &self,
         input: NotificationInput,
     ) -> anyhow::Result<NotificationReceipt> {
+        self.receive_notification_with_receipt_hook(input, |_| {})
+            .await
+    }
+
+    pub async fn receive_notification_with_receipt_hook(
+        &self,
+        input: NotificationInput,
+        on_receipt: impl FnOnce(&NotificationReceipt),
+    ) -> anyhow::Result<NotificationReceipt> {
         let expire_timeout = input.expire_timeout;
         let accepted = match intake_notification(input) {
             NotificationIntakeResult::Accepted(accepted) => *accepted,
-            NotificationIntakeResult::NoOpDropped(receipt) => return Ok(receipt),
+            NotificationIntakeResult::NoOpDropped {
+                app_identity,
+                replaces_id,
+            } => {
+                return self
+                    .runtime
+                    .drop_notification(app_identity, replaces_id, on_receipt)
+                    .await;
+            }
         };
 
         self.runtime
-            .receive_notification(
+            .receive_notification_with_receipt_hook(
                 accepted.notification,
                 accepted.image_data,
                 expire_timeout,
                 accepted.sound,
+                on_receipt,
             )
             .await
     }

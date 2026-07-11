@@ -1,6 +1,7 @@
 mod support;
 
 use assert_cmd::Command;
+use canopa_notify::{Daemon, DaemonOptions, DeliveryOutcome, Urgency, UserRule};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -541,6 +542,7 @@ async fn dev_dbus_noop_notification_returns_nonzero_sender_id_without_history() 
     )
     .await
     .unwrap();
+    let mut closed_signals = proxy.receive_signal("NotificationClosed").await.unwrap();
 
     let id: u32 = proxy
         .call(
@@ -560,6 +562,15 @@ async fn dev_dbus_noop_notification_returns_nonzero_sender_id_without_history() 
         .unwrap();
 
     assert!(id > 0);
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(1), closed_signals.next())
+        .await
+        .unwrap()
+        .unwrap();
+    let (closed_id, reason): (u32, u32) = signal.body().deserialize().unwrap();
+    assert_eq!((closed_id, reason), (id, 4));
+
+    let close_result: zbus::Result<()> = proxy.call("CloseNotification", &(id,)).await;
+    assert!(close_result.is_err());
 
     let output = Command::cargo_bin("canopa-notify")
         .unwrap()
@@ -575,6 +586,185 @@ async fn dev_dbus_noop_notification_returns_nonzero_sender_id_without_history() 
     assert!(output.status.success());
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(!json.contains("Blank Sender"));
+
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
+async fn dev_dbus_policy_drop_closes_reserved_sender_id_without_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = test_bus_name("PolicyDrop");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    seed.upsert_user_rule(UserRule::for_app("Blocked", DeliveryOutcome::Dropped))
+        .await
+        .unwrap();
+    drop(seed);
+
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let mut closed_signals = proxy.receive_signal("NotificationClosed").await.unwrap();
+
+    let id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Blocked",
+                0u32,
+                "",
+                "Dropped",
+                "Not retained",
+                Vec::<String>::new(),
+                HashMap::<String, OwnedValue>::new(),
+                0i32,
+            ),
+        )
+        .await
+        .unwrap();
+    assert!(id > 0);
+
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(1), closed_signals.next())
+        .await
+        .unwrap()
+        .unwrap();
+    let (closed_id, reason): (u32, u32) = signal.body().deserialize().unwrap();
+    assert_eq!((closed_id, reason), (id, 4));
+    let close_result: zbus::Result<()> = proxy.call("CloseNotification", &(id,)).await;
+    assert!(close_result.is_err());
+
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
+async fn dev_dbus_dropped_replacement_preserves_original_sender_lifecycle() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = test_bus_name("DroppedReplacement");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    seed.upsert_user_rule(UserRule::for_app_urgency(
+        "Chat",
+        Urgency::Normal,
+        DeliveryOutcome::Dropped,
+    ))
+    .await
+    .unwrap();
+    drop(seed);
+
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let critical_hints = HashMap::from([("urgency".to_string(), OwnedValue::from(2u8))]);
+    let id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Chat",
+                0u32,
+                "",
+                "Original",
+                "Keep this body",
+                Vec::<String>::new(),
+                critical_hints,
+                0i32,
+            ),
+        )
+        .await
+        .unwrap();
+    let mut closed_signals = proxy.receive_signal("NotificationClosed").await.unwrap();
+
+    let replacement_id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Chat",
+                id,
+                "",
+                "Replacement",
+                "Must not overwrite",
+                Vec::<String>::new(),
+                HashMap::<String, OwnedValue>::new(),
+                0i32,
+            ),
+        )
+        .await
+        .unwrap();
+    assert_eq!(replacement_id, id);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), closed_signals.next())
+            .await
+            .is_err()
+    );
+
+    let output = Command::cargo_bin("canopa-notify")
+        .unwrap()
+        .args([
+            "ctl",
+            "--socket",
+            support::path_arg(&socket),
+            "active",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains("Keep this body"));
+    assert!(!json.contains("Must not overwrite"));
+
+    proxy
+        .call::<_, _, ()>("CloseNotification", &(id,))
+        .await
+        .unwrap();
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(1), closed_signals.next())
+        .await
+        .unwrap()
+        .unwrap();
+    let (closed_id, reason): (u32, u32) = signal.body().deserialize().unwrap();
+    assert_eq!((closed_id, reason), (id, 3));
 
     daemon.kill().ok();
     daemon.wait().ok();

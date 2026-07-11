@@ -8,7 +8,7 @@ use canopa_notify::{
     LifecycleDelivery, LifecycleEffect, NewNotificationThread, NotificationAction,
     NotificationBodyContent, NotificationHistory, NotificationInput, NotificationLifecycle,
     NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutChange,
-    PersistPrecondition, SenderEvent, Urgency,
+    PersistPrecondition, SenderCloseReason, SenderEvent, Urgency,
 };
 use notifications::notification;
 use std::sync::{
@@ -225,7 +225,7 @@ async fn lifecycle_expires_timeout_when_revision_matches() {
             event,
             SenderEvent::NotificationClosed {
                 notification_id: 1,
-                reason: NotificationStatus::Expired
+                reason: SenderCloseReason::Expired
             }
         )
     }));
@@ -358,7 +358,7 @@ async fn lifecycle_transition_owns_status_timestamps_and_precondition() {
             event,
             SenderEvent::NotificationClosed {
                 notification_id,
-                reason: NotificationStatus::Dismissed
+                reason: SenderCloseReason::Dismissed
             } if notification_id == thread.id
         )
     }));
@@ -489,13 +489,45 @@ async fn lifecycle_dropped_replacement_returns_receipt_without_revising_thread()
         }
     )));
     assert_eq!(
-        effects.sender_receipt().unwrap().delivery_outcome,
-        DeliveryOutcome::Dropped
+        effects.sender_receipt().unwrap(),
+        canopa_notify::NotificationReceipt {
+            notification_id: 1,
+            delivery_outcome: DeliveryOutcome::Dropped,
+        }
     );
+    assert!(effects.sender_events().next().is_none());
+    assert!(effects.banner_changes().next().is_none());
     assert!(
         !effects
             .timeout_changes()
             .any(|change| matches!(change, NotificationTimeoutChange::Cancelled { .. }))
+    );
+}
+
+#[tokio::test]
+async fn lifecycle_new_drop_gets_ephemeral_receipt_and_undefined_terminal_event() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history.clone());
+
+    let effects = lifecycle
+        .receive(
+            lifecycle_notification(None, "Dropped"),
+            LifecycleDelivery::dropped("user:Chat:*"),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+
+    let receipt = effects.sender_receipt().unwrap();
+    assert_ne!(receipt.notification_id, 0);
+    assert_eq!(receipt.delivery_outcome, DeliveryOutcome::Dropped);
+    assert!(history.stored().is_empty());
+    assert_eq!(
+        effects.sender_events().collect::<Vec<_>>(),
+        vec![SenderEvent::NotificationClosed {
+            notification_id: receipt.notification_id,
+            reason: SenderCloseReason::Undefined,
+        }]
     );
 }
 
