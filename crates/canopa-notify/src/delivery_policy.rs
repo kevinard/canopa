@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeliveryPolicyRule {
     pub app_identity: String,
+    pub category: Option<String>,
     pub urgency: Option<Urgency>,
     pub outcome: DeliveryOutcome,
     pub reference: String,
@@ -18,6 +19,23 @@ impl DeliveryPolicyRule {
     ) -> Self {
         Self {
             app_identity: app_identity.into(),
+            category: None,
+            urgency,
+            outcome,
+            reference: reference.into(),
+        }
+    }
+
+    pub fn for_category(
+        app_identity: impl Into<String>,
+        category: impl Into<String>,
+        urgency: Option<Urgency>,
+        outcome: DeliveryOutcome,
+        reference: impl Into<String>,
+    ) -> Self {
+        Self {
+            app_identity: app_identity.into(),
+            category: Some(category.into()),
             urgency,
             outcome,
             reference: reference.into(),
@@ -27,6 +45,11 @@ impl DeliveryPolicyRule {
     fn matches(&self, notification: &AcceptedNotification) -> bool {
         self.app_identity == notification.app_identity
             && self
+                .category
+                .as_ref()
+                .map(|category| notification.category.as_ref() == Some(category))
+                .unwrap_or(true)
+            && self
                 .urgency
                 .map(|rule_urgency| rule_urgency == notification.urgency)
                 .unwrap_or(true)
@@ -35,12 +58,13 @@ impl DeliveryPolicyRule {
 
 impl From<UserRule> for DeliveryPolicyRule {
     fn from(rule: UserRule) -> Self {
-        Self::new(
-            rule.app_identity,
-            rule.urgency,
-            rule.outcome,
-            rule.reference,
-        )
+        Self {
+            app_identity: rule.app_identity,
+            category: rule.category,
+            urgency: rule.urgency,
+            outcome: rule.outcome,
+            reference: rule.reference,
+        }
     }
 }
 
@@ -71,7 +95,9 @@ impl LoadedDeliveryPolicyState {
 
     pub(crate) fn with_user_rule(mut self, rule: DeliveryPolicyRule) -> Self {
         match self.user_rules.iter_mut().find(|existing| {
-            existing.app_identity == rule.app_identity && existing.urgency == rule.urgency
+            existing.app_identity == rule.app_identity
+                && existing.category == rule.category
+                && existing.urgency == rule.urgency
         }) {
             Some(existing) => *existing = rule,
             None => self.user_rules.push(rule),
@@ -83,10 +109,14 @@ impl LoadedDeliveryPolicyState {
     pub(crate) fn without_user_rule(
         mut self,
         app_identity: &str,
+        category: Option<&str>,
         urgency: Option<Urgency>,
     ) -> Self {
-        self.user_rules
-            .retain(|rule| rule.app_identity != app_identity || rule.urgency != urgency);
+        self.user_rules.retain(|rule| {
+            rule.app_identity != app_identity
+                || rule.category.as_deref() != category
+                || rule.urgency != urgency
+        });
         self
     }
 
@@ -99,6 +129,7 @@ impl LoadedDeliveryPolicyState {
         self.user_rules.sort_by(|left, right| {
             left.app_identity
                 .cmp(&right.app_identity)
+                .then_with(|| left.category.cmp(&right.category))
                 .then_with(|| urgency_sort_key(left.urgency).cmp(urgency_sort_key(right.urgency)))
         });
     }
@@ -215,18 +246,22 @@ impl DeliveryPolicy {
     }
 
     fn match_user_rule(&self, notification: &AcceptedNotification) -> Option<&DeliveryPolicyRule> {
-        self.state
-            .user_rules
-            .iter()
-            .find(|rule| {
+        let category = notification.category.as_deref();
+        [
+            (category, Some(notification.urgency)),
+            (category, None),
+            (None, Some(notification.urgency)),
+            (None, None),
+        ]
+        .into_iter()
+        .filter(|(rule_category, _)| category.is_some() || rule_category.is_none())
+        .find_map(|(rule_category, rule_urgency)| {
+            self.state.user_rules.iter().find(|rule| {
                 rule.app_identity == notification.app_identity
-                    && rule.urgency == Some(notification.urgency)
+                    && rule.category.as_deref() == rule_category
+                    && rule.urgency == rule_urgency
             })
-            .or_else(|| {
-                self.state.user_rules.iter().find(|rule| {
-                    rule.app_identity == notification.app_identity && rule.urgency.is_none()
-                })
-            })
+        })
     }
 }
 
@@ -262,6 +297,7 @@ impl DeliveryDecision {
             rule_reference: rule_reference.clone(),
             log: DeliveryDecisionLog {
                 app_identity: notification.app_identity.clone(),
+                category: notification.category.clone(),
                 urgency: notification.urgency,
                 delivery_outcome: outcome,
                 rule_reference,
@@ -274,6 +310,7 @@ impl DeliveryDecision {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeliveryDecisionLog {
     pub app_identity: String,
+    pub category: Option<String>,
     pub urgency: Urgency,
     pub delivery_outcome: DeliveryOutcome,
     pub rule_reference: Option<String>,

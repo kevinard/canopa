@@ -1,4 +1,7 @@
-use crate::{DeliveryOutcome, DeliveryPolicyRule, NotificationSoundSettings, Urgency};
+use crate::{
+    DeliveryOutcome, DeliveryPolicyRule, NotificationSoundSettings, Urgency,
+    normalize_notification_category,
+};
 use anyhow::Context;
 use kdl::{KdlDocument, KdlEntry, KdlNode};
 use std::path::Path;
@@ -96,13 +99,20 @@ impl NotificationConfiguration {
     fn delivery_policy_rules(&self) -> Vec<DeliveryPolicyRule> {
         self.rules
             .iter()
-            .map(|rule| {
-                DeliveryPolicyRule::new(
+            .map(|rule| match &rule.category {
+                Some(category) => DeliveryPolicyRule::for_category(
+                    rule.app_identity.clone(),
+                    category.clone(),
+                    rule.urgency,
+                    rule.outcome,
+                    rule.reference.clone(),
+                ),
+                None => DeliveryPolicyRule::new(
                     rule.app_identity.clone(),
                     rule.urgency,
                     rule.outcome,
                     rule.reference.clone(),
-                )
+                ),
             })
             .collect()
     }
@@ -115,6 +125,7 @@ impl NotificationConfiguration {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct NotificationConfigurationRule {
     app_identity: String,
+    category: Option<String>,
     urgency: Option<Urgency>,
     outcome: DeliveryOutcome,
     reference: String,
@@ -135,12 +146,20 @@ fn parse_rule(node: &KdlNode, rule_number: usize) -> anyhow::Result<Notification
         .urgency
         .map(|value| Urgency::parse_config_value(&value))
         .transpose()?;
+    let category = entries
+        .category
+        .map(|value| {
+            normalize_notification_category(&value)
+                .ok_or_else(|| anyhow::anyhow!("rule {rule_number} has invalid category"))
+        })
+        .transpose()?;
     let reference = entries
         .rule_id
         .unwrap_or_else(|| format!("config-rule-{rule_number}"));
 
     Ok(NotificationConfigurationRule {
         app_identity,
+        category,
         urgency,
         outcome,
         reference,
@@ -197,6 +216,7 @@ struct RuleEntries {
     rule_id: Option<String>,
     app_identity: Option<String>,
     outcome: Option<String>,
+    category: Option<String>,
     urgency: Option<String>,
 }
 
@@ -215,6 +235,9 @@ impl RuleEntries {
                 }
                 Some("outcome") => {
                     set_rule_string_property(&mut entries.outcome, entry, "outcome", rule_number)?
+                }
+                Some("category") => {
+                    set_rule_string_property(&mut entries.category, entry, "category", rule_number)?
                 }
                 Some("urgency") => {
                     set_rule_string_property(&mut entries.urgency, entry, "urgency", rule_number)?
@@ -299,7 +322,7 @@ mod tests {
     fn parses_kdl_notification_rules_into_delivery_policy_rules() {
         let configuration = NotificationConfiguration::parse(
             r#"
-            rule "quiet-chat" app="Chat" outcome="silenced"
+            rule "quiet-chat" app="Chat" category="im.received" outcome="silenced"
             rule app="Build" urgency="critical" outcome="drop"
             "#,
         )
@@ -308,6 +331,7 @@ mod tests {
         let rules = configuration.delivery_policy_rules();
         assert_eq!(rules.len(), 2);
         assert_eq!(rules[0].app_identity, "Chat");
+        assert_eq!(rules[0].category.as_deref(), Some("im.received"));
         assert_eq!(rules[0].outcome, DeliveryOutcome::Silenced);
         assert_eq!(rules[0].reference, "quiet-chat");
         assert_eq!(rules[1].app_identity, "Build");
@@ -386,6 +410,13 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(type_error.contains("property app must be a string"));
+
+        let category_error = NotificationConfiguration::parse(
+            r#"rule app="Chat" category="IM Received" outcome="drop""#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(category_error.contains("invalid category"));
     }
 
     #[test]
@@ -398,7 +429,11 @@ mod tests {
         loaded.reload_file(&config).unwrap();
         let valid_rules = loaded.delivery_policy_rules();
 
-        std::fs::write(&config, "not-a-rule").unwrap();
+        std::fs::write(
+            &config,
+            r#"rule app="Chat" category="bad category" outcome="drop""#,
+        )
+        .unwrap();
         assert!(loaded.reload_file(&config).is_err());
         assert!(loaded.error().is_some());
         assert_eq!(loaded.delivery_policy_rules(), valid_rules);

@@ -4,7 +4,7 @@ use crate::intake::interpreted_body_content;
 use crate::{
     AcceptedNotification, DeliveryOutcome, NewNotificationThread, NotificationBodyContent,
     NotificationHistory, NotificationSnapshot, NotificationStatus, NotificationThread,
-    PersistPrecondition, Urgency, UserRule,
+    PersistPrecondition, Urgency, UserRule, normalize_notification_category,
 };
 use anyhow::Context;
 use sqlx::query::Query;
@@ -318,7 +318,10 @@ impl NotificationThreadRecord {
                 body_content,
                 raw_body: self.raw_body,
                 urgency: self.urgency,
-                category: self.category,
+                category: self
+                    .category
+                    .as_deref()
+                    .and_then(normalize_notification_category),
                 progress: self.progress,
                 image_reference,
                 has_image_payload: false,
@@ -339,6 +342,7 @@ impl NotificationThreadRecord {
 
 struct UserRuleRow {
     app_identity: String,
+    category: Option<String>,
     urgency: Option<Urgency>,
     outcome: DeliveryOutcome,
     reference: String,
@@ -348,6 +352,7 @@ impl UserRuleRow {
     fn from_row(row: SqliteRow) -> anyhow::Result<Self> {
         Ok(Self {
             app_identity: row.try_get("app_identity")?,
+            category: category_from_key(&row.try_get::<String, _>("category")?),
             urgency: urgency_from_key(&row.try_get::<String, _>("urgency")?),
             outcome: DeliveryOutcome::from_persisted_str(&row.try_get::<String, _>("outcome")?),
             reference: row.try_get("reference")?,
@@ -357,6 +362,7 @@ impl UserRuleRow {
     fn into_user_rule(self) -> UserRule {
         UserRule {
             app_identity: self.app_identity,
+            category: self.category,
             urgency: self.urgency,
             outcome: self.outcome,
             reference: self.reference,
@@ -411,11 +417,12 @@ impl SqlitePersistedState {
             r#"
             CREATE TABLE IF NOT EXISTS user_rules (
                 app_identity TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT '',
                 urgency TEXT NOT NULL,
                 outcome TEXT NOT NULL,
                 reference TEXT NOT NULL,
                 updated_at INTEGER NOT NULL,
-                PRIMARY KEY (app_identity, urgency)
+                PRIMARY KEY (app_identity, category, urgency)
             )
             "#,
         )
@@ -457,12 +464,60 @@ impl SqlitePersistedState {
     }
 
     async fn migrate_schema(pool: &SqlitePool) -> anyhow::Result<()> {
+        Self::migrate_user_rule_categories(pool).await?;
         Self::add_nullable_column_if_missing(pool, "replaces_id", "INTEGER").await?;
         Self::add_nullable_column_if_missing(pool, "app_icon_json", "TEXT").await?;
         Self::add_nullable_column_if_missing(pool, "image_reference_json", "TEXT").await?;
         Self::add_nullable_column_if_missing(pool, "body_content_json", "TEXT").await?;
         Self::backfill_body_content(pool).await?;
 
+        Ok(())
+    }
+
+    async fn migrate_user_rule_categories(pool: &SqlitePool) -> anyhow::Result<()> {
+        let category_column: Option<String> = sqlx::query_scalar(
+            "SELECT name FROM pragma_table_info('user_rules') WHERE name = 'category'",
+        )
+        .fetch_optional(pool)
+        .await?;
+        if category_column.is_some() {
+            return Ok(());
+        }
+
+        let mut transaction = pool.begin().await?;
+        sqlx::query("ALTER TABLE user_rules RENAME TO legacy_user_rules")
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query(
+            r#"
+            CREATE TABLE user_rules (
+                app_identity TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT '',
+                urgency TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                reference TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (app_identity, category, urgency)
+            )
+            "#,
+        )
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO user_rules (
+                app_identity, category, urgency, outcome, reference, updated_at
+            )
+            SELECT app_identity, '', urgency, outcome, reference, updated_at
+            FROM legacy_user_rules
+            "#,
+        )
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query("DROP TABLE legacy_user_rules")
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -565,17 +620,19 @@ impl SqlitePersistedState {
     }
 
     pub(crate) async fn upsert_user_rule(&self, rule: &UserRule) -> anyhow::Result<()> {
+        rule.validate()?;
         sqlx::query(
             r#"
-            INSERT INTO user_rules (app_identity, urgency, outcome, reference, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5)
-            ON CONFLICT(app_identity, urgency) DO UPDATE SET
+            INSERT INTO user_rules (app_identity, category, urgency, outcome, reference, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            ON CONFLICT(app_identity, category, urgency) DO UPDATE SET
                 outcome = excluded.outcome,
                 reference = excluded.reference,
                 updated_at = excluded.updated_at
             "#,
         )
         .bind(&rule.app_identity)
+        .bind(category_key(rule.category.as_deref()))
         .bind(urgency_key(rule.urgency))
         .bind(rule.outcome.as_str())
         .bind(&rule.reference)
@@ -587,7 +644,7 @@ impl SqlitePersistedState {
 
     pub(crate) async fn user_rules(&self) -> anyhow::Result<Vec<UserRule>> {
         let rows = sqlx::query(
-            "SELECT app_identity, urgency, outcome, reference FROM user_rules ORDER BY app_identity, urgency",
+            "SELECT app_identity, category, urgency, outcome, reference FROM user_rules ORDER BY app_identity, category, urgency",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -600,13 +657,17 @@ impl SqlitePersistedState {
     pub(crate) async fn remove_user_rule(
         &self,
         app_identity: &str,
+        category: Option<&str>,
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM user_rules WHERE app_identity = ?1 AND urgency = ?2")
-            .bind(app_identity)
-            .bind(urgency_key(urgency))
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "DELETE FROM user_rules WHERE app_identity = ?1 AND category = ?2 AND urgency = ?3",
+        )
+        .bind(app_identity)
+        .bind(category_key(category))
+        .bind(urgency_key(urgency))
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -645,6 +706,14 @@ impl SqlitePersistedState {
         self.prune_history().await?;
         Ok(value)
     }
+}
+
+fn category_key(category: Option<&str>) -> &str {
+    category.unwrap_or("")
+}
+
+fn category_from_key(category: &str) -> Option<String> {
+    (!category.is_empty()).then(|| category.to_string())
 }
 
 impl NotificationHistory for SqlitePersistedState {
@@ -723,6 +792,66 @@ mod tests {
 
         assert!(storage.create_thread(thread).await.is_err());
         assert!(storage.snapshot().await.unwrap().history.is_empty());
+    }
+
+    #[tokio::test]
+    async fn user_rule_schema_migrates_app_rules_and_keys_category_rules_separately() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+        let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", database.display()))
+            .unwrap()
+            .create_if_missing(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+            CREATE TABLE user_rules (
+                app_identity TEXT NOT NULL,
+                urgency TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                reference TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (app_identity, urgency)
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO user_rules VALUES ('Chat', '*', 'silenced', 'user:Chat:*', 1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let storage = SqlitePersistedState::open(database, 30, 1_000)
+            .await
+            .unwrap();
+        assert_eq!(storage.user_rules().await.unwrap()[0].category, None);
+        storage
+            .upsert_user_rule(
+                &UserRule::for_app_category("Chat", "im.received", DeliveryOutcome::Dropped)
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        storage
+            .upsert_user_rule(
+                &UserRule::for_app_category("Chat", "transfer.complete", DeliveryOutcome::Shown)
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(storage.user_rules().await.unwrap().len(), 3);
+        storage
+            .remove_user_rule("Chat", Some("im.received"), None)
+            .await
+            .unwrap();
+        assert_eq!(storage.user_rules().await.unwrap().len(), 2);
     }
 
     #[tokio::test]

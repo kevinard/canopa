@@ -37,6 +37,20 @@ impl NotifyControl {
                     .await?;
                 Ok(ControlReply::CommandApplied)
             }
+            ControlCommand::SetCategoryPermission {
+                app_identity,
+                category,
+                permission,
+            } => {
+                self.daemon
+                    .upsert_user_rule(UserRule::for_app_category(
+                        app_identity,
+                        category,
+                        permission.delivery_outcome(),
+                    )?)
+                    .await?;
+                Ok(ControlReply::CommandApplied)
+            }
             ControlCommand::ClearActiveNotifications => {
                 self.daemon.clear_active_notifications().await?;
                 Ok(ControlReply::CommandApplied)
@@ -79,6 +93,11 @@ pub enum ControlCommand {
         app_identity: String,
         permission: AppPermissionControl,
     },
+    SetCategoryPermission {
+        app_identity: String,
+        category: String,
+        permission: AppPermissionControl,
+    },
     ClearActiveNotifications,
     DeleteNotificationHistory,
     InvokeNotificationAction {
@@ -112,7 +131,14 @@ pub struct NotificationCenterProjection {
 pub struct NotificationCenterGroup {
     pub app_identity: String,
     pub permission: AppPermissionControl,
+    pub category_permissions: Vec<CategoryPermissionControl>,
     pub items: Vec<NotificationCenterItem>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CategoryPermissionControl {
+    pub category: String,
+    pub permission: AppPermissionControl,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

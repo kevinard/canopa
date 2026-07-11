@@ -1,7 +1,7 @@
 use canopa_notify::{
     AppPermissionControl, ControlCommand, ControlReply, NotificationBodyContent,
     NotificationBodyImage, NotificationBodyImageSource, NotificationBodySegment,
-    NotificationCenterProjection, NotifyControl,
+    NotificationCenterProjection, NotifyControl, normalize_notification_category,
 };
 use canopa_panel_protocol::{
     InteractionEvent, InteractionTarget, PanelAction, PanelContent, PanelControl,
@@ -18,6 +18,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 const PANEL_NOTIFICATION_ACTION_KEY: &str = "canopa-notify:notification-action";
 const PANEL_ACTIVATE_ITEM_KEY: &str = "canopa-notify:activate-item";
 const PANEL_APP_PERMISSION_KEY: &str = "canopa-notify:app-permission";
+const PANEL_CATEGORY_PERMISSION_KEY_PREFIX: &str = "canopa-notify:category-permission:";
 const PANEL_CLEAR_ACTIVE_KEY: &str = "canopa-notify:clear-active";
 const PANEL_DELETE_HISTORY_KEY: &str = "canopa-notify:delete-history";
 
@@ -372,7 +373,11 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                             .collect(),
                     })
                     .collect(),
-                controls: vec![app_permission_control(group.permission)],
+                controls: std::iter::once(app_permission_control(group.permission))
+                    .chain(group.category_permissions.into_iter().map(|control| {
+                        category_permission_control(control.category, control.permission)
+                    }))
+                    .collect(),
             })
             .collect(),
         actions: vec![
@@ -469,6 +474,22 @@ fn app_permission_control(permission: AppPermissionControl) -> PanelControl {
     }
 }
 
+fn category_permission_control(category: String, permission: AppPermissionControl) -> PanelControl {
+    PanelControl {
+        key: format!("{PANEL_CATEGORY_PERMISSION_KEY_PREFIX}{category}"),
+        label: format!("Category: {category}"),
+        value: permission.as_str().to_string(),
+        options: AppPermissionControl::options()
+            .iter()
+            .copied()
+            .map(|permission| PanelControlOption {
+                value: permission.as_str().to_string(),
+                label: permission.label().to_string(),
+            })
+            .collect(),
+    }
+}
+
 fn control_command_from_panel_interaction(event: InteractionEvent) -> Option<ControlCommand> {
     match event {
         InteractionEvent::Invoke {
@@ -490,6 +511,17 @@ fn control_command_from_panel_interaction(event: InteractionEvent) -> Option<Con
             InteractionTarget::Section { id } if action_key == PANEL_APP_PERMISSION_KEY => {
                 Some(ControlCommand::SetAppPermission {
                     app_identity: id,
+                    permission: app_permission_from_panel_value(value.as_deref()?)?,
+                })
+            }
+            InteractionTarget::Section { id }
+                if action_key.starts_with(PANEL_CATEGORY_PERMISSION_KEY_PREFIX) =>
+            {
+                let category = action_key.strip_prefix(PANEL_CATEGORY_PERMISSION_KEY_PREFIX)?;
+                let category = normalize_notification_category(category)?;
+                Some(ControlCommand::SetCategoryPermission {
+                    app_identity: id,
+                    category,
                     permission: app_permission_from_panel_value(value.as_deref()?)?,
                 })
             }
@@ -570,6 +602,10 @@ mod tests {
             groups: vec![canopa_notify::NotificationCenterGroup {
                 app_identity: "Mail".to_string(),
                 permission: AppPermissionControl::Allow,
+                category_permissions: vec![canopa_notify::CategoryPermissionControl {
+                    category: "email.arrived".to_string(),
+                    permission: AppPermissionControl::Silence,
+                }],
                 items: vec![canopa_notify::NotificationCenterItem {
                     notification_id: 42,
                     summary: "Inbox".to_string(),
@@ -595,6 +631,11 @@ mod tests {
             content.sections[0].controls[0].key,
             "canopa-notify:app-permission"
         );
+        assert_eq!(
+            content.sections[0].controls[1].key,
+            "canopa-notify:category-permission:email.arrived"
+        );
+        assert_eq!(content.sections[0].controls[1].value, "silence");
         assert_eq!(content.actions[0].key, "canopa-notify:clear-active");
         assert_eq!(content.actions[1].key, "canopa-notify:delete-history");
     }
@@ -613,6 +654,30 @@ mod tests {
                 notification_id: 42,
                 action_key: "reply".to_string(),
             })
+        );
+        assert_eq!(
+            control_command_from_panel_interaction(InteractionEvent::Invoke {
+                target: InteractionTarget::Section {
+                    id: "Mail".to_string()
+                },
+                action_key: "canopa-notify:category-permission:email.arrived".to_string(),
+                value: Some("drop".to_string()),
+            }),
+            Some(ControlCommand::SetCategoryPermission {
+                app_identity: "Mail".to_string(),
+                category: "email.arrived".to_string(),
+                permission: AppPermissionControl::Drop,
+            })
+        );
+        assert_eq!(
+            control_command_from_panel_interaction(InteractionEvent::Invoke {
+                target: InteractionTarget::Section {
+                    id: "Mail".to_string()
+                },
+                action_key: "canopa-notify:category-permission:bad category".to_string(),
+                value: Some("drop".to_string()),
+            }),
+            None
         );
         assert_eq!(
             control_command_from_panel_interaction(InteractionEvent::Invoke {

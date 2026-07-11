@@ -67,7 +67,7 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 43. As a desktop user, I want unknown App Identities allowed by default, so that applications continue to work unless I restrict them.
 44. As a desktop user, I want App Identity based primarily on desktop entry, so that rules follow real desktop applications rather than unstable labels.
 45. As a desktop user, I want app-name fallback when desktop entry is unavailable, so that rules still work for imperfect senders.
-46. As a desktop user, I want Notification Rules to match App Identity and optionally Notification Urgency, so that app permissions can still treat critical messages differently.
+46. As a desktop user, I want Notification Rules to match App Identity plus optional Notification Category and Notification Urgency, so that app permissions can treat notification types and critical messages differently.
 47. As a desktop user, I want first decisive rule semantics, so that policy is predictable and auditable.
 48. As a desktop user, I want explicit drop rules to apply even to critical notifications, so that my policy wins over sender urgency.
 49. As a desktop user, I want Silenced Notifications retained in history, so that I can audit what was suppressed.
@@ -139,9 +139,9 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - App Identity is primarily the desktop entry hint, with app name fallback.
 - Unknown App Identities are allowed unless a Notification Rule says otherwise.
 - Notification Rules use ordered first-decisive semantics for delivery policy.
-- First-version rules match App Identity and optional Notification Urgency.
+- Rules match App Identity plus optional Notification Category and Notification Urgency.
 - User-managed App Permission Controls write to the User Rule Store, not the KDL configuration file.
-- User Rule Store rules are keyed by App Identity and optional Notification Urgency.
+- User Rule Store rules are keyed by App Identity, optional Notification Category, and optional Notification Urgency.
 - User Rule Store rules take precedence over Notification Configuration rules.
 - Notification Configuration rules may define optional Config Rule IDs; unnamed config rules use generated references.
 - Rule changes affect future notifications and re-evaluate Active Notifications without changing inactive Notification History records.
@@ -158,7 +158,7 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - Active Notifications are exempt from retention pruning.
 - Active Notifications loaded after daemon restart become Stale Notifications, and old banners are not restored.
 - Notification History does not persist arbitrary notification image payloads by default and is not app-level encrypted in version one.
-- Notification Category is stored as metadata but has no first-version category-specific UI.
+- Notification Category is validated metadata and is available to category-specific Notification Rules and Notification Center controls.
 - Notification Progress is stored as metadata and may be rendered by Notification Banners; first Niribar-hosted Notification Center does not require progress rendering.
 - Raw Notification Body is retained while the user-visible Notification Body renders as conservative plain text.
 - Body-only notifications are valid. Empty no-op notifications are dropped.
@@ -208,7 +208,6 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - Standalone tray or status indicator.
 - Full-text Notification History search.
 - Unread/read notification state.
-- Category-specific UI or category-based rules in version one.
 - Notification sounds in version one.
 - Inline replies in version one.
 - App-level body hiding or screenshot privacy mode; this belongs to Compositor Privacy Mode.
@@ -229,4 +228,3 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - The shared panel protocol crate is a prerequisite for the final provider portion of the tracer bullet. The rest of the daemon can proceed independently.
 - Canopa Notify should include first-version documentation showing how to configure Niribar to open `canopa-notify panel-provider` through its external panel provider mechanism.
 - The repository uses local markdown tracking for now. Follow-up implementation issues should live under this feature directory and carry `Status: ready-for-agent` when fully specified.
-

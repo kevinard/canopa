@@ -38,7 +38,7 @@ This table is the complete capability vocabulary defined by Desktop Notification
 | Hint | Status | Notes |
 | --- | --- | --- |
 | `action-icons` | Implemented | When true, each action key is also treated as a static icon name for presentation. |
-| `category` | Implemented | Stored as notification metadata. |
+| `category` | Implemented | Valid standard and vendor-prefixed values are normalized into Notification Category metadata and may drive category-specific policy; malformed values are ignored. |
 | `desktop-entry` | Implemented | Preferred source for App Identity. |
 | `image-data` | Implemented | Raw static image payloads are validated and rendered at runtime without persisting payload bytes. |
 | `image_data`, `icon_data` | Compatibility aliases | Deprecated spellings remain decoded for older senders. |

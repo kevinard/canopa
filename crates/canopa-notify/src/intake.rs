@@ -2,6 +2,7 @@ use crate::{
     AcceptedNotification, NotificationBodyContent, NotificationBodyImage,
     NotificationBodyImageSource, NotificationBodySegment, NotificationBodyStyle,
     NotificationImageData, NotificationInput, NotificationSoundRequest,
+    normalize_notification_category,
 };
 
 const MAX_BODY_CONTENT_SEGMENTS: usize = 256;
@@ -27,12 +28,16 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
     let body_content = interpreted_body_content(&input.body);
     let body = body_content.plain_text();
     let has_image = input.image_data.is_some() || input.image_reference.is_some();
+    let category = input
+        .category
+        .as_deref()
+        .and_then(normalize_notification_category);
 
     if input.summary.trim().is_empty()
         && !body_content.has_meaningful_content()
         && input.actions.is_empty()
         && !has_image
-        && input.category.is_none()
+        && category.is_none()
         && input.progress.is_none()
     {
         return NotificationIntakeResult::NoOpDropped {
@@ -52,7 +57,7 @@ pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntak
             body_content,
             raw_body: input.body,
             urgency: input.urgency,
-            category: input.category,
+            category,
             progress: input.progress,
             image_reference: input.image_reference,
             has_image_payload: false,
@@ -813,6 +818,28 @@ mod tests {
                 NotificationIntakeResult::Accepted(_)
             ));
         }
+    }
+
+    #[test]
+    fn intake_normalizes_valid_category_and_ignores_malformed_category() {
+        let accepted = accepted(intake_notification(NotificationInput {
+            app_name: "Category Sender".to_string(),
+            category: Some(" x-vendor.message.received ".to_string()),
+            ..NotificationInput::default()
+        }));
+        assert_eq!(
+            accepted.category.as_deref(),
+            Some("x-vendor.message.received")
+        );
+
+        assert!(matches!(
+            intake_notification(NotificationInput {
+                app_name: "Malformed Category".to_string(),
+                category: Some("Bad Category".to_string()),
+                ..NotificationInput::default()
+            }),
+            NotificationIntakeResult::NoOpDropped { .. }
+        ));
     }
 
     #[test]

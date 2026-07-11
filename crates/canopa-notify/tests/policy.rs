@@ -135,6 +135,62 @@ fn delivery_policy_prefers_urgency_specific_user_rules() {
     assert_eq!(normal.rule_reference.as_deref(), Some("user:Chat:*"));
 }
 
+#[test]
+fn delivery_policy_prefers_category_then_urgency_specific_user_rules() {
+    let policy = DeliveryPolicy::new(
+        LoadedDeliveryPolicyState::builder()
+            .user_rule(DeliveryPolicyRule::new(
+                "Chat",
+                None,
+                DeliveryOutcome::Dropped,
+                "app-any",
+            ))
+            .user_rule(DeliveryPolicyRule::new(
+                "Chat",
+                Some(Urgency::Normal),
+                DeliveryOutcome::Silenced,
+                "app-normal",
+            ))
+            .user_rule(DeliveryPolicyRule::for_category(
+                "Chat",
+                "im.received",
+                None,
+                DeliveryOutcome::Shown,
+                "category-any",
+            ))
+            .user_rule(DeliveryPolicyRule::for_category(
+                "Chat",
+                "im.received",
+                Some(Urgency::Critical),
+                DeliveryOutcome::Silenced,
+                "category-critical",
+            ))
+            .build(),
+    );
+
+    let mut notification = accepted_notification("Chat", Urgency::Critical);
+    notification.category = Some("im.received".to_string());
+    assert_eq!(
+        policy.decide(&notification).rule_reference.as_deref(),
+        Some("category-critical")
+    );
+    notification.urgency = Urgency::Normal;
+    assert_eq!(
+        policy.decide(&notification).rule_reference.as_deref(),
+        Some("category-any")
+    );
+    notification.category = Some("transfer.complete".to_string());
+    assert_eq!(
+        policy.decide(&notification).rule_reference.as_deref(),
+        Some("app-normal")
+    );
+    notification.urgency = Urgency::Low;
+    assert_eq!(
+        policy.decide(&notification).rule_reference.as_deref(),
+        Some("app-any")
+    );
+}
+
 #[tokio::test]
 async fn do_not_disturb_silences_non_critical_notifications_but_allows_critical_banners() {
     let temp = tempfile::tempdir().unwrap();
@@ -271,6 +327,64 @@ async fn user_rules_take_precedence_over_config_rules_and_are_persisted() {
     assert_eq!(shown.delivery_outcome.as_str(), "shown");
     assert_eq!(restarted.user_rules().await.unwrap().len(), 1);
     assert_eq!(restarted.snapshot().await.unwrap().history.len(), 1);
+}
+
+#[tokio::test]
+async fn category_user_rules_persist_and_apply_to_new_and_replacement_requests() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let daemon = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    daemon
+        .upsert_user_rule(
+            UserRule::for_app_category("Chat", "im.received", DeliveryOutcome::Silenced).unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let original = daemon
+        .receive_notification(NotificationInput {
+            category: Some("im.received".to_string()),
+            ..notification("Chat", "Message")
+        })
+        .await
+        .unwrap();
+    assert_eq!(original.delivery_outcome, DeliveryOutcome::Silenced);
+    let unrelated = daemon
+        .receive_notification(notification("Chat", "No category"))
+        .await
+        .unwrap();
+    assert_eq!(unrelated.delivery_outcome, DeliveryOutcome::Shown);
+
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(original.notification_id),
+            category: Some("transfer.complete".to_string()),
+            ..notification("Chat", "Changed category")
+        })
+        .await
+        .unwrap();
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(
+        thread(&snapshot, original.notification_id).delivery_outcome,
+        DeliveryOutcome::Shown
+    );
+    assert_eq!(
+        thread(&snapshot, original.notification_id)
+            .accepted_notification
+            .category
+            .as_deref(),
+        Some("transfer.complete")
+    );
+    drop(daemon);
+
+    let restarted = Daemon::open(DaemonOptions::headless(database))
+        .await
+        .unwrap();
+    let rules = restarted.user_rules().await.unwrap();
+    assert_eq!(rules[0].category.as_deref(), Some("im.received"));
+    assert_eq!(rules[0].outcome, DeliveryOutcome::Silenced);
 }
 
 #[tokio::test]
@@ -413,6 +527,56 @@ async fn configuration_rule_changes_apply_only_to_subsequent_requests() {
         .await
         .unwrap();
     assert_eq!(subsequent.delivery_outcome, DeliveryOutcome::Silenced);
+}
+
+#[tokio::test]
+async fn configuration_category_rules_cover_standard_vendor_missing_and_malformed_values() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+        .await
+        .unwrap();
+    let config = temp.path().join("notify.kdl");
+    std::fs::write(
+        &config,
+        r#"
+        rule "drop-messages" app="Chat" category="im.received" outcome="drop"
+        rule "allow-vendor" app="Chat" category="x-vendor.attention" outcome="allow"
+        rule "fallback" app="Chat" outcome="silence"
+        "#,
+    )
+    .unwrap();
+    daemon.reload_configuration_file(&config).await.unwrap();
+
+    let standard = daemon
+        .receive_notification(NotificationInput {
+            category: Some("im.received".to_string()),
+            ..notification("Chat", "Standard")
+        })
+        .await
+        .unwrap();
+    let vendor = daemon
+        .receive_notification(NotificationInput {
+            category: Some("x-vendor.attention".to_string()),
+            ..notification("Chat", "Vendor")
+        })
+        .await
+        .unwrap();
+    let missing = daemon
+        .receive_notification(notification("Chat", "Missing"))
+        .await
+        .unwrap();
+    let malformed = daemon
+        .receive_notification(NotificationInput {
+            category: Some("Bad Category".to_string()),
+            ..notification("Chat", "Malformed")
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(standard.delivery_outcome, DeliveryOutcome::Dropped);
+    assert_eq!(vendor.delivery_outcome, DeliveryOutcome::Shown);
+    assert_eq!(missing.delivery_outcome, DeliveryOutcome::Silenced);
+    assert_eq!(malformed.delivery_outcome, DeliveryOutcome::Silenced);
 }
 
 #[tokio::test]

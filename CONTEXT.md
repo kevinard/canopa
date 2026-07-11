@@ -106,7 +106,7 @@ _Avoid_: Priority when referring to the freedesktop notification urgency concept
 
 **Notification Category**:
 The sender-declared type of notification, stored as metadata when provided.
-_Avoid_: Rule category when notification rules do not match categories
+_Avoid_: App Identity, Notification Urgency
 
 **Notification Progress**:
 Sender-provided progress metadata for an in-progress operation represented by a notification.
@@ -279,9 +279,10 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 ## Rules
 
 - A **Notification Rule** may silence a notification without dropping it.
-- A **Notification Rule** may match an **App Identity** and optionally **Notification Urgency**.
+- A **Notification Rule** matches an **App Identity** and may additionally match **Notification Category** and **Notification Urgency**.
 - An explicit drop **Notification Rule** applies even to critical notifications.
-- **Notification Category** is stored as metadata but has no first-version category-specific UI.
+- A valid **Notification Category** is a trimmed, lower-case, dot-separated ASCII name of at most 128 bytes; malformed sender values are treated as missing metadata.
+- **Notification Configuration** rejects an invalid category rule atomically without replacing the previously loaded rule slice.
 - **Notification Progress** is stored as metadata and may be rendered by **Notification Banners**.
 - **Notification App Icon** and **Notification Image** are distinct sender-provided visuals.
 - A surface that can render both a **Notification App Icon** and a **Notification Image** should keep those visuals distinct.
@@ -505,7 +506,9 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - The **Notify Control API** and panel protocol do not expose **Activation Tokens**; the **Notification Daemon** publishes them through the **Notification Server API**.
 - Pre-release control command formats do not require legacy compatibility.
 - User interface changes to **Notification Rules** are saved in the **User Rule Store**, not by rewriting **Notification Configuration**.
-- **User Rule Store** rules are keyed by **App Identity** and optional **Notification Urgency**.
+- **User Rule Store** rules are keyed by **App Identity**, optional **Notification Category**, and optional **Notification Urgency**.
+- **User Rule Store** matching prefers category-and-urgency, category-wide, app-and-urgency, then app-wide rules. This specificity order is deterministic regardless of persistence order.
+- **Notification Configuration** preserves declared first-decisive order; authors place category-specific rules before an app-wide fallback when the category rule should win.
 - **Notification Configuration** rules may define a **Config Rule ID**; unnamed config rules use generated references.
 - **Notification Rules** from the **User Rule Store** take precedence over rules from **Notification Configuration**.
 - Changes to **Notification Rules** affect future notifications and do not retroactively delete or reclassify **Notification History**.
@@ -520,8 +523,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification History** is not app-level encrypted in the first version.
 - The **Notification Center** shows retained **Active Notifications** and recent **Notification History**; it omits runtime-only **Transient Notifications**.
 - The **Notification Center** groups notifications by **App Identity**.
-- The **Notification Center** includes **App Permission Controls** for recent notification senders.
-- **App Permission Controls** show current policy; historical records may show their original **Delivery Outcome**.
+- The **Notification Center** includes an app-wide **App Permission Control** for each recent sender and category-specific controls for valid categories present in that app's retained threads.
+- A category-specific control shows its explicit category rule when present and otherwise the app-wide fallback. Historical records keep their original **Delivery Outcome**.
 - **Notification Center** requirements must not define core **Notification Daemon** state or lifecycle rules.
 - **Notification Center Projection** is Notify-owned state and is mapped to shared panel protocol types by **Panel Provider Mode**.
 - **Notification Center Projection** preserves interpreted **Notification Body Markup** in addition to the plain **Notification Body** fallback.

@@ -20,8 +20,8 @@ pub use activation::{
     WaylandActivationTokenProvider,
 };
 pub use control::{
-    AppPermissionControl, ControlCommand, ControlReply, ControlStatus, NotificationCenterGroup,
-    NotificationCenterItem, NotificationCenterProjection, NotifyControl,
+    AppPermissionControl, CategoryPermissionControl, ControlCommand, ControlReply, ControlStatus,
+    NotificationCenterGroup, NotificationCenterItem, NotificationCenterProjection, NotifyControl,
 };
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
@@ -35,7 +35,7 @@ pub use domain::{
     NotificationReceipt, NotificationSnapshot, NotificationSound, NotificationSoundPlayback,
     NotificationSoundRequest, NotificationSoundSettings, NotificationStatus, NotificationThread,
     NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference,
-    SenderCloseReason, SenderEvent, Urgency, UserRule,
+    SenderCloseReason, SenderEvent, Urgency, UserRule, normalize_notification_category,
 };
 pub use lifecycle::{
     BannerLifecycleChange, LifecycleDelivery, LifecycleEffect, LifecycleEffects,
@@ -291,6 +291,19 @@ impl Daemon {
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
         self.runtime.remove_user_rule(app_identity, urgency).await
+    }
+
+    pub async fn remove_category_user_rule(
+        &self,
+        app_identity: &str,
+        category: &str,
+        urgency: Option<Urgency>,
+    ) -> anyhow::Result<()> {
+        let category = normalize_notification_category(category)
+            .ok_or_else(|| anyhow::anyhow!("invalid Notification Category"))?;
+        self.runtime
+            .remove_category_user_rule(app_identity, &category, urgency)
+            .await
     }
 
     pub async fn reload_configuration_file(&self, path: &std::path::Path) -> anyhow::Result<()> {

@@ -4,6 +4,7 @@ use std::time::Duration;
 
 const MAX_NOTIFICATION_IMAGE_DIMENSION: u32 = 4096;
 const MAX_NOTIFICATION_IMAGE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_NOTIFICATION_CATEGORY_BYTES: usize = 128;
 pub const DEFAULT_NOTIFICATION_SOUND_THEME: &str = "freedesktop";
 pub const DEFAULT_NOTIFICATION_SOUND_NAME: &str = "message-new-instant";
 
@@ -70,6 +71,30 @@ pub struct NotificationInput {
     pub sound: Option<NotificationSound>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requested_position: Option<NotificationPosition>,
+}
+
+pub fn normalize_notification_category(category: &str) -> Option<String> {
+    let category = category.trim();
+    if category.is_empty() || category.len() > MAX_NOTIFICATION_CATEGORY_BYTES {
+        return None;
+    }
+
+    let valid = category.split('.').all(|component| {
+        !component.is_empty()
+            && component
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            && component
+                .as_bytes()
+                .last()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            && component
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    });
+
+    valid.then(|| category.to_string())
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -831,6 +856,33 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_standard_and_vendor_notification_categories() {
+        assert_eq!(
+            normalize_notification_category(" email.arrived ").as_deref(),
+            Some("email.arrived")
+        );
+        assert_eq!(
+            normalize_notification_category("x-canopa.transfer.complete").as_deref(),
+            Some("x-canopa.transfer.complete")
+        );
+        for malformed in [
+            "",
+            "Email.Arrived",
+            "email arrived",
+            "email..arrived",
+            "-email.arrived",
+            "email.arrived-",
+            "email_arrived",
+        ] {
+            assert_eq!(normalize_notification_category(malformed), None);
+        }
+        assert_eq!(
+            normalize_notification_category(&"x".repeat(MAX_NOTIFICATION_CATEGORY_BYTES + 1)),
+            None
+        );
+    }
+
+    #[test]
     fn notification_sound_names_and_files_keep_distinct_reference_shapes() {
         assert_eq!(
             NotificationSound::name(" message-new-instant "),
@@ -949,6 +1001,8 @@ pub enum SenderEvent {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UserRule {
     pub app_identity: String,
+    #[serde(default)]
+    pub category: Option<String>,
     pub urgency: Option<Urgency>,
     pub outcome: DeliveryOutcome,
     pub reference: String,
@@ -960,6 +1014,7 @@ impl UserRule {
         Self {
             reference: format!("user:{app_identity}:*"),
             app_identity,
+            category: None,
             urgency: None,
             outcome,
         }
@@ -974,8 +1029,57 @@ impl UserRule {
         Self {
             reference: format!("user:{app_identity}:{}", urgency.as_str()),
             app_identity,
+            category: None,
             urgency: Some(urgency),
             outcome,
         }
+    }
+
+    pub fn for_app_category(
+        app_identity: impl Into<String>,
+        category: impl AsRef<str>,
+        outcome: DeliveryOutcome,
+    ) -> anyhow::Result<Self> {
+        Self::for_app_category_and_urgency(app_identity, category, None, outcome)
+    }
+
+    pub fn for_app_category_urgency(
+        app_identity: impl Into<String>,
+        category: impl AsRef<str>,
+        urgency: Urgency,
+        outcome: DeliveryOutcome,
+    ) -> anyhow::Result<Self> {
+        Self::for_app_category_and_urgency(app_identity, category, Some(urgency), outcome)
+    }
+
+    fn for_app_category_and_urgency(
+        app_identity: impl Into<String>,
+        category: impl AsRef<str>,
+        urgency: Option<Urgency>,
+        outcome: DeliveryOutcome,
+    ) -> anyhow::Result<Self> {
+        let app_identity = app_identity.into();
+        let category = normalize_notification_category(category.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("invalid notification category"))?;
+        let urgency_key = urgency.map(Urgency::as_str).unwrap_or("*");
+        Ok(Self {
+            reference: format!("user:{app_identity}:category:{category}:{urgency_key}"),
+            app_identity,
+            category: Some(category),
+            urgency,
+            outcome,
+        })
+    }
+
+    pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        if self.app_identity.trim().is_empty() {
+            anyhow::bail!("user rule App Identity must not be empty");
+        }
+        if let Some(category) = &self.category
+            && normalize_notification_category(category).as_deref() != Some(category.as_str())
+        {
+            anyhow::bail!("user rule has invalid Notification Category");
+        }
+        Ok(())
     }
 }

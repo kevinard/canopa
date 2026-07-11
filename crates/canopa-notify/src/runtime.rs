@@ -1,7 +1,7 @@
 use crate::activation::ActivationTokenProvider;
 use crate::control::{
-    AppPermissionControl, NotificationCenterGroup, NotificationCenterItem,
-    NotificationCenterProjection,
+    AppPermissionControl, CategoryPermissionControl, NotificationCenterGroup,
+    NotificationCenterItem, NotificationCenterProjection,
 };
 use crate::delivery_policy::{
     DeliveryDecisionLog, DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState,
@@ -22,7 +22,7 @@ use crate::presentation::{
 };
 use crate::sound::SoundPresenter;
 use crate::sqlite_persisted_state::SqlitePersistedState;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -335,6 +335,7 @@ impl NotificationRuntime {
             .cloned()
             .map(|rule| UserRule {
                 app_identity: rule.app_identity,
+                category: rule.category,
                 urgency: rule.urgency,
                 outcome: rule.outcome,
                 reference: rule.reference,
@@ -348,8 +349,29 @@ impl NotificationRuntime {
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
         let _change = self.policy_changes.lock().await;
-        self.storage.remove_user_rule(app_identity, urgency).await?;
-        self.replace_loaded_policy_state(|state| state.without_user_rule(app_identity, urgency));
+        self.storage
+            .remove_user_rule(app_identity, None, urgency)
+            .await?;
+        self.replace_loaded_policy_state(|state| {
+            state.without_user_rule(app_identity, None, urgency)
+        });
+        self.notify_state_changed();
+        Ok(())
+    }
+
+    pub(crate) async fn remove_category_user_rule(
+        &self,
+        app_identity: &str,
+        category: &str,
+        urgency: Option<Urgency>,
+    ) -> anyhow::Result<()> {
+        let _change = self.policy_changes.lock().await;
+        self.storage
+            .remove_user_rule(app_identity, Some(category), urgency)
+            .await?;
+        self.replace_loaded_policy_state(|state| {
+            state.without_user_rule(app_identity, Some(category), urgency)
+        });
         self.notify_state_changed();
         Ok(())
     }
@@ -776,7 +798,7 @@ fn projection_from_snapshot(
     let mut grouped: BTreeMap<String, Vec<NotificationCenterItem>> = BTreeMap::new();
     let app_permissions: HashMap<_, _> = user_rules
         .iter()
-        .filter(|rule| rule.urgency.is_none())
+        .filter(|rule| rule.category.is_none() && rule.urgency.is_none())
         .map(|rule| {
             (
                 rule.app_identity.as_str(),
@@ -784,9 +806,29 @@ fn projection_from_snapshot(
             )
         })
         .collect();
+    let category_permissions: HashMap<_, _> = user_rules
+        .iter()
+        .filter_map(|rule| {
+            if rule.urgency.is_some() {
+                return None;
+            }
+            let category = rule.category.as_ref()?;
+            Some((
+                (rule.app_identity.clone(), category.clone()),
+                AppPermissionControl::from_delivery_outcome(rule.outcome),
+            ))
+        })
+        .collect();
+    let mut categories: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
     for thread in snapshot.history {
         let notification = thread.accepted_notification;
+        if let Some(category) = &notification.category {
+            categories
+                .entry(notification.app_identity.clone())
+                .or_default()
+                .insert(category.clone());
+        }
         let actions = if thread.status == NotificationStatus::Active {
             notification
                 .actions
@@ -819,6 +861,19 @@ fn projection_from_snapshot(
                     .get(app_identity.as_str())
                     .copied()
                     .unwrap_or(AppPermissionControl::Allow),
+                category_permissions: categories
+                    .remove(&app_identity)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|category| CategoryPermissionControl {
+                        permission: category_permissions
+                            .get(&(app_identity.clone(), category.clone()))
+                            .copied()
+                            .or_else(|| app_permissions.get(app_identity.as_str()).copied())
+                            .unwrap_or(AppPermissionControl::Allow),
+                        category,
+                    })
+                    .collect(),
                 app_identity,
                 items,
             })

@@ -401,6 +401,85 @@ async fn notify_control_projects_app_permission_from_user_rule_store() {
 }
 
 #[tokio::test]
+async fn notify_control_projects_and_applies_category_permissions_with_app_fallback() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new(daemon.clone());
+    let mut existing = Vec::new();
+    for category in ["transfer.complete", "im.received"] {
+        existing.push(
+            daemon
+                .receive_notification(NotificationInput {
+                    category: Some(category.to_string()),
+                    ..notification("Chat", category)
+                })
+                .await
+                .unwrap()
+                .notification_id,
+        );
+    }
+    control
+        .execute(ControlCommand::SetAppPermission {
+            app_identity: "Chat".to_string(),
+            permission: AppPermissionControl::Silence,
+        })
+        .await
+        .unwrap();
+    control
+        .execute(ControlCommand::SetCategoryPermission {
+            app_identity: "Chat".to_string(),
+            category: "im.received".to_string(),
+            permission: AppPermissionControl::Allow,
+        })
+        .await
+        .unwrap();
+
+    let ControlReply::NotificationCenterProjection(projection) = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap()
+    else {
+        panic!("expected notification center projection reply");
+    };
+    let chat = projection
+        .groups
+        .iter()
+        .find(|group| group.app_identity == "Chat")
+        .unwrap();
+    assert_eq!(chat.permission, AppPermissionControl::Silence);
+    assert_eq!(
+        chat.category_permissions
+            .iter()
+            .map(|control| (control.category.as_str(), control.permission))
+            .collect::<Vec<_>>(),
+        vec![
+            ("im.received", AppPermissionControl::Allow),
+            ("transfer.complete", AppPermissionControl::Silence),
+        ]
+    );
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert!(snapshot.active.iter().all(|thread| {
+        !existing.contains(&thread.id) || thread.delivery_outcome == DeliveryOutcome::Shown
+    }));
+
+    let allowed = daemon
+        .receive_notification(NotificationInput {
+            category: Some("im.received".to_string()),
+            ..notification("Chat", "Allowed category")
+        })
+        .await
+        .unwrap();
+    let silenced = daemon
+        .receive_notification(NotificationInput {
+            category: Some("transfer.complete".to_string()),
+            ..notification("Chat", "Fallback category")
+        })
+        .await
+        .unwrap();
+    assert_eq!(allowed.delivery_outcome, DeliveryOutcome::Shown);
+    assert_eq!(silenced.delivery_outcome, DeliveryOutcome::Silenced);
+}
+
+#[tokio::test]
 async fn notify_control_applies_notification_center_interaction_commands() {
     let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());
