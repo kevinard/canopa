@@ -287,6 +287,55 @@ struct NotificationServer {
     sender_ids: NotificationSenderIds,
 }
 
+const IMPLEMENTED_SPECIFICATION_CAPABILITIES: &[&str] = &[
+    "actions",
+    "action-icons",
+    "body",
+    "body-markup",
+    "icon-static",
+];
+const ACTIVATION_TOKEN_EXTENSION_CAPABILITY: &str = "activation-token";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CapabilityAdvertisement {
+    specification: Vec<&'static str>,
+    extensions: Vec<&'static str>,
+}
+
+impl CapabilityAdvertisement {
+    fn for_runtime(sound: bool, activation_token: bool) -> Self {
+        let mut specification = IMPLEMENTED_SPECIFICATION_CAPABILITIES.to_vec();
+        if sound {
+            specification.push("sound");
+        }
+
+        let mut extensions = Vec::new();
+        if activation_token {
+            extensions.push(ACTIVATION_TOKEN_EXTENSION_CAPABILITY);
+        }
+
+        Self {
+            specification,
+            extensions,
+        }
+    }
+
+    fn into_dbus_values(self) -> Vec<String> {
+        self.specification
+            .into_iter()
+            .chain(self.extensions)
+            .map(str::to_string)
+            .collect()
+    }
+}
+
+fn capability_advertisement(daemon: &Daemon) -> CapabilityAdvertisement {
+    CapabilityAdvertisement::for_runtime(
+        daemon.supports_sound(),
+        daemon.supports_activation_tokens(),
+    )
+}
+
 #[zbus::interface(name = "org.freedesktop.Notifications")]
 impl NotificationServer {
     #[allow(clippy::too_many_arguments)]
@@ -349,20 +398,7 @@ impl NotificationServer {
     }
 
     fn get_capabilities(&self) -> Vec<String> {
-        let mut capabilities = vec![
-            "actions".to_string(),
-            "action-icons".to_string(),
-            "body".to_string(),
-            "body-markup".to_string(),
-            "icon-static".to_string(),
-        ];
-        if self.daemon.supports_activation_tokens() {
-            capabilities.push("activation-token".to_string());
-        }
-        if self.daemon.supports_sound() {
-            capabilities.push("sound".to_string());
-        }
-        capabilities
+        capability_advertisement(&self.daemon).into_dbus_values()
     }
 
     fn get_server_information(&self) -> (String, String, String, String) {
@@ -872,10 +908,16 @@ mod tests {
         .await
         .unwrap();
         let capabilities: Vec<String> = proxy.call("GetCapabilities", &()).await.unwrap();
-        assert!(
-            capabilities
-                .iter()
-                .any(|capability| capability == "activation-token")
+        assert_eq!(
+            capabilities,
+            vec![
+                "actions",
+                "action-icons",
+                "body",
+                "body-markup",
+                "icon-static",
+                "activation-token",
+            ]
         );
         let mut token_signals = proxy.receive_signal("ActivationToken").await.unwrap();
         let mut action_signals = proxy.receive_signal("ActionInvoked").await.unwrap();
@@ -948,7 +990,80 @@ mod tests {
 
         let capabilities: Vec<String> = proxy.call("GetCapabilities", &()).await.unwrap();
 
-        assert!(capabilities.iter().any(|capability| capability == "sound"));
+        assert_eq!(
+            capabilities,
+            vec![
+                "actions",
+                "action-icons",
+                "body",
+                "body-markup",
+                "icon-static",
+                "sound",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_classification_is_exact_for_each_runtime_mode() {
+        let temp = tempfile::tempdir().unwrap();
+        let headless = Daemon::open(DaemonOptions::headless(temp.path().join("headless.db")))
+            .await
+            .unwrap();
+        let graphical = Daemon::open(DaemonOptions::graphical(
+            temp.path().join("graphical.db"),
+            canopa_notify::NoopBannerPresenter,
+        ))
+        .await
+        .unwrap();
+        let sound_enabled = Daemon::open(
+            DaemonOptions::graphical(
+                temp.path().join("sound.db"),
+                canopa_notify::NoopBannerPresenter,
+            )
+            .with_sound_presenter(AvailableSoundPresenter),
+        )
+        .await
+        .unwrap();
+        let activation_token_capable = Daemon::open(
+            DaemonOptions::headless(temp.path().join("activation.db"))
+                .with_activation_token_provider(FakeActivationTokenProvider::new(["token"])),
+        )
+        .await
+        .unwrap();
+        let base = CapabilityAdvertisement {
+            specification: vec![
+                "actions",
+                "action-icons",
+                "body",
+                "body-markup",
+                "icon-static",
+            ],
+            extensions: vec![],
+        };
+
+        assert_eq!(capability_advertisement(&headless), base);
+        assert_eq!(capability_advertisement(&graphical), base);
+        assert_eq!(
+            capability_advertisement(&sound_enabled),
+            CapabilityAdvertisement {
+                specification: vec![
+                    "actions",
+                    "action-icons",
+                    "body",
+                    "body-markup",
+                    "icon-static",
+                    "sound",
+                ],
+                extensions: vec![],
+            }
+        );
+        assert_eq!(
+            capability_advertisement(&activation_token_capable),
+            CapabilityAdvertisement {
+                specification: base.specification,
+                extensions: vec!["activation-token"],
+            }
+        );
     }
 
     fn daemon_args(headless: bool, service: bool) -> DaemonArgs {

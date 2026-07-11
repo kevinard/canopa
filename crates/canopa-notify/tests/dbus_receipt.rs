@@ -80,57 +80,15 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
     assert_eq!(spec_version, "1.3");
 
     let capabilities: Vec<String> = proxy.call("GetCapabilities", &()).await.unwrap();
-    assert!(
-        capabilities
-            .iter()
-            .any(|capability| capability == "actions")
-    );
-    assert!(
-        capabilities
-            .iter()
-            .any(|capability| capability == "action-icons")
-    );
-    assert!(capabilities.iter().any(|capability| capability == "body"));
-    assert!(
-        capabilities
-            .iter()
-            .any(|capability| capability == "body-markup")
-    );
-    assert!(
-        capabilities
-            .iter()
-            .any(|capability| capability == "icon-static")
-    );
-    assert!(
-        !capabilities
-            .iter()
-            .any(|capability| capability == "body-hyperlinks")
-    );
-    assert!(
-        !capabilities
-            .iter()
-            .any(|capability| capability == "body-images")
-    );
-    assert!(
-        !capabilities
-            .iter()
-            .any(|capability| capability == "icon-multi")
-    );
-    assert!(
-        !capabilities
-            .iter()
-            .any(|capability| capability == "persistence")
-    );
-    assert!(!capabilities.iter().any(|capability| capability == "sound"));
-    assert!(
-        !capabilities
-            .iter()
-            .any(|capability| capability == "activation-token")
-    );
-    assert!(
-        !capabilities
-            .iter()
-            .any(|capability| capability == "inline-reply")
+    assert_eq!(
+        capabilities,
+        vec![
+            "actions",
+            "action-icons",
+            "body",
+            "body-markup",
+            "icon-static",
+        ]
     );
 
     let output = Command::cargo_bin("canopa-notify")
