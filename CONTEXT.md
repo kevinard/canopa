@@ -161,7 +161,7 @@ A **Notification Lifecycle** result that tells the **Notification Daemon** what 
 _Avoid_: Sender event when referring to the lifecycle module's returned instruction rather than the published event
 
 **Notification Timeout Change**:
-A **Lifecycle Effect** projection that tells the **Notification Daemon** timer adapter to schedule or cancel a **Notification Timeout**.
+A **Lifecycle Effect** projection that tells the **Notification Daemon** timer adapter to start a **Notification Timeout** when the matching revision is displayed, or to cancel an existing timeout.
 _Avoid_: Timeout event when referring to the adapter instruction rather than the lifecycle meaning that produced it
 
 **Banner Lifecycle Change**:
@@ -446,7 +446,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Lifecycle Effects** are the primary **Notification Lifecycle** result; the **Notification Daemon** derives sender receipts and outward side effects from them.
 - **Activation Token** generation is a sender-visible publication side effect of the **Notification Daemon**, not **Notification Lifecycle** meaning.
 - A **Lifecycle Effect** may include the sender receipt for the accepted or rejected notification request.
-- **Lifecycle Effects** include **Notification Timeout** scheduling and cancellation instructions; timer adapters perform waiting but do not decide timeout meaning.
+- **Lifecycle Effects** include display-dependent **Notification Timeout** start intents and cancellation instructions; timer adapters perform waiting but do not decide timeout meaning.
 - **Lifecycle Effects** are fine-grained events rather than one coarse outcome struct.
 - **Notification Lifecycle** owns the domain shape of created and revised **Notification Threads**; **Notification History** persists that shape.
 - **Notification Lifecycle** may query **Notification History** directly for existing **Notification Threads**, including replacement targets.
@@ -568,5 +568,5 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Stale Notification** action labels may remain as read-only history metadata.
 - Invoking a **Notification Action** dismisses the notification unless it is a **Resident Notification**.
 - Non-resident **Notification Action** invocation publishes the sender-visible action event before the sender-visible dismissal event.
-- **Notification Timeout** scheduling and expiration belong to **Notification Lifecycle**; **Notification Banner State** reports visibility transitions but does not decide expiration meaning.
+- **Notification Lifecycle** owns **Notification Timeout** eligibility, duration, cancellation, and expiration meaning; **Notification Banner State** reports whether the matching revision is visible, and the **Notification Daemon** starts the timer only after graphical presentation acknowledges applying that banner state.
 - Inline replies are outside the first version scope.

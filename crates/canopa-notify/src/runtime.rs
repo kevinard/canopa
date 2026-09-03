@@ -17,8 +17,8 @@ use crate::lifecycle::{
     NotificationTimeoutChange,
 };
 use crate::presentation::{
-    BannerPresentation, BannerPresenter, BannerView, NotificationBannerState,
-    PresentationCoordinator,
+    BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerView,
+    NotificationBannerState, PresentationCoordinator,
 };
 use crate::sound::SoundPresenter;
 use crate::sqlite_persisted_state::SqlitePersistedState;
@@ -45,6 +45,7 @@ pub(crate) struct NotificationRuntime {
     sender_event_changes: broadcast::Sender<SenderEvent>,
     decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
     timeout_tasks: Arc<Mutex<HashMap<i64, TimeoutTask>>>,
+    pending_timeout_starts: Arc<Mutex<PendingTimeoutStarts>>,
     loaded_policy_state: Arc<Mutex<LoadedDeliveryPolicyState>>,
     policy_changes: Arc<AsyncMutex<()>>,
     state_version: Arc<AtomicU64>,
@@ -97,6 +98,68 @@ struct TimeoutTask {
     handle: tokio::task::JoinHandle<()>,
 }
 
+#[derive(Default)]
+struct PendingTimeoutStarts {
+    starts: BTreeMap<(i64, i64), NotificationTimeoutChange>,
+    cancelled_through: HashMap<i64, i64>,
+}
+
+impl PendingTimeoutStarts {
+    fn allows(&self, notification_id: i64, revision: i64) -> bool {
+        self.cancelled_through
+            .get(&notification_id)
+            .is_none_or(|cancelled_revision| revision > *cancelled_revision)
+    }
+
+    fn apply(&mut self, changes: impl IntoIterator<Item = NotificationTimeoutChange>) {
+        for change in changes {
+            match change {
+                NotificationTimeoutChange::StartsOnDisplay {
+                    notification_id,
+                    revision,
+                    ..
+                } => {
+                    if self.allows(notification_id, revision) {
+                        self.starts.insert((notification_id, revision), change);
+                    }
+                }
+                NotificationTimeoutChange::CancelThroughRevision {
+                    notification_id,
+                    revision,
+                } => {
+                    self.cancelled_through
+                        .entry(notification_id)
+                        .and_modify(|cancelled_revision| {
+                            *cancelled_revision = (*cancelled_revision).max(revision);
+                        })
+                        .or_insert(revision);
+                    self.starts.retain(|(pending_id, pending_revision), _| {
+                        *pending_id != notification_id || *pending_revision > revision
+                    });
+                }
+            }
+        }
+    }
+
+    fn revisions_in(&self, visible_revisions: &BTreeSet<(i64, i64)>) -> Vec<(i64, i64)> {
+        self.starts
+            .keys()
+            .filter(|revision| visible_revisions.contains(revision))
+            .copied()
+            .collect()
+    }
+
+    fn take(
+        &mut self,
+        revisions: impl IntoIterator<Item = (i64, i64)>,
+    ) -> Vec<NotificationTimeoutChange> {
+        revisions
+            .into_iter()
+            .filter_map(|revision| self.starts.remove(&revision))
+            .collect()
+    }
+}
+
 impl NotificationRuntime {
     pub(crate) async fn new(
         storage: SqlitePersistedState,
@@ -138,6 +201,7 @@ impl NotificationRuntime {
             sender_event_changes,
             decision_logs: Arc::new(Mutex::new(Vec::new())),
             timeout_tasks: Arc::new(Mutex::new(HashMap::new())),
+            pending_timeout_starts: Arc::new(Mutex::new(PendingTimeoutStarts::default())),
             loaded_policy_state: Arc::new(Mutex::new(loaded_policy_state)),
             policy_changes: Arc::new(AsyncMutex::new(())),
             state_version: Arc::new(AtomicU64::new(0)),
@@ -507,7 +571,12 @@ impl NotificationRuntime {
         sound: Option<NotificationSoundPlayback>,
     ) -> anyhow::Result<()> {
         self.remove_runtime_images_for_terminal_effects(effects);
-        self.apply_notification_timeout_changes(effects.timeout_changes());
+        let timeout_changes: Vec<_> = effects.timeout_changes().collect();
+        self.pending_timeout_starts
+            .lock()
+            .unwrap()
+            .apply(timeout_changes.iter().copied());
+        self.cancel_notification_timeouts(timeout_changes.iter().copied());
         {
             let mut banner_state = self.banner_state.lock().unwrap();
             banner_state.apply_changes(effects.banner_changes());
@@ -595,8 +664,8 @@ impl NotificationRuntime {
                 | LifecycleEffect::ThreadClosed(_)
                 | LifecycleEffect::ThreadStale(_)
                 | LifecycleEffect::NotificationDropped { .. }
-                | LifecycleEffect::NotificationTimeoutScheduled { .. }
-                | LifecycleEffect::NotificationTimeoutCancelled { .. } => {}
+                | LifecycleEffect::NotificationTimeoutStartsOnDisplay { .. }
+                | LifecycleEffect::NotificationTimeoutCancelledThroughRevision { .. } => {}
             }
         }
         events
@@ -619,11 +688,27 @@ impl NotificationRuntime {
     }
 
     async fn sync_presentation(&self) -> anyhow::Result<()> {
-        let presentation = self.banner_presentation();
-        self.presentation.replace_banner_presentation(presentation)
+        let (presentation, visible_revisions) = self.banner_presentation_with_visible_revisions();
+        let presented_timeout_revisions: Vec<_> = self
+            .pending_timeout_starts
+            .lock()
+            .unwrap()
+            .revisions_in(&visible_revisions);
+        let runtime = self.clone();
+        let acknowledgement = BannerPresentationAcknowledgement::new(move || {
+            runtime.start_timeouts_for_presented_revisions(presented_timeout_revisions);
+        });
+        self.presentation
+            .replace_banner_presentation_with_acknowledgement(presentation, acknowledgement)
     }
 
     fn banner_presentation(&self) -> BannerPresentation {
+        self.banner_presentation_with_visible_revisions().0
+    }
+
+    fn banner_presentation_with_visible_revisions(
+        &self,
+    ) -> (BannerPresentation, BTreeSet<(i64, i64)>) {
         let (threads, overflow_count) = {
             let banner_state = self.banner_state.lock().unwrap();
             (
@@ -631,17 +716,24 @@ impl NotificationRuntime {
                 banner_state.overflow_count(),
             )
         };
+        let visible_revisions = threads
+            .iter()
+            .map(|thread| (thread.id, thread.revision))
+            .collect();
         let runtime_images = self.runtime_images.lock().unwrap();
-        BannerPresentation {
-            banners: threads
-                .into_iter()
-                .map(|thread| {
-                    let image = runtime_images.image_for(thread.id, thread.revision);
-                    BannerView::from_thread(thread, image)
-                })
-                .collect(),
-            overflow_count,
-        }
+        (
+            BannerPresentation {
+                banners: threads
+                    .into_iter()
+                    .map(|thread| {
+                        let image = runtime_images.image_for(thread.id, thread.revision);
+                        BannerView::from_thread(thread, image)
+                    })
+                    .collect(),
+                overflow_count,
+            },
+            visible_revisions,
+        )
     }
 
     fn apply_request_images(
@@ -662,8 +754,8 @@ impl NotificationRuntime {
                 | LifecycleEffect::ThreadClosed(_)
                 | LifecycleEffect::ThreadStale(_)
                 | LifecycleEffect::NotificationDropped { .. }
-                | LifecycleEffect::NotificationTimeoutScheduled { .. }
-                | LifecycleEffect::NotificationTimeoutCancelled { .. }
+                | LifecycleEffect::NotificationTimeoutStartsOnDisplay { .. }
+                | LifecycleEffect::NotificationTimeoutCancelledThroughRevision { .. }
                 | LifecycleEffect::ActionInvoked { .. }
                 | LifecycleEffect::SenderClosed { .. } => {}
             }
@@ -685,8 +777,8 @@ impl NotificationRuntime {
                 | LifecycleEffect::ThreadCreated(_)
                 | LifecycleEffect::ThreadRevised(_)
                 | LifecycleEffect::NotificationDropped { .. }
-                | LifecycleEffect::NotificationTimeoutScheduled { .. }
-                | LifecycleEffect::NotificationTimeoutCancelled { .. }
+                | LifecycleEffect::NotificationTimeoutStartsOnDisplay { .. }
+                | LifecycleEffect::NotificationTimeoutCancelledThroughRevision { .. }
                 | LifecycleEffect::ActionInvoked { .. }
                 | LifecycleEffect::SenderClosed { .. } => {}
             }
@@ -698,19 +790,37 @@ impl NotificationRuntime {
         let _ = self.state_changes.send(version);
     }
 
-    fn apply_notification_timeout_changes(
+    fn cancel_notification_timeouts(
         &self,
         changes: impl IntoIterator<Item = NotificationTimeoutChange>,
     ) {
         for change in changes {
-            match change {
-                NotificationTimeoutChange::Scheduled {
-                    notification_id,
-                    revision,
-                    duration,
-                } => self.schedule_notification_timeout(notification_id, revision, duration),
-                NotificationTimeoutChange::Cancelled { notification_id } => {
-                    self.cancel_notification_timeout(notification_id)
+            if let NotificationTimeoutChange::CancelThroughRevision {
+                notification_id,
+                revision,
+            } = change
+            {
+                self.cancel_notification_timeout_through_revision(notification_id, revision);
+            }
+        }
+    }
+
+    fn start_timeouts_for_presented_revisions(
+        &self,
+        revisions: impl IntoIterator<Item = (i64, i64)>,
+    ) {
+        let changes = self.pending_timeout_starts.lock().unwrap().take(revisions);
+        for change in changes {
+            if let NotificationTimeoutChange::StartsOnDisplay {
+                notification_id,
+                revision,
+                timeout,
+                urgency,
+            } = change
+            {
+                if let Some(duration) = self.lifecycle.timeout_duration_on_display(timeout, urgency)
+                {
+                    self.schedule_notification_timeout(notification_id, revision, duration);
                 }
             }
         }
@@ -722,7 +832,20 @@ impl NotificationRuntime {
         revision: i64,
         duration: Duration,
     ) {
-        self.cancel_notification_timeout(notification_id);
+        let pending_timeout_starts = self.pending_timeout_starts.lock().unwrap();
+        if !pending_timeout_starts.allows(notification_id, revision) {
+            return;
+        }
+        let mut timeout_tasks = self.timeout_tasks.lock().unwrap();
+        if timeout_tasks
+            .get(&notification_id)
+            .is_some_and(|task| task.revision >= revision)
+        {
+            return;
+        }
+        if let Some(task) = timeout_tasks.remove(&notification_id) {
+            task.handle.abort();
+        }
 
         let runtime = self.clone();
         let handle = tokio::spawn(async move {
@@ -733,15 +856,25 @@ impl NotificationRuntime {
                 .await;
         });
 
-        self.timeout_tasks
-            .lock()
-            .unwrap()
-            .insert(notification_id, TimeoutTask { revision, handle });
+        timeout_tasks.insert(notification_id, TimeoutTask { revision, handle });
     }
 
-    fn cancel_notification_timeout(&self, notification_id: i64) {
-        if let Some(task) = self.timeout_tasks.lock().unwrap().remove(&notification_id) {
-            task.handle.abort();
+    fn cancel_notification_timeout_through_revision(&self, notification_id: i64, revision: i64) {
+        let mut pending_timeout_starts = self.pending_timeout_starts.lock().unwrap();
+        pending_timeout_starts.apply([NotificationTimeoutChange::CancelThroughRevision {
+            notification_id,
+            revision,
+        }]);
+        let mut timeout_tasks = self.timeout_tasks.lock().unwrap();
+        let should_cancel = timeout_tasks
+            .get(&notification_id)
+            .is_some_and(|task| task.revision <= revision);
+        if should_cancel {
+            timeout_tasks
+                .remove(&notification_id)
+                .unwrap()
+                .handle
+                .abort();
         }
     }
 
@@ -878,5 +1011,93 @@ fn projection_from_snapshot(
                 items,
             })
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{NoopActivationTokenProvider, NoopBannerPresenter, NoopSoundPresenter};
+
+    #[test]
+    fn pending_timeout_starts_reject_changes_older_than_a_cancellation() {
+        let mut pending = PendingTimeoutStarts::default();
+        pending.apply([
+            NotificationTimeoutChange::CancelThroughRevision {
+                notification_id: 7,
+                revision: 2,
+            },
+            NotificationTimeoutChange::StartsOnDisplay {
+                notification_id: 7,
+                revision: 1,
+                timeout: NotificationTimeout::Milliseconds(10),
+                urgency: Urgency::Normal,
+            },
+            NotificationTimeoutChange::StartsOnDisplay {
+                notification_id: 7,
+                revision: 3,
+                timeout: NotificationTimeout::Milliseconds(10),
+                urgency: Urgency::Normal,
+            },
+        ]);
+
+        assert!(!pending.starts.contains_key(&(7, 1)));
+        assert!(pending.starts.contains_key(&(7, 3)));
+    }
+
+    #[tokio::test]
+    async fn stale_timeout_changes_cannot_replace_or_cancel_newer_revision_task() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = SqlitePersistedState::open(temp.path().join("history.db"), 30, 1_000)
+            .await
+            .unwrap();
+        let runtime = NotificationRuntime::new(
+            storage,
+            false,
+            NotificationTimeoutDefaults::default(),
+            Arc::new(NoopBannerPresenter),
+            Arc::new(NoopActivationTokenProvider),
+            Arc::new(NoopSoundPresenter),
+        )
+        .await
+        .unwrap();
+
+        runtime.schedule_notification_timeout(7, 3, Duration::from_secs(60));
+        runtime.schedule_notification_timeout(7, 2, Duration::from_secs(60));
+
+        assert_eq!(
+            runtime
+                .timeout_tasks
+                .lock()
+                .unwrap()
+                .get(&7)
+                .map(|task| task.revision),
+            Some(3)
+        );
+        runtime.cancel_notification_timeout_through_revision(7, 2);
+        assert_eq!(
+            runtime
+                .timeout_tasks
+                .lock()
+                .unwrap()
+                .get(&7)
+                .map(|task| task.revision),
+            Some(3)
+        );
+        runtime.cancel_notification_timeout_through_revision(7, 3);
+        assert!(!runtime.timeout_tasks.lock().unwrap().contains_key(&7));
+
+        runtime.schedule_notification_timeout(7, 2, Duration::from_secs(60));
+        assert!(!runtime.timeout_tasks.lock().unwrap().contains_key(&7));
+        runtime.schedule_notification_timeout(7, 4, Duration::from_secs(60));
+        assert_eq!(
+            runtime
+                .timeout_tasks
+                .lock()
+                .unwrap()
+                .get(&7)
+                .map(|task| task.revision),
+            Some(4)
+        );
     }
 }

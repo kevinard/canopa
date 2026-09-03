@@ -2,7 +2,7 @@ use crate::clock::now_millis;
 use crate::{
     AcceptedNotification, DeliveryDecision, DeliveryOutcome, NotificationReceipt,
     NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
-    SenderCloseReason, SenderEvent,
+    SenderCloseReason, SenderEvent, Urgency,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -75,13 +75,15 @@ pub enum LifecycleEffect {
     NotificationDropped {
         replaces_id: Option<i64>,
     },
-    NotificationTimeoutScheduled {
+    NotificationTimeoutStartsOnDisplay {
         notification_id: i64,
         revision: i64,
-        duration: Duration,
+        timeout: NotificationTimeout,
+        urgency: Urgency,
     },
-    NotificationTimeoutCancelled {
+    NotificationTimeoutCancelledThroughRevision {
         notification_id: i64,
+        revision: i64,
     },
     ActionInvoked {
         notification_id: i64,
@@ -155,20 +157,24 @@ impl LifecycleEffects {
 
     pub fn timeout_changes(&self) -> impl Iterator<Item = NotificationTimeoutChange> + '_ {
         self.effects.iter().filter_map(|effect| match effect {
-            LifecycleEffect::NotificationTimeoutScheduled {
+            LifecycleEffect::NotificationTimeoutStartsOnDisplay {
                 notification_id,
                 revision,
-                duration,
-            } => Some(NotificationTimeoutChange::Scheduled {
+                timeout,
+                urgency,
+            } => Some(NotificationTimeoutChange::StartsOnDisplay {
                 notification_id: *notification_id,
                 revision: *revision,
-                duration: *duration,
+                timeout: *timeout,
+                urgency: *urgency,
             }),
-            LifecycleEffect::NotificationTimeoutCancelled { notification_id } => {
-                Some(NotificationTimeoutChange::Cancelled {
-                    notification_id: *notification_id,
-                })
-            }
+            LifecycleEffect::NotificationTimeoutCancelledThroughRevision {
+                notification_id,
+                revision,
+            } => Some(NotificationTimeoutChange::CancelThroughRevision {
+                notification_id: *notification_id,
+                revision: *revision,
+            }),
             _ => None,
         })
     }
@@ -187,8 +193,8 @@ impl LifecycleEffects {
             }),
             LifecycleEffect::SenderReceipt(_)
             | LifecycleEffect::NotificationDropped { .. }
-            | LifecycleEffect::NotificationTimeoutScheduled { .. }
-            | LifecycleEffect::NotificationTimeoutCancelled { .. }
+            | LifecycleEffect::NotificationTimeoutStartsOnDisplay { .. }
+            | LifecycleEffect::NotificationTimeoutCancelledThroughRevision { .. }
             | LifecycleEffect::ActionInvoked { .. }
             | LifecycleEffect::SenderClosed { .. } => None,
         })
@@ -215,13 +221,15 @@ impl<'a> IntoIterator for &'a LifecycleEffects {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NotificationTimeoutChange {
-    Scheduled {
+    StartsOnDisplay {
         notification_id: i64,
         revision: i64,
-        duration: Duration,
+        timeout: NotificationTimeout,
+        urgency: Urgency,
     },
-    Cancelled {
+    CancelThroughRevision {
         notification_id: i64,
+        revision: i64,
     },
 }
 
@@ -341,6 +349,14 @@ where
             delivery_outcome: delivery.outcome,
         }));
         Ok(LifecycleEffects::new(effects))
+    }
+
+    pub(crate) fn timeout_duration_on_display(
+        &self,
+        timeout: NotificationTimeout,
+        urgency: Urgency,
+    ) -> Option<Duration> {
+        timeout.duration(urgency, self.timeout_defaults)
     }
 
     pub async fn drop_notification(
@@ -492,7 +508,12 @@ where
                 )
                 .await?;
             effects.push(LifecycleEffect::ThreadStale(stale));
-            effects.push(LifecycleEffect::NotificationTimeoutCancelled { notification_id });
+            effects.push(
+                LifecycleEffect::NotificationTimeoutCancelledThroughRevision {
+                    notification_id,
+                    revision: expected_revision,
+                },
+            );
         }
         Ok(LifecycleEffects::new(effects))
     }
@@ -515,6 +536,7 @@ where
                 PersistPrecondition::ExpectedActiveRevision(expected_revision),
             )
             .await?;
+        let revision = thread.revision;
         let transition = match status {
             NotificationStatus::Dismissed => LifecycleEffect::ThreadDismissed(thread),
             NotificationStatus::Expired => LifecycleEffect::ThreadExpired(thread),
@@ -524,7 +546,10 @@ where
         };
         Ok(LifecycleEffects::new(vec![
             transition,
-            LifecycleEffect::NotificationTimeoutCancelled { notification_id },
+            LifecycleEffect::NotificationTimeoutCancelledThroughRevision {
+                notification_id,
+                revision,
+            },
             LifecycleEffect::SenderClosed {
                 notification_id,
                 reason: status.into(),
@@ -673,29 +698,31 @@ where
         timeout: NotificationTimeout,
         replace_existing: bool,
     ) {
+        if replace_existing {
+            effects.push(
+                LifecycleEffect::NotificationTimeoutCancelledThroughRevision {
+                    notification_id: thread.id,
+                    revision: thread.revision.saturating_sub(1),
+                },
+            );
+        }
+
         if thread.status != NotificationStatus::Active
             || thread.delivery_outcome != DeliveryOutcome::Shown
         {
-            if replace_existing {
-                effects.push(LifecycleEffect::NotificationTimeoutCancelled {
-                    notification_id: thread.id,
-                });
-            }
             return;
         }
 
-        match timeout.duration(thread.accepted_notification.urgency, self.timeout_defaults) {
-            Some(duration) => effects.push(LifecycleEffect::NotificationTimeoutScheduled {
-                notification_id: thread.id,
-                revision: thread.revision,
-                duration,
-            }),
-            None if replace_existing => {
-                effects.push(LifecycleEffect::NotificationTimeoutCancelled {
+        match timeout {
+            NotificationTimeout::ServerDefault | NotificationTimeout::Milliseconds(_) => {
+                effects.push(LifecycleEffect::NotificationTimeoutStartsOnDisplay {
                     notification_id: thread.id,
+                    revision: thread.revision,
+                    timeout,
+                    urgency: thread.accepted_notification.urgency,
                 });
             }
-            None => {}
+            NotificationTimeout::Never => {}
         }
     }
 }

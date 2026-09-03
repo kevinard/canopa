@@ -24,11 +24,49 @@ const BODY_CONTENT_TEXT_HEIGHT: u32 = 34;
 const BODY_CONTENT_RICH_HEIGHT: u32 = 70;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
+#[derive(Clone)]
+pub struct BannerPresentationAcknowledgement {
+    callback: Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>>,
+}
+
+impl BannerPresentationAcknowledgement {
+    pub fn new(callback: impl FnOnce() + Send + 'static) -> Self {
+        Self {
+            callback: Arc::new(Mutex::new(Some(Box::new(callback)))),
+        }
+    }
+
+    pub fn acknowledge(self) {
+        let callback = self.callback.lock().unwrap().take();
+        if let Some(callback) = callback {
+            callback();
+        }
+    }
+}
+
+impl std::fmt::Debug for BannerPresentationAcknowledgement {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BannerPresentationAcknowledgement")
+            .finish_non_exhaustive()
+    }
+}
+
 pub trait BannerPresenter: Send + Sync {
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()>;
 
     fn replace_banner_presentation(&self, presentation: BannerPresentation) -> anyhow::Result<()> {
         self.replace_visible_banners(presentation.banners)
+    }
+
+    fn replace_banner_presentation_with_acknowledgement(
+        &self,
+        presentation: BannerPresentation,
+        acknowledgement: BannerPresentationAcknowledgement,
+    ) -> anyhow::Result<()> {
+        self.replace_banner_presentation(presentation)?;
+        acknowledgement.acknowledge();
+        Ok(())
     }
 }
 
@@ -144,10 +182,24 @@ impl BannerPresenter for IcedLayerShellBannerPresenter {
     }
 
     fn replace_banner_presentation(&self, presentation: BannerPresentation) -> anyhow::Result<()> {
+        self.replace_banner_presentation_with_acknowledgement(
+            presentation,
+            BannerPresentationAcknowledgement::new(|| {}),
+        )
+    }
+
+    fn replace_banner_presentation_with_acknowledgement(
+        &self,
+        presentation: BannerPresentation,
+        acknowledgement: BannerPresentationAcknowledgement,
+    ) -> anyhow::Result<()> {
         self.updates
             .lock()
             .unwrap()
-            .try_send(BannerRuntimeInput::Replace(presentation))
+            .try_send(BannerRuntimeInput::Replace {
+                presentation,
+                acknowledgement,
+            })
             .map_err(|error| anyhow::anyhow!("failed to send banner update to renderer: {error}"))
     }
 }
@@ -161,13 +213,24 @@ static BANNER_UPDATE_RECEIVERS: OnceLock<Mutex<HashMap<u64, BannerUpdateReceiver
 
 #[derive(Clone, Debug)]
 enum BannerRuntimeInput {
-    Replace(BannerPresentation),
+    Replace {
+        presentation: BannerPresentation,
+        acknowledgement: BannerPresentationAcknowledgement,
+    },
+}
+
+#[derive(Clone)]
+struct PendingBannerAcknowledgement {
+    generation: u64,
+    acknowledgement: BannerPresentationAcknowledgement,
 }
 
 #[derive(Clone)]
 struct BannerUiState {
     runtime_id: u64,
     presentation: BannerPresentation,
+    presentation_generation: u64,
+    pending_acknowledgements: Vec<PendingBannerAcknowledgement>,
     surface_size: (u32, u32),
     interactions: mpsc::Sender<BannerInteraction>,
 }
@@ -175,6 +238,7 @@ struct BannerUiState {
 #[derive(Clone, Debug)]
 enum BannerUiMessage {
     Runtime(BannerRuntimeInput),
+    PresentationFrame(u64),
     ActivateRequested(i64),
     Activate {
         notification_id: i64,
@@ -280,6 +344,8 @@ fn run_banner_ui(
         move || BannerUiState {
             runtime_id,
             presentation: BannerPresentation::default(),
+            presentation_generation: 0,
+            pending_acknowledgements: Vec::new(),
             surface_size: banner_surface_size(0, 0),
             interactions: interactions.clone(),
         },
@@ -300,8 +366,22 @@ fn run_banner_ui(
 }
 
 fn banner_ui_subscription(state: &BannerUiState) -> iced::Subscription<BannerUiMessage> {
-    iced::Subscription::run_with(state.runtime_id, banner_update_stream)
-        .map(BannerUiMessage::Runtime)
+    let presentation_frames = if state
+        .pending_acknowledgements
+        .iter()
+        .any(|pending| pending.generation == state.presentation_generation)
+    {
+        iced::window::frames()
+            .with(state.presentation_generation)
+            .map(|(generation, _)| BannerUiMessage::PresentationFrame(generation))
+    } else {
+        iced::Subscription::none()
+    };
+    iced::Subscription::batch([
+        iced::Subscription::run_with(state.runtime_id, banner_update_stream)
+            .map(BannerUiMessage::Runtime),
+        presentation_frames,
+    ])
 }
 
 fn banner_ui_update(
@@ -309,13 +389,38 @@ fn banner_ui_update(
     message: BannerUiMessage,
 ) -> iced::Task<BannerUiMessage> {
     match message {
-        BannerUiMessage::Runtime(BannerRuntimeInput::Replace(presentation)) => {
+        BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
+            presentation,
+            acknowledgement,
+        }) => {
             let size = banner_surface_resize(&mut state.surface_size, &presentation);
             state.presentation = presentation;
+            state.presentation_generation = state
+                .presentation_generation
+                .checked_add(1)
+                .expect("banner presentation generation exhausted");
+            state
+                .pending_acknowledgements
+                .push(PendingBannerAcknowledgement {
+                    generation: state.presentation_generation,
+                    acknowledgement,
+                });
             match size {
                 Some(size) => iced::Task::done(BannerUiMessage::SizeChange(size)),
                 None => iced::Task::none(),
             }
+        }
+        BannerUiMessage::PresentationFrame(rendered_generation) => {
+            let mut later_acknowledgements = Vec::new();
+            for pending in std::mem::take(&mut state.pending_acknowledgements) {
+                if pending.generation == rendered_generation {
+                    pending.acknowledgement.acknowledge();
+                } else if pending.generation > rendered_generation {
+                    later_acknowledgements.push(pending);
+                }
+            }
+            state.pending_acknowledgements = later_acknowledgements;
+            iced::Task::none()
         }
         BannerUiMessage::ActivateRequested(notification_id) => {
             let Some(app_identity) = banner_app_identity(state, notification_id) else {
@@ -436,7 +541,40 @@ fn activation_token_task(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iced::futures::StreamExt;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
+
+    fn banner_ui_test_state() -> BannerUiState {
+        let (interactions, _interaction_receiver) = mpsc::channel();
+        BannerUiState {
+            runtime_id: 0,
+            presentation: BannerPresentation::default(),
+            presentation_generation: 0,
+            pending_acknowledgements: Vec::new(),
+            surface_size: banner_surface_size(0, 0),
+            interactions,
+        }
+    }
+
+    fn queue_banner_ui_presentation(
+        state: &mut BannerUiState,
+        notification_id: i64,
+        acknowledged: Arc<AtomicBool>,
+    ) {
+        let _task = banner_ui_update(
+            state,
+            BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
+                presentation: BannerPresentation::visible_banners(vec![banner_view(
+                    notification_id,
+                    "Queued",
+                )]),
+                acknowledgement: BannerPresentationAcknowledgement::new(move || {
+                    acknowledged.store(true, Ordering::SeqCst);
+                }),
+            }),
+        );
+    }
 
     #[tokio::test]
     async fn banner_ui_thread_enters_daemon_tokio_runtime() {
@@ -459,6 +597,84 @@ mod tests {
                 .unwrap(),
             "banner UI thread must enter the daemon Tokio runtime before invoking iced/layer-shell"
         );
+    }
+
+    #[tokio::test]
+    async fn iced_presenter_acknowledges_only_after_ui_consumes_presentation() {
+        let (updates, mut receiver) = iced::futures::channel::mpsc::channel(1);
+        let presenter = IcedLayerShellBannerPresenter {
+            updates: Arc::new(Mutex::new(updates)),
+        };
+        let acknowledged = Arc::new(AtomicBool::new(false));
+        let acknowledgement_state = acknowledged.clone();
+        presenter
+            .replace_banner_presentation_with_acknowledgement(
+                BannerPresentation::visible_banners(vec![banner_view(42, "Displayed")]),
+                BannerPresentationAcknowledgement::new(move || {
+                    acknowledgement_state.store(true, Ordering::SeqCst);
+                }),
+            )
+            .unwrap();
+        assert!(!acknowledged.load(Ordering::SeqCst));
+
+        let input = receiver.next().await.unwrap();
+        assert!(!acknowledged.load(Ordering::SeqCst));
+        let mut state = banner_ui_test_state();
+        let _task = banner_ui_update(&mut state, BannerUiMessage::Runtime(input));
+
+        assert!(!acknowledged.load(Ordering::SeqCst));
+        let rendered_generation = state.presentation_generation;
+        let _task = banner_ui_update(
+            &mut state,
+            BannerUiMessage::PresentationFrame(rendered_generation),
+        );
+
+        assert!(acknowledged.load(Ordering::SeqCst));
+        assert_eq!(state.presentation.banners[0].notification_id, 42);
+    }
+
+    #[test]
+    fn presentation_frame_does_not_acknowledge_a_superseded_update() {
+        let mut state = banner_ui_test_state();
+        let first_acknowledged = Arc::new(AtomicBool::new(false));
+        let latest_acknowledged = Arc::new(AtomicBool::new(false));
+
+        for (notification_id, acknowledged) in [
+            (1, first_acknowledged.clone()),
+            (2, latest_acknowledged.clone()),
+        ] {
+            queue_banner_ui_presentation(&mut state, notification_id, acknowledged);
+        }
+
+        let rendered_generation = state.presentation_generation;
+        let _task = banner_ui_update(
+            &mut state,
+            BannerUiMessage::PresentationFrame(rendered_generation),
+        );
+
+        assert!(!first_acknowledged.load(Ordering::SeqCst));
+        assert!(latest_acknowledged.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn presentation_frame_acknowledges_its_generation_after_a_newer_update_arrives() {
+        let mut state = banner_ui_test_state();
+        let first_acknowledged = Arc::new(AtomicBool::new(false));
+        let latest_acknowledged = Arc::new(AtomicBool::new(false));
+
+        for (notification_id, acknowledged) in [
+            (1, first_acknowledged.clone()),
+            (2, latest_acknowledged.clone()),
+        ] {
+            queue_banner_ui_presentation(&mut state, notification_id, acknowledged);
+        }
+
+        let _task = banner_ui_update(&mut state, BannerUiMessage::PresentationFrame(1));
+
+        assert!(first_acknowledged.load(Ordering::SeqCst));
+        assert!(!latest_acknowledged.load(Ordering::SeqCst));
+        let _task = banner_ui_update(&mut state, BannerUiMessage::PresentationFrame(2));
+        assert!(latest_acknowledged.load(Ordering::SeqCst));
     }
 
     #[test]
@@ -1838,13 +2054,14 @@ impl PresentationCoordinator {
         }
     }
 
-    pub(crate) fn replace_banner_presentation(
+    pub(crate) fn replace_banner_presentation_with_acknowledgement(
         &self,
         presentation: BannerPresentation,
+        acknowledgement: BannerPresentationAcknowledgement,
     ) -> anyhow::Result<()> {
         if self.enabled {
             self.banner_presenter
-                .replace_banner_presentation(presentation)?;
+                .replace_banner_presentation_with_acknowledgement(presentation, acknowledgement)?;
         }
         Ok(())
     }

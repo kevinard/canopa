@@ -769,6 +769,31 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Default)]
+    struct RecordingBannerPresenter {
+        updates: Arc<Mutex<Vec<Vec<canopa_notify::BannerView>>>>,
+    }
+
+    impl RecordingBannerPresenter {
+        fn displayed(&self, notification_id: i64) -> bool {
+            self.updates.lock().unwrap().iter().any(|banners| {
+                banners
+                    .iter()
+                    .any(|banner| banner.notification_id == notification_id)
+            })
+        }
+    }
+
+    impl canopa_notify::BannerPresenter for RecordingBannerPresenter {
+        fn replace_visible_banners(
+            &self,
+            banners: Vec<canopa_notify::BannerView>,
+        ) -> anyhow::Result<()> {
+            self.updates.lock().unwrap().push(banners);
+            Ok(())
+        }
+    }
+
     #[test]
     fn service_mode_uses_non_headless_daemon_options() {
         let args = daemon_args(false, true);
@@ -960,6 +985,67 @@ mod tests {
         let (action_id, action_key): (u32, String) = action_signal.body().deserialize().unwrap();
         assert_eq!(action_id, sender_id);
         assert_eq!(action_key, "open");
+    }
+
+    #[tokio::test]
+    async fn notification_server_expires_notification_after_banner_display() {
+        let temp = tempfile::tempdir().unwrap();
+        let bus_name = test_bus_name("DisplayedTimeout");
+        let presenter = RecordingBannerPresenter::default();
+        let daemon = Daemon::open(DaemonOptions::graphical(
+            temp.path().join("history.db"),
+            presenter.clone(),
+        ))
+        .await
+        .unwrap();
+        let _server_connection = start_notification_server(bus_name.clone(), daemon.clone())
+            .await
+            .unwrap();
+        let connection = zbus::Connection::session().await.unwrap();
+        let proxy = zbus::Proxy::new(
+            &connection,
+            bus_name.as_str(),
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        )
+        .await
+        .unwrap();
+        let mut closed_signals = proxy.receive_signal("NotificationClosed").await.unwrap();
+
+        let sender_id: u32 = proxy
+            .call(
+                "Notify",
+                &(
+                    "Calendar",
+                    0u32,
+                    "",
+                    "Displayed timeout",
+                    "Starting soon",
+                    Vec::<String>::new(),
+                    HashMap::<String, OwnedValue>::new(),
+                    100i32,
+                ),
+            )
+            .await
+            .unwrap();
+        let internal_id = daemon.snapshot().await.unwrap().active[0].id;
+        assert!(presenter.displayed(internal_id));
+
+        let signal = tokio::time::timeout(std::time::Duration::from_secs(1), closed_signals.next())
+            .await
+            .unwrap()
+            .unwrap();
+        let (closed_id, reason): (u32, u32) = signal.body().deserialize().unwrap();
+        assert_eq!((closed_id, reason), (sender_id, 1));
+        assert!(daemon.visible_banners().await.is_empty());
+
+        let snapshot = daemon.snapshot().await.unwrap();
+        assert!(snapshot.active.is_empty());
+        assert!(snapshot.history.iter().any(|thread| {
+            thread.id == internal_id && thread.status == canopa_notify::NotificationStatus::Expired
+        }));
+        let close_result: zbus::Result<()> = proxy.call("CloseNotification", &(sender_id,)).await;
+        assert!(close_result.is_err());
     }
 
     #[tokio::test]

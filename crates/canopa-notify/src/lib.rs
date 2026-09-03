@@ -46,9 +46,9 @@ pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
     BannerAction, BannerBodySegment, BannerFocusBehavior, BannerInteraction,
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPlacement,
-    BannerPresentation, BannerPresenter, BannerSurfaceSpec, BannerView, BannerVisual,
-    IcedLayerShellBannerPresenter, NoopBannerPresenter, NotificationBannerState,
-    StructuredLogBannerPresenter,
+    BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerSurfaceSpec,
+    BannerView, BannerVisual, IcedLayerShellBannerPresenter, NoopBannerPresenter,
+    NotificationBannerState, StructuredLogBannerPresenter,
 };
 pub use runtime::NotificationStateSubscription;
 pub use sound::{NoopSoundPresenter, RodioSoundPresenter, SoundPresenter};

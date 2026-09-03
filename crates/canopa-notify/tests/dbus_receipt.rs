@@ -550,7 +550,7 @@ async fn dev_dbus_noop_notification_returns_nonzero_sender_id_without_history() 
 }
 
 #[tokio::test]
-async fn dev_dbus_transient_notification_expires_without_history() {
+async fn dev_dbus_headless_transient_notification_does_not_expire_without_display() {
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("control.sock");
     let database = temp.path().join("history.db");
@@ -612,12 +612,22 @@ async fn dev_dbus_transient_notification_expires_without_history() {
         .await
         .unwrap();
     assert_eq!(replacement_id, id);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(150), closed_signals.next())
+            .await
+            .is_err()
+    );
+
+    proxy
+        .call::<_, _, ()>("CloseNotification", &(id,))
+        .await
+        .unwrap();
     let signal = tokio::time::timeout(std::time::Duration::from_secs(1), closed_signals.next())
         .await
         .unwrap()
         .unwrap();
     let (closed_id, reason): (u32, u32) = signal.body().deserialize().unwrap();
-    assert_eq!((closed_id, reason), (id, 1));
+    assert_eq!((closed_id, reason), (id, 3));
 
     let output = Command::cargo_bin("canopa-notify")
         .unwrap()

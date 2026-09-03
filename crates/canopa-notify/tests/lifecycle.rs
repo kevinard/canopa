@@ -8,7 +8,7 @@ use canopa_notify::{
     LifecycleDelivery, LifecycleEffect, NewNotificationThread, NotificationAction,
     NotificationBodyContent, NotificationHistory, NotificationInput, NotificationLifecycle,
     NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutChange,
-    PersistPrecondition, SenderCloseReason, SenderEvent, Urgency,
+    NotificationTimeoutDefaults, PersistPrecondition, SenderCloseReason, SenderEvent, Urgency,
 };
 use notifications::notification;
 use std::sync::{
@@ -158,7 +158,7 @@ async fn lifecycle_replacement_owns_thread_revision_shape() {
 }
 
 #[tokio::test]
-async fn lifecycle_schedules_timeout_for_shown_notification() {
+async fn lifecycle_requests_timeout_start_on_display_for_shown_notification() {
     let history = MemoryHistory::default();
     let lifecycle = NotificationLifecycle::new(history);
 
@@ -174,13 +174,63 @@ async fn lifecycle_schedules_timeout_for_shown_notification() {
     assert!(effects.timeout_changes().any(|change| {
         matches!(
             change,
-            NotificationTimeoutChange::Scheduled {
+            NotificationTimeoutChange::StartsOnDisplay {
                 notification_id: 1,
                 revision: 1,
-                duration,
-            } if duration == Duration::from_millis(42)
+                timeout: NotificationTimeout::Milliseconds(42),
+                urgency: Urgency::Normal,
+            }
         )
     }));
+}
+
+#[tokio::test]
+async fn lifecycle_never_timeout_does_not_request_start_on_display() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history);
+
+    let effects = lifecycle
+        .receive(
+            lifecycle_notification(None, "Untimed"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Never,
+        )
+        .await
+        .unwrap();
+
+    assert!(effects.timeout_changes().next().is_none());
+}
+
+#[tokio::test]
+async fn lifecycle_preserves_server_default_until_display() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::with_timeout_defaults(
+        history,
+        NotificationTimeoutDefaults::new(
+            Some(Duration::from_millis(11)),
+            Some(Duration::from_millis(22)),
+            Some(Duration::from_millis(33)),
+        ),
+    );
+
+    let effects = lifecycle
+        .receive(
+            lifecycle_notification(None, "Default timeout"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::ServerDefault,
+        )
+        .await
+        .unwrap();
+
+    assert!(effects.timeout_changes().any(|change| matches!(
+        change,
+        NotificationTimeoutChange::StartsOnDisplay {
+            notification_id: 1,
+            revision: 1,
+            timeout: NotificationTimeout::ServerDefault,
+            urgency: Urgency::Normal,
+        }
+    )));
 }
 
 #[tokio::test]
@@ -217,7 +267,10 @@ async fn lifecycle_expires_timeout_when_revision_matches() {
     assert!(effects.timeout_changes().any(|change| {
         matches!(
             change,
-            NotificationTimeoutChange::Cancelled { notification_id: 1 }
+            NotificationTimeoutChange::CancelThroughRevision {
+                notification_id: 1,
+                revision: 1,
+            }
         )
     }));
     assert!(effects.sender_events().any(|event| {
@@ -309,13 +362,56 @@ async fn replacement_with_ineligible_timeout_cancels_previous_timeout() {
     assert!(effects.timeout_changes().any(|change| {
         matches!(
             change,
-            NotificationTimeoutChange::Cancelled { notification_id: 1 }
+            NotificationTimeoutChange::CancelThroughRevision {
+                notification_id: 1,
+                revision: 1,
+            }
         )
     }));
     assert!(
         !effects
             .timeout_changes()
-            .any(|change| matches!(change, NotificationTimeoutChange::Scheduled { .. }))
+            .any(|change| matches!(change, NotificationTimeoutChange::StartsOnDisplay { .. }))
+    );
+}
+
+#[tokio::test]
+async fn finite_replacement_cancels_previous_timeout_before_requesting_a_fresh_one() {
+    let history = MemoryHistory::default();
+    let lifecycle = NotificationLifecycle::new(history);
+
+    lifecycle
+        .receive(
+            lifecycle_notification(None, "Original"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Milliseconds(100),
+        )
+        .await
+        .unwrap();
+
+    let effects = lifecycle
+        .receive(
+            lifecycle_notification(Some(1), "Replacement"),
+            LifecycleDelivery::shown(),
+            NotificationTimeout::Milliseconds(200),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        effects.timeout_changes().collect::<Vec<_>>(),
+        vec![
+            NotificationTimeoutChange::CancelThroughRevision {
+                notification_id: 1,
+                revision: 1,
+            },
+            NotificationTimeoutChange::StartsOnDisplay {
+                notification_id: 1,
+                revision: 2,
+                timeout: NotificationTimeout::Milliseconds(200),
+                urgency: Urgency::Normal,
+            },
+        ]
     );
 }
 
@@ -498,11 +594,10 @@ async fn lifecycle_dropped_replacement_returns_receipt_without_revising_thread()
     );
     assert!(effects.sender_events().next().is_none());
     assert!(effects.banner_changes().next().is_none());
-    assert!(
-        !effects
-            .timeout_changes()
-            .any(|change| matches!(change, NotificationTimeoutChange::Cancelled { .. }))
-    );
+    assert!(!effects.timeout_changes().any(|change| matches!(
+        change,
+        NotificationTimeoutChange::CancelThroughRevision { .. }
+    )));
 }
 
 #[tokio::test]

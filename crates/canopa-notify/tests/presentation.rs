@@ -5,9 +5,10 @@ mod notifications;
 
 use canopa_notify::{
     BannerBodySegment, BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection,
-    BannerPresentation, BannerPresenter, BannerSurfaceSpec, BannerView, BannerVisual, Daemon,
-    DaemonOptions, DeliveryOutcome, IcedLayerShellBannerPresenter, NotificationAction,
-    NotificationImageData, NotificationInput, NotificationTimeout, NotificationTimeoutDefaults,
+    BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerSurfaceSpec,
+    BannerView, BannerVisual, Daemon, DaemonOptions, DeliveryOutcome,
+    IcedLayerShellBannerPresenter, NotificationAction, NotificationImageData, NotificationInput,
+    NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
     NotificationVisualReference, SenderEvent, Urgency, UserRule,
 };
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer};
@@ -47,6 +48,51 @@ impl BannerPresenter for RecordingPresenter {
 
     fn replace_banner_presentation(&self, presentation: BannerPresentation) -> anyhow::Result<()> {
         self.updates.lock().unwrap().push(presentation);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Default)]
+struct DelayedAcknowledgementPresenter {
+    updates: Arc<Mutex<Vec<BannerPresentation>>>,
+    acknowledgements: Arc<Mutex<Vec<BannerPresentationAcknowledgement>>>,
+}
+
+impl DelayedAcknowledgementPresenter {
+    fn acknowledge_latest(&self) {
+        self.acknowledgements
+            .lock()
+            .unwrap()
+            .pop()
+            .unwrap()
+            .acknowledge();
+    }
+
+    fn acknowledge_oldest(&self) {
+        self.acknowledgements
+            .lock()
+            .unwrap()
+            .remove(0)
+            .acknowledge();
+    }
+}
+
+impl BannerPresenter for DelayedAcknowledgementPresenter {
+    fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()> {
+        self.updates
+            .lock()
+            .unwrap()
+            .push(BannerPresentation::visible_banners(banners));
+        Ok(())
+    }
+
+    fn replace_banner_presentation_with_acknowledgement(
+        &self,
+        presentation: BannerPresentation,
+        acknowledgement: BannerPresentationAcknowledgement,
+    ) -> anyhow::Result<()> {
+        self.updates.lock().unwrap().push(presentation);
+        self.acknowledgements.lock().unwrap().push(acknowledgement);
         Ok(())
     }
 }
@@ -597,16 +643,41 @@ async fn headless_daemon_keeps_banner_state_without_presenting_surfaces() {
 }
 
 #[tokio::test]
+async fn headless_notification_with_finite_timeout_remains_active_without_sender_close() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+        .await
+        .unwrap();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(10),
+            ..notification("Calendar", "Not displayed")
+        })
+        .await
+        .unwrap();
+
+    assert_active_without_sender_close_after(
+        &daemon,
+        receipt.notification_id,
+        Duration::from_millis(30),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn visible_normal_banners_expire_after_configured_timeout() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(
-        DaemonOptions::headless(temp.path().join("history.db")).with_notification_timeout_defaults(
-            NotificationTimeoutDefaults::new(
-                Some(Duration::from_millis(10)),
-                Some(Duration::from_millis(10)),
-                None,
-            ),
-        ),
+        DaemonOptions::graphical(
+            temp.path().join("history.db"),
+            RecordingPresenter::default(),
+        )
+        .with_notification_timeout_defaults(NotificationTimeoutDefaults::new(
+            Some(Duration::from_millis(10)),
+            Some(Duration::from_millis(10)),
+            None,
+        )),
     )
     .await
     .unwrap();
@@ -637,11 +708,98 @@ async fn visible_normal_banners_expire_after_configured_timeout() {
 }
 
 #[tokio::test]
+async fn timeout_waits_for_presenter_acknowledgement_before_counting() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = DelayedAcknowledgementPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(20),
+            ..notification("Calendar", "Waiting for display")
+        })
+        .await
+        .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    assert!(
+        daemon
+            .snapshot()
+            .await
+            .unwrap()
+            .active
+            .iter()
+            .any(|thread| {
+                thread.id == receipt.notification_id && thread.status.as_str() == "active"
+            })
+    );
+
+    presenter.acknowledge_latest();
+    tokio::time::sleep(Duration::from_millis(40)).await;
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    let thread = snapshot
+        .history
+        .iter()
+        .find(|thread| thread.id == receipt.notification_id)
+        .unwrap();
+    assert_eq!(thread.status.as_str(), "expired");
+}
+
+#[tokio::test]
+async fn latest_queued_presentation_starts_all_visible_notification_timeouts() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = DelayedAcknowledgementPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let first = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(20),
+            ..notification("Calendar", "First queued banner")
+        })
+        .await
+        .unwrap();
+    let second = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(20),
+            ..notification("Calendar", "Second queued banner")
+        })
+        .await
+        .unwrap();
+
+    presenter.acknowledge_latest();
+    tokio::time::sleep(Duration::from_millis(40)).await;
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    for notification_id in [first.notification_id, second.notification_id] {
+        let thread = snapshot
+            .history
+            .iter()
+            .find(|thread| thread.id == notification_id)
+            .unwrap();
+        assert_eq!(thread.status.as_str(), "expired");
+    }
+}
+
+#[tokio::test]
 async fn sender_requested_timeout_expires_banner_even_when_default_is_never() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(
-        DaemonOptions::headless(temp.path().join("history.db"))
-            .with_notification_timeout_defaults(NotificationTimeoutDefaults::new(None, None, None)),
+        DaemonOptions::graphical(
+            temp.path().join("history.db"),
+            RecordingPresenter::default(),
+        )
+        .with_notification_timeout_defaults(NotificationTimeoutDefaults::new(None, None, None)),
     )
     .await
     .unwrap();
@@ -666,30 +824,35 @@ async fn sender_requested_timeout_expires_banner_even_when_default_is_never() {
 async fn old_timeout_does_not_expire_replacement_revision() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(
-        DaemonOptions::headless(temp.path().join("history.db"))
-            .with_notification_timeout_defaults(NotificationTimeoutDefaults::new(None, None, None)),
+        DaemonOptions::graphical(
+            temp.path().join("history.db"),
+            RecordingPresenter::default(),
+        )
+        .with_notification_timeout_defaults(NotificationTimeoutDefaults::new(None, None, None)),
     )
     .await
     .unwrap();
 
     let first = daemon
         .receive_notification(NotificationInput {
-            expire_timeout: NotificationTimeout::Milliseconds(10),
+            expire_timeout: NotificationTimeout::Milliseconds(40),
             ..notification("Calendar", "Original")
         })
         .await
         .unwrap();
 
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
     daemon
         .receive_notification(NotificationInput {
             replaces_id: Some(first.notification_id),
-            expire_timeout: NotificationTimeout::Never,
+            expire_timeout: NotificationTimeout::Milliseconds(100),
             ..notification("Calendar", "Replacement")
         })
         .await
         .unwrap();
 
-    tokio::time::sleep(Duration::from_millis(30)).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
 
     assert!(is_visible(
         &daemon.visible_banners().await,
@@ -703,19 +866,130 @@ async fn old_timeout_does_not_expire_replacement_revision() {
         .unwrap();
     assert_eq!(thread.status.as_str(), "active");
     assert_eq!(thread.accepted_notification.summary, "Replacement");
+
+    tokio::time::sleep(Duration::from_millis(70)).await;
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    let thread = snapshot
+        .history
+        .iter()
+        .find(|thread| thread.id == first.notification_id)
+        .unwrap();
+    assert_eq!(thread.status.as_str(), "expired");
+}
+
+#[tokio::test]
+async fn overflowed_replacement_cancels_displayed_revisions_timeout_without_starting_another() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        RecordingPresenter::default(),
+    ))
+    .await
+    .unwrap();
+
+    let original = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(30),
+            ..notification("Chat", "Displayed original")
+        })
+        .await
+        .unwrap();
+    for index in 0..3 {
+        daemon
+            .receive_notification(NotificationInput {
+                urgency: Urgency::Critical,
+                expire_timeout: NotificationTimeout::Never,
+                ..notification("Alarm", format!("Critical {index}"))
+            })
+            .await
+            .unwrap();
+    }
+    assert!(!is_visible(
+        &daemon.visible_banners().await,
+        original.notification_id
+    ));
+
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(original.notification_id),
+            expire_timeout: NotificationTimeout::Milliseconds(20),
+            ..notification("Chat", "Overflowed replacement")
+        })
+        .await
+        .unwrap();
+
+    let thread = assert_active_without_sender_close_after(
+        &daemon,
+        original.notification_id,
+        Duration::from_millis(60),
+    )
+    .await;
+    assert_eq!(thread.revision, 2);
+    assert_eq!(
+        thread.accepted_notification.summary,
+        "Overflowed replacement"
+    );
+}
+
+#[tokio::test]
+async fn dropped_replacement_preserves_displayed_revisions_timeout() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        RecordingPresenter::default(),
+    ))
+    .await
+    .unwrap();
+
+    let original = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(40),
+            ..notification("Chat", "Displayed original")
+        })
+        .await
+        .unwrap();
+    daemon
+        .upsert_user_rule(UserRule::for_app("Chat", DeliveryOutcome::Dropped))
+        .await
+        .unwrap();
+    let dropped = daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(original.notification_id),
+            expire_timeout: NotificationTimeout::Never,
+            ..notification("Chat", "Dropped replacement")
+        })
+        .await
+        .unwrap();
+    assert_eq!(dropped.notification_id, original.notification_id);
+    assert_eq!(dropped.delivery_outcome, DeliveryOutcome::Dropped);
+
+    tokio::time::sleep(Duration::from_millis(70)).await;
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    let thread = snapshot
+        .history
+        .iter()
+        .find(|thread| thread.id == original.notification_id)
+        .unwrap();
+    assert_eq!(thread.status.as_str(), "expired");
+    assert_eq!(thread.revision, 1);
+    assert_eq!(thread.accepted_notification.summary, "Displayed original");
 }
 
 #[tokio::test]
 async fn policy_change_does_not_reclassify_or_cancel_existing_timeout() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(
-        DaemonOptions::headless(temp.path().join("history.db")).with_notification_timeout_defaults(
-            NotificationTimeoutDefaults::new(
-                Some(Duration::from_millis(200)),
-                Some(Duration::from_millis(200)),
-                None,
-            ),
-        ),
+        DaemonOptions::graphical(
+            temp.path().join("history.db"),
+            RecordingPresenter::default(),
+        )
+        .with_notification_timeout_defaults(NotificationTimeoutDefaults::new(
+            Some(Duration::from_millis(200)),
+            Some(Duration::from_millis(200)),
+            None,
+        )),
     )
     .await
     .unwrap();
@@ -743,16 +1017,82 @@ async fn policy_change_does_not_reclassify_or_cancel_existing_timeout() {
 }
 
 #[tokio::test]
+async fn do_not_disturb_notification_with_finite_timeout_remains_active() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter,
+    ))
+    .await
+    .unwrap();
+    daemon.set_do_not_disturb(true).await.unwrap();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(10),
+            ..notification("Chat", "Silenced by DND")
+        })
+        .await
+        .unwrap();
+    assert_eq!(receipt.delivery_outcome, DeliveryOutcome::Silenced);
+    assert!(!is_visible(
+        &daemon.visible_banners().await,
+        receipt.notification_id
+    ));
+
+    assert_active_without_sender_close_after(
+        &daemon,
+        receipt.notification_id,
+        Duration::from_millis(30),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn user_silenced_notification_with_finite_timeout_remains_active() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        RecordingPresenter::default(),
+    ))
+    .await
+    .unwrap();
+    daemon
+        .upsert_user_rule(UserRule::for_app("Chat", DeliveryOutcome::Silenced))
+        .await
+        .unwrap();
+
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(10),
+            ..notification("Chat", "Silenced by rule")
+        })
+        .await
+        .unwrap();
+    assert_eq!(receipt.delivery_outcome, DeliveryOutcome::Silenced);
+
+    assert_active_without_sender_close_after(
+        &daemon,
+        receipt.notification_id,
+        Duration::from_millis(30),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn critical_banners_do_not_expire_by_default() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(
-        DaemonOptions::headless(temp.path().join("history.db")).with_notification_timeout_defaults(
-            NotificationTimeoutDefaults::new(
-                Some(Duration::from_millis(10)),
-                Some(Duration::from_millis(10)),
-                None,
-            ),
-        ),
+        DaemonOptions::graphical(
+            temp.path().join("history.db"),
+            RecordingPresenter::default(),
+        )
+        .with_notification_timeout_defaults(NotificationTimeoutDefaults::new(
+            Some(Duration::from_millis(10)),
+            Some(Duration::from_millis(10)),
+            None,
+        )),
     )
     .await
     .unwrap();
@@ -778,6 +1118,116 @@ async fn critical_banners_do_not_expire_by_default() {
         .find(|thread| thread.id == receipt.notification_id)
         .unwrap();
     assert_eq!(thread.status.as_str(), "active");
+}
+
+#[tokio::test]
+async fn displayed_timeout_continues_after_critical_banner_displacement() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        RecordingPresenter::default(),
+    ))
+    .await
+    .unwrap();
+
+    let timed = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(50),
+            ..notification("Chat", "Timed normal")
+        })
+        .await
+        .unwrap();
+    for index in 0..2 {
+        daemon
+            .receive_notification(NotificationInput {
+                expire_timeout: NotificationTimeout::Never,
+                ..notification("Chat", format!("Normal {index}"))
+            })
+            .await
+            .unwrap();
+    }
+    daemon
+        .receive_notification(NotificationInput {
+            urgency: Urgency::Critical,
+            expire_timeout: NotificationTimeout::Never,
+            ..notification("Alarm", "Critical displacement")
+        })
+        .await
+        .unwrap();
+
+    assert!(!is_visible(
+        &daemon.visible_banners().await,
+        timed.notification_id
+    ));
+
+    tokio::time::sleep(Duration::from_millis(80)).await;
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    let thread = snapshot
+        .history
+        .iter()
+        .find(|thread| thread.id == timed.notification_id)
+        .unwrap();
+    assert_eq!(thread.status.as_str(), "expired");
+    assert!(daemon.sender_events().await.iter().any(|event| matches!(
+        event,
+        SenderEvent::NotificationClosed {
+            notification_id,
+            reason: canopa_notify::SenderCloseReason::Expired,
+        } if *notification_id == timed.notification_id
+    )));
+}
+
+#[tokio::test]
+async fn acknowledged_banner_starts_timeout_even_after_daemon_state_displaces_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = DelayedAcknowledgementPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let timed = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(20),
+            ..notification("Chat", "Delayed display acknowledgement")
+        })
+        .await
+        .unwrap();
+    for index in 0..2 {
+        daemon
+            .receive_notification(NotificationInput {
+                expire_timeout: NotificationTimeout::Never,
+                ..notification("Chat", format!("Normal {index}"))
+            })
+            .await
+            .unwrap();
+    }
+    daemon
+        .receive_notification(NotificationInput {
+            urgency: Urgency::Critical,
+            expire_timeout: NotificationTimeout::Never,
+            ..notification("Alarm", "Critical displacement")
+        })
+        .await
+        .unwrap();
+    assert!(!is_visible(
+        &daemon.visible_banners().await,
+        timed.notification_id
+    ));
+
+    presenter.acknowledge_oldest();
+    tokio::time::sleep(Duration::from_millis(40)).await;
+
+    let snapshot = daemon.snapshot().await.unwrap();
+    let thread = snapshot
+        .history
+        .iter()
+        .find(|thread| thread.id == timed.notification_id)
+        .unwrap();
+    assert_eq!(thread.status.as_str(), "expired");
 }
 
 #[tokio::test]
@@ -974,6 +1424,88 @@ async fn critical_notifications_displace_normal_banners_when_slots_are_full() {
             .count(),
         2
     );
+}
+
+#[tokio::test]
+async fn fourth_normal_notification_behind_critical_banners_does_not_start_timeout() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let mut critical_ids = Vec::new();
+    for index in 0..3 {
+        critical_ids.push(
+            daemon
+                .receive_notification(NotificationInput {
+                    urgency: Urgency::Critical,
+                    expire_timeout: NotificationTimeout::Never,
+                    ..notification("Alarm", format!("Critical {index}"))
+                })
+                .await
+                .unwrap()
+                .notification_id,
+        );
+    }
+
+    let overflowed = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(10),
+            ..notification("Chat", "Overflowed normal")
+        })
+        .await
+        .unwrap();
+
+    let presentation = presenter.presentation_updates().pop().unwrap();
+    assert_eq!(presentation.banners.len(), 3);
+    assert_eq!(presentation.overflow_count, 1);
+    assert!(!is_visible(
+        &presentation.banners,
+        overflowed.notification_id
+    ));
+
+    daemon.dismiss_notification(critical_ids[0]).await.unwrap();
+    assert!(!is_visible(
+        &daemon.visible_banners().await,
+        overflowed.notification_id
+    ));
+
+    assert_active_without_sender_close_after(
+        &daemon,
+        overflowed.notification_id,
+        Duration::from_millis(30),
+    )
+    .await;
+}
+
+async fn assert_active_without_sender_close_after(
+    daemon: &Daemon,
+    notification_id: i64,
+    delay: Duration,
+) -> NotificationThread {
+    tokio::time::sleep(delay).await;
+
+    let thread = daemon
+        .snapshot()
+        .await
+        .unwrap()
+        .history
+        .into_iter()
+        .find(|thread| thread.id == notification_id)
+        .unwrap();
+    assert_eq!(thread.status.as_str(), "active");
+    assert!(!daemon.sender_events().await.iter().any(|event| matches!(
+        event,
+        SenderEvent::NotificationClosed {
+            notification_id: closed_id,
+            ..
+        } if *closed_id == notification_id
+    )));
+    thread
 }
 
 fn visible_ids(banners: &[BannerView]) -> Vec<i64> {
