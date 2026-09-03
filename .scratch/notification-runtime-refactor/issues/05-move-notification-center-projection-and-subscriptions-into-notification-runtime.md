@@ -1,6 +1,6 @@
 # Move Notification Center Projection and subscriptions into Notification Runtime
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## What to build

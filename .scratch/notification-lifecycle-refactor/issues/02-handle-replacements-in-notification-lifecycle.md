@@ -1,6 +1,6 @@
 # Handle replacements in Notification Lifecycle
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## Parent

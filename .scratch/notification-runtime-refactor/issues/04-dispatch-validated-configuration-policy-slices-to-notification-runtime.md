@@ -1,6 +1,6 @@
 # Dispatch validated configuration policy slices to Notification Runtime
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## What to build

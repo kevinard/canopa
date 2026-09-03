@@ -1,6 +1,6 @@
 # Thin Notify Control API and panel adapters around Notification Runtime
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## What to build

@@ -1,6 +1,6 @@
 # Move runtime policy state and rule re-evaluation into Notification Runtime
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## What to build

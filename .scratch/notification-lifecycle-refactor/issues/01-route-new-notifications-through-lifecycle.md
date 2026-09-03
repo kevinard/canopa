@@ -1,6 +1,6 @@
 # Route new notifications through Notification Lifecycle
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## Parent

@@ -1,6 +1,6 @@
 # Drive runtime banner state from Lifecycle Effects
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## Parent

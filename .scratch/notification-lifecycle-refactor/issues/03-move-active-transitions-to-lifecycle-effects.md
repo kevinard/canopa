@@ -1,6 +1,6 @@
 # Move active transitions to Lifecycle Effects
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## Parent

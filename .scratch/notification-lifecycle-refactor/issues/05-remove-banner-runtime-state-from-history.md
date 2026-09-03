@@ -1,6 +1,6 @@
 # Remove banner runtime state from Notification History
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## Parent

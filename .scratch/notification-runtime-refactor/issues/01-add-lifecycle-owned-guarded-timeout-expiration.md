@@ -1,6 +1,6 @@
 # Add lifecycle-owned guarded timeout expiration
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## What to build

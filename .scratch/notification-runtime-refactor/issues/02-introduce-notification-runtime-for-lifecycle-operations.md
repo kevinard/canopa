@@ -1,6 +1,6 @@
 # Introduce Notification Runtime for lifecycle operations
 
-Status: ready-for-agent
+Status: implemented
 Type: AFK
 
 ## What to build
