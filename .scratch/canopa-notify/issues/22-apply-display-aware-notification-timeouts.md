@@ -13,13 +13,13 @@ Implement the agreed Notification Timeout semantics across Notification Lifecycl
 
 ## Acceptance criteria
 
-- [ ] Notification Timeout scheduling follows the ADR for visible, overflow, silenced, and headless notifications.
-- [ ] A finite timeout cannot expire an overflow notification before the ADR-defined display or Notification Center condition occurs.
-- [ ] A finite-timeout Silenced Notification completes its Sender Notification Lifecycle according to the documented rule.
-- [ ] Replacements cancel or restart timers atomically and stale revision timers cannot close current content.
-- [ ] Banner removal, optional promotion, Notification History status, and `NotificationClosed` reason `1` remain consistent.
+- [ ] Positive and server-default Notification Timeouts begin only when the current revision first becomes visible in a Notification Banner; a zero timeout never schedules expiration.
+- [ ] Overflow notifications, **Silenced Notifications**, requests accepted under **Do Not Disturb**, and **Headless Mode** requests that never display a banner remain active without a timer or sender-visible close event.
+- [ ] A timer that began on banner display continues to its original deadline if a critical notification displaces that banner, and hidden notifications are not promoted when a slot opens.
+- [ ] Replacements that revise a **Notification Thread** atomically cancel the prior revision's timer and start a fresh timer only when the replacement revision becomes visible; dropped replacements preserve the existing timer, and stale revision timers cannot close current content.
+- [ ] An elapsed timer removes the banner, retains an Expired Notification in Notification History, invalidates the active sender ID, and emits `NotificationClosed` reason `1`.
 - [ ] Runtime and presentation tests cover three occupied banner slots, a fourth normal notification, critical displacement, Do Not Disturb, Headless Mode, and replacement races.
-- [ ] D-Bus tests verify the sender-visible expiration result for notifications with and without a banner.
+- [ ] D-Bus tests verify expiration after actual banner display and the absence of expiration when no banner is displayed.
 
 ## Blocked by
 

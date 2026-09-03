@@ -16,6 +16,16 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 | `ActionInvoked` | Implemented | Preserves opaque, case-sensitive sender action keys. |
 | `ActivationToken` | Implemented | Emits before `ActionInvoked` when a user-originated notification interaction can obtain a Wayland activation token. |
 
+## Expiration semantics (planned)
+
+[ADR 0028](adr/0028-notification-timeouts-begin-with-banner-display.md) defines the target behavior; implementation remains tracked by the display-aware timeout issue.
+
+- Positive and server-default expiration values begin counting only when the current **Notification Thread** revision first becomes visible in a **Notification Banner**. A zero value never expires.
+- Overflow notifications, **Silenced Notifications**, requests accepted under **Do Not Disturb**, and **Headless Mode** requests that never display a banner remain active without automatic expiration. This deliberately permits a finite **Sender Notification Lifecycle** to remain open until user or sender action.
+- Once a **Notification Banner** has displayed, its deadline continues if a critical notification displaces it. Notify does not later promote an overflow notification merely because a banner slot opens.
+- A replacement that revises a **Notification Thread** cancels the prior revision's timeout and begins a fresh timeout only if the replacement revision becomes visible. A dropped replacement preserves the existing thread and timeout.
+- When a displayed notification reaches its deadline, Notify invalidates the active sender ID and emits `NotificationClosed` with reason `1` while retaining an **Expired Notification** in **Notification History**.
+
 ## Specification-defined capabilities
 
 | Capability | Status | Notes |

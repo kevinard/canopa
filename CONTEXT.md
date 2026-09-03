@@ -233,8 +233,8 @@ A notification whose sender requests that it remain active after action invocati
 _Avoid_: Persistent notification when referring specifically to post-action behavior
 
 **Notification Timeout**:
-The configured or sender-requested duration after which an active notification may expire.
-_Avoid_: Retention when referring to how long history is kept
+The configured or sender-requested duration counted from the first display of the current revision in a **Notification Banner**, after which an **Active Notification** may expire.
+_Avoid_: Retention when referring to how long history is kept, receipt timeout when no banner was displayed
 
 **App Permission Control**:
 A **Notification Center** control that changes the **Notification Rule** for one **App Identity**.
@@ -379,8 +379,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - A dropped replacement leaves the existing **Notification Banner**, runtime image, **Notification Timeout**, and sender-visible notification ID unchanged.
 - An eligible replacement notification may create a **Notification Banner** even when the previous revision did not.
 - A dropped replacement notification does not update **Notification History**.
-- A replacement notification whose **Notification Timeout** makes expiration ineligible explicitly cancels any pending expiration for the revised **Notification Thread**.
-- Re-evaluating an **Active Notification** from shown to silenced or dropped explicitly cancels any pending **Notification Timeout** expiration for that **Notification Thread**.
+- A replacement notification that revises a **Notification Thread** cancels the prior revision's pending **Notification Timeout** before the replacement revision is considered for **Notification Banner** visibility.
+- A replacement revision receives a fresh **Notification Timeout** only if it becomes visible in a **Notification Banner**.
 - A new **Dropped Notification** receives a valid nonzero sender-visible ID and is immediately closed from the **Sender Notification Lifecycle** perspective with freedesktop reason `4`; its internal ephemeral ID is never a **Notification Thread** ID.
 - A dropped replacement does not close the **Sender Notification Lifecycle** of the existing **Active Notification**; a later `CloseNotification` for its sender-visible ID still closes that original thread normally.
 - A **Silenced Notification** may remain an **Active Notification** without a visible **Notification Banner**.
@@ -404,9 +404,14 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Expiring an **Active Notification** makes it an **Expired Notification** without removing it from **Notification History**.
 - Sender-closing an **Active Notification** makes it a **Closed Notification** without removing it from **Notification History**.
 - Moving an **Active Notification** to dismissed, expired, closed, or stale explicitly cancels any pending **Notification Timeout** expiration for that **Notification Thread**.
+- A finite **Notification Timeout** begins when the current notification revision first becomes visible in a **Notification Banner**, not when its request is accepted.
+- A **Notification Timeout** that has begun continues to its original deadline if the banner is later displaced by a critical notification.
+- Overflow notifications, **Silenced Notifications**, requests accepted under **Do Not Disturb**, and **Headless Mode** requests do not begin a **Notification Timeout** and deliberately remain active until user or sender action.
+- A positive sender timeout uses its requested duration after banner display; a zero sender timeout never expires; a server-default timeout resolves through the configured urgency default after banner display.
+- An elapsed **Notification Timeout** makes the thread an **Expired Notification** and completes its **Sender Notification Lifecycle** with freedesktop reason `1`.
 - Critical **Active Notifications** do not expire automatically by default.
 - First-version **Notification Timeout** configuration is global with per-urgency defaults, not per-app.
-- Sender-requested **Notification Timeout** values are respected within user-configured bounds.
+- Sender-requested **Notification Timeout** values are respected within user-configured bounds when the current revision becomes visible in a **Notification Banner**.
 - **Notification Banners** appear at the top right of the focused output by default.
 - **Notification Banners** are owned by the **Notification Daemon**, not by Niribar.
 - First-version **Notification Image** and **Notification App Icon** rendering starts with **Notification Banners**.
@@ -563,5 +568,5 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Stale Notification** action labels may remain as read-only history metadata.
 - Invoking a **Notification Action** dismisses the notification unless it is a **Resident Notification**.
 - Non-resident **Notification Action** invocation publishes the sender-visible action event before the sender-visible dismissal event.
-- **Notification Timeout** scheduling and expiration belong to **Notification Lifecycle**, not **Notification Banner** presentation.
+- **Notification Timeout** scheduling and expiration belong to **Notification Lifecycle**; **Notification Banner State** reports visibility transitions but does not decide expiration meaning.
 - Inline replies are outside the first version scope.
