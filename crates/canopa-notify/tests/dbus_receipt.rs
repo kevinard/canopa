@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
-use zbus::zvariant::{OwnedValue, Value};
+use zbus::zvariant::{OwnedValue, Structure, Value};
 use zbus::{Connection, Proxy};
 
 #[tokio::test]
@@ -892,6 +892,138 @@ async fn dev_dbus_close_notification_emits_notification_closed_signal() {
     let (closed_id, reason): (u32, u32) = signal.body().deserialize().unwrap();
     assert_eq!(closed_id, id);
     assert_eq!(reason, 3);
+
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
+async fn dev_dbus_preserves_portal_default_action_with_empty_label() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = test_bus_name("PortalDefaultAction");
+
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let mut action_signals = proxy.receive_signal("ActionInvoked").await.unwrap();
+
+    let id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "",
+                0u32,
+                "mail-unread-symbolic",
+                "Portal message",
+                "Translated by the GTK portal backend",
+                vec![
+                    "default".to_string(),
+                    "".to_string(),
+                    "portal.open::button-7".to_string(),
+                    "Open".to_string(),
+                ],
+                HashMap::<String, OwnedValue>::new(),
+                -1i32,
+            ),
+        )
+        .await
+        .unwrap();
+
+    let active = control_socket_round_trip(&socket, "active-json\n");
+    assert!(active.contains("\"key\":\"default\""));
+    assert!(active.contains("\"key\":\"portal.open::button-7\""));
+    assert_eq!(
+        control_socket_round_trip(&socket, &format!("invoke-action {id} default\n")),
+        "ok\n"
+    );
+
+    let action_signal =
+        tokio::time::timeout(std::time::Duration::from_secs(1), action_signals.next())
+            .await
+            .unwrap()
+            .unwrap();
+    let (action_id, action_key): (u32, String) = action_signal.body().deserialize().unwrap();
+    assert_eq!(action_id, id);
+    assert_eq!(action_key, "default");
+
+    daemon.kill().ok();
+    daemon.wait().ok();
+}
+
+#[tokio::test]
+async fn dev_dbus_accepts_portal_fd_icon_as_image_only_notification() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = test_bus_name("PortalFdIcon");
+
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--database",
+        support::path_arg(&database),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+    support::wait_for_status_with_child(&socket, &mut daemon);
+
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let image_data = Structure::from((
+        1_i32,
+        1_i32,
+        4_i32,
+        true,
+        8_i32,
+        4_i32,
+        vec![0_u8, 0, 0, 255],
+    ));
+    let hints = HashMap::from([(
+        "image-data".to_string(),
+        OwnedValue::try_from(Value::from(image_data)).unwrap(),
+    )]);
+
+    proxy
+        .call::<_, _, u32>(
+            "Notify",
+            &("", 0_u32, "", "", "", Vec::<String>::new(), hints, -1_i32),
+        )
+        .await
+        .unwrap();
+
+    let active = control_socket_round_trip(&socket, "active-json\n");
+    assert_ne!(active, "[]\n");
+    assert!(active.contains("\"summary\":\"\""));
+    assert!(active.contains("\"has_image_payload\":false"));
 
     daemon.kill().ok();
     daemon.wait().ok();

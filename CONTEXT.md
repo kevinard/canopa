@@ -325,7 +325,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Intake** owns first-version **App Identity** derivation, **Notification Body** normalization, and **Notification Body Markup** interpretation.
 - **Notification Intake** returns an **Accepted Notification** for sender requests that should enter **Delivery Policy** and **Notification Lifecycle**.
 - **Accepted Notification** contains normalized sender/request facts, not lifecycle timestamps.
-- **Notification Intake** trims **Notification Action** labels, ignores malformed **Notification Action** pairs, and keeps only the first action for each action key.
+- **Notification Intake** trims **Notification Action** labels, ignores malformed **Notification Action** pairs, and keeps only the first action for each action key. An empty label remains valid only for the reserved `default` action because the XDG Notification portal's freedesktop adapter emits that pair for notification-body activation.
 - **Notification Action** keys are opaque case-sensitive sender-defined values.
 - Body-only notifications are valid even when **Notification Summary** is empty.
 - Notifications with no **Notification Summary**, **Notification Body**, **Notification Action**, **Notification Image**, **Body-Embedded Notification Image**, or meaningful metadata are dropped as no-op notifications.

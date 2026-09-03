@@ -174,7 +174,7 @@ fn notification_actions(actions: Vec<String>, action_icons: bool) -> Vec<Notific
             continue;
         };
         let label = label.trim();
-        if key.is_empty() || label.is_empty() || !seen.insert(key.clone()) {
+        if key.is_empty() || (label.is_empty() && key != "default") || !seen.insert(key.clone()) {
             continue;
         }
 
