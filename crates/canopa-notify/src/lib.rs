@@ -15,6 +15,7 @@ mod notification_server_intake;
 mod presentation;
 mod runtime;
 mod runtime_resources;
+mod runtime_timeouts;
 mod sender_events;
 mod sound;
 mod sqlite_persisted_state;
@@ -443,6 +444,10 @@ impl Daemon {
 
     pub fn presentation_error(&self) -> Option<String> {
         self.runtime.presentation_error()
+    }
+
+    pub(crate) fn timeout_record_count(&self) -> usize {
+        self.runtime.timeout_record_count()
     }
 
     pub(crate) async fn notification_center_projection(

@@ -37,6 +37,23 @@ fn headless_daemon_reports_available_through_private_runtime_socket() {
         .success()
         .stdout(contains("Canopa Notify daemon available"));
 
+    let status = Command::cargo_bin("canopa-notify")
+        .unwrap()
+        .args([
+            "ctl",
+            "--socket",
+            support::path_arg(&socket),
+            "status",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let status: serde_json::Value = serde_json::from_slice(&status).unwrap();
+    assert_eq!(status["timeout_records"], 0);
+
     daemon.kill().ok();
     daemon.wait().ok();
 }

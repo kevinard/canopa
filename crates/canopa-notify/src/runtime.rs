@@ -16,13 +16,13 @@ use crate::domain::{
 };
 use crate::lifecycle::{
     LifecycleDelivery, LifecycleEffect, LifecycleEffects, NotificationLifecycle,
-    NotificationTimeoutChange,
 };
 use crate::presentation::{
     BannerInteraction, BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter,
     BannerView, NotificationBannerState, PresentationCoordinator,
 };
 use crate::runtime_resources::RuntimeResources;
+use crate::runtime_timeouts::RuntimeTimeouts;
 use crate::sound::SoundPresenter;
 use crate::sqlite_persisted_state::SqlitePersistedState;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -58,83 +58,12 @@ pub(crate) struct NotificationRuntime {
     sender_publisher: Arc<Mutex<Option<Arc<dyn SenderEventPublisher>>>>,
     sender_publication_error: Arc<Mutex<Option<String>>>,
     decision_logs: Arc<Mutex<VecDeque<DeliveryDecisionLog>>>,
-    timeout_tasks: Arc<Mutex<HashMap<InternalNotificationId, TimeoutTask>>>,
-    pending_timeout_starts: Arc<Mutex<PendingTimeoutStarts>>,
+    timeouts: Arc<Mutex<RuntimeTimeouts>>,
     loaded_policy_state: Arc<Mutex<LoadedDeliveryPolicyState>>,
     // Commit and effect order share one coordinator. External token acquisition is outside it.
     commands: Arc<AsyncMutex<()>>,
     state_version: Arc<AtomicU64>,
     state_changes: watch::Sender<u64>,
-}
-
-struct TimeoutTask {
-    revision: i64,
-    handle: tokio::task::JoinHandle<()>,
-}
-
-#[derive(Default)]
-struct PendingTimeoutStarts {
-    starts: BTreeMap<(InternalNotificationId, i64), NotificationTimeoutChange>,
-    cancelled_through: HashMap<InternalNotificationId, i64>,
-}
-
-impl PendingTimeoutStarts {
-    fn allows(&self, notification_id: InternalNotificationId, revision: i64) -> bool {
-        self.cancelled_through
-            .get(&notification_id)
-            .is_none_or(|cancelled_revision| revision > *cancelled_revision)
-    }
-
-    fn apply(&mut self, changes: impl IntoIterator<Item = NotificationTimeoutChange>) {
-        for change in changes {
-            match change {
-                NotificationTimeoutChange::StartsOnDisplay {
-                    notification_id,
-                    revision,
-                    ..
-                } => {
-                    if self.allows(notification_id, revision) {
-                        self.starts.insert((notification_id, revision), change);
-                    }
-                }
-                NotificationTimeoutChange::CancelThroughRevision {
-                    notification_id,
-                    revision,
-                } => {
-                    self.cancelled_through
-                        .entry(notification_id)
-                        .and_modify(|cancelled_revision| {
-                            *cancelled_revision = (*cancelled_revision).max(revision);
-                        })
-                        .or_insert(revision);
-                    self.starts.retain(|(pending_id, pending_revision), _| {
-                        *pending_id != notification_id || *pending_revision > revision
-                    });
-                }
-            }
-        }
-    }
-
-    fn revisions_in(
-        &self,
-        visible_revisions: &BTreeSet<(InternalNotificationId, i64)>,
-    ) -> Vec<(InternalNotificationId, i64)> {
-        self.starts
-            .keys()
-            .filter(|revision| visible_revisions.contains(revision))
-            .copied()
-            .collect()
-    }
-
-    fn take(
-        &mut self,
-        revisions: impl IntoIterator<Item = (InternalNotificationId, i64)>,
-    ) -> Vec<NotificationTimeoutChange> {
-        revisions
-            .into_iter()
-            .filter_map(|revision| self.starts.remove(&revision))
-            .collect()
-    }
 }
 
 impl NotificationRuntime {
@@ -181,8 +110,7 @@ impl NotificationRuntime {
             sender_publisher: Arc::new(Mutex::new(None)),
             sender_publication_error: Arc::new(Mutex::new(None)),
             decision_logs: Arc::new(Mutex::new(VecDeque::new())),
-            timeout_tasks: Arc::new(Mutex::new(HashMap::new())),
-            pending_timeout_starts: Arc::new(Mutex::new(PendingTimeoutStarts::default())),
+            timeouts: Arc::new(Mutex::new(RuntimeTimeouts::default())),
             loaded_policy_state: Arc::new(Mutex::new(loaded_policy_state)),
             commands: Arc::new(AsyncMutex::new(())),
             state_version: Arc::new(AtomicU64::new(0)),
@@ -264,6 +192,10 @@ impl NotificationRuntime {
 
     pub(crate) async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
         self.storage.snapshot().await
+    }
+
+    pub(crate) fn timeout_record_count(&self) -> usize {
+        self.timeouts.lock().unwrap().record_count()
     }
 
     pub(crate) async fn visible_banners(&self) -> Vec<BannerView> {
@@ -717,12 +649,10 @@ impl NotificationRuntime {
         sound: Option<NotificationSoundPlayback>,
     ) -> anyhow::Result<()> {
         self.resources.lock().unwrap().release(effects);
-        let timeout_changes: Vec<_> = effects.timeout_changes().collect();
-        self.pending_timeout_starts
+        self.timeouts
             .lock()
             .unwrap()
-            .apply(timeout_changes.iter().copied());
-        self.cancel_notification_timeouts(timeout_changes.iter().copied());
+            .apply(effects.timeout_changes());
         {
             let mut banner_state = self.banner_state.lock().unwrap();
             banner_state.apply_changes(effects.banner_changes());
@@ -841,11 +771,8 @@ impl NotificationRuntime {
 
     async fn sync_presentation(&self) -> anyhow::Result<()> {
         let (presentation, visible_revisions) = self.banner_presentation_with_visible_revisions();
-        let presented_timeout_revisions: Vec<_> = self
-            .pending_timeout_starts
-            .lock()
-            .unwrap()
-            .revisions_in(&visible_revisions);
+        let presented_timeout_revisions: Vec<_> =
+            self.timeouts.lock().unwrap().pending_in(&visible_revisions);
         let runtime = self.clone();
         let acknowledgement = BannerPresentationAcknowledgement::new(move || {
             runtime.start_timeouts_for_presented_revisions(presented_timeout_revisions);
@@ -893,110 +820,29 @@ impl NotificationRuntime {
         let _ = self.state_changes.send(version);
     }
 
-    fn cancel_notification_timeouts(
-        &self,
-        changes: impl IntoIterator<Item = NotificationTimeoutChange>,
-    ) {
-        for change in changes {
-            if let NotificationTimeoutChange::CancelThroughRevision {
-                notification_id,
-                revision,
-            } = change
-            {
-                self.cancel_notification_timeout_through_revision(notification_id, revision);
-            }
-        }
-    }
-
     fn start_timeouts_for_presented_revisions(
         &self,
         revisions: impl IntoIterator<Item = (InternalNotificationId, i64)>,
     ) {
-        let changes = self.pending_timeout_starts.lock().unwrap().take(revisions);
-        for change in changes {
-            if let NotificationTimeoutChange::StartsOnDisplay {
-                notification_id,
-                revision,
-                timeout,
-                urgency,
-            } = change
-            {
-                if let Some(duration) = self.lifecycle.timeout_duration_on_display(timeout, urgency)
-                {
-                    self.schedule_notification_timeout(notification_id, revision, duration);
-                }
-            }
-        }
-    }
-
-    fn schedule_notification_timeout(
-        &self,
-        notification_id: InternalNotificationId,
-        revision: i64,
-        duration: Duration,
-    ) {
-        let pending_timeout_starts = self.pending_timeout_starts.lock().unwrap();
-        if !pending_timeout_starts.allows(notification_id, revision) {
-            return;
-        }
-        let mut timeout_tasks = self.timeout_tasks.lock().unwrap();
-        if timeout_tasks
-            .get(&notification_id)
-            .is_some_and(|task| task.revision >= revision)
-        {
-            return;
-        }
-        if let Some(task) = timeout_tasks.remove(&notification_id) {
-            task.handle.abort();
-        }
-
-        let runtime = self.clone();
-        let handle = tokio::spawn(async move {
-            tokio::time::sleep(duration).await;
-            runtime.forget_notification_timeout_if_current_revision(notification_id, revision);
-            let _ = runtime
-                .expire_notification_if_current_revision(notification_id, revision)
-                .await;
-        });
-
-        timeout_tasks.insert(notification_id, TimeoutTask { revision, handle });
-    }
-
-    fn cancel_notification_timeout_through_revision(
-        &self,
-        notification_id: InternalNotificationId,
-        revision: i64,
-    ) {
-        let mut pending_timeout_starts = self.pending_timeout_starts.lock().unwrap();
-        pending_timeout_starts.apply([NotificationTimeoutChange::CancelThroughRevision {
-            notification_id,
-            revision,
-        }]);
-        let mut timeout_tasks = self.timeout_tasks.lock().unwrap();
-        let should_cancel = timeout_tasks
-            .get(&notification_id)
-            .is_some_and(|task| task.revision <= revision);
-        if should_cancel {
-            timeout_tasks
-                .remove(&notification_id)
-                .unwrap()
-                .handle
-                .abort();
-        }
-    }
-
-    fn forget_notification_timeout_if_current_revision(
-        &self,
-        notification_id: InternalNotificationId,
-        revision: i64,
-    ) {
-        let mut timeout_tasks = self.timeout_tasks.lock().unwrap();
-        if timeout_tasks
-            .get(&notification_id)
-            .map(|task| task.revision == revision)
-            .unwrap_or(false)
-        {
-            timeout_tasks.remove(&notification_id);
+        let mut timeouts = self.timeouts.lock().unwrap();
+        for (notification_id, revision) in revisions {
+            timeouts.start(notification_id, revision, |timeout, urgency| {
+                let duration = self
+                    .lifecycle
+                    .timeout_duration_on_display(timeout, urgency)?;
+                let runtime = self.clone();
+                Some(tokio::spawn(async move {
+                    tokio::time::sleep(duration).await;
+                    runtime
+                        .timeouts
+                        .lock()
+                        .unwrap()
+                        .finish(notification_id, revision);
+                    let _ = runtime
+                        .expire_notification_if_current_revision(notification_id, revision)
+                        .await;
+                }))
+            });
         }
     }
 
@@ -1123,95 +969,5 @@ fn projection_from_snapshot(
                 items,
             })
             .collect(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    const TEST_ID: InternalNotificationId = InternalNotificationId::new(7).unwrap();
-    use crate::{NoopActivationTokenProvider, NoopBannerPresenter, NoopSoundPresenter};
-
-    #[test]
-    fn pending_timeout_starts_reject_changes_older_than_a_cancellation() {
-        let mut pending = PendingTimeoutStarts::default();
-        pending.apply([
-            NotificationTimeoutChange::CancelThroughRevision {
-                notification_id: TEST_ID,
-                revision: 2,
-            },
-            NotificationTimeoutChange::StartsOnDisplay {
-                notification_id: TEST_ID,
-                revision: 1,
-                timeout: NotificationTimeout::Milliseconds(10),
-                urgency: Urgency::Normal,
-            },
-            NotificationTimeoutChange::StartsOnDisplay {
-                notification_id: TEST_ID,
-                revision: 3,
-                timeout: NotificationTimeout::Milliseconds(10),
-                urgency: Urgency::Normal,
-            },
-        ]);
-
-        assert!(!pending.starts.contains_key(&(TEST_ID, 1)));
-        assert!(pending.starts.contains_key(&(TEST_ID, 3)));
-    }
-
-    #[tokio::test]
-    async fn stale_timeout_changes_cannot_replace_or_cancel_newer_revision_task() {
-        let temp = tempfile::tempdir().unwrap();
-        let storage = SqlitePersistedState::open(temp.path().join("history.db"), 30, 1_000)
-            .await
-            .unwrap();
-        let runtime = NotificationRuntime::new(
-            storage,
-            false,
-            NotificationTimeoutDefaults::default(),
-            Arc::new(NoopBannerPresenter),
-            Arc::new(NoopActivationTokenProvider),
-            Arc::new(NoopSoundPresenter),
-            Vec::new(),
-        )
-        .await
-        .unwrap();
-
-        runtime.schedule_notification_timeout(TEST_ID, 3, Duration::from_secs(60));
-        runtime.schedule_notification_timeout(TEST_ID, 2, Duration::from_secs(60));
-
-        assert_eq!(
-            runtime
-                .timeout_tasks
-                .lock()
-                .unwrap()
-                .get(&TEST_ID)
-                .map(|task| task.revision),
-            Some(3)
-        );
-        runtime.cancel_notification_timeout_through_revision(TEST_ID, 2);
-        assert_eq!(
-            runtime
-                .timeout_tasks
-                .lock()
-                .unwrap()
-                .get(&TEST_ID)
-                .map(|task| task.revision),
-            Some(3)
-        );
-        runtime.cancel_notification_timeout_through_revision(TEST_ID, 3);
-        assert!(!runtime.timeout_tasks.lock().unwrap().contains_key(&TEST_ID));
-
-        runtime.schedule_notification_timeout(TEST_ID, 2, Duration::from_secs(60));
-        assert!(!runtime.timeout_tasks.lock().unwrap().contains_key(&TEST_ID));
-        runtime.schedule_notification_timeout(TEST_ID, 4, Duration::from_secs(60));
-        assert_eq!(
-            runtime
-                .timeout_tasks
-                .lock()
-                .unwrap()
-                .get(&TEST_ID)
-                .map(|task| task.revision),
-            Some(4)
-        );
     }
 }

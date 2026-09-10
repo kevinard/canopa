@@ -32,6 +32,7 @@ impl NotifyControl {
                 configuration: self.daemon.configuration_status(),
                 presentation_error: self.daemon.presentation_error(),
                 sender_publication_error: self.daemon.sender_publication_error(),
+                timeout_records: self.daemon.timeout_record_count(),
             })),
             ControlCommand::DoNotDisturb => Ok(ControlReply::DoNotDisturb(
                 self.daemon.do_not_disturb().await?,
@@ -172,6 +173,9 @@ pub struct ControlStatus {
     pub configuration: crate::ConfigurationStatus,
     pub presentation_error: Option<String>,
     pub sender_publication_error: Option<String>,
+    /// Retained timeout bookkeeping records, not process memory or expired history.
+    #[serde(default)]
+    pub timeout_records: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
