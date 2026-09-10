@@ -168,7 +168,9 @@ fn validate_element_definition(
     element: &ExternalPanelElement,
 ) -> Result<(), ExternalPanelValidationError> {
     match element {
-        ExternalPanelElement::Text { .. } | ExternalPanelElement::SelectableList { .. } => Ok(()),
+        ExternalPanelElement::Text { .. }
+        | ExternalPanelElement::SelectableList { .. }
+        | ExternalPanelElement::Canopa { .. } => Ok(()),
         ExternalPanelElement::Button { label, .. } if label.is_empty() => Err(
             ExternalPanelValidationError("external button label must not be empty".into()),
         ),
@@ -191,6 +193,11 @@ fn validate_element_definition(
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ExternalPanelElement {
+    /// Host-only normalized Canopa content; never an extension of the v1 wire format.
+    #[serde(skip)]
+    Canopa {
+        snapshot: super::canopa::CanopaSnapshot,
+    },
     Text {
         text: String,
     },
@@ -228,7 +235,9 @@ impl ExternalPanelElement {
             ExternalPanelElement::Button { id, .. }
             | ExternalPanelElement::SelectableList { id, .. }
             | ExternalPanelElement::TextInput { id, .. } => Some(id.as_str()),
-            ExternalPanelElement::Text { .. } | ExternalPanelElement::Status { .. } => None,
+            ExternalPanelElement::Text { .. }
+            | ExternalPanelElement::Status { .. }
+            | ExternalPanelElement::Canopa { .. } => None,
         }
     }
 }

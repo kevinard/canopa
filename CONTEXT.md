@@ -661,8 +661,8 @@ _Avoid_: Unavailable module, runtime failure
 - **External Panel Content** may use **Selectable Search** to search **Wi-Fi Networks** without modeling those networks as **Panel Menu** entries.
 - An **External Panel Provider** may be launched on demand when Niribar opens the **Panel** that will host its **External Panel Content**.
 - An **External Panel Session** ends when its hosting **Panel** closes unless a later provider lifecycle explicitly keeps the provider alive.
-- A launched **External Panel Provider** communicates with Niribar over framed JSON on standard input and standard output.
-- An **External Panel Session** starts with a protocol-version handshake between Niribar and the **External Panel Provider**.
+- A launched **External Panel Provider** communicates over standard input and standard output using its explicitly configured protocol. The default `niribar-v1` uses framed JSON; `canopa-v3` uses bounded JSON lines and shared Canopa wire types ([ADR 0011](docs/adr/0011-explicit-canopa-panel-protocol-adapter.md)).
+- A framed-v1 **External Panel Session** starts with a host-first protocol-version handshake. A Canopa-v3 session starts with a provider-first, versioned complete content replacement.
 - An **External Panel Provider** updates **External Panel Content** by sending a complete replacement content model, not incremental patches.
 - A failed **External Panel Provider** renders provider error content in its hosting **Panel** instead of silently closing the **Panel**.
 - **External Panel Session** owns stale provider output filtering and provider failure conversion for its active **Panel**.

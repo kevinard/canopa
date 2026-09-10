@@ -576,6 +576,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "canopa-panel-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2566,15 +2573,19 @@ name = "niribar"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "canopa-panel-protocol",
  "chrono",
  "iced",
  "iced_layershell",
+ "image",
  "kdl",
  "libpulse-binding",
  "miette",
  "niri-ipc",
+ "rustix 1.1.4",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

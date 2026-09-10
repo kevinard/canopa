@@ -109,6 +109,57 @@ impl ActiveExternalPanelSession {
 }
 
 impl ExternalPanelSessionRuntime {
+    pub(super) fn canopa_focus_move(
+        &mut self,
+        forward: bool,
+        active_panel: Option<&ExternalPanelPanelIdentity>,
+    ) -> Option<Vec<ExternalPanelSessionEffect>> {
+        let active = self.active.as_mut()?;
+        if !active.matches_panel(active_panel) {
+            return None;
+        }
+        let snapshot = active
+            .content
+            .elements
+            .iter_mut()
+            .find_map(|element| match element {
+                crate::surface::panel::ExternalPanelElement::Canopa { snapshot } => Some(snapshot),
+                _ => None,
+            })?;
+        snapshot.move_focus(forward);
+        Some(vec![active.open_content_effect()])
+    }
+
+    pub(super) fn canopa_keyboard_activate(
+        &self,
+        active_panel: Option<&ExternalPanelPanelIdentity>,
+    ) -> Option<Vec<ExternalPanelSessionEffect>> {
+        let active = self.active.as_ref()?;
+        if !active.matches_panel(active_panel) {
+            return None;
+        }
+        let snapshot = active
+            .content
+            .elements
+            .iter()
+            .find_map(|element| match element {
+                crate::surface::panel::ExternalPanelElement::Canopa { snapshot } => Some(snapshot),
+                _ => None,
+            })?;
+        Some(
+            snapshot
+                .focused_action_id()
+                .map(|id| {
+                    self.button_activated(
+                        active.provider_name.clone(),
+                        id.to_string(),
+                        active_panel,
+                    )
+                })
+                .unwrap_or_default(),
+        )
+    }
+
     pub(super) fn begin_open_provider(&mut self, session_id: String) {
         self.close();
         self.pending_session_id = Some(session_id);

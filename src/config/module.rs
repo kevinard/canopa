@@ -496,6 +496,7 @@ pub struct MenuItemConfig {
 pub struct PanelProviderConfig {
     pub name: String,
     pub command: ConfiguredCommand,
+    pub protocol: crate::external_panel::ProviderProtocol,
 }
 
 /// A single module entry from the config, specifying name, type, and module params.

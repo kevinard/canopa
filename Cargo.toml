@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+canopa-panel-protocol = { path = "vendor/canopa-panel-protocol" }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+rustix = { version = "1.1", features = ["fs"] }
 iced_layershell = "0.18.0"
 iced = { version = "0.14", default-features = false, features = [
   "image",
@@ -36,6 +39,9 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+[dev-dependencies]
+tempfile = "3"
 
 [patch.crates-io]
 iced_layershell = { path = "vendor/iced_layershell" }

@@ -183,6 +183,7 @@ mod tests {
         let mut config = Config::default();
         config.bars[0].modules.end = vec!["network".into()];
         config.panel_providers = vec![crate::config::PanelProviderConfig {
+            protocol: Default::default(),
             name: "wifi".into(),
             command: crate::config::ConfiguredCommand::argv_for_test("wifi-provider", Vec::new()),
         }];
@@ -223,6 +224,7 @@ mod tests {
         let mut config = Config::default();
         config.bars[0].modules.end = vec!["network".into()];
         config.panel_providers = vec![crate::config::PanelProviderConfig {
+            protocol: Default::default(),
             name: "wifi".into(),
             command: crate::config::ConfiguredCommand::argv_for_test("wifi-provider", Vec::new()),
         }];
@@ -258,6 +260,7 @@ mod tests {
         let mut config = Config::default();
         config.bars[0].modules.end = vec!["network".into()];
         config.panel_providers = vec![crate::config::PanelProviderConfig {
+            protocol: Default::default(),
             name: "wifi".into(),
             command: crate::config::ConfiguredCommand::argv_for_test("wifi-provider", Vec::new()),
         }];

@@ -42,6 +42,7 @@ impl ExternalPanelContent {
         self.elements
             .iter()
             .map(|element| match element {
+                ExternalPanelElement::Canopa { snapshot } => snapshot.content.title.as_str(),
                 ExternalPanelElement::Text { text } => text.as_str(),
                 ExternalPanelElement::Button { label, .. } => label.as_str(),
                 ExternalPanelElement::SelectableList { id, .. } => id.as_str(),

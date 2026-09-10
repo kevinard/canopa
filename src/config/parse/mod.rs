@@ -286,7 +286,26 @@ fn parse_panel_providers_section(
                 Some("expected `command \"...\"` or `command { argv \"program\" }`".into()),
             )
         })?;
-        provider_ctx.validate_child_schema(provider_children, &["command"], &["command"])?;
+        provider_ctx.validate_child_schema(
+            provider_children,
+            &["command", "protocol"],
+            &["command", "protocol"],
+        )?;
+        let transport = field(provider_children, &provider_ctx, "protocol")
+            .optional()
+            .string()
+            .transpose()?;
+        let protocol = match transport.as_deref() {
+            None | Some("niribar-v1") => crate::external_panel::ProviderProtocol::NiribarV1,
+            Some("canopa-v3") => crate::external_panel::ProviderProtocol::CanopaV3,
+            Some(_) => {
+                return Err(provider_ctx.node_err(
+                    node,
+                    "unsupported provider protocol",
+                    Some("expected niribar-v1 or canopa-v3".into()),
+                ));
+            }
+        };
         let command_node = field(provider_children, &provider_ctx, "command").required_node(
             "missing provider command",
             Some("expected `command \"...\"` or `command { argv \"program\" }`".into()),
@@ -297,7 +316,11 @@ fn parse_panel_providers_section(
             command_policy,
         )?;
 
-        providers.push(PanelProviderConfig { name, command });
+        providers.push(PanelProviderConfig {
+            name,
+            command,
+            protocol,
+        });
     }
 
     Ok(providers)

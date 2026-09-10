@@ -157,8 +157,12 @@ fn route_panel_input(event: &super::messages::SurfaceEvent) -> SurfaceInputEffec
         SurfaceEvent::BarFocusLost(_) => SurfaceInputEffect::Ignore,
         SurfaceEvent::BackPressed(_) => SurfaceInputEffect::PanelBack,
         SurfaceEvent::EscapePressed(_) => SurfaceInputEffect::PanelEscape,
-        SurfaceEvent::FocusMoveNext(_) => SurfaceInputEffect::PanelMoveFocus { forward: true },
-        SurfaceEvent::FocusMovePrev(_) => SurfaceInputEffect::PanelMoveFocus { forward: false },
+        SurfaceEvent::FocusMoveNext(_) | SurfaceEvent::FocusNextZone(_) => {
+            SurfaceInputEffect::PanelMoveFocus { forward: true }
+        }
+        SurfaceEvent::FocusMovePrev(_) | SurfaceEvent::FocusPrevZone(_) => {
+            SurfaceInputEffect::PanelMoveFocus { forward: false }
+        }
         SurfaceEvent::KeyboardActivate(_) => SurfaceInputEffect::PanelKeyboardActivate,
         _ => SurfaceInputEffect::Ignore,
     }

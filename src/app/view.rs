@@ -94,9 +94,17 @@ fn render_external_panel_model<'a>(
     content: &'a crate::surface::panel::ExternalPanelContent,
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
+    if let [crate::surface::panel::ExternalPanelElement::Canopa { snapshot }] =
+        content.elements.as_slice()
+    {
+        return super::canopa_panel::render(snapshot, &content.provider_name);
+    }
     let mut body = column![].spacing(8).padding(8);
     for element in &content.elements {
         let rendered: Element<'_, Message> = match element {
+            crate::surface::panel::ExternalPanelElement::Canopa { snapshot } => {
+                super::canopa_panel::render(snapshot, &content.provider_name)
+            }
             crate::surface::panel::ExternalPanelElement::Text { text: value } => {
                 text(value.clone()).into()
             }

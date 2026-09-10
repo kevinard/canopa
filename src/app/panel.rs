@@ -483,7 +483,7 @@ impl App {
             })
     }
 
-    fn active_external_panel_identity(&self) -> Option<ExternalPanelPanelIdentity> {
+    pub(super) fn active_external_panel_identity(&self) -> Option<ExternalPanelPanelIdentity> {
         let tree = self.foreground.active_panel_tree()?;
         let crate::surface::panel::PanelContent::ExternalProvider(content) = &tree.content else {
             return None;
@@ -495,7 +495,7 @@ impl App {
         })
     }
 
-    fn apply_external_panel_session_effects(
+    pub(super) fn apply_external_panel_session_effects(
         &mut self,
         effects: Vec<ExternalPanelSessionEffect>,
     ) -> Task<Message> {
@@ -706,6 +706,7 @@ impl App {
 
         let provider_catalog =
             crate::external_panel::PanelProviderCatalog::new(&self.config.panel_providers);
+        let provider_protocol = provider_catalog.protocol(&provider_name);
         let provider_command = match provider_catalog.resolve(&provider_name) {
             Ok(command) => command,
             Err(crate::external_panel::PanelProviderResolutionError::NotConfigured) => {
@@ -781,7 +782,7 @@ impl App {
             async move {
                 match tokio::time::timeout(
                     std::time::Duration::from_secs(2),
-                    process.start_session(handshake),
+                    process.start_session_for_protocol(handshake, provider_protocol),
                 )
                 .await
                 {
@@ -1628,6 +1629,7 @@ mod tests {
     fn open_provider_action_shows_launch_failure_panel() {
         let mut config = crate::config::Config::default();
         config.panel_providers = vec![crate::config::PanelProviderConfig {
+            protocol: Default::default(),
             name: "wifi".into(),
             command: crate::config::ConfiguredCommand::argv_for_test(
                 "/definitely-missing-niribar-provider",
@@ -1863,6 +1865,7 @@ mod tests {
     fn open_provider_action_applies_successful_provider_handshake_content() {
         let mut config = crate::config::Config::default();
         config.panel_providers = vec![crate::config::PanelProviderConfig {
+            protocol: Default::default(),
             name: "wifi".into(),
             command: crate::config::ConfiguredCommand::argv_for_test(
                 "unused-test-provider",

@@ -3,11 +3,23 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use tokio::io::{AsyncRead, AsyncWrite};
+#[cfg(test)]
+use tokio::io::AsyncRead;
+use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr};
+
+#[cfg(test)]
+mod canopa_session_tests;
 
 pub(crate) mod protocol {
     pub(crate) use niribar::external_panel::protocol::*;
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProviderProtocol {
+    #[default]
+    NiribarV1,
+    CanopaV3,
 }
 pub(crate) struct ExternalPanelStartedSession {
     pub(crate) content: crate::surface::panel::ExternalPanelDocument,
@@ -22,6 +34,7 @@ pub(crate) struct ExternalPanelSessionHandle {
     child: Arc<tokio::sync::Mutex<Option<Child>>>,
     closed: Arc<AtomicBool>,
     stderr_tail: Arc<tokio::sync::Mutex<ProviderStderrTail>>,
+    canopa: Option<niribar::external_panel::canopa::CanopaSession>,
 }
 
 impl std::fmt::Debug for ExternalPanelSessionHandle {
@@ -33,7 +46,7 @@ impl std::fmt::Debug for ExternalPanelSessionHandle {
 }
 
 type ProviderStdin = Box<dyn AsyncWrite + Unpin + Send>;
-type ProviderStdout = Box<dyn AsyncRead + Unpin + Send>;
+type ProviderStdout = Box<dyn AsyncBufRead + Unpin + Send>;
 const PROVIDER_CLOSE_GRACE: std::time::Duration = std::time::Duration::from_millis(250);
 const PROVIDER_STDERR_TAIL_BYTES: usize = 4096;
 
@@ -102,11 +115,18 @@ impl ExternalPanelSessionHandle {
     }
 
     async fn send_close_event_best_effort(&self) {
-        let mut stdin = self.stdin.lock().await;
-        let _ = protocol::write_frame(
-            &mut *stdin,
-            &protocol::HostMessage::Event(protocol::ProviderEvent::Close),
-        )
+        let _ = tokio::time::timeout(PROVIDER_CLOSE_GRACE, async {
+            let mut stdin = self.stdin.lock().await;
+            if self.canopa.is_some() {
+                let _ = stdin.shutdown().await;
+            } else {
+                let _ = protocol::write_frame(
+                    &mut *stdin,
+                    &protocol::HostMessage::Event(protocol::ProviderEvent::Close),
+                )
+                .await;
+            }
+        })
         .await;
     }
 
@@ -169,8 +189,26 @@ impl ExternalPanelSessionHandle {
                 "external panel session is closed".into(),
             ));
         }
-        let mut stdin = self.stdin.lock().await;
-        protocol::write_frame(&mut *stdin, &protocol::HostMessage::Event(event)).await
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let mut stdin = self.stdin.lock().await;
+            if let Some(canopa) = &self.canopa {
+                match event {
+                    protocol::ProviderEvent::ButtonActivated { element_id } => {
+                        canopa.write_interaction(&mut *stdin, &element_id).await?;
+                    }
+                    protocol::ProviderEvent::Close => stdin
+                        .shutdown()
+                        .await
+                        .map_err(|error| protocol::ProtocolError::Io(error.to_string()))?,
+                    _ => return Err(protocol::ProtocolError::UnexpectedMessage),
+                }
+                Ok(())
+            } else {
+                protocol::write_frame(&mut *stdin, &protocol::HostMessage::Event(event)).await
+            }
+        })
+        .await
+        .map_err(|_| protocol::ProtocolError::Io("provider event write timed out".into()))?
     }
 
     pub(crate) async fn read_next_content(
@@ -182,6 +220,9 @@ impl ExternalPanelSessionHandle {
             ));
         }
         let mut stdout = self.stdout.lock().await;
+        if let Some(canopa) = &self.canopa {
+            return Ok(canopa_document(canopa.read_content(&mut *stdout).await?));
+        }
         match protocol::read_provider_frame(&mut *stdout).await? {
             protocol::ProviderMessage::Content { content } => {
                 content
@@ -202,8 +243,9 @@ impl ExternalPanelSessionHandle {
         Self {
             session_id: session_id.into(),
             stdin: Arc::new(tokio::sync::Mutex::new(Box::new(stdin))),
-            stdout: Arc::new(tokio::sync::Mutex::new(Box::new(stdout))),
+            stdout: Arc::new(tokio::sync::Mutex::new(Box::new(BufReader::new(stdout)))),
             child: Arc::new(tokio::sync::Mutex::new(None)),
+            canopa: None,
             closed: Arc::new(AtomicBool::new(false)),
             stderr_tail: Arc::new(tokio::sync::Mutex::new(ProviderStderrTail::new(
                 PROVIDER_STDERR_TAIL_BYTES,
@@ -238,14 +280,25 @@ impl ExternalPanelProcess {
         protocol::perform_handshake(stdout, stdin, handshake).await
     }
 
+    #[cfg(test)]
     pub(crate) async fn start_session(
-        mut self,
+        self,
         handshake: protocol::HostHandshake,
     ) -> Result<ExternalPanelStartedSession, protocol::ProtocolError> {
+        self.start_session_for_protocol(handshake, ProviderProtocol::NiribarV1)
+            .await
+    }
+
+    pub(crate) async fn start_session_for_protocol(
+        mut self,
+        handshake: protocol::HostHandshake,
+        transport: ProviderProtocol,
+    ) -> Result<ExternalPanelStartedSession, protocol::ProtocolError> {
         let session_id = handshake.session_id.clone();
-        let mut stdout = self.child.stdout.take().ok_or_else(|| {
+        let stdout = self.child.stdout.take().ok_or_else(|| {
             protocol::ProtocolError::Io("provider stdout pipe unavailable".into())
         })?;
+        let mut stdout = BufReader::new(stdout);
         let mut stdin =
             self.child.stdin.take().ok_or_else(|| {
                 protocol::ProtocolError::Io("provider stdin pipe unavailable".into())
@@ -256,16 +309,31 @@ impl ExternalPanelProcess {
         if let Some(stderr) = self.child.stderr.take() {
             capture_provider_stderr(stderr, stderr_tail.clone());
         }
-        let content = protocol::perform_handshake(&mut stdout, &mut stdin, handshake).await?;
+        let canopa = (transport == ProviderProtocol::CanopaV3)
+            .then(niribar::external_panel::canopa::CanopaSession::default);
+        let content = if let Some(canopa) = &canopa {
+            canopa_document(canopa.read_content(&mut stdout).await?)
+        } else {
+            protocol::perform_handshake(&mut stdout, &mut stdin, handshake).await?
+        };
         let handle = ExternalPanelSessionHandle {
             session_id,
             stdin: Arc::new(tokio::sync::Mutex::new(Box::new(stdin))),
             stdout: Arc::new(tokio::sync::Mutex::new(Box::new(stdout))),
             child: Arc::new(tokio::sync::Mutex::new(Some(self.child))),
+            canopa,
             closed: Arc::new(AtomicBool::new(false)),
             stderr_tail,
         };
         Ok(ExternalPanelStartedSession { content, handle })
+    }
+}
+
+fn canopa_document(
+    snapshot: niribar::external_panel::canopa::CanopaSnapshot,
+) -> protocol::ExternalPanelDocument {
+    protocol::ExternalPanelDocument {
+        elements: vec![protocol::ExternalPanelElement::Canopa { snapshot }],
     }
 }
 
@@ -314,6 +382,13 @@ pub(crate) struct PanelProviderCatalog<'a> {
 }
 
 impl<'a> PanelProviderCatalog<'a> {
+    pub(crate) fn protocol(&self, name: &str) -> ProviderProtocol {
+        self.configured
+            .iter()
+            .find(|provider| provider.name == name)
+            .map(|provider| provider.protocol)
+            .unwrap_or_default()
+    }
     pub(crate) fn new(configured: &'a [crate::config::PanelProviderConfig]) -> Self {
         Self { configured }
     }
@@ -524,8 +599,9 @@ mod tests {
         let child = Arc::new(tokio::sync::Mutex::new(Some(child)));
         let handle = ExternalPanelSessionHandle {
             session_id: "session-1".into(),
+            canopa: None,
             stdin: Arc::new(tokio::sync::Mutex::new(Box::new(stdin))),
-            stdout: Arc::new(tokio::sync::Mutex::new(Box::new(stdout))),
+            stdout: Arc::new(tokio::sync::Mutex::new(Box::new(BufReader::new(stdout)))),
             child: child.clone(),
             closed: Arc::new(AtomicBool::new(false)),
             stderr_tail,
@@ -577,6 +653,7 @@ mod tests {
         let command =
             crate::config::ConfiguredCommand::argv_for_test("custom-wifi-provider", Vec::new());
         let configured = vec![crate::config::PanelProviderConfig {
+            protocol: Default::default(),
             name: "wifi".into(),
             command: command.clone(),
         }];

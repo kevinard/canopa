@@ -51,6 +51,13 @@ impl App {
     }
 
     pub(super) fn handle_panel_focus_move(&mut self, forward: bool) -> Task<Message> {
+        let active_panel = self.active_external_panel_identity();
+        if let Some(effects) = self
+            .external_panel_session
+            .canopa_focus_move(forward, active_panel.as_ref())
+        {
+            return self.apply_external_panel_session_effects(effects);
+        }
         self.handle_panel_event(if forward {
             super::messages::PanelEvent::FocusMoveNext
         } else {
@@ -131,6 +138,13 @@ impl App {
     }
 
     pub(super) fn handle_panel_keyboard_activate(&mut self) -> Task<Message> {
+        let active_panel = self.active_external_panel_identity();
+        if let Some(effects) = self
+            .external_panel_session
+            .canopa_keyboard_activate(active_panel.as_ref())
+        {
+            return self.apply_external_panel_session_effects(effects);
+        }
         self.handle_panel_event(super::messages::PanelEvent::Activate)
     }
 

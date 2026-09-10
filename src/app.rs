@@ -1,6 +1,7 @@
 mod animation;
 mod app_effects;
 mod bar_surface_plan;
+mod canopa_panel;
 mod dynamic_modules;
 pub(crate) mod eligible_outputs;
 mod external_panel_session;

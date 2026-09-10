@@ -2,6 +2,29 @@ use crate::config::parse::parse;
 use crate::config::parse::{ConfigInput, ConfigSourceName, parse_input};
 
 #[test]
+fn canopa_panel_provider_selects_explicit_transport() {
+    let config = parse(
+        r#"
+        panel-providers {
+            provider "notifications" {
+                protocol "canopa-v3"
+                command { argv "canopa-notify" "panel-provider"; }
+            }
+        }
+    "#,
+    )
+    .expect("Canopa protocol should be selectable without changing existing providers");
+    assert_eq!(
+        config.panel_providers[0].protocol,
+        crate::external_panel::ProviderProtocol::CanopaV3
+    );
+    assert!(
+        parse(r#"panel-providers { provider "bad" { protocol "canopa-v99"; command "true"; }; }"#)
+            .is_err()
+    );
+}
+
+#[test]
 fn parse_panel_provider_and_open_provider_action() {
     let kdl = r#"
 panel-providers {

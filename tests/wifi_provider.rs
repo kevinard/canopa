@@ -717,6 +717,7 @@ fn document_text(document: &niribar::external_panel::protocol::ExternalPanelDocu
         .elements
         .iter()
         .map(|element| match element {
+            ExternalPanelElement::Canopa { .. } => panic!("Wi-Fi must use framed-v1 content"),
             ExternalPanelElement::Text { text } => text.clone(),
             ExternalPanelElement::Button { label, .. } => label.clone(),
             ExternalPanelElement::SelectableList { entries, .. } => entries

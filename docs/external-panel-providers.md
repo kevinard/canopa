@@ -129,6 +129,31 @@ V1 does not support disconnecting from or forgetting saved networks from the bui
 
 ## Transport
 
+### Canopa Notify (JSON-lines v3)
+
+Select `protocol "canopa-v3"` inside the `provider` declaration to host Canopa Notify. The default remains `niribar-v1`; unknown names are rejected at configuration load. The two versions name different transports, not successive versions of the Wi-Fi protocol.
+
+```kdl
+panel-providers {
+    provider "notifications" {
+        protocol "canopa-v3"
+        command "canopa-notify panel-provider --socket \"$XDG_RUNTIME_DIR/canopa-notify/control.sock\""
+    }
+}
+```
+
+This shell-form example obeys `command-policy`. With shell commands disabled, use `command { argv "canopa-notify" "panel-provider" "--socket" "/absolute/runtime/path/control.sock"; }` instead. Add `click { open-provider "notifications"; }` under a module's `actions` to open it.
+
+Canopa providers send complete `replace_content` JSON lines without waiting for a host handshake. Every message must carry `protocol_version: 3`, terminate with a newline and fit within 1 MiB. The shared crate validates unique section/item identifiers and unambiguous action/control values. Host events use the shared `InteractionEvent` JSON shape and preserve opaque keys and values.
+
+The host renders grouped sections, controls, metadata, all actions, bold/italic/underline and ordered local body images. Image decoding runs off the UI thread: at most 16 unique images per snapshot, 8 MiB encoded bytes per file, 2048×2048 source dimensions, and two concurrent decoding jobs; displayed pixels are reduced to at most 512×512. Invalid/unavailable images retain alternative text. No network fetching or arbitrary markup execution occurs.
+
+Arrow keys select an action, Enter activates it, and Escape closes the panel. The selected action and its item/control context remain visible above the scrolling content. A replacement clears keyboard selection and invalidates old actions. Pointer interaction remains available for every action/control option. Screen-reader support and hyperlink activation are not claimed.
+
+See [ADR 0011](adr/0011-explicit-canopa-panel-protocol-adapter.md) and `vendor/canopa-panel-protocol/README.md` for the source-of-truth and drift-check rules.
+
+### Niribar framed JSON v1
+
 Niribar launches the provider on demand and communicates over standard input and standard output. Every message is a framed JSON payload:
 
 1. ASCII magic: `NIRIBAR_EXTERNAL_PANEL_JSON_V1\n`
