@@ -272,6 +272,14 @@ _Avoid_: Notify Control API
 The sender-visible lifecycle of a notification after it has been submitted to the **Notification Server API**.
 _Avoid_: Notification History state when referring to what the sender observes
 
+**Sender Notification ID**:
+A nonzero unsigned wire ID issued by the **Notification Server API**, usable for replacement and closure only while its registration is live in the current daemon lifetime. Its numeric value never identifies retained history.
+_Avoid_: History ID, application identity, replacement alias for a retired ID
+
+**Internal Notification ID**:
+The daemon's nonzero identity for a retained or transient **Notification Thread**, or an immediately dropped receipt. Only the D-Bus adapter maps it to a **Sender Notification ID**; a dropped receipt does not identify a retained thread.
+_Avoid_: Sender Notification ID, SQLite row ID when referring to runtime-only identities
+
 **Notification Configuration**:
 The user-owned settings that define notification rules, presentation defaults, and history retention.
 _Avoid_: Runtime state, notification history

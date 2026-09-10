@@ -1219,7 +1219,7 @@ async fn dev_dbus_closed_wire_id_cannot_replace_an_unrelated_history_thread() {
         .await
         .unwrap();
     // A retired wire ID must not fall through to SQLite's row ID namespace.
-    let _: zbus::Result<u32> = proxy
+    let retired_result: zbus::Result<u32> = proxy
         .call(
             "Notify",
             &(
@@ -1239,6 +1239,7 @@ async fn dev_dbus_closed_wire_id_cannot_replace_an_unrelated_history_thread() {
     let close_result: zbus::Result<()> = proxy.call("CloseNotification", &(active,)).await;
     daemon.kill().ok();
     daemon.wait().ok();
+    assert!(retired_result.is_err(), "a retired sender ID was revived");
     assert!(preserved, "replacement aliased a retained row: {snapshot}");
     assert!(
         close_result.is_ok(),

@@ -25,7 +25,7 @@ The protocol baseline is the versioned [Desktop Notifications 1.3 protocol](http
 | Requirement | Obligation | Implementation owner | Evidence / remaining verification |
 | --- | --- | --- | --- |
 | Four D-Bus methods, reply types and server information | Core protocol | D-Bus adapter | `tests/dbus_receipt.rs` exercises Notify/Close; binary tests check exact GetCapabilities sets. Dedicated introspection/GetServerInformation assertions remain open in W01. |
-| Nonzero live IDs, replacement and invalidated closures | Core protocol | D-Bus registry + Lifecycle | `dev_dbus_closed_wire_id_cannot_replace_an_unrelated_history_thread`, `concurrent_fixed_wire_token_requests_revise_one_live_thread`, `tests/replacements.rs`. Typed registry extraction and wrap/retirement coverage remain W03. |
+| Nonzero live IDs, replacement and invalidated closures | Core protocol | D-Bus registry + Lifecycle | Typed adapter-local registry in `notification_server/ids.rs`; executable collision/concurrent-token regressions in `tests/dbus_receipt.rs`; protocol tests cover retirement, allocation exhaustion, sparse-range pressure, maximum wire values, failed storage receipts and client disconnection. Restart/owner-change fixtures and propagation of typed IDs through the core remain W03. |
 | Required closure/action signal delivery and ordering | Core protocol / advertised actions | Runtime + sender publisher | Binary `dbus_bulk_clear_publishes_all_130_closures`, `notification_server_emits_activation_token_before_action_invoked`; D-Bus action-before-close test. Transport failure and renderer recovery remain W05. |
 | Expiration, resident and transient semantics | Protocol with explicit local timeout policy | Lifecycle + Runtime | `tests/lifecycle.rs`, `tests/presentation.rs`, `tests/control_api.rs`; display-based timing and transient-center exclusion documented below. |
 | Revision-safe banner interactions and display callbacks | Local concurrency policy supporting replacement/actions | Banner presenter + Runtime | `queued_banner_action_cannot_invoke_the_same_key_on_replacement_content`, `queued_banner_activation_and_dismissal_cannot_mutate_replaced_or_closed_content`, `banner_token_wait_cannot_commit_an_action_after_replacement`, `delayed_display_acknowledgement_cannot_start_a_cancelled_revisions_timeout`; renderer burst and acknowledgement lifetime tests in `presentation.rs`. Graphical verification remains open. |
@@ -36,6 +36,14 @@ The protocol baseline is the versioned [Desktop Notifications 1.3 protocol](http
 | Atomic storage and safe upgrades | Local reliability contract | Notification History adapter | Twelve SQLite adapter tests, future-schema rejection and partial-clear history tests. Interrupted upgrades, large backfills and additional startup failure fixtures remain W02/W06. |
 
 The static profile excludes `icon-multi`; Wayland placement may ignore `x`/`y`. No native portal-v2 backend is claimed. See the existing [portal interoperability notes](xdg-notification-portal-v2.md) for negotiated bridge limitations.
+
+## Sender ID lifetime and compatibility
+
+[ADR 0029](adr/0029-live-notification-id-boundary.md) defines a daemon-lifetime wire namespace, independent of retained history. Successful live replacements preserve their wire ID. A never-issued nonzero token still creates a new notification for compatibility; an issued but closed token now returns `InvalidArgs`. Clients that reused closed fixed tokens must submit `replaces_id = 0` to start a new notification.
+
+Generated IDs never wrap or reuse committed IDs, including immediately dropped notifications. Exhaustion returns `LimitsExceeded` without a notification mutation. Issued-ID memory uses a contiguous prefix plus at most 4,096 sparse ranges: a caller token requiring another range is rejected, but automatic IDs can still extend the prefix. Receipts that fail before commitment consume no ID. This budget bounds retirement bookkeeping, not the separate active-notification resource budget still tracked in W07.
+
+Client disconnection does not close a live notification or make its ID private to that connection. Claimed app identity remains grouping/policy metadata, not authentication. Daemon restart creates a new namespace; clients must discard old IDs when the service owner changes.
 
 ## Expiration semantics
 
