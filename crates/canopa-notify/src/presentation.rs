@@ -1,3 +1,4 @@
+use crate::InternalNotificationId;
 use crate::domain::has_static_raster_extension;
 use crate::{
     BannerLifecycleChange, DeliveryOutcome, NotificationAction, NotificationBodyContent,
@@ -122,7 +123,7 @@ impl BannerSurfaceSpec {
 /// The content revision captured by a banner widget, preserved through async callbacks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BannerTarget {
-    pub notification_id: i64,
+    pub notification_id: InternalNotificationId,
     pub revision: i64,
 }
 
@@ -838,7 +839,7 @@ mod tests {
         let _task = banner_ui_update(&mut state, BannerUiMessage::PresentationFrame(rendered));
 
         assert!(acknowledged.load(Ordering::SeqCst));
-        assert_eq!(state.presentation.banners[0].notification_id, 42);
+        assert_eq!(state.presentation.banners[0].notification_id.get(), 42);
     }
 
     #[test]
@@ -1100,7 +1101,7 @@ mod tests {
 
     fn banner_view(notification_id: i64, body: &str) -> BannerView {
         BannerView {
-            notification_id,
+            notification_id: InternalNotificationId::new(notification_id).unwrap(),
             revision: 1,
             app_identity: "downloader".to_string(),
             app_name: "Downloader".to_string(),
@@ -1160,7 +1161,7 @@ fn banner_ui_view(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BannerStackItemKey {
-    Notification(i64),
+    Notification(InternalNotificationId),
     Overflow,
 }
 
@@ -1809,7 +1810,7 @@ pub enum BannerFocusBehavior {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BannerView {
-    pub notification_id: i64,
+    pub notification_id: InternalNotificationId,
     pub revision: i64,
     pub app_identity: String,
     pub app_name: String,
@@ -2318,9 +2319,9 @@ impl PresentationCoordinator {
 
 #[derive(Clone, Default)]
 pub struct NotificationBannerState {
-    visible: HashMap<i64, NotificationThread>,
-    visible_order: Vec<i64>,
-    overflow: HashMap<i64, NotificationThread>,
+    visible: HashMap<InternalNotificationId, NotificationThread>,
+    visible_order: Vec<InternalNotificationId>,
+    overflow: HashMap<InternalNotificationId, NotificationThread>,
 }
 
 impl NotificationBannerState {
@@ -2408,7 +2409,7 @@ impl NotificationBannerState {
         }
     }
 
-    fn remove_banner(&mut self, notification_id: i64) {
+    fn remove_banner(&mut self, notification_id: InternalNotificationId) {
         self.visible.remove(&notification_id);
         self.overflow.remove(&notification_id);
         self.visible_order.retain(|id| *id != notification_id);

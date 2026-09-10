@@ -1,3 +1,4 @@
+use crate::InternalNotificationId;
 use crate::clock::now_millis;
 use crate::domain::{urgency_from_key, urgency_key};
 use crate::intake::interpreted_body_content;
@@ -150,7 +151,7 @@ impl NotificationThreadRecord {
 
     fn from_thread(thread: NotificationThread) -> anyhow::Result<Self> {
         Self::from_thread_parts(
-            Some(thread.id),
+            Some(thread.id.get()),
             thread.accepted_notification,
             thread.status,
             thread.delivery_outcome,
@@ -177,7 +178,7 @@ impl NotificationThreadRecord {
             id,
             app_identity: notification.app_identity,
             app_name: notification.app_name,
-            replaces_id: notification.replaces_id,
+            replaces_id: notification.replaces_id.map(InternalNotificationId::get),
             app_icon_json: notification
                 .app_icon
                 .as_ref()
@@ -308,13 +309,12 @@ impl NotificationThreadRecord {
             .transpose()?
             .unwrap_or_else(|| NotificationBodyContent::plain(self.body.clone()));
         Ok(NotificationThread {
-            id: self
-                .id
-                .expect("persisted notification thread record must have id"),
+            id: InternalNotificationId::try_from(self.id()?)?,
             accepted_notification: AcceptedNotification {
                 app_identity: self.app_identity,
                 app_name: self.app_name,
-                replaces_id: self.replaces_id,
+                // Legacy library inputs could retain Some(0), meaning no replacement.
+                replaces_id: self.replaces_id.and_then(InternalNotificationId::new),
                 app_icon,
                 summary: self.summary,
                 body: self.body,
@@ -614,9 +614,15 @@ impl SqlitePersistedState {
         Ok(NotificationSnapshot { active, history })
     }
 
-    pub(crate) async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
+    pub(crate) async fn thread(
+        &self,
+        id: InternalNotificationId,
+    ) -> anyhow::Result<NotificationThread> {
         let sql = notification_thread_select_sql("WHERE id = ?1");
-        let row = sqlx::query(&sql).bind(id).fetch_one(&self.pool).await?;
+        let row = sqlx::query(&sql)
+            .bind(id.get())
+            .fetch_one(&self.pool)
+            .await?;
 
         NotificationThreadRecord::from_row(&row)?.into_thread()
     }
@@ -774,7 +780,7 @@ impl NotificationHistory for SqlitePersistedState {
         Ok(thread)
     }
 
-    async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
+    async fn thread(&self, id: InternalNotificationId) -> anyhow::Result<NotificationThread> {
         SqlitePersistedState::thread(self, id).await
     }
 

@@ -321,7 +321,7 @@ struct RecordingBannerPresenter {
 }
 
 impl RecordingBannerPresenter {
-    fn displayed(&self, notification_id: i64) -> bool {
+    fn displayed(&self, notification_id: canopa_notify::InternalNotificationId) -> bool {
         self.updates.lock().unwrap().iter().any(|banners| {
             banners
                 .iter()

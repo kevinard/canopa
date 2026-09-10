@@ -1,3 +1,4 @@
+use crate::InternalNotificationId;
 use crate::clock::now_millis;
 use crate::{
     AcceptedNotification, DeliveryDecision, DeliveryOutcome, NotificationReceipt,
@@ -73,25 +74,25 @@ pub enum LifecycleEffect {
     ThreadClosed(NotificationThread),
     ThreadStale(NotificationThread),
     NotificationDropped {
-        replaces_id: Option<i64>,
+        replaces_id: Option<InternalNotificationId>,
     },
     NotificationTimeoutStartsOnDisplay {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
         timeout: NotificationTimeout,
         urgency: Urgency,
     },
     NotificationTimeoutCancelledThroughRevision {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
     },
     ActionInvoked {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: String,
         app_identity: String,
     },
     SenderClosed {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         reason: SenderCloseReason,
     },
 }
@@ -253,13 +254,13 @@ impl<'a> IntoIterator for &'a LifecycleEffects {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NotificationTimeoutChange {
     StartsOnDisplay {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
         timeout: NotificationTimeout,
         urgency: Urgency,
     },
     CancelThroughRevision {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
     },
 }
@@ -267,7 +268,9 @@ pub enum NotificationTimeoutChange {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BannerLifecycleChange {
     ConsiderOpportunity(NotificationThread),
-    Remove { notification_id: i64 },
+    Remove {
+        notification_id: InternalNotificationId,
+    },
 }
 
 #[allow(async_fn_in_trait)]
@@ -276,7 +279,7 @@ pub trait NotificationHistory: Clone + Send + Sync + 'static {
         &self,
         thread: NewNotificationThread,
     ) -> anyhow::Result<NotificationThread>;
-    async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread>;
+    async fn thread(&self, id: InternalNotificationId) -> anyhow::Result<NotificationThread>;
     async fn persist_thread(
         &self,
         thread: NotificationThread,
@@ -290,7 +293,7 @@ pub struct NotificationLifecycle<H> {
     history: H,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     timeout_defaults: NotificationTimeoutDefaults,
-    transient_threads: Arc<Mutex<HashMap<i64, NotificationThread>>>,
+    transient_threads: Arc<Mutex<HashMap<InternalNotificationId, NotificationThread>>>,
     next_ephemeral_notification_id: Arc<AtomicI64>,
 }
 
@@ -366,7 +369,7 @@ where
 
         let new_thread = self.new_thread(notification, delivery.clone());
         let thread = if new_thread.accepted_notification.transient {
-            self.create_transient_thread(new_thread)
+            self.create_transient_thread(new_thread)?
         } else {
             self.history.create_thread(new_thread).await?
         };
@@ -393,7 +396,7 @@ where
     pub async fn drop_notification(
         &self,
         app_identity: &str,
-        replaces_id: Option<i64>,
+        replaces_id: Option<InternalNotificationId>,
     ) -> anyhow::Result<LifecycleEffects> {
         let replacement_target = self.replacement_target(app_identity, replaces_id).await?;
         if let Some(existing) = replacement_target {
@@ -408,9 +411,7 @@ where
             ]));
         }
 
-        let notification_id = self
-            .next_ephemeral_notification_id
-            .fetch_sub(1, Ordering::Relaxed);
+        let notification_id = self.allocate_runtime_id()?;
         Ok(LifecycleEffects::new(vec![
             LifecycleEffect::NotificationDropped { replaces_id: None },
             LifecycleEffect::SenderReceipt(NotificationReceipt {
@@ -435,7 +436,7 @@ where
     async fn replacement_target(
         &self,
         _app_identity: &str,
-        replaces_id: Option<i64>,
+        replaces_id: Option<InternalNotificationId>,
     ) -> anyhow::Result<Option<NotificationThread>> {
         let Some(replaces_id) = replaces_id else {
             return Ok(None);
@@ -448,14 +449,17 @@ where
             .find(|thread| thread.id == replaces_id))
     }
 
-    pub async fn dismiss(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {
+    pub async fn dismiss(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<LifecycleEffects> {
         self.transition_active(notification_id, NotificationStatus::Dismissed)
             .await
     }
 
     pub(crate) async fn dismiss_if_current_revision(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
     ) -> anyhow::Result<LifecycleEffects> {
         let thread = self.thread(notification_id).await?;
@@ -467,14 +471,17 @@ where
             .await
     }
 
-    pub async fn expire(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {
+    pub async fn expire(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<LifecycleEffects> {
         self.transition_active(notification_id, NotificationStatus::Expired)
             .await
     }
 
     pub async fn expire_timeout_if_current_revision(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
     ) -> anyhow::Result<LifecycleEffects> {
         let thread = self.thread(notification_id).await?;
@@ -486,7 +493,10 @@ where
             .await
     }
 
-    pub async fn close(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {
+    pub async fn close(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<LifecycleEffects> {
         self.transition_active(notification_id, NotificationStatus::Closed)
             .await
     }
@@ -517,7 +527,7 @@ where
     /// Validate an action without committing it, before bounded external token acquisition.
     pub(crate) async fn prepare_action(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: &str,
     ) -> anyhow::Result<NotificationThread> {
         let thread = self.thread(notification_id).await?;
@@ -538,7 +548,7 @@ where
 
     pub async fn invoke_action(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: &str,
     ) -> anyhow::Result<LifecycleEffects> {
         self.invoke_action_if_current_revision(notification_id, action_key, None)
@@ -547,7 +557,7 @@ where
 
     pub(crate) async fn invoke_action_if_current_revision(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: &str,
         revision: Option<i64>,
     ) -> anyhow::Result<LifecycleEffects> {
@@ -605,7 +615,7 @@ where
 
     async fn transition_active(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         status: NotificationStatus,
     ) -> anyhow::Result<LifecycleEffects> {
         let thread = self.thread(notification_id).await?;
@@ -700,7 +710,10 @@ where
         (self.clock)()
     }
 
-    pub async fn thread(&self, notification_id: i64) -> anyhow::Result<NotificationThread> {
+    pub async fn thread(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<NotificationThread> {
         if let Some(thread) = self
             .transient_threads
             .lock()
@@ -727,10 +740,19 @@ where
         Ok(threads)
     }
 
-    fn create_transient_thread(&self, thread: NewNotificationThread) -> NotificationThread {
-        let id = self
+    fn allocate_runtime_id(&self) -> anyhow::Result<InternalNotificationId> {
+        let value = self
             .next_ephemeral_notification_id
-            .fetch_sub(1, Ordering::Relaxed);
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_sub(1))
+            .map_err(|_| anyhow::anyhow!("runtime notification ID space exhausted"))?;
+        Ok(InternalNotificationId::try_from(value)?)
+    }
+
+    fn create_transient_thread(
+        &self,
+        thread: NewNotificationThread,
+    ) -> anyhow::Result<NotificationThread> {
+        let id = self.allocate_runtime_id()?;
         let thread = NotificationThread {
             id,
             accepted_notification: thread.accepted_notification,
@@ -746,7 +768,7 @@ where
             .lock()
             .unwrap()
             .insert(id, thread.clone());
-        thread
+        Ok(thread)
     }
 
     async fn persist_thread(

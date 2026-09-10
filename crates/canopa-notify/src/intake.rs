@@ -1,3 +1,4 @@
+use crate::InternalNotificationId;
 use crate::{
     AcceptedNotification, NotificationBodyContent, NotificationBodyImage,
     NotificationBodyImageSource, NotificationBodySegment, NotificationBodyStyle,
@@ -12,7 +13,7 @@ pub(crate) enum NotificationIntakeResult {
     Accepted(Box<AcceptedNotificationInput>),
     NoOpDropped {
         app_identity: String,
-        replaces_id: Option<i64>,
+        replaces_id: Option<InternalNotificationId>,
     },
 }
 

@@ -1,3 +1,4 @@
+use crate::InternalNotificationId;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::Duration;
@@ -51,7 +52,8 @@ impl Default for NotificationTimeoutDefaults {
 pub struct NotificationInput {
     pub app_name: String,
     pub desktop_entry: Option<String>,
-    pub replaces_id: Option<i64>,
+    /// Internal live target from a receipt or transport registry, never a wire ID.
+    pub replaces_id: Option<InternalNotificationId>,
     pub app_icon: Option<NotificationVisualReference>,
     pub summary: String,
     pub body: String,
@@ -105,7 +107,7 @@ pub struct NotificationSoundRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NotificationSoundPlayback {
-    pub notification_id: i64,
+    pub notification_id: InternalNotificationId,
     pub app_identity: String,
     pub summary: String,
     pub requested_sound: Option<NotificationSound>,
@@ -183,7 +185,8 @@ impl NotificationTimeout {
 pub struct AcceptedNotification {
     pub app_identity: String,
     pub app_name: String,
-    pub replaces_id: Option<i64>,
+    /// Already resolved internal target; lifecycle decides whether it remains live.
+    pub replaces_id: Option<InternalNotificationId>,
     pub app_icon: Option<NotificationVisualReference>,
     pub summary: String,
     pub body: String,
@@ -957,13 +960,13 @@ mod tests {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationReceipt {
-    pub notification_id: i64,
+    pub notification_id: InternalNotificationId,
     pub delivery_outcome: DeliveryOutcome,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationThread {
-    pub id: i64,
+    pub id: InternalNotificationId,
     pub accepted_notification: AcceptedNotification,
     pub status: NotificationStatus,
     pub delivery_outcome: DeliveryOutcome,
@@ -984,15 +987,15 @@ pub struct NotificationSnapshot {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum SenderEvent {
     ActivationToken {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         activation_token: String,
     },
     ActionInvoked {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: String,
     },
     NotificationClosed {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         reason: SenderCloseReason,
     },
 }

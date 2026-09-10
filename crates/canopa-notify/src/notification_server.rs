@@ -97,7 +97,7 @@ impl NotificationServer {
                     let sender_id = self.sender_ids.prepare(replaces_id)?;
                     let mut input = request.into_notification_input();
                     // A wire ID is never a SQLite row ID. Resolve under the mutation boundary.
-                    input.replaces_id = sender_id.replacement_target.map(|id| id.get());
+                    input.replaces_id = sender_id.replacement_target;
                     resolved.set(sender_id).unwrap();
                     Ok(input)
                 },
@@ -124,7 +124,7 @@ impl NotificationServer {
         };
 
         self.daemon
-            .close_notification(internal_id.get())
+            .close_notification(internal_id)
             .await
             .map_err(|_error| empty_dbus_error())
     }

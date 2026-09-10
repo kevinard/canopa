@@ -18,10 +18,12 @@ pub struct NotificationServerRequest {
 }
 
 impl NotificationServerRequest {
+    /// Decode content only. The transport must resolve `replaces_id` against its
+    /// live registry and assign the internal replacement target separately.
     pub fn into_notification_input(self) -> NotificationInput {
         let Self {
             app_name,
-            replaces_id,
+            replaces_id: _,
             app_icon,
             summary,
             body,
@@ -35,7 +37,7 @@ impl NotificationServerRequest {
         NotificationInput {
             app_name,
             desktop_entry: desktop_entry_hint(&hints),
-            replaces_id: (replaces_id != 0).then_some(replaces_id as i64),
+            replaces_id: None,
             app_icon: NotificationVisualReference::from_sender_reference(&app_icon),
             summary,
             body,
@@ -223,7 +225,7 @@ mod tests {
 
         assert_eq!(input.app_name, "Example Mail");
         assert_eq!(input.desktop_entry.as_deref(), Some("example-mail.desktop"));
-        assert_eq!(input.replaces_id, Some(42));
+        assert_eq!(input.replaces_id, None);
         assert_eq!(input.summary, "Inbox");
         assert_eq!(input.body, "One unread message");
         assert_eq!(

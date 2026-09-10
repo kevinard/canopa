@@ -1,3 +1,4 @@
+use canopa_notify::InternalNotificationId;
 use canopa_notify::{
     AppPermissionControl, ControlCommand, ControlReply, NotificationBodyContent,
     NotificationBodyImage, NotificationBodyImageSource, NotificationBodySegment,
@@ -229,7 +230,7 @@ enum SocketControlRequest {
     PanelSnapshot,
     PanelSubscribe,
     InvokeNotificationAction {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: String,
     },
     PanelInteraction(ControlCommand),
@@ -736,7 +737,7 @@ mod tests {
                     permission: AppPermissionControl::Silence,
                 }],
                 items: vec![canopa_notify::NotificationCenterItem {
-                    notification_id: 42,
+                    notification_id: InternalNotificationId::new(42).unwrap(),
                     summary: "Inbox".to_string(),
                     body: String::new(),
                     body_content: NotificationBodyContent::default(),
@@ -780,7 +781,7 @@ mod tests {
                 value: Some("reply".to_string()),
             }),
             Some(ControlCommand::InvokeNotificationAction {
-                notification_id: 42,
+                notification_id: InternalNotificationId::new(42).unwrap(),
                 action_key: "reply".to_string(),
             })
         );
@@ -817,7 +818,7 @@ mod tests {
                 value: None,
             }),
             Some(ControlCommand::ActivateNotification {
-                notification_id: 42,
+                notification_id: InternalNotificationId::new(42).unwrap(),
             })
         );
         assert_eq!(
@@ -886,7 +887,7 @@ mod tests {
         assert_eq!(
             SocketControlRequest::parse("invoke-action 42 Open action").command(),
             Some(ControlCommand::InvokeNotificationAction {
-                notification_id: 42,
+                notification_id: InternalNotificationId::new(42).unwrap(),
                 action_key: "Open action".to_string(),
             })
         );
@@ -902,7 +903,7 @@ mod tests {
             SocketControlRequest::parse(&format!("panel-interaction {panel_interaction}"))
                 .command(),
             Some(ControlCommand::InvokeNotificationAction {
-                notification_id: 42,
+                notification_id: InternalNotificationId::new(42).unwrap(),
                 action_key: "reply".to_string(),
             })
         );

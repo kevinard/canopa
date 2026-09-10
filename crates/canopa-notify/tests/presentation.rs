@@ -1784,7 +1784,7 @@ async fn fourth_normal_notification_behind_critical_banners_does_not_start_timeo
 
 async fn assert_active_without_sender_close_after(
     daemon: &Daemon,
-    notification_id: i64,
+    notification_id: canopa_notify::InternalNotificationId,
     delay: Duration,
 ) -> NotificationThread {
     tokio::time::sleep(delay).await;
@@ -1808,14 +1808,14 @@ async fn assert_active_without_sender_close_after(
     thread
 }
 
-fn visible_ids(banners: &[BannerView]) -> Vec<i64> {
+fn visible_ids(banners: &[BannerView]) -> Vec<canopa_notify::InternalNotificationId> {
     banners
         .iter()
         .map(|banner| banner.notification_id)
         .collect()
 }
 
-fn is_visible(banners: &[BannerView], id: i64) -> bool {
+fn is_visible(banners: &[BannerView], id: canopa_notify::InternalNotificationId) -> bool {
     banners.iter().any(|banner| banner.notification_id == id)
 }
 

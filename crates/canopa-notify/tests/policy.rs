@@ -252,7 +252,7 @@ async fn do_not_disturb_silences_non_critical_notifications_but_allows_critical_
 
 fn thread(
     snapshot: &canopa_notify::NotificationSnapshot,
-    id: i64,
+    id: canopa_notify::InternalNotificationId,
 ) -> &canopa_notify::NotificationThread {
     snapshot
         .history
@@ -282,7 +282,7 @@ fn accepted_notification(app_identity: &str, urgency: Urgency) -> AcceptedNotifi
     }
 }
 
-async fn is_banner_visible(daemon: &Daemon, id: i64) -> bool {
+async fn is_banner_visible(daemon: &Daemon, id: canopa_notify::InternalNotificationId) -> bool {
     daemon
         .visible_banners()
         .await

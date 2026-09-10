@@ -80,7 +80,7 @@ async fn unresolved_internal_replacement_ids_do_not_form_transport_aliases() {
 
     let first = daemon
         .receive_notification(NotificationInput {
-            replaces_id: Some(9999),
+            replaces_id: Some(canopa_notify::InternalNotificationId::new(9999).unwrap()),
             body: "0%".to_string(),
             progress: Some(0),
             ..notification("notify-send", "Test Progress")
@@ -90,7 +90,7 @@ async fn unresolved_internal_replacement_ids_do_not_form_transport_aliases() {
 
     let replacement = daemon
         .receive_notification(NotificationInput {
-            replaces_id: Some(9999),
+            replaces_id: Some(canopa_notify::InternalNotificationId::new(9999).unwrap()),
             body: "5%".to_string(),
             progress: Some(5),
             ..notification("notify-send", "Test Progress")

@@ -240,7 +240,7 @@ async fn sound_only_notification_is_noop_and_does_not_play() {
         .await
         .unwrap();
 
-    assert_ne!(receipt.notification_id, 0);
+    assert_ne!(receipt.notification_id.get(), 0);
     assert_eq!(receipt.delivery_outcome, DeliveryOutcome::Dropped);
     assert!(sound.playback().is_empty());
 }

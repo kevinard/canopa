@@ -9,6 +9,7 @@ mod delivery_policy;
 mod domain;
 mod intake;
 mod lifecycle;
+mod notification_id;
 mod notification_server_intake;
 mod presentation;
 mod runtime;
@@ -44,6 +45,7 @@ pub use lifecycle::{
     NewNotificationThread, NotificationHistory, NotificationLifecycle, NotificationTimeoutChange,
     PartialClearError, PersistPrecondition,
 };
+pub use notification_id::InternalNotificationId;
 pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
     BannerAction, BannerBodySegment, BannerFocusBehavior, BannerInteraction,
@@ -249,7 +251,7 @@ impl Daemon {
 
     pub async fn invoke_action(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: &str,
     ) -> anyhow::Result<()> {
         self.runtime
@@ -259,7 +261,7 @@ impl Daemon {
 
     pub async fn invoke_action_with_activation_token(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: &str,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
@@ -268,20 +270,32 @@ impl Daemon {
             .await
     }
 
-    pub async fn dismiss_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub async fn dismiss_notification(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         self.runtime.dismiss_notification(notification_id).await
     }
 
-    pub async fn expire_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub async fn expire_notification(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         self.runtime.expire_notification(notification_id).await
     }
 
-    pub async fn close_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub async fn close_notification(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         self.runtime.close_notification(notification_id).await
     }
 
     /// Activate current content immediately. Queued UI events must use `handle_banner_interaction`.
-    pub async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub async fn activate_banner(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         self.runtime.activate_banner(notification_id).await
     }
 
@@ -296,7 +310,7 @@ impl Daemon {
     /// Current-state convenience; a captured UI callback must retain its `BannerTarget` instead.
     pub async fn activate_banner_with_activation_token(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
         self.runtime
@@ -304,7 +318,10 @@ impl Daemon {
             .await
     }
 
-    pub async fn activate_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub async fn activate_notification(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         self.runtime.activate_notification(notification_id).await
     }
 

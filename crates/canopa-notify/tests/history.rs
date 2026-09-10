@@ -7,6 +7,44 @@ use canopa_notify::{Daemon, DaemonOptions};
 use notifications::notification;
 
 #[tokio::test]
+async fn legacy_zero_replacement_metadata_remains_readable_after_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    let receipt = seed
+        .receive_notification(notification("Legacy", "Keep this history"))
+        .await
+        .unwrap();
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&database))
+        .await
+        .unwrap();
+    // Previous library inputs could persist Some(0), meaning no live replacement.
+    sqlx::query("UPDATE notification_threads SET replaces_id = 0 WHERE id = ?1")
+        .bind(receipt.notification_id.get())
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    drop(seed);
+    let restarted = Daemon::open(DaemonOptions::headless(database))
+        .await
+        .unwrap();
+    let history = restarted.snapshot().await.unwrap().history;
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].id, receipt.notification_id);
+    assert_eq!(history[0].accepted_notification.replaces_id, None);
+    assert_eq!(
+        history[0].accepted_notification.summary,
+        "Keep this history"
+    );
+    assert_eq!(history[0].status, canopa_notify::NotificationStatus::Stale);
+}
+
+#[tokio::test]
 async fn inactive_history_is_pruned_by_count_while_active_threads_are_exempt() {
     let temp = tempfile::tempdir().unwrap();
     let options = DaemonOptions::headless(temp.path().join("history.db")).with_history_limit(2);

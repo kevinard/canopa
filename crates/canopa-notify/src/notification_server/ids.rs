@@ -1,6 +1,7 @@
 //! Session-global live mappings and bounded issued-ID memory (ADR 0029).
+use canopa_notify::InternalNotificationId;
 use std::collections::{BTreeMap, HashMap};
-use std::num::{NonZeroI64, NonZeroU32};
+use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -8,15 +9,6 @@ pub(super) struct SenderNotificationId(NonZeroU32);
 
 impl SenderNotificationId {
     pub(super) fn get(self) -> u32 {
-        self.0.get()
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) struct InternalNotificationId(NonZeroI64);
-
-impl InternalNotificationId {
-    pub(super) fn get(self) -> i64 {
         self.0.get()
     }
 }
@@ -113,9 +105,7 @@ impl NotificationSenderIds {
         })
     }
 
-    pub(super) fn commit(&self, request: ResolvedRequest, internal_id: i64) {
-        // Every committed receipt has a nonzero internal identity, including drops.
-        let internal_id = InternalNotificationId(NonZeroI64::new(internal_id).unwrap());
+    pub(super) fn commit(&self, request: ResolvedRequest, internal_id: InternalNotificationId) {
         let mut state = self.state.lock().unwrap();
         state.issued.insert(request.value.get());
         if let Some(previous) = state.sender_to_internal.insert(request.value, internal_id) {
@@ -136,8 +126,7 @@ impl NotificationSenderIds {
             .copied()
     }
 
-    pub(super) fn sender_id(&self, internal_id: i64) -> Option<SenderNotificationId> {
-        let id = InternalNotificationId(NonZeroI64::new(internal_id)?);
+    pub(super) fn sender_id(&self, id: InternalNotificationId) -> Option<SenderNotificationId> {
         self.state
             .lock()
             .unwrap()
@@ -146,8 +135,7 @@ impl NotificationSenderIds {
             .copied()
     }
 
-    pub(super) fn retire(&self, internal_id: i64) -> Option<SenderNotificationId> {
-        let id = InternalNotificationId(NonZeroI64::new(internal_id)?);
+    pub(super) fn retire(&self, id: InternalNotificationId) -> Option<SenderNotificationId> {
         let mut state = self.state.lock().unwrap();
         let sender_id = state.internal_to_sender.remove(&id)?;
         state.sender_to_internal.remove(&sender_id);

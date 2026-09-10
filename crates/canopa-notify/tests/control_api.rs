@@ -14,6 +14,67 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+#[tokio::test]
+async fn control_ids_keep_signed_numeric_json_and_reject_zero() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let retained = daemon
+        .receive_notification(notification("App", "Retained"))
+        .await
+        .unwrap();
+    let transient = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            ..notification("App", "Transient")
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&retained).unwrap(),
+        serde_json::json!({
+            "notification_id": 1, "delivery_outcome": "shown"
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(&transient).unwrap(),
+        serde_json::json!({
+            "notification_id": -1, "delivery_outcome": "shown"
+        })
+    );
+    let command: ControlCommand =
+        serde_json::from_str(r#"{"command":"activate-notification","notification_id":-1}"#)
+            .unwrap();
+    assert_eq!(
+        serde_json::to_value(&command).unwrap(),
+        serde_json::json!({
+            "command": "activate-notification", "notification_id": -1
+        })
+    );
+    let control = NotifyControl::new(daemon.clone());
+    assert_eq!(
+        control.execute(command).await.unwrap(),
+        ControlReply::CommandApplied
+    );
+    assert!(daemon.sender_events().await.iter().any(|event| matches!(event,
+        SenderEvent::NotificationClosed { notification_id, .. } if *notification_id == transient.notification_id
+    )));
+    for invalid in [
+        serde_json::json!(0),
+        serde_json::json!("1"),
+        serde_json::json!(1.5),
+        serde_json::json!(u64::MAX),
+    ] {
+        assert!(
+            serde_json::from_value::<ControlCommand>(serde_json::json!({
+                "command": "activate-notification", "notification_id": invalid
+            }))
+            .is_err()
+        );
+    }
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(snapshot.active.len(), 1);
+    assert_eq!(snapshot.active[0].id, retained.notification_id);
+}
+
 #[derive(Clone, Debug)]
 struct FakeActivationTokenProvider {
     tokens: Arc<Mutex<VecDeque<String>>>,

@@ -1,3 +1,4 @@
+use crate::InternalNotificationId;
 use crate::SenderEventPublisher;
 use crate::activation::ActivationTokenProvider;
 use crate::control::{
@@ -56,7 +57,7 @@ pub(crate) struct NotificationRuntime {
     sender_publisher: Arc<Mutex<Option<Arc<dyn SenderEventPublisher>>>>,
     sender_publication_error: Arc<Mutex<Option<String>>>,
     decision_logs: Arc<Mutex<VecDeque<DeliveryDecisionLog>>>,
-    timeout_tasks: Arc<Mutex<HashMap<i64, TimeoutTask>>>,
+    timeout_tasks: Arc<Mutex<HashMap<InternalNotificationId, TimeoutTask>>>,
     pending_timeout_starts: Arc<Mutex<PendingTimeoutStarts>>,
     loaded_policy_state: Arc<Mutex<LoadedDeliveryPolicyState>>,
     // Commit and effect order share one coordinator. External token acquisition is outside it.
@@ -73,13 +74,13 @@ struct RuntimeImageEntry {
 
 #[derive(Clone, Debug, Default)]
 struct RuntimeImageStore {
-    images: HashMap<i64, RuntimeImageEntry>,
+    images: HashMap<InternalNotificationId, RuntimeImageEntry>,
 }
 
 impl RuntimeImageStore {
     fn replace(
         &mut self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
         image: Option<NotificationImageData>,
     ) {
@@ -94,11 +95,15 @@ impl RuntimeImageStore {
         }
     }
 
-    fn remove(&mut self, notification_id: i64) {
+    fn remove(&mut self, notification_id: InternalNotificationId) {
         self.images.remove(&notification_id);
     }
 
-    fn image_for(&self, notification_id: i64, revision: i64) -> Option<NotificationImageData> {
+    fn image_for(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+    ) -> Option<NotificationImageData> {
         self.images
             .get(&notification_id)
             .filter(|entry| entry.revision == revision)
@@ -113,12 +118,12 @@ struct TimeoutTask {
 
 #[derive(Default)]
 struct PendingTimeoutStarts {
-    starts: BTreeMap<(i64, i64), NotificationTimeoutChange>,
-    cancelled_through: HashMap<i64, i64>,
+    starts: BTreeMap<(InternalNotificationId, i64), NotificationTimeoutChange>,
+    cancelled_through: HashMap<InternalNotificationId, i64>,
 }
 
 impl PendingTimeoutStarts {
-    fn allows(&self, notification_id: i64, revision: i64) -> bool {
+    fn allows(&self, notification_id: InternalNotificationId, revision: i64) -> bool {
         self.cancelled_through
             .get(&notification_id)
             .is_none_or(|cancelled_revision| revision > *cancelled_revision)
@@ -154,7 +159,10 @@ impl PendingTimeoutStarts {
         }
     }
 
-    fn revisions_in(&self, visible_revisions: &BTreeSet<(i64, i64)>) -> Vec<(i64, i64)> {
+    fn revisions_in(
+        &self,
+        visible_revisions: &BTreeSet<(InternalNotificationId, i64)>,
+    ) -> Vec<(InternalNotificationId, i64)> {
         self.starts
             .keys()
             .filter(|revision| visible_revisions.contains(revision))
@@ -164,7 +172,7 @@ impl PendingTimeoutStarts {
 
     fn take(
         &mut self,
-        revisions: impl IntoIterator<Item = (i64, i64)>,
+        revisions: impl IntoIterator<Item = (InternalNotificationId, i64)>,
     ) -> Vec<NotificationTimeoutChange> {
         revisions
             .into_iter()
@@ -277,7 +285,7 @@ impl NotificationRuntime {
         &self,
         _command: &tokio::sync::OwnedMutexGuard<()>,
         app_identity: String,
-        replaces_id: Option<i64>,
+        replaces_id: Option<InternalNotificationId>,
         on_receipt: impl FnOnce(&NotificationReceipt),
     ) -> anyhow::Result<NotificationReceipt> {
         let effects = self
@@ -300,7 +308,7 @@ impl NotificationRuntime {
 
     pub(crate) async fn invoke_action(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: &str,
     ) -> anyhow::Result<()> {
         self.invoke_action_with_activation_token(notification_id, action_key, None)
@@ -309,7 +317,7 @@ impl NotificationRuntime {
 
     pub(crate) async fn invoke_action_with_activation_token(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: &str,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
@@ -319,7 +327,7 @@ impl NotificationRuntime {
 
     async fn invoke_action_for_revision(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: &str,
         activation_token: Option<String>,
         expected_revision: Option<i64>,
@@ -348,32 +356,44 @@ impl NotificationRuntime {
             .await
     }
 
-    pub(crate) async fn dismiss_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub(crate) async fn dismiss_notification(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         let _command = self.commands.lock().await;
         let effects = self.lifecycle.dismiss(notification_id).await?;
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
-    pub(crate) async fn expire_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub(crate) async fn expire_notification(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         let _command = self.commands.lock().await;
         let effects = self.lifecycle.expire(notification_id).await?;
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
-    pub(crate) async fn close_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub(crate) async fn close_notification(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         let _command = self.commands.lock().await;
         let effects = self.lifecycle.close(notification_id).await?;
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
-    pub(crate) async fn activate_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub(crate) async fn activate_notification(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         self.activate_notification_for_revision(notification_id, None, None)
             .await
     }
 
     async fn activate_notification_for_revision(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         activation_token: Option<String>,
         expected_revision: Option<i64>,
     ) -> anyhow::Result<()> {
@@ -409,7 +429,7 @@ impl NotificationRuntime {
 
     async fn dismiss_notification_for_revision(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
     ) -> anyhow::Result<()> {
         let _command = self.commands.lock().await;
@@ -420,7 +440,10 @@ impl NotificationRuntime {
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
-    pub(crate) async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
+    pub(crate) async fn activate_banner(
+        &self,
+        notification_id: InternalNotificationId,
+    ) -> anyhow::Result<()> {
         self.activate_banner_with_activation_token(notification_id, None)
             .await
     }
@@ -463,7 +486,7 @@ impl NotificationRuntime {
 
     pub(crate) async fn activate_banner_with_activation_token(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
         self.activate_notification_for_revision(notification_id, activation_token, None)
@@ -873,7 +896,7 @@ impl NotificationRuntime {
 
     fn banner_presentation_with_visible_revisions(
         &self,
-    ) -> (BannerPresentation, BTreeSet<(i64, i64)>) {
+    ) -> (BannerPresentation, BTreeSet<(InternalNotificationId, i64)>) {
         let (threads, overflow_count) = {
             let banner_state = self.banner_state.lock().unwrap();
             (
@@ -972,7 +995,7 @@ impl NotificationRuntime {
 
     fn start_timeouts_for_presented_revisions(
         &self,
-        revisions: impl IntoIterator<Item = (i64, i64)>,
+        revisions: impl IntoIterator<Item = (InternalNotificationId, i64)>,
     ) {
         let changes = self.pending_timeout_starts.lock().unwrap().take(revisions);
         for change in changes {
@@ -993,7 +1016,7 @@ impl NotificationRuntime {
 
     fn schedule_notification_timeout(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
         duration: Duration,
     ) {
@@ -1024,7 +1047,11 @@ impl NotificationRuntime {
         timeout_tasks.insert(notification_id, TimeoutTask { revision, handle });
     }
 
-    fn cancel_notification_timeout_through_revision(&self, notification_id: i64, revision: i64) {
+    fn cancel_notification_timeout_through_revision(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+    ) {
         let mut pending_timeout_starts = self.pending_timeout_starts.lock().unwrap();
         pending_timeout_starts.apply([NotificationTimeoutChange::CancelThroughRevision {
             notification_id,
@@ -1043,7 +1070,11 @@ impl NotificationRuntime {
         }
     }
 
-    fn forget_notification_timeout_if_current_revision(&self, notification_id: i64, revision: i64) {
+    fn forget_notification_timeout_if_current_revision(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+    ) {
         let mut timeout_tasks = self.timeout_tasks.lock().unwrap();
         if timeout_tasks
             .get(&notification_id)
@@ -1056,7 +1087,7 @@ impl NotificationRuntime {
 
     async fn expire_notification_if_current_revision(
         &self,
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         revision: i64,
     ) -> anyhow::Result<()> {
         let _command = self.commands.lock().await;
@@ -1183,6 +1214,7 @@ fn projection_from_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
+    const TEST_ID: InternalNotificationId = InternalNotificationId::new(7).unwrap();
     use crate::{NoopActivationTokenProvider, NoopBannerPresenter, NoopSoundPresenter};
 
     #[test]
@@ -1190,25 +1222,25 @@ mod tests {
         let mut pending = PendingTimeoutStarts::default();
         pending.apply([
             NotificationTimeoutChange::CancelThroughRevision {
-                notification_id: 7,
+                notification_id: TEST_ID,
                 revision: 2,
             },
             NotificationTimeoutChange::StartsOnDisplay {
-                notification_id: 7,
+                notification_id: TEST_ID,
                 revision: 1,
                 timeout: NotificationTimeout::Milliseconds(10),
                 urgency: Urgency::Normal,
             },
             NotificationTimeoutChange::StartsOnDisplay {
-                notification_id: 7,
+                notification_id: TEST_ID,
                 revision: 3,
                 timeout: NotificationTimeout::Milliseconds(10),
                 urgency: Urgency::Normal,
             },
         ]);
 
-        assert!(!pending.starts.contains_key(&(7, 1)));
-        assert!(pending.starts.contains_key(&(7, 3)));
+        assert!(!pending.starts.contains_key(&(TEST_ID, 1)));
+        assert!(pending.starts.contains_key(&(TEST_ID, 3)));
     }
 
     #[tokio::test]
@@ -1229,40 +1261,40 @@ mod tests {
         .await
         .unwrap();
 
-        runtime.schedule_notification_timeout(7, 3, Duration::from_secs(60));
-        runtime.schedule_notification_timeout(7, 2, Duration::from_secs(60));
+        runtime.schedule_notification_timeout(TEST_ID, 3, Duration::from_secs(60));
+        runtime.schedule_notification_timeout(TEST_ID, 2, Duration::from_secs(60));
 
         assert_eq!(
             runtime
                 .timeout_tasks
                 .lock()
                 .unwrap()
-                .get(&7)
+                .get(&TEST_ID)
                 .map(|task| task.revision),
             Some(3)
         );
-        runtime.cancel_notification_timeout_through_revision(7, 2);
+        runtime.cancel_notification_timeout_through_revision(TEST_ID, 2);
         assert_eq!(
             runtime
                 .timeout_tasks
                 .lock()
                 .unwrap()
-                .get(&7)
+                .get(&TEST_ID)
                 .map(|task| task.revision),
             Some(3)
         );
-        runtime.cancel_notification_timeout_through_revision(7, 3);
-        assert!(!runtime.timeout_tasks.lock().unwrap().contains_key(&7));
+        runtime.cancel_notification_timeout_through_revision(TEST_ID, 3);
+        assert!(!runtime.timeout_tasks.lock().unwrap().contains_key(&TEST_ID));
 
-        runtime.schedule_notification_timeout(7, 2, Duration::from_secs(60));
-        assert!(!runtime.timeout_tasks.lock().unwrap().contains_key(&7));
-        runtime.schedule_notification_timeout(7, 4, Duration::from_secs(60));
+        runtime.schedule_notification_timeout(TEST_ID, 2, Duration::from_secs(60));
+        assert!(!runtime.timeout_tasks.lock().unwrap().contains_key(&TEST_ID));
+        runtime.schedule_notification_timeout(TEST_ID, 4, Duration::from_secs(60));
         assert_eq!(
             runtime
                 .timeout_tasks
                 .lock()
                 .unwrap()
-                .get(&7)
+                .get(&TEST_ID)
                 .map(|task| task.revision),
             Some(4)
         );

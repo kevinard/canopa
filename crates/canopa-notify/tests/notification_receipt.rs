@@ -10,6 +10,42 @@ use canopa_notify::{
 use notifications::{blank_notification, notification_with_body};
 
 #[tokio::test]
+async fn decoding_an_unresolved_wire_id_cannot_replace_an_internal_thread() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let original = daemon
+        .receive_notification(notification_with_body("Original", "Keep me", ""))
+        .await
+        .unwrap();
+    let request = canopa_notify::NotificationServerRequest {
+        app_name: "Other sender".into(),
+        replaces_id: u32::try_from(original.notification_id.get()).unwrap(),
+        app_icon: String::new(),
+        summary: "Separate notification".into(),
+        body: String::new(),
+        actions: Vec::new(),
+        hints: std::collections::HashMap::new(),
+        expire_timeout: 0,
+    };
+    let received = daemon
+        .receive_notification(request.into_notification_input())
+        .await
+        .unwrap();
+    assert_ne!(
+        received.notification_id, original.notification_id,
+        "request decoding treated a wire ID as an internal replacement target"
+    );
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(snapshot.active.len(), 2);
+    let original = snapshot
+        .active
+        .iter()
+        .find(|thread| thread.id == original.notification_id)
+        .unwrap();
+    assert_eq!(original.revision, 1);
+    assert_eq!(original.accepted_notification.summary, "Keep me");
+}
+
+#[tokio::test]
 async fn completed_notification_churn_keeps_only_bounded_diagnostics() {
     let daemon = daemon_support::open_headless_daemon().await;
     for _ in 0..600 {
@@ -90,7 +126,7 @@ async fn empty_noop_notifications_are_dropped_without_history() {
         .unwrap();
 
     assert_eq!(receipt.delivery_outcome.as_str(), "dropped");
-    assert_ne!(receipt.notification_id, 0);
+    assert_ne!(receipt.notification_id.get(), 0);
     assert_eq!(
         events.recv().await.unwrap(),
         SenderEvent::NotificationClosed {
@@ -132,7 +168,7 @@ async fn transient_notification_never_enters_history_or_survives_restart() {
         .await
         .unwrap();
 
-    assert!(receipt.notification_id < 0);
+    assert!(receipt.notification_id.is_runtime_only());
     assert!(daemon.snapshot().await.unwrap().active.is_empty());
     assert!(daemon.snapshot().await.unwrap().history.is_empty());
     daemon

@@ -1,3 +1,4 @@
+use crate::InternalNotificationId;
 use crate::{
     Daemon, DeliveryOutcome, NotificationAction, NotificationBodyContent,
     NotificationStateSubscription, NotificationStatus, NotificationThread, UserRule,
@@ -145,11 +146,11 @@ pub enum ControlCommand {
     ClearActiveNotifications,
     DeleteNotificationHistory,
     InvokeNotificationAction {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
         action_key: String,
     },
     ActivateNotification {
-        notification_id: i64,
+        notification_id: InternalNotificationId,
     },
 }
 
@@ -194,7 +195,7 @@ pub struct CategoryPermissionControl {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationCenterItem {
-    pub notification_id: i64,
+    pub notification_id: InternalNotificationId,
     pub summary: String,
     pub body: String,
     pub body_content: NotificationBodyContent,

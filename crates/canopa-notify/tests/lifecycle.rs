@@ -1,3 +1,6 @@
+use canopa_notify::InternalNotificationId;
+const FIRST_ID: InternalNotificationId = InternalNotificationId::new(1).unwrap();
+const SECOND_ID: InternalNotificationId = InternalNotificationId::new(2).unwrap();
 #[path = "support/daemon.rs"]
 mod daemon_support;
 #[path = "support/notifications.rs"]
@@ -40,7 +43,7 @@ impl NotificationHistory for MemoryHistory {
         thread: NewNotificationThread,
     ) -> anyhow::Result<NotificationThread> {
         let mut threads = self.threads.lock().unwrap();
-        let id = threads.len() as i64 + 1;
+        let id = InternalNotificationId::new(threads.len() as i64 + 1).unwrap();
         let thread = NotificationThread {
             id,
             accepted_notification: thread.accepted_notification,
@@ -56,7 +59,7 @@ impl NotificationHistory for MemoryHistory {
         Ok(thread)
     }
 
-    async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
+    async fn thread(&self, id: InternalNotificationId) -> anyhow::Result<NotificationThread> {
         let mut threads = self.threads.lock().unwrap();
         let stored = threads
             .iter_mut()
@@ -127,15 +130,17 @@ async fn stale_timeout_or_action_cannot_transition_a_concurrent_replacement() {
         // Storage advances revision after returning the snapshot the operation validates.
         *history.replace_after_read.lock().unwrap() = true;
         let result = if action {
-            lifecycle.invoke_action(1, "open").await
+            lifecycle.invoke_action(FIRST_ID, "open").await
         } else {
-            lifecycle.expire_timeout_if_current_revision(1, 1).await
+            lifecycle
+                .expire_timeout_if_current_revision(FIRST_ID, 1)
+                .await
         };
         assert!(
             result.is_err() || result.unwrap().is_empty(),
             "stale operation emitted effects"
         );
-        let current = lifecycle.thread(1).await.unwrap();
+        let current = lifecycle.thread(FIRST_ID).await.unwrap();
         assert_eq!(current.revision, 2);
         assert_eq!(current.status, NotificationStatus::Active);
         assert_eq!(
@@ -224,7 +229,7 @@ async fn lifecycle_replacement_owns_thread_revision_shape() {
     clock.store(250, Ordering::SeqCst);
     let effects = lifecycle
         .receive(
-            lifecycle_notification(Some(1), "Replacement"),
+            lifecycle_notification(Some(FIRST_ID), "Replacement"),
             LifecycleDelivery::silenced("user:Chat:*"),
             NotificationTimeout::Never,
         )
@@ -277,7 +282,7 @@ async fn lifecycle_requests_timeout_start_on_display_for_shown_notification() {
         matches!(
             change,
             NotificationTimeoutChange::StartsOnDisplay {
-                notification_id: 1,
+                notification_id: FIRST_ID,
                 revision: 1,
                 timeout: NotificationTimeout::Milliseconds(42),
                 urgency: Urgency::Normal,
@@ -327,7 +332,7 @@ async fn lifecycle_preserves_server_default_until_display() {
     assert!(effects.timeout_changes().any(|change| matches!(
         change,
         NotificationTimeoutChange::StartsOnDisplay {
-            notification_id: 1,
+            notification_id: FIRST_ID,
             revision: 1,
             timeout: NotificationTimeout::ServerDefault,
             urgency: Urgency::Normal,
@@ -350,7 +355,7 @@ async fn lifecycle_expires_timeout_when_revision_matches() {
         .unwrap();
 
     let effects = lifecycle
-        .expire_timeout_if_current_revision(1, 1)
+        .expire_timeout_if_current_revision(FIRST_ID, 1)
         .await
         .unwrap();
 
@@ -363,14 +368,14 @@ async fn lifecycle_expires_timeout_when_revision_matches() {
     assert!(effects.raw().iter().any(|effect| {
         matches!(
             effect,
-            LifecycleEffect::ThreadExpired(thread) if thread.id == 1
+            LifecycleEffect::ThreadExpired(thread) if thread.id == FIRST_ID
         )
     }));
     assert!(effects.timeout_changes().any(|change| {
         matches!(
             change,
             NotificationTimeoutChange::CancelThroughRevision {
-                notification_id: 1,
+                notification_id: FIRST_ID,
                 revision: 1,
             }
         )
@@ -379,7 +384,7 @@ async fn lifecycle_expires_timeout_when_revision_matches() {
         matches!(
             event,
             SenderEvent::NotificationClosed {
-                notification_id: 1,
+                notification_id: FIRST_ID,
                 reason: SenderCloseReason::Expired
             }
         )
@@ -401,7 +406,7 @@ async fn lifecycle_ignores_timeout_when_revision_is_stale() {
         .unwrap();
 
     let effects = lifecycle
-        .expire_timeout_if_current_revision(1, 2)
+        .expire_timeout_if_current_revision(FIRST_ID, 2)
         .await
         .unwrap();
 
@@ -424,11 +429,11 @@ async fn lifecycle_ignores_timeout_when_thread_is_inactive() {
         )
         .await
         .unwrap();
-    lifecycle.dismiss(1).await.unwrap();
+    lifecycle.dismiss(FIRST_ID).await.unwrap();
     let preconditions_before_timeout = history.preconditions();
 
     let effects = lifecycle
-        .expire_timeout_if_current_revision(1, 1)
+        .expire_timeout_if_current_revision(FIRST_ID, 1)
         .await
         .unwrap();
 
@@ -454,7 +459,7 @@ async fn replacement_with_ineligible_timeout_cancels_previous_timeout() {
 
     let effects = lifecycle
         .receive(
-            lifecycle_notification(Some(1), "Replacement"),
+            lifecycle_notification(Some(FIRST_ID), "Replacement"),
             LifecycleDelivery::shown(),
             NotificationTimeout::Never,
         )
@@ -465,7 +470,7 @@ async fn replacement_with_ineligible_timeout_cancels_previous_timeout() {
         matches!(
             change,
             NotificationTimeoutChange::CancelThroughRevision {
-                notification_id: 1,
+                notification_id: FIRST_ID,
                 revision: 1,
             }
         )
@@ -493,7 +498,7 @@ async fn finite_replacement_cancels_previous_timeout_before_requesting_a_fresh_o
 
     let effects = lifecycle
         .receive(
-            lifecycle_notification(Some(1), "Replacement"),
+            lifecycle_notification(Some(FIRST_ID), "Replacement"),
             LifecycleDelivery::shown(),
             NotificationTimeout::Milliseconds(200),
         )
@@ -504,11 +509,11 @@ async fn finite_replacement_cancels_previous_timeout_before_requesting_a_fresh_o
         effects.timeout_changes().collect::<Vec<_>>(),
         vec![
             NotificationTimeoutChange::CancelThroughRevision {
-                notification_id: 1,
+                notification_id: FIRST_ID,
                 revision: 1,
             },
             NotificationTimeoutChange::StartsOnDisplay {
-                notification_id: 1,
+                notification_id: FIRST_ID,
                 revision: 2,
                 timeout: NotificationTimeout::Milliseconds(200),
                 urgency: Urgency::Normal,
@@ -671,7 +676,7 @@ async fn lifecycle_dropped_replacement_returns_receipt_without_revising_thread()
 
     let effects = lifecycle
         .receive(
-            lifecycle_notification(Some(1), "Should not overwrite"),
+            lifecycle_notification(Some(FIRST_ID), "Should not overwrite"),
             LifecycleDelivery::dropped("user:Chat:*"),
             NotificationTimeout::Never,
         )
@@ -684,13 +689,13 @@ async fn lifecycle_dropped_replacement_returns_receipt_without_revising_thread()
     assert!(effects.raw().iter().any(|effect| matches!(
         effect,
         LifecycleEffect::NotificationDropped {
-            replaces_id: Some(1)
+            replaces_id: Some(FIRST_ID)
         }
     )));
     assert_eq!(
         effects.sender_receipt().unwrap(),
         canopa_notify::NotificationReceipt {
-            notification_id: 1,
+            notification_id: FIRST_ID,
             delivery_outcome: DeliveryOutcome::Dropped,
         }
     );
@@ -717,7 +722,7 @@ async fn lifecycle_new_drop_gets_ephemeral_receipt_and_undefined_terminal_event(
         .unwrap();
 
     let receipt = effects.sender_receipt().unwrap();
-    assert_ne!(receipt.notification_id, 0);
+    assert_ne!(receipt.notification_id.get(), 0);
     assert_eq!(receipt.delivery_outcome, DeliveryOutcome::Dropped);
     assert!(history.stored().is_empty());
     assert_eq!(
@@ -746,7 +751,7 @@ async fn transient_thread_stays_runtime_only_across_replacement_and_action() {
         .await
         .unwrap();
     let notification_id = created.sender_receipt().unwrap().notification_id;
-    assert!(notification_id < 0);
+    assert!(notification_id.is_runtime_only());
     assert!(history.stored().is_empty());
 
     let mut replacement = lifecycle_notification(Some(notification_id), "Replacement");
@@ -824,7 +829,7 @@ async fn lifecycle_missing_replacement_target_creates_new_thread() {
 
     let effects = lifecycle
         .receive(
-            lifecycle_notification(Some(99), "New thread"),
+            lifecycle_notification(Some(InternalNotificationId::new(99).unwrap()), "New thread"),
             LifecycleDelivery::shown(),
             NotificationTimeout::Never,
         )
@@ -835,9 +840,9 @@ async fn lifecycle_missing_replacement_target_creates_new_thread() {
     assert!(effects.raw().iter().any(|effect| matches!(
         effect,
         LifecycleEffect::ThreadCreated(thread)
-            if thread.id == 1
+            if thread.id == FIRST_ID
                 && thread.accepted_notification.summary == "New thread"
-                && thread.accepted_notification.replaces_id == Some(99)
+                && thread.accepted_notification.replaces_id == Some(InternalNotificationId::new(99).unwrap())
     )));
 }
 
@@ -848,7 +853,7 @@ async fn lifecycle_does_not_resolve_unrecognized_transport_aliases() {
 
     lifecycle
         .receive(
-            lifecycle_notification(Some(9999), "0%"),
+            lifecycle_notification(Some(InternalNotificationId::new(9999).unwrap()), "0%"),
             LifecycleDelivery::shown(),
             NotificationTimeout::Never,
         )
@@ -857,7 +862,7 @@ async fn lifecycle_does_not_resolve_unrecognized_transport_aliases() {
 
     let effects = lifecycle
         .receive(
-            lifecycle_notification(Some(9999), "5%"),
+            lifecycle_notification(Some(InternalNotificationId::new(9999).unwrap()), "5%"),
             LifecycleDelivery::shown(),
             NotificationTimeout::Never,
         )
@@ -866,17 +871,20 @@ async fn lifecycle_does_not_resolve_unrecognized_transport_aliases() {
 
     let stored = history.stored();
     assert_eq!(stored.len(), 2);
-    assert_eq!(stored[0].id, 1);
+    assert_eq!(stored[0].id, FIRST_ID);
     assert_eq!(stored[0].revision, 1);
     assert_eq!(stored[0].accepted_notification.summary, "0%");
     assert_eq!(stored[1].accepted_notification.summary, "5%");
     assert!(effects.raw().iter().any(|effect| matches!(
         effect,
-        LifecycleEffect::ThreadCreated(thread) if thread.id == 2
+        LifecycleEffect::ThreadCreated(thread) if thread.id == SECOND_ID
     )));
 }
 
-fn lifecycle_notification(replaces_id: Option<i64>, summary: &str) -> AcceptedNotification {
+fn lifecycle_notification(
+    replaces_id: Option<InternalNotificationId>,
+    summary: &str,
+) -> AcceptedNotification {
     AcceptedNotification {
         app_identity: "Chat".to_string(),
         app_name: "Chat".to_string(),
@@ -1041,7 +1049,11 @@ async fn active_notifications_can_be_dismissed_expired_closed_and_marked_stale_a
     assert_status(&snapshot, stale.notification_id, "stale");
 }
 
-fn assert_status(snapshot: &canopa_notify::NotificationSnapshot, id: i64, status: &str) {
+fn assert_status(
+    snapshot: &canopa_notify::NotificationSnapshot,
+    id: InternalNotificationId,
+    status: &str,
+) {
     let thread = snapshot
         .history
         .iter()
