@@ -49,7 +49,7 @@ pub use presentation::{
     BannerAction, BannerBodySegment, BannerFocusBehavior, BannerInteraction,
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPlacement,
     BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerSurfaceSpec,
-    BannerView, BannerVisual, IcedLayerShellBannerPresenter, NoopBannerPresenter,
+    BannerTarget, BannerView, BannerVisual, IcedLayerShellBannerPresenter, NoopBannerPresenter,
     NotificationBannerState, StructuredLogBannerPresenter,
 };
 pub use runtime::NotificationStateSubscription;
@@ -280,10 +280,20 @@ impl Daemon {
         self.runtime.close_notification(notification_id).await
     }
 
+    /// Activate current content immediately. Queued UI events must use `handle_banner_interaction`.
     pub async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
         self.runtime.activate_banner(notification_id).await
     }
 
+    /// Apply a queued banner interaction only to the content revision it originated from.
+    pub async fn handle_banner_interaction(
+        &self,
+        interaction: BannerInteraction,
+    ) -> anyhow::Result<()> {
+        self.runtime.handle_banner_interaction(interaction).await
+    }
+
+    /// Current-state convenience; a captured UI callback must retain its `BannerTarget` instead.
     pub async fn activate_banner_with_activation_token(
         &self,
         notification_id: i64,

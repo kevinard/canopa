@@ -176,6 +176,10 @@ _Avoid_: Historical notification when the notification is still pending user att
 The transient on-screen presentation of an **Active Notification** outside the **Notification Center**.
 _Avoid_: Popup when referring to Notify's user-visible notification presentation
 
+**Banner Target**:
+The **Notification Thread** identifier and revision captured by a **Notification Banner** interaction. Asynchronous callbacks preserve this pair so a click cannot act on replacement content.
+_Avoid_: Sender notification ID, current notification when referring to captured banner content
+
 **Notification Sound**:
 A transient audible cue associated with a notification being shown to the user in a **Graphical User Session**. It is part of notification presentation, not retained notification history, and is resolved from local audio resources.
 _Avoid_: Alert sound, history sound
@@ -426,6 +430,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Banner** visibility is not derived from persisted **Notification History** flags.
 - **Notification Banner** state is runtime-only and is not persisted in **Notification History**.
 - Activating a **Notification Banner** invokes its **Default Notification Action** when present and otherwise dismisses the notification.
+- Queued **Notification Banner** activation, dismissal and named actions carry a **Banner Target**. A replaced or inactive target is rejected without sender-visible effects, even when a replacement reuses the same action key. Ordinary **Control Commands** deliberately resolve current state.
+- Banner presentation is a coalesced current-state projection: a slow renderer may skip intermediate updates, but receives the latest state when it resumes. Superseded undisplayed updates do not count as display acknowledgements.
 - **Default Notification Actions** are invoked by activating the notification itself, not shown as separate named action controls.
 - First-version **Notification Banners** expose at most two visible named **Notification Action** controls for an **Active Notification**.
 - The **Notification Center** remains the complete action surface for named **Notification Actions** on retained **Active Notifications**; **Transient Notifications** expose actions only through their runtime presentation.

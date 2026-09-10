@@ -4,9 +4,9 @@ mod daemon_support;
 mod notifications;
 
 use canopa_notify::{
-    BannerBodySegment, BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection,
-    BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerSurfaceSpec,
-    BannerView, BannerVisual, Daemon, DaemonOptions, DeliveryOutcome,
+    BannerBodySegment, BannerInteraction, BannerKeyboardInteractivity, BannerLayer,
+    BannerOutputSelection, BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter,
+    BannerSurfaceSpec, BannerView, BannerVisual, Daemon, DaemonOptions, DeliveryOutcome,
     IcedLayerShellBannerPresenter, NotificationAction, NotificationImageData, NotificationInput,
     NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
     NotificationVisualReference, SenderEvent, Urgency, UserRule,
@@ -50,6 +50,232 @@ impl BannerPresenter for RecordingPresenter {
         self.updates.lock().unwrap().push(presentation);
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn queued_banner_action_cannot_invoke_the_same_key_on_replacement_content() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+    let input = NotificationInput {
+        actions: vec![NotificationAction::new("reply", "Reply to Alice")],
+        expire_timeout: NotificationTimeout::Never,
+        ..notification("Mail", "Alice")
+    };
+    let receipt = daemon.receive_notification(input.clone()).await.unwrap();
+    let original = presenter.updates().last().unwrap()[0].clone();
+    let interaction = BannerInteraction::InvokeAction {
+        target: original.target(),
+        action_key: "reply".into(),
+        activation_token: Some("token-for-alice".into()),
+    };
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(receipt.notification_id),
+            summary: "Bob".into(),
+            actions: vec![NotificationAction::new("reply", "Reply to Bob")],
+            ..input
+        })
+        .await
+        .unwrap();
+
+    assert!(daemon.handle_banner_interaction(interaction).await.is_err());
+    assert!(daemon.sender_events().await.is_empty());
+    let active = daemon.snapshot().await.unwrap().active;
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].accepted_notification.summary, "Bob");
+
+    let current = presenter.updates().last().unwrap()[0].clone();
+    assert_ne!(original.target(), current.target());
+    daemon
+        .handle_banner_interaction(BannerInteraction::InvokeAction {
+            target: current.target(),
+            action_key: "reply".into(),
+            activation_token: Some("token-for-bob".into()),
+        })
+        .await
+        .unwrap();
+    assert!(matches!(&daemon.sender_events().await[..], [
+        SenderEvent::ActivationToken { activation_token, .. },
+        SenderEvent::ActionInvoked { action_key, .. },
+        SenderEvent::NotificationClosed { .. },
+    ] if activation_token == "token-for-bob" && action_key == "reply"));
+}
+
+#[tokio::test]
+async fn queued_banner_activation_and_dismissal_cannot_mutate_replaced_or_closed_content() {
+    for transient in [false, true] {
+        for has_default in [false, true] {
+            for dismiss in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+                    .await
+                    .unwrap();
+                let input = NotificationInput {
+                    transient,
+                    expire_timeout: NotificationTimeout::Never,
+                    actions: if has_default {
+                        vec![NotificationAction::new("default", "Open")]
+                    } else {
+                        vec![]
+                    },
+                    ..notification("Mail", "Original")
+                };
+                let receipt = daemon.receive_notification(input.clone()).await.unwrap();
+                let original = daemon.visible_banners().await[0].target();
+                let interaction = |target| {
+                    if dismiss {
+                        BannerInteraction::Dismiss(target)
+                    } else {
+                        BannerInteraction::Activate {
+                            target,
+                            activation_token: Some("click-token".into()),
+                        }
+                    }
+                };
+                daemon
+                    .receive_notification(NotificationInput {
+                        replaces_id: Some(receipt.notification_id),
+                        summary: "Replacement".into(),
+                        ..input
+                    })
+                    .await
+                    .unwrap();
+                assert!(
+                    daemon
+                        .handle_banner_interaction(interaction(original))
+                        .await
+                        .is_err()
+                );
+                assert!(daemon.sender_events().await.is_empty());
+                let current = daemon.visible_banners().await[0].target();
+                daemon
+                    .handle_banner_interaction(interaction(current))
+                    .await
+                    .unwrap();
+                let events = daemon.sender_events().await;
+                assert_eq!(events.len(), if has_default && !dismiss { 3 } else { 1 });
+                assert!(matches!(
+                    events.last(),
+                    Some(SenderEvent::NotificationClosed {
+                        reason: canopa_notify::SenderCloseReason::Dismissed,
+                        ..
+                    })
+                ));
+                assert!(
+                    daemon
+                        .handle_banner_interaction(interaction(current))
+                        .await
+                        .is_err()
+                );
+                assert_eq!(
+                    daemon.sender_events().await,
+                    events,
+                    "duplicate interaction emitted effects"
+                );
+                assert!(daemon.visible_banners().await.is_empty());
+                if transient {
+                    assert!(daemon.snapshot().await.unwrap().history.is_empty());
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn resident_banner_actions_remain_repeatable_only_for_the_current_revision() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let input = NotificationInput {
+        resident: true,
+        transient: true,
+        actions: vec![NotificationAction::new("next", "Next")],
+        ..notification("Player", "First track")
+    };
+    let receipt = daemon.receive_notification(input.clone()).await.unwrap();
+    let original = daemon.visible_banners().await[0].target();
+    let interaction = BannerInteraction::InvokeAction {
+        target: original,
+        action_key: "next".into(),
+        activation_token: None,
+    };
+    for _ in 0..2 {
+        daemon
+            .handle_banner_interaction(interaction.clone())
+            .await
+            .unwrap();
+    }
+    assert_eq!(daemon.sender_events().await.len(), 2);
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(receipt.notification_id),
+            summary: "Second track".into(),
+            ..input
+        })
+        .await
+        .unwrap();
+    assert!(daemon.handle_banner_interaction(interaction).await.is_err());
+    assert_eq!(daemon.sender_events().await.len(), 2);
+    assert_eq!(daemon.visible_banners().await[0].summary, "Second track");
+}
+
+#[tokio::test]
+async fn banner_token_wait_cannot_commit_an_action_after_replacement() {
+    struct WaitingToken(Arc<tokio::sync::Notify>);
+    impl canopa_notify::ActivationTokenProvider for WaitingToken {
+        fn available(&self) -> bool {
+            true
+        }
+        fn activation_token(&self, _: String) -> canopa_notify::ActivationTokenFuture {
+            let started = self.0.clone();
+            Box::pin(async move {
+                started.notify_one();
+                std::future::pending().await
+            })
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let started = Arc::new(tokio::sync::Notify::new());
+    let daemon = Daemon::open(
+        DaemonOptions::headless(temp.path().join("history.db"))
+            .with_activation_token_provider(WaitingToken(started.clone())),
+    )
+    .await
+    .unwrap();
+    let input = NotificationInput {
+        transient: true,
+        actions: vec![NotificationAction::new("default", "Open")],
+        ..notification("Mail", "Original")
+    };
+    let receipt = daemon.receive_notification(input.clone()).await.unwrap();
+    let target = daemon.visible_banners().await[0].target();
+    let action_daemon = daemon.clone();
+    let action = tokio::spawn(async move {
+        action_daemon
+            .handle_banner_interaction(BannerInteraction::Activate {
+                target,
+                activation_token: None,
+            })
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(1), started.notified())
+        .await
+        .unwrap();
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(receipt.notification_id),
+            summary: "Replacement".into(),
+            ..input
+        })
+        .await
+        .unwrap();
+    assert!(action.await.unwrap().is_err());
+    assert!(daemon.sender_events().await.is_empty());
+    assert_eq!(daemon.visible_banners().await[0].summary, "Replacement");
 }
 
 #[tokio::test]
@@ -735,6 +961,50 @@ async fn visible_normal_banners_expire_after_configured_timeout() {
         .find(|thread| thread.id == receipt.notification_id)
         .unwrap();
     assert_eq!(thread.status.as_str(), "expired");
+}
+
+#[tokio::test]
+async fn delayed_display_acknowledgement_cannot_start_a_cancelled_revisions_timeout() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = DelayedAcknowledgementPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+    let input = NotificationInput {
+        expire_timeout: NotificationTimeout::Milliseconds(20),
+        ..notification("Mail", "Original")
+    };
+    let receipt = daemon.receive_notification(input.clone()).await.unwrap();
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(receipt.notification_id),
+            summary: "Replacement".into(),
+            ..input
+        })
+        .await
+        .unwrap();
+    presenter.acknowledge_oldest();
+    assert_active_without_sender_close_after(
+        &daemon,
+        receipt.notification_id,
+        Duration::from_millis(40),
+    )
+    .await;
+    daemon
+        .close_notification(receipt.notification_id)
+        .await
+        .unwrap();
+    let events = daemon.sender_events().await;
+    presenter.acknowledge_oldest();
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    assert_eq!(daemon.sender_events().await, events);
+    assert_eq!(
+        daemon.snapshot().await.unwrap().history[0].status.as_str(),
+        "closed"
+    );
 }
 
 #[tokio::test]

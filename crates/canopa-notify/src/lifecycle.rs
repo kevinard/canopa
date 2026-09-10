@@ -453,6 +453,20 @@ where
             .await
     }
 
+    pub(crate) async fn dismiss_if_current_revision(
+        &self,
+        notification_id: i64,
+        revision: i64,
+    ) -> anyhow::Result<LifecycleEffects> {
+        let thread = self.thread(notification_id).await?;
+        anyhow::ensure!(
+            thread.revision == revision,
+            "notification was replaced before dismissal"
+        );
+        self.transition_thread(thread, NotificationStatus::Dismissed)
+            .await
+    }
+
     pub async fn expire(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {
         self.transition_active(notification_id, NotificationStatus::Expired)
             .await

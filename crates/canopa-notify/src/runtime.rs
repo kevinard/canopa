@@ -18,8 +18,8 @@ use crate::lifecycle::{
     NotificationTimeoutChange,
 };
 use crate::presentation::{
-    BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerView,
-    NotificationBannerState, PresentationCoordinator,
+    BannerInteraction, BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter,
+    BannerView, NotificationBannerState, PresentationCoordinator,
 };
 use crate::sound::SoundPresenter;
 use crate::sqlite_persisted_state::SqlitePersistedState;
@@ -313,10 +313,25 @@ impl NotificationRuntime {
         action_key: &str,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
+        self.invoke_action_for_revision(notification_id, action_key, activation_token, None)
+            .await
+    }
+
+    async fn invoke_action_for_revision(
+        &self,
+        notification_id: i64,
+        action_key: &str,
+        activation_token: Option<String>,
+        expected_revision: Option<i64>,
+    ) -> anyhow::Result<()> {
         let thread = self
             .lifecycle
             .prepare_action(notification_id, action_key)
             .await?;
+        anyhow::ensure!(
+            expected_revision.is_none_or(|revision| revision == thread.revision),
+            "notification was replaced before action invocation"
+        );
         let activation_token = match activation_token.filter(|token| !token.is_empty()) {
             Some(token) => Some(token),
             None => {
@@ -352,19 +367,24 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn activate_notification(&self, notification_id: i64) -> anyhow::Result<()> {
-        self.activate_notification_with_activation_token(notification_id, None)
+        self.activate_notification_for_revision(notification_id, None, None)
             .await
     }
 
-    async fn activate_notification_with_activation_token(
+    async fn activate_notification_for_revision(
         &self,
         notification_id: i64,
         activation_token: Option<String>,
+        expected_revision: Option<i64>,
     ) -> anyhow::Result<()> {
         let thread = self.lifecycle.thread(notification_id).await?;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
         }
+        anyhow::ensure!(
+            expected_revision.is_none_or(|revision| revision == thread.revision),
+            "notification was replaced before activation"
+        );
 
         let default_action_key = thread
             .accepted_notification
@@ -374,22 +394,30 @@ impl NotificationRuntime {
             .map(|action| action.key.clone());
 
         if let Some(default_action_key) = default_action_key {
-            self.invoke_action_with_activation_token(
+            self.invoke_action_for_revision(
                 notification_id,
                 &default_action_key,
                 activation_token,
+                Some(thread.revision),
             )
             .await
         } else {
-            let _command = self.commands.lock().await;
-            let current = self.lifecycle.thread(notification_id).await?;
-            anyhow::ensure!(
-                current.revision == thread.revision,
-                "notification was replaced before activation"
-            );
-            let effects = self.lifecycle.dismiss(notification_id).await?;
-            self.apply_lifecycle_effects_and_notify(&effects).await
+            self.dismiss_notification_for_revision(notification_id, thread.revision)
+                .await
         }
+    }
+
+    async fn dismiss_notification_for_revision(
+        &self,
+        notification_id: i64,
+        revision: i64,
+    ) -> anyhow::Result<()> {
+        let _command = self.commands.lock().await;
+        let effects = self
+            .lifecycle
+            .dismiss_if_current_revision(notification_id, revision)
+            .await?;
+        self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
     pub(crate) async fn activate_banner(&self, notification_id: i64) -> anyhow::Result<()> {
@@ -397,12 +425,48 @@ impl NotificationRuntime {
             .await
     }
 
+    pub(crate) async fn handle_banner_interaction(
+        &self,
+        interaction: BannerInteraction,
+    ) -> anyhow::Result<()> {
+        match interaction {
+            BannerInteraction::Activate {
+                target,
+                activation_token,
+            } => {
+                self.activate_notification_for_revision(
+                    target.notification_id,
+                    activation_token,
+                    Some(target.revision),
+                )
+                .await
+            }
+            BannerInteraction::Dismiss(target) => {
+                self.dismiss_notification_for_revision(target.notification_id, target.revision)
+                    .await
+            }
+            BannerInteraction::InvokeAction {
+                target,
+                action_key,
+                activation_token,
+            } => {
+                self.invoke_action_for_revision(
+                    target.notification_id,
+                    &action_key,
+                    activation_token,
+                    Some(target.revision),
+                )
+                .await
+            }
+        }
+    }
+
     pub(crate) async fn activate_banner_with_activation_token(
         &self,
         notification_id: i64,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
-        self.activate_notification_with_activation_token(notification_id, activation_token)
+        self.activate_notification_for_revision(notification_id, activation_token, None)
             .await
     }
 

@@ -275,38 +275,10 @@ fn spawn_banner_interaction_forwarder(
             while let Ok(interaction) = interactions.recv() {
                 let daemon = daemon.clone();
                 handle.spawn(async move {
-                    let result = match interaction {
-                        BannerInteraction::Activate {
-                            notification_id,
-                            activation_token,
-                        } => {
-                            daemon
-                                .activate_banner_with_activation_token(
-                                    notification_id,
-                                    activation_token,
-                                )
-                                .await
-                        }
-                        BannerInteraction::Dismiss(notification_id) => {
-                            daemon.dismiss_notification(notification_id).await
-                        }
-                        BannerInteraction::InvokeAction {
-                            notification_id,
-                            action_key,
-                            activation_token,
-                        } => {
-                            daemon
-                                .invoke_action_with_activation_token(
-                                    notification_id,
-                                    &action_key,
-                                    activation_token,
-                                )
-                                .await
-                        }
-                    };
-                    if let Err(error) = result {
+                    let result = daemon.handle_banner_interaction(interaction).await;
+                    if result.is_err() {
                         eprintln!(
-                            "level=warn component=presentation event=banner_interaction_failed error={error:#}"
+                            "level=warn component=presentation event=banner_interaction_failed"
                         );
                     }
                 });
@@ -982,7 +954,10 @@ mod tests {
         let mut events = daemon.subscribe_sender_events();
         interactions
             .send(BannerInteraction::InvokeAction {
-                notification_id: receipt.notification_id,
+                target: canopa_notify::BannerTarget {
+                    notification_id: receipt.notification_id,
+                    revision: 1,
+                },
                 action_key: "reply".to_string(),
                 activation_token: None,
             })
@@ -1023,7 +998,10 @@ mod tests {
         let mut events = daemon.subscribe_sender_events();
         interactions
             .send(BannerInteraction::InvokeAction {
-                notification_id: receipt.notification_id,
+                target: canopa_notify::BannerTarget {
+                    notification_id: receipt.notification_id,
+                    revision: 1,
+                },
                 action_key: "reply".to_string(),
                 activation_token: Some("banner-token".to_string()),
             })

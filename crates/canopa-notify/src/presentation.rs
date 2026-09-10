@@ -119,15 +119,22 @@ impl BannerSurfaceSpec {
     }
 }
 
+/// The content revision captured by a banner widget, preserved through async callbacks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BannerTarget {
+    pub notification_id: i64,
+    pub revision: i64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BannerInteraction {
     Activate {
-        notification_id: i64,
+        target: BannerTarget,
         activation_token: Option<String>,
     },
-    Dismiss(i64),
+    Dismiss(BannerTarget),
     InvokeAction {
-        notification_id: i64,
+        target: BannerTarget,
         action_key: String,
         activation_token: Option<String>,
     },
@@ -135,20 +142,35 @@ pub enum BannerInteraction {
 
 #[derive(Clone)]
 pub struct IcedLayerShellBannerPresenter {
-    updates: Arc<Mutex<BannerUpdateSender>>,
+    updates: BannerUpdateSender,
 }
 
 impl IcedLayerShellBannerPresenter {
     pub fn start(interactions: mpsc::Sender<BannerInteraction>) -> anyhow::Result<Self> {
+        Self::start_with(interactions, run_banner_ui)
+    }
+
+    fn start_with<F>(
+        interactions: mpsc::Sender<BannerInteraction>,
+        run_ui: F,
+    ) -> anyhow::Result<Self>
+    where
+        F: FnOnce(u64, mpsc::Sender<BannerInteraction>) -> iced_layershell::Result + Send + 'static,
+    {
         let runtime_id = NEXT_BANNER_RUNTIME_ID.fetch_add(1, Ordering::Relaxed);
-        let (updates, receiver) = iced::futures::channel::mpsc::channel(32);
+        let (updates, receiver) = BannerUpdateSender::channel();
         register_banner_update_receiver(runtime_id, receiver);
 
-        spawn_banner_ui_thread(runtime_id, interactions, run_banner_ui)?;
+        let lifetime = BannerUiLifetime {
+            runtime_id,
+            updates: updates.clone(),
+        };
+        spawn_banner_ui_thread(runtime_id, interactions, move |runtime_id, interactions| {
+            let _lifetime = lifetime;
+            run_ui(runtime_id, interactions)
+        })?;
 
-        Ok(Self {
-            updates: Arc::new(Mutex::new(updates)),
-        })
+        Ok(Self { updates })
     }
 
     pub fn layer_shell_settings(
@@ -193,23 +215,71 @@ impl BannerPresenter for IcedLayerShellBannerPresenter {
         presentation: BannerPresentation,
         acknowledgement: BannerPresentationAcknowledgement,
     ) -> anyhow::Result<()> {
-        self.updates
-            .lock()
-            .unwrap()
-            .try_send(BannerRuntimeInput::Replace {
-                presentation,
-                acknowledgement,
-            })
-            .map_err(|error| anyhow::anyhow!("failed to send banner update to renderer: {error}"))
+        self.updates.send(BannerRuntimeInput::Replace {
+            presentation,
+            acknowledgement,
+        })
     }
 }
 
-type BannerUpdateSender = iced::futures::channel::mpsc::Sender<BannerRuntimeInput>;
-type BannerUpdateReceiver = iced::futures::channel::mpsc::Receiver<BannerRuntimeInput>;
+// Complete current-state projections replace one pending value; intermediate states are not events.
+type BannerWatchSender = tokio::sync::watch::Sender<Option<BannerRuntimeInput>>;
+type BannerUpdateReceiver = tokio::sync::watch::Receiver<Option<BannerRuntimeInput>>;
+
+#[derive(Clone)]
+struct BannerUpdateSender {
+    // None is terminal. Publishing and clearing runtime-owning callbacks share this gate.
+    sender: Arc<Mutex<Option<BannerWatchSender>>>,
+}
+
+impl BannerUpdateSender {
+    fn channel() -> (Self, BannerUpdateReceiver) {
+        let (sender, receiver) = tokio::sync::watch::channel(None);
+        (
+            Self {
+                sender: Arc::new(Mutex::new(Some(sender))),
+            },
+            receiver,
+        )
+    }
+
+    fn send(&self, input: BannerRuntimeInput) -> anyhow::Result<()> {
+        let sender = self.sender.lock().unwrap();
+        let sender = sender
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("banner renderer disconnected"))?;
+        sender
+            .send(Some(input))
+            .map_err(|_| anyhow::anyhow!("banner renderer disconnected"))
+    }
+
+    fn close(&self) {
+        let mut sender = self.sender.lock().unwrap();
+        if let Some(sender) = sender.take() {
+            sender.send_replace(None);
+        }
+    }
+}
 
 static NEXT_BANNER_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 static BANNER_UPDATE_RECEIVERS: OnceLock<Mutex<HashMap<u64, BannerUpdateReceiver>>> =
     OnceLock::new();
+
+struct BannerUiLifetime {
+    runtime_id: u64,
+    updates: BannerUpdateSender,
+}
+
+impl Drop for BannerUiLifetime {
+    fn drop(&mut self) {
+        // A queued acknowledgement can own the runtime, which owns this presenter. Clear it
+        // even when startup fails before the UI takes the receiver, breaking that ownership cycle.
+        self.updates.close();
+        if let Some(receivers) = BANNER_UPDATE_RECEIVERS.get() {
+            receivers.lock().unwrap().remove(&self.runtime_id);
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 enum BannerRuntimeInput {
@@ -219,10 +289,17 @@ enum BannerRuntimeInput {
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct PendingBannerAcknowledgement {
     generation: u64,
     acknowledgement: BannerPresentationAcknowledgement,
+}
+
+impl std::hash::Hash for PendingBannerAcknowledgement {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Each UI generation has one acknowledgement; the generation identifies its subscription.
+        std::hash::Hash::hash(&self.generation, state);
+    }
 }
 
 #[derive(Clone)]
@@ -230,7 +307,7 @@ struct BannerUiState {
     runtime_id: u64,
     presentation: BannerPresentation,
     presentation_generation: u64,
-    pending_acknowledgements: Vec<PendingBannerAcknowledgement>,
+    pending_acknowledgement: Option<PendingBannerAcknowledgement>,
     surface_size: (u32, u32),
     interactions: mpsc::Sender<BannerInteraction>,
 }
@@ -238,16 +315,16 @@ struct BannerUiState {
 #[derive(Clone, Debug)]
 enum BannerUiMessage {
     Runtime(BannerRuntimeInput),
-    PresentationFrame(u64),
-    ActivateRequested(i64),
+    PresentationFrame(PendingBannerAcknowledgement),
+    ActivateRequested(BannerTarget),
     Activate {
-        notification_id: i64,
+        target: BannerTarget,
         activation_token: Option<String>,
     },
-    Dismiss(i64),
-    InvokeActionRequested(i64, String),
+    Dismiss(BannerTarget),
+    InvokeActionRequested(BannerTarget, String),
     InvokeAction {
-        notification_id: i64,
+        target: BannerTarget,
         action_key: String,
         activation_token: Option<String>,
     },
@@ -301,13 +378,25 @@ fn take_banner_update_receiver(runtime_id: u64) -> BannerUpdateReceiver {
         .unwrap()
         .remove(&runtime_id)
         .unwrap_or_else(|| {
-            let (_sender, receiver) = iced::futures::channel::mpsc::channel(1);
+            let (_sender, receiver) = tokio::sync::watch::channel(None);
             receiver
         })
 }
 
-fn banner_update_stream(runtime_id: &u64) -> BannerUpdateReceiver {
-    take_banner_update_receiver(*runtime_id)
+fn banner_update_stream(
+    runtime_id: &u64,
+) -> impl iced::futures::Stream<Item = BannerRuntimeInput> + use<> {
+    banner_updates(take_banner_update_receiver(*runtime_id))
+}
+
+fn banner_updates(
+    receiver: BannerUpdateReceiver,
+) -> impl iced::futures::Stream<Item = BannerRuntimeInput> {
+    iced::futures::stream::unfold(receiver, |mut receiver| async move {
+        receiver.changed().await.ok()?;
+        let input = receiver.borrow_and_update().clone()?;
+        Some((input, receiver))
+    })
 }
 
 fn spawn_banner_ui_thread<F>(
@@ -345,7 +434,7 @@ fn run_banner_ui(
             runtime_id,
             presentation: BannerPresentation::default(),
             presentation_generation: 0,
-            pending_acknowledgements: Vec::new(),
+            pending_acknowledgement: None,
             surface_size: banner_surface_size(0, 0),
             interactions: interactions.clone(),
         },
@@ -366,14 +455,10 @@ fn run_banner_ui(
 }
 
 fn banner_ui_subscription(state: &BannerUiState) -> iced::Subscription<BannerUiMessage> {
-    let presentation_frames = if state
-        .pending_acknowledgements
-        .iter()
-        .any(|pending| pending.generation == state.presentation_generation)
-    {
+    let presentation_frames = if let Some(pending) = &state.pending_acknowledgement {
         iced::window::frames()
-            .with(state.presentation_generation)
-            .map(|(generation, _)| BannerUiMessage::PresentationFrame(generation))
+            .with(pending.clone())
+            .map(|(pending, _)| BannerUiMessage::PresentationFrame(pending))
     } else {
         iced::Subscription::none()
     };
@@ -399,96 +484,86 @@ fn banner_ui_update(
                 .presentation_generation
                 .checked_add(1)
                 .expect("banner presentation generation exhausted");
-            state
-                .pending_acknowledgements
-                .push(PendingBannerAcknowledgement {
-                    generation: state.presentation_generation,
-                    acknowledgement,
-                });
+            state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
+                generation: state.presentation_generation,
+                acknowledgement,
+            });
             match size {
                 Some(size) => iced::Task::done(BannerUiMessage::SizeChange(size)),
                 None => iced::Task::none(),
             }
         }
-        BannerUiMessage::PresentationFrame(rendered_generation) => {
-            let mut later_acknowledgements = Vec::new();
-            for pending in std::mem::take(&mut state.pending_acknowledgements) {
-                if pending.generation == rendered_generation {
-                    pending.acknowledgement.acknowledge();
-                } else if pending.generation > rendered_generation {
-                    later_acknowledgements.push(pending);
-                }
+        BannerUiMessage::PresentationFrame(rendered) => {
+            // The event owns the acknowledgement for the frame that actually happened, even
+            // if a replacement arrived before this message was handled.
+            rendered.acknowledgement.acknowledge();
+            if state
+                .pending_acknowledgement
+                .as_ref()
+                .is_some_and(|pending| pending.generation == rendered.generation)
+            {
+                state.pending_acknowledgement = None;
             }
-            state.pending_acknowledgements = later_acknowledgements;
             iced::Task::none()
         }
-        BannerUiMessage::ActivateRequested(notification_id) => {
-            let Some(app_identity) = banner_app_identity(state, notification_id) else {
-                state
-                    .interactions
-                    .send(BannerInteraction::Activate {
-                        notification_id,
-                        activation_token: None,
-                    })
-                    .ok();
+        BannerUiMessage::ActivateRequested(target) => {
+            let Some(banner) = current_banner(state, target) else {
                 return iced::Task::none();
             };
-            activation_token_task(app_identity, move |activation_token| {
+            if banner.default_action_key.is_none() {
+                return iced::Task::done(BannerUiMessage::Dismiss(target));
+            }
+            activation_token_task(banner.app_identity.clone(), move |activation_token| {
                 BannerUiMessage::Activate {
-                    notification_id,
+                    target,
                     activation_token,
                 }
             })
         }
         BannerUiMessage::Activate {
-            notification_id,
+            target,
             activation_token,
         } => {
             state
                 .interactions
                 .send(BannerInteraction::Activate {
-                    notification_id,
+                    target,
                     activation_token,
                 })
                 .ok();
             iced::Task::none()
         }
-        BannerUiMessage::Dismiss(notification_id) => {
+        BannerUiMessage::Dismiss(target) => {
             state
                 .interactions
-                .send(BannerInteraction::Dismiss(notification_id))
+                .send(BannerInteraction::Dismiss(target))
                 .ok();
             iced::Task::none()
         }
-        BannerUiMessage::InvokeActionRequested(notification_id, action_key) => {
-            let Some(app_identity) = banner_app_identity(state, notification_id) else {
-                state
-                    .interactions
-                    .send(BannerInteraction::InvokeAction {
-                        notification_id,
-                        action_key,
-                        activation_token: None,
-                    })
-                    .ok();
+        BannerUiMessage::InvokeActionRequested(target, action_key) => {
+            let Some(banner) = current_banner(state, target) else {
                 return iced::Task::none();
             };
-            activation_token_task(app_identity, move |activation_token| {
+            if !banner.actions.iter().any(|action| action.key == action_key) {
+                return iced::Task::none();
+            }
+            activation_token_task(banner.app_identity.clone(), move |activation_token| {
                 BannerUiMessage::InvokeAction {
-                    notification_id,
+                    target,
                     action_key,
                     activation_token,
                 }
             })
         }
         BannerUiMessage::InvokeAction {
-            notification_id,
+            target,
             action_key,
             activation_token,
         } => {
             state
                 .interactions
                 .send(BannerInteraction::InvokeAction {
-                    notification_id,
+                    target,
                     action_key,
                     activation_token,
                 })
@@ -499,13 +574,12 @@ fn banner_ui_update(
     }
 }
 
-fn banner_app_identity(state: &BannerUiState, notification_id: i64) -> Option<String> {
+fn current_banner(state: &BannerUiState, target: BannerTarget) -> Option<&BannerView> {
     state
         .presentation
         .banners
         .iter()
-        .find(|banner| banner.notification_id == notification_id)
-        .map(|banner| banner.app_identity.clone())
+        .find(|banner| banner.target() == target)
 }
 
 fn activation_token_task(
@@ -551,7 +625,7 @@ mod tests {
             runtime_id: 0,
             presentation: BannerPresentation::default(),
             presentation_generation: 0,
-            pending_acknowledgements: Vec::new(),
+            pending_acknowledgement: None,
             surface_size: banner_surface_size(0, 0),
             interactions,
         }
@@ -600,11 +674,148 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn publication_cannot_refill_a_closing_renderers_callback_slot() {
+        let (interactions, _) = mpsc::channel();
+        let (exit_ui, exit_requested) = mpsc::channel();
+        let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _| {
+            exit_requested.recv_timeout(Duration::from_secs(2)).unwrap();
+            Ok(())
+        })
+        .unwrap();
+        let initial = Arc::new(AtomicBool::new(false));
+        let initial_lifetime = Arc::downgrade(&initial);
+        presenter
+            .replace_banner_presentation_with_acknowledgement(
+                BannerPresentation::default(),
+                BannerPresentationAcknowledgement::new(move || {
+                    initial.store(true, Ordering::SeqCst);
+                }),
+            )
+            .unwrap();
+
+        // Pause renderer retirement between clearing pending content and removing the receiver.
+        // The UI runs on a separate OS thread, so no executor work is needed while holding this lock.
+        let registry = BANNER_UPDATE_RECEIVERS.get().unwrap().lock().unwrap();
+        exit_ui.send(()).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while initial_lifetime.upgrade().is_some() && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        let cleanup_started = initial_lifetime.upgrade().is_none();
+        let late = Arc::new(AtomicBool::new(false));
+        let late_lifetime = Arc::downgrade(&late);
+        let result = presenter.replace_banner_presentation_with_acknowledgement(
+            BannerPresentation::default(),
+            BannerPresentationAcknowledgement::new(move || {
+                late.store(true, Ordering::SeqCst);
+            }),
+        );
+        drop(registry);
+
+        assert!(
+            cleanup_started,
+            "renderer did not begin callback retirement"
+        );
+        assert!(
+            result.is_err(),
+            "publication was admitted after renderer retirement began"
+        );
+        assert!(
+            late_lifetime.upgrade().is_none(),
+            "a late callback retained the stopped runtime"
+        );
+    }
+
+    #[tokio::test]
+    async fn renderer_exit_before_subscription_releases_callbacks_and_closes_transport() {
+        let (interactions, _) = mpsc::channel();
+        let (exit_ui, exit_requested) = mpsc::channel();
+        let (finished, finished_receiver) = tokio::sync::oneshot::channel();
+        let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _| {
+            // A renderer may fail before iced takes ownership of the update subscription.
+            exit_requested.recv_timeout(Duration::from_secs(2)).unwrap();
+            finished.send(()).unwrap();
+            Ok(())
+        })
+        .unwrap();
+        let callback = Arc::new(AtomicBool::new(false));
+        let transport = presenter
+            .updates
+            .sender
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .clone();
+        let callback_lifetime = Arc::downgrade(&callback);
+        presenter
+            .replace_banner_presentation_with_acknowledgement(
+                BannerPresentation::default(),
+                BannerPresentationAcknowledgement::new(move || {
+                    callback.store(true, Ordering::SeqCst);
+                }),
+            )
+            .unwrap();
+        exit_ui.send(()).unwrap();
+        finished_receiver.await.unwrap();
+        tokio::time::timeout(Duration::from_secs(1), transport.closed())
+            .await
+            .expect("renderer exit must close even an unclaimed subscription");
+        assert!(
+            callback_lifetime.upgrade().is_none(),
+            "renderer exit retained a runtime callback"
+        );
+        assert!(presenter.replace_visible_banners(vec![]).is_err());
+    }
+
+    #[tokio::test]
+    async fn paused_renderer_receives_latest_state_after_a_burst_without_lost_closures() {
+        let (updates, receiver) = BannerUpdateSender::channel();
+        let mut receiver = Box::pin(banner_updates(receiver));
+        let presenter = IcedLayerShellBannerPresenter { updates };
+        let superseded_acknowledged = Arc::new(AtomicBool::new(false));
+        for id in 1..=130 {
+            let acknowledged = superseded_acknowledged.clone();
+            presenter
+                .replace_banner_presentation_with_acknowledgement(
+                    BannerPresentation::visible_banners(vec![banner_view(id, "Superseded")]),
+                    BannerPresentationAcknowledgement::new(move || {
+                        acknowledged.store(true, Ordering::SeqCst);
+                    }),
+                )
+                .expect("a slow renderer must not reject current-state updates");
+        }
+        let final_acknowledged = Arc::new(AtomicBool::new(false));
+        let acknowledged = final_acknowledged.clone();
+        presenter
+            .replace_banner_presentation_with_acknowledgement(
+                BannerPresentation::default(),
+                BannerPresentationAcknowledgement::new(move || {
+                    acknowledged.store(true, Ordering::SeqCst);
+                }),
+            )
+            .unwrap();
+
+        let mut state = banner_ui_test_state();
+        let input = receiver.next().await.unwrap();
+        let _ = banner_ui_update(&mut state, BannerUiMessage::Runtime(input));
+        assert!(
+            state.presentation.banners.is_empty(),
+            "a closed banner was resurrected by queued state"
+        );
+        assert!(!superseded_acknowledged.load(Ordering::SeqCst));
+        assert!(!final_acknowledged.load(Ordering::SeqCst));
+        let frame = state.pending_acknowledgement.clone().unwrap();
+        let _ = banner_ui_update(&mut state, BannerUiMessage::PresentationFrame(frame));
+        assert!(final_acknowledged.load(Ordering::SeqCst));
+        assert!(!superseded_acknowledged.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
     async fn iced_presenter_acknowledges_only_after_ui_consumes_presentation() {
-        let (updates, mut receiver) = iced::futures::channel::mpsc::channel(1);
-        let presenter = IcedLayerShellBannerPresenter {
-            updates: Arc::new(Mutex::new(updates)),
-        };
+        let (updates, receiver) = BannerUpdateSender::channel();
+        let mut receiver = Box::pin(banner_updates(receiver));
+        let presenter = IcedLayerShellBannerPresenter { updates };
         let acknowledged = Arc::new(AtomicBool::new(false));
         let acknowledgement_state = acknowledged.clone();
         presenter
@@ -623,14 +834,27 @@ mod tests {
         let _task = banner_ui_update(&mut state, BannerUiMessage::Runtime(input));
 
         assert!(!acknowledged.load(Ordering::SeqCst));
-        let rendered_generation = state.presentation_generation;
-        let _task = banner_ui_update(
-            &mut state,
-            BannerUiMessage::PresentationFrame(rendered_generation),
-        );
+        let rendered = state.pending_acknowledgement.clone().unwrap();
+        let _task = banner_ui_update(&mut state, BannerUiMessage::PresentationFrame(rendered));
 
         assert!(acknowledged.load(Ordering::SeqCst));
         assert_eq!(state.presentation.banners[0].notification_id, 42);
+    }
+
+    #[test]
+    fn undisplayed_banner_updates_release_superseded_acknowledgements() {
+        let mut state = banner_ui_test_state();
+        let mut retired = Vec::new();
+        for id in 1..=130 {
+            let acknowledgement = Arc::new(AtomicBool::new(false));
+            retired.push(Arc::downgrade(&acknowledgement));
+            queue_banner_ui_presentation(&mut state, id, acknowledgement);
+        }
+        assert!(
+            retired[..129].iter().all(|ack| ack.upgrade().is_none()),
+            "undisplayed updates must not retain old runtime callbacks indefinitely"
+        );
+        assert!(retired[129].upgrade().is_some());
     }
 
     #[test]
@@ -646,11 +870,8 @@ mod tests {
             queue_banner_ui_presentation(&mut state, notification_id, acknowledged);
         }
 
-        let rendered_generation = state.presentation_generation;
-        let _task = banner_ui_update(
-            &mut state,
-            BannerUiMessage::PresentationFrame(rendered_generation),
-        );
+        let rendered = state.pending_acknowledgement.clone().unwrap();
+        let _task = banner_ui_update(&mut state, BannerUiMessage::PresentationFrame(rendered));
 
         assert!(!first_acknowledged.load(Ordering::SeqCst));
         assert!(latest_acknowledged.load(Ordering::SeqCst));
@@ -661,19 +882,27 @@ mod tests {
         let mut state = banner_ui_test_state();
         let first_acknowledged = Arc::new(AtomicBool::new(false));
         let latest_acknowledged = Arc::new(AtomicBool::new(false));
+        let mut queued_frames = Vec::new();
 
         for (notification_id, acknowledged) in [
             (1, first_acknowledged.clone()),
             (2, latest_acknowledged.clone()),
         ] {
             queue_banner_ui_presentation(&mut state, notification_id, acknowledged);
+            queued_frames.push(state.pending_acknowledgement.clone().unwrap());
         }
 
-        let _task = banner_ui_update(&mut state, BannerUiMessage::PresentationFrame(1));
+        let _task = banner_ui_update(
+            &mut state,
+            BannerUiMessage::PresentationFrame(queued_frames.remove(0)),
+        );
 
         assert!(first_acknowledged.load(Ordering::SeqCst));
         assert!(!latest_acknowledged.load(Ordering::SeqCst));
-        let _task = banner_ui_update(&mut state, BannerUiMessage::PresentationFrame(2));
+        let _task = banner_ui_update(
+            &mut state,
+            BannerUiMessage::PresentationFrame(queued_frames.remove(0)),
+        );
         assert!(latest_acknowledged.load(Ordering::SeqCst));
     }
 
@@ -872,6 +1101,7 @@ mod tests {
     fn banner_view(notification_id: i64, body: &str) -> BannerView {
         BannerView {
             notification_id,
+            revision: 1,
             app_identity: "downloader".to_string(),
             app_name: "Downloader".to_string(),
             app_icon: None,
@@ -961,8 +1191,8 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
         .padding(0)
         .width(Length::Fill)
         .style(content_button_style)
-        .on_press(BannerUiMessage::ActivateRequested(banner.notification_id));
-    let dismiss = close_button(banner.notification_id);
+        .on_press(BannerUiMessage::ActivateRequested(banner.target()));
+    let dismiss = close_button(banner.target());
 
     let visual_layout = banner_header_visual_layout(banner);
     let mut header = row![primary_banner_visual(banner, visual_layout.primary),]
@@ -1014,7 +1244,7 @@ fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessa
                 .width(Length::Fill)
                 .style(content_button_style)
                 .on_press(BannerUiMessage::InvokeActionRequested(
-                    banner.notification_id,
+                    banner.target(),
                     action.key.clone(),
                 )),
         );
@@ -1321,7 +1551,7 @@ fn banner_visual_handle(visual: &BannerVisual) -> iced::widget::image::Handle {
     }
 }
 
-fn close_button<'a>(notification_id: i64) -> iced::widget::Button<'a, BannerUiMessage> {
+fn close_button<'a>(target: BannerTarget) -> iced::widget::Button<'a, BannerUiMessage> {
     use iced::widget::{button, text};
 
     button(text("x").size(14))
@@ -1329,7 +1559,7 @@ fn close_button<'a>(notification_id: i64) -> iced::widget::Button<'a, BannerUiMe
         .width(28)
         .height(28)
         .style(close_button_style)
-        .on_press(BannerUiMessage::Dismiss(notification_id))
+        .on_press(BannerUiMessage::Dismiss(target))
 }
 
 fn card_container_style(theme: &iced::Theme) -> iced::widget::container::Style {
@@ -1580,6 +1810,7 @@ pub enum BannerFocusBehavior {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BannerView {
     pub notification_id: i64,
+    pub revision: i64,
     pub app_identity: String,
     pub app_name: String,
     pub app_icon: Option<BannerVisual>,
@@ -1722,6 +1953,13 @@ fn push_banner_body_text_segment(
 }
 
 impl BannerView {
+    pub fn target(&self) -> BannerTarget {
+        BannerTarget {
+            notification_id: self.notification_id,
+            revision: self.revision,
+        }
+    }
+
     pub(crate) fn from_thread(
         thread: NotificationThread,
         image_data: Option<NotificationImageData>,
@@ -1743,6 +1981,7 @@ impl BannerView {
             banner_app_icon_visual(notification.app_icon.as_ref(), &notification.app_identity);
         Self {
             notification_id: thread.id,
+            revision: thread.revision,
             app_identity: notification.app_identity,
             app_name: notification.app_name,
             app_icon,
