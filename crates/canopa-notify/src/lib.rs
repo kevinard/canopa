@@ -7,6 +7,7 @@ mod configuration;
 pub mod control;
 mod delivery_policy;
 mod domain;
+mod input_limits;
 mod intake;
 mod lifecycle;
 mod notification_id;
@@ -40,6 +41,7 @@ pub use domain::{
     NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference,
     SenderCloseReason, SenderEvent, Urgency, UserRule, normalize_notification_category,
 };
+pub use input_limits::NotificationLimitExceeded;
 pub use lifecycle::{
     BannerLifecycleChange, LifecycleBatch, LifecycleDelivery, LifecycleEffect, LifecycleEffects,
     NewNotificationThread, NotificationHistory, NotificationLifecycle, NotificationTimeoutChange,
@@ -215,6 +217,7 @@ impl Daemon {
     ) -> anyhow::Result<NotificationReceipt> {
         let command = self.runtime.begin_receipt().await?;
         let input = prepare()?;
+        input_limits::validate_input(&input)?;
         let expire_timeout = input.expire_timeout;
         let accepted = match intake_notification(input) {
             NotificationIntakeResult::Accepted(accepted) => *accepted,

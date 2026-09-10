@@ -27,7 +27,7 @@ async fn decoding_an_unresolved_wire_id_cannot_replace_an_internal_thread() {
         expire_timeout: 0,
     };
     let received = daemon
-        .receive_notification(request.into_notification_input())
+        .receive_notification(request.into_notification_input().unwrap())
         .await
         .unwrap();
     assert_ne!(

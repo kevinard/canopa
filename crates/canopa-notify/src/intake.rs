@@ -7,6 +7,7 @@ use crate::{
 };
 
 const MAX_BODY_CONTENT_SEGMENTS: usize = 256;
+const MAX_BODY_STYLE_DEPTH: u16 = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NotificationIntakeResult {
@@ -85,15 +86,16 @@ fn derive_app_identity(input: &NotificationInput) -> String {
 }
 
 pub(crate) fn interpreted_body_content(body: &str) -> NotificationBodyContent {
+    // New receipts are admitted before intake. Legacy backfill also uses this
+    // parser, so bound its work without changing stored raw/plain body fields.
+    let mut end = body.len().min(crate::input_limits::MAX_BODY_BYTES);
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    let body = &body[..end];
     let mut parser = BodyMarkupParser::new(body);
     parser.parse();
-    let content = parsed_body_nodes_to_content(parser.output);
-
-    if content.segments.len() > MAX_BODY_CONTENT_SEGMENTS {
-        NotificationBodyContent::plain(content.plain_text())
-    } else {
-        content
-    }
+    parsed_body_nodes_to_content(parser.output)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -148,6 +150,8 @@ struct BodyMarkupParser<'a> {
     index: usize,
     output: Vec<ParsedBodyNode>,
     style: StyleCounts,
+    plain: bool,
+    segments: usize,
 }
 
 impl<'a> BodyMarkupParser<'a> {
@@ -157,6 +161,8 @@ impl<'a> BodyMarkupParser<'a> {
             index: 0,
             output: Vec::new(),
             style: StyleCounts::default(),
+            plain: false,
+            segments: 0,
         }
     }
 
@@ -176,7 +182,7 @@ impl<'a> BodyMarkupParser<'a> {
 
     fn parse_tag_or_discard_markup_start(&mut self) {
         let remaining = self.remaining();
-        if let Some(end) = remaining.find('>') {
+        if let Some(end) = markup_tag_end(remaining) {
             let tag = &remaining[1..end];
             self.index += end + 1;
             self.handle_tag(tag);
@@ -215,12 +221,16 @@ impl<'a> BodyMarkupParser<'a> {
 
         match tag_name.as_str() {
             "b" | "i" | "u" => {
-                if self_closing {
+                if self_closing || self.plain {
                     return;
                 }
 
                 if closing {
                     self.style.close(&tag_name);
+                } else if self.style.bold + self.style.italic + self.style.underline
+                    >= MAX_BODY_STYLE_DEPTH
+                {
+                    self.degrade_to_plain();
                 } else {
                     self.style.open(&tag_name);
                 }
@@ -229,12 +239,17 @@ impl<'a> BodyMarkupParser<'a> {
             "p" | "div" => self.push_newline(),
             "img" if !closing => {
                 let alt = attribute_value(tag_without_direction, "alt");
+                if self.plain {
+                    if let Some(alt) = alt {
+                        self.push_text(&alt);
+                    }
+                    return;
+                }
                 let image_source = attribute_value(tag_without_direction, "src")
                     .and_then(|src| NotificationBodyImageSource::from_body_image_src(&src));
 
                 if let Some(source) = image_source {
-                    self.output
-                        .push(ParsedBodyNode::Image(NotificationBodyImage { source, alt }));
+                    self.push_node(ParsedBodyNode::Image(NotificationBodyImage { source, alt }));
                 } else if let Some(alt) = alt {
                     self.push_text(&alt);
                 }
@@ -246,10 +261,53 @@ impl<'a> BodyMarkupParser<'a> {
 
     fn push_text(&mut self, text: &str) {
         let style = self.style.style();
-        self.output.extend(
-            text.chars()
-                .map(|ch| ParsedBodyNode::Text(StyledChar { ch, style })),
-        );
+        for ch in text.chars() {
+            self.push_node(ParsedBodyNode::Text(StyledChar { ch, style }));
+        }
+    }
+
+    fn push_node(&mut self, mut node: ParsedBodyNode) {
+        // Line normalization uses unstyled newlines, so count them that way now.
+        if let ParsedBodyNode::Text(text) = &mut node
+            && text.ch == '\n'
+        {
+            text.style = NotificationBodyStyle::default();
+        }
+        if !self.plain {
+            let same_run = matches!((&node, self.output.last()),
+                (ParsedBodyNode::Text(current), Some(ParsedBodyNode::Text(previous)))
+                    if current.style == previous.style);
+            if !same_run {
+                if self.segments == MAX_BODY_CONTENT_SEGMENTS {
+                    self.degrade_to_plain();
+                } else {
+                    self.segments += 1;
+                }
+            }
+        }
+        match node {
+            ParsedBodyNode::Text(mut text) => {
+                if self.plain {
+                    text.style = NotificationBodyStyle::default();
+                }
+                self.output.push(ParsedBodyNode::Text(text));
+            }
+            ParsedBodyNode::Image(image) if self.plain => {
+                if let Some(alt) = image.alt {
+                    self.push_text(&alt);
+                }
+            }
+            image => self.output.push(image),
+        }
+    }
+
+    fn degrade_to_plain(&mut self) {
+        self.plain = true;
+        self.style = StyleCounts::default();
+        let nodes = std::mem::take(&mut self.output);
+        for node in nodes {
+            self.push_node(node);
+        }
     }
 
     fn push_newline(&mut self) {
@@ -258,12 +316,34 @@ impl<'a> BodyMarkupParser<'a> {
             Some(ParsedBodyNode::Text(StyledChar { ch: '\n', .. }))
         );
         if !last_is_newline {
-            self.output.push(ParsedBodyNode::Text(StyledChar {
+            self.push_node(ParsedBodyNode::Text(StyledChar {
                 ch: '\n',
                 style: NotificationBodyStyle::default(),
             }));
         }
     }
+}
+
+// Stop at the next markup start, even for malformed quoted attributes (XML does
+// not allow raw '<' in them). A failed lookup never scans past another '<', so
+// repeated malformed starts cannot rescan the remaining body quadratically.
+fn markup_tag_end(value: &str) -> Option<usize> {
+    let mut quote = None;
+    for (index, ch) in value[1..].char_indices() {
+        if ch == '<' {
+            return None;
+        }
+        if let Some(expected) = quote {
+            if ch == expected {
+                quote = None;
+            }
+        } else if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+        } else if ch == '>' {
+            return Some(index + 1);
+        }
+    }
+    None
 }
 
 fn malformed_known_tag_name_len(value: &str) -> Option<usize> {
@@ -379,11 +459,13 @@ fn decode_xml_entities(value: &str) -> String {
     while index < value.len() {
         let ch = value[index..].chars().next().unwrap();
         if ch == '&'
-            && let Some(end) = value[index + 1..].find(';')
+            && let Some(end) = value[index + 1..].find(['&', ';'])
         {
             let entity_end = index + 1 + end;
             let entity = &value[index + 1..entity_end];
-            if let Some(decoded) = decode_xml_entity(entity) {
+            if value.as_bytes()[entity_end] == b';'
+                && let Some(decoded) = decode_xml_entity(entity)
+            {
                 output.push(decoded);
                 index = entity_end + ';'.len_utf8();
                 continue;
@@ -454,18 +536,20 @@ fn parsed_body_nodes_to_content(nodes: Vec<ParsedBodyNode>) -> NotificationBodyC
         normalized.extend_from_slice(&line[start..end]);
     }
 
-    while normalized.first().is_some_and(is_whitespace_text_node) {
-        normalized.remove(0);
-    }
-    while normalized.last().is_some_and(is_whitespace_text_node) {
-        normalized.pop();
-    }
+    let start = normalized
+        .iter()
+        .position(|node| !is_whitespace_text_node(node))
+        .unwrap_or(normalized.len());
+    let end = normalized
+        .iter()
+        .rposition(|node| !is_whitespace_text_node(node))
+        .map_or(start, |index| index + 1);
 
     let mut segments = Vec::new();
     let mut current_text = String::new();
     let mut current_style: Option<NotificationBodyStyle> = None;
 
-    for node in normalized {
+    for node in normalized.into_iter().skip(start).take(end - start) {
         match node {
             ParsedBodyNode::Text(styled) => match current_style {
                 Some(style) if style == styled.style => current_text.push(styled.ch),

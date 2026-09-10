@@ -20,7 +20,11 @@ pub struct NotificationServerRequest {
 impl NotificationServerRequest {
     /// Decode content only. The transport must resolve `replaces_id` against its
     /// live registry and assign the internal replacement target separately.
-    pub fn into_notification_input(self) -> NotificationInput {
+    /// Oversized text/action input is rejected before normalization or hint decoding.
+    pub fn into_notification_input(
+        self,
+    ) -> Result<NotificationInput, crate::NotificationLimitExceeded> {
+        crate::input_limits::validate_server_request(&self)?;
         let Self {
             app_name,
             replaces_id: _,
@@ -34,7 +38,7 @@ impl NotificationServerRequest {
         let (image_data, image_reference) = notification_image(&hints);
         let action_icons = bool_hint(&hints, "action-icons");
 
-        NotificationInput {
+        let input = NotificationInput {
             app_name,
             desktop_entry: desktop_entry_hint(&hints),
             replaces_id: None,
@@ -53,7 +57,9 @@ impl NotificationServerRequest {
             requested_position: requested_position_hint(&hints),
             image_data,
             image_reference,
-        }
+        };
+        crate::input_limits::validate_input(&input)?;
+        Ok(input)
     }
 }
 
@@ -221,7 +227,8 @@ mod tests {
             ]),
             expire_timeout: 2_500,
         }
-        .into_notification_input();
+        .into_notification_input()
+        .unwrap();
 
         assert_eq!(input.app_name, "Example Mail");
         assert_eq!(input.desktop_entry.as_deref(), Some("example-mail.desktop"));
@@ -273,7 +280,8 @@ mod tests {
             hints: HashMap::new(),
             expire_timeout: -1,
         }
-        .into_notification_input();
+        .into_notification_input()
+        .unwrap();
 
         assert_eq!(
             input
@@ -302,7 +310,8 @@ mod tests {
             hints: HashMap::from([("action-icons".to_string(), OwnedValue::from(true))]),
             expire_timeout: -1,
         }
-        .into_notification_input();
+        .into_notification_input()
+        .unwrap();
 
         assert_eq!(
             input.actions[0].icon,
@@ -326,7 +335,8 @@ mod tests {
             hints: HashMap::new(),
             expire_timeout: -1,
         }
-        .into_notification_input();
+        .into_notification_input()
+        .unwrap();
 
         assert_eq!(input.desktop_entry, None);
         assert_eq!(input.replaces_id, None);
@@ -420,7 +430,8 @@ mod tests {
             ]),
             expire_timeout: -1,
         }
-        .into_notification_input();
+        .into_notification_input()
+        .unwrap();
 
         assert_eq!(
             input.app_icon,
@@ -445,7 +456,8 @@ mod tests {
             )]),
             expire_timeout: -1,
         }
-        .into_notification_input();
+        .into_notification_input()
+        .unwrap();
 
         assert_eq!(input.image_data, None);
         assert_eq!(
@@ -466,6 +478,7 @@ mod tests {
             expire_timeout: -1,
         }
         .into_notification_input()
+        .unwrap()
     }
 
     fn string_value(value: &'static str) -> OwnedValue {

@@ -34,6 +34,7 @@ The protocol baseline is the versioned [Desktop Notifications 1.3 protocol](http
 | Hyperlinks and persistence | Optional; not advertised | Intake, presentation, retention | Explicitly unfinished W12/W13; retaining closed history alone does not satisfy persistence. |
 | Durable paths, installed configuration and reload | Local product/operational contract | Startup + Configuration + Control | `tests/control_spine.rs`, `installed_startup_loads_xdg_configuration_before_accepting_notifications`, failed-install sound test; socket partial-clear regression verifies committed counts. |
 | Atomic storage and safe upgrades | Local reliability contract | Notification History adapter | Twelve SQLite adapter tests, future-schema rejection and partial-clear history tests. Interrupted upgrades, large backfills and additional startup failure fixtures remain W02/W06. |
+| Text/action admission and markup work bounds | Local resource policy, not specification limits | Request decoder + Intake | `tests/input_limits.rs` covers atomic rejection, exact UTF-8/aggregate limits and markup degradation; `wire_input_limits_reject_before_normalization_without_consuming_ids_or_replacements` covers D-Bus errors and unchanged wire identity. Aggregate active resources, assets and worker limits remain W07/W09. |
 
 The static profile excludes `icon-multi`; Wayland placement may ignore `x`/`y`. No native portal-v2 backend is claimed. See the existing [portal interoperability notes](xdg-notification-portal-v2.md) for negotiated bridge limitations.
 
@@ -48,6 +49,27 @@ Client disconnection does not close a live notification or make its ID private t
 The restart fixture observes [D-Bus service-owner changes](https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-name-owner-changed) across two daemon processes. Retained active history becomes stale, transient state disappears, and old IDs are not registered as live in the successor. Numbers may recur across owners. Binding ID-bearing requests to the unique owner associated with their receipt prevents a request from being rerouted to a successor between an owner check and send; a bare old number sent to the new owner cannot carry its former namespace.
 
 Rust library callers now use `InternalNotificationId` for receipts, replacement targets, lifecycle commands and presentation/control targets. `NotificationServerRequest::into_notification_input` decodes content only; the transport supplies its resolved target under the receipt guard. Numeric control JSON and SQLite encodings are unchanged. Zero is rejected as a control target, while legacy stored replacement metadata of zero is read as no replacement. `control_ids_keep_signed_numeric_json_and_reject_zero` and `legacy_zero_replacement_metadata_remains_readable_after_restart` cover that compatibility boundary.
+
+## Request limits and markup degradation
+
+[ADR 0031](adr/0031-bounded-notification-intake.md) defines fixed admission limits, measured in UTF-8 bytes rather than characters. These are Canopa resource policies, not requirements of the [Notifications 1.3 protocol](https://specifications.freedesktop.org/notification/1.3/protocol.html).
+
+| Input | Limit |
+| --- | --- |
+| Raw body | 64 KiB |
+| Summary | 8 KiB |
+| Each other request text field, including action keys/labels/icons and hint keys/string values | 4 KiB |
+| Aggregate text | 128 KiB, checked on both raw wire fields and normalized library input |
+| Actions | 64 library actions; 128 wire strings before malformed-pair/duplicate normalization |
+| Hints | 64 wire entries |
+
+Body-markup attributes count within the raw-body budget rather than as separate 4 KiB fields. Normalized aggregate accounting includes derived action-icon references as well as their action keys.
+
+An over-limit request returns `org.freedesktop.DBus.Error.LimitsExceeded` without a receipt, ID consumption, policy decision, stored thread change or sender event. A rejected replacement leaves the original notification active and unchanged. Error descriptions contain only fixed categories, never sender text. This also applies to DND, transient and otherwise no-op requests. The Rust request decoder now returns `Result<NotificationInput, NotificationLimitExceeded>`; direct daemon intake enforces the same normalized limits. No D-Bus signature, numeric encoding or database schema changes.
+
+Within the byte budget, markup may use at most 64 nested emphasis tags and 256 rich segments during parsing, before whitespace normalization. Exceeding either limit switches the whole body to plain text, preserving decoded text and image alternative text but dropping styling and image references. Empty fallback still follows the ordinary no-op policy; no placeholder text is invented. Malformed tag/entity scans move forward, and leading whitespace is trimmed without repeatedly shifting the remaining body. New receipts retain the complete admitted raw body. Legacy backfill interprets only a UTF-8-safe 64 KiB prefix of oversized raw bodies, without rewriting the original raw or plain body fields.
+
+These checks run after D-Bus deserialization. Nested unknown hint values, aggregate active text/assets, provider streams and sound workers are not bounded by this text policy; existing raw-image limits remain separate. No additional capability is advertised.
 
 ## Expiration semantics
 

@@ -89,13 +89,15 @@ impl NotificationServer {
             hints,
             expire_timeout,
         };
+        let mut input = request
+            .into_notification_input()
+            .map_err(|error| zbus::fdo::Error::LimitsExceeded(error.to_string()))?;
         let resolved = std::sync::OnceLock::new();
 
         self.daemon
             .receive_notification_with_preparation(
                 || {
                     let sender_id = self.sender_ids.prepare(replaces_id)?;
-                    let mut input = request.into_notification_input();
                     // A wire ID is never a SQLite row ID. Resolve under the mutation boundary.
                     input.replaces_id = sender_id.replacement_target;
                     resolved.set(sender_id).unwrap();
@@ -110,6 +112,9 @@ impl NotificationServer {
             .map_err(|error| match error.downcast_ref::<IdError>() {
                 Some(IdError::Retired) => zbus::fdo::Error::InvalidArgs(error.to_string()),
                 Some(IdError::Exhausted | IdError::Fragmented) => {
+                    zbus::fdo::Error::LimitsExceeded(error.to_string())
+                }
+                None if error.is::<canopa_notify::NotificationLimitExceeded>() => {
                     zbus::fdo::Error::LimitsExceeded(error.to_string())
                 }
                 None => zbus::fdo::Error::Failed(error.to_string()),

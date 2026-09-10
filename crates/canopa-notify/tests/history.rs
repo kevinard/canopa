@@ -7,6 +7,44 @@ use canopa_notify::{Daemon, DaemonOptions};
 use notifications::notification;
 
 #[tokio::test]
+async fn legacy_body_backfill_bounds_interpretation_without_rewriting_original_content() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    let receipt = seed
+        .receive_notification(notification("Legacy", "Old body"))
+        .await
+        .unwrap();
+    let raw_body = format!("{}éTAIL", "a".repeat(65_535));
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&database))
+        .await
+        .unwrap();
+    // Model an old row awaiting interpreted-content backfill, not a new receipt.
+    sqlx::query("UPDATE notification_threads SET raw_body = ?1, body = 'Legacy plain body', body_content_json = NULL WHERE id = ?2")
+        .bind(&raw_body).bind(receipt.notification_id.get()).execute(&pool).await.unwrap();
+    sqlx::query("PRAGMA user_version = 0")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    drop(seed);
+    let restarted = Daemon::open(DaemonOptions::headless(database))
+        .await
+        .unwrap();
+    let history = restarted.snapshot().await.unwrap().history;
+    assert_eq!(history.len(), 1);
+    let accepted = &history[0].accepted_notification;
+    assert_eq!(accepted.body_content.plain_text().len(), 65_535);
+    assert!(accepted.body_content.plain_text().ends_with('a'));
+    assert_eq!(accepted.raw_body, raw_body);
+    assert_eq!(accepted.body, "Legacy plain body");
+}
+
+#[tokio::test]
 async fn legacy_zero_replacement_metadata_remains_readable_after_restart() {
     let temp = tempfile::tempdir().unwrap();
     let database = temp.path().join("history.db");

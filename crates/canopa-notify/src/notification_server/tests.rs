@@ -81,6 +81,78 @@ fn assert_dbus_error<T: std::fmt::Debug>(result: zbus::Result<T>, expected_name:
 }
 
 #[tokio::test]
+async fn wire_input_limits_reject_before_normalization_without_consuming_ids_or_replacements() {
+    let fixture = ServerFixture::new("InputLimits", NotificationSenderIds::new()).await;
+    assert_eq!(fixture.notify(0, "Original").await.unwrap(), 1);
+    let before = fixture.daemon.snapshot().await.unwrap();
+    let cases = [
+        (1u32, "x".repeat(65_537), Vec::new(), HashMap::new()),
+        // Malformed/duplicate actions still count toward the wire admission budget.
+        (0, String::new(), vec![String::new(); 130], HashMap::new()),
+        (
+            7,
+            String::new(),
+            Vec::new(),
+            (0..65)
+                .map(|index| (format!("x-test-{index}"), OwnedValue::from(true)))
+                .collect(),
+        ),
+        (
+            7,
+            String::new(),
+            Vec::new(),
+            HashMap::from([(
+                "x-test".into(),
+                OwnedValue::try_from(zbus::zvariant::Value::from("private".repeat(600))).unwrap(),
+            )]),
+        ),
+        (
+            7,
+            String::new(),
+            Vec::new(),
+            (0..33)
+                .map(|index| {
+                    (
+                        format!("x-test-{index}"),
+                        OwnedValue::try_from(zbus::zvariant::Value::from("x".repeat(4096)))
+                            .unwrap(),
+                    )
+                })
+                .collect(),
+        ),
+    ];
+    for (replacement, body, actions, hints) in cases {
+        let result: zbus::Result<u32> = fixture
+            .proxy
+            .call(
+                "Notify",
+                &(
+                    "Limits",
+                    replacement,
+                    "",
+                    "Rejected",
+                    body,
+                    actions,
+                    hints,
+                    0i32,
+                ),
+            )
+            .await;
+        let error = result.unwrap_err();
+        assert!(
+            matches!(&error, zbus::Error::MethodError(name, _, _) if name.as_str() == "org.freedesktop.DBus.Error.LimitsExceeded"),
+            "{error:?}"
+        );
+        assert!(!error.to_string().contains("private"));
+        assert_eq!(fixture.daemon.snapshot().await.unwrap(), before);
+        assert!(fixture.daemon.sender_events().await.is_empty());
+    }
+    assert_eq!(fixture.notify(0, "Fresh automatic").await.unwrap(), 2);
+    assert_eq!(fixture.notify(7, "Fresh fixed").await.unwrap(), 7);
+    fixture.close(1).await;
+}
+
+#[tokio::test]
 async fn automatic_ids_skip_retired_caller_tokens() {
     let fixture = ServerFixture::new("RetiredAllocation", NotificationSenderIds::new()).await;
     assert_eq!(fixture.notify(2, "Caller token").await.unwrap(), 2);
