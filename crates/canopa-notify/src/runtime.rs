@@ -22,6 +22,7 @@ use crate::presentation::{
     BannerInteraction, BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter,
     BannerView, NotificationBannerState, PresentationCoordinator,
 };
+use crate::runtime_resources::RuntimeResources;
 use crate::sound::SoundPresenter;
 use crate::sqlite_persisted_state::SqlitePersistedState;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -47,7 +48,7 @@ pub(crate) struct NotificationRuntime {
     lifecycle: NotificationLifecycle<SqlitePersistedState>,
     presentation: PresentationCoordinator,
     banner_state: Arc<Mutex<NotificationBannerState>>,
-    runtime_images: Arc<Mutex<RuntimeImageStore>>,
+    resources: Arc<Mutex<RuntimeResources>>,
     activation_token_provider: Arc<dyn ActivationTokenProvider>,
     sound_presenter: Arc<dyn SoundPresenter>,
     headless: bool,
@@ -64,51 +65,6 @@ pub(crate) struct NotificationRuntime {
     commands: Arc<AsyncMutex<()>>,
     state_version: Arc<AtomicU64>,
     state_changes: watch::Sender<u64>,
-}
-
-#[derive(Clone, Debug)]
-struct RuntimeImageEntry {
-    revision: i64,
-    image: NotificationImageData,
-}
-
-#[derive(Clone, Debug, Default)]
-struct RuntimeImageStore {
-    images: HashMap<InternalNotificationId, RuntimeImageEntry>,
-}
-
-impl RuntimeImageStore {
-    fn replace(
-        &mut self,
-        notification_id: InternalNotificationId,
-        revision: i64,
-        image: Option<NotificationImageData>,
-    ) {
-        match image {
-            Some(image) => {
-                self.images
-                    .insert(notification_id, RuntimeImageEntry { revision, image });
-            }
-            None => {
-                self.images.remove(&notification_id);
-            }
-        }
-    }
-
-    fn remove(&mut self, notification_id: InternalNotificationId) {
-        self.images.remove(&notification_id);
-    }
-
-    fn image_for(
-        &self,
-        notification_id: InternalNotificationId,
-        revision: i64,
-    ) -> Option<NotificationImageData> {
-        self.images
-            .get(&notification_id)
-            .filter(|entry| entry.revision == revision)
-            .map(|entry| entry.image.clone())
-    }
 }
 
 struct TimeoutTask {
@@ -215,7 +171,7 @@ impl NotificationRuntime {
             lifecycle,
             presentation: PresentationCoordinator::new(!headless, banner_presenter),
             banner_state: Arc::new(Mutex::new(NotificationBannerState::new())),
-            runtime_images: Arc::new(Mutex::new(RuntimeImageStore::default())),
+            resources: Arc::new(Mutex::new(RuntimeResources::default())),
             activation_token_provider,
             sound_presenter,
             headless,
@@ -254,6 +210,11 @@ impl NotificationRuntime {
     ) -> anyhow::Result<NotificationReceipt> {
         let policy = self.delivery_policy();
         let decision = policy.decide(&notification);
+        self.resources.lock().unwrap().admit(
+            &notification,
+            decision.outcome,
+            image_data.as_ref(),
+        )?;
         self.record_decision(decision.log.clone());
         let sound_app_identity = notification.app_identity.clone();
         let sound_summary = notification.summary.clone();
@@ -268,7 +229,10 @@ impl NotificationRuntime {
             .await?;
         let receipt = effects.sender_receipt()?;
         on_receipt(&receipt);
-        self.apply_request_images(&effects, image_data);
+        self.resources
+            .lock()
+            .unwrap()
+            .record_receipt(&effects, image_data);
         let sound = (decision.outcome == DeliveryOutcome::Shown && !sound_request.suppress)
             .then_some(NotificationSoundPlayback {
                 notification_id: receipt.notification_id,
@@ -752,7 +716,7 @@ impl NotificationRuntime {
         activation_token: Option<String>,
         sound: Option<NotificationSoundPlayback>,
     ) -> anyhow::Result<()> {
-        self.remove_runtime_images_for_terminal_effects(effects);
+        self.resources.lock().unwrap().release(effects);
         let timeout_changes: Vec<_> = effects.timeout_changes().collect();
         self.pending_timeout_starts
             .lock()
@@ -908,13 +872,13 @@ impl NotificationRuntime {
             .iter()
             .map(|thread| (thread.id, thread.revision))
             .collect();
-        let runtime_images = self.runtime_images.lock().unwrap();
+        let resources = self.resources.lock().unwrap();
         (
             BannerPresentation {
                 banners: threads
                     .into_iter()
                     .map(|thread| {
-                        let image = runtime_images.image_for(thread.id, thread.revision);
+                        let image = resources.image_for(thread.id, thread.revision);
                         BannerView::from_thread(thread, image)
                     })
                     .collect(),
@@ -922,55 +886,6 @@ impl NotificationRuntime {
             },
             visible_revisions,
         )
-    }
-
-    fn apply_request_images(
-        &self,
-        effects: &LifecycleEffects,
-        image_data: Option<NotificationImageData>,
-    ) {
-        let mut runtime_images = self.runtime_images.lock().unwrap();
-        for effect in effects {
-            match effect {
-                LifecycleEffect::ThreadCreated(thread) | LifecycleEffect::ThreadRevised(thread) => {
-                    runtime_images.replace(thread.id, thread.revision, image_data.clone());
-                }
-                LifecycleEffect::SenderReceipt(_)
-                | LifecycleEffect::ThreadSilenced(_)
-                | LifecycleEffect::ThreadDismissed(_)
-                | LifecycleEffect::ThreadExpired(_)
-                | LifecycleEffect::ThreadClosed(_)
-                | LifecycleEffect::ThreadStale(_)
-                | LifecycleEffect::NotificationDropped { .. }
-                | LifecycleEffect::NotificationTimeoutStartsOnDisplay { .. }
-                | LifecycleEffect::NotificationTimeoutCancelledThroughRevision { .. }
-                | LifecycleEffect::ActionInvoked { .. }
-                | LifecycleEffect::SenderClosed { .. } => {}
-            }
-        }
-    }
-
-    fn remove_runtime_images_for_terminal_effects(&self, effects: &LifecycleEffects) {
-        let mut runtime_images = self.runtime_images.lock().unwrap();
-        for effect in effects {
-            match effect {
-                LifecycleEffect::ThreadSilenced(thread)
-                | LifecycleEffect::ThreadDismissed(thread)
-                | LifecycleEffect::ThreadExpired(thread)
-                | LifecycleEffect::ThreadClosed(thread)
-                | LifecycleEffect::ThreadStale(thread) => {
-                    runtime_images.remove(thread.id);
-                }
-                LifecycleEffect::SenderReceipt(_)
-                | LifecycleEffect::ThreadCreated(_)
-                | LifecycleEffect::ThreadRevised(_)
-                | LifecycleEffect::NotificationDropped { .. }
-                | LifecycleEffect::NotificationTimeoutStartsOnDisplay { .. }
-                | LifecycleEffect::NotificationTimeoutCancelledThroughRevision { .. }
-                | LifecycleEffect::ActionInvoked { .. }
-                | LifecycleEffect::SenderClosed { .. } => {}
-            }
-        }
     }
 
     fn notify_state_changed(&self) {

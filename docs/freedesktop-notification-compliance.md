@@ -34,7 +34,8 @@ The protocol baseline is the versioned [Desktop Notifications 1.3 protocol](http
 | Hyperlinks and persistence | Optional; not advertised | Intake, presentation, retention | Explicitly unfinished W12/W13; retaining closed history alone does not satisfy persistence. |
 | Durable paths, installed configuration and reload | Local product/operational contract | Startup + Configuration + Control | `tests/control_spine.rs`, `installed_startup_loads_xdg_configuration_before_accepting_notifications`, failed-install sound test; socket partial-clear regression verifies committed counts. |
 | Atomic storage and safe upgrades | Local reliability contract | Notification History adapter | Twelve SQLite adapter tests, future-schema rejection and partial-clear history tests. Interrupted upgrades, large backfills and additional startup failure fixtures remain W02/W06. |
-| Text/action admission and markup work bounds | Local resource policy, not specification limits | Request decoder + Intake | `tests/input_limits.rs` covers atomic rejection, exact UTF-8/aggregate limits and markup degradation; `wire_input_limits_reject_before_normalization_without_consuming_ids_or_replacements` covers D-Bus errors and unchanged wire identity. Aggregate active resources, assets and worker limits remain W07/W09. |
+| Text/action admission and markup work bounds | Local resource policy, not specification limits | Request decoder + Intake | `tests/input_limits.rs` covers atomic rejection, exact UTF-8/aggregate limits and markup degradation; `wire_input_limits_reject_before_normalization_without_consuming_ids_or_replacements` covers D-Bus errors and unchanged wire identity. Asset decoding and worker limits remain W07/W09. |
+| Aggregate live count/text/raw-image admission | Local resource policy, not specification limits | Notification Runtime | `tests/active_resources.rs` covers exact boundaries, replacements, committed cleanup, failed writes, concurrent last-slot admission and stale history; `live_resource_exhaustion_returns_limits_exceeded_without_consuming_wire_ids` verifies the D-Bus boundary. |
 
 The static profile excludes `icon-multi`; Wayland placement may ignore `x`/`y`. No native portal-v2 backend is claimed. See the existing [portal interoperability notes](xdg-notification-portal-v2.md) for negotiated bridge limitations.
 
@@ -42,7 +43,7 @@ The static profile excludes `icon-multi`; Wayland placement may ignore `x`/`y`. 
 
 [ADR 0029](adr/0029-live-notification-id-boundary.md) defines a daemon-lifetime wire namespace, independent of retained history. Successful live replacements preserve their wire ID. A never-issued nonzero token still creates a new notification for compatibility; an issued but closed token now returns `InvalidArgs`. Clients that reused closed fixed tokens must submit `replaces_id = 0` to start a new notification.
 
-Generated IDs never wrap or reuse committed IDs, including immediately dropped notifications. Exhaustion returns `LimitsExceeded` without a notification mutation. Issued-ID memory uses a contiguous prefix plus at most 4,096 sparse ranges: a caller token requiring another range is rejected, but automatic IDs can still extend the prefix. Receipts that fail before commitment consume no ID. This budget bounds retirement bookkeeping, not the separate active-notification resource budget still tracked in W07.
+Generated IDs never wrap or reuse committed IDs, including immediately dropped notifications. Exhaustion returns `LimitsExceeded` without a notification mutation. Issued-ID memory uses a contiguous prefix plus at most 4,096 sparse ranges: a caller token requiring another range is rejected, but automatic IDs can still extend the prefix. Receipts that fail before commitment consume no ID. This budget bounds retirement bookkeeping, independently of the live-resource admission limits below.
 
 Client disconnection does not close a live notification or make its ID private to that connection. Claimed app identity remains grouping/policy metadata, not authentication. Daemon restart creates a new namespace; clients must discard old IDs when the service owner changes.
 
@@ -69,7 +70,21 @@ An over-limit request returns `org.freedesktop.DBus.Error.LimitsExceeded` withou
 
 Within the byte budget, markup may use at most 64 nested emphasis tags and 256 rich segments during parsing, before whitespace normalization. Exceeding either limit switches the whole body to plain text, preserving decoded text and image alternative text but dropping styling and image references. Empty fallback still follows the ordinary no-op policy; no placeholder text is invented. Malformed tag/entity scans move forward, and leading whitespace is trimmed without repeatedly shifting the remaining body. New receipts retain the complete admitted raw body. Legacy backfill interprets only a UTF-8-safe 64 KiB prefix of oversized raw bodies, without rewriting the original raw or plain body fields.
 
-These checks run after D-Bus deserialization. Nested unknown hint values, aggregate active text/assets, provider streams and sound workers are not bounded by this text policy; existing raw-image limits remain separate. No additional capability is advertised.
+These checks run after D-Bus deserialization. Nested unknown hint values, provider streams and sound workers are not bounded by this text policy; live-resource admission and existing per-image limits are separate. No additional capability is advertised.
+
+## Live-resource admission
+
+[ADR 0032](adr/0032-live-notification-resource-admission.md) defines fixed daemon-wide safety defaults:
+
+| Live resource | Limit |
+| --- | --- |
+| Retained and transient notification threads, including silenced/DND threads | 1,024 |
+| Accepted text, including duplicated identity/body representations, visuals, body-image references/alternatives and actions | 16 MiB |
+| Retained raw-image payloads, including padding/trailing bytes | 64 MiB |
+
+Admission follows the pure delivery-policy decision under the mutation coordinator, before lifecycle writes or receipt registration. Exhaustion returns `LimitsExceeded` without consuming an ID, emitting sender events, evicting existing notifications or altering a rejected replacement. A live replacement gets credit for its previous footprint. Policy/no-op drops need no live capacity; dropped replacements preserve the original footprint. DND/silenced threads consume count/text capacity, but their images are not retained.
+
+Only committed lifecycle effects change accounting. Failed storage writes leave it untouched; committed closure, dismissal, expiry and staleness release capacity. Restart-loaded history is stale before the new runtime begins and consumes no live capacity. These are logical resource limits, not a total RSS guarantee: client projections, transport deserialization, asset decoding, sound workers, provider streams and timer-tombstone reclamation remain separate work. Aggregate image exhaustion rejects the request; it does not silently remove a valid image. No capability, D-Bus signature or schema changes.
 
 ## Expiration semantics
 

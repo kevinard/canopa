@@ -303,7 +303,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Server Request** decoding recognizes a boolean true freedesktop resident hint as **Resident Notification** behavior.
 - Invalid or unresolvable sender-provided visuals do not make an otherwise meaningful notification a **Dropped Notification**.
 - Invalid raw **Notification Image** data does not make an otherwise no-op notification meaningful.
-- Oversized or resource-unsafe sender-provided visual payloads degrade like invalid sender-provided visuals.
+- Individually oversized or resource-unsafe sender-provided visual payloads degrade like invalid sender-provided visuals. Daemon-wide admission exhaustion is a request rejection, not invalid visual content ([ADR 0032](docs/adr/0032-live-notification-resource-admission.md)).
 - A **Body-Embedded Notification Image** may be scaled to fit a body-display surface; natural image dimensions alone do not make the image invalid when the visual can be handled safely.
 - Sender-provided visual references are resolved only as local file references or icon-theme names.
 - An **Accepted Notification** may retain sender-provided **Notification App Icon** references.

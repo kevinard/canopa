@@ -14,6 +14,7 @@ mod notification_id;
 mod notification_server_intake;
 mod presentation;
 mod runtime;
+mod runtime_resources;
 mod sender_events;
 mod sound;
 mod sqlite_persisted_state;
