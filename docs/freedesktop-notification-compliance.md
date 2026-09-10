@@ -4,6 +4,8 @@ Source: Desktop Notifications Specification 1.3, latest upstream publication dat
 
 Canopa Notify should advertise a freedesktop capability only when the sender-visible D-Bus behavior and Notify-owned presentation behavior are both implemented. Unsupported hints are ignored or decoded as request facts according to the spec's optional hint model.
 
+Completion is still in progress. The following status tables describe implemented behavior, not a claim that every selected presentation requirement has passed. The [execution tracker](../.scratch/freedesktop-completion-review/IMPLEMENTATION.md) records remaining work; the [graphical checklist](notification-center-verification.md) has not yet been executed for the Niribar port.
+
 ## D-Bus interface
 
 | Spec surface | Status | Notes |
@@ -15,6 +17,24 @@ Canopa Notify should advertise a freedesktop capability only when the sender-vis
 | `NotificationClosed` | Implemented | Emits reasons for expired, dismissed, sender-closed, and undefined terminal states. New no-op and policy-dropped requests return a nonzero ID and then emit reason `4`; a dropped replacement preserves the existing notification lifecycle. |
 | `ActionInvoked` | Implemented | Preserves opaque, case-sensitive sender action keys. |
 | `ActivationToken` | Implemented | Emits before `ActionInvoked` when a user-originated notification interaction can obtain a Wayland activation token. |
+
+## Requirement-to-evidence matrix
+
+The protocol baseline is the versioned [Desktop Notifications 1.3 protocol](https://specifications.freedesktop.org/notification/1.3/protocol.html); image layout follows [icons and images](https://specifications.freedesktop.org/notification/1.3/icons-and-images.html). Automated executable tests run on a private bus through `bash scripts/test.sh`.
+
+| Requirement | Obligation | Implementation owner | Evidence / remaining verification |
+| --- | --- | --- | --- |
+| Four D-Bus methods, reply types and server information | Core protocol | D-Bus adapter | `tests/dbus_receipt.rs` exercises Notify/Close; binary tests check exact GetCapabilities sets. Dedicated introspection/GetServerInformation assertions remain open in W01. |
+| Nonzero live IDs, replacement and invalidated closures | Core protocol | D-Bus registry + Lifecycle | `dev_dbus_closed_wire_id_cannot_replace_an_unrelated_history_thread`, `concurrent_fixed_wire_token_requests_revise_one_live_thread`, `tests/replacements.rs`. Typed registry extraction and wrap/retirement coverage remain W03. |
+| Required closure/action signal delivery and ordering | Core protocol / advertised actions | Runtime + sender publisher | Binary `dbus_bulk_clear_publishes_all_130_closures`, `notification_server_emits_activation_token_before_action_invoked`; D-Bus action-before-close test. Transport failure and renderer recovery remain W05. |
+| Expiration, resident and transient semantics | Protocol with explicit local timeout policy | Lifecycle + Runtime | `tests/lifecycle.rs`, `tests/presentation.rs`, `tests/control_api.rs`; display-based timing and transient-center exclusion documented below. |
+| Static raw images and legacy spellings | Advertised static profile | Request decoder + Intake | `tests/notification_receipt.rs`, decoder tests: signed channel validation, omitted final-row padding, and source precedence. Theme/file safety work remains W09. |
+| Actions, markup and body images on real surfaces | Optional capabilities, required when advertised | Banner presenter + Niribar host | Banner presentation tests and Niribar `canopa_provider`/`provider_protocol` tests; host v3 port now renders sections, controls, styled bodies and bounded images. All-transient action reachability and actual graphical evidence remain W10/W11. |
+| Hyperlinks and persistence | Optional; not advertised | Intake, presentation, retention | Explicitly unfinished W12/W13; retaining closed history alone does not satisfy persistence. |
+| Durable paths, installed configuration and reload | Local product/operational contract | Startup + Configuration + Control | `tests/control_spine.rs`, `installed_startup_loads_xdg_configuration_before_accepting_notifications`, failed-install sound test; socket partial-clear regression verifies committed counts. |
+| Atomic storage and safe upgrades | Local reliability contract | Notification History adapter | Twelve SQLite adapter tests, future-schema rejection and partial-clear history tests. Interrupted upgrades, large backfills and additional startup failure fixtures remain W02/W06. |
+
+The static profile excludes `icon-multi`; Wayland placement may ignore `x`/`y`. No native portal-v2 backend is claimed. See the existing [portal interoperability notes](xdg-notification-portal-v2.md) for negotiated bridge limitations.
 
 ## Expiration semantics
 

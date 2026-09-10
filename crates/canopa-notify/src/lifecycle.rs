@@ -101,6 +101,37 @@ pub struct LifecycleEffects {
     effects: Vec<LifecycleEffect>,
 }
 
+/// A bulk operation may stop on a storage error after earlier transitions committed.
+/// Consumers must apply `effects` even when `result` reports partial failure.
+#[derive(Debug)]
+pub struct LifecycleBatch {
+    pub effects: LifecycleEffects,
+    pub result: anyhow::Result<()>,
+}
+
+/// Safe operation outcome; the underlying storage error stays out of wire replies.
+#[derive(Debug)]
+pub struct PartialClearError {
+    pub dismissed: usize,
+    source: anyhow::Error,
+}
+
+impl std::fmt::Display for PartialClearError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "clear stopped after {} committed dismissals",
+            self.dismissed
+        )
+    }
+}
+
+impl std::error::Error for PartialClearError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
 impl LifecycleEffects {
     pub(crate) fn empty() -> Self {
         Self::default()
@@ -318,7 +349,7 @@ where
             let thread = self
                 .persist_thread(
                     thread,
-                    PersistPrecondition::ExpectedRevision(expected_revision),
+                    PersistPrecondition::ExpectedActiveRevision(expected_revision),
                 )
                 .await?;
             let mut effects = vec![LifecycleEffect::ThreadRevised(thread.clone())];
@@ -403,26 +434,18 @@ where
 
     async fn replacement_target(
         &self,
-        app_identity: &str,
+        _app_identity: &str,
         replaces_id: Option<i64>,
     ) -> anyhow::Result<Option<NotificationThread>> {
         let Some(replaces_id) = replaces_id else {
             return Ok(None);
         };
 
-        if let Ok(existing) = self.thread(replaces_id).await {
-            return Ok(Some(existing));
-        }
-
         Ok(self
             .active_threads()
             .await?
             .into_iter()
-            .filter(|thread| {
-                thread.accepted_notification.replaces_id == Some(replaces_id)
-                    && thread.accepted_notification.app_identity == app_identity
-            })
-            .max_by_key(|thread| (thread.updated_at, thread.id)))
+            .find(|thread| thread.id == replaces_id))
     }
 
     pub async fn dismiss(&self, notification_id: i64) -> anyhow::Result<LifecycleEffects> {
@@ -445,7 +468,7 @@ where
             return Ok(LifecycleEffects::empty());
         }
 
-        self.transition_active(notification_id, NotificationStatus::Expired)
+        self.transition_thread(thread, NotificationStatus::Expired)
             .await
     }
 
@@ -454,12 +477,49 @@ where
             .await
     }
 
-    pub async fn clear_active_notifications(&self) -> anyhow::Result<LifecycleEffects> {
+    pub async fn clear_active_notifications(&self) -> anyhow::Result<LifecycleBatch> {
         let mut effects = LifecycleEffects::empty();
-        for thread in self.active_threads().await? {
-            effects.extend(self.dismiss(thread.id).await?);
+        for (completed, thread) in self.active_threads().await?.into_iter().enumerate() {
+            match self.dismiss(thread.id).await {
+                Ok(committed) => effects.extend(committed),
+                Err(error) => {
+                    return Ok(LifecycleBatch {
+                        effects,
+                        result: Err(PartialClearError {
+                            dismissed: completed,
+                            source: error,
+                        }
+                        .into()),
+                    });
+                }
+            }
         }
-        Ok(effects)
+        Ok(LifecycleBatch {
+            effects,
+            result: Ok(()),
+        })
+    }
+
+    /// Validate an action without committing it, before bounded external token acquisition.
+    pub(crate) async fn prepare_action(
+        &self,
+        notification_id: i64,
+        action_key: &str,
+    ) -> anyhow::Result<NotificationThread> {
+        let thread = self.thread(notification_id).await?;
+        anyhow::ensure!(
+            thread.status == NotificationStatus::Active,
+            "notification {notification_id} is not active"
+        );
+        anyhow::ensure!(
+            thread
+                .accepted_notification
+                .actions
+                .iter()
+                .any(|action| action.key == action_key),
+            "notification {notification_id} has no action {action_key}"
+        );
+        Ok(thread)
     }
 
     pub async fn invoke_action(
@@ -467,20 +527,21 @@ where
         notification_id: i64,
         action_key: &str,
     ) -> anyhow::Result<LifecycleEffects> {
-        let thread = self.thread(notification_id).await?;
-        if thread.status != NotificationStatus::Active {
-            anyhow::bail!("notification {notification_id} is not active");
-        }
+        self.invoke_action_if_current_revision(notification_id, action_key, None)
+            .await
+    }
 
-        if !thread
-            .accepted_notification
-            .actions
-            .iter()
-            .any(|action| action.key == action_key)
-        {
-            anyhow::bail!("notification {notification_id} has no action {action_key}");
-        }
-
+    pub(crate) async fn invoke_action_if_current_revision(
+        &self,
+        notification_id: i64,
+        action_key: &str,
+        revision: Option<i64>,
+    ) -> anyhow::Result<LifecycleEffects> {
+        let thread = self.prepare_action(notification_id, action_key).await?;
+        anyhow::ensure!(
+            revision.is_none_or(|revision| thread.revision == revision),
+            "notification was replaced before action invocation"
+        );
         let mut effects = LifecycleEffects::new(vec![LifecycleEffect::ActionInvoked {
             notification_id,
             action_key: action_key.to_string(),
@@ -488,7 +549,17 @@ where
         }]);
 
         if !thread.accepted_notification.resident {
-            effects.extend(self.dismiss(notification_id).await?);
+            effects.extend(
+                self.transition_thread(thread, NotificationStatus::Dismissed)
+                    .await?,
+            );
+        } else {
+            let revision = thread.revision;
+            self.persist_thread(
+                thread,
+                PersistPrecondition::ExpectedActiveRevision(revision),
+            )
+            .await?;
         }
 
         Ok(effects)
@@ -524,6 +595,15 @@ where
         status: NotificationStatus,
     ) -> anyhow::Result<LifecycleEffects> {
         let thread = self.thread(notification_id).await?;
+        self.transition_thread(thread, status).await
+    }
+
+    async fn transition_thread(
+        &self,
+        thread: NotificationThread,
+        status: NotificationStatus,
+    ) -> anyhow::Result<LifecycleEffects> {
+        let notification_id = thread.id;
         if thread.status != NotificationStatus::Active {
             anyhow::bail!("notification {notification_id} is not active");
         }

@@ -79,6 +79,49 @@ impl SoundPresenter for RecordingSoundPresenter {
 }
 
 #[tokio::test]
+async fn failed_runtime_configuration_install_preserves_the_active_configuration() {
+    struct RejectSettings;
+    impl SoundPresenter for RejectSettings {
+        fn apply_sound_settings(&self, settings: NotificationSoundSettings) -> anyhow::Result<()> {
+            anyhow::ensure!(settings.theme != "reject", "injected settings failure");
+            Ok(())
+        }
+        fn play_notification_sound(&self, _: NotificationSoundPlayback) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn stop_all_sounds(&self) {}
+        fn supports_sound(&self) -> bool {
+            false
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(
+        DaemonOptions::graphical(temp.path().join("history.db"), NoopBannerPresenter)
+            .with_sound_presenter(RejectSettings),
+    )
+    .await
+    .unwrap();
+    let config = temp.path().join("config.kdl");
+    std::fs::write(&config, "rule app=\"Mail\" outcome=\"silence\"\n").unwrap();
+    daemon.reload_configuration_file(&config).await.unwrap();
+    std::fs::write(
+        &config,
+        "rule app=\"Mail\" outcome=\"drop\"\nsound theme=\"reject\"\n",
+    )
+    .unwrap();
+    assert!(daemon.reload_configuration_file(&config).await.is_err());
+    assert!(
+        daemon.configuration_error().await.is_some(),
+        "runtime install failure was not recorded"
+    );
+    let receipt = daemon
+        .receive_notification(notification("Mail", "Must still be silenced"))
+        .await
+        .unwrap();
+    assert_eq!(receipt.delivery_outcome, DeliveryOutcome::Silenced);
+}
+
+#[tokio::test]
 async fn shown_notification_plays_default_sound_once() {
     let sound = RecordingSoundPresenter::available();
     let daemon = open_graphical_daemon(sound.clone()).await;

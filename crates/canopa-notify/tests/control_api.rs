@@ -78,9 +78,46 @@ async fn notify_control_reports_daemon_status() {
 
     let reply = control.execute(ControlCommand::Status).await.unwrap();
 
-    assert_eq!(
-        reply,
-        ControlReply::Status(canopa_notify::ControlStatus { available: true })
+    let ControlReply::Status(status) = reply else {
+        panic!("expected status")
+    };
+    assert!(status.available);
+    assert!(!status.do_not_disturb);
+    assert_eq!(status.configuration.generation, 0);
+    assert!(status.presentation_error.is_none());
+    assert!(status.sender_publication_error.is_none());
+}
+
+#[tokio::test]
+async fn rejected_actions_do_not_request_activation_tokens() {
+    let provider = FakeActivationTokenProvider::new(["unused-token"]);
+    let (_temp, daemon) = open_daemon_with_activation_provider(provider.clone()).await;
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("Mail", "Message")
+        })
+        .await
+        .unwrap();
+    assert!(
+        daemon
+            .invoke_action(receipt.notification_id, "missing")
+            .await
+            .is_err()
+    );
+    daemon
+        .close_notification(receipt.notification_id)
+        .await
+        .unwrap();
+    assert!(
+        daemon
+            .invoke_action(receipt.notification_id, "open")
+            .await
+            .is_err()
+    );
+    assert!(
+        provider.requested_app_identities().is_empty(),
+        "rejected actions requested compositor tokens"
     );
 }
 

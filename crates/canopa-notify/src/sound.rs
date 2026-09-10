@@ -12,6 +12,7 @@ const SOUND_EXTENSIONS: [&str; 5] = ["oga", "ogg", "wav", "flac", "mp3"];
 const SOUND_PROFILES: [&str; 2] = ["stereo", "mono"];
 
 pub trait SoundPresenter: Send + Sync {
+    /// Failure must leave the previously installed settings intact.
     fn apply_sound_settings(&self, settings: NotificationSoundSettings) -> anyhow::Result<()>;
     fn play_notification_sound(&self, playback: NotificationSoundPlayback) -> anyhow::Result<()>;
     fn stop_all_sounds(&self);

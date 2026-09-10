@@ -7,16 +7,45 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone)]
 pub struct NotifyControl {
     daemon: Daemon,
+    configuration_path: Option<std::path::PathBuf>,
 }
 
 impl NotifyControl {
     pub fn new(daemon: Daemon) -> Self {
-        Self { daemon }
+        Self {
+            daemon,
+            configuration_path: None,
+        }
+    }
+
+    pub fn with_configuration_path(mut self, path: std::path::PathBuf) -> Self {
+        self.configuration_path = Some(path);
+        self
     }
 
     pub async fn execute(&self, command: ControlCommand) -> anyhow::Result<ControlReply> {
         match command {
-            ControlCommand::Status => Ok(ControlReply::Status(ControlStatus { available: true })),
+            ControlCommand::Status => Ok(ControlReply::Status(ControlStatus {
+                available: true,
+                do_not_disturb: self.daemon.do_not_disturb().await?,
+                configuration: self.daemon.configuration_status(),
+                presentation_error: self.daemon.presentation_error(),
+                sender_publication_error: self.daemon.sender_publication_error(),
+            })),
+            ControlCommand::DoNotDisturb => Ok(ControlReply::DoNotDisturb(
+                self.daemon.do_not_disturb().await?,
+            )),
+            ControlCommand::ChangeDoNotDisturb { enabled } => Ok(ControlReply::DoNotDisturb(
+                self.daemon.change_do_not_disturb(enabled).await?,
+            )),
+            ControlCommand::ReloadConfiguration { path } => {
+                let path = path
+                    .or_else(|| self.configuration_path.clone())
+                    .or_else(|| self.daemon.configuration_status().path)
+                    .ok_or_else(|| anyhow::anyhow!("no configuration path is configured"))?;
+                self.daemon.reload_configuration_file(&path).await?;
+                Ok(ControlReply::CommandApplied)
+            }
             ControlCommand::ActiveNotifications => Ok(ControlReply::ActiveNotifications(
                 self.daemon.snapshot().await?.active,
             )),
@@ -52,8 +81,15 @@ impl NotifyControl {
                 Ok(ControlReply::CommandApplied)
             }
             ControlCommand::ClearActiveNotifications => {
-                self.daemon.clear_active_notifications().await?;
-                Ok(ControlReply::CommandApplied)
+                match self.daemon.clear_active_notifications().await {
+                    Ok(()) => Ok(ControlReply::CommandApplied),
+                    Err(error) => match error.downcast_ref::<crate::PartialClearError>() {
+                        Some(partial) => Ok(ControlReply::ClearPartiallyApplied {
+                            dismissed: partial.dismissed,
+                        }),
+                        None => Err(error),
+                    },
+                }
             }
             ControlCommand::DeleteNotificationHistory => {
                 self.daemon.delete_notification_history().await?;
@@ -84,9 +120,17 @@ impl NotifyControl {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "command", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ControlCommand {
     Status,
+    DoNotDisturb,
+    ChangeDoNotDisturb {
+        enabled: Option<bool>,
+    },
+    ReloadConfiguration {
+        path: Option<std::path::PathBuf>,
+    },
     ActiveNotifications,
     NotificationCenterProjection,
     SetAppPermission {
@@ -109,17 +153,24 @@ pub enum ControlCommand {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "reply", content = "value", rename_all = "kebab-case")]
 pub enum ControlReply {
     Status(ControlStatus),
+    DoNotDisturb(bool),
     ActiveNotifications(Vec<NotificationThread>),
     NotificationCenterProjection(NotificationCenterProjection),
     CommandApplied,
+    ClearPartiallyApplied { dismissed: usize },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ControlStatus {
     pub available: bool,
+    pub do_not_disturb: bool,
+    pub configuration: crate::ConfigurationStatus,
+    pub presentation_error: Option<String>,
+    pub sender_publication_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

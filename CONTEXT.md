@@ -507,6 +507,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - The **Notify Control API** exposes all private control surfaces over **Notification Daemon** state, including diagnostic status, active notification output, **Control Commands**, **Notification Center Projection**, and **Notification State Subscription**.
 - Diagnostic **Control Commands** are adapters over the **Notify Control API** module, not a separate control path.
 - The **Notify Control API** returns domain-shaped replies; command-line text, JSON, socket frames, and panel protocol messages are adapter formatting.
+- Installed **Notification Configuration** is loaded before receipt; candidate reloads publish only after successful runtime installation. Configuration generation and presentation/sender publication errors are exposed through control status.
+- **Notification Runtime** serializes lifecycle mutations and committed effects. Authoritative sender publication is ordered and bounded; diagnostic subscriptions are separate and may be lossy ([ADR 0030](docs/adr/0030-mutation-commit-and-effects.md)). Live D-Bus IDs never address retained history directly ([ADR 0029](docs/adr/0029-live-notification-id-boundary.md)).
 - **Activation Token** behavior is the same across **Notify Control API** adapters that invoke a sender-provided **Notification Action**.
 - The **Notify Control API** and panel protocol do not expose **Activation Tokens**; the **Notification Daemon** publishes them through the **Notification Server API**.
 - Pre-release control command formats do not require legacy compatibility.
@@ -560,7 +562,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - After a replacement, **Activation Tokens** use the current revision's **App Identity**.
 - Failure to obtain an **Activation Token** does not prevent the requested **Notification Action** from being invoked.
 - **Activation Token** generation is bounded; the **Notification Daemon** does not hold a **Notification Action** indefinitely while waiting for a token.
-- **Activation Token** generation is attempted only after **Notification Lifecycle** accepts a **Notification Action** invocation.
+- **Activation Token** generation is attempted only after **Notification Lifecycle** validates an active **Notification Action**. Generation precedes mutation; invocation revalidates the observed revision before committing, so a slow compositor never holds the mutation coordinator ([ADR 0030](docs/adr/0030-mutation-commit-and-effects.md)).
 - When an **Activation Token** is emitted for a non-resident **Notification Action**, sender-visible signal order is **Activation Token**, action invocation, then dismissal.
 - Each **Notification Action** invocation on a **Resident Notification** gets its own **Activation Token** opportunity.
 - Inactive **Notification History** is read-only except for deletion.

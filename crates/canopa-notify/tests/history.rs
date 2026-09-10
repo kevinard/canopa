@@ -85,3 +85,72 @@ async fn clear_active_and_delete_history_are_separate_operations() {
     daemon.delete_notification_history().await.unwrap();
     assert_eq!(daemon.snapshot().await.unwrap().history.len(), 0);
 }
+
+#[tokio::test]
+async fn partially_failed_clear_publishes_every_committed_closure() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let daemon = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    daemon
+        .receive_notification(notification("App", "Fails"))
+        .await
+        .unwrap();
+    let cleared = daemon
+        .receive_notification(notification("App", "Clears first"))
+        .await
+        .unwrap();
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&database))
+        .await
+        .unwrap();
+    sqlx::query("CREATE TRIGGER fail_one_clear BEFORE UPDATE ON notification_threads WHEN OLD.summary = 'Fails' BEGIN SELECT RAISE(ABORT, 'injected write failure'); END")
+        .execute(&pool).await.unwrap();
+    let result = daemon.clear_active_notifications().await;
+    pool.close().await;
+    assert!(result.is_err());
+    let active = daemon.snapshot().await.unwrap().active;
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].accepted_notification.summary, "Fails");
+    assert!(daemon.sender_events().await.iter().any(|event| matches!(event,
+        canopa_notify::SenderEvent::NotificationClosed {notification_id, ..} if *notification_id == cleared.notification_id
+    )), "committed closure lost its sender event");
+    assert!(
+        !daemon
+            .visible_banners()
+            .await
+            .iter()
+            .any(|banner| banner.notification_id == cleared.notification_id)
+    );
+}
+
+#[tokio::test]
+async fn future_database_schema_is_rejected_before_recovering_active_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    seed.receive_notification(notification("App", "Still active"))
+        .await
+        .unwrap();
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&database))
+        .await
+        .unwrap();
+    sqlx::query("PRAGMA user_version = 999")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    assert!(
+        Daemon::open(DaemonOptions::headless(database))
+            .await
+            .is_err(),
+        "future schema was accepted"
+    );
+    assert_eq!(seed.snapshot().await.unwrap().active.len(), 1);
+}

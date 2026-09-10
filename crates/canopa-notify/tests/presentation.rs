@@ -52,6 +52,36 @@ impl BannerPresenter for RecordingPresenter {
     }
 }
 
+#[tokio::test]
+async fn renderer_failure_does_not_turn_a_committed_notification_into_a_failed_receipt() {
+    struct OfflinePresenter;
+    impl BannerPresenter for OfflinePresenter {
+        fn replace_visible_banners(&self, _: Vec<BannerView>) -> anyhow::Result<()> {
+            anyhow::bail!("renderer disconnected")
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        OfflinePresenter,
+    ))
+    .await
+    .unwrap();
+    let result = daemon
+        .receive_notification(notification("Mail", "Retained despite renderer failure"))
+        .await;
+    assert!(result.is_ok(), "committed receipt failed: {result:?}");
+    assert!(daemon.presentation_error().is_some());
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(snapshot.active.len(), 1);
+    assert_eq!(snapshot.active[0].id, result.unwrap().notification_id);
+    daemon
+        .close_notification(snapshot.active[0].id)
+        .await
+        .unwrap();
+    assert_eq!(daemon.sender_events().await.len(), 1);
+}
+
 #[derive(Clone, Default)]
 struct DelayedAcknowledgementPresenter {
     updates: Arc<Mutex<Vec<BannerPresentation>>>,

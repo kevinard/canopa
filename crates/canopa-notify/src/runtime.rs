@@ -1,3 +1,4 @@
+use crate::SenderEventPublisher;
 use crate::activation::ActivationTokenProvider;
 use crate::control::{
     AppPermissionControl, CategoryPermissionControl, NotificationCenterGroup,
@@ -22,13 +23,22 @@ use crate::presentation::{
 };
 use crate::sound::SoundPresenter;
 use crate::sqlite_persisted_state::SqlitePersistedState;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{Mutex as AsyncMutex, broadcast, watch};
 
 const ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_millis(100);
+const DIAGNOSTIC_RECORD_LIMIT: usize = 256;
+
+fn record_recent<T>(records: &Mutex<VecDeque<T>>, value: T) {
+    let mut records = records.lock().unwrap();
+    if records.len() == DIAGNOSTIC_RECORD_LIMIT {
+        records.pop_front();
+    }
+    records.push_back(value);
+}
 
 #[derive(Clone)]
 pub(crate) struct NotificationRuntime {
@@ -41,13 +51,16 @@ pub(crate) struct NotificationRuntime {
     sound_presenter: Arc<dyn SoundPresenter>,
     headless: bool,
     activation_token_capable: bool,
-    sender_events: Arc<Mutex<Vec<SenderEvent>>>,
+    sender_events: Arc<Mutex<VecDeque<SenderEvent>>>,
     sender_event_changes: broadcast::Sender<SenderEvent>,
-    decision_logs: Arc<Mutex<Vec<DeliveryDecisionLog>>>,
+    sender_publisher: Arc<Mutex<Option<Arc<dyn SenderEventPublisher>>>>,
+    sender_publication_error: Arc<Mutex<Option<String>>>,
+    decision_logs: Arc<Mutex<VecDeque<DeliveryDecisionLog>>>,
     timeout_tasks: Arc<Mutex<HashMap<i64, TimeoutTask>>>,
     pending_timeout_starts: Arc<Mutex<PendingTimeoutStarts>>,
     loaded_policy_state: Arc<Mutex<LoadedDeliveryPolicyState>>,
-    policy_changes: Arc<AsyncMutex<()>>,
+    // Commit and effect order share one coordinator. External token acquisition is outside it.
+    commands: Arc<AsyncMutex<()>>,
     state_version: Arc<AtomicU64>,
     state_changes: watch::Sender<u64>,
 }
@@ -168,12 +181,14 @@ impl NotificationRuntime {
         banner_presenter: Arc<dyn BannerPresenter>,
         activation_token_provider: Arc<dyn ActivationTokenProvider>,
         sound_presenter: Arc<dyn SoundPresenter>,
+        configuration_rules: Vec<DeliveryPolicyRule>,
     ) -> anyhow::Result<Self> {
         let lifecycle =
             NotificationLifecycle::with_timeout_defaults(storage.clone(), timeout_defaults);
         lifecycle.mark_active_stale().await?;
         storage.prune_history().await?;
         let loaded_policy_state = LoadedDeliveryPolicyState::builder()
+            .config_rules(configuration_rules)
             .do_not_disturb(storage.do_not_disturb().await?)
             .user_rules(
                 storage
@@ -197,20 +212,32 @@ impl NotificationRuntime {
             sound_presenter,
             headless,
             activation_token_capable,
-            sender_events: Arc::new(Mutex::new(Vec::new())),
+            sender_events: Arc::new(Mutex::new(VecDeque::new())),
             sender_event_changes,
-            decision_logs: Arc::new(Mutex::new(Vec::new())),
+            sender_publisher: Arc::new(Mutex::new(None)),
+            sender_publication_error: Arc::new(Mutex::new(None)),
+            decision_logs: Arc::new(Mutex::new(VecDeque::new())),
             timeout_tasks: Arc::new(Mutex::new(HashMap::new())),
             pending_timeout_starts: Arc::new(Mutex::new(PendingTimeoutStarts::default())),
             loaded_policy_state: Arc::new(Mutex::new(loaded_policy_state)),
-            policy_changes: Arc::new(AsyncMutex::new(())),
+            commands: Arc::new(AsyncMutex::new(())),
             state_version: Arc::new(AtomicU64::new(0)),
             state_changes,
         })
     }
 
+    pub(crate) async fn begin_receipt(&self) -> anyhow::Result<tokio::sync::OwnedMutexGuard<()>> {
+        let command = self.commands.clone().lock_owned().await;
+        anyhow::ensure!(
+            self.sender_publication_error().is_none(),
+            "notification transport is unavailable"
+        );
+        Ok(command)
+    }
+
     pub(crate) async fn receive_notification_with_receipt_hook(
         &self,
+        _command: &tokio::sync::OwnedMutexGuard<()>,
         notification: AcceptedNotification,
         image_data: Option<NotificationImageData>,
         expire_timeout: NotificationTimeout,
@@ -248,6 +275,7 @@ impl NotificationRuntime {
 
     pub(crate) async fn drop_notification(
         &self,
+        _command: &tokio::sync::OwnedMutexGuard<()>,
         app_identity: String,
         replaces_id: Option<i64>,
         on_receipt: impl FnOnce(&NotificationReceipt),
@@ -285,25 +313,40 @@ impl NotificationRuntime {
         action_key: &str,
         activation_token: Option<String>,
     ) -> anyhow::Result<()> {
+        let thread = self
+            .lifecycle
+            .prepare_action(notification_id, action_key)
+            .await?;
+        let activation_token = match activation_token.filter(|token| !token.is_empty()) {
+            Some(token) => Some(token),
+            None => {
+                self.activation_token(thread.accepted_notification.app_identity.clone())
+                    .await
+            }
+        };
+        let _command = self.commands.lock().await;
         let effects = self
             .lifecycle
-            .invoke_action(notification_id, action_key)
+            .invoke_action_if_current_revision(notification_id, action_key, Some(thread.revision))
             .await?;
         self.apply_lifecycle_effects_and_notify_with_activation_token(&effects, activation_token)
             .await
     }
 
     pub(crate) async fn dismiss_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+        let _command = self.commands.lock().await;
         let effects = self.lifecycle.dismiss(notification_id).await?;
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
     pub(crate) async fn expire_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+        let _command = self.commands.lock().await;
         let effects = self.lifecycle.expire(notification_id).await?;
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
 
     pub(crate) async fn close_notification(&self, notification_id: i64) -> anyhow::Result<()> {
+        let _command = self.commands.lock().await;
         let effects = self.lifecycle.close(notification_id).await?;
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
@@ -338,7 +381,14 @@ impl NotificationRuntime {
             )
             .await
         } else {
-            self.dismiss_notification(notification_id).await
+            let _command = self.commands.lock().await;
+            let current = self.lifecycle.thread(notification_id).await?;
+            anyhow::ensure!(
+                current.revision == thread.revision,
+                "notification was replaced before activation"
+            );
+            let effects = self.lifecycle.dismiss(notification_id).await?;
+            self.apply_lifecycle_effects_and_notify(&effects).await
         }
     }
 
@@ -357,22 +407,35 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn clear_active_notifications(&self) -> anyhow::Result<()> {
-        let effects = self.lifecycle.clear_active_notifications().await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        let _command = self.commands.lock().await;
+        let batch = self.lifecycle.clear_active_notifications().await?;
+        self.apply_lifecycle_effects_and_notify(&batch.effects)
+            .await?;
+        batch.result
     }
 
     pub(crate) async fn delete_notification_history(&self) -> anyhow::Result<()> {
+        let _command = self.commands.lock().await;
         self.storage.delete_inactive_history().await?;
         self.notify_state_changed();
         Ok(())
     }
 
     pub(crate) async fn set_do_not_disturb(&self, enabled: bool) -> anyhow::Result<()> {
-        let _change = self.policy_changes.lock().await;
+        self.change_do_not_disturb(Some(enabled)).await.map(|_| ())
+    }
+
+    pub(crate) async fn change_do_not_disturb(
+        &self,
+        enabled: Option<bool>,
+    ) -> anyhow::Result<bool> {
+        let _change = self.commands.lock().await;
+        let enabled =
+            enabled.unwrap_or_else(|| !self.loaded_policy_state.lock().unwrap().do_not_disturb());
         self.storage.set_do_not_disturb(enabled).await?;
         self.replace_loaded_policy_state(|state| state.with_do_not_disturb(enabled));
         self.notify_state_changed();
-        Ok(())
+        Ok(enabled)
     }
 
     pub(crate) async fn do_not_disturb(&self) -> anyhow::Result<bool> {
@@ -380,7 +443,7 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn upsert_user_rule(&self, rule: UserRule) -> anyhow::Result<()> {
-        let _change = self.policy_changes.lock().await;
+        let _change = self.commands.lock().await;
         self.storage.upsert_user_rule(&rule).await?;
         self.replace_loaded_policy_state(|state| {
             state.with_user_rule(DeliveryPolicyRule::from(rule))
@@ -412,7 +475,7 @@ impl NotificationRuntime {
         app_identity: &str,
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
-        let _change = self.policy_changes.lock().await;
+        let _change = self.commands.lock().await;
         self.storage
             .remove_user_rule(app_identity, None, urgency)
             .await?;
@@ -429,7 +492,7 @@ impl NotificationRuntime {
         category: &str,
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
-        let _change = self.policy_changes.lock().await;
+        let _change = self.commands.lock().await;
         self.storage
             .remove_user_rule(app_identity, Some(category), urgency)
             .await?;
@@ -445,12 +508,13 @@ impl NotificationRuntime {
         rules: Vec<DeliveryPolicyRule>,
         sound_settings: NotificationSoundSettings,
     ) -> anyhow::Result<()> {
-        let _change = self.policy_changes.lock().await;
+        let _change = self.commands.lock().await;
         if !self.headless {
-            if !sound_settings.enabled {
+            let disable = !sound_settings.enabled;
+            self.sound_presenter.apply_sound_settings(sound_settings)?;
+            if disable {
                 self.sound_presenter.stop_all_sounds();
             }
-            self.sound_presenter.apply_sound_settings(sound_settings)?;
         }
         self.replace_loaded_policy_state(|state| state.with_config_rules(rules));
         self.notify_state_changed();
@@ -458,15 +522,42 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn delivery_decision_logs(&self) -> Vec<DeliveryDecisionLog> {
-        self.decision_logs.lock().unwrap().clone()
+        self.decision_logs.lock().unwrap().iter().cloned().collect()
     }
 
     pub(crate) async fn sender_events(&self) -> Vec<SenderEvent> {
-        self.sender_events.lock().unwrap().clone()
+        self.sender_events.lock().unwrap().iter().cloned().collect()
     }
 
     pub(crate) fn subscribe_sender_events(&self) -> broadcast::Receiver<SenderEvent> {
         self.sender_event_changes.subscribe()
+    }
+
+    pub(crate) fn install_sender_event_publisher(
+        &self,
+        publisher: Arc<dyn SenderEventPublisher>,
+    ) -> anyhow::Result<()> {
+        let mut installed = self.sender_publisher.lock().unwrap();
+        anyhow::ensure!(
+            installed.is_none(),
+            "sender event publisher already installed"
+        );
+        *installed = Some(publisher);
+        Ok(())
+    }
+
+    pub(crate) fn sender_publication_error(&self) -> Option<String> {
+        self.sender_publication_error
+            .lock()
+            .unwrap()
+            .clone()
+            .or_else(|| {
+                self.sender_publisher
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .and_then(|publisher| publisher.error())
+            })
     }
 
     pub(crate) fn supports_activation_tokens(&self) -> bool {
@@ -475,6 +566,10 @@ impl NotificationRuntime {
 
     pub(crate) fn supports_sound(&self) -> bool {
         !self.headless && self.sound_presenter.supports_sound()
+    }
+
+    pub(crate) fn presentation_error(&self) -> Option<String> {
+        self.presentation.error()
     }
 
     pub(crate) async fn notification_center_projection(
@@ -498,7 +593,7 @@ impl NotificationRuntime {
     }
 
     fn record_decision(&self, log: DeliveryDecisionLog) {
-        self.decision_logs.lock().unwrap().push(log);
+        record_recent(&self.decision_logs, log);
     }
 
     fn replace_loaded_policy_state(
@@ -586,7 +681,10 @@ impl NotificationRuntime {
         if let Some(sound) = sound {
             self.play_notification_sound(sound);
         }
-        self.sync_presentation().await?;
+        if let Err(error) = self.sync_presentation().await {
+            // Lifecycle commitment is independent of the replaceable UI projection.
+            eprintln!("level=warn component=presentation event=update_failed error={error:#}");
+        }
         Ok(())
     }
 
@@ -612,9 +710,15 @@ impl NotificationRuntime {
         let events = self
             .sender_events_for_effects(effects, activation_token)
             .await;
-        let mut sender_events = self.sender_events.lock().unwrap();
+        let publisher = self.sender_publisher.lock().unwrap().clone();
         for event in events {
-            sender_events.push(event.clone());
+            if let Some(publisher) = &publisher
+                && let Err(error) = publisher.publish(event.clone()).await
+            {
+                *self.sender_publication_error.lock().unwrap() = Some(format!("{error:#}"));
+                eprintln!("level=error component=transport event=sender_publication_failed");
+            }
+            record_recent(&self.sender_events, event.clone());
             let _ = self.sender_event_changes.send(event);
         }
     }
@@ -631,12 +735,9 @@ impl NotificationRuntime {
                 LifecycleEffect::ActionInvoked {
                     notification_id,
                     action_key,
-                    app_identity,
+                    ..
                 } => {
-                    let activation_token = match activation_token.take() {
-                        Some(activation_token) => Some(activation_token),
-                        None => self.activation_token(app_identity.clone()).await,
-                    };
+                    let activation_token = activation_token.take();
                     if let Some(activation_token) = activation_token {
                         events.push(SenderEvent::ActivationToken {
                             notification_id: *notification_id,
@@ -894,6 +995,7 @@ impl NotificationRuntime {
         notification_id: i64,
         revision: i64,
     ) -> anyhow::Result<()> {
+        let _command = self.commands.lock().await;
         let effects = self
             .lifecycle
             .expire_timeout_if_current_revision(notification_id, revision)
@@ -1058,6 +1160,7 @@ mod tests {
             Arc::new(NoopBannerPresenter),
             Arc::new(NoopActivationTokenProvider),
             Arc::new(NoopSoundPresenter),
+            Vec::new(),
         )
         .await
         .unwrap();

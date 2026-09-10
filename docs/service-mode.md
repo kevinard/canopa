@@ -24,14 +24,26 @@ canopa-notify daemon --headless --socket /tmp/canopa-notify.sock --dev-bus-name 
 
 ## Diagnostics
 
+History and persisted user policy default to `$XDG_STATE_HOME/canopa-notify/history.db` (or `$HOME/.local/state/canopa-notify/history.db`); they no longer depend on the session socket directory. `--database` remains an explicit override. Startup takes socket/database ownership locks before recovery, rejects non-socket endpoint collisions and keeps private state permissions. When no destination exists, it imports an existing legacy socket-adjacent `.db` using a verified SQLite snapshot, preserving the source.
+
+The installed configuration is `$XDG_CONFIG_HOME/canopa-notify/config.kdl` (or `$HOME/.config/canopa-notify/config.kdl`). `daemon --config PATH` overrides it. Initial configuration is loaded before accepting notifications. Invalid reloads keep the last valid configuration and expose the failure in status.
+
 Control commands never start the daemon implicitly:
 
 ```bash
 canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" status
 canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" active --json
+canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" status --json
+canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" dnd on
+canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" dnd toggle
+canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" reload
 ```
 
 If another process already owns the runtime socket or the freedesktop notification service name, startup fails clearly instead of replacing the running daemon.
+
+`dnd` without an argument reports the current state; changes survive restart. `reload [PATH]` installs a validated candidate atomically. `clear` dismisses active notifications; `delete-history` removes inactive local history. JSON status includes configuration generation/error, presentation error and sender-publication error. These controls do not imply a freedesktop `persistence` capability.
+
+Run automated checks on a private session bus with `bash scripts/test.sh`. This avoids replacing the desktop notification service.
 
 ## Graphical Smoke Check
 

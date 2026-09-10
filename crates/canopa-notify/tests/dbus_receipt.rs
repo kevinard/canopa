@@ -1157,3 +1157,215 @@ fn control_socket_round_trip(socket: &std::path::Path, request: &str) -> String 
     stream.read_to_string(&mut response).unwrap();
     response
 }
+
+#[tokio::test]
+async fn dev_dbus_closed_wire_id_cannot_replace_an_unrelated_history_thread() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let bus_name = test_bus_name("IdIsolation");
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+    support::wait_for_status_with_child(&socket, &mut daemon);
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let mut closures = proxy.receive_signal("NotificationClosed").await.unwrap();
+    let retired: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Empty",
+                0u32,
+                "",
+                "",
+                "",
+                Vec::<String>::new(),
+                HashMap::<String, OwnedValue>::new(),
+                0i32,
+            ),
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(2), closures.next())
+        .await
+        .unwrap()
+        .unwrap();
+    let active: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "AppA",
+                0u32,
+                "",
+                "Preserve AppA",
+                "",
+                Vec::<String>::new(),
+                HashMap::<String, OwnedValue>::new(),
+                0i32,
+            ),
+        )
+        .await
+        .unwrap();
+    // A retired wire ID must not fall through to SQLite's row ID namespace.
+    let _: zbus::Result<u32> = proxy
+        .call(
+            "Notify",
+            &(
+                "AppB",
+                retired,
+                "",
+                "Foreign replacement",
+                "",
+                Vec::<String>::new(),
+                HashMap::<String, OwnedValue>::new(),
+                0i32,
+            ),
+        )
+        .await;
+    let snapshot = control_socket_round_trip(&socket, "active-json\n");
+    let preserved = snapshot.contains("Preserve AppA");
+    let close_result: zbus::Result<()> = proxy.call("CloseNotification", &(active,)).await;
+    daemon.kill().ok();
+    daemon.wait().ok();
+    assert!(preserved, "replacement aliased a retained row: {snapshot}");
+    assert!(
+        close_result.is_ok(),
+        "replacement invalidated the unrelated sender ID"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_fixed_wire_token_requests_revise_one_live_thread() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let bus_name = test_bus_name("ConcurrentToken");
+    let mut daemon = support::spawn_canopa_notify([
+        "daemon",
+        "--headless",
+        "--socket",
+        support::path_arg(&socket),
+        "--dev-bus-name",
+        bus_name.as_str(),
+    ]);
+    support::wait_for_status_with_child(&socket, &mut daemon);
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let a = (
+        "App",
+        9999u32,
+        "",
+        "First",
+        "",
+        Vec::<String>::new(),
+        HashMap::<String, OwnedValue>::new(),
+        0i32,
+    );
+    let b = (
+        "App",
+        9999u32,
+        "",
+        "Second",
+        "",
+        Vec::<String>::new(),
+        HashMap::<String, OwnedValue>::new(),
+        0i32,
+    );
+    let (first, second) = tokio::join!(
+        proxy.call::<_, _, u32>("Notify", &a),
+        proxy.call::<_, _, u32>("Notify", &b)
+    );
+    let active = control_socket_round_trip(&socket, "active-json\n");
+    daemon.kill().ok();
+    daemon.wait().ok();
+    assert_eq!(first.unwrap(), 9999);
+    assert_eq!(second.unwrap(), 9999);
+    let active: Vec<serde_json::Value> = serde_json::from_str(&active).unwrap();
+    assert_eq!(
+        active.len(),
+        1,
+        "one wire token created orphan live threads"
+    );
+    assert_eq!(active[0]["revision"], 2);
+}
+
+#[tokio::test]
+async fn installed_startup_loads_xdg_configuration_before_accepting_notifications() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let config_home = temp.path().join("config");
+    std::fs::create_dir_all(config_home.join("canopa-notify")).unwrap();
+    std::fs::write(
+        config_home.join("canopa-notify/config.kdl"),
+        "rule app=\"Configured App\" outcome=\"drop\"\n",
+    )
+    .unwrap();
+    let bus_name = test_bus_name("StartupConfiguration");
+    let mut daemon = support::canopa_notify_command()
+        .env("XDG_CONFIG_HOME", &config_home)
+        .args([
+            "daemon",
+            "--headless",
+            "--socket",
+            support::path_arg(&socket),
+            "--database",
+            support::path_arg(&database),
+            "--dev-bus-name",
+            bus_name.as_str(),
+        ])
+        .spawn()
+        .unwrap();
+    support::wait_for_status_with_child(&socket, &mut daemon);
+    let connection = Connection::session().await.unwrap();
+    let proxy = Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let reply: zbus::Result<u32> = proxy
+        .call(
+            "Notify",
+            &(
+                "Configured App",
+                0u32,
+                "",
+                "Must be dropped",
+                "",
+                Vec::<String>::new(),
+                HashMap::<String, OwnedValue>::new(),
+                0i32,
+            ),
+        )
+        .await;
+    let active = control_socket_round_trip(&socket, "active-json\n");
+    daemon.kill().ok();
+    daemon.wait().ok();
+    assert_ne!(reply.unwrap(), 0);
+    assert_eq!(
+        active.trim(),
+        "[]",
+        "initial request ignored the installed configuration"
+    );
+}

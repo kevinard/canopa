@@ -4,12 +4,21 @@ use crate::{
 };
 use anyhow::Context;
 use kdl::{KdlDocument, KdlEntry, KdlNode};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ConfigurationStatus {
+    pub generation: u64,
+    pub path: Option<PathBuf>,
+    pub error: Option<String>,
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LoadedNotificationConfiguration {
     active: NotificationConfiguration,
     last_error: Option<String>,
+    generation: u64,
+    path: Option<PathBuf>,
 }
 
 impl LoadedNotificationConfiguration {
@@ -22,6 +31,8 @@ impl LoadedNotificationConfiguration {
             Ok(configuration) => {
                 self.active = configuration;
                 self.last_error = None;
+                self.generation = self.generation.saturating_add(1);
+                self.path = Some(path.to_path_buf());
                 Ok(())
             }
             Err(error) => {
@@ -41,6 +52,18 @@ impl LoadedNotificationConfiguration {
 
     pub(crate) fn error(&self) -> Option<String> {
         self.last_error.clone()
+    }
+
+    pub(crate) fn record_error(&mut self, error: &anyhow::Error) {
+        self.last_error = Some(format!("{error:#}"));
+    }
+
+    pub(crate) fn status(&self) -> ConfigurationStatus {
+        ConfigurationStatus {
+            generation: self.generation,
+            path: self.path.clone(),
+            error: self.error(),
+        }
     }
 }
 

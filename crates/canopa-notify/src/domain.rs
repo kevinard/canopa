@@ -467,15 +467,14 @@ impl NotificationImageData {
             return None;
         }
 
-        let width = width as u32;
-        let height = height as u32;
-        let rowstride = rowstride as u32;
-        let channels = channels as u8;
         let expected_channels = if has_alpha { 4 } else { 3 };
         if channels != expected_channels {
             return None;
         }
-
+        let width = width as u32;
+        let height = height as u32;
+        let rowstride = rowstride as u32;
+        let channels = channels as u8;
         if width > MAX_NOTIFICATION_IMAGE_DIMENSION
             || height > MAX_NOTIFICATION_IMAGE_DIMENSION
             || data.len() > MAX_NOTIFICATION_IMAGE_BYTES

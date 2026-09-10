@@ -12,6 +12,7 @@ mod lifecycle;
 mod notification_server_intake;
 mod presentation;
 mod runtime;
+mod sender_events;
 mod sound;
 mod sqlite_persisted_state;
 
@@ -19,6 +20,7 @@ pub use activation::{
     ActivationTokenFuture, ActivationTokenProvider, NoopActivationTokenProvider,
     WaylandActivationTokenProvider,
 };
+pub use configuration::ConfigurationStatus;
 pub use control::{
     AppPermissionControl, CategoryPermissionControl, ControlCommand, ControlReply, ControlStatus,
     NotificationCenterGroup, NotificationCenterItem, NotificationCenterProjection, NotifyControl,
@@ -38,9 +40,9 @@ pub use domain::{
     SenderCloseReason, SenderEvent, Urgency, UserRule, normalize_notification_category,
 };
 pub use lifecycle::{
-    BannerLifecycleChange, LifecycleDelivery, LifecycleEffect, LifecycleEffects,
+    BannerLifecycleChange, LifecycleBatch, LifecycleDelivery, LifecycleEffect, LifecycleEffects,
     NewNotificationThread, NotificationHistory, NotificationLifecycle, NotificationTimeoutChange,
-    PersistPrecondition,
+    PartialClearError, PersistPrecondition,
 };
 pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
@@ -51,6 +53,7 @@ pub use presentation::{
     NotificationBannerState, StructuredLogBannerPresenter,
 };
 pub use runtime::NotificationStateSubscription;
+pub use sender_events::{SenderEventPublication, SenderEventPublisher};
 pub use sound::{NoopSoundPresenter, RodioSoundPresenter, SoundPresenter};
 
 use configuration::LoadedNotificationConfiguration;
@@ -68,6 +71,7 @@ pub struct DaemonOptions {
     banner_presenter: Arc<dyn BannerPresenter>,
     activation_token_provider: Arc<dyn ActivationTokenProvider>,
     sound_presenter: Arc<dyn SoundPresenter>,
+    configuration_path: Option<PathBuf>,
 }
 
 impl DaemonOptions {
@@ -81,6 +85,7 @@ impl DaemonOptions {
             banner_presenter: Arc::new(NoopBannerPresenter),
             activation_token_provider: Arc::new(NoopActivationTokenProvider),
             sound_presenter: Arc::new(NoopSoundPresenter),
+            configuration_path: None,
         }
     }
 
@@ -97,11 +102,17 @@ impl DaemonOptions {
             banner_presenter: Arc::new(banner_presenter),
             activation_token_provider: Arc::new(NoopActivationTokenProvider),
             sound_presenter: Arc::new(NoopSoundPresenter),
+            configuration_path: None,
         }
     }
 
     pub fn with_history_limit(mut self, history_limit: i64) -> Self {
         self.history_limit = history_limit;
+        self
+    }
+
+    pub fn with_configuration_file(mut self, path: PathBuf) -> Self {
+        self.configuration_path = Some(path);
         self
     }
 
@@ -139,10 +150,20 @@ impl DaemonOptions {
 pub struct Daemon {
     runtime: NotificationRuntime,
     configuration: Arc<Mutex<LoadedNotificationConfiguration>>,
+    configuration_reloads: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Daemon {
     pub async fn open(options: DaemonOptions) -> anyhow::Result<Self> {
+        let mut configuration = LoadedNotificationConfiguration::empty();
+        if let Some(path) = &options.configuration_path {
+            configuration.reload_file(path)?;
+            if !options.headless {
+                options
+                    .sound_presenter
+                    .apply_sound_settings(configuration.sound_settings())?;
+            }
+        }
         let storage = SqlitePersistedState::open(
             options.database_path,
             options.retention_days,
@@ -156,11 +177,13 @@ impl Daemon {
             options.banner_presenter,
             options.activation_token_provider,
             options.sound_presenter,
+            configuration.delivery_policy_rules(),
         )
         .await?;
         Ok(Self {
             runtime,
-            configuration: Arc::new(Mutex::new(LoadedNotificationConfiguration::empty())),
+            configuration: Arc::new(Mutex::new(configuration)),
+            configuration_reloads: Arc::new(tokio::sync::Mutex::new(())),
         })
     }
 
@@ -177,6 +200,19 @@ impl Daemon {
         input: NotificationInput,
         on_receipt: impl FnOnce(&NotificationReceipt),
     ) -> anyhow::Result<NotificationReceipt> {
+        self.receive_notification_with_preparation(|| Ok(input), on_receipt)
+            .await
+    }
+
+    /// Resolves transport-local identity while holding the receipt mutation boundary.
+    /// Hooks must be synchronous and nonblocking; receipt registration precedes effects.
+    pub async fn receive_notification_with_preparation(
+        &self,
+        prepare: impl FnOnce() -> anyhow::Result<NotificationInput>,
+        on_receipt: impl FnOnce(&NotificationReceipt),
+    ) -> anyhow::Result<NotificationReceipt> {
+        let command = self.runtime.begin_receipt().await?;
+        let input = prepare()?;
         let expire_timeout = input.expire_timeout;
         let accepted = match intake_notification(input) {
             NotificationIntakeResult::Accepted(accepted) => *accepted,
@@ -186,13 +222,14 @@ impl Daemon {
             } => {
                 return self
                     .runtime
-                    .drop_notification(app_identity, replaces_id, on_receipt)
+                    .drop_notification(&command, app_identity, replaces_id, on_receipt)
                     .await;
             }
         };
 
         self.runtime
             .receive_notification_with_receipt_hook(
+                &command,
                 accepted.notification,
                 accepted.image_data,
                 expire_timeout,
@@ -273,6 +310,10 @@ impl Daemon {
         self.runtime.set_do_not_disturb(enabled).await
     }
 
+    pub async fn change_do_not_disturb(&self, enabled: Option<bool>) -> anyhow::Result<bool> {
+        self.runtime.change_do_not_disturb(enabled).await
+    }
+
     pub async fn do_not_disturb(&self) -> anyhow::Result<bool> {
         self.runtime.do_not_disturb().await
     }
@@ -307,17 +348,29 @@ impl Daemon {
     }
 
     pub async fn reload_configuration_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
-        let (rules, sound_settings) = {
-            let mut configuration = self.configuration.lock().unwrap();
-            configuration.reload_file(path)?;
-            (
-                configuration.delivery_policy_rules(),
-                configuration.sound_settings(),
+        let _reload = self.configuration_reloads.lock().await;
+        let mut candidate = self.configuration.lock().unwrap().clone();
+        if let Err(error) = candidate.reload_file(path) {
+            self.configuration.lock().unwrap().record_error(&error);
+            return Err(error);
+        }
+        if let Err(error) = self
+            .runtime
+            .install_configuration(
+                candidate.delivery_policy_rules(),
+                candidate.sound_settings(),
             )
-        };
-        self.runtime
-            .install_configuration(rules, sound_settings)
             .await
+        {
+            self.configuration.lock().unwrap().record_error(&error);
+            return Err(error);
+        }
+        *self.configuration.lock().unwrap() = candidate;
+        Ok(())
+    }
+
+    pub fn configuration_status(&self) -> ConfigurationStatus {
+        self.configuration.lock().unwrap().status()
     }
 
     pub async fn configuration_error(&self) -> Option<String> {
@@ -336,12 +389,29 @@ impl Daemon {
         self.runtime.subscribe_sender_events()
     }
 
+    /// Installs the single authoritative transport, before exposing its request interface.
+    pub fn install_sender_event_publisher(
+        &self,
+        publisher: impl SenderEventPublisher + 'static,
+    ) -> anyhow::Result<()> {
+        self.runtime
+            .install_sender_event_publisher(Arc::new(publisher))
+    }
+
+    pub fn sender_publication_error(&self) -> Option<String> {
+        self.runtime.sender_publication_error()
+    }
+
     pub fn supports_activation_tokens(&self) -> bool {
         self.runtime.supports_activation_tokens()
     }
 
     pub fn supports_sound(&self) -> bool {
         self.runtime.supports_sound()
+    }
+
+    pub fn presentation_error(&self) -> Option<String> {
+        self.runtime.presentation_error()
     }
 
     pub(crate) async fn notification_center_projection(

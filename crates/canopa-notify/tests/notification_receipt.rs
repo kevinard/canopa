@@ -10,6 +10,46 @@ use canopa_notify::{
 use notifications::{blank_notification, notification_with_body};
 
 #[tokio::test]
+async fn completed_notification_churn_keeps_only_bounded_diagnostics() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    for _ in 0..600 {
+        let receipt = daemon
+            .receive_notification(NotificationInput {
+                transient: true,
+                expire_timeout: NotificationTimeout::Never,
+                ..notification_with_body("Churn", "One event", "")
+            })
+            .await
+            .unwrap();
+        daemon
+            .close_notification(receipt.notification_id)
+            .await
+            .unwrap();
+    }
+    assert!(daemon.sender_events().await.len() <= 256);
+    assert!(daemon.delivery_decision_logs().await.len() <= 256);
+    assert!(daemon.visible_banners().await.is_empty());
+    assert!(daemon.snapshot().await.unwrap().history.is_empty());
+}
+
+#[test]
+fn raw_image_channels_are_validated_before_narrowing() {
+    for channels in [-253, -252, 259, 260, i32::MAX, i32::MIN] {
+        for alpha in [false, true] {
+            assert!(
+                NotificationImageData::from_freedesktop(1, 1, 4, alpha, 8, channels, vec![0; 4])
+                    .is_none(),
+                "accepted channel count {channels}"
+            );
+        }
+    }
+    assert!(
+        NotificationImageData::from_freedesktop(1, 2, 4, false, 8, 3, vec![0; 7]).is_some(),
+        "final-row padding is optional"
+    );
+}
+
+#[tokio::test]
 async fn default_allowed_notification_is_persisted_as_an_active_thread() {
     let daemon = daemon_support::open_headless_daemon().await;
 

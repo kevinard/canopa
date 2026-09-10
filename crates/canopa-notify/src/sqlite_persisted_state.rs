@@ -6,12 +6,15 @@ use crate::{
     NotificationHistory, NotificationSnapshot, NotificationStatus, NotificationThread,
     PersistPrecondition, Urgency, UserRule, normalize_notification_category,
 };
-use anyhow::Context;
 use sqlx::query::Query;
 use sqlx::sqlite::{SqliteArguments, SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
-use sqlx::{Row, Sqlite, SqlitePool};
+use sqlx::{Row, Sqlite, SqliteConnection, SqlitePool};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::PathBuf;
+#[cfg(test)]
 use std::str::FromStr;
+
+const CURRENT_SCHEMA_VERSION: i64 = 1;
 
 #[derive(Clone)]
 pub(crate) struct SqlitePersistedState {
@@ -380,17 +383,46 @@ impl SqlitePersistedState {
             std::fs::create_dir_all(parent)?;
         }
 
-        let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
-            .with_context(|| format!("invalid SQLite database path {}", path.display()))?
-            .create_if_missing(true);
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
+            .open(&path)?;
+        let metadata = file.metadata()?;
+        anyhow::ensure!(
+            metadata.is_file() && metadata.uid() == rustix::process::geteuid().as_raw(),
+            "notification database must be an owned regular file"
+        );
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .busy_timeout(std::time::Duration::from_secs(5));
 
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(options)
             .await?;
 
-        Self::create_schema(&pool).await?;
-        Self::migrate_schema(&pool).await?;
+        let mut transaction = pool.begin().await?;
+        let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(&mut *transaction)
+            .await?;
+        anyhow::ensure!(
+            version <= CURRENT_SCHEMA_VERSION,
+            "notification database schema {version} is newer than supported schema {CURRENT_SCHEMA_VERSION}"
+        );
+        if version == 0 {
+            // Version 1 adopts every supported pre-release schema atomically.
+            Self::create_schema(&mut transaction).await?;
+            Self::migrate_schema(&mut transaction).await?;
+            sqlx::raw_sql(include_str!("../migrations/0001-baseline.sql"))
+                .execute(&mut *transaction)
+                .await?;
+        }
+        transaction.commit().await?;
 
         Ok(Self {
             pool,
@@ -401,7 +433,7 @@ impl SqlitePersistedState {
         })
     }
 
-    async fn create_schema(pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn create_schema(connection: &mut SqliteConnection) -> anyhow::Result<()> {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS daemon_metadata (
@@ -410,7 +442,7 @@ impl SqlitePersistedState {
             )
             "#,
         )
-        .execute(pool)
+        .execute(&mut *connection)
         .await?;
 
         sqlx::query(
@@ -426,7 +458,7 @@ impl SqlitePersistedState {
             )
             "#,
         )
-        .execute(pool)
+        .execute(&mut *connection)
         .await?;
 
         sqlx::query(
@@ -457,36 +489,36 @@ impl SqlitePersistedState {
             )
             "#,
         )
-        .execute(pool)
+        .execute(&mut *connection)
         .await?;
 
         Ok(())
     }
 
-    async fn migrate_schema(pool: &SqlitePool) -> anyhow::Result<()> {
-        Self::migrate_user_rule_categories(pool).await?;
-        Self::add_nullable_column_if_missing(pool, "replaces_id", "INTEGER").await?;
-        Self::add_nullable_column_if_missing(pool, "app_icon_json", "TEXT").await?;
-        Self::add_nullable_column_if_missing(pool, "image_reference_json", "TEXT").await?;
-        Self::add_nullable_column_if_missing(pool, "body_content_json", "TEXT").await?;
-        Self::backfill_body_content(pool).await?;
+    async fn migrate_schema(connection: &mut SqliteConnection) -> anyhow::Result<()> {
+        Self::migrate_user_rule_categories(&mut *connection).await?;
+        Self::add_nullable_column_if_missing(&mut *connection, "replaces_id", "INTEGER").await?;
+        Self::add_nullable_column_if_missing(&mut *connection, "app_icon_json", "TEXT").await?;
+        Self::add_nullable_column_if_missing(&mut *connection, "image_reference_json", "TEXT")
+            .await?;
+        Self::add_nullable_column_if_missing(&mut *connection, "body_content_json", "TEXT").await?;
+        Self::backfill_body_content(&mut *connection).await?;
 
         Ok(())
     }
 
-    async fn migrate_user_rule_categories(pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn migrate_user_rule_categories(connection: &mut SqliteConnection) -> anyhow::Result<()> {
         let category_column: Option<String> = sqlx::query_scalar(
             "SELECT name FROM pragma_table_info('user_rules') WHERE name = 'category'",
         )
-        .fetch_optional(pool)
+        .fetch_optional(&mut *connection)
         .await?;
         if category_column.is_some() {
             return Ok(());
         }
 
-        let mut transaction = pool.begin().await?;
         sqlx::query("ALTER TABLE user_rules RENAME TO legacy_user_rules")
-            .execute(&mut *transaction)
+            .execute(&mut *connection)
             .await?;
         sqlx::query(
             r#"
@@ -501,7 +533,7 @@ impl SqlitePersistedState {
             )
             "#,
         )
-        .execute(&mut *transaction)
+        .execute(&mut *connection)
         .await?;
         sqlx::query(
             r#"
@@ -512,20 +544,19 @@ impl SqlitePersistedState {
             FROM legacy_user_rules
             "#,
         )
-        .execute(&mut *transaction)
+        .execute(&mut *connection)
         .await?;
         sqlx::query("DROP TABLE legacy_user_rules")
-            .execute(&mut *transaction)
+            .execute(&mut *connection)
             .await?;
-        transaction.commit().await?;
         Ok(())
     }
 
-    async fn backfill_body_content(pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn backfill_body_content(connection: &mut SqliteConnection) -> anyhow::Result<()> {
         let rows = sqlx::query(
             "SELECT id, raw_body FROM notification_threads WHERE body_content_json IS NULL OR body_content_json = ''",
         )
-        .fetch_all(pool)
+        .fetch_all(&mut *connection)
         .await?;
 
         for row in rows {
@@ -535,7 +566,7 @@ impl SqlitePersistedState {
             sqlx::query("UPDATE notification_threads SET body_content_json = ?1 WHERE id = ?2")
                 .bind(body_content_json)
                 .bind(id)
-                .execute(pool)
+                .execute(&mut *connection)
                 .await?;
         }
 
@@ -543,7 +574,7 @@ impl SqlitePersistedState {
     }
 
     async fn add_nullable_column_if_missing(
-        pool: &SqlitePool,
+        connection: &mut SqliteConnection,
         column: &str,
         sql_type: &str,
     ) -> anyhow::Result<()> {
@@ -551,14 +582,14 @@ impl SqlitePersistedState {
             "SELECT name FROM pragma_table_info('notification_threads') WHERE name = ?1",
         )
         .bind(column)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *connection)
         .await?;
 
         if existing.is_none() {
             sqlx::query(&format!(
                 "ALTER TABLE notification_threads ADD COLUMN {column} {sql_type}"
             ))
-            .execute(pool)
+            .execute(&mut *connection)
             .await?;
         }
 
@@ -672,13 +703,21 @@ impl SqlitePersistedState {
     }
 
     pub(crate) async fn prune_history(&self) -> anyhow::Result<()> {
-        let cutoff = now_millis() - self.retention.days.max(0) * 24 * 60 * 60 * 1_000;
+        let mut transaction = self.pool.begin().await?;
+        self.prune_history_in(&mut transaction).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    async fn prune_history_in(&self, connection: &mut SqliteConnection) -> anyhow::Result<()> {
+        let cutoff =
+            now_millis().saturating_sub(self.retention.days.max(0).saturating_mul(86_400_000));
 
         sqlx::query(
             "DELETE FROM notification_threads WHERE status != 'active' AND updated_at < ?1",
         )
         .bind(cutoff)
-        .execute(&self.pool)
+        .execute(&mut *connection)
         .await?;
 
         sqlx::query(
@@ -695,16 +734,10 @@ impl SqlitePersistedState {
             "#,
         )
         .bind(self.retention.history_limit.max(0))
-        .execute(&self.pool)
+        .execute(&mut *connection)
         .await?;
 
         Ok(())
-    }
-
-    // Call after fetching the write result so lifecycle effects do not depend on retention keeping the row.
-    async fn finish_history_write<T>(&self, value: T) -> anyhow::Result<T> {
-        self.prune_history().await?;
-        Ok(value)
     }
 }
 
@@ -725,14 +758,20 @@ impl NotificationHistory for SqlitePersistedState {
             anyhow::bail!("transient notifications cannot be written to persisted history");
         }
         let record = NotificationThreadRecord::from_new_thread(thread)?;
-        let sql = notification_thread_insert_sql();
-        let id = record
+        let sql = format!(
+            "{} RETURNING {}",
+            notification_thread_insert_sql(),
+            notification_thread_columns()
+        );
+        let mut transaction = self.pool.begin().await?;
+        let row = record
             .bind_insert(sqlx::query(&sql))
-            .execute(&self.pool)
-            .await?
-            .last_insert_rowid();
-        let thread = self.thread(id).await?;
-        self.finish_history_write(thread).await
+            .fetch_one(&mut *transaction)
+            .await?;
+        let thread = NotificationThreadRecord::from_row(&row)?.into_thread()?;
+        self.prune_history_in(&mut transaction).await?;
+        transaction.commit().await?;
+        Ok(thread)
     }
 
     async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
@@ -757,25 +796,40 @@ impl NotificationHistory for SqlitePersistedState {
             PersistPrecondition::ExpectedRevision(_) => None,
             PersistPrecondition::ExpectedActiveRevision(_) => Some(NotificationStatus::Active),
         };
-        let sql = notification_thread_update_sql();
-        let result = record
+        let sql = format!(
+            "{} RETURNING {}",
+            notification_thread_update_sql(),
+            notification_thread_columns()
+        );
+        let mut transaction = self.pool.begin().await?;
+        let row = record
             .bind_update(sqlx::query(&sql), expected_revision, expected_status)?
-            .execute(&self.pool)
+            .fetch_optional(&mut *transaction)
             .await?;
 
-        if result.rows_affected() == 0 {
+        let Some(row) = row else {
             anyhow::bail!(
                 "failed to persist notification thread {}; persistence precondition was not met",
                 thread_id
             );
-        }
+        };
 
-        let thread = self.thread(thread_id).await?;
-        self.finish_history_write(thread).await
+        let thread = NotificationThreadRecord::from_row(&row)?.into_thread()?;
+        self.prune_history_in(&mut transaction).await?;
+        transaction.commit().await?;
+        Ok(thread)
     }
 
     async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
-        Ok(self.snapshot().await?.active)
+        let sql = notification_thread_select_sql(
+            "WHERE status = 'active' ORDER BY created_at DESC, id DESC",
+        );
+        sqlx::query(&sql)
+            .fetch_all(&self.pool)
+            .await?
+            .iter()
+            .map(|row| NotificationThreadRecord::from_row(row)?.into_thread())
+            .collect()
     }
 }
 
@@ -870,6 +924,40 @@ mod tests {
 
         let snapshot = storage.snapshot().await.unwrap();
         assert_eq!(summaries(&snapshot.history), vec!["new"]);
+    }
+
+    #[tokio::test]
+    async fn retention_failure_rolls_back_the_notification_write() {
+        let (_temp, storage) = open_history(10).await;
+        storage
+            .create_thread(new_thread(
+                "Retained",
+                NotificationStatus::Dismissed,
+                now_millis(),
+            ))
+            .await
+            .unwrap();
+        sqlx::query("CREATE TRIGGER fail_retention BEFORE DELETE ON notification_threads BEGIN SELECT RAISE(ABORT, 'injected retention failure'); END")
+            .execute(&storage.pool).await.unwrap();
+        let storage = storage.with_history_limit(0);
+        assert!(
+            storage
+                .create_thread(new_thread(
+                    "Must not commit",
+                    NotificationStatus::Active,
+                    now_millis()
+                ))
+                .await
+                .is_err()
+        );
+        assert!(
+            storage.active_threads().await.unwrap().is_empty(),
+            "write committed despite a failed result"
+        );
+        assert_eq!(
+            summaries(&storage.snapshot().await.unwrap().history),
+            vec!["Retained"]
+        );
     }
 
     #[tokio::test]

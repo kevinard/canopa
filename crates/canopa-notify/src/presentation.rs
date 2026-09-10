@@ -2044,6 +2044,7 @@ fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
 pub(crate) struct PresentationCoordinator {
     enabled: bool,
     banner_presenter: Arc<dyn BannerPresenter>,
+    last_error: Arc<Mutex<Option<String>>>,
 }
 
 impl PresentationCoordinator {
@@ -2051,6 +2052,7 @@ impl PresentationCoordinator {
         Self {
             enabled,
             banner_presenter,
+            last_error: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -2060,10 +2062,18 @@ impl PresentationCoordinator {
         acknowledgement: BannerPresentationAcknowledgement,
     ) -> anyhow::Result<()> {
         if self.enabled {
-            self.banner_presenter
-                .replace_banner_presentation_with_acknowledgement(presentation, acknowledgement)?;
+            let result = self
+                .banner_presenter
+                .replace_banner_presentation_with_acknowledgement(presentation, acknowledgement);
+            *self.last_error.lock().unwrap() =
+                result.as_ref().err().map(|error| format!("{error:#}"));
+            result?;
         }
         Ok(())
+    }
+
+    pub(crate) fn error(&self) -> Option<String> {
+        self.last_error.lock().unwrap().clone()
     }
 }
 

@@ -3,6 +3,19 @@
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u16 = 3;
+pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
+pub const MAX_INTERACTIVE_ELEMENTS: usize = 8192;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidPanelContent;
+
+impl std::fmt::Display for InvalidPanelContent {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("invalid or excessive panel identifiers, actions, or controls")
+    }
+}
+
+impl std::error::Error for InvalidPanelContent {}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderHandshake {
@@ -46,6 +59,47 @@ pub struct PanelContent {
 }
 
 impl PanelContent {
+    /// Validate the same opaque interaction contract in providers and hosts.
+    pub fn validate(&self) -> Result<(), InvalidPanelContent> {
+        use std::collections::HashSet;
+        let mut section_ids = HashSet::new();
+        let mut item_ids = HashSet::new();
+        let mut count = self.actions.len();
+        validate_actions(&self.actions)?;
+        for section in &self.sections {
+            if section.id.is_empty() || !section_ids.insert(&section.id) {
+                return Err(InvalidPanelContent);
+            }
+            let mut controls = HashSet::new();
+            for control in &section.controls {
+                if control.key.is_empty()
+                    || control.label.is_empty()
+                    || !controls.insert(&control.key)
+                {
+                    return Err(InvalidPanelContent);
+                }
+                let mut values = HashSet::new();
+                for option in &control.options {
+                    if option.label.is_empty() || !values.insert(&option.value) {
+                        return Err(InvalidPanelContent);
+                    }
+                }
+                count = count.saturating_add(control.options.len());
+            }
+            for item in &section.items {
+                if item.id.is_empty() || !item_ids.insert(&item.id) {
+                    return Err(InvalidPanelContent);
+                }
+                validate_actions(&item.actions)?;
+                count = count.saturating_add(item.actions.len());
+            }
+        }
+        if count > MAX_INTERACTIVE_ELEMENTS || item_ids.len() > 4096 || section_ids.len() > 1024 {
+            return Err(InvalidPanelContent);
+        }
+        Ok(())
+    }
+
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
@@ -186,6 +240,19 @@ impl PanelAction {
             value: None,
         }
     }
+}
+
+fn validate_actions(actions: &[PanelAction]) -> Result<(), InvalidPanelContent> {
+    let mut keys = std::collections::HashSet::new();
+    for action in actions {
+        if action.key.is_empty()
+            || action.label.is_empty()
+            || !keys.insert((&action.key, &action.value))
+        {
+            return Err(InvalidPanelContent);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

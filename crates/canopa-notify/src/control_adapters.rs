@@ -13,7 +13,10 @@ use std::io::{BufRead, Read, Write};
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::{Path, PathBuf};
 use std::thread;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+const MAX_CONTROL_FRAME_BYTES: usize = 64 * 1024;
+const CONTROL_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 const PANEL_NOTIFICATION_ACTION_KEY: &str = "canopa-notify:notification-action";
 const PANEL_ACTIVATE_ITEM_KEY: &str = "canopa-notify:activate-item";
@@ -22,20 +25,28 @@ const PANEL_CATEGORY_PERMISSION_KEY_PREFIX: &str = "canopa-notify:category-permi
 const PANEL_CLEAR_ACTIVE_KEY: &str = "canopa-notify:clear-active";
 const PANEL_DELETE_HISTORY_KEY: &str = "canopa-notify:delete-history";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CtlRequest {
     Status,
     ActiveJson,
     ActiveCount,
+    Command(ControlCommand),
 }
 
 impl CtlRequest {
-    fn line(self) -> &'static str {
-        match self {
+    fn line(&self) -> String {
+        let line = match self {
             Self::Status => SocketControlRequest::Status.line(),
             Self::ActiveJson => SocketControlRequest::ActiveJson.line(),
             Self::ActiveCount => SocketControlRequest::ActiveCount.line(),
-        }
+            Self::Command(command) => {
+                return format!(
+                    "control {}\n",
+                    serde_json::to_string(command).expect("control command serialization")
+                );
+            }
+        };
+        line.to_string()
     }
 }
 
@@ -46,10 +57,35 @@ pub(crate) fn run_ctl(socket: &Path, request: CtlRequest) -> anyhow::Result<()> 
             socket.display()
         )
     })?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
+    stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
     stream.write_all(request.line().as_bytes())?;
     let mut response = String::new();
     stream.read_to_string(&mut response)?;
-    print!("{response}");
+    anyhow::ensure!(
+        !response.is_empty(),
+        "Canopa Notify daemon closed the control connection without a reply"
+    );
+    anyhow::ensure!(
+        !response.starts_with("error "),
+        "Canopa Notify request failed: {}",
+        response.trim()
+    );
+    if matches!(request, CtlRequest::Command(_)) {
+        match serde_json::from_str::<ControlReply>(&response)? {
+            ControlReply::DoNotDisturb(enabled) => {
+                println!("{}", if enabled { "on" } else { "off" })
+            }
+            ControlReply::CommandApplied => println!("ok"),
+            ControlReply::ClearPartiallyApplied { dismissed } => anyhow::bail!(
+                "clear stopped after {dismissed} committed dismissals; remaining notifications were not cleared"
+            ),
+            ControlReply::Status(status) => println!("{}", serde_json::to_string_pretty(&status)?),
+            reply => println!("{}", serde_json::to_string(&reply)?),
+        }
+    } else {
+        print!("{response}");
+    }
     Ok(())
 }
 
@@ -123,17 +159,36 @@ pub(crate) async fn handle_connection(
 ) -> anyhow::Result<()> {
     let mut stream = BufReader::new(stream);
     let mut request = String::new();
-    stream.read_line(&mut request).await?;
+    {
+        let mut limited = (&mut stream).take((MAX_CONTROL_FRAME_BYTES + 1) as u64);
+        tokio::time::timeout(CONTROL_READ_TIMEOUT, limited.read_line(&mut request)).await??;
+    }
+    if request.len() > MAX_CONTROL_FRAME_BYTES || !request.ends_with('\n') {
+        stream
+            .get_mut()
+            .write_all(b"error control frame too large or incomplete\n")
+            .await?;
+        stream.get_mut().shutdown().await?;
+        return Ok(());
+    }
     let request = request.trim_end_matches(['\r', '\n']);
-    eprintln!("level=info component=control event=request command={request}");
     let request = SocketControlRequest::parse(request);
+    eprintln!(
+        "level=info component=control event=request command={}",
+        request.kind()
+    );
 
     if matches!(request, SocketControlRequest::PanelSubscribe) {
         stream_projection_subscription(stream.get_mut(), control).await?;
         return Ok(());
     }
 
-    let response = control_socket_response(request, &control).await?;
+    let response = control_socket_response(request, &control)
+        .await
+        .unwrap_or_else(|_| {
+            "error request rejected; inspect daemon status for configuration or health errors\n"
+                .to_string()
+        });
 
     let stream = stream.get_mut();
     stream.write_all(response.as_bytes()).await?;
@@ -178,6 +233,7 @@ enum SocketControlRequest {
         action_key: String,
     },
     PanelInteraction(ControlCommand),
+    TypedCommand(ControlCommand),
     Unsupported,
 }
 
@@ -222,7 +278,24 @@ const SOCKET_CONTROL_REQUESTS: &[SocketControlRequestSpec] = &[
 ];
 
 impl SocketControlRequest {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::TypedCommand(_) => "control",
+            Self::PanelInteraction(_) => "panel-interaction",
+            Self::InvokeNotificationAction { .. } => "invoke-action",
+            _ => self
+                .spec()
+                .map(SocketControlRequestSpec::request_token)
+                .unwrap_or("unsupported"),
+        }
+    }
+
     fn parse(request: &str) -> Self {
+        if let Some(json) = request.strip_prefix("control ") {
+            return serde_json::from_str(json)
+                .map(Self::TypedCommand)
+                .unwrap_or(Self::Unsupported);
+        }
         if let Some(rest) = request.strip_prefix("invoke-action ") {
             return parse_invoke_action_request(rest).unwrap_or(Self::Unsupported);
         }
@@ -250,12 +323,15 @@ impl SocketControlRequest {
                 notification_id: *notification_id,
                 action_key: action_key.clone(),
             }),
-            Self::PanelInteraction(command) => Some(command.clone()),
+            Self::PanelInteraction(command) | Self::TypedCommand(command) => Some(command.clone()),
             _ => self.spec().and_then(|spec| spec.command.clone()),
         }
     }
 
     fn format_reply(&self, reply: ControlReply) -> anyhow::Result<String> {
+        if matches!(self, Self::TypedCommand(_)) {
+            return Ok(serde_json::to_string(&reply)? + "\n");
+        }
         if matches!(
             self,
             Self::InvokeNotificationAction { .. } | Self::PanelInteraction(_)
@@ -326,6 +402,11 @@ fn format_panel_snapshot_reply(reply: ControlReply) -> anyhow::Result<String> {
 }
 
 fn format_command_applied_reply(reply: ControlReply) -> anyhow::Result<String> {
+    if let ControlReply::ClearPartiallyApplied { dismissed } = reply {
+        return Ok(format!(
+            "error clear stopped after {dismissed} committed dismissals\n"
+        ));
+    }
     let ControlReply::CommandApplied = reply else {
         return Err(unexpected_control_reply());
     };
@@ -550,6 +631,54 @@ fn app_permission_from_panel_value(value: &str) -> Option<AppPermissionControl> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn partial_clear_reports_committed_count_over_control_socket() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+        let daemon =
+            canopa_notify::Daemon::open(canopa_notify::DaemonOptions::headless(database.clone()))
+                .await
+                .unwrap();
+        let blocked = daemon
+            .receive_notification(canopa_notify::NotificationInput {
+                app_name: "Mail".into(),
+                summary: "First".into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        daemon
+            .receive_notification(canopa_notify::NotificationInput {
+                app_name: "Mail".into(),
+                summary: "Second".into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(database))
+            .await
+            .unwrap();
+        sqlx::query(&format!("CREATE TRIGGER fail_second_dismissal BEFORE UPDATE ON notification_threads WHEN OLD.id = {} AND NEW.status = 'dismissed' BEGIN SELECT RAISE(ABORT, 'injected'); END", blocked.notification_id)).execute(&pool).await.unwrap();
+        let (mut client, server) = tokio::net::UnixStream::pair().unwrap();
+        let control = NotifyControl::new(daemon.clone());
+        let handler = tokio::spawn(handle_connection(server, control));
+        client
+            .write_all(b"control {\"command\":\"clear-active-notifications\"}\n")
+            .await
+            .unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).await.unwrap();
+        handler.await.unwrap().unwrap();
+        assert_eq!(
+            serde_json::from_str::<ControlReply>(&response).unwrap(),
+            ControlReply::ClearPartiallyApplied { dismissed: 1 }
+        );
+        assert_eq!(daemon.snapshot().await.unwrap().active.len(), 1);
+        pool.close().await;
+    }
 
     #[test]
     fn ctl_commands_map_to_socket_request_lines() {

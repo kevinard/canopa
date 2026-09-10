@@ -21,6 +21,7 @@ use std::time::Duration;
 struct MemoryHistory {
     threads: Arc<Mutex<Vec<NotificationThread>>>,
     preconditions: Arc<Mutex<Vec<PersistPrecondition>>>,
+    replace_after_read: Arc<Mutex<bool>>,
 }
 
 impl MemoryHistory {
@@ -56,13 +57,17 @@ impl NotificationHistory for MemoryHistory {
     }
 
     async fn thread(&self, id: i64) -> anyhow::Result<NotificationThread> {
-        self.threads
-            .lock()
-            .unwrap()
-            .iter()
+        let mut threads = self.threads.lock().unwrap();
+        let stored = threads
+            .iter_mut()
             .find(|thread| thread.id == id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("missing thread {id}"))
+            .ok_or_else(|| anyhow::anyhow!("missing thread {id}"))?;
+        let snapshot = stored.clone();
+        if std::mem::take(&mut *self.replace_after_read.lock().unwrap()) {
+            stored.revision += 1;
+            stored.accepted_notification.summary = "Concurrent replacement".to_string();
+        }
+        Ok(snapshot)
     }
 
     async fn persist_thread(
@@ -105,6 +110,103 @@ impl NotificationHistory for MemoryHistory {
 }
 
 #[tokio::test]
+async fn stale_timeout_or_action_cannot_transition_a_concurrent_replacement() {
+    for action in [false, true] {
+        let history = MemoryHistory::default();
+        let lifecycle = NotificationLifecycle::new(history.clone());
+        let mut notification = lifecycle_notification(None, "Original");
+        notification.actions = vec![NotificationAction::new("open", "Open")];
+        lifecycle
+            .receive(
+                notification,
+                LifecycleDelivery::shown(),
+                NotificationTimeout::Never,
+            )
+            .await
+            .unwrap();
+        // Storage advances revision after returning the snapshot the operation validates.
+        *history.replace_after_read.lock().unwrap() = true;
+        let result = if action {
+            lifecycle.invoke_action(1, "open").await
+        } else {
+            lifecycle.expire_timeout_if_current_revision(1, 1).await
+        };
+        assert!(
+            result.is_err() || result.unwrap().is_empty(),
+            "stale operation emitted effects"
+        );
+        let current = lifecycle.thread(1).await.unwrap();
+        assert_eq!(current.revision, 2);
+        assert_eq!(current.status, NotificationStatus::Active);
+        assert_eq!(
+            current.accepted_notification.summary,
+            "Concurrent replacement"
+        );
+    }
+}
+
+#[tokio::test]
+async fn activation_token_wait_does_not_commit_an_action_or_block_replacement() {
+    #[derive(Clone)]
+    struct WaitingToken(Arc<tokio::sync::Notify>);
+    impl canopa_notify::ActivationTokenProvider for WaitingToken {
+        fn available(&self) -> bool {
+            true
+        }
+        fn activation_token(&self, _: String) -> canopa_notify::ActivationTokenFuture {
+            let started = self.0.clone();
+            Box::pin(async move {
+                started.notify_one();
+                std::future::pending().await
+            })
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let started = Arc::new(tokio::sync::Notify::new());
+    let daemon = Daemon::open(
+        DaemonOptions::headless(temp.path().join("history.db"))
+            .with_activation_token_provider(WaitingToken(started.clone())),
+    )
+    .await
+    .unwrap();
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            actions: vec![NotificationAction::new("open", "Open")],
+            ..notification("Mail", "Original")
+        })
+        .await
+        .unwrap();
+    let action_daemon = daemon.clone();
+    let action = tokio::spawn(async move {
+        action_daemon
+            .invoke_action(receipt.notification_id, "open")
+            .await
+    });
+    started.notified().await;
+    assert_eq!(
+        daemon.visible_banners().await.len(),
+        1,
+        "action committed before token acquisition completed"
+    );
+    let replacement = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            replaces_id: Some(receipt.notification_id),
+            ..notification("Mail", "Replacement")
+        })
+        .await
+        .unwrap();
+    assert_eq!(replacement.notification_id, receipt.notification_id);
+    assert!(
+        action.await.unwrap().is_err(),
+        "stale action succeeded after replacement"
+    );
+    assert!(daemon.sender_events().await.is_empty());
+    assert_eq!(daemon.visible_banners().await[0].summary, "Replacement");
+}
+
+#[tokio::test]
 async fn lifecycle_replacement_owns_thread_revision_shape() {
     let history = MemoryHistory::default();
     let clock = Arc::new(AtomicI64::new(100));
@@ -141,7 +243,7 @@ async fn lifecycle_replacement_owns_thread_revision_shape() {
     assert_eq!(thread.closed_at, None);
     assert_eq!(
         history.preconditions(),
-        vec![PersistPrecondition::ExpectedRevision(1)]
+        vec![PersistPrecondition::ExpectedActiveRevision(1)]
     );
     assert!(effects.raw().iter().any(|effect| {
         matches!(
@@ -740,7 +842,7 @@ async fn lifecycle_missing_replacement_target_creates_new_thread() {
 }
 
 #[tokio::test]
-async fn lifecycle_fixed_replacement_token_revises_active_thread_created_for_that_token() {
+async fn lifecycle_does_not_resolve_unrecognized_transport_aliases() {
     let history = MemoryHistory::default();
     let lifecycle = NotificationLifecycle::new(history.clone());
 
@@ -763,13 +865,14 @@ async fn lifecycle_fixed_replacement_token_revises_active_thread_created_for_tha
         .unwrap();
 
     let stored = history.stored();
-    assert_eq!(stored.len(), 1);
+    assert_eq!(stored.len(), 2);
     assert_eq!(stored[0].id, 1);
-    assert_eq!(stored[0].revision, 2);
-    assert_eq!(stored[0].accepted_notification.summary, "5%");
+    assert_eq!(stored[0].revision, 1);
+    assert_eq!(stored[0].accepted_notification.summary, "0%");
+    assert_eq!(stored[1].accepted_notification.summary, "5%");
     assert!(effects.raw().iter().any(|effect| matches!(
         effect,
-        LifecycleEffect::ThreadRevised(thread) if thread.id == 1
+        LifecycleEffect::ThreadCreated(thread) if thread.id == 2
     )));
 }
 

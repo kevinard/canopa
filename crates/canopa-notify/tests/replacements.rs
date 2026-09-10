@@ -75,7 +75,7 @@ async fn replacement_revises_existing_thread_and_can_create_banner_opportunity()
 }
 
 #[tokio::test]
-async fn repeated_fixed_replacement_id_updates_prior_thread() {
+async fn unresolved_internal_replacement_ids_do_not_form_transport_aliases() {
     let daemon = daemon_support::open_headless_daemon().await;
 
     let first = daemon
@@ -98,20 +98,47 @@ async fn repeated_fixed_replacement_id_updates_prior_thread() {
         .await
         .unwrap();
 
-    assert_eq!(replacement.notification_id, first.notification_id);
+    assert_ne!(replacement.notification_id, first.notification_id);
 
     let snapshot = daemon.snapshot().await.unwrap();
-    assert_eq!(snapshot.history.len(), 1);
-    assert_eq!(snapshot.active.len(), 1);
-    assert_eq!(snapshot.active[0].revision, 2);
-    assert_eq!(snapshot.active[0].accepted_notification.body, "5%");
-    assert_eq!(snapshot.active[0].accepted_notification.progress, Some(5));
+    assert_eq!(snapshot.history.len(), 2);
+    assert_eq!(snapshot.active.len(), 2);
+    assert!(snapshot.active.iter().all(|thread| thread.revision == 1));
 
     let banners = daemon.visible_banners().await;
-    assert_eq!(banners.len(), 1);
-    assert_eq!(banners[0].notification_id, first.notification_id);
-    assert_eq!(banners[0].body, "5%");
-    assert_eq!(banners[0].progress, Some(5));
+    assert_eq!(banners.len(), 2);
+    assert!(banners.iter().any(
+        |banner| banner.notification_id == replacement.notification_id && banner.body == "5%"
+    ));
+}
+
+#[tokio::test]
+async fn replacing_closed_history_creates_a_new_live_thread() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let first = daemon
+        .receive_notification(notification("Mail", "Archived"))
+        .await
+        .unwrap();
+    daemon
+        .close_notification(first.notification_id)
+        .await
+        .unwrap();
+    let next = daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(first.notification_id),
+            ..notification("Mail", "New")
+        })
+        .await
+        .unwrap();
+    assert_ne!(first.notification_id, next.notification_id);
+    let snapshot = daemon.snapshot().await.unwrap();
+    let old = snapshot
+        .history
+        .iter()
+        .find(|thread| thread.id == first.notification_id)
+        .unwrap();
+    assert_eq!(old.status, canopa_notify::NotificationStatus::Closed);
+    assert_eq!(old.accepted_notification.summary, "Archived");
 }
 
 #[tokio::test]

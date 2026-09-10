@@ -6,15 +6,13 @@ use canopa_notify::{
 };
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
-use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
-use tokio::net::UnixListener;
-use tokio::sync::broadcast;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedValue;
 
 mod control_adapters;
+mod startup;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DaemonMode {
@@ -55,6 +53,8 @@ struct DaemonArgs {
     #[arg(long)]
     database: Option<PathBuf>,
     #[arg(long)]
+    config: Option<PathBuf>,
+    #[arg(long)]
     dev_bus_name: Option<String>,
     #[arg(long)]
     service: bool,
@@ -70,11 +70,31 @@ struct CtlArgs {
 
 #[derive(Subcommand)]
 enum CtlCommand {
-    Status,
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
     Active {
         #[arg(long)]
         json: bool,
     },
+    Dnd {
+        #[arg(value_enum, default_value = "status")]
+        state: DndCommand,
+    },
+    Reload {
+        path: Option<PathBuf>,
+    },
+    Clear,
+    DeleteHistory,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum DndCommand {
+    Status,
+    On,
+    Off,
+    Toggle,
 }
 
 #[derive(Parser)]
@@ -101,17 +121,9 @@ async fn run() -> anyhow::Result<()> {
 
 async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
     let mode = daemon_mode(&args)?;
-    let database = args
-        .database
-        .unwrap_or_else(|| args.socket.with_extension("db"));
+    let paths = startup::DaemonPaths::resolve(args.socket, args.database)?;
     if mode == DaemonMode::Service {
         ensure_wayland_session()?;
-    }
-    let startup = daemon_startup(mode, database)?;
-    let daemon = Daemon::open(startup.options).await?;
-    let control = NotifyControl::new(daemon.clone());
-    if let Some(interactions) = startup.banner_interactions {
-        spawn_banner_interaction_forwarder(daemon.clone(), interactions)?;
     }
     let bus_name = match (args.dev_bus_name.as_deref(), args.service) {
         (Some(_), true) => anyhow::bail!("--dev-bus-name and --service are mutually exclusive"),
@@ -120,42 +132,64 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         (None, false) => None,
     };
 
-    if args.socket.exists() {
-        if StdUnixStream::connect(&args.socket).is_ok() {
-            anyhow::bail!(
-                "Canopa Notify daemon already running at {}",
-                args.socket.display()
-            );
-        }
-        std::fs::remove_file(&args.socket)?;
-    }
-    if let Some(parent) = args.socket.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    let listener = UnixListener::bind(&args.socket)
-        .with_context(|| format!("failed to bind control socket {}", args.socket.display()))?;
-    eprintln!(
-        "level=info component=daemon event=startup mode={} socket={}",
-        mode.as_str(),
-        args.socket.display()
-    );
-
-    let _bus_connection = if let Some(bus_name) = bus_name {
-        Some(start_notification_server(bus_name, daemon.clone()).await?)
+    let ownership = startup::StartupOwnership::acquire(&paths)?;
+    // Establish ownership before opening history: opening performs restart recovery.
+    let bus_connection = if let Some(bus_name) = bus_name {
+        Some(
+            zbus::connection::Builder::session()?
+                .name(bus_name)?
+                .build()
+                .await?,
+        )
     } else {
         None
     };
+    paths.import_legacy_history().await?;
+    let mut startup = daemon_startup(mode, paths.database.clone())?;
+    let configuration = startup::configuration_path(args.config)?;
+    let reload_path = configuration.clone().unwrap_or(
+        startup::xdg_home("XDG_CONFIG_HOME", ".config")?.join("canopa-notify/config.kdl"),
+    );
+    if let Some(configuration) = configuration {
+        startup.options = startup.options.with_configuration_file(configuration);
+    }
+    let daemon = Daemon::open(startup.options).await?;
+    let control = NotifyControl::new(daemon.clone()).with_configuration_path(reload_path);
+    if let Some(interactions) = startup.banner_interactions {
+        spawn_banner_interaction_forwarder(daemon.clone(), interactions)?;
+    }
+    eprintln!(
+        "level=info component=daemon event=startup mode={} socket={}",
+        mode.as_str(),
+        paths.socket.display()
+    );
 
-    let shutdown = tokio::signal::ctrl_c();
+    if let Some(connection) = &bus_connection {
+        attach_notification_server(connection.clone(), daemon.clone()).await?;
+    }
+
+    let shutdown = async {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result,
+            _ = terminate.recv() => Ok(()),
+        }
+    };
     tokio::pin!(shutdown);
+    let control_connections = Arc::new(tokio::sync::Semaphore::new(64));
 
     loop {
         tokio::select! {
-            incoming = listener.accept() => {
+            incoming = ownership.listener.accept() => {
                 let (stream, _) = incoming?;
+                let Ok(permit) = control_connections.clone().try_acquire_owned() else {
+                    drop(stream);
+                    continue;
+                };
                 let control = control.clone();
                 tokio::spawn(async move {
+                    let _permit = permit;
                     if let Err(error) = control_adapters::handle_connection(stream, control).await {
                         eprintln!("level=warn component=control event=request_failed error={error:#}");
                     }
@@ -169,7 +203,6 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         }
     }
 
-    std::fs::remove_file(&args.socket).ok();
     Ok(())
 }
 
@@ -350,8 +383,7 @@ impl NotificationServer {
         hints: HashMap<String, OwnedValue>,
         expire_timeout: i32,
     ) -> zbus::fdo::Result<u32> {
-        let sender_id = self.sender_ids.sender_id_for_request(replaces_id);
-        let mut input = NotificationServerRequest {
+        let request = NotificationServerRequest {
             app_name,
             replaces_id,
             app_icon,
@@ -360,27 +392,34 @@ impl NotificationServer {
             actions,
             hints,
             expire_timeout,
-        }
-        .into_notification_input();
-
-        if let Some(internal_id) = sender_id.replacement_target {
-            input.replaces_id = Some(internal_id);
-        }
+        };
+        let resolved = std::sync::OnceLock::new();
 
         self.daemon
-            .receive_notification_with_receipt_hook(input, |receipt| {
-                if receipt.notification_id != 0 {
-                    self.sender_ids.register(
-                        sender_id.value,
-                        receipt.notification_id,
-                        sender_id.origin,
-                    );
-                }
-            })
+            .receive_notification_with_preparation(
+                || {
+                    let sender_id = self.sender_ids.sender_id_for_request(replaces_id);
+                    let mut input = request.into_notification_input();
+                    // A wire ID is never a SQLite row ID. Resolve under the mutation boundary.
+                    input.replaces_id = sender_id.replacement_target;
+                    resolved.set(sender_id).unwrap();
+                    Ok(input)
+                },
+                |receipt| {
+                    let sender_id = resolved.get().unwrap();
+                    if receipt.notification_id != 0 {
+                        self.sender_ids.register(
+                            sender_id.value,
+                            receipt.notification_id,
+                            sender_id.origin,
+                        );
+                    }
+                },
+            )
             .await
             .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
 
-        Ok(sender_id.value)
+        Ok(resolved.into_inner().unwrap().value)
     }
 
     async fn close_notification(&self, id: u32) -> zbus::fdo::Result<()> {
@@ -391,10 +430,7 @@ impl NotificationServer {
         self.daemon
             .close_notification(internal_id)
             .await
-            .map_err(|_error| {
-                self.sender_ids.unregister_sender_id(id);
-                empty_dbus_error()
-            })
+            .map_err(|_error| empty_dbus_error())
     }
 
     fn get_capabilities(&self) -> Vec<String> {
@@ -432,88 +468,126 @@ impl NotificationServer {
     ) -> zbus::Result<()>;
 }
 
+#[cfg(test)]
 async fn start_notification_server(
     bus_name: String,
     daemon: Daemon,
 ) -> anyhow::Result<zbus::Connection> {
-    let sender_events = daemon.subscribe_sender_events();
-    let sender_ids = NotificationSenderIds::new();
     let connection = zbus::connection::Builder::session()?
         .name(bus_name)?
-        .serve_at(
+        .build()
+        .await?;
+    attach_notification_server(connection.clone(), daemon).await?;
+    Ok(connection)
+}
+
+async fn attach_notification_server(
+    connection: zbus::Connection,
+    daemon: Daemon,
+) -> anyhow::Result<()> {
+    let sender_ids = NotificationSenderIds::new();
+    daemon.install_sender_event_publisher(DbusSenderPublisher::start(
+        connection.clone(),
+        sender_ids.clone(),
+    )?)?;
+    connection
+        .object_server()
+        .at(
             "/org/freedesktop/Notifications",
             NotificationServer {
                 daemon,
                 sender_ids: sender_ids.clone(),
             },
-        )?
-        .build()
+        )
         .await?;
-    spawn_notification_signal_relay(connection.clone(), sender_events, sender_ids)?;
-    Ok(connection)
+    Ok(())
 }
 
-fn spawn_notification_signal_relay(
-    connection: zbus::Connection,
-    mut sender_events: broadcast::Receiver<SenderEvent>,
+struct DbusSenderPublisher {
+    queue: tokio::sync::mpsc::Sender<(u32, SenderEvent)>,
     sender_ids: NotificationSenderIds,
-) -> anyhow::Result<()> {
-    let emitter = SignalEmitter::new(&connection, "/org/freedesktop/Notifications")?.into_owned();
-    tokio::spawn(async move {
-        loop {
-            match sender_events.recv().await {
-                Ok(event) => {
-                    if let Err(error) = emit_sender_event(&emitter, &sender_ids, &event).await {
-                        eprintln!(
-                            "level=warn component=dbus event=sender_signal_failed error={error:#}"
-                        );
-                    }
+    error: Arc<Mutex<Option<String>>>,
+}
+
+impl DbusSenderPublisher {
+    fn start(
+        connection: zbus::Connection,
+        sender_ids: NotificationSenderIds,
+    ) -> anyhow::Result<Self> {
+        let emitter =
+            SignalEmitter::new(&connection, "/org/freedesktop/Notifications")?.into_owned();
+        let (queue, mut events) = tokio::sync::mpsc::channel(64);
+        let error = Arc::new(Mutex::new(None));
+        let transport_error = error.clone();
+        tokio::spawn(async move {
+            while let Some((sender_id, event)) = events.recv().await {
+                if let Err(error) = emit_sender_event(&emitter, sender_id, &event).await {
+                    *transport_error.lock().unwrap() = Some(format!("{error:#}"));
+                    eprintln!("level=error component=dbus event=sender_signal_failed");
+                    break;
                 }
-                Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                    eprintln!(
-                        "level=warn component=dbus event=sender_signal_lagged skipped={skipped}"
-                    );
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
             }
-        }
-    });
-    Ok(())
+        });
+        Ok(Self {
+            queue,
+            sender_ids,
+            error,
+        })
+    }
+}
+
+impl canopa_notify::SenderEventPublisher for DbusSenderPublisher {
+    fn publish(&self, event: SenderEvent) -> canopa_notify::SenderEventPublication {
+        // Freeze identity at commitment, before waiting for transport capacity.
+        // A failed or delayed signal cannot keep a closed registration alive.
+        let sender_id = match &event {
+            SenderEvent::NotificationClosed {
+                notification_id, ..
+            } => self.sender_ids.unregister_internal_id(*notification_id),
+            SenderEvent::ActivationToken {
+                notification_id, ..
+            }
+            | SenderEvent::ActionInvoked {
+                notification_id, ..
+            } => self.sender_ids.sender_id_for_internal_id(*notification_id),
+        };
+        let queue = self.queue.clone();
+        Box::pin(async move {
+            if let Some(sender_id) = sender_id {
+                queue
+                    .send((sender_id, event))
+                    .await
+                    .map_err(|_| anyhow::anyhow!("D-Bus sender publisher disconnected"))?;
+            }
+            Ok(())
+        })
+    }
+
+    fn error(&self) -> Option<String> {
+        self.error.lock().unwrap().clone()
+    }
 }
 
 async fn emit_sender_event(
     emitter: &SignalEmitter<'_>,
-    sender_ids: &NotificationSenderIds,
+    sender_id: u32,
     event: &SenderEvent,
 ) -> zbus::Result<()> {
     match event {
         SenderEvent::ActivationToken {
-            notification_id,
-            activation_token,
+            activation_token, ..
         } => {
-            if let Some(sender_id) = sender_ids.sender_id_for_internal_id(*notification_id) {
-                emitter
-                    .activation_token(sender_id, activation_token)
-                    .await?;
-            }
+            emitter
+                .activation_token(sender_id, activation_token)
+                .await?;
         }
-        SenderEvent::ActionInvoked {
-            notification_id,
-            action_key,
-        } => {
-            if let Some(sender_id) = sender_ids.sender_id_for_internal_id(*notification_id) {
-                emitter.action_invoked(sender_id, action_key).await?;
-            }
+        SenderEvent::ActionInvoked { action_key, .. } => {
+            emitter.action_invoked(sender_id, action_key).await?;
         }
-        SenderEvent::NotificationClosed {
-            notification_id,
-            reason,
-        } => {
-            if let Some(closed_id) = sender_ids.unregister_internal_id(*notification_id) {
-                emitter
-                    .notification_closed(closed_id, close_reason_code(*reason))
-                    .await?;
-            }
+        SenderEvent::NotificationClosed { reason, .. } => {
+            emitter
+                .notification_closed(sender_id, close_reason_code(*reason))
+                .await?;
         }
     }
 
@@ -585,10 +659,6 @@ impl NotificationSenderIds {
             .unwrap()
             .unregister_internal_id(internal_id)
     }
-
-    fn unregister_sender_id(&self, sender_id: u32) -> Option<i64> {
-        self.state.lock().unwrap().unregister_sender_id(sender_id)
-    }
 }
 
 #[derive(Debug)]
@@ -617,13 +687,11 @@ impl NotificationSenderIdState {
         }
 
         match self.sender_to_internal.get(&replaces_id) {
-            Some(registration) if registration.origin == SenderIdOrigin::Generated => {
-                SenderIdForRequest {
-                    value: replaces_id,
-                    replacement_target: Some(registration.internal_id),
-                    origin: SenderIdOrigin::Generated,
-                }
-            }
+            Some(registration) => SenderIdForRequest {
+                value: replaces_id,
+                replacement_target: Some(registration.internal_id),
+                origin: registration.origin,
+            },
             _ => SenderIdForRequest {
                 value: replaces_id,
                 replacement_target: None,
@@ -670,12 +738,6 @@ impl NotificationSenderIdState {
         self.sender_to_internal.remove(&sender_id);
         Some(sender_id)
     }
-
-    fn unregister_sender_id(&mut self, sender_id: u32) -> Option<i64> {
-        let registration = self.sender_to_internal.remove(&sender_id)?;
-        self.internal_to_sender.remove(&registration.internal_id);
-        Some(registration.internal_id)
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -697,7 +759,10 @@ struct SenderIdRegistration {
     origin: SenderIdOrigin,
 }
 
-fn run_ctl(args: CtlArgs) -> anyhow::Result<()> {
+fn run_ctl(mut args: CtlArgs) -> anyhow::Result<()> {
+    if let CtlCommand::Reload { path: Some(path) } = &mut args.command {
+        *path = std::path::absolute(&*path)?;
+    }
     control_adapters::run_ctl(&args.socket, control_request_for_ctl(&args.command))
 }
 
@@ -707,9 +772,33 @@ fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
 
 fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest {
     match command {
-        CtlCommand::Status => control_adapters::CtlRequest::Status,
+        CtlCommand::Status { json: false } => control_adapters::CtlRequest::Status,
+        CtlCommand::Status { json: true } => {
+            control_adapters::CtlRequest::Command(canopa_notify::ControlCommand::Status)
+        }
         CtlCommand::Active { json: true } => control_adapters::CtlRequest::ActiveJson,
         CtlCommand::Active { json: false } => control_adapters::CtlRequest::ActiveCount,
+        CtlCommand::Dnd { state } => control_adapters::CtlRequest::Command(match state {
+            DndCommand::Status => canopa_notify::ControlCommand::DoNotDisturb,
+            DndCommand::On => canopa_notify::ControlCommand::ChangeDoNotDisturb {
+                enabled: Some(true),
+            },
+            DndCommand::Off => canopa_notify::ControlCommand::ChangeDoNotDisturb {
+                enabled: Some(false),
+            },
+            DndCommand::Toggle => {
+                canopa_notify::ControlCommand::ChangeDoNotDisturb { enabled: None }
+            }
+        }),
+        CtlCommand::Reload { path } => control_adapters::CtlRequest::Command(
+            canopa_notify::ControlCommand::ReloadConfiguration { path: path.clone() },
+        ),
+        CtlCommand::Clear => control_adapters::CtlRequest::Command(
+            canopa_notify::ControlCommand::ClearActiveNotifications,
+        ),
+        CtlCommand::DeleteHistory => control_adapters::CtlRequest::Command(
+            canopa_notify::ControlCommand::DeleteNotificationHistory,
+        ),
     }
 }
 
@@ -807,6 +896,61 @@ mod tests {
         assert_eq!(mode, DaemonMode::Service);
         assert!(!startup.options.headless);
         assert!(startup.banner_interactions.is_none());
+    }
+
+    #[tokio::test]
+    async fn dbus_bulk_clear_publishes_all_130_closures() {
+        let temp = tempfile::tempdir().unwrap();
+        let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+            .await
+            .unwrap();
+        let bus_name = test_bus_name("BulkSignals");
+        let _server = start_notification_server(bus_name.clone(), daemon.clone())
+            .await
+            .unwrap();
+        let connection = zbus::Connection::session().await.unwrap();
+        let proxy = zbus::Proxy::new(
+            &connection,
+            bus_name.as_str(),
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        )
+        .await
+        .unwrap();
+        let mut closures = proxy.receive_signal("NotificationClosed").await.unwrap();
+        let mut expected = std::collections::BTreeSet::new();
+        for _ in 0..130 {
+            let hints = HashMap::from([("transient".to_string(), OwnedValue::from(true))]);
+            let id: u32 = proxy
+                .call(
+                    "Notify",
+                    &(
+                        "Burst",
+                        0u32,
+                        "",
+                        "Active",
+                        "",
+                        Vec::<String>::new(),
+                        hints,
+                        0i32,
+                    ),
+                )
+                .await
+                .unwrap();
+            expected.insert(id);
+        }
+        daemon.clear_active_notifications().await.unwrap();
+        let mut received = std::collections::BTreeSet::new();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while received.len() < expected.len() {
+                let signal = closures.next().await.unwrap();
+                let (id, reason): (u32, u32) = signal.body().deserialize().unwrap();
+                assert_eq!(reason, 2);
+                assert!(received.insert(id), "duplicate closure");
+            }
+        })
+        .await;
+        assert_eq!(received, expected, "required sender signals were lost");
     }
 
     #[test]
@@ -1157,6 +1301,7 @@ mod tests {
             headless,
             socket: PathBuf::from("control.sock"),
             database: None,
+            config: None,
             dev_bus_name: None,
             service,
         }
