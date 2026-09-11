@@ -33,4 +33,12 @@ The canonical wire types remain in `crates/canopa-panel-protocol`; Niribar vendo
 bash scripts/check-panel-protocol.sh /path/to/niribar
 ```
 
+## Stream limits and recovery
+
+Frames include their terminating newline and may not exceed 1 MiB. If a complete Notification Center projection exceeds that display budget, Notify emits an error instead of partial content. History and active notifications are unchanged; use the control interfaces to inspect/clear retained state. The existing subscription resumes normal content when a subsequent projection fits. Pagination and aggregate projection-building memory remain unfinished.
+
+At most eight panel subscriptions may share the daemon's 64 control connections. Additional panels receive a visible limit error and may be reopened after another panel closes. A subscription is one-way after `panel-subscribe`: closing its write half or sending additional bytes ends it. Healthy idle panels have no idle timeout, but a socket frame write that stalls for five seconds is disconnected. A disconnected or invalid provider stream must be reopened; there is no automatic action retry or reconnect in this change.
+
+Provider input permits 65,518 bytes per newline-terminated interaction, leaving space for the control-command prefix. Oversized or malformed input is discarded without logging its contents, and later valid input remains usable. Each serial interaction exchange has a five-second total deadline and a 4 KiB reply limit. A timeout does not prove that the daemon rejected the action; it may already have committed. Invalid, incompatible or incomplete daemon output becomes a small visible error instead of being forwarded to Niribar. Pipe backpressure adds no application queue, but a host that stops reading stdout must still clean up its provider process.
+
 `body-images` remains unadvertised until a graphical check confirms both banners and this host. Codec/image tests do not substitute for that check. The full remaining completion work is tracked in `.scratch/freedesktop-completion-review/IMPLEMENTATION.md`.

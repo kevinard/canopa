@@ -6,18 +6,13 @@ use canopa_notify::{
 };
 use canopa_panel_protocol::{
     InteractionEvent, InteractionTarget, PanelAction, PanelContent, PanelControl,
-    PanelControlOption, PanelItem, PanelMetadata, PanelSection, ProviderResponse, RichBody,
-    RichBodyImage, RichBodyImageSource, RichBodySegment, StyledText, StyledTextRun,
-    StyledTextStyle,
+    PanelControlOption, PanelItem, PanelMetadata, PanelSection, RichBody, RichBodyImage,
+    RichBodyImageSource, RichBodySegment, StyledText, StyledTextRun, StyledTextStyle,
 };
-use std::io::{BufRead, Read, Write};
-use std::os::unix::net::UnixStream as StdUnixStream;
-use std::path::{Path, PathBuf};
-use std::thread;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+mod transport;
 
-const MAX_CONTROL_FRAME_BYTES: usize = 64 * 1024;
-const CONTROL_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+use transport::panel_response_line;
+pub(crate) use transport::{ControlSocket, run_ctl, run_panel_provider};
 
 const PANEL_NOTIFICATION_ACTION_KEY: &str = "canopa-notify:notification-action";
 const PANEL_ACTIVATE_ITEM_KEY: &str = "canopa-notify:activate-item";
@@ -49,167 +44,6 @@ impl CtlRequest {
         };
         line.to_string()
     }
-}
-
-pub(crate) fn run_ctl(socket: &Path, request: CtlRequest) -> anyhow::Result<()> {
-    let mut stream = StdUnixStream::connect(socket).map_err(|source| {
-        anyhow::anyhow!(
-            "Canopa Notify daemon unavailable at {}: {source}",
-            socket.display()
-        )
-    })?;
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
-    stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
-    stream.write_all(request.line().as_bytes())?;
-    let mut response = String::new();
-    stream.read_to_string(&mut response)?;
-    anyhow::ensure!(
-        !response.is_empty(),
-        "Canopa Notify daemon closed the control connection without a reply"
-    );
-    anyhow::ensure!(
-        !response.starts_with("error "),
-        "Canopa Notify request failed: {}",
-        response.trim()
-    );
-    if matches!(request, CtlRequest::Command(_)) {
-        match serde_json::from_str::<ControlReply>(&response)? {
-            ControlReply::DoNotDisturb(enabled) => {
-                println!("{}", if enabled { "on" } else { "off" })
-            }
-            ControlReply::CommandApplied => println!("ok"),
-            ControlReply::ClearPartiallyApplied { dismissed } => anyhow::bail!(
-                "clear stopped after {dismissed} committed dismissals; remaining notifications were not cleared"
-            ),
-            ControlReply::Status(status) => println!("{}", serde_json::to_string_pretty(&status)?),
-            reply => println!("{}", serde_json::to_string(&reply)?),
-        }
-    } else {
-        print!("{response}");
-    }
-    Ok(())
-}
-
-pub(crate) fn run_panel_provider(socket: &Path) -> anyhow::Result<()> {
-    let mut stream = match StdUnixStream::connect(socket) {
-        Ok(stream) => stream,
-        Err(source) => {
-            let message = format!(
-                "Canopa Notify daemon unavailable at {}: {source}",
-                socket.display()
-            );
-            println!(
-                "{}",
-                serde_json::to_string(&ProviderResponse::replace_content(PanelContent::error(
-                    "Canopa Notify",
-                    message
-                )))?
-            );
-            return Ok(());
-        }
-    };
-    stream.write_all(SocketControlRequest::PanelSubscribe.line().as_bytes())?;
-    spawn_panel_interaction_forwarder(socket.to_path_buf())?;
-    let mut stdout = std::io::stdout();
-    std::io::copy(&mut stream, &mut stdout)?;
-    Ok(())
-}
-
-fn spawn_panel_interaction_forwarder(socket: PathBuf) -> anyhow::Result<()> {
-    thread::Builder::new()
-        .name("canopa-notify-panel-interactions".to_string())
-        .spawn(move || {
-            let stdin = std::io::stdin();
-            for line in stdin.lock().lines() {
-                let result = line
-                    .map_err(anyhow::Error::from)
-                    .and_then(|line| send_panel_interaction(&socket, &line));
-                if let Err(error) = result {
-                    eprintln!(
-                        "level=warn component=panel_provider event=interaction_failed error={error:#}"
-                    );
-                }
-            }
-        })?;
-    Ok(())
-}
-
-fn send_panel_interaction(socket: &Path, event_json: &str) -> anyhow::Result<()> {
-    let Some(request) = panel_interaction_request_line(event_json) else {
-        return Ok(());
-    };
-    let mut stream = StdUnixStream::connect(socket)?;
-    stream.write_all(request.as_bytes())?;
-    let mut response = String::new();
-    stream.read_to_string(&mut response)?;
-    if response == "ok\n" {
-        Ok(())
-    } else {
-        anyhow::bail!("panel interaction was rejected: {}", response.trim());
-    }
-}
-
-fn panel_interaction_request_line(event_json: &str) -> Option<String> {
-    let event_json = event_json.trim_end_matches(['\r', '\n']);
-    (!event_json.trim().is_empty()).then(|| format!("panel-interaction {event_json}\n"))
-}
-
-pub(crate) async fn handle_connection(
-    stream: tokio::net::UnixStream,
-    control: NotifyControl,
-) -> anyhow::Result<()> {
-    let mut stream = BufReader::new(stream);
-    let mut request = String::new();
-    {
-        let mut limited = (&mut stream).take((MAX_CONTROL_FRAME_BYTES + 1) as u64);
-        tokio::time::timeout(CONTROL_READ_TIMEOUT, limited.read_line(&mut request)).await??;
-    }
-    if request.len() > MAX_CONTROL_FRAME_BYTES || !request.ends_with('\n') {
-        stream
-            .get_mut()
-            .write_all(b"error control frame too large or incomplete\n")
-            .await?;
-        stream.get_mut().shutdown().await?;
-        return Ok(());
-    }
-    let request = request.trim_end_matches(['\r', '\n']);
-    let request = SocketControlRequest::parse(request);
-    eprintln!(
-        "level=info component=control event=request command={}",
-        request.kind()
-    );
-
-    if matches!(request, SocketControlRequest::PanelSubscribe) {
-        stream_projection_subscription(stream.get_mut(), control).await?;
-        return Ok(());
-    }
-
-    let response = control_socket_response(request, &control)
-        .await
-        .unwrap_or_else(|_| {
-            "error request rejected; inspect daemon status for configuration or health errors\n"
-                .to_string()
-        });
-
-    let stream = stream.get_mut();
-    stream.write_all(response.as_bytes()).await?;
-    stream.shutdown().await?;
-    Ok(())
-}
-
-async fn stream_projection_subscription(
-    stream: &mut tokio::net::UnixStream,
-    control: NotifyControl,
-) -> anyhow::Result<()> {
-    let mut subscription = control.subscribe_notification_state();
-    while let Some(projection) = subscription.next_projection().await? {
-        let content = panel_content_from_projection(projection);
-        let response = serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n";
-        stream.write_all(response.as_bytes()).await?;
-        stream.flush().await?;
-    }
-    stream.shutdown().await?;
-    Ok(())
 }
 
 async fn control_socket_response(
@@ -399,7 +233,7 @@ fn format_panel_snapshot_reply(reply: ControlReply) -> anyhow::Result<String> {
         return Err(unexpected_control_reply());
     };
     let content = panel_content_from_projection(projection);
-    Ok(serde_json::to_string(&ProviderResponse::replace_content(content))? + "\n")
+    panel_response_line(content)
 }
 
 fn format_command_applied_reply(reply: ControlReply) -> anyhow::Result<String> {
@@ -632,6 +466,7 @@ fn app_permission_from_panel_value(value: &str) -> Option<AppPermissionControl> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[tokio::test]
     async fn partial_clear_reports_committed_count_over_control_socket() {
@@ -665,14 +500,13 @@ mod tests {
         sqlx::query(&format!("CREATE TRIGGER fail_second_dismissal BEFORE UPDATE ON notification_threads WHEN OLD.id = {} AND NEW.status = 'dismissed' BEGIN SELECT RAISE(ABORT, 'injected'); END", blocked.notification_id)).execute(&pool).await.unwrap();
         let (mut client, server) = tokio::net::UnixStream::pair().unwrap();
         let control = NotifyControl::new(daemon.clone());
-        let handler = tokio::spawn(handle_connection(server, control));
+        ControlSocket::new(control).accept(server);
         client
             .write_all(b"control {\"command\":\"clear-active-notifications\"}\n")
             .await
             .unwrap();
         let mut response = String::new();
         client.read_to_string(&mut response).await.unwrap();
-        handler.await.unwrap().unwrap();
         assert_eq!(
             serde_json::from_str::<ControlReply>(&response).unwrap(),
             ControlReply::ClearPartiallyApplied { dismissed: 1 }
@@ -699,15 +533,6 @@ mod tests {
         }
 
         assert_eq!(SocketControlRequest::Unsupported.line(), "unsupported\n");
-    }
-
-    #[test]
-    fn panel_provider_wraps_stdin_events_as_panel_interaction_requests() {
-        assert_eq!(
-            panel_interaction_request_line(r#"{"type":"invoke"}"#).as_deref(),
-            Some("panel-interaction {\"type\":\"invoke\"}\n")
-        );
-        assert_eq!(panel_interaction_request_line("\n"), None);
     }
 
     #[test]

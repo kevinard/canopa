@@ -5,7 +5,7 @@ use canopa_notify::{
 };
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use std::sync::{Arc, mpsc};
+use std::sync::mpsc;
 
 mod control_adapters;
 mod notification_server;
@@ -153,7 +153,9 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         startup.options = startup.options.with_configuration_file(configuration);
     }
     let daemon = Daemon::open(startup.options).await?;
-    let control = NotifyControl::new(daemon.clone()).with_configuration_path(reload_path);
+    let control = control_adapters::ControlSocket::new(
+        NotifyControl::new(daemon.clone()).with_configuration_path(reload_path),
+    );
     if let Some(interactions) = startup.banner_interactions {
         spawn_banner_interaction_forwarder(daemon.clone(), interactions)?;
     }
@@ -176,23 +178,12 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         }
     };
     tokio::pin!(shutdown);
-    let control_connections = Arc::new(tokio::sync::Semaphore::new(64));
 
     loop {
         tokio::select! {
             incoming = ownership.listener.accept() => {
                 let (stream, _) = incoming?;
-                let Ok(permit) = control_connections.clone().try_acquire_owned() else {
-                    drop(stream);
-                    continue;
-                };
-                let control = control.clone();
-                tokio::spawn(async move {
-                    let _permit = permit;
-                    if let Err(error) = control_adapters::handle_connection(stream, control).await {
-                        eprintln!("level=warn component=control event=request_failed error={error:#}");
-                    }
-                });
+                control.accept(stream);
             }
             result = &mut shutdown => {
                 result?;
