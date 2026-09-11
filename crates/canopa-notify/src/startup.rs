@@ -34,6 +34,10 @@ impl DaemonPaths {
             return Ok(());
         };
         check_owned_regular_file(source)?;
+        // The source may belong to a daemon listening on a different socket.
+        // Keep its normal database ownership lock until publication completes.
+        let _source_ownership = lock_path(source)
+            .context("legacy notification history is in use or cannot be locked; stop its daemon before importing")?;
         let parent = self.database.parent().context("database has no parent")?;
         let copy = tempfile::NamedTempFile::new_in(parent)?;
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
