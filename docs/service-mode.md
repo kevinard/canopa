@@ -28,6 +28,14 @@ History and persisted user policy default to `$XDG_STATE_HOME/canopa-notify/hist
 
 The installed configuration is `$XDG_CONFIG_HOME/canopa-notify/config.kdl` (or `$HOME/.config/canopa-notify/config.kdl`). `daemon --config PATH` overrides it. Initial configuration is loaded before accepting notifications. Invalid reloads keep the last valid configuration and expose the failure in status.
 
+Select a static icon theme and source-asset scale with:
+
+```kdl
+icons theme="Adwaita" scale=2
+```
+
+Defaults are `theme="hicolor"` and `scale=1`. Scale is an integer from 1 to 8 used for icon lookup, not banner geometry; it is not automatically derived from the compositor. Theme names are case-sensitive local directory names. A reload applies selection to subsequent banner updates without changing existing notification delivery decisions. Missing icons fall back through inherited themes, hicolor and unthemed files. Unsafe metadata or exhausted lookup budgets omit icons. PNG is supported; JPEG is a local extension; SVG and XPM remain unsupported. Theme metadata and files are refreshed on the next banner update without restarting; simply editing a theme does not generate a notification update.
+
 Control commands never start the daemon implicitly:
 
 ```bash

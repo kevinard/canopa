@@ -9,15 +9,10 @@ use crate::{
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-#[cfg(test)]
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
-const MAX_FILE_BACKED_VISUAL_BYTES: u64 = 16 * 1024 * 1024;
-const ICON_SEARCH_MAX_DEPTH: usize = 8;
-const STATIC_ICON_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
 const APP_ICON_VISUAL_SIZE: u16 = 34;
 const NOTIFICATION_IMAGE_VISUAL_SIZE: u16 = 58;
 const BODY_IMAGE_VISUAL_HEIGHT: u32 = 48;
@@ -25,6 +20,7 @@ const BODY_CONTENT_TEXT_HEIGHT: u32 = 34;
 const BODY_CONTENT_RICH_HEIGHT: u32 = 70;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
+mod icons;
 mod images;
 
 #[derive(Clone)]
@@ -77,6 +73,7 @@ pub trait BannerPresenter: Send + Sync {
 pub struct BannerPresentation {
     pub banners: Vec<BannerView>,
     pub overflow_count: usize,
+    pub icon_settings: BannerIconSettings,
 }
 
 impl BannerPresentation {
@@ -84,7 +81,44 @@ impl BannerPresentation {
         Self {
             banners,
             overflow_count: 0,
+            icon_settings: BannerIconSettings::default(),
         }
+    }
+}
+
+/// Static icon selection. Scale selects a source asset; it does not scale the UI.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BannerIconSettings {
+    pub theme: String,
+    pub scale: u16,
+}
+
+impl Default for BannerIconSettings {
+    fn default() -> Self {
+        Self {
+            theme: "hicolor".into(),
+            scale: 1,
+        }
+    }
+}
+
+impl BannerIconSettings {
+    pub fn new(theme: String, scale: u16) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !theme.is_empty()
+                && theme.len() <= 255
+                && theme.is_ascii()
+                && !matches!(theme.as_str(), "." | "..")
+                && !theme.bytes().any(|byte| byte.is_ascii_control()
+                    || byte.is_ascii_whitespace()
+                    || matches!(byte, b'/' | b'\\' | b',')),
+            "invalid icon theme"
+        );
+        anyhow::ensure!(
+            (1..=8).contains(&scale),
+            "icon scale must be between 1 and 8"
+        );
+        Ok(Self { theme, scale })
     }
 }
 
@@ -232,6 +266,7 @@ type BannerWatchSender = tokio::sync::watch::Sender<Option<BannerRuntimeInput>>;
 struct BannerUpdateReceiver {
     receiver: tokio::sync::watch::Receiver<Option<BannerRuntimeInput>>,
     executor: tokio::runtime::Handle,
+    icon_roots: Arc<[PathBuf]>,
 }
 
 #[derive(Clone)]
@@ -247,7 +282,11 @@ impl BannerUpdateSender {
             Self {
                 sender: Arc::new(Mutex::new(Some(sender))),
             },
-            BannerUpdateReceiver { receiver, executor },
+            BannerUpdateReceiver {
+                receiver,
+                executor,
+                icon_roots: icons::search_roots().into(),
+            },
         )
     }
 
@@ -402,6 +441,7 @@ fn banner_updates(
         let BannerUpdateReceiver {
             mut receiver,
             executor,
+            icon_roots,
         } = state;
         'updates: loop {
             receiver.changed().await.ok()?;
@@ -417,7 +457,7 @@ fn banner_updates(
                         changed.ok()?;
                         continue;
                     }
-                    prepared = images::prepare(presentation, &executor, move || latest.has_changed().unwrap_or(true)) => prepared,
+                    prepared = images::prepare(presentation, &executor, icon_roots.clone(), move || latest.has_changed().unwrap_or(true)) => prepared,
                 };
                 match receiver.has_changed() {
                     Ok(true) => continue,
@@ -432,7 +472,11 @@ fn banner_updates(
                         presentation,
                         acknowledgement,
                     },
-                    BannerUpdateReceiver { receiver, executor },
+                    BannerUpdateReceiver {
+                        receiver,
+                        executor,
+                        icon_roots,
+                    },
                 ));
             }
         }
@@ -659,6 +703,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
+    mod icons;
     mod images;
 
     fn banner_ui_test_state() -> BannerUiState {
@@ -1003,141 +1048,6 @@ mod tests {
             primary_banner_visual_size(BannerPrimaryVisual::NotificationImage),
             APP_ICON_VISUAL_SIZE
         );
-    }
-
-    #[test]
-    fn static_icon_names_resolve_from_icon_search_roots() {
-        let temp = tempfile::tempdir().unwrap();
-        let icon_root = temp.path().join("icons");
-        let icon_path = icon_root
-            .join("hicolor")
-            .join("48x48")
-            .join("actions")
-            .join("mail-reply-sender.png");
-        std::fs::create_dir_all(icon_path.parent().unwrap()).unwrap();
-        std::fs::write(&icon_path, [0_u8]).unwrap();
-
-        assert_eq!(
-            find_static_icon_in_roots("mail-reply-sender", vec![icon_root]),
-            Some(icon_path)
-        );
-        assert_eq!(
-            find_static_icon_in_roots("../mail-reply-sender", vec![temp.path().join("icons")]),
-            None
-        );
-    }
-
-    #[test]
-    fn static_icon_name_resolution_reuses_cached_index_for_roots() {
-        clear_static_icon_index_cache_for_tests();
-
-        let temp = tempfile::tempdir().unwrap();
-        let icon_root = temp.path().join("icons");
-        let icon_path = icon_root
-            .join("hicolor")
-            .join("48x48")
-            .join("apps")
-            .join("mail-client.png");
-        std::fs::create_dir_all(icon_path.parent().unwrap()).unwrap();
-        std::fs::write(&icon_path, [0_u8]).unwrap();
-
-        let icon_root_set = vec![icon_root.clone()];
-        assert_eq!(
-            resolve_static_icon_name_in_roots("mail-client", icon_root_set.clone()),
-            Some(icon_path.to_string_lossy().into_owned())
-        );
-
-        std::fs::remove_file(&icon_path).unwrap();
-        assert_eq!(
-            resolve_static_icon_name_in_roots("mail-client", icon_root_set),
-            Some(icon_path.to_string_lossy().into_owned())
-        );
-
-        let missing_icon_root = temp.path().join("missing-icons");
-        let missing_icon_path = missing_icon_root.join("hicolor/48x48/apps/calendar.png");
-        std::fs::create_dir_all(missing_icon_path.parent().unwrap()).unwrap();
-        let missing_icon_root_set = vec![missing_icon_root];
-        assert_eq!(
-            resolve_static_icon_name_in_roots("calendar", missing_icon_root_set.clone()),
-            None
-        );
-
-        std::fs::write(&missing_icon_path, [0_u8]).unwrap();
-        assert_eq!(
-            resolve_static_icon_name_in_roots("calendar", missing_icon_root_set),
-            None
-        );
-    }
-
-    #[test]
-    fn app_identity_icon_is_used_when_notification_has_no_app_icon() {
-        clear_static_icon_index_cache_for_tests();
-
-        let temp = tempfile::tempdir().unwrap();
-        let icon_root = temp.path().join("icons");
-        let icon_path = icon_root
-            .join("hicolor")
-            .join("48x48")
-            .join("apps")
-            .join("org.example.Mail.png");
-        std::fs::create_dir_all(icon_path.parent().unwrap()).unwrap();
-        std::fs::write(&icon_path, [0_u8]).unwrap();
-
-        assert!(matches!(
-            banner_app_icon_visual_in_roots(
-                None,
-                "org.example.Mail.desktop",
-                vec![icon_root],
-            ),
-            Some(BannerVisual::LocalPath { path }) if path == icon_path.to_string_lossy()
-        ));
-    }
-
-    #[test]
-    fn specified_app_icon_takes_priority_over_app_identity_icon() {
-        clear_static_icon_index_cache_for_tests();
-
-        let temp = tempfile::tempdir().unwrap();
-        let explicit_icon_path = temp.path().join("explicit.png");
-        std::fs::write(&explicit_icon_path, [0_u8]).unwrap();
-        let icon_root = temp.path().join("icons");
-        let identity_icon_path = icon_root
-            .join("hicolor")
-            .join("48x48")
-            .join("apps")
-            .join("org.example.Mail.png");
-        std::fs::create_dir_all(identity_icon_path.parent().unwrap()).unwrap();
-        std::fs::write(identity_icon_path, [0_u8]).unwrap();
-        let explicit_icon_path = explicit_icon_path.to_string_lossy().into_owned();
-        let explicit_icon = NotificationVisualReference::local_path(explicit_icon_path.clone());
-
-        assert!(matches!(
-            banner_app_icon_visual_in_roots(
-                explicit_icon.as_ref(),
-                "org.example.Mail.desktop",
-                vec![icon_root],
-            ),
-            Some(BannerVisual::LocalPath { path }) if path == explicit_icon_path
-        ));
-    }
-
-    #[test]
-    fn banner_actions_resolve_sender_action_icons() {
-        let temp = tempfile::tempdir().unwrap();
-        let icon_path = temp.path().join("reply.png");
-        std::fs::write(&icon_path, [0_u8]).unwrap();
-        let icon_path_string = icon_path.to_string_lossy().into_owned();
-        let action = NotificationAction::new("reply", "Reply")
-            .with_icon(NotificationVisualReference::local_path(icon_path_string.clone()).unwrap());
-
-        let action = banner_action_from_notification_action(&action);
-
-        assert_eq!(action.key, "reply");
-        assert_eq!(action.label, "Reply");
-        assert!(matches!(
-            action.icon,
-            Some(BannerVisual::LocalPath { path }) if path == icon_path_string
-        ));
     }
 
     fn banner_view(notification_id: i64, body: &str) -> BannerView {
@@ -1591,7 +1501,9 @@ fn banner_visual_handle(visual: &BannerVisual) -> iced::widget::image::Handle {
         } => iced::widget::image::Handle::from_rgba(*width, *height, pixels.clone()),
         // Renderer inputs are prepared pixels. Never reopen a sender path here,
         // even if an internal caller accidentally bypasses preparation.
-        BannerVisual::LocalPath { .. } => iced::widget::image::Handle::from_rgba(1, 1, vec![0; 4]),
+        BannerVisual::LocalPath { .. } | BannerVisual::IconNames { .. } => {
+            iced::widget::image::Handle::from_rgba(1, 1, vec![0; 4])
+        }
     }
 }
 
@@ -1881,6 +1793,10 @@ pub struct BannerAction {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum BannerVisual {
+    /// Unresolved local theme references, in preference order (at most two).
+    IconNames {
+        names: Vec<String>,
+    },
     Rgba {
         width: u32,
         height: u32,
@@ -1934,9 +1850,9 @@ impl BannerVisual {
             NotificationVisualReference::LocalPath(path) if supported_local_image_path(path) => {
                 Some(Self::LocalPath { path: path.clone() })
             }
-            NotificationVisualReference::IconName(icon_name) => {
-                resolve_static_icon_name(icon_name).map(|path| Self::LocalPath { path })
-            }
+            NotificationVisualReference::IconName(icon_name) => Some(Self::IconNames {
+                names: vec![icon_name.clone()],
+            }),
             NotificationVisualReference::LocalPath(_) => None,
         }
     }
@@ -2056,48 +1972,25 @@ fn banner_app_icon_visual(
     app_icon: Option<&NotificationVisualReference>,
     app_identity: &str,
 ) -> Option<BannerVisual> {
-    banner_app_icon_visual_in_roots(app_icon, app_identity, icon_search_roots())
-}
-
-fn banner_app_icon_visual_in_roots(
-    app_icon: Option<&NotificationVisualReference>,
-    app_identity: &str,
-    roots: Vec<PathBuf>,
-) -> Option<BannerVisual> {
     match app_icon {
-        Some(app_icon) => BannerVisual::from_reference(app_icon),
-        None => app_identity_icon_visual_in_roots(app_identity, roots),
+        Some(reference) => BannerVisual::from_reference(reference),
+        None => Some(BannerVisual::IconNames {
+            names: app_identity_icon_name_candidates(app_identity),
+        }),
     }
 }
 
-fn app_identity_icon_visual_in_roots(
-    app_identity: &str,
-    roots: Vec<PathBuf>,
-) -> Option<BannerVisual> {
-    let index = cached_static_icon_index(roots);
-    app_identity_icon_name_candidates(app_identity)
-        .into_iter()
-        .find_map(|icon_name| {
-            index
-                .resolve(&icon_name)
-                .map(|path| BannerVisual::LocalPath {
-                    path: path.to_string_lossy().into_owned(),
-                })
-        })
-}
-
 fn app_identity_icon_name_candidates(app_identity: &str) -> Vec<String> {
-    let Some(app_identity) = normalize_static_icon_name(app_identity) else {
+    let app_identity = app_identity.trim();
+    if !icons::valid_name(app_identity) {
         return Vec::new();
-    };
-    let mut candidates = vec![app_identity.clone()];
+    }
+    let mut candidates = vec![app_identity.to_owned()];
     let suffix = ".desktop";
     if app_identity.to_ascii_lowercase().ends_with(suffix) {
         let stripped = app_identity[..app_identity.len() - suffix.len()].trim();
-        if let Some(stripped) = normalize_static_icon_name(stripped)
-            && stripped != app_identity
-        {
-            candidates.push(stripped);
+        if icons::valid_name(stripped) && stripped != app_identity {
+            candidates.push(stripped.to_owned());
         }
     }
     candidates
@@ -2112,215 +2005,7 @@ fn banner_action_from_notification_action(action: &NotificationAction) -> Banner
 }
 
 fn supported_local_image_path(path: &str) -> bool {
-    has_static_raster_extension(path)
-        && std::fs::metadata(Path::new(path))
-            .map(|metadata| metadata.is_file() && metadata.len() <= MAX_FILE_BACKED_VISUAL_BYTES)
-            .unwrap_or(false)
-}
-
-fn resolve_static_icon_name(icon_name: &str) -> Option<String> {
-    resolve_static_icon_name_in_roots(icon_name, icon_search_roots())
-}
-
-fn resolve_static_icon_name_in_roots(icon_name: &str, roots: Vec<PathBuf>) -> Option<String> {
-    let icon_name = normalize_static_icon_name(icon_name)?;
-    cached_static_icon_index(roots)
-        .resolve(&icon_name)
-        .map(|path| path.to_string_lossy().into_owned())
-}
-
-#[cfg(test)]
-fn find_static_icon_in_roots(
-    icon_name: &str,
-    roots: impl IntoIterator<Item = PathBuf>,
-) -> Option<PathBuf> {
-    let icon_name = normalize_static_icon_name(icon_name)?;
-
-    for root in roots {
-        if let Some(path) = find_static_icon_in_root(&root, &icon_name) {
-            return Some(path);
-        }
-    }
-
-    None
-}
-
-fn normalize_static_icon_name(icon_name: &str) -> Option<String> {
-    let icon_name = icon_name.trim();
-    if icon_name.is_empty() || icon_name.contains('/') || icon_name.contains('\\') {
-        None
-    } else {
-        Some(icon_name.to_string())
-    }
-}
-
-#[derive(Debug, Default)]
-struct StaticIconIndex {
-    paths_by_name: HashMap<String, PathBuf>,
-}
-
-impl StaticIconIndex {
-    fn from_roots(roots: &[PathBuf]) -> Self {
-        let mut index = Self::default();
-        for root in roots {
-            index.add_root(root);
-        }
-        index
-    }
-
-    fn resolve(&self, icon_name: &str) -> Option<PathBuf> {
-        self.paths_by_name.get(icon_name).cloned()
-    }
-
-    fn add_root(&mut self, root: &Path) {
-        let mut stack = vec![(root.to_path_buf(), 0_usize)];
-
-        while let Some((directory, depth)) = stack.pop() {
-            let Ok(entries) = std::fs::read_dir(&directory) else {
-                continue;
-            };
-            let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
-            entries.sort_by_key(|entry| entry.file_name());
-
-            let mut child_directories = Vec::new();
-            for entry in entries {
-                let path = entry.path();
-                if let Some(icon_name) = supported_static_icon_file_name(&path)
-                    && supported_local_image_path(path.to_string_lossy().as_ref())
-                {
-                    self.paths_by_name
-                        .entry(icon_name)
-                        .or_insert_with(|| path.clone());
-                }
-
-                if depth < ICON_SEARCH_MAX_DEPTH
-                    && entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
-                {
-                    child_directories.push(path);
-                }
-            }
-
-            child_directories.sort();
-            for child in child_directories.into_iter().rev() {
-                stack.push((child, depth + 1));
-            }
-        }
-    }
-}
-
-fn supported_static_icon_file_name(path: &Path) -> Option<String> {
-    let extension = path.extension()?.to_str()?;
-    if !STATIC_ICON_EXTENSIONS
-        .iter()
-        .any(|supported| extension.eq_ignore_ascii_case(supported))
-    {
-        return None;
-    }
-
-    path.file_stem()?.to_str().map(str::to_string)
-}
-
-fn cached_static_icon_index(roots: Vec<PathBuf>) -> Arc<StaticIconIndex> {
-    let cache = static_icon_index_cache();
-    if let Some(index) = cache.lock().unwrap().get(&roots).cloned() {
-        return index;
-    }
-
-    let index = Arc::new(StaticIconIndex::from_roots(&roots));
-    let mut cache = cache.lock().unwrap();
-    Arc::clone(cache.entry(roots).or_insert(index))
-}
-
-fn static_icon_index_cache() -> &'static Mutex<HashMap<Vec<PathBuf>, Arc<StaticIconIndex>>> {
-    static CACHE: OnceLock<Mutex<HashMap<Vec<PathBuf>, Arc<StaticIconIndex>>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-#[cfg(test)]
-fn clear_static_icon_index_cache_for_tests() {
-    static_icon_index_cache().lock().unwrap().clear();
-}
-
-#[cfg(test)]
-fn find_static_icon_in_root(root: &Path, icon_name: &str) -> Option<PathBuf> {
-    let file_names = STATIC_ICON_EXTENSIONS
-        .iter()
-        .map(|extension| format!("{icon_name}.{extension}"))
-        .collect::<Vec<_>>();
-    let mut stack = vec![(root.to_path_buf(), 0_usize)];
-
-    while let Some((directory, depth)) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&directory) else {
-            continue;
-        };
-        let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
-        entries.sort_by_key(|entry| entry.file_name());
-
-        let mut child_directories = Vec::new();
-        for entry in entries {
-            let path = entry.path();
-            let file_name = entry.file_name();
-            if file_names
-                .iter()
-                .any(|expected| file_name == OsStr::new(expected))
-                && supported_local_image_path(path.to_string_lossy().as_ref())
-            {
-                return Some(path);
-            }
-
-            if depth < ICON_SEARCH_MAX_DEPTH
-                && entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
-            {
-                child_directories.push(path);
-            }
-        }
-
-        child_directories.sort();
-        for child in child_directories.into_iter().rev() {
-            stack.push((child, depth + 1));
-        }
-    }
-
-    None
-}
-
-fn icon_search_roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-
-    if let Some(data_home) = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from) {
-        push_data_dir_icon_roots(&mut roots, data_home);
-    } else if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        push_data_dir_icon_roots(&mut roots, home.join(".local/share"));
-    }
-
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        push_unique_path(&mut roots, home.join(".icons"));
-    }
-
-    let data_dirs = std::env::var_os("XDG_DATA_DIRS")
-        .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
-        .unwrap_or_else(|| {
-            vec![
-                PathBuf::from("/usr/local/share"),
-                PathBuf::from("/usr/share"),
-            ]
-        });
-    for data_dir in data_dirs {
-        push_data_dir_icon_roots(&mut roots, data_dir);
-    }
-
-    roots
-}
-
-fn push_data_dir_icon_roots(roots: &mut Vec<PathBuf>, data_dir: PathBuf) {
-    push_unique_path(roots, data_dir.join("icons"));
-    push_unique_path(roots, data_dir.join("pixmaps"));
-}
-
-fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
-    if !paths.iter().any(|existing| existing == &path) {
-        paths.push(path);
-    }
+    Path::new(path).is_absolute() && has_static_raster_extension(path)
 }
 
 #[derive(Clone)]
@@ -2328,6 +2013,7 @@ pub(crate) struct PresentationCoordinator {
     enabled: bool,
     banner_presenter: Arc<dyn BannerPresenter>,
     last_error: Arc<Mutex<Option<String>>>,
+    icon_settings: Arc<Mutex<BannerIconSettings>>,
 }
 
 impl PresentationCoordinator {
@@ -2336,7 +2022,16 @@ impl PresentationCoordinator {
             enabled,
             banner_presenter,
             last_error: Arc::new(Mutex::new(None)),
+            icon_settings: Arc::new(Mutex::new(BannerIconSettings::default())),
         }
+    }
+
+    pub(crate) fn set_icon_settings(&self, settings: BannerIconSettings) {
+        *self.icon_settings.lock().unwrap() = settings;
+    }
+
+    pub(crate) fn icon_settings(&self) -> BannerIconSettings {
+        self.icon_settings.lock().unwrap().clone()
     }
 
     pub(crate) fn replace_banner_presentation_with_acknowledgement(
@@ -2400,6 +2095,7 @@ impl NotificationBannerState {
         BannerPresentation {
             banners: self.visible_banners(),
             overflow_count: self.overflow_count(),
+            icon_settings: BannerIconSettings::default(),
         }
     }
 

@@ -1,7 +1,7 @@
 use super::*;
 use crate::NotificationBodyImage;
 
-static IMAGE_FIXTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+pub(super) static IMAGE_FIXTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn body_image_banner(path: &Path, alt: Option<&str>) -> BannerView {
     let path = path.to_string_lossy().into_owned();
@@ -562,7 +562,9 @@ fn dropped_consumer_releases_callbacks_but_keeps_decoder_admission_until_job_exi
         );
         assert!(!acknowledged.load(Ordering::SeqCst));
 
-        let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
+        let (updates, mut receiver) =
+            BannerUpdateSender::channel(tokio::runtime::Handle::current());
+        receiver.icon_roots = vec![temp.path().to_path_buf()].into();
         let presenter = IcedLayerShellBannerPresenter { updates };
         let mut stream = Box::pin(banner_updates(receiver));
         let mut replacement = body_image_banner(&path, Some("Decoder busy"));
@@ -571,6 +573,13 @@ fn dropped_consumer_releases_callbacks_but_keeps_decoder_admission_until_job_exi
             height: 1,
             pixels: vec![44, 55, 66, 255],
         });
+        replacement.actions = vec![BannerAction {
+            key: "named".into(),
+            label: "Named icon".into(),
+            icon: Some(BannerVisual::IconNames {
+                names: vec!["pixel".into()],
+            }),
+        }];
         // Reopening cannot queue a second decoder behind the occupied executor.
         for _ in 0..32 {
             presenter
@@ -586,6 +595,7 @@ fn dropped_consumer_releases_callbacks_but_keeps_decoder_admission_until_job_exi
                 vec![BannerBodySegment::plain_text("Decoder busy")]
             );
             assert_eq!(presentation.banners[0].app_icon, replacement.app_icon);
+            assert!(presentation.banners[0].actions[0].icon.is_none());
         }
         drop(release);
         blocker.await.unwrap();
@@ -601,6 +611,14 @@ fn dropped_consumer_releases_callbacks_but_keeps_decoder_admission_until_job_exi
                         image: BannerVisual::Rgba { .. }
                     }]
                 ) {
+                    assert_eq!(
+                        presentation.banners[0].actions[0].icon,
+                        Some(BannerVisual::Rgba {
+                            width: 1,
+                            height: 1,
+                            pixels: vec![11, 22, 33, 255],
+                        })
+                    );
                     break;
                 }
                 tokio::task::yield_now().await;

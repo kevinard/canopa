@@ -490,6 +490,7 @@ impl NotificationRuntime {
         &self,
         rules: Vec<DeliveryPolicyRule>,
         sound_settings: NotificationSoundSettings,
+        icon_settings: crate::BannerIconSettings,
     ) -> anyhow::Result<()> {
         let _change = self.commands.lock().await;
         if !self.headless {
@@ -500,8 +501,13 @@ impl NotificationRuntime {
             }
         }
         self.replace_loaded_policy_state(|state| state.with_config_rules(rules));
+        self.set_icon_settings(icon_settings);
         self.notify_state_changed();
         Ok(())
+    }
+
+    pub(crate) fn set_icon_settings(&self, settings: crate::BannerIconSettings) {
+        self.presentation.set_icon_settings(settings);
     }
 
     pub(crate) async fn delivery_decision_logs(&self) -> Vec<DeliveryDecisionLog> {
@@ -810,6 +816,7 @@ impl NotificationRuntime {
                     })
                     .collect(),
                 overflow_count,
+                icon_settings: self.presentation.icon_settings(),
             },
             visible_revisions,
         )

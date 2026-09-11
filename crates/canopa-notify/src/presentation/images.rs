@@ -34,13 +34,14 @@ struct ImageBudget<'a> {
 pub(super) async fn prepare(
     presentation: BannerPresentation,
     executor: &tokio::runtime::Handle,
+    icon_roots: Arc<[std::path::PathBuf]>,
     superseded: impl Fn() -> bool + Send + 'static,
 ) -> Option<BannerPresentation> {
     if !has_local_files(&presentation) {
-        return prepare_pixels(presentation, &superseded, false);
+        return prepare_pixels(presentation, &superseded, false, &icon_roots);
     }
     let Ok(permit) = DECODER.try_acquire() else {
-        return prepare_pixels(presentation, &superseded, false);
+        return prepare_pixels(presentation, &superseded, false, &icon_roots);
     };
     let lifetime = ConsumerLifetime(Arc::new(AtomicBool::new(false)));
     let cancelled = lifetime.0.clone();
@@ -52,6 +53,7 @@ pub(super) async fn prepare(
                 presentation,
                 &|| cancelled.load(Ordering::Relaxed) || superseded(),
                 true,
+                &icon_roots,
             )
         })
         .await;
@@ -77,7 +79,12 @@ fn has_local_files(presentation: &BannerPresentation) -> bool {
                     .iter()
                     .filter_map(|action| action.icon.as_ref()),
             )
-            .any(|visual| matches!(visual, BannerVisual::LocalPath { .. }))
+            .any(|visual| {
+                matches!(
+                    visual,
+                    BannerVisual::LocalPath { .. } | BannerVisual::IconNames { .. }
+                )
+            })
             || banner
                 .body_content
                 .segments
@@ -90,6 +97,7 @@ fn prepare_pixels(
     mut presentation: BannerPresentation,
     cancelled: &dyn Fn() -> bool,
     allow_files: bool,
+    icon_roots: &[std::path::PathBuf],
 ) -> Option<BannerPresentation> {
     let mut budget = ImageBudget {
         remaining_pixels_bytes: 32 * 1024 * 1024,
@@ -97,6 +105,12 @@ fn prepare_pixels(
         remaining_encoded_bytes: 32 * 1024 * 1024,
         cancelled,
     };
+    let mut icons = super::icons::IconLookup::new(
+        icon_roots,
+        &presentation.icon_settings,
+        cancelled,
+        allow_files,
+    );
     for banner in &mut presentation.banners {
         if cancelled() {
             return None;
@@ -104,13 +118,21 @@ fn prepare_pixels(
         banner.app_icon = banner
             .app_icon
             .take()
-            .and_then(|visual| budget.resolve(visual));
+            .and_then(|visual| budget.resolve(visual, &mut icons, super::APP_ICON_VISUAL_SIZE));
+        let image_size = if banner.app_icon.is_some() {
+            super::NOTIFICATION_IMAGE_VISUAL_SIZE
+        } else {
+            super::APP_ICON_VISUAL_SIZE
+        };
         banner.image = banner
             .image
             .take()
-            .and_then(|visual| budget.resolve(visual));
+            .and_then(|visual| budget.resolve(visual, &mut icons, image_size));
         for action in &mut banner.actions {
-            action.icon = action.icon.take().and_then(|visual| budget.resolve(visual));
+            action.icon = action
+                .icon
+                .take()
+                .and_then(|visual| budget.resolve(visual, &mut icons, 16));
         }
         let mut segments = Vec::new();
         for segment in &banner.body_content.segments {
@@ -141,11 +163,20 @@ fn prepare_pixels(
 }
 
 impl ImageBudget<'_> {
-    fn resolve(&mut self, visual: BannerVisual) -> Option<BannerVisual> {
+    fn resolve(
+        &mut self,
+        visual: BannerVisual,
+        icons: &mut super::icons::IconLookup<'_>,
+        size: u16,
+    ) -> Option<BannerVisual> {
         if (self.cancelled)() {
             return None;
         }
         match &visual {
+            BannerVisual::IconNames { names } => {
+                let path = icons.resolve(names, size)?;
+                self.decode_file(&path)
+            }
             BannerVisual::LocalPath { path } => self.decode_file(Path::new(path)),
             BannerVisual::Rgba {
                 width,

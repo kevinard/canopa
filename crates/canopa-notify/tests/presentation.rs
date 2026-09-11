@@ -53,6 +53,122 @@ impl BannerPresenter for RecordingPresenter {
 }
 
 #[tokio::test]
+async fn icon_configuration_loads_and_reloads_without_reclassifying_notifications() {
+    struct RejectSoundTheme;
+    impl canopa_notify::SoundPresenter for RejectSoundTheme {
+        fn apply_sound_settings(
+            &self,
+            settings: canopa_notify::NotificationSoundSettings,
+        ) -> anyhow::Result<()> {
+            anyhow::ensure!(
+                settings.theme != "reject",
+                "injected sound settings failure"
+            );
+            Ok(())
+        }
+        fn play_notification_sound(
+            &self,
+            _: canopa_notify::NotificationSoundPlayback,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn stop_all_sounds(&self) {}
+        fn supports_sound(&self) -> bool {
+            false
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("notify.kdl");
+    std::fs::write(&config, "icons theme=\"Birch\" scale=2\n").unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(
+        DaemonOptions::graphical(temp.path().join("history.db"), presenter.clone())
+            .with_sound_presenter(RejectSoundTheme)
+            .with_configuration_file(config.clone()),
+    )
+    .await
+    .expect("installed configuration must accept icon selection");
+    daemon
+        .receive_notification(notification("Mail", "First"))
+        .await
+        .unwrap();
+    let first = presenter
+        .presentation_updates()
+        .last()
+        .unwrap()
+        .icon_settings
+        .clone();
+    assert_eq!(first.theme, "Birch");
+    assert_eq!(first.scale, 2);
+    assert_eq!(daemon.snapshot().await.unwrap().active.len(), 1);
+    std::fs::write(&config, "icons theme=\"Other\" scale=1\n").unwrap();
+    daemon.reload_configuration_file(&config).await.unwrap();
+    assert_eq!(daemon.snapshot().await.unwrap().active.len(), 1);
+    daemon
+        .receive_notification(notification("Mail", "Second"))
+        .await
+        .unwrap();
+    let second = presenter
+        .presentation_updates()
+        .last()
+        .unwrap()
+        .icon_settings
+        .clone();
+    assert_eq!(second.theme, "Other");
+    assert_eq!(second.scale, 1);
+    for invalid in [
+        "icons scale=0",
+        "icons scale=9",
+        "icons scale=1.5",
+        "icons theme=\"../other\"",
+        "icons theme=\"\"",
+        "icons surprise=1",
+        "icons; icons",
+        "icons { child; }",
+    ] {
+        let generation = daemon.configuration_status().generation;
+        std::fs::write(&config, format!("{invalid}\n")).unwrap();
+        assert!(
+            daemon.reload_configuration_file(&config).await.is_err(),
+            "{invalid}"
+        );
+        assert_eq!(daemon.configuration_status().generation, generation);
+        daemon
+            .receive_notification(notification("Mail", "Still configured"))
+            .await
+            .unwrap();
+        assert_eq!(
+            presenter
+                .presentation_updates()
+                .last()
+                .unwrap()
+                .icon_settings,
+            second
+        );
+    }
+    let generation = daemon.configuration_status().generation;
+    std::fs::write(&config, "icons theme=\"Uncommitted\" scale=4\nsound theme=\"reject\"\nrule app=\"Mail\" outcome=\"drop\"\n").unwrap();
+    assert!(daemon.reload_configuration_file(&config).await.is_err());
+    assert_eq!(daemon.configuration_status().generation, generation);
+    let receipt = daemon
+        .receive_notification(notification(
+            "Mail",
+            "Still configured after install failure",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(receipt.delivery_outcome, DeliveryOutcome::Shown);
+    assert_eq!(
+        presenter
+            .presentation_updates()
+            .last()
+            .unwrap()
+            .icon_settings,
+        second
+    );
+}
+
+#[tokio::test]
 async fn queued_banner_action_cannot_invoke_the_same_key_on_replacement_content() {
     let temp = tempfile::tempdir().unwrap();
     let presenter = RecordingPresenter::default();
@@ -487,7 +603,7 @@ async fn non_headless_daemon_presents_ordered_body_image_segments() {
 }
 
 #[tokio::test]
-async fn non_headless_daemon_uses_body_image_alt_when_local_file_cannot_render() {
+async fn non_headless_daemon_preserves_missing_body_image_reference_and_plain_fallback() {
     let temp = tempfile::tempdir().unwrap();
     let missing_body_image_path = temp.path().join("missing.png");
     let presenter = RecordingPresenter::default();
@@ -516,12 +632,18 @@ async fn non_headless_daemon_uses_body_image_alt_when_local_file_cannot_render()
     assert_eq!(banner.body, "Before missing chart after");
     assert_eq!(
         banner.body_segments,
-        vec![BannerBodySegment::plain_text("Before missing chart after")]
+        vec![
+            BannerBodySegment::plain_text("Before "),
+            BannerBodySegment::image(BannerVisual::LocalPath {
+                path: path_string(&missing_body_image_path)
+            }),
+            BannerBodySegment::plain_text(" after")
+        ]
     );
 }
 
 #[tokio::test]
-async fn non_headless_daemon_uses_body_image_alt_for_resource_unsafe_file() {
+async fn non_headless_daemon_leaves_file_size_validation_to_asset_preparation() {
     let temp = tempfile::tempdir().unwrap();
     let oversized_body_image_path = temp.path().join("oversized.png");
     std::fs::File::create(&oversized_body_image_path)
@@ -554,7 +676,9 @@ async fn non_headless_daemon_uses_body_image_alt_for_resource_unsafe_file() {
     assert_eq!(banner.body, "oversized chart");
     assert_eq!(
         banner.body_segments,
-        vec![BannerBodySegment::plain_text("oversized chart")]
+        vec![BannerBodySegment::image(BannerVisual::LocalPath {
+            path: path_string(&oversized_body_image_path)
+        })]
     );
 }
 

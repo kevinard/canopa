@@ -1,5 +1,5 @@
 use crate::{
-    DeliveryOutcome, DeliveryPolicyRule, NotificationSoundSettings, Urgency,
+    BannerIconSettings, DeliveryOutcome, DeliveryPolicyRule, NotificationSoundSettings, Urgency,
     normalize_notification_category,
 };
 use anyhow::Context;
@@ -50,6 +50,10 @@ impl LoadedNotificationConfiguration {
         self.active.sound_settings()
     }
 
+    pub(crate) fn icon_settings(&self) -> BannerIconSettings {
+        self.active.icons.clone()
+    }
+
     pub(crate) fn error(&self) -> Option<String> {
         self.last_error.clone()
     }
@@ -71,6 +75,7 @@ impl LoadedNotificationConfiguration {
 struct NotificationConfiguration {
     rules: Vec<NotificationConfigurationRule>,
     sound: NotificationSoundSettings,
+    icons: BannerIconSettings,
 }
 
 impl NotificationConfiguration {
@@ -95,6 +100,7 @@ impl NotificationConfiguration {
             .context("failed to parse Notification Configuration as KDL")?;
         let mut rules = Vec::new();
         let mut sound = None;
+        let mut icons = None;
 
         for node in doc.nodes() {
             match node.name().value() {
@@ -105,9 +111,13 @@ impl NotificationConfiguration {
                     }
                     sound = Some(parse_sound(node)?);
                 }
+                "icons" => {
+                    anyhow::ensure!(icons.is_none(), "duplicate icons nodes");
+                    icons = Some(parse_icons(node)?);
+                }
                 name => {
                     anyhow::bail!(
-                        "invalid Notification Configuration node {name:?}: expected rule or sound"
+                        "invalid Notification Configuration node {name:?}: expected rule, sound or icons"
                     );
                 }
             }
@@ -116,6 +126,7 @@ impl NotificationConfiguration {
         Ok(Self {
             rules,
             sound: sound.unwrap_or_default(),
+            icons: icons.unwrap_or_default(),
         })
     }
 
@@ -199,6 +210,32 @@ fn parse_sound(node: &KdlNode) -> anyhow::Result<NotificationSoundSettings> {
         entries
             .default_sound
             .unwrap_or_else(|| NotificationSoundSettings::default().default_sound),
+    )
+}
+
+fn parse_icons(node: &KdlNode) -> anyhow::Result<BannerIconSettings> {
+    anyhow::ensure!(node.children().is_none(), "icons must not have child nodes");
+    let mut theme = None;
+    let mut scale = None;
+    for entry in node.entries() {
+        match entry.name().map(|name| name.value()) {
+            Some("theme") => set_string_property(&mut theme, entry, "theme", "icons")?,
+            Some("scale") => {
+                anyhow::ensure!(scale.is_none(), "duplicate icon scale");
+                scale = Some(
+                    entry
+                        .value()
+                        .as_integer()
+                        .and_then(|value| u16::try_from(value).ok())
+                        .context("icon scale must be an integer between 1 and 8")?,
+                );
+            }
+            _ => anyhow::bail!("icons accepts only theme and scale properties"),
+        }
+    }
+    BannerIconSettings::new(
+        theme.unwrap_or_else(|| "hicolor".into()),
+        scale.unwrap_or(1),
     )
 }
 

@@ -1317,7 +1317,7 @@ async fn installed_startup_loads_xdg_configuration_before_accepting_notification
     std::fs::create_dir_all(config_home.join("canopa-notify")).unwrap();
     std::fs::write(
         config_home.join("canopa-notify/config.kdl"),
-        "rule app=\"Configured App\" outcome=\"drop\"\n",
+        "rule app=\"Configured App\" outcome=\"drop\"\nicons theme=\"Birch\" scale=2\n",
     )
     .unwrap();
     let bus_name = test_bus_name("StartupConfiguration");

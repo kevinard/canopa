@@ -53,7 +53,7 @@ pub use lifecycle::{
 pub use notification_id::InternalNotificationId;
 pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
-    BannerAction, BannerBodySegment, BannerFocusBehavior, BannerInteraction,
+    BannerAction, BannerBodySegment, BannerFocusBehavior, BannerIconSettings, BannerInteraction,
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPlacement,
     BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerSurfaceSpec,
     BannerTarget, BannerView, BannerVisual, IcedLayerShellBannerPresenter, NoopBannerPresenter,
@@ -187,6 +187,7 @@ impl Daemon {
             configuration.delivery_policy_rules(),
         )
         .await?;
+        runtime.set_icon_settings(configuration.icon_settings());
         Ok(Self {
             runtime,
             configuration: Arc::new(Mutex::new(configuration)),
@@ -392,6 +393,7 @@ impl Daemon {
             .install_configuration(
                 candidate.delivery_policy_rules(),
                 candidate.sound_settings(),
+                candidate.icon_settings(),
             )
             .await
         {
