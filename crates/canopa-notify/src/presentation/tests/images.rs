@@ -18,7 +18,7 @@ fn body_image_banner(path: &Path, alt: Option<&str>) -> BannerView {
 async fn render_banner(banner: BannerView) -> BannerView {
     let _fixture = IMAGE_FIXTURE.lock().await;
     let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
-    let presenter = IcedLayerShellBannerPresenter { updates };
+    let presenter = test_presenter(updates);
     presenter.replace_visible_banners(vec![banner]).unwrap();
     let mut stream = Box::pin(banner_updates(receiver));
     let BannerRuntimeInput::Replace {
@@ -143,7 +143,7 @@ async fn renderer_prepares_images_when_polled_outside_the_daemon_executor() {
     let path = temp.path().join("pixel.png");
     write_png(&path, 1, 1, [11, 22, 33, 255]);
     let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
-    let presenter = IcedLayerShellBannerPresenter { updates };
+    let presenter = test_presenter(updates);
     presenter
         .replace_visible_banners(vec![body_image_banner(&path, None)])
         .unwrap();
@@ -191,7 +191,7 @@ fn superseded_image_preparation_cannot_display_or_acknowledge_a_closed_banner() 
         });
         ready.await.unwrap();
         let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
-        let presenter = IcedLayerShellBannerPresenter { updates };
+        let presenter = test_presenter(updates);
         let mut stream = Box::pin(banner_updates(receiver));
         let old_acknowledged = Arc::new(AtomicBool::new(false));
         let old = old_acknowledged.clone();
@@ -302,7 +302,7 @@ async fn prepared_pixels_keep_visual_roles_and_survive_source_edits_and_deletion
         icon: Some(local(2)),
     }];
     let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
-    let presenter = IcedLayerShellBannerPresenter { updates };
+    let presenter = test_presenter(updates);
     let mut stream = Box::pin(banner_updates(receiver));
     presenter
         .replace_visible_banners(vec![banner.clone()])
@@ -537,7 +537,7 @@ fn dropped_consumer_releases_callbacks_but_keeps_decoder_admission_until_job_exi
         });
         ready.await.unwrap();
         let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
-        let presenter = IcedLayerShellBannerPresenter { updates };
+        let presenter = test_presenter(updates);
         let mut stream = Box::pin(banner_updates(receiver));
         let marker = Arc::new(());
         let lifetime = Arc::downgrade(&marker);
@@ -565,7 +565,7 @@ fn dropped_consumer_releases_callbacks_but_keeps_decoder_admission_until_job_exi
         let (updates, mut receiver) =
             BannerUpdateSender::channel(tokio::runtime::Handle::current());
         receiver.icon_roots = vec![temp.path().to_path_buf()].into();
-        let presenter = IcedLayerShellBannerPresenter { updates };
+        let presenter = test_presenter(updates);
         let mut stream = Box::pin(banner_updates(receiver));
         let mut replacement = body_image_banner(&path, Some("Decoder busy"));
         replacement.app_icon = Some(BannerVisual::Rgba {
@@ -659,7 +659,7 @@ async fn renderer_rejects_a_fifo_without_waiting_for_a_writer() {
         }
     });
     let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
-    let presenter = IcedLayerShellBannerPresenter { updates };
+    let presenter = test_presenter(updates);
     let mut stream = Box::pin(banner_updates(receiver));
     let started = std::time::Instant::now();
     presenter

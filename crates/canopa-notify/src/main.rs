@@ -143,8 +143,8 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
     } else {
         None
     };
+    let mut startup = daemon_startup(mode, paths.database.clone()).await?;
     paths.import_legacy_history().await?;
-    let mut startup = daemon_startup(mode, paths.database.clone())?;
     let configuration = startup::configuration_path(args.config)?;
     let reload_path = configuration.clone().unwrap_or(
         startup::xdg_home("XDG_CONFIG_HOME", ".config")?.join("canopa-notify/config.kdl"),
@@ -212,7 +212,7 @@ struct DaemonStartup {
     banner_interactions: Option<mpsc::Receiver<BannerInteraction>>,
 }
 
-fn daemon_startup(mode: DaemonMode, database: PathBuf) -> anyhow::Result<DaemonStartup> {
+async fn daemon_startup(mode: DaemonMode, database: PathBuf) -> anyhow::Result<DaemonStartup> {
     match mode {
         DaemonMode::Headless => Ok(DaemonStartup {
             options: DaemonOptions::headless(database),
@@ -222,7 +222,7 @@ fn daemon_startup(mode: DaemonMode, database: PathBuf) -> anyhow::Result<DaemonS
             let (interactions, banner_interactions) = mpsc::channel();
             Ok(graphical_daemon_startup(
                 database,
-                IcedLayerShellBannerPresenter::start(interactions)?,
+                IcedLayerShellBannerPresenter::start(interactions).await?,
                 Some(banner_interactions),
             ))
         }

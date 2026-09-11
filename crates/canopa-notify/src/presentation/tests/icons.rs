@@ -26,11 +26,8 @@ async fn fixture_daemon(
     let (updates, mut receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
     receiver.icon_roots = roots.into();
     let daemon = Daemon::open(
-        DaemonOptions::graphical(
-            path.join("history.db"),
-            IcedLayerShellBannerPresenter { updates },
-        )
-        .with_configuration_file(config),
+        DaemonOptions::graphical(path.join("history.db"), test_presenter(updates))
+            .with_configuration_file(config),
     )
     .await
     .unwrap();
@@ -675,7 +672,7 @@ async fn renderer_resolves_selected_icon_theme_before_parent_or_undeclared_direc
     std::fs::write(&config, "icons theme=\"Birch\"\n").unwrap();
     let (updates, mut receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
     receiver.icon_roots = vec![root].into();
-    let presenter = IcedLayerShellBannerPresenter { updates };
+    let presenter = test_presenter(updates);
     let daemon = Daemon::open(
         DaemonOptions::graphical(temp.path().join("history.db"), presenter)
             .with_configuration_file(config),

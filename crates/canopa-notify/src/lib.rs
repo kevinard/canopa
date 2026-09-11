@@ -56,9 +56,9 @@ pub use notification_server_intake::NotificationServerRequest;
 pub use presentation::{
     BannerAction, BannerBodySegment, BannerFocusBehavior, BannerIconSettings, BannerInteraction,
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPlacement,
-    BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerSurfaceSpec,
-    BannerTarget, BannerView, BannerVisual, IcedLayerShellBannerPresenter, NoopBannerPresenter,
-    NotificationBannerState, StructuredLogBannerPresenter,
+    BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerRendererState,
+    BannerSurfaceSpec, BannerTarget, BannerView, BannerVisual, IcedLayerShellBannerPresenter,
+    NoopBannerPresenter, NotificationBannerState, StructuredLogBannerPresenter,
 };
 pub use runtime::NotificationStateSubscription;
 pub use sender_events::{SenderEventPublication, SenderEventPublisher};
@@ -163,6 +163,9 @@ pub struct Daemon {
 
 impl Daemon {
     pub async fn open(options: DaemonOptions) -> anyhow::Result<Self> {
+        if !options.headless {
+            presentation::await_banner_renderer(options.banner_presenter.as_ref()).await?;
+        }
         let mut configuration = LoadedNotificationConfiguration::empty();
         if let Some(path) = options.configuration_path.clone() {
             configuration = tokio::task::spawn_blocking(move || {

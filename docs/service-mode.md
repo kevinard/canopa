@@ -22,6 +22,8 @@ Service mode owns the real `org.freedesktop.Notifications` D-Bus service name. D
 canopa-notify daemon --headless --socket /tmp/canopa-notify.sock --dev-bus-name org.canopa.NotifyTest
 ```
 
+Graphical startup waits at most ten seconds for the renderer's first processed window redraw, after window/graphics setup, before importing or recovering history. Exit before this first readiness signal, or a readiness timeout, aborts startup without marking existing notifications stale or publishing a legacy import. Readiness is checked again before opening history; a later startup failure does not roll back an import already published after first readiness. This establishes event-loop readiness, not proof of visible compositor output. Headless mode does not start or wait for a renderer.
+
 ## Diagnostics
 
 History and persisted user policy default to `$XDG_STATE_HOME/canopa-notify/history.db` (or `$HOME/.local/state/canopa-notify/history.db`); they no longer depend on the session socket directory. `--database` remains an explicit override. Startup takes socket/database ownership locks before recovery, rejects non-socket endpoint collisions and keeps private state permissions. When no destination exists, it imports an existing legacy socket-adjacent `.db` using a verified SQLite snapshot, preserving the source.
@@ -56,6 +58,8 @@ canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" reload
 If another process already owns the runtime socket or the freedesktop notification service name, startup fails clearly instead of replacing the running daemon.
 
 `dnd` without an argument reports the current state; changes survive restart. `reload [PATH]` installs a validated candidate atomically. `clear` dismisses active notifications; `delete-history` removes inactive local history. JSON status includes configuration generation/error, presentation error and sender-publication error. These controls do not imply a freedesktop `persistence` capability.
+
+If the renderer exits after startup, JSON status reports `banner renderer stopped; restart the daemon to restore banners` even without another notification. Notification receipt, sender lifecycles and Center controls remain available. The error is terminal for that renderer lifetime; restart the daemon explicitly to restore banners. The process stays running, so the unit's `Restart=on-failure` does not automatically recover this degraded state. Restart also invalidates live sender IDs and removes runtime-only transient notifications; retained history becomes stale as usual. See [ADR 0043](adr/0043-renderer-readiness-and-degraded-service.md).
 
 Control requests must fit 64 KiB and ordinary replies must fit 8 MiB, including their terminating newline. Oversized replies return an error without truncating or deleting notification history. The CLI validates a complete reply before printing it and gives connect/write/read one 30-second deadline, with at most five seconds for writing. Malformed, incomplete, mismatched or oversized replies fail without printing their contents. A failed exchange can leave the command outcome unknown: the CLI never retries automatically. Inspect state before repeating a state-changing command, especially `dnd toggle` or `clear`. A completed partial-clear reply reports the number of committed dismissals.
 

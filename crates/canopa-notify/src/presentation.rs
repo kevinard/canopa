@@ -23,6 +23,43 @@ const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration
 mod icons;
 mod images;
 
+/// Renderer-owned lifecycle, independent of notification receipt or display acknowledgements.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BannerRendererState {
+    Starting,
+    Ready,
+    Stopped,
+}
+
+const RENDERER_STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+pub(crate) async fn await_banner_renderer(presenter: &dyn BannerPresenter) -> anyhow::Result<()> {
+    let Some(mut state) = presenter.renderer_state() else {
+        return Ok(());
+    };
+    tokio::time::timeout(RENDERER_STARTUP_TIMEOUT, async {
+        loop {
+            anyhow::ensure!(
+                state.has_changed().is_ok(),
+                "banner renderer stopped before readiness"
+            );
+            match *state.borrow_and_update() {
+                BannerRendererState::Ready => return Ok(()),
+                BannerRendererState::Stopped => {
+                    anyhow::bail!("banner renderer stopped before readiness")
+                }
+                BannerRendererState::Starting => {}
+            }
+            state
+                .changed()
+                .await
+                .context("banner renderer stopped before readiness")?;
+        }
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("banner renderer readiness timed out"))?
+}
+
 #[derive(Clone)]
 pub struct BannerPresentationAcknowledgement {
     callback: Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>>,
@@ -52,6 +89,12 @@ impl std::fmt::Debug for BannerPresentationAcknowledgement {
 }
 
 pub trait BannerPresenter: Send + Sync {
+    /// None denotes a synchronous presenter without an independently running renderer.
+    /// A renderer must retain its sender and report terminal state even while idle.
+    fn renderer_state(&self) -> Option<tokio::sync::watch::Receiver<BannerRendererState>> {
+        None
+    }
+
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()>;
 
     fn replace_banner_presentation(&self, presentation: BannerPresentation) -> anyhow::Result<()> {
@@ -180,11 +223,16 @@ pub enum BannerInteraction {
 #[derive(Clone)]
 pub struct IcedLayerShellBannerPresenter {
     updates: BannerUpdateSender,
+    state: tokio::sync::watch::Sender<BannerRendererState>,
+    // The UI has a separate guard: either UI exit or the last owner retires the transport.
+    _owner: Arc<BannerUiLifetime>,
 }
 
 impl IcedLayerShellBannerPresenter {
-    pub fn start(interactions: mpsc::Sender<BannerInteraction>) -> anyhow::Result<Self> {
-        Self::start_with(interactions, run_banner_ui)
+    pub async fn start(interactions: mpsc::Sender<BannerInteraction>) -> anyhow::Result<Self> {
+        let presenter = Self::start_with(interactions, run_banner_ui)?;
+        await_banner_renderer(&presenter).await?;
+        Ok(presenter)
     }
 
     fn start_with<F>(
@@ -192,7 +240,13 @@ impl IcedLayerShellBannerPresenter {
         run_ui: F,
     ) -> anyhow::Result<Self>
     where
-        F: FnOnce(u64, mpsc::Sender<BannerInteraction>) -> iced_layershell::Result + Send + 'static,
+        F: FnOnce(
+                u64,
+                mpsc::Sender<BannerInteraction>,
+                tokio::sync::watch::Sender<BannerRendererState>,
+            ) -> iced_layershell::Result
+            + Send
+            + 'static,
     {
         let runtime_id = NEXT_BANNER_RUNTIME_ID.fetch_add(1, Ordering::Relaxed);
         let executor = tokio::runtime::Handle::try_current()
@@ -200,16 +254,25 @@ impl IcedLayerShellBannerPresenter {
         let (updates, receiver) = BannerUpdateSender::channel(executor);
         register_banner_update_receiver(runtime_id, receiver);
 
+        let (state, _) = tokio::sync::watch::channel(BannerRendererState::Starting);
+        let renderer_state = state.clone();
+
         let lifetime = BannerUiLifetime {
             runtime_id,
             updates: updates.clone(),
+            state: renderer_state.clone(),
         };
+        let owner = Arc::new(lifetime.clone());
         spawn_banner_ui_thread(runtime_id, interactions, move |runtime_id, interactions| {
             let _lifetime = lifetime;
-            run_ui(runtime_id, interactions)
+            run_ui(runtime_id, interactions, renderer_state)
         })?;
 
-        Ok(Self { updates })
+        Ok(Self {
+            updates,
+            state,
+            _owner: owner,
+        })
     }
 
     pub fn layer_shell_settings(
@@ -238,6 +301,10 @@ impl IcedLayerShellBannerPresenter {
 }
 
 impl BannerPresenter for IcedLayerShellBannerPresenter {
+    fn renderer_state(&self) -> Option<tokio::sync::watch::Receiver<BannerRendererState>> {
+        Some(self.state.subscribe())
+    }
+
     fn replace_visible_banners(&self, banners: Vec<BannerView>) -> anyhow::Result<()> {
         self.replace_banner_presentation(BannerPresentation::visible_banners(banners))
     }
@@ -301,8 +368,10 @@ impl BannerUpdateSender {
     }
 
     fn close(&self) {
-        let mut sender = self.sender.lock().unwrap();
-        if let Some(sender) = sender.take() {
+        // Retire the gate before dropping callbacks. A callback may hold the last presenter
+        // owner, whose destructor closes this same transport.
+        let sender = self.sender.lock().unwrap().take();
+        if let Some(sender) = sender {
             sender.send_replace(None);
         }
     }
@@ -312,9 +381,11 @@ static NEXT_BANNER_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 static BANNER_UPDATE_RECEIVERS: OnceLock<Mutex<HashMap<u64, BannerUpdateReceiver>>> =
     OnceLock::new();
 
+#[derive(Clone)]
 struct BannerUiLifetime {
     runtime_id: u64,
     updates: BannerUpdateSender,
+    state: tokio::sync::watch::Sender<BannerRendererState>,
 }
 
 impl Drop for BannerUiLifetime {
@@ -322,6 +393,7 @@ impl Drop for BannerUiLifetime {
         // A queued acknowledgement can own the runtime, which owns this presenter. Clear it
         // even when startup fails before the UI takes the receiver, breaking that ownership cycle.
         self.updates.close();
+        self.state.send_replace(BannerRendererState::Stopped);
         if let Some(receivers) = BANNER_UPDATE_RECEIVERS.get() {
             receivers.lock().unwrap().remove(&self.runtime_id);
         }
@@ -357,10 +429,13 @@ struct BannerUiState {
     pending_acknowledgement: Option<PendingBannerAcknowledgement>,
     surface_size: (u32, u32),
     interactions: mpsc::Sender<BannerInteraction>,
+    renderer_state: tokio::sync::watch::Sender<BannerRendererState>,
 }
 
 #[derive(Clone, Debug)]
 enum BannerUiMessage {
+    RendererReady,
+    Shutdown,
     Runtime(BannerRuntimeInput),
     PresentationFrame(PendingBannerAcknowledgement),
     ActivateRequested(BannerTarget),
@@ -428,10 +503,14 @@ fn take_banner_update_receiver(runtime_id: u64) -> Option<BannerUpdateReceiver> 
 
 fn banner_update_stream(
     runtime_id: &u64,
-) -> impl iced::futures::Stream<Item = BannerRuntimeInput> + use<> {
+) -> impl iced::futures::Stream<Item = BannerUiMessage> + use<> {
     use iced::futures::StreamExt;
     iced::futures::stream::iter(take_banner_update_receiver(*runtime_id).map(banner_updates))
         .flatten()
+        .map(BannerUiMessage::Runtime)
+        .chain(iced::futures::stream::once(async {
+            BannerUiMessage::Shutdown
+        }))
 }
 
 fn banner_updates(
@@ -497,10 +576,8 @@ where
         .name("canopa-notify-banner-ui".to_string())
         .spawn(move || {
             let _runtime_guard = runtime_handle.enter();
-            if let Err(error) = run_ui(runtime_id, interactions) {
-                eprintln!(
-                    "level=error component=presentation event=renderer_failed error={error:#}"
-                );
+            if run_ui(runtime_id, interactions).is_err() {
+                eprintln!("level=error component=presentation event=renderer_failed");
             }
         })?;
     Ok(())
@@ -509,6 +586,7 @@ where
 fn run_banner_ui(
     runtime_id: u64,
     interactions: mpsc::Sender<BannerInteraction>,
+    renderer_state: tokio::sync::watch::Sender<BannerRendererState>,
 ) -> iced_layershell::Result {
     use iced_layershell::settings::Settings;
 
@@ -521,6 +599,7 @@ fn run_banner_ui(
             pending_acknowledgement: None,
             surface_size: banner_surface_size(0, 0),
             interactions: interactions.clone(),
+            renderer_state: renderer_state.clone(),
         },
         || "Canopa Notify Notification Banners".to_string(),
         banner_ui_update,
@@ -539,6 +618,11 @@ fn run_banner_ui(
 }
 
 fn banner_ui_subscription(state: &BannerUiState) -> iced::Subscription<BannerUiMessage> {
+    let readiness = if *state.renderer_state.borrow() == BannerRendererState::Starting {
+        iced::window::frames().map(|_| BannerUiMessage::RendererReady)
+    } else {
+        iced::Subscription::none()
+    };
     let presentation_frames = if let Some(pending) = &state.pending_acknowledgement {
         iced::window::frames()
             .with(pending.clone())
@@ -547,8 +631,8 @@ fn banner_ui_subscription(state: &BannerUiState) -> iced::Subscription<BannerUiM
         iced::Subscription::none()
     };
     iced::Subscription::batch([
-        iced::Subscription::run_with(state.runtime_id, banner_update_stream)
-            .map(BannerUiMessage::Runtime),
+        readiness,
+        iced::Subscription::run_with(state.runtime_id, banner_update_stream),
         presentation_frames,
     ])
 }
@@ -558,6 +642,18 @@ fn banner_ui_update(
     message: BannerUiMessage,
 ) -> iced::Task<BannerUiMessage> {
     match message {
+        BannerUiMessage::Shutdown => iced::exit(),
+        BannerUiMessage::RendererReady => {
+            state.renderer_state.send_if_modified(|value| {
+                if *value == BannerRendererState::Starting {
+                    *value = BannerRendererState::Ready;
+                    true
+                } else {
+                    false
+                }
+            });
+            iced::Task::none()
+        }
         BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
             presentation,
             acknowledgement,
@@ -706,6 +802,275 @@ mod tests {
     mod icons;
     mod images;
 
+    // Renderer-consumer fixtures already supply the running consumer themselves.
+    fn test_presenter(updates: BannerUpdateSender) -> IcedLayerShellBannerPresenter {
+        let state = tokio::sync::watch::channel(BannerRendererState::Ready).0;
+        IcedLayerShellBannerPresenter {
+            _owner: Arc::new(BannerUiLifetime {
+                runtime_id: NEXT_BANNER_RUNTIME_ID.fetch_add(1, Ordering::Relaxed),
+                updates: updates.clone(),
+                state: state.clone(),
+            }),
+            updates,
+            state,
+        }
+    }
+
+    #[tokio::test]
+    async fn renderer_exit_before_readiness_does_not_recover_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+        let seed = crate::Daemon::open(crate::DaemonOptions::headless(database.clone()))
+            .await
+            .unwrap();
+        seed.receive_notification(crate::NotificationInput {
+            app_name: "Mail".into(),
+            summary: "Still active".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let before = seed.snapshot().await.unwrap();
+        let (interactions, _) = mpsc::channel();
+        let presenter =
+            IcedLayerShellBannerPresenter::start_with(interactions, |_, _, _| Ok(())).unwrap();
+        let result =
+            crate::Daemon::open(crate::DaemonOptions::graphical(database, presenter)).await;
+        assert!(
+            result.is_err(),
+            "daemon accepted a renderer that exited before readiness"
+        );
+        assert_eq!(
+            seed.snapshot().await.unwrap(),
+            before,
+            "failed renderer startup recovered live history"
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_renderer_exit_degrades_status_without_disabling_notification_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let (interactions, _) = mpsc::channel();
+        let (exit_ui, exit_requested) = mpsc::channel();
+        let presenter =
+            IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, renderer_state| {
+                let mut ui = banner_ui_test_state();
+                ui.renderer_state = renderer_state;
+                let _task = banner_ui_update(&mut ui, BannerUiMessage::RendererReady);
+                let _ = exit_requested.recv_timeout(Duration::from_secs(5));
+                Ok(())
+            })
+            .unwrap();
+        let mut renderer_state = presenter.renderer_state().unwrap();
+        let daemon = crate::Daemon::open(crate::DaemonOptions::graphical(
+            temp.path().join("history.db"),
+            presenter,
+        ))
+        .await
+        .unwrap();
+        let control = crate::NotifyControl::new(daemon.clone());
+        let crate::ControlReply::Status(status) = control
+            .execute(crate::ControlCommand::Status)
+            .await
+            .unwrap()
+        else {
+            panic!("expected control status");
+        };
+        assert!(status.presentation_error.is_none());
+
+        exit_ui.send(()).unwrap();
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            renderer_state.wait_for(|state| *state == BannerRendererState::Stopped),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        // No receipt or presentation update occurs between renderer exit and this query.
+        let crate::ControlReply::Status(status) = control
+            .execute(crate::ControlCommand::Status)
+            .await
+            .unwrap()
+        else {
+            panic!("expected control status");
+        };
+        assert_eq!(
+            status.presentation_error.as_deref(),
+            Some("banner renderer stopped; restart the daemon to restore banners")
+        );
+
+        let receipt = daemon
+            .receive_notification(crate::NotificationInput {
+                app_name: "Mail".into(),
+                summary: "Retained while banners are offline".into(),
+                ..Default::default()
+            })
+            .await
+            .expect("renderer failure must not reject committed receipts");
+        let crate::ControlReply::NotificationCenterProjection(center) = control
+            .execute(crate::ControlCommand::NotificationCenterProjection)
+            .await
+            .unwrap()
+        else {
+            panic!("expected center projection");
+        };
+        assert!(
+            center
+                .groups
+                .iter()
+                .flat_map(|group| &group.items)
+                .any(|item| { item.notification_id == receipt.notification_id })
+        );
+        assert_eq!(daemon.presentation_error(), status.presentation_error);
+        daemon
+            .close_notification(receipt.notification_id)
+            .await
+            .unwrap();
+        assert_eq!(daemon.presentation_error(), status.presentation_error);
+    }
+
+    #[tokio::test]
+    async fn cancelled_renderer_startup_retires_transport_and_rejects_late_readiness() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+        let (interactions, _) = mpsc::channel();
+        let (release_ui, released) = mpsc::channel();
+        let (late_state, observed_late_state) = tokio::sync::oneshot::channel();
+        let presenter =
+            IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, renderer_state| {
+                let _ = released.recv_timeout(Duration::from_secs(5));
+                let mut ui = banner_ui_test_state();
+                ui.renderer_state = renderer_state;
+                let _task = banner_ui_update(&mut ui, BannerUiMessage::RendererReady);
+                let _ = late_state.send(*ui.renderer_state.borrow());
+                Ok(())
+            })
+            .unwrap();
+        let state = presenter.renderer_state().unwrap();
+        let mut startup = Box::pin(crate::Daemon::open(crate::DaemonOptions::graphical(
+            database.clone(),
+            presenter,
+        )));
+        assert!(iced::futures::poll!(&mut startup).is_pending());
+        assert!(
+            !database.exists(),
+            "startup opened history before readiness"
+        );
+        drop(startup);
+        assert_eq!(
+            *state.borrow(),
+            BannerRendererState::Stopped,
+            "cancelling startup left the renderer transport alive"
+        );
+        release_ui.send(()).unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), observed_late_state)
+                .await
+                .unwrap()
+                .unwrap(),
+            BannerRendererState::Stopped,
+            "a late redraw resurrected a cancelled renderer"
+        );
+    }
+
+    #[tokio::test]
+    async fn last_presenter_owner_requests_renderer_shutdown() {
+        let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
+        let presenter = test_presenter(updates);
+        let retained = presenter.clone();
+        let state = presenter.renderer_state().unwrap();
+        let runtime_id = presenter._owner.runtime_id;
+        register_banner_update_receiver(runtime_id, receiver);
+        let mut messages = Box::pin(banner_update_stream(&runtime_id));
+        drop(presenter);
+        assert!(iced::futures::poll!(messages.next()).is_pending());
+        assert_eq!(*state.borrow(), BannerRendererState::Ready);
+
+        drop(retained);
+        assert_eq!(*state.borrow(), BannerRendererState::Stopped);
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(1), messages.next())
+                .await
+                .unwrap(),
+            Some(BannerUiMessage::Shutdown)
+        ));
+    }
+
+    #[tokio::test]
+    async fn renderer_readiness_timeout_retires_startup_without_opening_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+        let (interactions, _) = mpsc::channel();
+        let (release_ui, released) = mpsc::channel::<()>();
+        let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, _| {
+            let _ = released.recv_timeout(Duration::from_secs(15));
+            Ok(())
+        })
+        .unwrap();
+        let state = presenter.renderer_state().unwrap();
+        let started = tokio::time::Instant::now();
+        let result =
+            crate::Daemon::open(crate::DaemonOptions::graphical(database.clone(), presenter)).await;
+        assert_eq!(
+            result.err().expect("unready renderer accepted").to_string(),
+            "banner renderer readiness timed out"
+        );
+        assert!(started.elapsed() >= Duration::from_secs(10));
+        assert!(!database.exists());
+        assert_eq!(*state.borrow(), BannerRendererState::Stopped);
+        drop(release_ui);
+    }
+
+    #[tokio::test]
+    async fn delayed_renderer_readiness_gates_history_recovery() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+        let seed = crate::Daemon::open(crate::DaemonOptions::headless(database.clone()))
+            .await
+            .unwrap();
+        seed.receive_notification(crate::NotificationInput {
+            app_name: "Mail".into(),
+            summary: "Live until readiness".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let before = seed.snapshot().await.unwrap();
+        let (interactions, _) = mpsc::channel();
+        let (ready_ui, ready_requested) = mpsc::channel();
+        let (exit_ui, exit_requested) = mpsc::channel::<()>();
+        let presenter =
+            IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, renderer_state| {
+                if ready_requested
+                    .recv_timeout(Duration::from_secs(15))
+                    .is_ok()
+                {
+                    let mut ui = banner_ui_test_state();
+                    ui.renderer_state = renderer_state;
+                    let _task = banner_ui_update(&mut ui, BannerUiMessage::RendererReady);
+                    let _ = exit_requested.recv_timeout(Duration::from_secs(15));
+                }
+                Ok(())
+            })
+            .unwrap();
+        let mut startup = Box::pin(crate::Daemon::open(crate::DaemonOptions::graphical(
+            database, presenter,
+        )));
+        assert!(iced::futures::poll!(&mut startup).is_pending());
+        assert_eq!(seed.snapshot().await.unwrap(), before);
+        ready_ui.send(()).unwrap();
+        let daemon = tokio::time::timeout(Duration::from_secs(3), startup)
+            .await
+            .unwrap()
+            .unwrap();
+        let recovered = daemon.snapshot().await.unwrap();
+        assert!(recovered.active.is_empty());
+        assert_eq!(recovered.history.len(), 1);
+        assert_eq!(recovered.history[0].status, NotificationStatus::Stale);
+        assert!(daemon.presentation_error().is_none());
+        drop(exit_ui);
+    }
+
     fn banner_ui_test_state() -> BannerUiState {
         let (interactions, _interaction_receiver) = mpsc::channel();
         BannerUiState {
@@ -715,6 +1080,7 @@ mod tests {
             pending_acknowledgement: None,
             surface_size: banner_surface_size(0, 0),
             interactions,
+            renderer_state: tokio::sync::watch::channel(BannerRendererState::Starting).0,
         }
     }
 
@@ -764,7 +1130,7 @@ mod tests {
     async fn publication_cannot_refill_a_closing_renderers_callback_slot() {
         let (interactions, _) = mpsc::channel();
         let (exit_ui, exit_requested) = mpsc::channel();
-        let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _| {
+        let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, _| {
             exit_requested.recv_timeout(Duration::from_secs(2)).unwrap();
             Ok(())
         })
@@ -818,7 +1184,7 @@ mod tests {
         let (interactions, _) = mpsc::channel();
         let (exit_ui, exit_requested) = mpsc::channel();
         let (finished, finished_receiver) = tokio::sync::oneshot::channel();
-        let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _| {
+        let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, _| {
             // A renderer may fail before iced takes ownership of the update subscription.
             exit_requested.recv_timeout(Duration::from_secs(2)).unwrap();
             finished.send(()).unwrap();
@@ -859,7 +1225,7 @@ mod tests {
     async fn paused_renderer_receives_latest_state_after_a_burst_without_lost_closures() {
         let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
         let mut receiver = Box::pin(banner_updates(receiver));
-        let presenter = IcedLayerShellBannerPresenter { updates };
+        let presenter = test_presenter(updates);
         let superseded_acknowledged = Arc::new(AtomicBool::new(false));
         for id in 1..=130 {
             let acknowledged = superseded_acknowledged.clone();
@@ -902,7 +1268,7 @@ mod tests {
     async fn iced_presenter_acknowledges_only_after_ui_consumes_presentation() {
         let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
         let mut receiver = Box::pin(banner_updates(receiver));
-        let presenter = IcedLayerShellBannerPresenter { updates };
+        let presenter = test_presenter(updates);
         let acknowledged = Arc::new(AtomicBool::new(false));
         let acknowledgement_state = acknowledged.clone();
         presenter
@@ -2012,6 +2378,7 @@ fn supported_local_image_path(path: &str) -> bool {
 pub(crate) struct PresentationCoordinator {
     enabled: bool,
     banner_presenter: Arc<dyn BannerPresenter>,
+    renderer_state: Option<tokio::sync::watch::Receiver<BannerRendererState>>,
     last_error: Arc<Mutex<Option<String>>>,
     icon_settings: Arc<Mutex<BannerIconSettings>>,
 }
@@ -2020,6 +2387,7 @@ impl PresentationCoordinator {
     pub(crate) fn new(enabled: bool, banner_presenter: Arc<dyn BannerPresenter>) -> Self {
         Self {
             enabled,
+            renderer_state: enabled.then(|| banner_presenter.renderer_state()).flatten(),
             banner_presenter,
             last_error: Arc::new(Mutex::new(None)),
             icon_settings: Arc::new(Mutex::new(BannerIconSettings::default())),
@@ -2051,6 +2419,11 @@ impl PresentationCoordinator {
     }
 
     pub(crate) fn error(&self) -> Option<String> {
+        if self.renderer_state.as_ref().is_some_and(|state| {
+            state.has_changed().is_err() || *state.borrow() == BannerRendererState::Stopped
+        }) {
+            return Some("banner renderer stopped; restart the daemon to restore banners".into());
+        }
         self.last_error.lock().unwrap().clone()
     }
 }
