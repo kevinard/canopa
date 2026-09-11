@@ -541,8 +541,8 @@ async fn notification_server_emits_activation_token_before_action_invoked() {
             "activation-token",
         ]
     );
-    let mut token_signals = proxy.receive_signal("ActivationToken").await.unwrap();
-    let mut action_signals = proxy.receive_signal("ActionInvoked").await.unwrap();
+    // Separate streams prove presence but cannot detect cross-signal reordering.
+    let mut signals = proxy.receive_all_signals().await.unwrap();
 
     let sender_id: u32 = proxy
         .call(
@@ -564,23 +564,43 @@ async fn notification_server_emits_activation_token_before_action_invoked() {
 
     daemon.invoke_action(notification_id, "open").await.unwrap();
 
-    let token_signal =
-        tokio::time::timeout(std::time::Duration::from_secs(1), token_signals.next())
+    for (member, value) in [
+        ("ActivationToken", "token-1"),
+        ("ActionInvoked", "open"),
+        ("NotificationClosed", ""),
+    ] {
+        let signal = tokio::time::timeout(std::time::Duration::from_secs(1), signals.next())
             .await
             .unwrap()
             .unwrap();
-    let (token_id, activation_token): (u32, String) = token_signal.body().deserialize().unwrap();
-    assert_eq!(token_id, sender_id);
-    assert_eq!(activation_token, "token-1");
-
-    let action_signal =
-        tokio::time::timeout(std::time::Duration::from_secs(1), action_signals.next())
-            .await
-            .unwrap()
-            .unwrap();
-    let (action_id, action_key): (u32, String) = action_signal.body().deserialize().unwrap();
-    assert_eq!(action_id, sender_id);
-    assert_eq!(action_key, "open");
+        assert_eq!(signal.header().message_type(), zbus::message::Type::Signal);
+        assert_eq!(signal.header().member().unwrap().as_str(), member);
+        assert_eq!(
+            signal.header().interface().unwrap().as_str(),
+            "org.freedesktop.Notifications"
+        );
+        assert_eq!(
+            signal.header().path().unwrap().as_str(),
+            "/org/freedesktop/Notifications"
+        );
+        assert_eq!(
+            signal.header().sender().unwrap().as_str(),
+            _connection.unique_name().unwrap().as_str()
+        );
+        if member == "NotificationClosed" {
+            assert_eq!(signal.body().signature(), "uu");
+            assert_eq!(
+                signal.body().deserialize::<(u32, u32)>().unwrap(),
+                (sender_id, 2)
+            );
+        } else {
+            assert_eq!(signal.body().signature(), "us");
+            assert_eq!(
+                signal.body().deserialize::<(u32, String)>().unwrap(),
+                (sender_id, value.into())
+            );
+        }
+    }
 }
 
 #[tokio::test]

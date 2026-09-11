@@ -24,6 +24,7 @@ iced_layershell = { version = "0.18", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 kdl = "6.5.0"
 predicates = "3"
+roxmltree = "0.20"
 rodio = "0.22.2"
 rustix = { version = "1.1", features = ["fs", "process", "rand"] }
 serde = { version = "1", features = ["derive"] }

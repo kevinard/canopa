@@ -569,6 +569,7 @@ dependencies = [
  "kdl",
  "predicates",
  "rodio",
+ "roxmltree",
  "rustix 1.1.4",
  "serde",
  "serde_json",

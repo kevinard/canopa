@@ -134,11 +134,16 @@ impl NotificationServer {
             .map_err(|_error| empty_dbus_error())
     }
 
-    fn get_capabilities(&self) -> Vec<String> {
+    // An injected header makes zbus validate the empty argument list. Without any
+    // parameters its generated dispatcher skips body deserialization entirely.
+    fn get_capabilities(&self, #[zbus(header)] _header: zbus::message::Header<'_>) -> Vec<String> {
         capability_advertisement(&self.daemon).into_dbus_values()
     }
 
-    fn get_server_information(&self) -> (String, String, String, String) {
+    fn get_server_information(
+        &self,
+        #[zbus(header)] _header: zbus::message::Header<'_>,
+    ) -> (String, String, String, String) {
         (
             "Canopa Notify".to_string(),
             "Canopa".to_string(),
