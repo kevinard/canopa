@@ -28,6 +28,8 @@ History and persisted user policy default to `$XDG_STATE_HOME/canopa-notify/hist
 
 The installed configuration is `$XDG_CONFIG_HOME/canopa-notify/config.kdl` (or `$HOME/.config/canopa-notify/config.kdl`). `daemon --config PATH` overrides it. Initial configuration is loaded before accepting notifications. Invalid reloads keep the last valid configuration and expose the failure in status.
 
+Configuration must be a readable regular UTF-8 file of at most 1 MiB; symlinks to regular files work, but directories, FIFOs and devices are not configuration streams. Supported KDL nodes are `rule`, `sound` and `icons`, with their documented entries only. Child documents and type annotations are rejected. Read, parse or installation failure leaves the committed path, generation and settings unchanged. Diagnostics identify the setting category or syntax byte offset without echoing arbitrary names, values or source text. File reading and parsing run off the async executor, and reloads remain serialized even if a waiting caller is cancelled. These are source/admission bounds, not a hard filesystem deadline or a limit on parser-internal nesting and work.
+
 Select a static icon theme and source-asset scale with:
 
 ```kdl

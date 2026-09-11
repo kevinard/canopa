@@ -163,12 +163,22 @@ pub struct Daemon {
 impl Daemon {
     pub async fn open(options: DaemonOptions) -> anyhow::Result<Self> {
         let mut configuration = LoadedNotificationConfiguration::empty();
-        if let Some(path) = &options.configuration_path {
-            configuration.reload_file(path)?;
+        if let Some(path) = options.configuration_path.clone() {
+            configuration = tokio::task::spawn_blocking(move || {
+                configuration.reload_file(&path)?;
+                Ok::<_, anyhow::Error>(configuration)
+            })
+            .await
+            .map_err(|_| anyhow::anyhow!("Notification Configuration preparation failed"))??;
             if !options.headless {
                 options
                     .sound_presenter
-                    .apply_sound_settings(configuration.sound_settings())?;
+                    .apply_sound_settings(configuration.sound_settings())
+                    .map_err(|_| {
+                        anyhow::anyhow!(
+                            "Notification Configuration presentation installation failed"
+                        )
+                    })?;
             }
         }
         let storage = SqlitePersistedState::open(
@@ -382,12 +392,29 @@ impl Daemon {
     }
 
     pub async fn reload_configuration_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
-        let _reload = self.configuration_reloads.lock().await;
+        // Both the caller and actual file job retain serialization. Cancelling
+        // the caller cannot admit another preparation while this job still runs.
+        let reload = Arc::new(self.configuration_reloads.clone().lock_owned().await);
         let mut candidate = self.configuration.lock().unwrap().clone();
-        if let Err(error) = candidate.reload_file(path) {
-            self.configuration.lock().unwrap().record_error(&error);
-            return Err(error);
-        }
+        let path = path.to_path_buf();
+        let preparation = tokio::task::spawn_blocking({
+            let reload = reload.clone();
+            move || {
+                let _reload = reload;
+                candidate.reload_file(&path)?;
+                Ok::<_, anyhow::Error>(candidate)
+            }
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Notification Configuration preparation failed"))
+        .and_then(|result| result);
+        let candidate = match preparation {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                self.configuration.lock().unwrap().record_error(&error);
+                return Err(error);
+            }
+        };
         if let Err(error) = self
             .runtime
             .install_configuration(
@@ -396,6 +423,9 @@ impl Daemon {
                 candidate.icon_settings(),
             )
             .await
+            .map_err(|_| {
+                anyhow::anyhow!("Notification Configuration presentation installation failed")
+            })
         {
             self.configuration.lock().unwrap().record_error(&error);
             return Err(error);

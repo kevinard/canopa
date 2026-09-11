@@ -1,4 +1,4 @@
-//! Descriptor-safe, content-free bounded reads shared by image, audio and theme assets.
+//! Descriptor-safe, content-free bounded reads for local assets and configuration.
 use std::io::Read;
 use std::path::Path;
 

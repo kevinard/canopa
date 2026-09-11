@@ -6,6 +6,8 @@ use anyhow::Context;
 use kdl::{KdlDocument, KdlEntry, KdlNode};
 use std::path::{Path, PathBuf};
 
+const MAX_CONFIGURATION_BYTES: usize = 1024 * 1024;
+
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ConfigurationStatus {
     pub generation: u64,
@@ -80,29 +82,31 @@ struct NotificationConfiguration {
 
 impl NotificationConfiguration {
     fn load_file(path: &Path) -> anyhow::Result<Self> {
-        let source = std::fs::read_to_string(path).with_context(|| {
-            format!(
-                "failed to read Notification Configuration {}",
-                path.display()
-            )
+        let bytes = crate::local_file::read_bounded(path, MAX_CONFIGURATION_BYTES).map_err(|_| {
+            anyhow::anyhow!("Notification Configuration must be a readable regular UTF-8 file of at most 1 MiB")
         })?;
-        Self::parse(&source).with_context(|| {
-            format!(
-                "failed to parse Notification Configuration {}",
-                path.display()
-            )
-        })
+        let source = String::from_utf8(bytes)
+            .map_err(|_| anyhow::anyhow!("Notification Configuration must be UTF-8"))?;
+        Self::parse(&source)
     }
 
     fn parse(source: &str) -> anyhow::Result<Self> {
-        let doc: KdlDocument = source
-            .parse()
-            .context("failed to parse Notification Configuration as KDL")?;
+        let doc: KdlDocument = source.parse().map_err(|error: kdl::KdlError| {
+            let offset = error
+                .diagnostics
+                .first()
+                .map_or(0, |diagnostic| diagnostic.span.offset());
+            anyhow::anyhow!("invalid Notification Configuration KDL near byte {offset}")
+        })?;
         let mut rules = Vec::new();
         let mut sound = None;
         let mut icons = None;
 
         for node in doc.nodes() {
+            anyhow::ensure!(
+                node.ty().is_none() && node.entries().iter().all(|entry| entry.ty().is_none()),
+                "Notification Configuration does not support type annotations"
+            );
             match node.name().value() {
                 "rule" => rules.push(parse_rule(node, rules.len() + 1)?),
                 "sound" => {
@@ -115,9 +119,9 @@ impl NotificationConfiguration {
                     anyhow::ensure!(icons.is_none(), "duplicate icons nodes");
                     icons = Some(parse_icons(node)?);
                 }
-                name => {
+                _ => {
                     anyhow::bail!(
-                        "invalid Notification Configuration node {name:?}: expected rule, sound or icons"
+                        "invalid Notification Configuration node: expected rule, sound or icons"
                     );
                 }
             }
@@ -175,10 +179,19 @@ fn parse_rule(node: &KdlNode, rule_number: usize) -> anyhow::Result<Notification
         entries.outcome,
         "outcome",
         rule_number,
-    )?)?;
+    )?)
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "rule {rule_number} outcome must be allow/shown, silence/silenced or drop/dropped"
+        )
+    })?;
     let urgency = entries
         .urgency
-        .map(|value| Urgency::parse_config_value(&value))
+        .map(|value| {
+            Urgency::parse_config_value(&value).map_err(|_| {
+                anyhow::anyhow!("rule {rule_number} urgency must be low, normal or critical")
+            })
+        })
         .transpose()?;
     let category = entries
         .category
@@ -263,7 +276,9 @@ impl SoundEntries {
                 Some("default") => {
                     set_string_property(&mut entries.default_sound, entry, "default", "sound")?
                 }
-                Some(name) => anyhow::bail!("sound has unknown property {name:?}"),
+                Some(_) => {
+                    anyhow::bail!("sound has unknown property; expected enabled, theme or default")
+                }
             }
         }
 
@@ -302,7 +317,9 @@ impl RuleEntries {
                 Some("urgency") => {
                     set_rule_string_property(&mut entries.urgency, entry, "urgency", rule_number)?
                 }
-                Some(name) => anyhow::bail!("rule {rule_number} has unknown property {name:?}"),
+                Some(_) => anyhow::bail!(
+                    "rule {rule_number} has unknown property; expected app, outcome, category or urgency"
+                ),
             }
         }
 
