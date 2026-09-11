@@ -6,13 +6,197 @@ mod notifications;
 use canopa_notify::{
     ActivationTokenFuture, ActivationTokenProvider, AppPermissionControl, ControlCommand,
     ControlReply, Daemon, DaemonOptions, DeliveryOutcome, NotificationAction,
-    NotificationBodyContent, NotificationBodyImage, NotificationBodySegment, NotificationInput,
-    NotifyControl, SenderEvent,
+    NotificationBodyContent, NotificationBodyImage, NotificationBodySegment,
+    NotificationCenterAction, NotificationCenterItem, NotificationInput, NotifyControl,
+    SenderEvent,
 };
 use notifications::{notification, notification_with_body};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+async fn center_item(
+    control: &NotifyControl,
+    id: canopa_notify::InternalNotificationId,
+) -> NotificationCenterItem {
+    let ControlReply::NotificationCenterProjection(projection) = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap()
+    else {
+        panic!("expected center projection")
+    };
+    projection
+        .groups
+        .into_iter()
+        .flat_map(|group| group.items)
+        .find(|item| item.notification_id == id)
+        .unwrap()
+}
+
+#[tokio::test]
+async fn center_activation_rejects_replaced_and_terminal_targets_without_requesting_tokens() {
+    let temp = tempfile::tempdir().unwrap();
+    let tokens = FakeActivationTokenProvider::new(["new-token"; 4]);
+    let daemon = Daemon::open(
+        DaemonOptions::headless(temp.path().join("history.db"))
+            .with_activation_token_provider(tokens.clone()),
+    )
+    .await
+    .unwrap();
+    let control = NotifyControl::new(daemon.clone());
+    for transient in [false, true] {
+        for had_default in [false, true] {
+            let mut input = NotificationInput {
+                transient,
+                actions: vec![NotificationAction::new("same", "Named")],
+                ..notification("Old app", "Original")
+            };
+            if had_default {
+                input.actions.push(NotificationAction::new("default", ""));
+            }
+            let receipt = daemon.receive_notification(input.clone()).await.unwrap();
+            let captured = center_item(&control, receipt.notification_id).await;
+            input.replaces_id = Some(receipt.notification_id);
+            input.app_name = "New app".into();
+            input.summary = "Replacement".into();
+            input.actions.retain(|action| action.key != "default");
+            if !had_default {
+                input.actions.push(NotificationAction::new("default", ""));
+            }
+            daemon.receive_notification(input).await.unwrap();
+            let events = daemon.sender_events().await;
+            let requests = tokens.requested_app_identities();
+            for action in [
+                NotificationCenterAction::Activate,
+                NotificationCenterAction::InvokeAction {
+                    action_key: "same".into(),
+                },
+            ] {
+                assert!(
+                    control
+                        .execute(ControlCommand::InteractWithNotificationCenter {
+                            target: captured.target.clone(),
+                            action,
+                        })
+                        .await
+                        .is_err()
+                );
+            }
+            assert_eq!(tokens.requested_app_identities(), requests);
+            assert_eq!(daemon.sender_events().await, events);
+            let current = center_item(&control, receipt.notification_id).await;
+            assert_ne!(current.target, captured.target);
+            let activation = ControlCommand::InteractWithNotificationCenter {
+                target: current.target,
+                action: NotificationCenterAction::Activate,
+            };
+            // Exercise the same typed encoding consumed by socket and panel adapters.
+            let activation: ControlCommand =
+                serde_json::from_str(&serde_json::to_string(&activation).unwrap()).unwrap();
+            control.execute(activation.clone()).await.unwrap();
+            let committed = daemon.sender_events().await;
+            let requests = tokens.requested_app_identities();
+            assert!(control.execute(activation).await.is_err());
+            assert_eq!(daemon.sender_events().await, committed);
+            assert_eq!(tokens.requested_app_identities(), requests);
+            assert_eq!(
+                committed.len() - events.len(),
+                if had_default { 1 } else { 3 }
+            );
+            if !had_default {
+                assert_eq!(requests.last().unwrap(), "New app");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn center_token_wait_revalidates_after_replacement_or_close_without_blocking_mutation() {
+    #[derive(Clone)]
+    struct GatedToken {
+        started: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    }
+    impl ActivationTokenProvider for GatedToken {
+        fn available(&self) -> bool {
+            true
+        }
+        fn activation_token(&self, _: String) -> ActivationTokenFuture {
+            let gate = self.clone();
+            Box::pin(async move {
+                gate.started.notify_one();
+                gate.release.notified().await;
+                Some("obsolete-token".into())
+            })
+        }
+    }
+    for close in [false, true] {
+        for action in [
+            NotificationCenterAction::Activate,
+            NotificationCenterAction::InvokeAction {
+                action_key: "same".into(),
+            },
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let gate = GatedToken {
+                started: Arc::default(),
+                release: Arc::default(),
+            };
+            let daemon = Daemon::open(
+                DaemonOptions::headless(temp.path().join("history.db"))
+                    .with_activation_token_provider(gate.clone()),
+            )
+            .await
+            .unwrap();
+            let control = NotifyControl::new(daemon.clone());
+            let input = NotificationInput {
+                transient: true,
+                actions: vec![
+                    NotificationAction::new("default", ""),
+                    NotificationAction::new("same", "Named"),
+                ],
+                ..notification("Mail", "Original")
+            };
+            let receipt = daemon.receive_notification(input.clone()).await.unwrap();
+            let captured = center_item(&control, receipt.notification_id).await;
+            // Poll only to the token gate, then withhold further action polling until
+            // mutation completes. The interleaving does not depend on a short sleep
+            // or pausing the database's timers along with the activation deadline.
+            let mut invocation = Box::pin(control.execute(
+                ControlCommand::InteractWithNotificationCenter {
+                    target: captured.target,
+                    action,
+                },
+            ));
+            assert!(futures_util::poll!(&mut invocation).is_pending());
+            assert!(futures_util::FutureExt::now_or_never(gate.started.notified()).is_some());
+            tokio::time::timeout(Duration::from_secs(3), async {
+                if close {
+                    daemon
+                        .close_notification(receipt.notification_id)
+                        .await
+                        .unwrap();
+                } else {
+                    daemon
+                        .receive_notification(NotificationInput {
+                            replaces_id: Some(receipt.notification_id),
+                            summary: "Replacement".into(),
+                            ..input
+                        })
+                        .await
+                        .unwrap();
+                }
+            })
+            .await
+            .expect("token acquisition must not hold the mutation coordinator");
+            let events = daemon.sender_events().await;
+            gate.release.notify_one();
+            assert!(invocation.await.is_err());
+            assert_eq!(daemon.sender_events().await, events);
+        }
+    }
+}
 
 #[tokio::test]
 async fn control_ids_keep_signed_numeric_json_and_reject_zero() {

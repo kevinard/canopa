@@ -110,6 +110,12 @@ impl NotifyControl {
                 self.daemon.activate_notification(notification_id).await?;
                 Ok(ControlReply::CommandApplied)
             }
+            ControlCommand::InteractWithNotificationCenter { target, action } => {
+                self.daemon
+                    .handle_notification_center_interaction(target, action)
+                    .await?;
+                Ok(ControlReply::CommandApplied)
+            }
         }
     }
 
@@ -152,6 +158,36 @@ pub enum ControlCommand {
     },
     ActivateNotification {
         notification_id: InternalNotificationId,
+    },
+    InteractWithNotificationCenter {
+        target: NotificationCenterTarget,
+        action: NotificationCenterAction,
+    },
+}
+
+/// The displayed revision in one daemon lifetime. Obtain from a center projection;
+/// keep it unchanged through queued interactions. This is not an authorization token.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationCenterTarget {
+    pub(crate) instance: [u8; 16],
+    pub(crate) notification_id: InternalNotificationId,
+    pub(crate) revision: i64,
+}
+
+impl NotificationCenterTarget {
+    pub fn notification_id(&self) -> InternalNotificationId {
+        self.notification_id
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum NotificationCenterAction {
+    /// Invoke the captured revision's default action, or dismiss if it has none.
+    Activate,
+    InvokeAction {
+        action_key: String,
     },
 }
 
@@ -200,6 +236,7 @@ pub struct CategoryPermissionControl {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationCenterItem {
     pub notification_id: InternalNotificationId,
+    pub target: NotificationCenterTarget,
     /// Live runtime-only content, never an entry in durable Notification History.
     #[serde(default)]
     pub transient: bool,

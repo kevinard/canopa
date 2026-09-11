@@ -6,6 +6,8 @@ The Notification Runtime serializes lifecycle mutations and effect publication t
 
 Banner interactions capture a `BannerTarget` (thread ID and revision) when the widget is built, including dismissal and default activation. The target survives contextual activation-token callbacks and is checked again by the runtime; a stale target is rejected without acting on the replacement, including when an action key is reused. Current-state control commands still resolve their target when handled, but default-action selection and commitment use the same observed revision. This is Canopa's explicit stale-interaction policy, not an additional wire-protocol requirement.
 
+[ADR 0042](0042-revision-bound-notification-center-actions.md) extends captured-revision safety to Notification Center controls, also binding their targets to the producing daemon lifetime. Ordinary current-state commands remain unchanged.
+
 Bulk clear is explicitly **partial-success** across durable and transient threads. It stops on the first failed transition, publishes all earlier committed transitions, and reports the failure and committed-dismissal count. Remaining threads stay active; repeating clear retries them. The library's `LifecycleBatch` carries effects independently from the operation result, so an error cannot discard committed effects.
 
 The Control API returns `ClearPartiallyApplied { dismissed }` for this outcome. JSON socket clients receive that typed result; `ctl clear` exits unsuccessfully with the count. Legacy panel interaction replies report the same count without exposing raw storage errors.

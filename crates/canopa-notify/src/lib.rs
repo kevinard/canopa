@@ -28,7 +28,8 @@ pub use activation::{
 pub use configuration::ConfigurationStatus;
 pub use control::{
     AppPermissionControl, CategoryPermissionControl, ControlCommand, ControlReply, ControlStatus,
-    NotificationCenterGroup, NotificationCenterItem, NotificationCenterProjection, NotifyControl,
+    NotificationCenterAction, NotificationCenterGroup, NotificationCenterItem,
+    NotificationCenterProjection, NotificationCenterTarget, NotifyControl,
 };
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
@@ -340,6 +341,16 @@ impl Daemon {
         notification_id: InternalNotificationId,
     ) -> anyhow::Result<()> {
         self.runtime.activate_notification(notification_id).await
+    }
+
+    pub(crate) async fn handle_notification_center_interaction(
+        &self,
+        target: NotificationCenterTarget,
+        action: NotificationCenterAction,
+    ) -> anyhow::Result<()> {
+        self.runtime
+            .handle_notification_center_interaction(target, action)
+            .await
     }
 
     pub async fn clear_active_notifications(&self) -> anyhow::Result<()> {

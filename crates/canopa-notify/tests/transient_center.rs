@@ -99,6 +99,113 @@ async fn action_signal(signals: &mut zbus::proxy::SignalStream<'_>) -> (u32, Str
         .unwrap()
 }
 
+async fn invoke_captured_action(
+    socket: &Path,
+    item: &canopa_panel_protocol::PanelItem,
+    action: &canopa_panel_protocol::PanelAction,
+) -> String {
+    let event = InteractionEvent::Invoke {
+        target: InteractionTarget::Item {
+            id: item.id.clone(),
+        },
+        action_key: action.key.clone(),
+        value: action.value.clone(),
+    };
+    let mut connection = tokio::net::UnixStream::connect(socket).await.unwrap();
+    connection
+        .write_all(
+            format!(
+                "panel-interaction {}\n",
+                serde_json::to_string(&event).unwrap()
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let mut response = String::new();
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        BufReader::new(connection).read_line(&mut response),
+    )
+    .await
+    .expect("interaction completion deadline")
+    .unwrap();
+    response
+}
+
+#[tokio::test]
+async fn captured_center_action_cannot_invoke_a_reused_key_on_replacement_content() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = format!("org.canopa.TransientCenter.Revision{}", std::process::id());
+    let _daemon = DaemonProcess::start(&socket, &database, &bus_name);
+    let connection = zbus::Connection::session().await.unwrap();
+    let proxy = zbus::Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let mut signals = proxy.receive_signal("ActionInvoked").await.unwrap();
+    let mut provider = Provider::start(&socket);
+    assert!(provider.next().await.sections.is_empty());
+    for transient in [false, true] {
+        let mut wire_id = 0u32;
+        let mut captured: Option<canopa_panel_protocol::PanelItem> = None;
+        for summary in ["Original", "Replacement"] {
+            wire_id = proxy
+                .call(
+                    "Notify",
+                    &(
+                        "Preview",
+                        wire_id,
+                        "",
+                        summary,
+                        "",
+                        vec!["same", "Open"],
+                        HashMap::from([
+                            ("transient".to_string(), OwnedValue::from(transient)),
+                            ("resident".to_string(), OwnedValue::from(true)),
+                        ]),
+                        0i32,
+                    ),
+                )
+                .await
+                .unwrap();
+            let content = provider.next().await;
+            let item = content.sections[0]
+                .items
+                .iter()
+                .find(|item| item.title == summary)
+                .unwrap();
+            if let Some(old) = captured.as_ref() {
+                assert_eq!(item.id, old.id, "replacement must preserve item identity");
+                let result = invoke_captured_action(&socket, old, &old.actions[0]).await;
+                assert!(
+                    result.starts_with("error "),
+                    "stale action was accepted: {result}"
+                );
+                assert_eq!(
+                    invoke_captured_action(&socket, item, &item.actions[0]).await,
+                    "ok\n"
+                );
+                assert_eq!(action_signal(&mut signals).await, (wire_id, "same".into()));
+                provider.next().await;
+            } else {
+                captured = Some(item.clone());
+            }
+        }
+        proxy
+            .call::<_, _, ()>("CloseNotification", &(wire_id,))
+            .await
+            .unwrap();
+        provider.next().await;
+    }
+}
+
 #[tokio::test]
 async fn provider_marks_transient_items_and_routes_every_action_to_the_live_sender() {
     let temp = tempfile::tempdir().unwrap();
@@ -175,13 +282,17 @@ async fn provider_marks_transient_items_and_routes_every_action_to_the_live_send
             .collect::<Vec<_>>(),
         ["First", "Second", "Third", "Fourth — opaque sender action"]
     );
-    for action in named_actions {
+    for (action, sender_key) in
+        named_actions
+            .into_iter()
+            .zip(["one", "two", "three", "canopa-notify:clear-active"])
+    {
         provider
             .invoke(&item.id, &action.key, action.value.clone())
             .await;
         assert_eq!(
             action_signal(&mut signals).await,
-            (wire_id, action.value.clone().unwrap())
+            (wire_id, sender_key.to_owned())
         );
         let update = provider.next().await;
         assert_eq!(
@@ -202,6 +313,189 @@ async fn provider_marks_transient_items_and_routes_every_action_to_the_live_send
         .await
         .unwrap();
     assert!(provider.next().await.sections.is_empty());
+}
+
+#[tokio::test]
+async fn center_targets_from_a_previous_daemon_cannot_act_on_reused_transient_ids() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = format!("org.canopa.TransientCenter.Restart{}", std::process::id());
+    let mut captured: Option<canopa_panel_protocol::PanelItem> = None;
+    for _ in 0..2 {
+        let daemon = DaemonProcess::start(&socket, &database, &bus_name);
+        let connection = zbus::Connection::session().await.unwrap();
+        let proxy = zbus::Proxy::new(
+            &connection,
+            bus_name.as_str(),
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        )
+        .await
+        .unwrap();
+        let mut signals = proxy.receive_signal("ActionInvoked").await.unwrap();
+        let wire_id: u32 = proxy
+            .call(
+                "Notify",
+                &(
+                    "Preview",
+                    0u32,
+                    "",
+                    "Same content and revision",
+                    "",
+                    vec!["default", "", "same", "Named"],
+                    HashMap::from([
+                        ("transient".to_string(), OwnedValue::from(true)),
+                        ("resident".to_string(), OwnedValue::from(true)),
+                    ]),
+                    0i32,
+                ),
+            )
+            .await
+            .unwrap();
+        let mut provider = Provider::start(&socket);
+        let content = provider.next().await;
+        let item = &content.sections[0].items[0];
+        if let Some(old) = captured.as_ref() {
+            assert_eq!(item.id, old.id, "fixture must reuse the transient ID");
+            assert_ne!(
+                item.actions, old.actions,
+                "new lifetime must have fresh targets"
+            );
+            for action in &old.actions {
+                assert!(
+                    invoke_captured_action(&socket, old, action)
+                        .await
+                        .starts_with("error ")
+                );
+            }
+            for (action, key) in item.actions.iter().zip(["same", "default"]) {
+                provider
+                    .invoke(&item.id, &action.key, action.value.clone())
+                    .await;
+                assert_eq!(action_signal(&mut signals).await, (wire_id, key.into()));
+                provider.next().await;
+            }
+        } else {
+            captured = Some(item.clone());
+        }
+        drop(provider);
+        drop(daemon);
+    }
+}
+
+#[tokio::test]
+async fn center_activation_controls_cannot_switch_meaning_after_replacement() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let bus_name = format!(
+        "org.canopa.TransientCenter.Activation{}",
+        std::process::id()
+    );
+    let _daemon = DaemonProcess::start(&socket, &database, &bus_name);
+    let connection = zbus::Connection::session().await.unwrap();
+    let proxy = zbus::Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let mut closures = proxy.receive_signal("NotificationClosed").await.unwrap();
+    let mut signals = proxy.receive_signal("ActionInvoked").await.unwrap();
+    let mut provider = Provider::start(&socket);
+    assert!(provider.next().await.sections.is_empty());
+    for transient in [false, true] {
+        for had_default in [false, true] {
+            let mut wire_id = 0u32;
+            let mut captured: Option<canopa_panel_protocol::PanelItem> = None;
+            for (summary, has_default) in [("Original", had_default), ("Replacement", !had_default)]
+            {
+                wire_id = proxy
+                    .call(
+                        "Notify",
+                        &(
+                            "Preview",
+                            wire_id,
+                            "",
+                            summary,
+                            "",
+                            if has_default {
+                                vec!["default", ""]
+                            } else {
+                                vec![]
+                            },
+                            HashMap::from([("transient".to_string(), OwnedValue::from(transient))]),
+                            0i32,
+                        ),
+                    )
+                    .await
+                    .unwrap();
+                let content = provider.next().await;
+                let item = content.sections[0]
+                    .items
+                    .iter()
+                    .find(|item| item.title == summary && !item.actions.is_empty())
+                    .unwrap();
+                if let Some(old) = captured.as_ref() {
+                    assert_eq!(item.id, old.id);
+                    assert!(
+                        invoke_captured_action(&socket, old, &old.actions[0])
+                            .await
+                            .starts_with("error ")
+                    );
+                    assert_eq!(
+                        invoke_captured_action(&socket, item, &item.actions[0]).await,
+                        "ok\n"
+                    );
+                    let closure = tokio::time::timeout(Duration::from_secs(3), closures.next())
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(
+                        closure.body().deserialize::<(u32, u32)>().unwrap(),
+                        (wire_id, 2)
+                    );
+                    if has_default {
+                        assert_eq!(
+                            action_signal(&mut signals).await,
+                            (wire_id, "default".into())
+                        );
+                    }
+                    let update = provider.next().await;
+                    assert!(
+                        update
+                            .sections
+                            .iter()
+                            .flat_map(|group| &group.items)
+                            .filter(|candidate| candidate.id == item.id)
+                            .all(|candidate| candidate.actions.is_empty())
+                    );
+                    // The completed socket exchange is a barrier: duplicate terminal events
+                    // must be rejected, not interpreted against history or another live item.
+                    assert!(
+                        invoke_captured_action(&socket, item, &item.actions[0])
+                            .await
+                            .starts_with("error ")
+                    );
+                } else {
+                    captured = Some(item.clone());
+                }
+            }
+        }
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), signals.next())
+            .await
+            .is_err()
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), closures.next())
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]

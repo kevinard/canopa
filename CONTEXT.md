@@ -260,6 +260,10 @@ _Avoid_: Event log when referring to display state, Notification Snapshot when r
 The `canopa-notify` mode that serves Notify-owned notification center content to Niribar.
 _Avoid_: Notification Daemon when referring to the short-lived provider process
 
+**Notification Center Target**:
+The identity of a notification revision displayed by the **Notification Center**, scoped to the **Notification Daemon** lifetime that produced it.
+_Avoid_: Current notification ID when referring to a captured center interaction
+
 **Control Command**:
 A command-line operation that inspects or changes Notify state through the **Notify Control API**.
 _Avoid_: Notification action when referring to user/admin control of Notify itself

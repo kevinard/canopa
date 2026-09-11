@@ -2,7 +2,8 @@ use canopa_notify::InternalNotificationId;
 use canopa_notify::{
     AppPermissionControl, ControlCommand, ControlReply, NotificationBodyContent,
     NotificationBodyImage, NotificationBodyImageSource, NotificationBodySegment,
-    NotificationCenterProjection, NotifyControl, normalize_notification_category,
+    NotificationCenterAction, NotificationCenterProjection, NotificationCenterTarget,
+    NotifyControl, normalize_notification_category,
 };
 use canopa_panel_protocol::{
     InteractionEvent, InteractionTarget, PanelAction, PanelContent, PanelControl,
@@ -102,7 +103,8 @@ impl CtlRequest {
                                 | ControlCommand::ClearActiveNotifications
                                 | ControlCommand::DeleteNotificationHistory
                                 | ControlCommand::InvokeNotificationAction { .. }
-                                | ControlCommand::ActivateNotification { .. },
+                                | ControlCommand::ActivateNotification { .. }
+                                | ControlCommand::InteractWithNotificationCenter { .. },
                             ControlReply::CommandApplied
                         )
                 );
@@ -381,17 +383,27 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                         actions: item
                             .actions
                             .into_iter()
-                            .map(|action| panel_sender_action(action.key, action.label))
+                            .map(|action| {
+                                panel_center_action(
+                                    item.target.clone(),
+                                    NotificationCenterAction::InvokeAction {
+                                        action_key: action.key,
+                                    },
+                                    action.label,
+                                )
+                            })
                             .chain(
                                 (item.status == canopa_notify::NotificationStatus::Active).then(
                                     || {
-                                        PanelAction::new(
-                                            PANEL_ACTIVATE_ITEM_KEY,
+                                        panel_center_action(
+                                            item.target.clone(),
+                                            NotificationCenterAction::Activate,
                                             if item.has_default_action {
                                                 "Open notification"
                                             } else {
                                                 "Dismiss notification"
-                                            },
+                                            }
+                                            .to_string(),
                                         )
                                     },
                                 ),
@@ -414,11 +426,28 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
     }
 }
 
-fn panel_sender_action(action_key: String, label: String) -> PanelAction {
+fn panel_center_action(
+    target: NotificationCenterTarget,
+    action: NotificationCenterAction,
+    label: String,
+) -> PanelAction {
     PanelAction {
-        key: PANEL_NOTIFICATION_ACTION_KEY.to_string(),
+        key: panel_center_action_key(&action).to_string(),
         label,
-        value: Some(action_key),
+        value: Some(
+            serde_json::to_string(&ControlCommand::InteractWithNotificationCenter {
+                target,
+                action,
+            })
+            .expect("notification center action serialization"),
+        ),
+    }
+}
+
+fn panel_center_action_key(action: &NotificationCenterAction) -> &'static str {
+    match action {
+        NotificationCenterAction::Activate => PANEL_ACTIVATE_ITEM_KEY,
+        NotificationCenterAction::InvokeAction { .. } => PANEL_NOTIFICATION_ACTION_KEY,
     }
 }
 
@@ -523,16 +552,15 @@ fn control_command_from_panel_interaction(event: InteractionEvent) -> Option<Con
             action_key,
             value,
         } => match target {
-            InteractionTarget::Item { id } if action_key == PANEL_NOTIFICATION_ACTION_KEY => {
-                Some(ControlCommand::InvokeNotificationAction {
-                    notification_id: id.parse().ok()?,
-                    action_key: value?,
-                })
-            }
-            InteractionTarget::Item { id } if action_key == PANEL_ACTIVATE_ITEM_KEY => {
-                Some(ControlCommand::ActivateNotification {
-                    notification_id: id.parse().ok()?,
-                })
+            InteractionTarget::Item { id } => {
+                let command = serde_json::from_str(value.as_deref()?).ok()?;
+                let ControlCommand::InteractWithNotificationCenter { target, action } = &command
+                else {
+                    return None;
+                };
+                let expected_key = panel_center_action_key(action);
+                (target.notification_id() == id.parse().ok()? && action_key == expected_key)
+                    .then_some(command)
             }
             InteractionTarget::Section { id } if action_key == PANEL_APP_PERMISSION_KEY => {
                 Some(ControlCommand::SetAppPermission {
@@ -557,9 +585,7 @@ fn control_command_from_panel_interaction(event: InteractionEvent) -> Option<Con
             InteractionTarget::Content if action_key == PANEL_DELETE_HISTORY_KEY => {
                 Some(ControlCommand::DeleteNotificationHistory)
             }
-            InteractionTarget::Content
-            | InteractionTarget::Section { .. }
-            | InteractionTarget::Item { .. } => None,
+            InteractionTarget::Content | InteractionTarget::Section { .. } => None,
         },
     }
 }
@@ -577,6 +603,20 @@ fn app_permission_from_panel_value(value: &str) -> Option<AppPermissionControl> 
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    fn center_target_fixture() -> NotificationCenterTarget {
+        serde_json::from_value(serde_json::json!({
+            "notification_id": 42, "revision": 1, "instance": vec![7; 16],
+        }))
+        .unwrap()
+    }
+
+    fn center_command_fixture(action: NotificationCenterAction) -> ControlCommand {
+        ControlCommand::InteractWithNotificationCenter {
+            target: center_target_fixture(),
+            action,
+        }
+    }
 
     #[tokio::test]
     async fn partial_clear_reports_committed_count_over_control_socket() {
@@ -673,6 +713,7 @@ mod tests {
                 }],
                 items: vec![canopa_notify::NotificationCenterItem {
                     notification_id: InternalNotificationId::new(42).unwrap(),
+                    target: center_target_fixture(),
                     transient: false,
                     has_default_action: false,
                     summary: "Inbox".to_string(),
@@ -691,8 +732,10 @@ mod tests {
         let item_action = &content.sections[0].items[0].actions[0];
         assert_eq!(item_action.key, "canopa-notify:notification-action");
         assert_eq!(
-            item_action.value.as_deref(),
-            Some("canopa-notify:notification-action")
+            serde_json::from_str::<ControlCommand>(item_action.value.as_deref().unwrap()).unwrap(),
+            center_command_fixture(NotificationCenterAction::InvokeAction {
+                action_key: "canopa-notify:notification-action".into(),
+            })
         );
         assert_eq!(
             content.sections[0].controls[0].key,
@@ -715,12 +758,20 @@ mod tests {
                     id: "42".to_string()
                 },
                 action_key: PANEL_NOTIFICATION_ACTION_KEY.to_string(),
-                value: Some("reply".to_string()),
+                value: Some(
+                    serde_json::to_string(&center_command_fixture(
+                        NotificationCenterAction::InvokeAction {
+                            action_key: "reply".into()
+                        }
+                    ))
+                    .unwrap()
+                ),
             }),
-            Some(ControlCommand::InvokeNotificationAction {
-                notification_id: InternalNotificationId::new(42).unwrap(),
-                action_key: "reply".to_string(),
-            })
+            Some(center_command_fixture(
+                NotificationCenterAction::InvokeAction {
+                    action_key: "reply".into()
+                }
+            ))
         );
         assert_eq!(
             control_command_from_panel_interaction(InteractionEvent::Invoke {
@@ -752,11 +803,14 @@ mod tests {
                     id: "42".to_string()
                 },
                 action_key: PANEL_ACTIVATE_ITEM_KEY.to_string(),
-                value: None,
+                value: Some(
+                    serde_json::to_string(&center_command_fixture(
+                        NotificationCenterAction::Activate
+                    ))
+                    .unwrap()
+                ),
             }),
-            Some(ControlCommand::ActivateNotification {
-                notification_id: InternalNotificationId::new(42).unwrap(),
-            })
+            Some(center_command_fixture(NotificationCenterAction::Activate))
         );
         assert_eq!(
             control_command_from_panel_interaction(InteractionEvent::Invoke {
@@ -833,17 +887,68 @@ mod tests {
                 id: "42".to_string(),
             },
             action_key: PANEL_NOTIFICATION_ACTION_KEY.to_string(),
-            value: Some("reply".to_string()),
+            value: Some(
+                serde_json::to_string(&center_command_fixture(
+                    NotificationCenterAction::InvokeAction {
+                        action_key: "reply".into(),
+                    },
+                ))
+                .unwrap(),
+            ),
         })
         .unwrap();
         assert_eq!(
             SocketControlRequest::parse(&format!("panel-interaction {panel_interaction}"))
                 .command(),
-            Some(ControlCommand::InvokeNotificationAction {
-                notification_id: InternalNotificationId::new(42).unwrap(),
-                action_key: "reply".to_string(),
-            })
+            Some(center_command_fixture(
+                NotificationCenterAction::InvokeAction {
+                    action_key: "reply".into()
+                }
+            ))
         );
         assert_eq!(SocketControlRequest::parse("bogus").command(), None);
+    }
+
+    #[test]
+    fn panel_item_commands_reject_unguarded_mismatched_and_unrelated_payloads() {
+        let activation =
+            serde_json::to_string(&center_command_fixture(NotificationCenterAction::Activate))
+                .unwrap();
+        for (id, key, value) in [
+            ("42", PANEL_ACTIVATE_ITEM_KEY, None),
+            ("42", PANEL_NOTIFICATION_ACTION_KEY, Some("same".into())),
+            ("41", PANEL_ACTIVATE_ITEM_KEY, Some(activation.clone())),
+            (
+                "42",
+                PANEL_NOTIFICATION_ACTION_KEY,
+                Some(activation.clone()),
+            ),
+            ("42", "default", Some(activation.clone())),
+            ("0", PANEL_ACTIVATE_ITEM_KEY, Some(activation)),
+            (
+                "42",
+                PANEL_ACTIVATE_ITEM_KEY,
+                Some(
+                    serde_json::to_string(&ControlCommand::ActivateNotification {
+                        notification_id: InternalNotificationId::new(42).unwrap(),
+                    })
+                    .unwrap(),
+                ),
+            ),
+            (
+                "42",
+                PANEL_ACTIVATE_ITEM_KEY,
+                Some(serde_json::to_string(&ControlCommand::ClearActiveNotifications).unwrap()),
+            ),
+        ] {
+            assert_eq!(
+                control_command_from_panel_interaction(InteractionEvent::Invoke {
+                    target: InteractionTarget::Item { id: id.into() },
+                    action_key: key.into(),
+                    value,
+                }),
+                None
+            );
+        }
     }
 }

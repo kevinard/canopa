@@ -2,8 +2,9 @@ use crate::InternalNotificationId;
 use crate::SenderEventPublisher;
 use crate::activation::ActivationTokenProvider;
 use crate::control::{
-    AppPermissionControl, CategoryPermissionControl, NotificationCenterGroup,
-    NotificationCenterItem, NotificationCenterProjection,
+    AppPermissionControl, CategoryPermissionControl, NotificationCenterAction,
+    NotificationCenterGroup, NotificationCenterItem, NotificationCenterProjection,
+    NotificationCenterTarget,
 };
 use crate::delivery_policy::{
     DeliveryDecisionLog, DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState,
@@ -64,6 +65,7 @@ pub(crate) struct NotificationRuntime {
     commands: Arc<AsyncMutex<()>>,
     state_version: Arc<AtomicU64>,
     state_changes: watch::Sender<u64>,
+    center_instance: [u8; 16],
 }
 
 impl NotificationRuntime {
@@ -76,6 +78,17 @@ impl NotificationRuntime {
         sound_presenter: Arc<dyn SoundPresenter>,
         configuration_rules: Vec<DeliveryPolicyRule>,
     ) -> anyhow::Result<Self> {
+        // External center events can outlive this runtime and its transient ID allocator.
+        let mut center_instance = [0u8; 16];
+        let mut remaining = center_instance.as_mut_slice();
+        while !remaining.is_empty() {
+            match rustix::rand::getrandom(&mut *remaining, rustix::rand::GetRandomFlags::empty()) {
+                Ok(0) => anyhow::bail!("could not allocate notification center instance"),
+                Ok(count) => remaining = &mut remaining[count..],
+                Err(rustix::io::Errno::INTR) => continue,
+                Err(_) => anyhow::bail!("could not allocate notification center instance"),
+            }
+        }
         let lifecycle =
             NotificationLifecycle::with_timeout_defaults(storage.clone(), timeout_defaults);
         lifecycle.mark_active_stale().await?;
@@ -115,6 +128,7 @@ impl NotificationRuntime {
             commands: Arc::new(AsyncMutex::new(())),
             state_version: Arc::new(AtomicU64::new(0)),
             state_changes,
+            center_instance,
         })
     }
 
@@ -380,6 +394,36 @@ impl NotificationRuntime {
         }
     }
 
+    pub(crate) async fn handle_notification_center_interaction(
+        &self,
+        target: NotificationCenterTarget,
+        action: NotificationCenterAction,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            target.instance == self.center_instance,
+            "notification center target is obsolete"
+        );
+        match action {
+            NotificationCenterAction::Activate => {
+                self.activate_notification_for_revision(
+                    target.notification_id,
+                    None,
+                    Some(target.revision),
+                )
+                .await
+            }
+            NotificationCenterAction::InvokeAction { action_key } => {
+                self.invoke_action_for_revision(
+                    target.notification_id,
+                    &action_key,
+                    None,
+                    Some(target.revision),
+                )
+                .await
+            }
+        }
+    }
+
     pub(crate) async fn activate_banner_with_activation_token(
         &self,
         notification_id: InternalNotificationId,
@@ -569,7 +613,11 @@ impl NotificationRuntime {
         // Match retained ordering and keep runtime-only HashMap iteration out of the UI.
         threads.sort_by_key(|thread| std::cmp::Reverse((thread.created_at, thread.id)));
         let user_rules = self.user_rules().await?;
-        Ok(projection_from_threads(threads, &user_rules))
+        Ok(projection_from_threads(
+            threads,
+            &user_rules,
+            self.center_instance,
+        ))
     }
 
     pub(crate) fn subscribe_notification_state(&self) -> NotificationStateSubscription {
@@ -895,6 +943,7 @@ impl NotificationStateSubscription {
 fn projection_from_threads(
     threads: Vec<NotificationThread>,
     user_rules: &[UserRule],
+    instance: [u8; 16],
 ) -> NotificationCenterProjection {
     let mut grouped: BTreeMap<String, Vec<NotificationCenterItem>> = BTreeMap::new();
     let app_permissions: HashMap<_, _> = user_rules
@@ -945,6 +994,11 @@ fn projection_from_threads(
             .or_default()
             .push(NotificationCenterItem {
                 notification_id: thread.id,
+                target: NotificationCenterTarget {
+                    instance,
+                    notification_id: thread.id,
+                    revision: thread.revision,
+                },
                 transient: notification.transient,
                 has_default_action: thread.status == NotificationStatus::Active
                     && notification
