@@ -1201,8 +1201,32 @@ async fn latest_queued_presentation_starts_all_visible_notification_timeouts() {
         .await
         .unwrap();
 
+    let mut events = daemon.subscribe_sender_events();
     presenter.acknowledge_latest();
-    tokio::time::sleep(Duration::from_millis(40)).await;
+    // Model a busy executor before the newly scheduled timer tasks can run.
+    std::thread::sleep(Duration::from_millis(80));
+    // Expiration includes asynchronous storage commitment. A fixed sleep is not
+    // evidence that both transitions have finished, even when timers are due.
+    let expired = tokio::time::timeout(Duration::from_secs(2), async {
+        let mut expired = std::collections::BTreeSet::new();
+        for _ in 0..2 {
+            let SenderEvent::NotificationClosed {
+                notification_id,
+                reason: canopa_notify::SenderCloseReason::Expired,
+            } = events.recv().await.unwrap()
+            else {
+                panic!("expected a committed expiration");
+            };
+            expired.insert(notification_id);
+        }
+        expired
+    })
+    .await
+    .expect("latest presentation must start both visible notification timeouts");
+    assert_eq!(
+        expired,
+        [first.notification_id, second.notification_id].into()
+    );
 
     let snapshot = daemon.snapshot().await.unwrap();
     for notification_id in [first.notification_id, second.notification_id] {

@@ -1,7 +1,9 @@
 use super::{
-    CtlRequest, SocketControlRequest, control_socket_response, panel_content_from_projection,
+    CtlRequest, SocketControlRequest, control_socket_response, invalid_control_reply,
+    panel_content_from_projection,
 };
-use canopa_notify::{ControlReply, NotifyControl};
+use anyhow::Context;
+use canopa_notify::NotifyControl;
 use canopa_panel_protocol::{
     InteractionEvent, MAX_FRAME_BYTES as MAX_PANEL_FRAME_BYTES, PanelContent, ProviderResponse,
 };
@@ -13,48 +15,49 @@ use std::thread;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 const MAX_CONTROL_FRAME_BYTES: usize = 64 * 1024;
+const MAX_CONTROL_REPLY_BYTES: usize = 8 * 1024 * 1024;
+pub(super) const CONTROL_REPLY_TOO_LARGE: &str = "error control reply exceeds the 8 MiB limit\n";
 const MAX_PANEL_INTERACTION_BYTES: usize = MAX_CONTROL_FRAME_BYTES - "panel-interaction ".len();
 const MAX_PANEL_REPLY_BYTES: usize = 4096;
 const CONTROL_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const CONTROL_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const CONTROL_EXCHANGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const PANEL_INTERACTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-pub(crate) fn run_ctl(socket: &Path, request: CtlRequest) -> anyhow::Result<()> {
-    let mut stream = StdUnixStream::connect(socket).map_err(|source| {
-        anyhow::anyhow!(
-            "Canopa Notify daemon unavailable at {}: {source}",
-            socket.display()
-        )
-    })?;
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
-    stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
-    stream.write_all(request.line().as_bytes())?;
-    let mut response = String::new();
-    stream.read_to_string(&mut response)?;
+pub(crate) async fn run_ctl(socket: &Path, request: CtlRequest) -> anyhow::Result<()> {
+    let line = request.line();
     anyhow::ensure!(
-        !response.is_empty(),
-        "Canopa Notify daemon closed the control connection without a reply"
+        line.len() <= MAX_CONTROL_FRAME_BYTES,
+        "Canopa Notify control request exceeds 64 KiB; command was not sent"
     );
+    let bytes = tokio::time::timeout(CONTROL_EXCHANGE_TIMEOUT, async {
+        let mut stream = tokio::net::UnixStream::connect(socket).await.map_err(|source| {
+            anyhow::anyhow!(
+                "Canopa Notify daemon unavailable at {}: {source}",
+                socket.display()
+            )
+        })?;
+        tokio::time::timeout(CONTROL_WRITE_TIMEOUT, stream.write_all(line.as_bytes()))
+            .await
+            .context("Canopa Notify control write exceeded its five-second deadline; command outcome may be unknown")?
+            .context("Canopa Notify control write failed; command outcome may be unknown")?;
+        let mut bytes = Vec::with_capacity(MAX_CONTROL_REPLY_BYTES + 1);
+        BufReader::new(stream)
+            .take((MAX_CONTROL_REPLY_BYTES + 1) as u64)
+            .read_until(b'\n', &mut bytes)
+            .await
+            .context("Canopa Notify control read failed; command outcome may be unknown")?;
+        Ok::<_, anyhow::Error>(bytes)
+    })
+    .await
+    .context("Canopa Notify control exchange exceeded its 30-second deadline; command outcome may be unknown")??;
     anyhow::ensure!(
-        !response.starts_with("error "),
-        "Canopa Notify request failed: {}",
-        response.trim()
+        bytes.len() <= MAX_CONTROL_REPLY_BYTES,
+        "Canopa Notify control reply exceeds 8 MiB; command outcome may be unknown"
     );
-    if matches!(request, CtlRequest::Command(_)) {
-        match serde_json::from_str::<ControlReply>(&response)? {
-            ControlReply::DoNotDisturb(enabled) => {
-                println!("{}", if enabled { "on" } else { "off" })
-            }
-            ControlReply::CommandApplied => println!("ok"),
-            ControlReply::ClearPartiallyApplied { dismissed } => anyhow::bail!(
-                "clear stopped after {dismissed} committed dismissals; remaining notifications were not cleared"
-            ),
-            ControlReply::Status(status) => println!("{}", serde_json::to_string_pretty(&status)?),
-            reply => println!("{}", serde_json::to_string(&reply)?),
-        }
-    } else {
-        print!("{response}");
-    }
+    anyhow::ensure!(bytes.last() == Some(&b'\n'), invalid_control_reply());
+    let response = String::from_utf8(bytes).map_err(|_| invalid_control_reply())?;
+    print!("{}", request.reply_text(&response)?);
     Ok(())
 }
 
@@ -336,37 +339,61 @@ async fn stream_projection_subscription(
 }
 
 pub(super) fn panel_response_line(content: PanelContent) -> anyhow::Result<String> {
-    let mut buffer = PanelFrameBuffer {
-        bytes: Vec::with_capacity(MAX_PANEL_FRAME_BYTES),
-        exceeded: false,
-    };
-    if let Err(error) =
-        serde_json::to_writer(&mut buffer, &ProviderResponse::replace_content(content))
-    {
-        if !buffer.exceeded {
-            return Err(error.into());
-        }
-        return Ok(serde_json::to_string(&ProviderResponse::replace_content(
-            PanelContent::error(
+    if let Some(line) = json_line(
+        &ProviderResponse::replace_content(content),
+        MAX_PANEL_FRAME_BYTES,
+    )? {
+        Ok(line)
+    } else {
+        Ok(
+            serde_json::to_string(&ProviderResponse::replace_content(PanelContent::error(
                 "Canopa Notify",
                 "Notification Center exceeds the 1 MiB display limit; use notification history controls.",
-            ),
-        ))? + "\n");
+            )))? + "\n",
+        )
     }
-    buffer.bytes.push(b'\n');
-    Ok(String::from_utf8(buffer.bytes)?)
 }
 
-struct PanelFrameBuffer {
+pub(super) fn control_reply_line(value: &impl serde::Serialize) -> anyhow::Result<String> {
+    Ok(
+        json_line(value, MAX_CONTROL_REPLY_BYTES)?
+            .unwrap_or_else(|| CONTROL_REPLY_TOO_LARGE.into()),
+    )
+}
+
+fn json_line(value: &impl serde::Serialize, maximum: usize) -> anyhow::Result<Option<String>> {
+    let mut buffer = JsonLineBuffer {
+        bytes: Vec::with_capacity(4096.min(maximum)),
+        maximum,
+        exceeded: false,
+    };
+    if let Err(error) = serde_json::to_writer(&mut buffer, value) {
+        if buffer.exceeded {
+            return Ok(None);
+        }
+        return Err(error.into());
+    }
+    buffer.bytes.push(b'\n');
+    Ok(Some(String::from_utf8(buffer.bytes)?))
+}
+
+struct JsonLineBuffer {
     bytes: Vec<u8>,
+    maximum: usize,
     exceeded: bool,
 }
 
-impl Write for PanelFrameBuffer {
+impl Write for JsonLineBuffer {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        if bytes.len() > MAX_PANEL_FRAME_BYTES - 1 - self.bytes.len() {
+        if bytes.len() > self.maximum - 1 - self.bytes.len() {
             self.exceeded = true;
-            return Err(std::io::Error::other("panel frame limit exceeded"));
+            return Err(std::io::Error::other("JSON reply limit exceeded"));
+        }
+        // Grow geometrically within the limit, retaining room for the final newline.
+        let required = self.bytes.len() + bytes.len() + 1;
+        if required > self.bytes.capacity() {
+            let capacity = required.max(self.bytes.capacity() * 2).min(self.maximum);
+            self.bytes.reserve_exact(capacity - self.bytes.len());
         }
         self.bytes.extend_from_slice(bytes);
         Ok(bytes.len())

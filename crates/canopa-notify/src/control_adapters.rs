@@ -11,8 +11,8 @@ use canopa_panel_protocol::{
 };
 mod transport;
 
-use transport::panel_response_line;
 pub(crate) use transport::{ControlSocket, run_ctl, run_panel_provider};
+use transport::{control_reply_line, panel_response_line};
 
 const PANEL_NOTIFICATION_ACTION_KEY: &str = "canopa-notify:notification-action";
 const PANEL_ACTIVATE_ITEM_KEY: &str = "canopa-notify:activate-item";
@@ -44,6 +44,92 @@ impl CtlRequest {
         };
         line.to_string()
     }
+
+    fn reply_text(&self, response: &str) -> anyhow::Result<String> {
+        if response.starts_with("error ") {
+            if response == transport::CONTROL_REPLY_TOO_LARGE {
+                anyhow::bail!(
+                    "Canopa Notify control reply exceeds 8 MiB; command outcome may be unknown"
+                );
+            }
+            anyhow::bail!(
+                "Canopa Notify request failed; inspect daemon status; command outcome may be unknown"
+            );
+        }
+        match self {
+            Self::Status if response == "Canopa Notify daemon available\n" => Ok(response.into()),
+            Self::ActiveCount => {
+                let count = response
+                    .strip_suffix(" active notifications\n")
+                    .and_then(|count| count.parse::<usize>().ok())
+                    .ok_or_else(invalid_control_reply)?;
+                let expected = format!("{count} active notifications\n");
+                anyhow::ensure!(response == expected, invalid_control_reply());
+                Ok(expected)
+            }
+            Self::ActiveJson => {
+                serde_json::from_str::<Vec<canopa_notify::NotificationThread>>(response)
+                    .map_err(|_| invalid_control_reply())?;
+                Ok(response.into())
+            }
+            Self::Command(command) => {
+                let reply: ControlReply =
+                    serde_json::from_str(response).map_err(|_| invalid_control_reply())?;
+                let matches = matches!(
+                    (command, &reply),
+                    (ControlCommand::Status, ControlReply::Status(_))
+                        | (
+                            ControlCommand::DoNotDisturb
+                                | ControlCommand::ChangeDoNotDisturb { .. },
+                            ControlReply::DoNotDisturb(_)
+                        )
+                        | (
+                            ControlCommand::ActiveNotifications,
+                            ControlReply::ActiveNotifications(_)
+                        )
+                        | (
+                            ControlCommand::NotificationCenterProjection,
+                            ControlReply::NotificationCenterProjection(_)
+                        )
+                        | (
+                            ControlCommand::ClearActiveNotifications,
+                            ControlReply::ClearPartiallyApplied { .. }
+                        )
+                        | (
+                            ControlCommand::ReloadConfiguration { .. }
+                                | ControlCommand::SetAppPermission { .. }
+                                | ControlCommand::SetCategoryPermission { .. }
+                                | ControlCommand::ClearActiveNotifications
+                                | ControlCommand::DeleteNotificationHistory
+                                | ControlCommand::InvokeNotificationAction { .. }
+                                | ControlCommand::ActivateNotification { .. },
+                            ControlReply::CommandApplied
+                        )
+                );
+                anyhow::ensure!(matches, invalid_control_reply());
+                match reply {
+                    ControlReply::DoNotDisturb(enabled) => {
+                        Ok(if enabled { "on\n" } else { "off\n" }.into())
+                    }
+                    ControlReply::CommandApplied => Ok("ok\n".into()),
+                    ControlReply::ClearPartiallyApplied { dismissed } => anyhow::bail!(
+                        "clear stopped after {dismissed} committed dismissals; remaining notifications were not cleared"
+                    ),
+                    ControlReply::Status(status) => {
+                        Ok(serde_json::to_string_pretty(&status)? + "\n")
+                    }
+                    reply => Ok(serde_json::to_string(&reply)? + "\n"),
+                }
+            }
+            _ => Err(invalid_control_reply()),
+        }
+    }
+}
+
+fn invalid_control_reply() -> anyhow::Error {
+    anyhow::anyhow!(
+        "invalid or incomplete Canopa Notify control reply; command outcome may be unknown"
+    )
 }
 
 async fn control_socket_response(
@@ -165,7 +251,7 @@ impl SocketControlRequest {
 
     fn format_reply(&self, reply: ControlReply) -> anyhow::Result<String> {
         if matches!(self, Self::TypedCommand(_)) {
-            return Ok(serde_json::to_string(&reply)? + "\n");
+            return control_reply_line(&reply);
         }
         if matches!(
             self,
@@ -218,7 +304,7 @@ fn format_active_json_reply(reply: ControlReply) -> anyhow::Result<String> {
     let ControlReply::ActiveNotifications(active) = reply else {
         return Err(unexpected_control_reply());
     };
-    Ok(serde_json::to_string(&active)? + "\n")
+    control_reply_line(&active)
 }
 
 fn format_active_count_reply(reply: ControlReply) -> anyhow::Result<String> {

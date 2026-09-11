@@ -51,6 +51,8 @@ If another process already owns the runtime socket or the freedesktop notificati
 
 `dnd` without an argument reports the current state; changes survive restart. `reload [PATH]` installs a validated candidate atomically. `clear` dismisses active notifications; `delete-history` removes inactive local history. JSON status includes configuration generation/error, presentation error and sender-publication error. These controls do not imply a freedesktop `persistence` capability.
 
+Control requests must fit 64 KiB and ordinary replies must fit 8 MiB, including their terminating newline. Oversized replies return an error without truncating or deleting notification history. The CLI validates a complete reply before printing it and gives connect/write/read one 30-second deadline, with at most five seconds for writing. Malformed, incomplete, mismatched or oversized replies fail without printing their contents. A failed exchange can leave the command outcome unknown: the CLI never retries automatically. Inspect state before repeating a state-changing command, especially `dnd toggle` or `clear`. A completed partial-clear reply reports the number of committed dismissals.
+
 Run automated checks on a private session bus with `bash scripts/test.sh`. This avoids replacing the desktop notification service.
 
 ## Graphical Smoke Check

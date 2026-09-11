@@ -113,7 +113,7 @@ async fn main() {
 async fn run() -> anyhow::Result<()> {
     match Cli::parse().command {
         Command::Daemon(args) => run_daemon(args).await,
-        Command::Ctl(args) => run_ctl(args),
+        Command::Ctl(args) => run_ctl(args).await,
         Command::PanelProvider(args) => run_panel_provider(args),
     }
 }
@@ -277,11 +277,11 @@ fn spawn_banner_interaction_forwarder(
     Ok(())
 }
 
-fn run_ctl(mut args: CtlArgs) -> anyhow::Result<()> {
+async fn run_ctl(mut args: CtlArgs) -> anyhow::Result<()> {
     if let CtlCommand::Reload { path: Some(path) } = &mut args.command {
         *path = std::path::absolute(&*path)?;
     }
-    control_adapters::run_ctl(&args.socket, control_request_for_ctl(&args.command))
+    control_adapters::run_ctl(&args.socket, control_request_for_ctl(&args.command)).await
 }
 
 fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
