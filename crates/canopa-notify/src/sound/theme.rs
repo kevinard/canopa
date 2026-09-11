@@ -1,5 +1,5 @@
-use super::read_bounded_sound_file;
 use crate::DEFAULT_NOTIFICATION_SOUND_THEME;
+use crate::local_file::read_bounded;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -123,7 +123,7 @@ impl SoundThemeResolver {
             let index = root.join("sounds").join(theme).join("index.theme");
             if budget.exists(&index)? {
                 // First index wins across roots, including when malformed.
-                let bytes = read_bounded_sound_file(&index, MAX_INDEX_BYTES)
+                let bytes = read_bounded(&index, MAX_INDEX_BYTES)
                     .map_err(|_| SoundLookupStopped::InvalidMetadata)?;
                 let text =
                     std::str::from_utf8(&bytes).map_err(|_| SoundLookupStopped::InvalidMetadata)?;

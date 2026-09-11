@@ -10,6 +10,7 @@ mod domain;
 mod input_limits;
 mod intake;
 mod lifecycle;
+mod local_file;
 mod notification_id;
 mod notification_server_intake;
 mod presentation;

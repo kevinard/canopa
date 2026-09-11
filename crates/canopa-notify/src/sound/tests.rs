@@ -1,4 +1,5 @@
 use super::*;
+use std::fs::File;
 
 fn offline_presenter() -> (RodioSoundPresenter, rodio::mixer::MixerSource) {
     offline_presenter_with_dirs(Vec::new())

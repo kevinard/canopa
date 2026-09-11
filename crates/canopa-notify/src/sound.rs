@@ -1,8 +1,8 @@
+use crate::local_file::read_bounded;
 use crate::{NotificationSound, NotificationSoundPlayback, NotificationSoundSettings};
 use anyhow::Context;
 use rodio::Source;
-use std::fs::File;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -335,7 +335,7 @@ fn try_add_file_to_mixer(
         return Ok(());
     }
     let path = path.as_ref();
-    let bytes = read_bounded_sound_file(path, MAX_SOUND_FILE_BYTES)?;
+    let bytes = read_bounded(path, MAX_SOUND_FILE_BYTES)?;
     if job.is_cancelled() {
         return Ok(());
     }
@@ -371,38 +371,6 @@ fn try_add_file_to_mixer(
         job: job.clone(),
     });
     Ok(())
-}
-
-fn read_bounded_sound_file(path: &Path, maximum_bytes: usize) -> anyhow::Result<Vec<u8>> {
-    use rustix::fs::{Mode, OFlags};
-
-    // Validate the opened descriptor, not the path: a sender may supply a FIFO
-    // or swap a symlink between lookup and open. NONBLOCK avoids waiting for a
-    // FIFO writer before we can reject it. Symlinks to regular files still work.
-    let descriptor = rustix::fs::open(
-        path,
-        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK,
-        Mode::empty(),
-    )
-    .map_err(|_| anyhow::anyhow!("sound file unavailable"))?;
-    let file = File::from(descriptor);
-    let metadata = file
-        .metadata()
-        .map_err(|_| anyhow::anyhow!("sound file metadata unavailable"))?;
-    anyhow::ensure!(metadata.is_file(), "sound source is not a regular file");
-    anyhow::ensure!(
-        metadata.len() <= maximum_bytes as u64,
-        "sound file exceeds byte limit"
-    );
-    let mut bytes = Vec::new();
-    file.take(maximum_bytes as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| anyhow::anyhow!("sound file read failed"))?;
-    anyhow::ensure!(
-        bytes.len() <= maximum_bytes,
-        "sound file exceeds byte limit"
-    );
-    Ok(bytes)
 }
 
 fn xdg_data_dirs() -> Vec<PathBuf> {

@@ -25,6 +25,8 @@ const BODY_CONTENT_TEXT_HEIGHT: u32 = 34;
 const BODY_CONTENT_RICH_HEIGHT: u32 = 70;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
+mod images;
+
 #[derive(Clone)]
 pub struct BannerPresentationAcknowledgement {
     callback: Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>>,
@@ -159,7 +161,9 @@ impl IcedLayerShellBannerPresenter {
         F: FnOnce(u64, mpsc::Sender<BannerInteraction>) -> iced_layershell::Result + Send + 'static,
     {
         let runtime_id = NEXT_BANNER_RUNTIME_ID.fetch_add(1, Ordering::Relaxed);
-        let (updates, receiver) = BannerUpdateSender::channel();
+        let executor = tokio::runtime::Handle::try_current()
+            .context("notification banner UI must be started from the daemon Tokio runtime")?;
+        let (updates, receiver) = BannerUpdateSender::channel(executor);
         register_banner_update_receiver(runtime_id, receiver);
 
         let lifetime = BannerUiLifetime {
@@ -225,7 +229,10 @@ impl BannerPresenter for IcedLayerShellBannerPresenter {
 
 // Complete current-state projections replace one pending value; intermediate states are not events.
 type BannerWatchSender = tokio::sync::watch::Sender<Option<BannerRuntimeInput>>;
-type BannerUpdateReceiver = tokio::sync::watch::Receiver<Option<BannerRuntimeInput>>;
+struct BannerUpdateReceiver {
+    receiver: tokio::sync::watch::Receiver<Option<BannerRuntimeInput>>,
+    executor: tokio::runtime::Handle,
+}
 
 #[derive(Clone)]
 struct BannerUpdateSender {
@@ -234,13 +241,13 @@ struct BannerUpdateSender {
 }
 
 impl BannerUpdateSender {
-    fn channel() -> (Self, BannerUpdateReceiver) {
+    fn channel(executor: tokio::runtime::Handle) -> (Self, BannerUpdateReceiver) {
         let (sender, receiver) = tokio::sync::watch::channel(None);
         (
             Self {
                 sender: Arc::new(Mutex::new(Some(sender))),
             },
-            receiver,
+            BannerUpdateReceiver { receiver, executor },
         )
     }
 
@@ -372,31 +379,63 @@ fn register_banner_update_receiver(runtime_id: u64, receiver: BannerUpdateReceiv
         .insert(runtime_id, receiver);
 }
 
-fn take_banner_update_receiver(runtime_id: u64) -> BannerUpdateReceiver {
+fn take_banner_update_receiver(runtime_id: u64) -> Option<BannerUpdateReceiver> {
     BANNER_UPDATE_RECEIVERS
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap()
         .remove(&runtime_id)
-        .unwrap_or_else(|| {
-            let (_sender, receiver) = tokio::sync::watch::channel(None);
-            receiver
-        })
 }
 
 fn banner_update_stream(
     runtime_id: &u64,
 ) -> impl iced::futures::Stream<Item = BannerRuntimeInput> + use<> {
-    banner_updates(take_banner_update_receiver(*runtime_id))
+    use iced::futures::StreamExt;
+    iced::futures::stream::iter(take_banner_update_receiver(*runtime_id).map(banner_updates))
+        .flatten()
 }
 
 fn banner_updates(
     receiver: BannerUpdateReceiver,
 ) -> impl iced::futures::Stream<Item = BannerRuntimeInput> {
-    iced::futures::stream::unfold(receiver, |mut receiver| async move {
-        receiver.changed().await.ok()?;
-        let input = receiver.borrow_and_update().clone()?;
-        Some((input, receiver))
+    iced::futures::stream::unfold(receiver, |state| async move {
+        let BannerUpdateReceiver {
+            mut receiver,
+            executor,
+        } = state;
+        'updates: loop {
+            receiver.changed().await.ok()?;
+            loop {
+                let BannerRuntimeInput::Replace {
+                    presentation,
+                    acknowledgement,
+                } = receiver.borrow_and_update().clone()?;
+                let latest = receiver.clone();
+                let prepared = tokio::select! {
+                    biased;
+                    changed = receiver.changed() => {
+                        changed.ok()?;
+                        continue;
+                    }
+                    prepared = images::prepare(presentation, &executor, move || latest.has_changed().unwrap_or(true)) => prepared,
+                };
+                match receiver.has_changed() {
+                    Ok(true) => continue,
+                    Err(_) => return None,
+                    Ok(false) => {}
+                }
+                let Some(presentation) = prepared else {
+                    continue 'updates;
+                };
+                return Some((
+                    BannerRuntimeInput::Replace {
+                        presentation,
+                        acknowledgement,
+                    },
+                    BannerUpdateReceiver { receiver, executor },
+                ));
+            }
+        }
     })
 }
 
@@ -620,6 +659,8 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
+    mod images;
+
     fn banner_ui_test_state() -> BannerUiState {
         let (interactions, _interaction_receiver) = mpsc::channel();
         BannerUiState {
@@ -771,7 +812,7 @@ mod tests {
 
     #[tokio::test]
     async fn paused_renderer_receives_latest_state_after_a_burst_without_lost_closures() {
-        let (updates, receiver) = BannerUpdateSender::channel();
+        let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
         let mut receiver = Box::pin(banner_updates(receiver));
         let presenter = IcedLayerShellBannerPresenter { updates };
         let superseded_acknowledged = Arc::new(AtomicBool::new(false));
@@ -814,7 +855,7 @@ mod tests {
 
     #[tokio::test]
     async fn iced_presenter_acknowledges_only_after_ui_consumes_presentation() {
-        let (updates, receiver) = BannerUpdateSender::channel();
+        let (updates, receiver) = BannerUpdateSender::channel(tokio::runtime::Handle::current());
         let mut receiver = Box::pin(banner_updates(receiver));
         let presenter = IcedLayerShellBannerPresenter { updates };
         let acknowledged = Arc::new(AtomicBool::new(false));
@@ -1548,7 +1589,9 @@ fn banner_visual_handle(visual: &BannerVisual) -> iced::widget::image::Handle {
             height,
             pixels,
         } => iced::widget::image::Handle::from_rgba(*width, *height, pixels.clone()),
-        BannerVisual::LocalPath { path } => iced::widget::image::Handle::from_path(path),
+        // Renderer inputs are prepared pixels. Never reopen a sender path here,
+        // even if an internal caller accidentally bypasses preparation.
+        BannerVisual::LocalPath { .. } => iced::widget::image::Handle::from_rgba(1, 1, vec![0; 4]),
     }
 }
 
