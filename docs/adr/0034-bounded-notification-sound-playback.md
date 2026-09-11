@@ -1,0 +1,9 @@
+# Bounded notification sound playback
+
+Keep sound admission, cancellation and audio ownership behind `SoundPresenter`, preserving ADR 0025's in-process, best-effort playback. Admit at most four jobs with no backlog, reserving capacity before spawning a worker and retaining that reservation until both the worker and its queued/playing audio have gone away. Dropping sound under pressure must not reject or change an already committed notification; limiting worker threads alone would leave the mixer's pending sources unbounded.
+
+Decode on the worker into at most 4 MiB of PCM and ten seconds of audio (whichever comes first), rounded down to complete frames. Accept at most eight channels and 192 kHz, and reject changing stream formats. Only bounded PCM reaches the audio callback. File reads are limited to 8 MiB and opened nonblocking before validating the descriptor as a regular file; missing, invalid or oversized requested sounds use the existing best-effort default fallback. These are fixed local safety defaults, not freedesktop protocol limits or user-facing volume/cooldown settings.
+
+Stopping playback, disabling sound or changing sound settings cancels the old generation; reopening never resets outstanding reservations. Workers check cancellation before expensive work and while decoding, and queued sources check it when consumed. Samples already buffered by the audio device cannot be recalled. Cancellation does not synchronously join workers or promise a filesystem deadline. The presenter does not form a reference cycle with the sources it queues.
+
+These limits bound admitted work and application-owned input/PCM, not total process RSS, codec-internal allocations, or filesystem latency. Sound-theme traversal and full theme semantics, image decoding, provider streams and broader shutdown/recovery acceptance remain separate work. Playback diagnostics must use content-free categories, not sender-provided paths, sound names or content.
