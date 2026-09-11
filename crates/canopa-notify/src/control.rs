@@ -200,6 +200,12 @@ pub struct CategoryPermissionControl {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationCenterItem {
     pub notification_id: InternalNotificationId,
+    /// Live runtime-only content, never an entry in durable Notification History.
+    #[serde(default)]
+    pub transient: bool,
+    /// Whether activating this live item invokes a sender action instead of dismissing it.
+    #[serde(default)]
+    pub has_default_action: bool,
     pub summary: String,
     pub body: String,
     pub body_content: NotificationBodyContent,

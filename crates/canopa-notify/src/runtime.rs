@@ -11,7 +11,7 @@ use crate::delivery_policy::{
 use crate::domain::{
     AcceptedNotification, DeliveryOutcome, NotificationImageData, NotificationReceipt,
     NotificationSnapshot, NotificationSoundPlayback, NotificationSoundRequest,
-    NotificationSoundSettings, NotificationStatus, NotificationTimeout,
+    NotificationSoundSettings, NotificationStatus, NotificationThread, NotificationTimeout,
     NotificationTimeoutDefaults, SenderEvent, Urgency, UserRule,
 };
 use crate::lifecycle::{
@@ -564,9 +564,12 @@ impl NotificationRuntime {
     pub(crate) async fn notification_center_projection(
         &self,
     ) -> anyhow::Result<NotificationCenterProjection> {
-        let snapshot = self.snapshot().await?;
+        let mut threads = self.snapshot().await?.history;
+        threads.extend(self.lifecycle.transient_threads());
+        // Match retained ordering and keep runtime-only HashMap iteration out of the UI.
+        threads.sort_by_key(|thread| std::cmp::Reverse((thread.created_at, thread.id)));
         let user_rules = self.user_rules().await?;
-        Ok(projection_from_snapshot(snapshot, &user_rules))
+        Ok(projection_from_threads(threads, &user_rules))
     }
 
     pub(crate) fn subscribe_notification_state(&self) -> NotificationStateSubscription {
@@ -889,8 +892,8 @@ impl NotificationStateSubscription {
     }
 }
 
-fn projection_from_snapshot(
-    snapshot: NotificationSnapshot,
+fn projection_from_threads(
+    threads: Vec<NotificationThread>,
     user_rules: &[UserRule],
 ) -> NotificationCenterProjection {
     let mut grouped: BTreeMap<String, Vec<NotificationCenterItem>> = BTreeMap::new();
@@ -919,7 +922,7 @@ fn projection_from_snapshot(
         .collect();
     let mut categories: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
-    for thread in snapshot.history {
+    for thread in threads {
         let notification = thread.accepted_notification;
         if let Some(category) = &notification.category {
             categories
@@ -942,6 +945,12 @@ fn projection_from_snapshot(
             .or_default()
             .push(NotificationCenterItem {
                 notification_id: thread.id,
+                transient: notification.transient,
+                has_default_action: thread.status == NotificationStatus::Active
+                    && notification
+                        .actions
+                        .iter()
+                        .any(|action| action.key == "default"),
                 summary: notification.summary,
                 body: notification.body,
                 body_content: notification.body_content,

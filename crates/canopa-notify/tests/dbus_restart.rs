@@ -127,7 +127,20 @@ async fn restart_changes_service_owner_without_registering_retained_history_as_l
         notify(&first_proxy, 0, "Transient before restart", true).await,
         3
     );
-    let original = center(&socket).groups.remove(0).items.remove(0);
+    let before_restart = center(&socket);
+    let items = &before_restart.groups[0].items;
+    assert_eq!(items.len(), 2);
+    assert!(
+        items
+            .iter()
+            .any(|item| item.summary == "Transient before restart" && item.transient)
+    );
+    let original = items
+        .iter()
+        .find(|item| item.summary == "Retained before restart")
+        .unwrap()
+        .clone();
+    assert!(!original.transient);
     assert_eq!(
         original.notification_id.get(),
         1,

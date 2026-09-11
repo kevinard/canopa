@@ -93,7 +93,7 @@ A notification intentionally discarded without being shown or retained in histor
 _Avoid_: Silenced notification
 
 **Transient Notification**:
-A sender-requested notification that participates in runtime presentation and **Sender Notification Lifecycle** without entering persisted **Notification History** or the first **Notification Center**.
+A sender-requested notification that participates in runtime presentation, the live **Notification Center**, and **Sender Notification Lifecycle** without entering persisted **Notification History**.
 _Avoid_: Dropped notification, short-timeout notification
 
 **Do Not Disturb**:
@@ -397,7 +397,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - A dropped replacement does not close the **Sender Notification Lifecycle** of the existing **Active Notification**; a later `CloseNotification` for its sender-visible ID still closes that original thread normally.
 - A **Silenced Notification** may remain an **Active Notification** without a visible **Notification Banner**.
 - A **Transient Notification** may produce a **Notification Banner**, **Notification Sound**, **Notification Action**, and **Notification Timeout**, but its content and lifecycle are never written to persisted **Notification History**.
-- The first **Notification Center** omits **Transient Notifications** because its projection is backed by retained state; omission does not imply that the runtime notification was dropped.
+- The **Notification Center** includes live **Transient Notifications** as explicitly runtime-only items; termination or restart removes them without archiving their content.
 - A **Notification Thread**'s initial request fixes whether it is transient or retained. Replacement `transient` hints cannot weaken a retained thread or promote a transient thread into persisted history.
 - Replacing a **Transient Notification** revises the same runtime thread and sender-visible ID without creating a persisted duplicate.
 - Closing, dismissing, invoking a non-resident action on, or expiring a **Transient Notification** releases its runtime thread, banner opportunity, image, and timer after publishing the normal sender-visible lifecycle effects.
@@ -442,7 +442,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Banner presentation is a coalesced current-state projection: a slow renderer may skip intermediate updates, but receives the latest state when it resumes. Superseded undisplayed updates do not count as display acknowledgements.
 - **Default Notification Actions** are invoked by activating the notification itself, not shown as separate named action controls.
 - First-version **Notification Banners** expose at most two visible named **Notification Action** controls for an **Active Notification**.
-- The **Notification Center** remains the complete action surface for named **Notification Actions** on retained **Active Notifications**; **Transient Notifications** expose actions only through their runtime presentation.
+- The **Notification Center** exposes all named **Notification Actions** for retained **Active Notifications** and live **Transient Notifications**, including those without a visible banner.
 - The first banner placement scope is global rather than per-output.
 - If focused output cannot be determined, **Notification Banners** fall back to a configured or default output.
 - First-version **Notification Banner** styling configuration is minimal.
@@ -542,14 +542,15 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification History** persists interpreted **Notification Body Markup** for new and revised **Notification Threads**.
 - Legacy **Notification History** may derive interpreted **Notification Body Markup** from **Raw Notification Body** during migration, but normal history reads should not reinterpret **Raw Notification Body**.
 - **Notification History** is not app-level encrypted in the first version.
-- The **Notification Center** shows retained **Active Notifications** and recent **Notification History**; it omits runtime-only **Transient Notifications**.
+- The **Notification Center** shows retained **Active Notifications**, recent **Notification History**, and live runtime-only **Transient Notifications** without archiving transient content.
 - The **Notification Center** groups notifications by **App Identity**.
-- The **Notification Center** includes an app-wide **App Permission Control** for each recent sender and category-specific controls for valid categories present in that app's retained threads.
+- The **Notification Center** includes an app-wide **App Permission Control** for each recent sender and category-specific controls for valid categories present in that app's retained or live transient threads.
 - A category-specific control shows its explicit category rule when present and otherwise the app-wide fallback. Historical records keep their original **Delivery Outcome**.
 - **Notification Center** requirements must not define core **Notification Daemon** state or lifecycle rules.
 - **Notification Center Projection** is Notify-owned state and is mapped to shared panel protocol types by **Panel Provider Mode**.
 - **Notification Center Projection** preserves interpreted **Notification Body Markup** in addition to the plain **Notification Body** fallback.
 - **Notification Center** item activation invokes the **Default Notification Action** when present and otherwise dismisses the notification.
+- Active **Notification Center** items expose an explicit activation control, distinct from sender-named actions, identifying whether it opens or dismisses the notification. Inactive history exposes no activation control.
 - **Notification Center** adapter-owned controls must not collide with sender-provided **Notification Action** keys.
 - The shared panel protocol contains generic Niribar panel infrastructure, not Notify-specific notification logic.
 - Shared panel protocol styled text is generic inline presentation data, not raw freedesktop notification markup.

@@ -525,6 +525,144 @@ async fn non_headless_daemon_presents_visible_banner_content() {
 }
 
 #[tokio::test]
+async fn transient_banner_overflow_keeps_every_center_action_without_starting_a_timeout() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        RecordingPresenter::default(),
+    ))
+    .await
+    .unwrap();
+    for summary in ["First critical", "Second critical", "Third critical"] {
+        daemon
+            .receive_notification(NotificationInput {
+                urgency: Urgency::Critical,
+                expire_timeout: NotificationTimeout::Never,
+                ..notification("Critical", summary)
+            })
+            .await
+            .unwrap();
+    }
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            expire_timeout: NotificationTimeout::Milliseconds(20),
+            actions: ["one", "two", "three", "four"]
+                .into_iter()
+                .map(|key| NotificationAction::new(key, format!("Long action label: {key}")))
+                .collect(),
+            ..notification_with_body(
+                "Preview",
+                "Overflow",
+                "Before <img src=\"/tmp/preview.png\" alt=\"preview\"/> after",
+            )
+        })
+        .await
+        .unwrap();
+    assert_eq!(daemon.visible_banners().await.len(), 3);
+    assert!(!is_visible(
+        &daemon.visible_banners().await,
+        receipt.notification_id
+    ));
+    let control = canopa_notify::NotifyControl::new(daemon.clone());
+    let mut events = daemon.subscribe_sender_events();
+    let canopa_notify::ControlReply::NotificationCenterProjection(projection) = control
+        .execute(canopa_notify::ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap()
+    else {
+        panic!("expected center projection")
+    };
+    let item = &projection
+        .groups
+        .iter()
+        .find(|group| group.app_identity == "Preview")
+        .unwrap()
+        .items[0];
+    assert!(item.transient);
+    assert_eq!(item.body, "Before preview after");
+    assert_eq!(
+        item.actions
+            .iter()
+            .map(|action| action.key.as_str())
+            .collect::<Vec<_>>(),
+        ["one", "two", "three", "four"]
+    );
+    // Negative timing assertion: opening the center must not acknowledge an undisplayed banner.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(60), events.recv())
+            .await
+            .is_err()
+    );
+    control
+        .execute(canopa_notify::ControlCommand::InvokeNotificationAction {
+            notification_id: item.notification_id,
+            action_key: item.actions[3].key.clone(),
+        })
+        .await
+        .unwrap();
+    assert!(
+        matches!(tokio::time::timeout(Duration::from_secs(2), events.recv()).await.unwrap().unwrap(), SenderEvent::ActionInvoked {
+        notification_id, action_key,
+    } if notification_id == receipt.notification_id && action_key == "four")
+    );
+    assert!(
+        matches!(tokio::time::timeout(Duration::from_secs(2), events.recv()).await.unwrap().unwrap(), SenderEvent::NotificationClosed {
+        notification_id, reason: canopa_notify::SenderCloseReason::Dismissed,
+    } if notification_id == receipt.notification_id)
+    );
+    assert_eq!(daemon.snapshot().await.unwrap().history.len(), 3);
+}
+
+#[tokio::test]
+async fn transient_center_item_disappears_after_display_acknowledged_expiry() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = DelayedAcknowledgementPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            expire_timeout: NotificationTimeout::Milliseconds(20),
+            ..notification("Preview", "Waiting for actual display")
+        })
+        .await
+        .unwrap();
+    let control = canopa_notify::NotifyControl::new(daemon.clone());
+    let mut subscription = control.subscribe_notification_state();
+    let projection = subscription.next_projection().await.unwrap().unwrap();
+    assert_eq!(
+        projection.groups[0].items[0].notification_id,
+        receipt.notification_id
+    );
+    assert!(projection.groups[0].items[0].transient);
+    let mut events = daemon.subscribe_sender_events();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(60), events.recv())
+            .await
+            .is_err()
+    );
+    presenter.acknowledge_latest();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(2), events.recv()).await.unwrap().unwrap(),
+        SenderEvent::NotificationClosed { notification_id, reason: canopa_notify::SenderCloseReason::Expired }
+            if notification_id == receipt.notification_id
+    ));
+    let projection = tokio::time::timeout(Duration::from_secs(2), subscription.next_projection())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(projection.groups.is_empty());
+    assert!(daemon.snapshot().await.unwrap().history.is_empty());
+    assert!(daemon.visible_banners().await.is_empty());
+}
+
+#[tokio::test]
 async fn transient_notification_uses_banner_runtime_without_history() {
     let temp = tempfile::tempdir().unwrap();
     let presenter = RecordingPresenter::default();

@@ -727,6 +727,15 @@ where
         self.history.thread(notification_id).await
     }
 
+    pub(crate) fn transient_threads(&self) -> Vec<NotificationThread> {
+        self.transient_threads
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect()
+    }
+
     async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
         let mut threads = self.history.active_threads().await?;
         threads.extend(

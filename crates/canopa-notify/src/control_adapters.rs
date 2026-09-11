@@ -358,6 +358,16 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                         rich_body: rich_body_from_body_content(item.body_content),
                         metadata: vec![
                             PanelMetadata {
+                                key: "retention".to_string(),
+                                label: "Retention".to_string(),
+                                value: if item.transient {
+                                    "Runtime only"
+                                } else {
+                                    "Retained"
+                                }
+                                .to_string(),
+                            },
+                            PanelMetadata {
                                 key: "status".to_string(),
                                 label: "Status".to_string(),
                                 value: item.status.as_str().to_string(),
@@ -372,6 +382,20 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                             .actions
                             .into_iter()
                             .map(|action| panel_sender_action(action.key, action.label))
+                            .chain(
+                                (item.status == canopa_notify::NotificationStatus::Active).then(
+                                    || {
+                                        PanelAction::new(
+                                            PANEL_ACTIVATE_ITEM_KEY,
+                                            if item.has_default_action {
+                                                "Open notification"
+                                            } else {
+                                                "Dismiss notification"
+                                            },
+                                        )
+                                    },
+                                ),
+                            )
                             .collect(),
                     })
                     .collect(),
@@ -649,6 +673,8 @@ mod tests {
                 }],
                 items: vec![canopa_notify::NotificationCenterItem {
                     notification_id: InternalNotificationId::new(42).unwrap(),
+                    transient: false,
+                    has_default_action: false,
                     summary: "Inbox".to_string(),
                     body: String::new(),
                     body_content: NotificationBodyContent::default(),

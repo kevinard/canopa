@@ -206,36 +206,272 @@ async fn notify_control_returns_active_notifications() {
 }
 
 #[tokio::test]
-async fn notification_center_omits_transient_runtime_notifications() {
+async fn notification_center_exposes_all_transient_actions_without_retaining_history() {
     let daemon = daemon_support::open_headless_daemon().await;
     let control = NotifyControl::new(daemon.clone());
     let receipt = daemon
         .receive_notification(NotificationInput {
             transient: true,
-            actions: vec![NotificationAction::new("open", "Open")],
+            actions: vec![
+                NotificationAction::new("default", ""),
+                NotificationAction::new("one", "First"),
+                NotificationAction::new("two", "Second"),
+                NotificationAction::new("three", "Third"),
+                NotificationAction::new("four", "Fourth"),
+            ],
             ..notification("Preview", "Runtime only")
         })
         .await
         .unwrap();
 
-    let projection = control
+    let ControlReply::NotificationCenterProjection(projection) = control
         .execute(ControlCommand::NotificationCenterProjection)
         .await
-        .unwrap();
+        .unwrap()
+    else {
+        panic!("expected center projection")
+    };
+    assert_eq!(projection.groups.len(), 1);
+    assert_eq!(projection.groups[0].app_identity, "Preview");
+    let item = &projection.groups[0].items[0];
+    assert_eq!(item.notification_id, receipt.notification_id);
     assert_eq!(
-        projection,
-        ControlReply::NotificationCenterProjection(canopa_notify::NotificationCenterProjection {
-            groups: vec![]
-        })
+        item.actions
+            .iter()
+            .map(|action| action.key.as_str())
+            .collect::<Vec<_>>(),
+        ["one", "two", "three", "four"]
     );
+    assert!(daemon.snapshot().await.unwrap().history.is_empty());
 
     control
         .execute(ControlCommand::InvokeNotificationAction {
             notification_id: receipt.notification_id,
-            action_key: "open".to_string(),
+            action_key: "four".to_string(),
         })
         .await
         .unwrap();
+    assert!(daemon.snapshot().await.unwrap().history.is_empty());
+    let ControlReply::NotificationCenterProjection(projection) = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap()
+    else {
+        panic!("expected center projection")
+    };
+    assert!(projection.groups.is_empty());
+}
+
+#[tokio::test]
+async fn center_subscription_tracks_transient_replacement_policy_and_cleanup() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new(daemon.clone());
+    control
+        .execute(ControlCommand::ChangeDoNotDisturb {
+            enabled: Some(true),
+        })
+        .await
+        .unwrap();
+    control
+        .execute(ControlCommand::SetCategoryPermission {
+            app_identity: "Chat".to_string(),
+            category: "im.received".to_string(),
+            permission: AppPermissionControl::Silence,
+        })
+        .await
+        .unwrap();
+    let mut subscription = control.subscribe_notification_state();
+    assert!(
+        subscription
+            .next_projection()
+            .await
+            .unwrap()
+            .unwrap()
+            .groups
+            .is_empty()
+    );
+    let retained = daemon
+        .receive_notification(notification("Chat", "Retained"))
+        .await
+        .unwrap();
+    let transient = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            resident: true,
+            category: Some("im.received".to_string()),
+            actions: vec![NotificationAction::new("old", "Old action")],
+            ..notification("Chat", "Runtime only")
+        })
+        .await
+        .unwrap();
+    let projection = tokio::time::timeout(Duration::from_secs(1), subscription.next_projection())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let group = &projection.groups[0];
+    assert_eq!(group.items.len(), 2);
+    assert_eq!(
+        group.category_permissions[0].permission,
+        AppPermissionControl::Silence
+    );
+    let item = group
+        .items
+        .iter()
+        .find(|item| item.notification_id == transient.notification_id)
+        .unwrap();
+    assert!(item.transient);
+    assert_eq!(item.delivery_outcome, DeliveryOutcome::Silenced);
+    assert!(
+        !group
+            .items
+            .iter()
+            .find(|item| item.notification_id == retained.notification_id)
+            .unwrap()
+            .transient
+    );
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(transient.notification_id),
+            transient: false,
+            resident: true,
+            actions: vec![
+                NotificationAction::new("default", ""),
+                NotificationAction::new("new", "New action"),
+            ],
+            ..notification("Chat", "Replaced runtime content")
+        })
+        .await
+        .unwrap();
+    let projection = tokio::time::timeout(Duration::from_secs(1), subscription.next_projection())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let item = projection.groups[0]
+        .items
+        .iter()
+        .find(|item| item.notification_id == transient.notification_id)
+        .unwrap();
+    assert!(
+        item.transient,
+        "replacement must not promote transient content into history"
+    );
+    assert_eq!(item.summary, "Replaced runtime content");
+    assert_eq!(
+        item.actions,
+        vec![NotificationAction::new("new", "New action")]
+    );
+    assert!(
+        control
+            .execute(ControlCommand::InvokeNotificationAction {
+                notification_id: transient.notification_id,
+                action_key: "old".to_string(),
+            })
+            .await
+            .is_err()
+    );
+    control
+        .execute(ControlCommand::ActivateNotification {
+            notification_id: transient.notification_id,
+        })
+        .await
+        .unwrap();
+    assert!(
+        matches!(daemon.sender_events().await.last().unwrap(), SenderEvent::ActionInvoked {
+        notification_id, action_key,
+    } if *notification_id == transient.notification_id && action_key == "default")
+    );
+    control
+        .execute(ControlCommand::DeleteNotificationHistory)
+        .await
+        .unwrap();
+    let ControlReply::NotificationCenterProjection(projection) = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap()
+    else {
+        panic!("expected center projection")
+    };
+    assert_eq!(
+        projection.groups[0].items.len(),
+        2,
+        "history deletion must not terminate live items"
+    );
+    control
+        .execute(ControlCommand::ClearActiveNotifications)
+        .await
+        .unwrap();
+    let projection = tokio::time::timeout(Duration::from_secs(1), subscription.next_projection())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(projection.groups[0].items.len(), 1);
+    assert_eq!(
+        projection.groups[0].items[0].notification_id,
+        retained.notification_id
+    );
+    assert!(projection.groups[0].items[0].actions.is_empty());
+    assert_eq!(daemon.snapshot().await.unwrap().history.len(), 1);
+}
+
+#[tokio::test]
+async fn transient_center_order_survives_other_app_runtime_churn() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new(daemon.clone());
+    for index in 0..32 {
+        daemon
+            .receive_notification(NotificationInput {
+                transient: true,
+                ..notification("Preview", format!("Preview {index}"))
+            })
+            .await
+            .unwrap();
+    }
+    let ControlReply::NotificationCenterProjection(before) = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap()
+    else {
+        panic!("expected center projection")
+    };
+    assert_eq!(before.groups.len(), 1);
+    assert_eq!(before.groups[0].items.len(), 32);
+    let ids = before.groups[0]
+        .items
+        .iter()
+        .map(|item| item.notification_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(ids.len(), 32);
+    assert!(before.groups[0].items.iter().all(|item| item.transient));
+    let mut other_ids = Vec::new();
+    for index in 0..64 {
+        other_ids.push(
+            daemon
+                .receive_notification(NotificationInput {
+                    transient: true,
+                    ..notification("Other", format!("Other {index}"))
+                })
+                .await
+                .unwrap()
+                .notification_id,
+        );
+    }
+    for id in other_ids {
+        daemon.close_notification(id).await.unwrap();
+    }
+    let ControlReply::NotificationCenterProjection(after) = control
+        .execute(ControlCommand::NotificationCenterProjection)
+        .await
+        .unwrap()
+    else {
+        panic!("expected center projection")
+    };
+    assert_eq!(
+        after, before,
+        "unchanged items must retain their content and ordering"
+    );
     assert!(daemon.snapshot().await.unwrap().history.is_empty());
 }
 
