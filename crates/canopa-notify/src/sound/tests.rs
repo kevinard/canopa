@@ -15,11 +15,19 @@ fn offline_presenter_with_format(
     channels: u16,
     rate: u32,
 ) -> (RodioSoundPresenter, rodio::mixer::MixerSource) {
+    offline_presenter_with_resolver(SoundThemeResolver::new(data_dirs, "C"), channels, rate)
+}
+
+fn offline_presenter_with_resolver(
+    resolver: SoundThemeResolver,
+    channels: u16,
+    rate: u32,
+) -> (RodioSoundPresenter, rodio::mixer::MixerSource) {
     let (mixer, output) =
         rodio::mixer::mixer(channels.try_into().unwrap(), rate.try_into().unwrap());
     let presenter = RodioSoundPresenter::with_backend_opener(
         NotificationSoundSettings::default(),
-        data_dirs,
+        resolver,
         Arc::new(move || {
             Ok(RodioBackend {
                 _sink: None,
@@ -71,6 +79,8 @@ fn wait_until(mut condition: impl FnMut() -> bool) {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
+
+mod theme;
 
 #[test]
 fn sound_presentation_admits_at_most_four_jobs_including_unconsumed_audio() {
@@ -335,7 +345,7 @@ fn backend_unavailability_is_degraded_support_and_can_be_retried() {
     let (mixer, _output) = rodio::mixer::mixer(1.try_into().unwrap(), 8_000.try_into().unwrap());
     let presenter = RodioSoundPresenter::with_backend_opener(
         NotificationSoundSettings::default(),
-        Vec::new(),
+        SoundThemeResolver::new(Vec::new(), "C"),
         Arc::new(move || {
             if attempts.fetch_add(1, Ordering::Relaxed) == 0 {
                 anyhow::bail!("injected unavailable output");
@@ -412,53 +422,5 @@ async fn saturated_sound_preserves_notification_receipts_history_and_closures() 
         history
             .iter()
             .all(|thread| thread.status == NotificationStatus::Closed)
-    );
-}
-
-#[test]
-fn sound_theme_resolver_prefers_profile_directories_and_extension_order() {
-    let temp = tempfile::tempdir().unwrap();
-    let theme = temp.path().join("sounds/freedesktop");
-    std::fs::create_dir_all(theme.join("mono")).unwrap();
-    std::fs::create_dir_all(theme.join("stereo")).unwrap();
-    std::fs::write(theme.join("mono/message-new-instant.wav"), "").unwrap();
-    std::fs::write(theme.join("stereo/message-new-instant.oga"), "").unwrap();
-
-    let resolver = SoundThemeResolver::new(vec![temp.path().to_path_buf()]);
-
-    assert_eq!(
-        resolver
-            .resolve("freedesktop", "message-new-instant")
-            .unwrap(),
-        theme.join("stereo/message-new-instant.oga")
-    );
-}
-
-#[test]
-fn sound_theme_resolver_follows_inherits_and_freedesktop_fallback() {
-    let temp = tempfile::tempdir().unwrap();
-    let custom = temp.path().join("sounds/custom");
-    let parent = temp.path().join("sounds/parent/stereo");
-    let freedesktop = temp.path().join("sounds/freedesktop/stereo");
-    std::fs::create_dir_all(&custom).unwrap();
-    std::fs::create_dir_all(&parent).unwrap();
-    std::fs::create_dir_all(&freedesktop).unwrap();
-    std::fs::write(
-        custom.join("index.theme"),
-        "[Sound Theme]\nInherits=parent\n",
-    )
-    .unwrap();
-    std::fs::write(parent.join("complete.oga"), "").unwrap();
-    std::fs::write(freedesktop.join("message-new-instant.oga"), "").unwrap();
-
-    let resolver = SoundThemeResolver::new(vec![temp.path().to_path_buf()]);
-
-    assert_eq!(
-        resolver.resolve("custom", "complete").unwrap(),
-        parent.join("complete.oga")
-    );
-    assert_eq!(
-        resolver.resolve("custom", "message-new-instant").unwrap(),
-        freedesktop.join("message-new-instant.oga")
     );
 }
