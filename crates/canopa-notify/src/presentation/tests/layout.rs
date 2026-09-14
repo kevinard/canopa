@@ -217,13 +217,6 @@ async fn fully_visible_card_is_acknowledged_while_a_lower_card_is_clipped() {
         ),
     });
     let mut tree = Tree::empty();
-    for message in frame_messages_in_tree(&state, &renderer, Size::new(360.0, 110.0), &mut tree) {
-        let _ = banner_ui_update(&mut state, message);
-    }
-    assert!(
-        displayed.lock().unwrap().is_empty(),
-        "a card clipped beyond scroll-rounding tolerance must wait"
-    );
     for message in frame_messages_in_tree(&state, &renderer, Size::new(360.0, 120.0), &mut tree) {
         let _ = banner_ui_update(&mut state, message);
     }
@@ -391,6 +384,174 @@ impl Operation for TextBounds {
 #[derive(Default)]
 struct ScrollBounds(Vec<(Rectangle, Rectangle, core::Vector)>);
 
+fn scroll_bounds_in_tree(
+    state: &BannerUiState,
+    renderer: &iced::Renderer,
+    viewport: Size,
+    tree: &mut Tree,
+) -> ScrollBounds {
+    let mut view = banner_ui_view(state, iced::window::Id::unique());
+    tree.diff(view.as_widget());
+    let node = view.as_widget_mut().layout(
+        tree,
+        renderer,
+        &core::layout::Limits::new(Size::ZERO, viewport),
+    );
+    let mut scroll = ScrollBounds::default();
+    view.as_widget_mut()
+        .operate(tree, Layout::new(&node), renderer, &mut scroll);
+    scroll
+}
+
+#[tokio::test]
+async fn ordinary_stack_wheel_steps_acknowledge_an_oversized_middle_card() {
+    let renderer = software_renderer().await;
+    for height in [150.0, 216.0, 426.0] {
+        let mut state = banner_ui_test_state();
+        let banners: Vec<_> = (1..=3)
+            .map(|id| {
+                let mut banner = banner_view(id, "Body");
+                banner.summary = "Summary line\n".repeat(30);
+                banner
+            })
+            .collect();
+        let targets: Vec<_> = banners.iter().map(BannerView::target).collect();
+        state.presentation = BannerPresentation::visible_banners(banners);
+        let displayed = Arc::new(Mutex::new(Vec::new()));
+        let observed = displayed.clone();
+        state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
+            generation: 0,
+            acknowledgement: BannerPresentationAcknowledgement::for_banners(
+                targets.clone(),
+                move |target| {
+                    observed.lock().unwrap().push(target);
+                },
+            ),
+        });
+        let viewport = Size::new(360.0, height);
+        let mut tree = Tree::empty();
+        for step in 0..=20 {
+            if step > 0 {
+                let _ = event_messages_in_tree(
+                    &state,
+                    &renderer,
+                    viewport,
+                    &mut tree,
+                    core::Event::Mouse(core::mouse::Event::WheelScrolled {
+                        delta: core::mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 },
+                    }),
+                    core::mouse::Cursor::Available(core::Point::new(355.0, height / 2.0)),
+                );
+            }
+            for message in frame_messages_in_tree(&state, &renderer, viewport, &mut tree) {
+                let _ = banner_ui_update(&mut state, message);
+            }
+        }
+        assert_eq!(
+            *displayed.lock().unwrap(),
+            targets,
+            "ordinary wheel traversal must fully reveal the middle card at height {height}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn oversized_card_and_stack_have_independently_reachable_scrollbars() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    let mut oversized = banner_view(1, "Body");
+    oversized.summary = "A summary line\n".repeat(12);
+    oversized.actions = vec![BannerAction {
+        key: "opaque/action".into(),
+        label: "Last action".into(),
+        icon: None,
+    }];
+    state.presentation =
+        BannerPresentation::visible_banners(vec![oversized, banner_view(2, "Lower")]);
+    let targets: Vec<_> = state
+        .presentation
+        .banners
+        .iter()
+        .map(BannerView::target)
+        .collect();
+    let displayed = Arc::new(Mutex::new(Vec::new()));
+    let observed = displayed.clone();
+    state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
+        generation: 0,
+        acknowledgement: BannerPresentationAcknowledgement::for_banners(
+            targets.clone(),
+            move |target| {
+                observed.lock().unwrap().push(target);
+            },
+        ),
+    });
+    let viewport = Size::new(360.0, 150.0);
+    let mut tree = Tree::empty();
+    for message in frame_messages_in_tree(&state, &renderer, viewport, &mut tree) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert_eq!(*displayed.lock().unwrap(), vec![targets[0]]);
+    // The card rail sits immediately left of a distinct outer-stack gutter.
+    for event in [
+        core::mouse::Event::ButtonPressed(core::mouse::Button::Left),
+        core::mouse::Event::ButtonReleased(core::mouse::Button::Left),
+    ] {
+        assert!(
+            event_messages_in_tree(
+                &state,
+                &renderer,
+                viewport,
+                &mut tree,
+                core::Event::Mouse(event),
+                core::mouse::Cursor::Available(core::Point::new(343.0, 87.0))
+            )
+            .is_empty()
+        );
+    }
+    let scrolled = scroll_bounds_in_tree(&state, &renderer, viewport, &mut tree);
+    assert_eq!(
+        scrolled.0[0].2.y, 0.0,
+        "card scrolling must not move the stack"
+    );
+    assert!(
+        scrolled.0[1].2.y > 100.0,
+        "card scrollbar must be reachable: {:?}",
+        scrolled.0
+    );
+    // The separate outer rail still reaches the lower card without scrolling
+    // through all the first card's contents or waiting for wheel transactions.
+    for event in [
+        core::mouse::Event::ButtonPressed(core::mouse::Button::Left),
+        core::mouse::Event::ButtonReleased(core::mouse::Button::Left),
+    ] {
+        assert!(
+            event_messages_in_tree(
+                &state,
+                &renderer,
+                viewport,
+                &mut tree,
+                core::Event::Mouse(event),
+                core::mouse::Cursor::Available(core::Point::new(355.0, 147.0))
+            )
+            .is_empty()
+        );
+    }
+    for message in frame_messages_in_tree(&state, &renderer, viewport, &mut tree) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert_eq!(
+        *displayed.lock().unwrap(),
+        targets,
+        "only full bounded card viewports count as first display"
+    );
+    let after = scroll_bounds_in_tree(&state, &renderer, viewport, &mut tree);
+    assert!(after.0[0].2.y > 0.0);
+    assert_eq!(
+        after.0[1].2.y, scrolled.0[1].2.y,
+        "stack navigation preserves internal scroll position"
+    );
+}
+
 impl Operation for ScrollBounds {
     fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation)) {
         operate(self);
@@ -405,6 +566,166 @@ impl Operation for ScrollBounds {
     ) {
         self.0.push((bounds, content, translation));
     }
+}
+
+#[tokio::test]
+async fn oversized_card_wheel_scrolling_preserves_body_navigation_and_action_clicks() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    let mut banner = banner_view(42, "Multiple images");
+    banner.summary = "Summary line\n".repeat(10);
+    banner.body_segments = (0..6)
+        .map(|_| BannerBodySegment::Image {
+            image: test_banner_visual(),
+        })
+        .collect();
+    banner.actions = vec![BannerAction {
+        key: "opaque key/α".into(),
+        label: "Review changes\nand open report\nin the editor".into(),
+        icon: Some(test_banner_visual()),
+    }];
+    let target = banner.target();
+    state.presentation = BannerPresentation::visible_banners(vec![banner]);
+    state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
+        generation: 0,
+        acknowledgement: BannerPresentationAcknowledgement::for_banners([target], |_| {}),
+    });
+    let viewport = Size::new(276.0, 150.0);
+    let mut tree = Tree::empty();
+    let wheel = |y| {
+        core::Event::Mouse(core::mouse::Event::WheelScrolled {
+            delta: core::mouse::ScrollDelta::Pixels { x: 0.0, y },
+        })
+    };
+    // Scroll the card from its left padding to reveal the body's own viewport.
+    assert!(
+        event_messages_in_tree(
+            &state,
+            &renderer,
+            viewport,
+            &mut tree,
+            wheel(-230.0),
+            core::mouse::Cursor::Available(core::Point::new(5.0, 75.0))
+        )
+        .is_empty()
+    );
+    let before = scroll_bounds_in_tree(&state, &renderer, viewport, &mut tree);
+    let (body, content, _) = before.0[2];
+    assert!(content.height > body.height * 2.0);
+    let body_cursor = core::Point::new(body.center_x(), body.y - before.0[1].2.y + 20.0);
+    assert!(Rectangle::with_size(viewport).contains(body_cursor));
+    // A fresh pointer gesture ends Iced's wheel transaction, without sleeps or
+    // poking private scroll state. Wheel input can now target the body preview.
+    let _ = event_messages_in_tree(
+        &state,
+        &renderer,
+        viewport,
+        &mut tree,
+        core::Event::Mouse(core::mouse::Event::CursorLeft),
+        core::mouse::Cursor::Unavailable,
+    );
+    assert!(
+        event_messages_in_tree(
+            &state,
+            &renderer,
+            viewport,
+            &mut tree,
+            wheel(-1000.0),
+            core::mouse::Cursor::Available(body_cursor)
+        )
+        .is_empty()
+    );
+    let body_scrolled = scroll_bounds_in_tree(&state, &renderer, viewport, &mut tree);
+    assert!(
+        body_scrolled.0[2].2.y > 0.0,
+        "remaining body images are reachable"
+    );
+    assert_eq!(
+        body_scrolled.0[1].2, before.0[1].2,
+        "body scrolling must not move the card"
+    );
+    let _ = event_messages_in_tree(
+        &state,
+        &renderer,
+        viewport,
+        &mut tree,
+        core::Event::Mouse(core::mouse::Event::CursorLeft),
+        core::mouse::Cursor::Unavailable,
+    );
+    let _ = event_messages_in_tree(
+        &state,
+        &renderer,
+        viewport,
+        &mut tree,
+        wheel(-1000.0),
+        core::mouse::Cursor::Available(core::Point::new(5.0, 75.0)),
+    );
+    let scrolled = scroll_bounds_in_tree(&state, &renderer, viewport, &mut tree);
+    let point = {
+        let mut view = banner_ui_view(&state, iced::window::Id::unique());
+        tree.diff(view.as_widget());
+        let node = view.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &core::layout::Limits::new(Size::ZERO, viewport),
+        );
+        let mut labels = TextBounds::default();
+        view.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut labels);
+        let action = labels
+            .0
+            .iter()
+            .find(|(text, _)| text.contains("in the editor"))
+            .unwrap()
+            .1;
+        core::Point::new(
+            action.center_x(),
+            action.y + action.height - scrolled.0[1].2.y - 5.0,
+        )
+    };
+    assert!(
+        Rectangle::with_size(viewport).contains(point),
+        "last action line is visible: {point:?}"
+    );
+    assert!(
+        event_messages_in_tree(
+            &state,
+            &renderer,
+            viewport,
+            &mut tree,
+            core::Event::Mouse(core::mouse::Event::ButtonPressed(core::mouse::Button::Left)),
+            core::mouse::Cursor::Available(point)
+        )
+        .is_empty()
+    );
+    for message in frame_messages_in_tree(&state, &renderer, viewport, &mut tree) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert!(state.pending_acknowledgement.is_none());
+    let messages = event_messages_in_tree(
+        &state,
+        &renderer,
+        viewport,
+        &mut tree,
+        core::Event::Mouse(core::mouse::Event::ButtonReleased(
+            core::mouse::Button::Left,
+        )),
+        core::mouse::Cursor::Available(point),
+    );
+    assert!(
+        matches!(messages.as_slice(), [BannerUiMessage::InvokeActionRequested(actual, key)]
+        if *actual == target && key == "opaque key/α"),
+        "last-line action hit: {messages:?}"
+    );
+    let after = scroll_bounds_in_tree(&state, &renderer, viewport, &mut tree);
+    assert_eq!(
+        after.0[1].2, scrolled.0[1].2,
+        "acknowledgement preserves card scroll"
+    );
+    assert_eq!(
+        after.0[2].2, body_scrolled.0[2].2,
+        "acknowledgement preserves body scroll"
+    );
 }
 
 #[tokio::test]
@@ -940,7 +1261,7 @@ async fn three_card_stack_with_overflow_clamps_input_and_clears_to_click_through
 }
 
 #[tokio::test]
-async fn constrained_surface_defers_rich_card_acknowledgement_until_it_fits() {
+async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_content() {
     let mut state = banner_ui_test_state();
     let acknowledged = Arc::new(AtomicBool::new(false));
     queue_banner_ui_presentation(&mut state, 42, acknowledged.clone());
@@ -968,8 +1289,42 @@ async fn constrained_surface_defers_rich_card_acknowledgement_until_it_fits() {
         [LayerShellCustomAction::SetInputRegion(_)]
     ));
     assert!(
-        !acknowledged.load(Ordering::SeqCst),
-        "a clipped compact card is not a displayed banner"
+        acknowledged.load(Ordering::SeqCst),
+        "a fully visible bounded compact card must acknowledge display"
+    );
+    let mut view = banner_ui_view(&state, iced::window::Id::unique());
+    tree.diff(view.as_widget());
+    let node = view.as_widget_mut().layout(
+        &mut tree,
+        &renderer,
+        &core::layout::Limits::new(Size::ZERO, Size::new(976.0, 150.0)),
+    );
+    let mut scroll = ScrollBounds::default();
+    view.as_widget_mut()
+        .operate(&mut tree, Layout::new(&node), &renderer, &mut scroll);
+    assert!(
+        scroll
+            .0
+            .iter()
+            .any(|(viewport, content, _)| { viewport.height == 150.0 && content.height > 200.0 }),
+        "the complete natural card must remain internally scrollable"
+    );
+    drop(view);
+    let _ = event_messages_in_tree(
+        &state,
+        &renderer,
+        Size::new(976.0, 150.0),
+        &mut tree,
+        core::Event::Mouse(core::mouse::Event::WheelScrolled {
+            delta: core::mouse::ScrollDelta::Lines { x: 0.0, y: -20.0 },
+        }),
+        core::mouse::Cursor::Available(core::Point::new(621.0, 75.0)),
+    );
+    assert!(
+        scroll_bounds_in_tree(&state, &renderer, Size::new(976.0, 150.0), &mut tree).0[1]
+            .2
+            .y
+            > 0.0
     );
     let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 320.0), &mut tree).await;
     let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
@@ -983,6 +1338,13 @@ async fn constrained_surface_defers_rich_card_acknowledgement_until_it_fits() {
     assert!(
         acknowledged.load(Ordering::SeqCst),
         "the fitting frame must acknowledge its presentation"
+    );
+    assert_eq!(
+        scroll_bounds_in_tree(&state, &renderer, Size::new(976.0, 320.0), &mut tree).0[1]
+            .2
+            .y,
+        0.0,
+        "growing the viewport must remove obsolete internal translation"
     );
 
     let replacement = Arc::new(AtomicBool::new(false));

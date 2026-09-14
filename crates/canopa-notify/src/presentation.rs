@@ -18,6 +18,8 @@ const NOTIFICATION_IMAGE_VISUAL_SIZE: u16 = 58;
 const BODY_IMAGE_VISUAL_HEIGHT: u32 = 48;
 const BODY_PREVIEW_MAX_HEIGHT: u32 = 120;
 const BANNER_MAX_WIDTH: f32 = 360.0;
+// One ordinary Iced wheel step: leave room to fully reveal middle stack cards.
+const BANNER_SCROLL_REVEAL_SPACE: f32 = 60.0;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
 mod display;
@@ -1554,7 +1556,7 @@ fn banner_ui_view(
                 .then(|| state.pending_acknowledgement.clone())
                 .flatten(),
         };
-        let measured = sensor(banner_stack_widget(state))
+        let measured = sensor(banner_stack_widget(state, viewport.height))
             .key((state.presentation_generation, viewport))
             // Sensor keys retrigger on_show, not an on_resize-only subscription.
             // Measure even when scrolling has moved both stack edges out of view.
@@ -1572,10 +1574,20 @@ fn banner_ui_view(
     .into()
 }
 
-fn banner_stack_widget(state: &BannerUiState) -> iced::Element<'_, BannerUiMessage> {
-    use iced::widget::{container, keyed_column};
+fn banner_stack_widget(
+    state: &BannerUiState,
+    viewport_height: f32,
+) -> iced::Element<'_, BannerUiMessage> {
+    use iced::widget::{container, keyed_column, scrollable};
     use iced::{Alignment, Length};
 
+    let has_siblings =
+        state.presentation.banners.len() > 1 || state.presentation.overflow_count > 0;
+    let card_height = if has_siblings {
+        (viewport_height - BANNER_SCROLL_REVEAL_SPACE).max(viewport_height / 2.0)
+    } else {
+        viewport_height
+    };
     let mut stack = keyed_column![]
         .spacing(BANNER_STACK_SPACING)
         .width(Length::Fill)
@@ -1584,7 +1596,12 @@ fn banner_stack_widget(state: &BannerUiState) -> iced::Element<'_, BannerUiMessa
         stack = stack.push(
             banner_stack_item_key(banner),
             display::observe(
-                notification_banner_widget(banner),
+                // Display means the bounded card viewport is visible, not every
+                // line of oversized content has been read (ADR 0046).
+                container(scrollable(notification_banner_widget(banner)).width(Length::Fill))
+                    .width(Length::Fill)
+                    .max_height(card_height)
+                    .into(),
                 banner.target(),
                 state.pending_acknowledgement.as_ref(),
             ),
@@ -1598,6 +1615,12 @@ fn banner_stack_widget(state: &BannerUiState) -> iced::Element<'_, BannerUiMessa
     }
 
     container(stack)
+        // A multi-item stack can overflow independently of an individual card.
+        // Keep its 10px rail clear of the card's own rail and action hit regions.
+        .padding(iced::Padding {
+            right: if has_siblings { 12.0 } else { 0.0 },
+            ..iced::Padding::ZERO
+        })
         .width(Length::Fill)
         .height(Length::Shrink)
         .into()
