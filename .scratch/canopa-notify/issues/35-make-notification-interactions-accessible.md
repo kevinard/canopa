@@ -28,3 +28,5 @@ None - can start immediately.
 ## Comments
 
 2026-09-14: The [Center keyboard continuation](../../freedesktop-completion-review/CENTER-KEYBOARD-EVIDENCE.md) establishes partial real-host keyboard behavior and records a concrete blocker for assistive technology. The pinned Iced widget and layer-shell stack has no implemented semantic-tree/platform bridge. Visible names and provider labels must not be counted as accessible names/roles/states or an announcement policy. A supported bridge and full-session screen-reader verification remain required; no acceptance boxes are closed by this partial keyboard work.
+
+2026-09-14: The [window-lifetime follow-up](../../freedesktop-completion-review/CENTER-WINDOW-EVIDENCE.md) corrects rapid-key loss and replacement-induced interruption by keeping the Canopa panel window stable. Forty graphical trials and six new application regressions pass; the full host suite passes 1,151 tests. This remains partial keyboard evidence, not semantic-tree, announcement, held-key or full keyboard-reading acceptance.
