@@ -91,6 +91,7 @@ impl<'a> PanelMenuCatalog<'a> {
 }
 
 pub(super) enum PanelRuntimeIntent<'a> {
+    UpdateExternalContent(crate::surface::panel::ExternalPanelContent),
     PrepareOpen {
         request: PanelOpenRequest,
         catalog: PanelMenuCatalog<'a>,
@@ -163,6 +164,18 @@ pub(super) struct PanelRuntime {
 impl PanelRuntime {
     pub(super) fn handle(&mut self, intent: PanelRuntimeIntent<'_>) -> Vec<PanelRuntimeEffect> {
         match intent {
+            PanelRuntimeIntent::UpdateExternalContent(content) => {
+                if let Some(panel) = &mut self.active_panel {
+                    if matches!(
+                        panel.tree.content,
+                        crate::surface::panel::PanelContent::ExternalProvider(_)
+                    ) {
+                        panel.tree.content =
+                            crate::surface::panel::PanelContent::ExternalProvider(content);
+                    }
+                }
+                Vec::new()
+            }
             PanelRuntimeIntent::PrepareOpen {
                 request,
                 catalog,

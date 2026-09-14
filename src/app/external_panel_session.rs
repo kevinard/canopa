@@ -19,6 +19,10 @@ pub(super) enum ExternalPanelSessionEffect {
         content: crate::surface::panel::ExternalPanelContent,
         anchor: Option<iced::Rectangle>,
     },
+    UpdatePanelContent {
+        identity: ExternalPanelPanelIdentity,
+        content: crate::surface::panel::ExternalPanelContent,
+    },
     WatchProviderSession {
         session_id: String,
         provider_name: String,
@@ -106,6 +110,34 @@ impl ActiveExternalPanelSession {
             },
         ]
     }
+
+    fn update_content_effect(&self) -> ExternalPanelSessionEffect {
+        ExternalPanelSessionEffect::UpdatePanelContent {
+            identity: self.panel_identity(),
+            content: self.content.clone(),
+        }
+    }
+
+    fn replace_content(
+        &mut self,
+        content: crate::surface::panel::ExternalPanelContent,
+    ) -> ExternalPanelSessionEffect {
+        let was_canopa = self.content.elements.iter().any(|element| {
+            matches!(
+                element,
+                crate::surface::panel::ExternalPanelElement::Canopa { .. }
+            )
+        });
+        self.content = content;
+        if was_canopa {
+            // Canopa widgets bind retained interaction state to snapshot IDs.
+            self.update_content_effect()
+        } else {
+            // Framed-v1 widgets have no generation-owned press state. Preserve
+            // their existing window replacement until that contract is added.
+            self.open_content_effect()
+        }
+    }
 }
 
 impl ExternalPanelSessionRuntime {
@@ -127,7 +159,7 @@ impl ExternalPanelSessionRuntime {
                 _ => None,
             })?;
         snapshot.move_focus(forward);
-        Some(vec![active.open_content_effect()])
+        Some(vec![active.update_content_effect()])
     }
 
     pub(super) fn canopa_keyboard_activate(
@@ -233,11 +265,11 @@ impl ExternalPanelSessionRuntime {
         if !active.matches_session(&session_id, &provider_name, active_panel) {
             return Vec::new();
         }
-        active.content = crate::surface::panel::ExternalPanelContent::from_provider_document(
+        let content = crate::surface::panel::ExternalPanelContent::from_provider_document(
             provider_name,
             content,
         );
-        let mut effects = vec![active.open_content_effect()];
+        let mut effects = vec![active.replace_content(content)];
         if let Some(handle) = active.handle.clone() {
             effects.push(ExternalPanelSessionEffect::WatchProviderContent {
                 session_id: active.session_id.clone(),
@@ -275,9 +307,12 @@ impl ExternalPanelSessionRuntime {
         let Some(mut active) = self.active.take() else {
             return Vec::new();
         };
-        active.content =
-            crate::surface::panel::ExternalPanelContent::failure(provider_name, message);
-        vec![active.open_content_effect()]
+        vec![
+            active.replace_content(crate::surface::panel::ExternalPanelContent::failure(
+                provider_name,
+                message,
+            )),
+        ]
     }
 
     pub(super) fn provider_session_ended(
@@ -308,11 +343,11 @@ impl ExternalPanelSessionRuntime {
         if active.provider_name != provider_name || !active.matches_panel(active_panel) {
             return Vec::new();
         }
-        active.content = crate::surface::panel::ExternalPanelContent::from_provider_document(
+        let content = crate::surface::panel::ExternalPanelContent::from_provider_document(
             provider_name,
             content,
         );
-        vec![active.open_content_effect()]
+        vec![active.replace_content(content)]
     }
 
     pub(super) fn button_activated(

@@ -134,6 +134,10 @@ pub(super) enum ForegroundOverlay {
 }
 
 pub(super) enum ForegroundIntent<'a> {
+    UpdateExternalPanelContent {
+        identity: super::external_panel_session::ExternalPanelPanelIdentity,
+        content: crate::surface::panel::ExternalPanelContent,
+    },
     OpenPanel {
         request: PanelForegroundRequest,
         context: PanelOpenContext<'a>,
@@ -323,6 +327,10 @@ pub(super) struct Foreground {
 impl Foreground {
     pub(super) fn handle(&mut self, intent: ForegroundIntent<'_>) -> Vec<ForegroundEffect> {
         match intent {
+            ForegroundIntent::UpdateExternalPanelContent { identity, content } => {
+                self.update_external_panel_content(identity, content);
+                Vec::new()
+            }
             ForegroundIntent::OpenPanel { request, context } => {
                 self.prepare_panel(request, context)
             }
@@ -719,6 +727,32 @@ impl Foreground {
         }
 
         ForegroundRoleSnapshot { roles }
+    }
+
+    fn update_external_panel_content(
+        &mut self,
+        identity: super::external_panel_session::ExternalPanelPanelIdentity,
+        content: crate::surface::panel::ExternalPanelContent,
+    ) {
+        use crate::surface::panel::PanelContent;
+        let Some(ForegroundOverlay::Panel { tree, .. }) = self.active.as_mut() else {
+            return;
+        };
+        let PanelContent::ExternalProvider(current) = &tree.content else {
+            return;
+        };
+        if tree.origin_window != identity.origin_window
+            || tree.origin != identity.origin
+            || current.provider_name != identity.provider_name
+            || content.provider_name != identity.provider_name
+        {
+            return;
+        }
+        // Updating an existing document must not retire its focused window.
+        // External content has a fixed physical size; only its view changes.
+        tree.content = PanelContent::ExternalProvider(content.clone());
+        self.panel
+            .handle(super::panel_runtime::PanelRuntimeIntent::UpdateExternalContent(content));
     }
 
     fn prepare_panel(

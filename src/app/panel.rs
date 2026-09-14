@@ -523,6 +523,15 @@ impl App {
                 anchor,
                 true,
             ),
+            ExternalPanelSessionEffect::UpdatePanelContent { identity, content } => {
+                let effects = self.foreground.handle(
+                    super::foreground::ForegroundIntent::UpdateExternalPanelContent {
+                        identity,
+                        content,
+                    },
+                );
+                Task::batch(self.apply_foreground_effects(effects))
+            }
             ExternalPanelSessionEffect::WatchProviderSession {
                 session_id,
                 provider_name,
@@ -1298,6 +1307,9 @@ pub(super) fn panel_event_for_action(
         crate::config::PanelAction::Command(_) => None,
     }
 }
+
+#[cfg(test)]
+mod canopa_tests;
 
 #[cfg(test)]
 mod tests {
