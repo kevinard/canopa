@@ -1,12 +1,196 @@
 use super::*;
 use core::renderer::Headless;
 use core::widget::{Operation, Tree};
+use futures_util::StreamExt;
+use iced_layershell::actions::{LayerShellCustomAction, LayerShellCustomActionWithId};
 use iced_layershell::reexport::core::{self, Layout, Rectangle, Size};
 
 async fn software_renderer() -> iced::Renderer {
     iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
         .await
         .expect("software renderer")
+}
+
+async fn frame_actions(
+    state: &mut BannerUiState,
+    renderer: &iced::Renderer,
+    viewport: Size,
+    tree: &mut Tree,
+) -> Vec<LayerShellCustomAction> {
+    let mut actions = Vec::new();
+    for message in frame_messages_in_tree(state, renderer, viewport, tree) {
+        if let Some(mut stream) = iced_runtime::task::into_stream(banner_ui_update(state, message))
+        {
+            while let Some(action) = stream.next().await {
+                let iced_runtime::Action::Output(message) = action else {
+                    panic!("unexpected frame task");
+                };
+                let LayerShellCustomActionWithId(_, action) =
+                    message.try_into().expect("layer-shell frame action");
+                actions.push(action);
+            }
+        }
+    }
+    actions
+}
+
+#[tokio::test]
+async fn measured_content_updates_pointer_input_instead_of_resizing_the_surface() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    queue_banner_ui_presentation(&mut state, 42, Arc::new(AtomicBool::new(false)));
+    let mut tree = Tree::empty();
+    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 216.0), &mut tree).await;
+    assert!(
+        matches!(
+            actions.as_slice(),
+            [LayerShellCustomAction::SetInputRegion(_)]
+        ),
+        "measured content must not override compositor-assigned dimensions: {actions:?}"
+    );
+}
+
+// An external wire peer records actual wl_region requests. No compositor or
+// private geometry helper is mocked; object setup uses ordinary client proxies.
+fn region_requests(callback: &iced_layershell::actions::ActionCallback) -> Vec<(u16, Vec<i32>)> {
+    use std::io::Read;
+    use std::os::unix::net::UnixStream;
+    use wayland_client::{
+        Connection, Proxy,
+        protocol::{wl_compositor, wl_region, wl_registry},
+    };
+    struct RegionClient;
+    wayland_client::delegate_noop!(RegionClient: ignore wl_registry::WlRegistry);
+    wayland_client::delegate_noop!(RegionClient: ignore wl_compositor::WlCompositor);
+    wayland_client::delegate_noop!(RegionClient: ignore wl_region::WlRegion);
+    let (client, mut peer) = UnixStream::pair().unwrap();
+    peer.set_nonblocking(true).unwrap();
+    let connection = Connection::from_socket(client).unwrap();
+    let queue = connection.new_event_queue::<RegionClient>();
+    let handle = queue.handle();
+    let registry = connection.display().get_registry(&handle, ());
+    let compositor = registry.bind::<wl_compositor::WlCompositor, _, _>(1, 4, &handle, ());
+    let region = compositor.create_region(&handle, ());
+    (callback.0)(&region);
+    connection.flush().unwrap();
+    let mut bytes = Vec::new();
+    let mut chunk = [0; 4096];
+    loop {
+        match peer.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(count) => bytes.extend_from_slice(&chunk[..count]),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+            Err(error) => panic!("read region requests: {error}"),
+        }
+    }
+    let mut requests = Vec::new();
+    let mut remaining = bytes.as_slice();
+    while !remaining.is_empty() {
+        let object = u32::from_ne_bytes(remaining[..4].try_into().unwrap());
+        let header = u32::from_ne_bytes(remaining[4..8].try_into().unwrap());
+        let length = (header >> 16) as usize;
+        assert!(length >= 8 && length <= remaining.len());
+        if object == region.id().protocol_id() {
+            requests.push((
+                header as u16,
+                remaining[8..length]
+                    .chunks_exact(4)
+                    .map(|word| i32::from_ne_bytes(word.try_into().unwrap()))
+                    .collect(),
+            ));
+        }
+        remaining = &remaining[length..];
+    }
+    requests
+}
+
+#[tokio::test]
+async fn queued_input_regions_use_the_latest_viewport_and_remain_empty_after_clear() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    let mut tree = Tree::empty();
+    queue_banner_ui_presentation(&mut state, 42, Arc::new(AtomicBool::new(false)));
+    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 216.0), &mut tree).await;
+    let [LayerShellCustomAction::SetInputRegion(old)] = actions.as_slice() else {
+        panic!("{actions:?}");
+    };
+    let reset = (2, vec![0, 0, i32::MAX, i32::MAX]);
+    assert_eq!(
+        region_requests(old),
+        vec![reset.clone(), (1, vec![616, 0, 360, 112])]
+    );
+    let resized = frame_actions(&mut state, &renderer, Size::new(276.0, 216.0), &mut tree).await;
+    let [LayerShellCustomAction::SetInputRegion(current)] = resized.as_slice() else {
+        panic!("{resized:?}");
+    };
+    let narrow = vec![reset.clone(), (1, vec![0, 0, 276, 112])];
+    assert_eq!(region_requests(current), narrow);
+    assert_eq!(
+        region_requests(old),
+        narrow,
+        "a delayed command must not restore the old region"
+    );
+    let _ = banner_ui_update(
+        &mut state,
+        BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
+            presentation: BannerPresentation::default(),
+            acknowledgement: BannerPresentationAcknowledgement::new(|| {}),
+        }),
+    );
+    let cleared = frame_actions(&mut state, &renderer, Size::new(276.0, 216.0), &mut tree).await;
+    let [LayerShellCustomAction::SetInputRegion(empty)] = cleared.as_slice() else {
+        panic!("{cleared:?}");
+    };
+    for callback in [old, current, empty] {
+        assert_eq!(
+            region_requests(callback),
+            vec![reset.clone()],
+            "cleared banners must remain click-through"
+        );
+    }
+}
+
+#[tokio::test]
+async fn compositor_viewport_keeps_cards_width_capped_and_top_right() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    state.presentation = BannerPresentation::visible_banners(vec![banner_view(42, "Fits")]);
+    for (viewport, expected_x, expected_width) in [
+        (Size::new(976.0, 216.0), 616.0, 360.0),
+        (Size::new(276.0, 416.0), 0.0, 276.0),
+    ] {
+        let frames = frame_messages(&state, &renderer, viewport);
+        let measured = frames
+            .iter()
+            .find_map(|message| match message {
+                BannerUiMessage::LayoutFrame { size, .. } => Some(*size),
+                _ => None,
+            })
+            .expect("measured content");
+        assert_eq!(
+            measured.width, expected_width,
+            "cards must fit narrow outputs without stretching on wide ones"
+        );
+        let mut view = banner_ui_view(&state, iced::window::Id::unique());
+        let mut tree = Tree::new(view.as_widget());
+        let node = view.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &core::layout::Limits::new(Size::ZERO, viewport),
+        );
+        let mut scroll = ScrollBounds::default();
+        view.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut scroll);
+        assert_eq!(
+            scroll.0[0].0,
+            Rectangle {
+                x: expected_x,
+                y: 0.0,
+                width: expected_width,
+                height: viewport.height
+            }
+        );
+    }
 }
 
 #[tokio::test]
@@ -522,16 +706,13 @@ async fn scrolling_reveals_a_pending_card_without_restarting_already_displayed_c
 }
 
 #[tokio::test]
-async fn measured_replacements_keep_frame_ownership_without_redundant_resizes() {
+async fn measured_replacements_keep_frame_ownership_without_redundant_input_updates() {
     let renderer = software_renderer().await;
     let mut state = banner_ui_test_state();
     let mut tree = Tree::empty();
     let first = Arc::new(AtomicBool::new(false));
     queue_banner_ui_presentation(&mut state, 42, first.clone());
-    for message in frame_messages_in_tree(&state, &renderer, Size::new(360.0, 1.0), &mut tree) {
-        let _ = banner_ui_update(&mut state, message);
-    }
-    let viewport = Size::new(360.0, state.surface_size.1 as f32);
+    let viewport = Size::new(976.0, 216.0);
     let old_frames = frame_messages_in_tree(&state, &renderer, viewport, &mut tree);
     let replacement = Arc::new(AtomicBool::new(false));
     queue_banner_ui_presentation(&mut state, 42, replacement.clone());
@@ -539,22 +720,30 @@ async fn measured_replacements_keep_frame_ownership_without_redundant_resizes() 
         assert_eq!(
             banner_ui_update(&mut state, message).units(),
             0,
-            "old geometry must not resize the new generation"
+            "old geometry must not change the new generation's input region"
         );
     }
     assert!(first.load(Ordering::SeqCst));
     assert!(!replacement.load(Ordering::SeqCst));
-    for message in frame_messages_in_tree(&state, &renderer, viewport, &mut tree) {
-        assert_eq!(
-            banner_ui_update(&mut state, message).units(),
-            0,
-            "same-size replacement must not resize the surface"
-        );
-    }
+    assert!(matches!(
+        frame_actions(&mut state, &renderer, viewport, &mut tree)
+            .await
+            .as_slice(),
+        [LayerShellCustomAction::SetInputRegion(_)]
+    ));
     assert!(
         replacement.load(Ordering::SeqCst),
         "same geometry still needs the replacement's own frame"
     );
+    let next = Arc::new(AtomicBool::new(false));
+    queue_banner_ui_presentation(&mut state, 42, next.clone());
+    assert!(
+        frame_actions(&mut state, &renderer, viewport, &mut tree)
+            .await
+            .is_empty(),
+        "same-size replacement must not update the input region"
+    );
+    assert!(next.load(Ordering::SeqCst));
     assert!(
         frame_messages_in_tree(&state, &renderer, viewport, &mut tree).is_empty(),
         "stable frames must not cause a redraw loop"
@@ -562,43 +751,7 @@ async fn measured_replacements_keep_frame_ownership_without_redundant_resizes() 
 }
 
 #[tokio::test]
-async fn delayed_resize_is_repaired_from_the_actual_viewport() {
-    let renderer = software_renderer().await;
-    let mut state = banner_ui_test_state();
-    let mut tree = Tree::empty();
-    queue_banner_ui_presentation(&mut state, 42, Arc::new(AtomicBool::new(false)));
-    for message in frame_messages_in_tree(&state, &renderer, Size::new(360.0, 1.0), &mut tree) {
-        let _ = banner_ui_update(&mut state, message);
-    }
-    let old_viewport = Size::new(360.0, state.surface_size.1 as f32);
-    queue_banner_ui_presentation(&mut state, 42, Arc::new(AtomicBool::new(false)));
-    state.presentation.banners[0].body = "Long body\n".repeat(20);
-    state.presentation.banners[0].body_segments.clear();
-    for message in frame_messages_in_tree(&state, &renderer, old_viewport, &mut tree) {
-        let _ = banner_ui_update(&mut state, message);
-    }
-    let current_viewport = Size::new(360.0, state.surface_size.1 as f32);
-    assert!(current_viewport.height > old_viewport.height);
-    for message in frame_messages_in_tree(&state, &renderer, current_viewport, &mut tree) {
-        let _ = banner_ui_update(&mut state, message);
-    }
-    // Layer-shell task outputs are asynchronous: the old resize can arrive last.
-    let repairs: usize = frame_messages_in_tree(&state, &renderer, old_viewport, &mut tree)
-        .into_iter()
-        .map(|message| banner_ui_update(&mut state, message).units())
-        .sum();
-    assert_eq!(
-        repairs, 1,
-        "cached desired size must not hide a stale actual viewport"
-    );
-    for message in frame_messages_in_tree(&state, &renderer, current_viewport, &mut tree) {
-        assert_eq!(banner_ui_update(&mut state, message).units(), 0);
-    }
-    assert!(frame_messages_in_tree(&state, &renderer, current_viewport, &mut tree).is_empty());
-}
-
-#[tokio::test]
-async fn three_card_stack_with_overflow_shrinks_after_clear_and_defers_clipped_display() {
+async fn three_card_stack_with_overflow_clamps_input_and_clears_to_click_through() {
     let renderer = software_renderer().await;
     let mut state = banner_ui_test_state();
     let acknowledged = Arc::new(AtomicBool::new(false));
@@ -608,24 +761,31 @@ async fn three_card_stack_with_overflow_shrinks_after_clear_and_defers_clipped_d
         .banners
         .extend([banner_view(2, "Second"), banner_view(3, "Third")]);
     state.presentation.overflow_count = 4;
-    for message in frame_messages(&state, &renderer, Size::new(360.0, 1.0)) {
-        let _ = banner_ui_update(&mut state, message);
-    }
-    let height = state.surface_size.1;
-    assert!(
-        height > 300,
-        "measurement must include every card and overflow"
+    let mut tree = Tree::empty();
+    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 216.0), &mut tree).await;
+    let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
+        panic!("{actions:?}");
+    };
+    assert_eq!(
+        region_requests(region),
+        vec![
+            (2, vec![0, 0, i32::MAX, i32::MAX]),
+            (1, vec![616, 0, 360, 216])
+        ]
     );
-    for message in frame_messages(&state, &renderer, Size::new(360.0, height as f32 / 2.0)) {
-        let _ = banner_ui_update(&mut state, message);
-    }
     assert!(
         !acknowledged.load(Ordering::SeqCst),
         "clipped stack must not start undisplayed timeouts"
     );
-    for message in frame_messages(&state, &renderer, Size::new(360.0, height as f32)) {
-        let _ = banner_ui_update(&mut state, message);
-    }
+    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 600.0), &mut tree).await;
+    let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
+        panic!("{actions:?}");
+    };
+    let requests = region_requests(region);
+    assert!(
+        requests[1].1[3] > 300 && requests[1].1[3] < 600,
+        "input follows content, including overflow, not empty surface space"
+    );
     assert!(acknowledged.load(Ordering::SeqCst));
     let _ = banner_ui_update(
         &mut state,
@@ -634,14 +794,18 @@ async fn three_card_stack_with_overflow_shrinks_after_clear_and_defers_clipped_d
             acknowledgement: BannerPresentationAcknowledgement::new(|| {}),
         }),
     );
-    for message in frame_messages(&state, &renderer, Size::new(360.0, height as f32)) {
-        let _ = banner_ui_update(&mut state, message);
-    }
-    assert_eq!(state.surface_size, (360, 1));
+    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 600.0), &mut tree).await;
+    let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
+        panic!("{actions:?}");
+    };
+    assert_eq!(
+        region_requests(region),
+        vec![(2, vec![0, 0, i32::MAX, i32::MAX])]
+    );
 }
 
 #[tokio::test]
-async fn surface_fits_measured_rich_cards_before_acknowledging_display() {
+async fn constrained_surface_defers_rich_card_acknowledgement_until_it_fits() {
     let mut state = banner_ui_test_state();
     let acknowledged = Arc::new(AtomicBool::new(false));
     queue_banner_ui_presentation(&mut state, 42, acknowledged.clone());
@@ -661,22 +825,25 @@ async fn surface_fits_measured_rich_cards_before_acknowledging_display() {
     }];
     let renderer = software_renderer().await;
 
-    for message in frame_messages(&state, &renderer, Size::new(360.0, 1.0)) {
-        let _ = banner_ui_update(&mut state, message);
-    }
-    assert!(
-        state.surface_size.1 > 160,
-        "rich card needs more room than the old fixed surface: {:?}",
-        state.surface_size
-    );
+    let mut tree = Tree::empty();
+    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 150.0), &mut tree).await;
+    assert!(matches!(
+        actions.as_slice(),
+        [LayerShellCustomAction::SetInputRegion(_)]
+    ));
     assert!(
         !acknowledged.load(Ordering::SeqCst),
-        "a measurement frame is not a displayed banner"
+        "a clipped compact card is not a displayed banner"
     );
-    let viewport = Size::new(state.surface_size.0 as f32, state.surface_size.1 as f32);
-    for message in frame_messages(&state, &renderer, viewport) {
-        let _ = banner_ui_update(&mut state, message);
-    }
+    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 320.0), &mut tree).await;
+    let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
+        panic!("{actions:?}");
+    };
+    let requests = region_requests(region);
+    assert!(
+        requests[1].1[3] > 160 && requests[1].1[3] <= 320,
+        "rich card retains its natural height"
+    );
     assert!(
         acknowledged.load(Ordering::SeqCst),
         "the fitting frame must acknowledge its presentation"

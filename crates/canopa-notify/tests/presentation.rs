@@ -488,7 +488,20 @@ fn notification_banner_surface_maps_to_iced_layer_shell_settings() {
         BannerSurfaceSpec::notification_banner(),
     );
 
-    assert_eq!(settings.anchor, Anchor::Top | Anchor::Right);
+    assert_eq!(
+        settings.anchor,
+        Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right
+    );
+    assert_eq!(
+        settings.size,
+        Some((0, 0)),
+        "the compositor assigns both available dimensions"
+    );
+    assert_eq!(settings.margin, (12, 12, 12, 12));
+    assert!(
+        settings.events_transparent,
+        "empty startup must not intercept desktop input"
+    );
     assert_eq!(settings.layer, Layer::Overlay);
     assert_eq!(settings.keyboard_interactivity, KeyboardInteractivity::None);
     assert!(matches!(settings.start_mode, StartMode::Active));

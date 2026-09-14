@@ -17,6 +17,7 @@ const APP_ICON_VISUAL_SIZE: u16 = 34;
 const NOTIFICATION_IMAGE_VISUAL_SIZE: u16 = 58;
 const BODY_IMAGE_VISUAL_HEIGHT: u32 = 48;
 const BODY_PREVIEW_MAX_HEIGHT: u32 = 120;
+const BANNER_MAX_WIDTH: f32 = 360.0;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
 mod display;
@@ -331,19 +332,21 @@ impl IcedLayerShellBannerPresenter {
 
         iced_layershell::settings::LayerShellSettings {
             anchor: match spec.output {
-                BannerOutputSelection::FocusedWithFallback => Anchor::Top | Anchor::Right,
+                BannerOutputSelection::FocusedWithFallback => {
+                    Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right
+                }
             },
             layer: match spec.layer {
                 BannerLayer::Overlay => Layer::Overlay,
             },
             exclusive_zone: spec.exclusive_zone,
-            size: Some((360, 1)),
-            margin: (12, 12, 0, 0),
+            size: Some((0, 0)),
+            margin: (12, 12, 12, 12),
             keyboard_interactivity: match spec.keyboard_interactivity {
                 BannerKeyboardInteractivity::None => KeyboardInteractivity::None,
             },
             start_mode: StartMode::Active,
-            events_transparent: false,
+            events_transparent: true,
         }
     }
 }
@@ -462,13 +465,15 @@ struct PendingBannerAcknowledgement {
     acknowledgement: BannerPresentationAcknowledgement,
 }
 
+type BannerInputRegion = Arc<Mutex<Option<iced::Rectangle<i32>>>>;
+
 #[derive(Clone)]
 struct BannerUiState {
     runtime_id: u64,
     presentation: BannerPresentation,
     presentation_generation: u64,
     pending_acknowledgement: Option<PendingBannerAcknowledgement>,
-    surface_size: (u32, u32),
+    input_region: BannerInputRegion,
     interactions: mpsc::Sender<BannerInteraction>,
     renderer_state: tokio::sync::watch::Sender<BannerRendererState>,
 }
@@ -505,7 +510,7 @@ enum BannerUiMessage {
         app_identity: String,
         callback: iced_layershell::actions::ActivationTokenCallback,
     },
-    SizeChange((u32, u32)),
+    SetInputRegion(BannerInputRegion),
 }
 
 impl TryInto<iced_layershell::actions::LayerShellCustomActionWithId> for BannerUiMessage {
@@ -527,9 +532,21 @@ impl TryInto<iced_layershell::actions::LayerShellCustomActionWithId> for BannerU
                     callback,
                 },
             )),
-            Self::SizeChange(size) => Ok(LayerShellCustomActionWithId::new(
+            Self::SetInputRegion(latest) => Ok(LayerShellCustomActionWithId::new(
                 None,
-                LayerShellCustomAction::SizeChange(size),
+                LayerShellCustomAction::SetInputRegion(
+                    iced_layershell::actions::ActionCallback::new(move |region| {
+                        // Layer-shell tasks may run out of order. Every queued action
+                        // resolves the current measured region at execution time.
+                        let bounds = latest.lock().unwrap().unwrap_or_default();
+                        // The adapter reuses a region across resizes. Clear its entire
+                        // old extent, including points outside the current viewport.
+                        region.subtract(0, 0, i32::MAX, i32::MAX);
+                        if bounds.width > 0 && bounds.height > 0 {
+                            region.add(bounds.x, bounds.y, bounds.width, bounds.height);
+                        }
+                    }),
+                ),
             )),
             message => Err(message),
         }
@@ -648,7 +665,7 @@ fn run_banner_ui(
             presentation: BannerPresentation::default(),
             presentation_generation: 0,
             pending_acknowledgement: None,
-            surface_size: (360, 1),
+            input_region: Default::default(),
             interactions: interactions.clone(),
             renderer_state: renderer_state.clone(),
         },
@@ -724,16 +741,20 @@ fn banner_ui_update(
             if generation != state.presentation_generation {
                 return iced::Task::none();
             }
-            let next_size = (360, (size.height.ceil() as u32).max(1));
-            // A delayed layer-shell task can apply an older size after a newer one.
-            // Reconcile the actual viewport, not only the last requested dimensions.
-            if state.surface_size == next_size
-                && viewport == iced::Size::new(next_size.0 as f32, next_size.1 as f32)
-            {
+            let width = size.width.min(viewport.width);
+            let x = (viewport.width - width).floor();
+            let bounds = iced::Rectangle {
+                x: x as i32,
+                y: 0,
+                width: (viewport.width - x).ceil() as i32,
+                height: size.height.min(viewport.height).ceil() as i32,
+            };
+            let mut current = state.input_region.lock().unwrap();
+            if *current == Some(bounds) {
                 iced::Task::none()
             } else {
-                state.surface_size = next_size;
-                iced::Task::done(BannerUiMessage::SizeChange(next_size))
+                *current = Some(bounds);
+                iced::Task::done(BannerUiMessage::SetInputRegion(state.input_region.clone()))
             }
         }
         BannerUiMessage::PresentationFrame(rendered) => {
@@ -1155,7 +1176,7 @@ mod tests {
             presentation: BannerPresentation::default(),
             presentation_generation: 0,
             pending_acknowledgement: None,
-            surface_size: (360, 1),
+            input_region: Default::default(),
             interactions,
             renderer_state: tokio::sync::watch::channel(BannerRendererState::Starting).0,
         }
@@ -1519,12 +1540,11 @@ fn banner_ui_view(
     _window: iced::window::Id,
 ) -> iced::Element<'_, BannerUiMessage> {
     use iced::Length;
-    use iced::widget::{responsive, scrollable, sensor};
+    use iced::widget::{container, responsive, scrollable, sensor};
 
     responsive(move |viewport| {
-        // Measure the natural stack independently of the previous surface height.
-        // The scrollable also keeps content reachable if the compositor constrains
-        // the requested height. Whole-presentation observers wait for the stack;
+        // The compositor owns the viewport; natural content measurement only
+        // determines the input region. Whole-presentation observers wait for the stack;
         // each card independently observes its own full visibility below.
         let frame = move |size: iced::Size| BannerUiMessage::LayoutFrame {
             generation: state.presentation_generation,
@@ -1541,8 +1561,11 @@ fn banner_ui_view(
             .anticipate(f32::INFINITY)
             .on_show(frame)
             .on_resize(frame);
-        scrollable(measured)
-            .width(Length::Fill)
+        let stack = scrollable(measured)
+            .width(viewport.width.min(BANNER_MAX_WIDTH))
+            .height(Length::Fill);
+        container(stack)
+            .align_right(Length::Fill)
             .height(Length::Fill)
             .into()
     })
