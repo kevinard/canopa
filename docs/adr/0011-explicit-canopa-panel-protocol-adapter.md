@@ -14,6 +14,8 @@ Keep canonical Canopa wire types in Notify's `canopa-panel-protocol` crate and v
 
 Canopa content is a host-only normalized content variant, not an extension accepted on the v1 wire. Niribar renders sections, controls, metadata, all actions, styled text and safe local images. Keyboard selection has a persistent contextual action affordance above the scrolling content. Invalid or replaced interaction IDs cannot invoke newly displayed actions.
 
+Selection labels put the action/control before its section and item context. The full selected text remains in a bounded scrollable preview so a long provider title cannot consume the content viewport. Preview scroll and every action button's pointer-press state belong to the exact opaque interaction ID and reset when it changes. A press begun on old content cannot complete against its replacement; no notification-domain keys are interpreted by the widget. This is visible keyboard guidance, not platform accessibility semantics.
+
 Do not interpret notification-specific action keys. Do not load remote images, execute provider-supplied commands, or add hyperlink execution without a separate safe-opening contract. Canopa v3 has no close message; close stdin and apply the existing bounded process-exit grace.
 
 ## Consequences

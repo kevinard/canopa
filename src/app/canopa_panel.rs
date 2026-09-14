@@ -6,6 +6,11 @@ use niribar::external_panel::canopa::CanopaSnapshot;
 
 use super::{Message, messages::ExternalPanelEvent};
 
+mod action_widget;
+
+#[cfg(test)]
+mod tests;
+
 pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Element<'a, Message> {
     let mut panel = column![].spacing(10);
     if let Some(error) = &snapshot.content.error {
@@ -113,16 +118,7 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
     }
     let mut header = column![text(snapshot.content.title.clone()).size(20)].spacing(6);
     if let (Some(id), Some(label)) = (snapshot.focused_action_id(), snapshot.focused_label()) {
-        header = header.push(
-            button(text(format!("Selected: {label}")))
-                .width(Length::Fill)
-                .on_press(Message::ExternalPanel(
-                    ExternalPanelEvent::ButtonActivated {
-                        provider_name: provider.to_string(),
-                        element_id: id.to_string(),
-                    },
-                )),
-        );
+        header = header.push(action_widget::preview(id, label, provider));
     } else {
         header = header.push(text("Tab / arrows: select · Enter: activate · Esc: close").size(12));
     }
@@ -150,15 +146,7 @@ fn action_button<'a>(
     target: InteractionTarget,
     action: &PanelAction,
 ) -> Element<'a, Message> {
-    button(text(action.label.clone()))
-        .width(Length::Fill)
-        .on_press(Message::ExternalPanel(
-            ExternalPanelEvent::ButtonActivated {
-                provider_name: provider.to_string(),
-                element_id: snapshot.action_id(target, action),
-            },
-        ))
-        .into()
+    action_widget::render(snapshot.action_id(target, action), &action.label, provider)
 }
 
 fn styled<'a>(runs: Vec<StyledTextRun>) -> Element<'a, Message> {

@@ -1,6 +1,56 @@
 use niribar::external_panel::canopa::CanopaSession;
 
 #[tokio::test]
+async fn keyboard_selection_names_action_before_context_and_preserves_wire_target() {
+    let mut input = serde_json::json!({
+        "type": "replace_content", "protocol_version": 3,
+        "content": {"title": "Notifications", "actions": [], "error": null,
+            "sections": [{"id": "mail", "title": "Mail", "controls": [{
+                "key": "permission", "label": "App permission", "value": "allow",
+                "options": [{"label": "Allow", "value": "allow"}, {"label": "Silence", "value": "silence"}]
+            }], "items": [{"id": "message", "title": "An important message", "metadata": [],
+                "actions": [{"key": "opaque/key", "label": "Reply", "value": "captured-revision"}]
+            }]}]
+        }
+    }).to_string();
+    input.push('\n');
+    let session = CanopaSession::default();
+    let mut snapshot = session
+        .read_content(&mut tokio::io::BufReader::new(input.as_bytes()))
+        .await
+        .unwrap();
+    snapshot.move_focus(true);
+    assert_eq!(
+        snapshot.focused_label(),
+        Some("App permission: Allow · Mail")
+    );
+    snapshot.move_focus(true);
+    assert_eq!(
+        snapshot.focused_label(),
+        Some("App permission: Silence · Mail")
+    );
+    snapshot.move_focus(true);
+    assert_eq!(
+        snapshot.focused_label(),
+        Some("Reply · Mail · An important message")
+    );
+    let mut output = Vec::new();
+    assert!(
+        session
+            .write_interaction(&mut output, snapshot.focused_action_id().unwrap())
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output).unwrap(),
+        serde_json::json!({
+            "type": "invoke", "target": {"target": "item", "id": "message"},
+            "action_key": "opaque/key", "value": "captured-revision"
+        })
+    );
+}
+
+#[tokio::test]
 async fn canopa_provider_rejects_bad_versions_truncated_and_oversized_frames() {
     let valid = "{\"type\":\"replace_content\",\"protocol_version\":3,\"content\":{\"title\":\"Ready\",\"sections\":[],\"actions\":[],\"error\":null}}\n";
     for input in [

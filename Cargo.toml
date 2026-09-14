@@ -41,6 +41,7 @@ strip = "symbols"
 panic = "abort"
 
 [dev-dependencies]
+iced = { version = "0.14", default-features = false, features = ["tiny-skia"] }
 tempfile = "3"
 
 [patch.crates-io]

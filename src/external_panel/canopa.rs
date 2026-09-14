@@ -135,7 +135,7 @@ impl CanopaSession {
                                 value: Some(option.value.clone()),
                             },
                         ),
-                        format!("{} · {}: {}", section.title, control.label, option.label),
+                        format!("{}: {} · {}", control.label, option.label, section.title),
                     ));
                 }
             }
@@ -148,7 +148,7 @@ impl CanopaSession {
                             },
                             action,
                         ),
-                        format!("{} · {}", item.title, action.label),
+                        format!("{} · {} · {}", action.label, section.title, item.title),
                     ));
                 }
             }
