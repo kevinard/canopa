@@ -1621,7 +1621,7 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
         text(banner_title(banner))
             .size(15)
             .width(Length::Fill)
-            .height(22)
+            .line_height(iced::Pixels(22.0))
             .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
         notification_body_widget(banner),
         text(&banner.app_name)
@@ -1679,13 +1679,17 @@ fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessa
         .spacing(6)
         .align_y(Alignment::Center)
         .width(Length::Fill)
-        .height(28);
+        .height(if banner.actions.is_empty() {
+            Length::Fixed(28.0)
+        } else {
+            Length::Shrink
+        });
 
     for action in &banner.actions {
         actions = actions.push(
             button(banner_action_content(action))
                 .padding([4, 8])
-                .height(28)
+                .height(Length::Shrink)
                 .width(Length::Fill)
                 .style(content_button_style)
                 .on_press(BannerUiMessage::InvokeActionRequested(
@@ -1695,7 +1699,7 @@ fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessa
         );
     }
 
-    container(actions).height(28).width(Length::Fill).into()
+    container(actions).width(Length::Fill).into()
 }
 
 fn banner_action_content(action: &BannerAction) -> iced::Element<'_, BannerUiMessage> {
@@ -1704,6 +1708,8 @@ fn banner_action_content(action: &BannerAction) -> iced::Element<'_, BannerUiMes
 
     let label = text(action.label.as_str())
         .size(12)
+        .line_height(iced::Pixels(20.0))
+        .width(Length::Fill)
         .wrapping(iced::widget::text::Wrapping::WordOrGlyph);
 
     match &action.icon {

@@ -4,6 +4,8 @@ The compatible host is the Canopa-v3 Niribar port described in [provider setup](
 
 Before enabling additional advertised body capabilities, run this checklist in a disposable or explicitly selected Wayland session. Do not replace a user's running bar/notification service as part of an automated headless test.
 
+The subsequent [long-label graphical check](../.scratch/freedesktop-completion-review/LONG-LABEL-EVIDENCE.md) corrects overlapping/clipped banner summaries and action labels. It verifies full fixture text, final-line named/default clicks, unchanged focus and replacement shrink/click-through at scale 1 and a narrow scale-2 output. This adds banner evidence only; oversized cards, the full scale/font/label matrix and Center keyboard/accessibility remain open.
+
 - Start Notify and the rebuilt Niribar with the provider configured as `canopa-v3`; open Notifications from a module action.
 - Confirm banner readiness on the actual compositor, including the initial empty surface and the first notification. In a disposable session, disconnect the daemon's renderer connection or stop that compositor; verify `ctl status --json` reports terminal presentation failure without sending another notification, while receipt and Center state remain available through their transports. Reconnecting the compositor alone does not restore banners: explicitly restart Notify and check normal retained/stale and transient restart behavior. The automated first-redraw/readiness tests do not prove visible pixels or compositor-disconnect handling.
 - Send several applications' notifications. Confirm section titles, summaries, metadata, permission controls, and all named actions are visible/reachable. Verify active state changes replace content without opening a second panel.

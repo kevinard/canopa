@@ -487,6 +487,141 @@ async fn scrolling_multiple_body_images_preserves_action_hit_regions() {
 }
 
 #[tokio::test]
+async fn multiline_summary_keeps_every_line_above_the_body_and_activates_the_card() {
+    let mut banner = banner_view(42, "Body follows the complete summary");
+    banner.summary = "Download complete\nReview destination\nOpen document".into();
+    let renderer = software_renderer().await;
+    for width in [360.0, 276.0] {
+        let mut card = notification_banner_widget(&banner);
+        let mut tree = Tree::new(card.as_widget());
+        let node = card.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &core::layout::Limits::new(Size::ZERO, Size::new(width, 1000.0)),
+        );
+        let mut labels = TextBounds::default();
+        card.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut labels);
+        let summary = labels
+            .0
+            .iter()
+            .find(|(text, _)| text == &banner.summary)
+            .unwrap()
+            .1;
+        assert!(
+            summary.height >= 45.0,
+            "three summary lines are clipped: {summary:?}"
+        );
+        let mut body = ScrollBounds::default();
+        card.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut body);
+        assert!(body.0[0].0.y >= summary.y + summary.height);
+        assert!(summary.x >= 0.0 && summary.x + summary.width <= width);
+        // The final summary line belongs to the default activation hit region.
+        let point = core::Point::new(summary.center_x(), summary.y + summary.height - 5.0);
+        let mut messages = Vec::new();
+        for event in [
+            core::mouse::Event::ButtonPressed(core::mouse::Button::Left),
+            core::mouse::Event::ButtonReleased(core::mouse::Button::Left),
+        ] {
+            card.as_widget_mut().update(
+                &mut tree,
+                &core::Event::Mouse(event),
+                Layout::new(&node),
+                core::mouse::Cursor::Available(point),
+                &renderer,
+                &mut core::clipboard::Null,
+                &mut core::Shell::new(&mut messages),
+                &Rectangle::with_size(node.size()),
+            );
+        }
+        assert!(
+            matches!(messages.as_slice(), [BannerUiMessage::ActivateRequested(target)] if *target == banner.target())
+        );
+    }
+}
+
+#[tokio::test]
+async fn long_named_action_labels_wrap_and_their_last_lines_remain_clickable() {
+    let renderer = software_renderer().await;
+    for label in [
+        "Review changes\nand open report\nin the editor",
+        "Review the downloaded document and open it in the selected application",
+        "ReviewTheDownloadedDocumentAndOpenItInTheSelectedApplicationWithoutSpaces",
+    ] {
+        for width in [360.0, 276.0] {
+            let mut banner = banner_view(42, "Body above actions");
+            banner.progress = Some(42);
+            banner.actions = vec![
+                BannerAction {
+                    key: "opaque key/α".into(),
+                    label: label.into(),
+                    icon: None,
+                },
+                BannerAction {
+                    key: "other".into(),
+                    label: label.into(),
+                    icon: Some(test_banner_visual()),
+                },
+            ];
+            let mut card = notification_banner_widget(&banner);
+            let mut tree = Tree::new(card.as_widget());
+            let node = card.as_widget_mut().layout(
+                &mut tree,
+                &renderer,
+                &core::layout::Limits::new(Size::ZERO, Size::new(width, 1000.0)),
+            );
+            let mut labels = TextBounds::default();
+            card.as_widget_mut()
+                .operate(&mut tree, Layout::new(&node), &renderer, &mut labels);
+            let bounds: Vec<_> = labels
+                .0
+                .iter()
+                .filter(|(text, _)| text == label)
+                .map(|(_, bounds)| *bounds)
+                .collect();
+            assert_eq!(bounds.len(), 2);
+            assert!(
+                bounds[0].x + bounds[0].width <= bounds[1].x,
+                "action labels overlap: {bounds:?}"
+            );
+            for (action, bounds) in banner.actions.iter().zip(bounds) {
+                assert!(
+                    bounds.height >= 36.0,
+                    "long action is clipped at width {width}: {bounds:?}"
+                );
+                assert!(bounds.x >= 0.0 && bounds.x + bounds.width <= width);
+                assert!(
+                    bounds.y + bounds.height + 13.0 <= node.size().height,
+                    "progress and padding must remain below actions"
+                );
+                let point = core::Point::new(bounds.center_x(), bounds.y + bounds.height - 4.0);
+                let mut messages = Vec::new();
+                for event in [
+                    core::mouse::Event::ButtonPressed(core::mouse::Button::Left),
+                    core::mouse::Event::ButtonReleased(core::mouse::Button::Left),
+                ] {
+                    card.as_widget_mut().update(
+                        &mut tree,
+                        &core::Event::Mouse(event),
+                        Layout::new(&node),
+                        core::mouse::Cursor::Available(point),
+                        &renderer,
+                        &mut core::clipboard::Null,
+                        &mut core::Shell::new(&mut messages),
+                        &Rectangle::with_size(node.size()),
+                    );
+                }
+                assert!(
+                    matches!(messages.as_slice(), [BannerUiMessage::InvokeActionRequested(target, key)] if *target == banner.target() && key == &action.key),
+                    "wrong last-line action: {messages:?}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn rich_banner_keeps_named_action_labels_inside_the_card() {
     let mut banner = banner_view(42, "Before bold / After italic");
     banner.body_segments = vec![
@@ -810,6 +945,7 @@ async fn constrained_surface_defers_rich_card_acknowledgement_until_it_fits() {
     let acknowledged = Arc::new(AtomicBool::new(false));
     queue_banner_ui_presentation(&mut state, 42, acknowledged.clone());
     let banner = &mut state.presentation.banners[0];
+    banner.summary = "Download complete\nReview destination\nOpen document".into();
     banner.body_segments = vec![
         BannerBodySegment::plain_text("Before"),
         BannerBodySegment::Image {
@@ -820,7 +956,7 @@ async fn constrained_surface_defers_rich_card_acknowledgement_until_it_fits() {
     banner.progress = Some(42);
     banner.actions = vec![BannerAction {
         key: "one".into(),
-        label: "First action".into(),
+        label: "Review changes\nand open report\nin the editor".into(),
         icon: None,
     }];
     let renderer = software_renderer().await;
@@ -847,5 +983,23 @@ async fn constrained_surface_defers_rich_card_acknowledgement_until_it_fits() {
     assert!(
         acknowledged.load(Ordering::SeqCst),
         "the fitting frame must acknowledge its presentation"
+    );
+
+    let replacement = Arc::new(AtomicBool::new(false));
+    queue_banner_ui_presentation(&mut state, 42, replacement.clone());
+    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 320.0), &mut tree).await;
+    let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
+        panic!("{actions:?}");
+    };
+    assert_eq!(
+        region_requests(region),
+        vec![
+            (2, vec![0, 0, i32::MAX, i32::MAX]),
+            (1, vec![616, 0, 360, 112])
+        ]
+    );
+    assert!(
+        replacement.load(Ordering::SeqCst),
+        "replacing wrapped content must shrink and acknowledge the new frame"
     );
 }
