@@ -8,7 +8,7 @@ use crate::{
 };
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
@@ -19,6 +19,7 @@ const BODY_IMAGE_VISUAL_HEIGHT: u32 = 48;
 const BODY_PREVIEW_MAX_HEIGHT: u32 = 120;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
+mod display;
 mod icons;
 mod images;
 
@@ -61,21 +62,69 @@ pub(crate) async fn await_banner_renderer(presenter: &dyn BannerPresenter) -> an
 
 #[derive(Clone)]
 pub struct BannerPresentationAcknowledgement {
-    callback: Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>>,
+    // None is a legacy whole-presentation observer; Some targets are independently
+    // consumable display acknowledgements. Callbacks always run outside the lock.
+    callbacks: Arc<Mutex<BTreeMap<Option<BannerTarget>, DisplayCallback>>>,
 }
+
+type DisplayCallback = Box<dyn FnOnce() + Send + 'static>;
 
 impl BannerPresentationAcknowledgement {
     pub fn new(callback: impl FnOnce() + Send + 'static) -> Self {
         Self {
-            callback: Arc::new(Mutex::new(Some(Box::new(callback)))),
+            callbacks: Arc::new(Mutex::new(BTreeMap::from([(
+                None,
+                Box::new(callback) as DisplayCallback,
+            )]))),
         }
     }
 
+    /// Bind display to the captured revisions. Unknown and duplicate targets do nothing.
+    pub fn for_banners(
+        targets: impl IntoIterator<Item = BannerTarget>,
+        callback: impl Fn(BannerTarget) + Send + Sync + 'static,
+    ) -> Self {
+        let callback = Arc::new(callback);
+        let callbacks = targets
+            .into_iter()
+            .map(|target| {
+                let callback = callback.clone();
+                (
+                    Some(target),
+                    Box::new(move || callback(target)) as DisplayCallback,
+                )
+            })
+            .collect();
+        Self {
+            callbacks: Arc::new(Mutex::new(callbacks)),
+        }
+    }
+
+    /// A synchronous presenter may acknowledge all targets after displaying the full projection.
     pub fn acknowledge(self) {
-        let callback = self.callback.lock().unwrap().take();
+        let callbacks = std::mem::take(&mut *self.callbacks.lock().unwrap());
+        for callback in callbacks.into_values() {
+            callback();
+        }
+    }
+
+    pub fn acknowledge_banner(&self, target: BannerTarget) {
+        self.acknowledge_target(Some(target));
+    }
+
+    fn acknowledge_target(&self, target: Option<BannerTarget>) {
+        let callback = self.callbacks.lock().unwrap().remove(&target);
         if let Some(callback) = callback {
             callback();
         }
+    }
+
+    fn is_complete(&self) -> bool {
+        self.callbacks.lock().unwrap().is_empty()
+    }
+
+    fn is_pending(&self, target: BannerTarget) -> bool {
+        self.callbacks.lock().unwrap().contains_key(&Some(target))
     }
 }
 
@@ -199,7 +248,7 @@ impl BannerSurfaceSpec {
 }
 
 /// The content revision captured by a banner widget, preserved through async callbacks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BannerTarget {
     pub notification_id: InternalNotificationId,
     pub revision: i64,
@@ -430,6 +479,10 @@ enum BannerUiMessage {
     Shutdown,
     Runtime(BannerRuntimeInput),
     PresentationFrame(PendingBannerAcknowledgement),
+    BannerFrame {
+        rendered: PendingBannerAcknowledgement,
+        target: BannerTarget,
+    },
     LayoutFrame {
         generation: u64,
         size: iced::Size,
@@ -684,16 +737,11 @@ fn banner_ui_update(
             }
         }
         BannerUiMessage::PresentationFrame(rendered) => {
-            // The event owns the acknowledgement for the frame that actually happened, even
-            // if a replacement arrived before this message was handled.
-            rendered.acknowledgement.acknowledge();
-            if state
-                .pending_acknowledgement
-                .as_ref()
-                .is_some_and(|pending| pending.generation == rendered.generation)
-            {
-                state.pending_acknowledgement = None;
-            }
+            acknowledge_banner_frame(state, rendered, None);
+            iced::Task::none()
+        }
+        BannerUiMessage::BannerFrame { rendered, target } => {
+            acknowledge_banner_frame(state, rendered, Some(target));
             iced::Task::none()
         }
         BannerUiMessage::ActivateRequested(target) => {
@@ -761,6 +809,24 @@ fn banner_ui_update(
             iced::Task::none()
         }
         _ => iced::Task::none(),
+    }
+}
+
+fn acknowledge_banner_frame(
+    state: &mut BannerUiState,
+    rendered: PendingBannerAcknowledgement,
+    target: Option<BannerTarget>,
+) {
+    // A frame owns its captured acknowledgement, including when a newer projection
+    // arrives before dispatch. It must not clear that newer projection's callbacks.
+    rendered.acknowledgement.acknowledge_target(target);
+    if rendered.acknowledgement.is_complete()
+        && state
+            .pending_acknowledgement
+            .as_ref()
+            .is_some_and(|pending| pending.generation == rendered.generation)
+    {
+        state.pending_acknowledgement = None;
     }
 }
 
@@ -1458,7 +1524,8 @@ fn banner_ui_view(
     responsive(move |viewport| {
         // Measure the natural stack independently of the previous surface height.
         // The scrollable also keeps content reachable if the compositor constrains
-        // the requested height. Such a clipped stack is not display-acknowledged.
+        // the requested height. Whole-presentation observers wait for the stack;
+        // each card independently observes its own full visibility below.
         let frame = move |size: iced::Size| BannerUiMessage::LayoutFrame {
             generation: state.presentation_generation,
             size,
@@ -1493,7 +1560,11 @@ fn banner_stack_widget(state: &BannerUiState) -> iced::Element<'_, BannerUiMessa
     for banner in &state.presentation.banners {
         stack = stack.push(
             banner_stack_item_key(banner),
-            notification_banner_widget(banner),
+            display::observe(
+                notification_banner_widget(banner),
+                banner.target(),
+                state.pending_acknowledgement.as_ref(),
+            ),
         );
     }
     if state.presentation.overflow_count > 0 {

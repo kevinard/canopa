@@ -9,8 +9,190 @@ async fn software_renderer() -> iced::Renderer {
         .expect("software renderer")
 }
 
+#[tokio::test]
+async fn fully_visible_card_is_acknowledged_while_a_lower_card_is_clipped() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    state.presentation =
+        BannerPresentation::visible_banners(vec![banner_view(1, "Upper"), banner_view(2, "Lower")]);
+    let targets: Vec<_> = state
+        .presentation
+        .banners
+        .iter()
+        .map(BannerView::target)
+        .collect();
+    let displayed = Arc::new(Mutex::new(Vec::new()));
+    let observed = displayed.clone();
+    state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
+        generation: 0,
+        acknowledgement: BannerPresentationAcknowledgement::for_banners(
+            targets.clone(),
+            move |target| {
+                observed.lock().unwrap().push(target);
+            },
+        ),
+    });
+    let mut tree = Tree::empty();
+    for message in frame_messages_in_tree(&state, &renderer, Size::new(360.0, 110.0), &mut tree) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert!(
+        displayed.lock().unwrap().is_empty(),
+        "a card clipped beyond scroll-rounding tolerance must wait"
+    );
+    for message in frame_messages_in_tree(&state, &renderer, Size::new(360.0, 120.0), &mut tree) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert_eq!(
+        *displayed.lock().unwrap(),
+        vec![targets[0]],
+        "the upper card must not wait for the clipped lower card"
+    );
+    assert!(state.pending_acknowledgement.is_some());
+    for message in frame_messages_in_tree(&state, &renderer, Size::new(360.0, 240.0), &mut tree) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert_eq!(
+        *displayed.lock().unwrap(),
+        targets,
+        "each card reports first display once"
+    );
+    assert!(state.pending_acknowledgement.is_none());
+}
+
 #[derive(Default, Debug)]
 struct TextBounds(Vec<(String, Rectangle)>);
+
+#[tokio::test]
+async fn queued_card_frames_cannot_acknowledge_replacement_content() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    let displayed = Arc::new(Mutex::new(Vec::new()));
+    let mut tree = Tree::empty();
+    let viewport = Size::new(360.0, 240.0);
+    let mut frames = Vec::new();
+    for revision in [1, 2] {
+        let mut banner = banner_view(42, "Replaced");
+        banner.revision = revision;
+        let observed = displayed.clone();
+        let acknowledgement =
+            BannerPresentationAcknowledgement::for_banners([banner.target()], move |target| {
+                observed.lock().unwrap().push(target)
+            });
+        let _ = banner_ui_update(
+            &mut state,
+            BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
+                presentation: BannerPresentation::visible_banners(vec![banner]),
+                acknowledgement,
+            }),
+        );
+        frames.push(frame_messages_in_tree(
+            &state, &renderer, viewport, &mut tree,
+        ));
+    }
+    for message in frames.remove(0) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert_eq!(
+        *displayed.lock().unwrap(),
+        vec![BannerTarget {
+            notification_id: InternalNotificationId::new(42).unwrap(),
+            revision: 1
+        }]
+    );
+    assert!(
+        state.pending_acknowledgement.is_some(),
+        "the new frame remains pending"
+    );
+    for message in frames.remove(0) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert_eq!(
+        *displayed.lock().unwrap(),
+        vec![
+            BannerTarget {
+                notification_id: InternalNotificationId::new(42).unwrap(),
+                revision: 1
+            },
+            BannerTarget {
+                notification_id: InternalNotificationId::new(42).unwrap(),
+                revision: 2
+            },
+        ]
+    );
+    assert!(state.pending_acknowledgement.is_none());
+}
+
+#[tokio::test]
+async fn display_observer_preserves_action_clicks_across_view_rebuilds() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    let mut banner = banner_view(42, "Action card");
+    banner.actions = vec![BannerAction {
+        key: "reply".into(),
+        label: "Reply".into(),
+        icon: None,
+    }];
+    let target = banner.target();
+    state.presentation = BannerPresentation::visible_banners(vec![banner]);
+    state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
+        generation: 0,
+        acknowledgement: BannerPresentationAcknowledgement::for_banners([target], |_| {}),
+    });
+    let viewport = Size::new(360.0, 240.0);
+    let mut tree = Tree::empty();
+    let position = {
+        let mut view = banner_ui_view(&state, iced::window::Id::unique());
+        tree.diff(view.as_widget());
+        let node = view.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &core::layout::Limits::new(Size::ZERO, viewport),
+        );
+        let mut labels = TextBounds::default();
+        view.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut labels);
+        labels
+            .0
+            .iter()
+            .find(|(text, _)| text == "Reply")
+            .unwrap()
+            .1
+            .center()
+    };
+    assert!(
+        event_messages_in_tree(
+            &state,
+            &renderer,
+            viewport,
+            &mut tree,
+            core::Event::Mouse(core::mouse::Event::ButtonPressed(core::mouse::Button::Left)),
+            core::mouse::Cursor::Available(position)
+        )
+        .is_empty()
+    );
+    // Consume the first display between press and release. Its removal must not
+    // discard the button's pressed state on the next view rebuild.
+    for message in frame_messages_in_tree(&state, &renderer, viewport, &mut tree) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert!(state.pending_acknowledgement.is_none());
+    let messages = event_messages_in_tree(
+        &state,
+        &renderer,
+        viewport,
+        &mut tree,
+        core::Event::Mouse(core::mouse::Event::ButtonReleased(
+            core::mouse::Button::Left,
+        )),
+        core::mouse::Cursor::Available(position),
+    );
+    assert!(
+        matches!(messages.as_slice(), [BannerUiMessage::InvokeActionRequested(actual, key)]
+        if *actual == target && key == "reply"),
+        "wrong action hit result: {messages:?}"
+    );
+}
 
 impl Operation for TextBounds {
     fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation)) {
@@ -214,6 +396,26 @@ fn frame_messages_in_tree(
     viewport: Size,
     tree: &mut Tree,
 ) -> Vec<BannerUiMessage> {
+    event_messages_in_tree(
+        state,
+        renderer,
+        viewport,
+        tree,
+        core::Event::Window(core::window::Event::RedrawRequested(
+            core::time::Instant::now(),
+        )),
+        core::mouse::Cursor::Unavailable,
+    )
+}
+
+fn event_messages_in_tree(
+    state: &BannerUiState,
+    renderer: &iced::Renderer,
+    viewport: Size,
+    tree: &mut Tree,
+    event: core::Event,
+    cursor: core::mouse::Cursor,
+) -> Vec<BannerUiMessage> {
     let mut view = banner_ui_view(state, iced::window::Id::unique());
     tree.diff(view.as_widget());
     let node = view.as_widget_mut().layout(
@@ -224,17 +426,99 @@ fn frame_messages_in_tree(
     let mut messages = Vec::new();
     view.as_widget_mut().update(
         tree,
-        &core::Event::Window(core::window::Event::RedrawRequested(
-            core::time::Instant::now(),
-        )),
+        &event,
         Layout::new(&node),
-        core::mouse::Cursor::Unavailable,
+        cursor,
         renderer,
         &mut core::clipboard::Null,
         &mut core::Shell::new(&mut messages),
         &Rectangle::with_size(viewport),
     );
     messages
+}
+
+#[tokio::test]
+async fn scrolling_reveals_a_pending_card_without_restarting_already_displayed_cards() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    state.presentation =
+        BannerPresentation::visible_banners(vec![banner_view(1, "Upper"), banner_view(2, "Lower")]);
+    let targets: Vec<_> = state
+        .presentation
+        .banners
+        .iter()
+        .map(BannerView::target)
+        .collect();
+    let displayed = Arc::new(Mutex::new(Vec::new()));
+    let observed = displayed.clone();
+    state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
+        generation: 0,
+        acknowledgement: BannerPresentationAcknowledgement::for_banners(
+            targets.clone(),
+            move |target| {
+                observed.lock().unwrap().push(target);
+            },
+        ),
+    });
+    let viewport = Size::new(360.0, 120.0);
+    let mut tree = Tree::empty();
+    for message in frame_messages_in_tree(&state, &renderer, viewport, &mut tree) {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    for wheel in [-20.0, 20.0, -20.0] {
+        for message in event_messages_in_tree(
+            &state,
+            &renderer,
+            viewport,
+            &mut tree,
+            core::Event::Mouse(core::mouse::Event::WheelScrolled {
+                delta: core::mouse::ScrollDelta::Lines { x: 0.0, y: wheel },
+            }),
+            core::mouse::Cursor::Available(core::Point::new(355.0, 110.0)),
+        ) {
+            let _ = banner_ui_update(&mut state, message);
+        }
+        for message in frame_messages_in_tree(&state, &renderer, viewport, &mut tree) {
+            let _ = banner_ui_update(&mut state, message);
+        }
+        let mut view = banner_ui_view(&state, iced::window::Id::unique());
+        tree.diff(view.as_widget());
+        let node = view.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &core::layout::Limits::new(Size::ZERO, viewport),
+        );
+        let mut scroll = ScrollBounds::default();
+        view.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut scroll);
+        assert_eq!(
+            scroll.0[0].2.y > 0.0,
+            wheel < 0.0,
+            "outer scroll geometry: {:?}",
+            scroll.0
+        );
+    }
+    assert_eq!(
+        *displayed.lock().unwrap(),
+        targets,
+        "scrolling must reveal lower content without acknowledging either card twice"
+    );
+    assert!(state.pending_acknowledgement.is_none());
+    // Clearing the pending acknowledgement must not rebuild the scrollable tree.
+    let mut view = banner_ui_view(&state, iced::window::Id::unique());
+    tree.diff(view.as_widget());
+    let node = view.as_widget_mut().layout(
+        &mut tree,
+        &renderer,
+        &core::layout::Limits::new(Size::ZERO, viewport),
+    );
+    let mut scroll = ScrollBounds::default();
+    view.as_widget_mut()
+        .operate(&mut tree, Layout::new(&node), &renderer, &mut scroll);
+    assert!(
+        scroll.0[0].2.y > 0.0,
+        "finishing acknowledgement must preserve the user's scroll position"
+    );
 }
 
 #[tokio::test]

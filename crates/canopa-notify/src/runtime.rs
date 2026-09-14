@@ -20,7 +20,7 @@ use crate::lifecycle::{
 };
 use crate::presentation::{
     BannerInteraction, BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter,
-    BannerView, NotificationBannerState, PresentationCoordinator,
+    BannerTarget, BannerView, NotificationBannerState, PresentationCoordinator,
 };
 use crate::runtime_resources::RuntimeResources;
 use crate::runtime_timeouts::RuntimeTimeouts;
@@ -831,9 +831,20 @@ impl NotificationRuntime {
         let presented_timeout_revisions: Vec<_> =
             self.timeouts.lock().unwrap().pending_in(&visible_revisions);
         let runtime = self.clone();
-        let acknowledgement = BannerPresentationAcknowledgement::new(move || {
-            runtime.start_timeouts_for_presented_revisions(presented_timeout_revisions);
-        });
+        let acknowledgement = BannerPresentationAcknowledgement::for_banners(
+            presented_timeout_revisions
+                .into_iter()
+                .map(|(notification_id, revision)| BannerTarget {
+                    notification_id,
+                    revision,
+                }),
+            move |target| {
+                runtime.start_timeouts_for_presented_revisions([(
+                    target.notification_id,
+                    target.revision,
+                )])
+            },
+        );
         self.presentation
             .replace_banner_presentation_with_acknowledgement(presentation, acknowledgement)
     }

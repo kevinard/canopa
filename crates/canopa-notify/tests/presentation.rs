@@ -1240,6 +1240,7 @@ async fn delayed_display_acknowledgement_cannot_start_a_cancelled_revisions_time
         ..notification("Mail", "Original")
     };
     let receipt = daemon.receive_notification(input.clone()).await.unwrap();
+    let original_target = presenter.updates.lock().unwrap().last().unwrap().banners[0].target();
     daemon
         .receive_notification(NotificationInput {
             replaces_id: Some(receipt.notification_id),
@@ -1248,6 +1249,7 @@ async fn delayed_display_acknowledgement_cannot_start_a_cancelled_revisions_time
         })
         .await
         .unwrap();
+    presenter.acknowledgements.lock().unwrap()[0].acknowledge_banner(original_target);
     presenter.acknowledge_oldest();
     assert_active_without_sender_close_after(
         &daemon,
@@ -1375,6 +1377,102 @@ async fn latest_queued_presentation_starts_all_visible_notification_timeouts() {
             .unwrap();
         assert_eq!(thread.status.as_str(), "expired");
     }
+}
+
+#[tokio::test]
+async fn a_displayed_card_expires_without_starting_a_clipped_cards_timeout() {
+    let temp = tempfile::tempdir().unwrap();
+    let presenter = DelayedAcknowledgementPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+    let lower = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(20),
+            ..notification("Calendar", "Clipped lower card")
+        })
+        .await
+        .unwrap();
+    let upper = daemon
+        .receive_notification(NotificationInput {
+            expire_timeout: NotificationTimeout::Milliseconds(20),
+            ..notification("Calendar", "Fully visible upper card")
+        })
+        .await
+        .unwrap();
+    let targets: Vec<_> = presenter
+        .updates
+        .lock()
+        .unwrap()
+        .last()
+        .unwrap()
+        .banners
+        .iter()
+        .map(BannerView::target)
+        .collect();
+    let upper_target = *targets
+        .iter()
+        .find(|target| target.notification_id == upper.notification_id)
+        .unwrap();
+    let lower_target = *targets
+        .iter()
+        .find(|target| target.notification_id == lower.notification_id)
+        .unwrap();
+    let frame = presenter
+        .acknowledgements
+        .lock()
+        .unwrap()
+        .last()
+        .unwrap()
+        .clone();
+    let mut events = daemon.subscribe_sender_events();
+    frame.acknowledge_banner(canopa_notify::BannerTarget {
+        revision: upper_target.revision + 1,
+        ..upper_target
+    });
+    assert_active_without_sender_close_after(
+        &daemon,
+        upper.notification_id,
+        Duration::from_millis(60),
+    )
+    .await;
+    frame.acknowledge_banner(upper_target);
+    frame.acknowledge_banner(upper_target);
+    let expired = tokio::time::timeout(Duration::from_secs(2), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        expired,
+        SenderEvent::NotificationClosed {
+            notification_id: upper.notification_id,
+            reason: canopa_notify::SenderCloseReason::Expired,
+        }
+    );
+    assert_active_without_sender_close_after(
+        &daemon,
+        lower.notification_id,
+        Duration::from_millis(60),
+    )
+    .await;
+    frame.acknowledge_banner(lower_target);
+    let expired = tokio::time::timeout(Duration::from_secs(2), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        expired,
+        SenderEvent::NotificationClosed {
+            notification_id: lower.notification_id,
+            reason: canopa_notify::SenderCloseReason::Expired,
+        }
+    );
+    frame.acknowledge_banner(lower_target);
+    frame.acknowledge();
+    assert_eq!(daemon.sender_events().await.len(), 2);
 }
 
 #[tokio::test]
