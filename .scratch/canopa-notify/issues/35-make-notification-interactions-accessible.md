@@ -24,3 +24,7 @@ Make Notification Banner and Notification Center interactions expose meaningful 
 ## Blocked by
 
 None - can start immediately.
+
+## Comments
+
+2026-09-14: The [Center keyboard continuation](../../freedesktop-completion-review/CENTER-KEYBOARD-EVIDENCE.md) establishes partial real-host keyboard behavior and records a concrete blocker for assistive technology. The pinned Iced widget and layer-shell stack has no implemented semantic-tree/platform bridge. Visible names and provider labels must not be counted as accessible names/roles/states or an announcement policy. A supported bridge and full-session screen-reader verification remain required; no acceptance boxes are closed by this partial keyboard work.
