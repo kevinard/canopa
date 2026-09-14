@@ -16,8 +16,7 @@ use std::sync::{Arc, Mutex, OnceLock, mpsc};
 const APP_ICON_VISUAL_SIZE: u16 = 34;
 const NOTIFICATION_IMAGE_VISUAL_SIZE: u16 = 58;
 const BODY_IMAGE_VISUAL_HEIGHT: u32 = 48;
-const BODY_CONTENT_TEXT_HEIGHT: u32 = 34;
-const BODY_CONTENT_RICH_HEIGHT: u32 = 70;
+const BODY_PREVIEW_MAX_HEIGHT: u32 = 120;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
 mod icons;
@@ -414,13 +413,6 @@ struct PendingBannerAcknowledgement {
     acknowledgement: BannerPresentationAcknowledgement,
 }
 
-impl std::hash::Hash for PendingBannerAcknowledgement {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Each UI generation has one acknowledgement; the generation identifies its subscription.
-        std::hash::Hash::hash(&self.generation, state);
-    }
-}
-
 #[derive(Clone)]
 struct BannerUiState {
     runtime_id: u64,
@@ -438,6 +430,12 @@ enum BannerUiMessage {
     Shutdown,
     Runtime(BannerRuntimeInput),
     PresentationFrame(PendingBannerAcknowledgement),
+    LayoutFrame {
+        generation: u64,
+        size: iced::Size,
+        viewport: iced::Size,
+        rendered: Option<PendingBannerAcknowledgement>,
+    },
     ActivateRequested(BannerTarget),
     Activate {
         target: BannerTarget,
@@ -597,7 +595,7 @@ fn run_banner_ui(
             presentation: BannerPresentation::default(),
             presentation_generation: 0,
             pending_acknowledgement: None,
-            surface_size: banner_surface_size(0, 0),
+            surface_size: (360, 1),
             interactions: interactions.clone(),
             renderer_state: renderer_state.clone(),
         },
@@ -623,17 +621,9 @@ fn banner_ui_subscription(state: &BannerUiState) -> iced::Subscription<BannerUiM
     } else {
         iced::Subscription::none()
     };
-    let presentation_frames = if let Some(pending) = &state.pending_acknowledgement {
-        iced::window::frames()
-            .with(pending.clone())
-            .map(|(pending, _)| BannerUiMessage::PresentationFrame(pending))
-    } else {
-        iced::Subscription::none()
-    };
     iced::Subscription::batch([
         readiness,
         iced::Subscription::run_with(state.runtime_id, banner_update_stream),
-        presentation_frames,
     ])
 }
 
@@ -658,7 +648,6 @@ fn banner_ui_update(
             presentation,
             acknowledgement,
         }) => {
-            let size = banner_surface_resize(&mut state.surface_size, &presentation);
             state.presentation = presentation;
             state.presentation_generation = state
                 .presentation_generation
@@ -668,9 +657,30 @@ fn banner_ui_update(
                 generation: state.presentation_generation,
                 acknowledgement,
             });
-            match size {
-                Some(size) => iced::Task::done(BannerUiMessage::SizeChange(size)),
-                None => iced::Task::none(),
+            iced::Task::none()
+        }
+        BannerUiMessage::LayoutFrame {
+            generation,
+            size,
+            viewport,
+            rendered,
+        } => {
+            if let Some(rendered) = rendered {
+                let _ = banner_ui_update(state, BannerUiMessage::PresentationFrame(rendered));
+            }
+            if generation != state.presentation_generation {
+                return iced::Task::none();
+            }
+            let next_size = (360, (size.height.ceil() as u32).max(1));
+            // A delayed layer-shell task can apply an older size after a newer one.
+            // Reconcile the actual viewport, not only the last requested dimensions.
+            if state.surface_size == next_size
+                && viewport == iced::Size::new(next_size.0 as f32, next_size.1 as f32)
+            {
+                iced::Task::none()
+            } else {
+                state.surface_size = next_size;
+                iced::Task::done(BannerUiMessage::SizeChange(next_size))
             }
         }
         BannerUiMessage::PresentationFrame(rendered) => {
@@ -801,6 +811,7 @@ mod tests {
 
     mod icons;
     mod images;
+    mod layout;
 
     // Renderer-consumer fixtures already supply the running consumer themselves.
     fn test_presenter(updates: BannerUpdateSender) -> IcedLayerShellBannerPresenter {
@@ -1078,7 +1089,7 @@ mod tests {
             presentation: BannerPresentation::default(),
             presentation_generation: 0,
             pending_acknowledgement: None,
-            surface_size: banner_surface_size(0, 0),
+            surface_size: (360, 1),
             interactions,
             renderer_state: tokio::sync::watch::channel(BannerRendererState::Starting).0,
         }
@@ -1360,15 +1371,6 @@ mod tests {
     }
 
     #[test]
-    fn same_size_banner_replacement_does_not_request_layer_shell_resize() {
-        let mut current_size = banner_surface_size(1, 0);
-        let replacement = BannerPresentation::visible_banners(vec![banner_view(42, "Complete")]);
-
-        assert_eq!(banner_surface_resize(&mut current_size, &replacement), None);
-        assert_eq!(current_size, banner_surface_size(1, 0));
-    }
-
-    #[test]
     fn banner_stack_identity_uses_notification_id() {
         let first = banner_view(42, "Starting");
         let replacement = banner_view(42, "Complete");
@@ -1450,11 +1452,42 @@ fn banner_ui_view(
     state: &BannerUiState,
     _window: iced::window::Id,
 ) -> iced::Element<'_, BannerUiMessage> {
+    use iced::Length;
+    use iced::widget::{responsive, scrollable, sensor};
+
+    responsive(move |viewport| {
+        // Measure the natural stack independently of the previous surface height.
+        // The scrollable also keeps content reachable if the compositor constrains
+        // the requested height. Such a clipped stack is not display-acknowledged.
+        let frame = move |size: iced::Size| BannerUiMessage::LayoutFrame {
+            generation: state.presentation_generation,
+            size,
+            viewport,
+            rendered: (size.width <= viewport.width && size.height <= viewport.height)
+                .then(|| state.pending_acknowledgement.clone())
+                .flatten(),
+        };
+        let measured = sensor(banner_stack_widget(state))
+            .key((state.presentation_generation, viewport))
+            // Sensor keys retrigger on_show, not an on_resize-only subscription.
+            // Measure even when scrolling has moved both stack edges out of view.
+            .anticipate(f32::INFINITY)
+            .on_show(frame)
+            .on_resize(frame);
+        scrollable(measured)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    })
+    .into()
+}
+
+fn banner_stack_widget(state: &BannerUiState) -> iced::Element<'_, BannerUiMessage> {
     use iced::widget::{container, keyed_column};
     use iced::{Alignment, Length};
 
     let mut stack = keyed_column![]
-        .spacing(8)
+        .spacing(BANNER_STACK_SPACING)
         .width(Length::Fill)
         .align_items(Alignment::End);
     for banner in &state.presentation.banners {
@@ -1538,7 +1571,7 @@ fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUi
     container(card)
         .padding(10)
         .width(Length::Fill)
-        .height(FULL_BANNER_HEIGHT)
+        .height(Length::Shrink)
         .clip(true)
         .style(card_container_style)
         .into()
@@ -1591,16 +1624,17 @@ fn banner_action_content(action: &BannerAction) -> iced::Element<'_, BannerUiMes
 
 fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
     use iced::Length;
-    use iced::widget::{column, container, text};
+    use iced::widget::{column, text};
 
     if banner.body_segments.is_empty() {
-        return text(&banner.body)
-            .size(13)
-            .width(Length::Fill)
-            .height(BODY_CONTENT_TEXT_HEIGHT)
-            .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
-            .style(subdued_text_style)
-            .into();
+        return body_preview(
+            text(&banner.body)
+                .size(13)
+                .width(Length::Fill)
+                .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
+                .style(subdued_text_style)
+                .into(),
+        );
     }
 
     if !banner
@@ -1608,16 +1642,12 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
         .iter()
         .any(|segment| matches!(segment, BannerBodySegment::Image { .. }))
     {
-        return banner_body_text_widget(
-            banner_body_text_runs(&banner.body_segments),
-            BODY_CONTENT_TEXT_HEIGHT,
-        );
+        return body_preview(banner_body_text_widget(banner_body_text_runs(
+            &banner.body_segments,
+        )));
     }
 
-    let mut body = column![]
-        .spacing(4)
-        .width(Length::Fill)
-        .height(BODY_CONTENT_RICH_HEIGHT);
+    let mut body = column![].spacing(4).width(Length::Fill);
     let mut pending_text = Vec::new();
 
     for segment in &banner.body_segments {
@@ -1627,10 +1657,7 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
             }
             BannerBodySegment::Image { image } => {
                 if !pending_text.is_empty() {
-                    body = body.push(banner_body_text_widget(
-                        std::mem::take(&mut pending_text),
-                        BODY_CONTENT_TEXT_HEIGHT,
-                    ));
+                    body = body.push(banner_body_text_widget(std::mem::take(&mut pending_text)));
                 }
                 body = body.push(body_image_visual(image));
             }
@@ -1638,16 +1665,20 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
     }
 
     if !pending_text.is_empty() {
-        body = body.push(banner_body_text_widget(
-            pending_text,
-            BODY_CONTENT_TEXT_HEIGHT,
-        ));
+        body = body.push(banner_body_text_widget(pending_text));
     }
 
-    container(body)
+    body_preview(body.into())
+}
+
+fn body_preview(body: iced::Element<'_, BannerUiMessage>) -> iced::Element<'_, BannerUiMessage> {
+    use iced::Length;
+    use iced::widget::{container, scrollable};
+
+    // Only body content scrolls. The app name, actions and progress keep their space.
+    container(scrollable(body).width(Length::Fill))
         .width(Length::Fill)
-        .height(BODY_CONTENT_RICH_HEIGHT)
-        .clip(true)
+        .max_height(BODY_PREVIEW_MAX_HEIGHT)
         .into()
 }
 
@@ -1665,7 +1696,6 @@ fn banner_body_text_runs(segments: &[BannerBodySegment]) -> Vec<NotificationBody
 
 fn banner_body_text_widget(
     runs: Vec<NotificationBodyRun>,
-    height: u32,
 ) -> iced::Element<'static, BannerUiMessage> {
     use iced::widget::{rich_text, span};
     use iced::{Font, Length, font};
@@ -1699,7 +1729,6 @@ fn banner_body_text_widget(
     rich_text(spans)
         .size(13)
         .width(Length::Fill)
-        .height(height)
         .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
         .style(subdued_text_style)
         .into()
@@ -2048,38 +2077,8 @@ fn banner_ui_style(_state: &BannerUiState, theme: &iced::Theme) -> iced::theme::
     }
 }
 
-const FULL_BANNER_HEIGHT: u32 = 140;
 const DENSE_BANNER_HEIGHT: u32 = 60;
 const BANNER_STACK_SPACING: u32 = 8;
-
-fn banner_surface_size(count: usize, overflow_count: usize) -> (u32, u32) {
-    if count == 0 && overflow_count == 0 {
-        (1, 1)
-    } else {
-        let count = count.min(3) as u32;
-        let mut height =
-            count * FULL_BANNER_HEIGHT + count.saturating_sub(1) * BANNER_STACK_SPACING;
-        if overflow_count > 0 {
-            let spacing = if count > 0 { BANNER_STACK_SPACING } else { 0 };
-            height += spacing + DENSE_BANNER_HEIGHT;
-        }
-
-        (360, height.max(FULL_BANNER_HEIGHT))
-    }
-}
-
-fn banner_surface_resize(
-    current_size: &mut (u32, u32),
-    presentation: &BannerPresentation,
-) -> Option<(u32, u32)> {
-    let next_size = banner_surface_size(presentation.banners.len(), presentation.overflow_count);
-    if *current_size == next_size {
-        None
-    } else {
-        *current_size = next_size;
-        Some(next_size)
-    }
-}
 
 #[derive(Clone, Default)]
 pub struct NoopBannerPresenter;
