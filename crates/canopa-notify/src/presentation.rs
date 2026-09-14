@@ -25,6 +25,7 @@ const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration
 mod display;
 mod icons;
 mod images;
+mod surface;
 
 /// Renderer-owned lifecycle, independent of notification receipt or display acknowledgements.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -347,7 +348,7 @@ impl IcedLayerShellBannerPresenter {
             keyboard_interactivity: match spec.keyboard_interactivity {
                 BannerKeyboardInteractivity::None => KeyboardInteractivity::None,
             },
-            start_mode: StartMode::Active,
+            start_mode: StartMode::Background,
             events_transparent: true,
         }
     }
@@ -471,6 +472,7 @@ type BannerInputRegion = Arc<Mutex<Option<iced::Rectangle<i32>>>>;
 
 #[derive(Clone)]
 struct BannerUiState {
+    surface: surface::Surface,
     runtime_id: u64,
     presentation: BannerPresentation,
     presentation_generation: u64,
@@ -482,7 +484,10 @@ struct BannerUiState {
 
 #[derive(Clone, Debug)]
 enum BannerUiMessage {
-    RendererReady,
+    WindowFrame(iced::window::Id),
+    WindowClosed(iced::window::Id),
+    WindowTimedOut(iced::window::Id),
+    OpenSurface(iced::window::Id),
     Shutdown,
     Runtime(BannerRuntimeInput),
     PresentationFrame(PendingBannerAcknowledgement),
@@ -491,6 +496,7 @@ enum BannerUiMessage {
         target: BannerTarget,
     },
     LayoutFrame {
+        window: iced::window::Id,
         generation: u64,
         size: iced::Size,
         viewport: iced::Size,
@@ -524,6 +530,28 @@ impl TryInto<iced_layershell::actions::LayerShellCustomActionWithId> for BannerU
         use iced_layershell::actions::{LayerShellCustomAction, LayerShellCustomActionWithId};
 
         match self {
+            Self::OpenSurface(id) => {
+                let settings = IcedLayerShellBannerPresenter::layer_shell_settings(
+                    BannerSurfaceSpec::notification_banner(),
+                );
+                Ok(LayerShellCustomActionWithId::new(
+                    None,
+                    LayerShellCustomAction::NewLayerShell {
+                        id,
+                        settings: iced_layershell::reexport::NewLayerShellSettings {
+                            size: settings.size,
+                            layer: settings.layer,
+                            anchor: settings.anchor,
+                            exclusive_zone: Some(settings.exclusive_zone),
+                            margin: Some(settings.margin),
+                            keyboard_interactivity: settings.keyboard_interactivity,
+                            output_option: iced_layershell::reexport::OutputOption::Compositor,
+                            events_transparent: true,
+                            namespace: Some("canopa-notify-banners".into()),
+                        },
+                    },
+                ))
+            }
             Self::RequestActivationToken {
                 app_identity,
                 callback,
@@ -662,14 +690,20 @@ fn run_banner_ui(
 
     iced_layershell::disable_clipboard();
     iced_layershell::daemon(
-        move || BannerUiState {
-            runtime_id,
-            presentation: BannerPresentation::default(),
-            presentation_generation: 0,
-            pending_acknowledgement: None,
-            input_region: Default::default(),
-            interactions: interactions.clone(),
-            renderer_state: renderer_state.clone(),
+        move || {
+            let mut state = BannerUiState {
+                surface: surface::Surface::new(),
+                runtime_id,
+                presentation: BannerPresentation::default(),
+                presentation_generation: 0,
+                pending_acknowledgement: None,
+                input_region: Default::default(),
+                interactions: interactions.clone(),
+                renderer_state: renderer_state.clone(),
+            };
+            let window = state.surface.window().unwrap();
+            let task = open_banner_surface(&mut state.surface, window);
+            (state, task)
         },
         || "Canopa Notify Notification Banners".to_string(),
         banner_ui_update,
@@ -688,13 +722,19 @@ fn run_banner_ui(
 }
 
 fn banner_ui_subscription(state: &BannerUiState) -> iced::Subscription<BannerUiMessage> {
-    let readiness = if *state.renderer_state.borrow() == BannerRendererState::Starting {
-        iced::window::frames().map(|_| BannerUiMessage::RendererReady)
+    let readiness = if state.surface.awaiting_frame() {
+        iced::event::listen_raw(|event, _, id| match event {
+            iced::Event::Window(iced::window::Event::RedrawRequested(_)) => {
+                Some(BannerUiMessage::WindowFrame(id))
+            }
+            _ => None,
+        })
     } else {
         iced::Subscription::none()
     };
     iced::Subscription::batch([
         readiness,
+        iced::window::close_events().map(BannerUiMessage::WindowClosed),
         iced::Subscription::run_with(state.runtime_id, banner_update_stream),
     ])
 }
@@ -705,16 +745,21 @@ fn banner_ui_update(
 ) -> iced::Task<BannerUiMessage> {
     match message {
         BannerUiMessage::Shutdown => iced::exit(),
-        BannerUiMessage::RendererReady => {
-            state.renderer_state.send_if_modified(|value| {
-                if *value == BannerRendererState::Starting {
-                    *value = BannerRendererState::Ready;
-                    true
-                } else {
-                    false
-                }
-            });
-            iced::Task::none()
+        BannerUiMessage::WindowFrame(window) => {
+            let effects = state
+                .surface
+                .redraw(window, !state.presentation.banners.is_empty());
+            apply_surface_effects(state, effects)
+        }
+        BannerUiMessage::WindowClosed(window) => {
+            let effects = state
+                .surface
+                .closed(window, !state.presentation.banners.is_empty());
+            apply_surface_effects(state, effects)
+        }
+        BannerUiMessage::WindowTimedOut(window) => {
+            let effects = state.surface.timed_out(window);
+            apply_surface_effects(state, effects)
         }
         BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
             presentation,
@@ -729,9 +774,13 @@ fn banner_ui_update(
                 generation: state.presentation_generation,
                 acknowledgement,
             });
-            iced::Task::none()
+            let effects = state
+                .surface
+                .content_changed(!state.presentation.banners.is_empty());
+            apply_surface_effects(state, effects)
         }
         BannerUiMessage::LayoutFrame {
+            window,
             generation,
             size,
             viewport,
@@ -740,7 +789,7 @@ fn banner_ui_update(
             if let Some(rendered) = rendered {
                 let _ = banner_ui_update(state, BannerUiMessage::PresentationFrame(rendered));
             }
-            if generation != state.presentation_generation {
+            if generation != state.presentation_generation || !state.surface.displays(window) {
                 return iced::Task::none();
             }
             let width = size.width.min(viewport.width);
@@ -835,6 +884,56 @@ fn banner_ui_update(
     }
 }
 
+fn open_banner_surface(
+    surface: &mut surface::Surface,
+    window: iced::window::Id,
+) -> iced::Task<BannerUiMessage> {
+    // Construct the timer while entered into the daemon Tokio runtime. Iced may
+    // poll this future from its separate thread-pool executor.
+    let deadline = tokio::time::sleep(RENDERER_STARTUP_TIMEOUT);
+    let (deadline, handle) =
+        iced::Task::perform(deadline, move |_| BannerUiMessage::WindowTimedOut(window)).abortable();
+    surface.watch_deadline(handle);
+    iced::Task::batch([
+        iced::Task::done(BannerUiMessage::OpenSurface(window)),
+        deadline,
+    ])
+}
+
+fn apply_surface_effects(
+    state: &mut BannerUiState,
+    effects: Vec<surface::Effect>,
+) -> iced::Task<BannerUiMessage> {
+    iced::Task::batch(effects.into_iter().map(|effect| match effect {
+        surface::Effect::Open(window) => {
+            *state.input_region.lock().unwrap() = None;
+            open_banner_surface(&mut state.surface, window)
+        }
+        surface::Effect::Close(window) => {
+            *state.input_region.lock().unwrap() = None;
+            iced::window::close(window)
+        }
+        surface::Effect::Ready => {
+            state.renderer_state.send_if_modified(|value| {
+                if *value == BannerRendererState::Starting {
+                    *value = BannerRendererState::Ready;
+                    true
+                } else {
+                    false
+                }
+            });
+            iced::Task::none()
+        }
+        surface::Effect::Stop => {
+            *state.input_region.lock().unwrap() = None;
+            state
+                .renderer_state
+                .send_replace(BannerRendererState::Stopped);
+            iced::exit()
+        }
+    }))
+}
+
 fn acknowledge_banner_frame(
     state: &mut BannerUiState,
     rendered: PendingBannerAcknowledgement,
@@ -901,6 +1000,7 @@ mod tests {
     mod icons;
     mod images;
     mod layout;
+    mod surfaces;
 
     // Renderer-consumer fixtures already supply the running consumer themselves.
     fn test_presenter(updates: BannerUpdateSender) -> IcedLayerShellBannerPresenter {
@@ -956,7 +1056,8 @@ mod tests {
             IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, renderer_state| {
                 let mut ui = banner_ui_test_state();
                 ui.renderer_state = renderer_state;
-                let _task = banner_ui_update(&mut ui, BannerUiMessage::RendererReady);
+                let window = ui.surface.window().unwrap();
+                let _task = banner_ui_update(&mut ui, BannerUiMessage::WindowFrame(window));
                 let _ = exit_requested.recv_timeout(Duration::from_secs(5));
                 Ok(())
             })
@@ -1041,7 +1142,8 @@ mod tests {
                 let _ = released.recv_timeout(Duration::from_secs(5));
                 let mut ui = banner_ui_test_state();
                 ui.renderer_state = renderer_state;
-                let _task = banner_ui_update(&mut ui, BannerUiMessage::RendererReady);
+                let window = ui.surface.window().unwrap();
+                let _task = banner_ui_update(&mut ui, BannerUiMessage::WindowFrame(window));
                 let _ = late_state.send(*ui.renderer_state.borrow());
                 Ok(())
             })
@@ -1147,7 +1249,8 @@ mod tests {
                 {
                     let mut ui = banner_ui_test_state();
                     ui.renderer_state = renderer_state;
-                    let _task = banner_ui_update(&mut ui, BannerUiMessage::RendererReady);
+                    let window = ui.surface.window().unwrap();
+                    let _task = banner_ui_update(&mut ui, BannerUiMessage::WindowFrame(window));
                     let _ = exit_requested.recv_timeout(Duration::from_secs(15));
                 }
                 Ok(())
@@ -1174,6 +1277,7 @@ mod tests {
     fn banner_ui_test_state() -> BannerUiState {
         let (interactions, _interaction_receiver) = mpsc::channel();
         BannerUiState {
+            surface: surface::Surface::new(),
             runtime_id: 0,
             presentation: BannerPresentation::default(),
             presentation_generation: 0,
@@ -1539,16 +1643,21 @@ mod tests {
 
 fn banner_ui_view(
     state: &BannerUiState,
-    _window: iced::window::Id,
+    window: iced::window::Id,
 ) -> iced::Element<'_, BannerUiMessage> {
     use iced::Length;
     use iced::widget::{container, responsive, scrollable, sensor};
+
+    if !state.surface.displays(window) {
+        return iced::widget::Space::new().into();
+    }
 
     responsive(move |viewport| {
         // The compositor owns the viewport; natural content measurement only
         // determines the input region. Whole-presentation observers wait for the stack;
         // each card independently observes its own full visibility below.
         let frame = move |size: iced::Size| BannerUiMessage::LayoutFrame {
+            window,
             generation: state.presentation_generation,
             size,
             viewport,

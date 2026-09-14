@@ -50,6 +50,8 @@ use std::{
 use window_manager::Window;
 
 mod state;
+#[cfg(test)]
+mod tests;
 mod window_manager;
 
 type MultiRuntime<E, Message> = Runtime<E, IcedProxy<Action<Message>>, Action<Message>>;
@@ -601,16 +603,20 @@ where
 
     fn handle_closed_event(
         &mut self,
-        ev: &mut WindowState<IcedId>,
+        _ev: &mut WindowState<IcedId>,
         layer_shell_id: Option<LayerShellId>,
     ) {
+        // Output removal destroys the backend unit before dispatching Closed.
+        // The renderer's alias survives until we remove the window below.
         let Some(iced_id) = layer_shell_id
-            .and_then(|lid| ev.get_unit_with_id(lid))
-            .and_then(|layer_shell_window| layer_shell_window.get_binding().copied())
+            .and_then(|lid| self.window_manager.get_alias(lid))
+            .map(|(id, _)| id)
         else {
             return;
         };
         self.cached_layer_dimensions.remove(&iced_id);
+        self.waiting_layer_shell_actions
+            .retain(|(id, _)| *id != Some(iced_id));
         self.window_manager.remove(iced_id);
         self.user_interfaces.remove(&iced_id);
         self.runtime
@@ -709,6 +715,16 @@ where
             .and_then(|iced_id| self.window_manager.get(iced_id))
             .map(|window| window.id);
         if iced_id.is_some() && layer_shell_id.is_none() {
+            // Close can arrive after output removal has already retired the
+            // window. Retry only while a created backend unit still owns the
+            // ID (before its first refresh); absent IDs need no close or tombstone.
+            if matches!(action, LayerShellCustomAction::RemoveWindow)
+                && !ev
+                    .get_unit_iter()
+                    .any(|unit| unit.get_binding().copied() == iced_id)
+            {
+                return;
+            }
             // still waiting
             self.waiting_layer_shell_actions.push((iced_id, action));
             return;

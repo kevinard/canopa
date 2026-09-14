@@ -171,7 +171,7 @@ async fn compositor_viewport_keeps_cards_width_capped_and_top_right() {
             measured.width, expected_width,
             "cards must fit narrow outputs without stretching on wide ones"
         );
-        let mut view = banner_ui_view(&state, iced::window::Id::unique());
+        let mut view = banner_ui_view(&state, state.surface.window().unwrap());
         let mut tree = Tree::new(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,
@@ -319,7 +319,7 @@ async fn display_observer_preserves_action_clicks_across_view_rebuilds() {
     let viewport = Size::new(360.0, 240.0);
     let mut tree = Tree::empty();
     let position = {
-        let mut view = banner_ui_view(&state, iced::window::Id::unique());
+        let mut view = banner_ui_view(&state, state.surface.window().unwrap());
         tree.diff(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,
@@ -390,7 +390,7 @@ fn scroll_bounds_in_tree(
     viewport: Size,
     tree: &mut Tree,
 ) -> ScrollBounds {
-    let mut view = banner_ui_view(state, iced::window::Id::unique());
+    let mut view = banner_ui_view(state, state.surface.window().unwrap());
     tree.diff(view.as_widget());
     let node = view.as_widget_mut().layout(
         tree,
@@ -662,7 +662,7 @@ async fn oversized_card_wheel_scrolling_preserves_body_navigation_and_action_cli
     );
     let scrolled = scroll_bounds_in_tree(&state, &renderer, viewport, &mut tree);
     let point = {
-        let mut view = banner_ui_view(&state, iced::window::Id::unique());
+        let mut view = banner_ui_view(&state, state.surface.window().unwrap());
         tree.diff(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,
@@ -1056,7 +1056,27 @@ fn event_messages_in_tree(
     event: core::Event,
     cursor: core::mouse::Cursor,
 ) -> Vec<BannerUiMessage> {
-    let mut view = banner_ui_view(state, iced::window::Id::unique());
+    event_messages_for_window(
+        state,
+        state.surface.window().unwrap(),
+        renderer,
+        viewport,
+        tree,
+        event,
+        cursor,
+    )
+}
+
+fn event_messages_for_window(
+    state: &BannerUiState,
+    window: iced::window::Id,
+    renderer: &iced::Renderer,
+    viewport: Size,
+    tree: &mut Tree,
+    event: core::Event,
+    cursor: core::mouse::Cursor,
+) -> Vec<BannerUiMessage> {
+    let mut view = banner_ui_view(state, window);
     tree.diff(view.as_widget());
     let node = view.as_widget_mut().layout(
         tree,
@@ -1075,6 +1095,66 @@ fn event_messages_in_tree(
         &Rectangle::with_size(viewport),
     );
     messages
+}
+
+#[tokio::test]
+async fn retiring_window_does_not_display_or_acknowledge_the_next_stack() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    let old = state.surface.window().unwrap();
+    let _ = banner_ui_update(&mut state, BannerUiMessage::WindowFrame(old));
+    let acknowledged = Arc::new(AtomicBool::new(false));
+    queue_banner_ui_presentation(&mut state, 42, acknowledged.clone());
+    let messages = event_messages_for_window(
+        &state,
+        old,
+        &renderer,
+        Size::new(776.0, 516.0),
+        &mut Tree::empty(),
+        core::Event::Window(core::window::Event::RedrawRequested(
+            core::time::Instant::now(),
+        )),
+        core::mouse::Cursor::Unavailable,
+    );
+    assert!(
+        messages.is_empty(),
+        "a retiring surface must render no new content: {messages:?}"
+    );
+    assert!(!acknowledged.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn late_layout_from_lost_output_cannot_restore_its_input_region() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    let acknowledged = Arc::new(AtomicBool::new(false));
+    queue_banner_ui_presentation(&mut state, 42, acknowledged.clone());
+    let old = state.surface.window().unwrap();
+    let delayed = frame_messages(&state, &renderer, Size::new(776.0, 516.0));
+    let _ = banner_ui_update(&mut state, BannerUiMessage::WindowFrame(old));
+    let _ = banner_ui_update(&mut state, BannerUiMessage::WindowClosed(old));
+    let actions = frame_actions(
+        &mut state,
+        &renderer,
+        Size::new(276.0, 216.0),
+        &mut Tree::empty(),
+    )
+    .await;
+    let [LayerShellCustomAction::SetInputRegion(current)] = actions.as_slice() else {
+        panic!("fallback must install its measured region: {actions:?}");
+    };
+    for message in delayed {
+        let _ = banner_ui_update(&mut state, message);
+    }
+    assert!(acknowledged.load(Ordering::SeqCst));
+    assert_eq!(
+        region_requests(current),
+        vec![
+            (2, vec![0, 0, i32::MAX, i32::MAX]),
+            (1, vec![0, 0, 276, 112]),
+        ],
+        "late geometry cannot change the fallback output's input region"
+    );
 }
 
 #[tokio::test]
@@ -1121,7 +1201,7 @@ async fn scrolling_reveals_a_pending_card_without_restarting_already_displayed_c
         for message in frame_messages_in_tree(&state, &renderer, viewport, &mut tree) {
             let _ = banner_ui_update(&mut state, message);
         }
-        let mut view = banner_ui_view(&state, iced::window::Id::unique());
+        let mut view = banner_ui_view(&state, state.surface.window().unwrap());
         tree.diff(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,
@@ -1145,7 +1225,7 @@ async fn scrolling_reveals_a_pending_card_without_restarting_already_displayed_c
     );
     assert!(state.pending_acknowledgement.is_none());
     // Clearing the pending acknowledgement must not rebuild the scrollable tree.
-    let mut view = banner_ui_view(&state, iced::window::Id::unique());
+    let mut view = banner_ui_view(&state, state.surface.window().unwrap());
     tree.diff(view.as_widget());
     let node = view.as_widget_mut().layout(
         &mut tree,
@@ -1292,7 +1372,7 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
         acknowledged.load(Ordering::SeqCst),
         "a fully visible bounded compact card must acknowledge display"
     );
-    let mut view = banner_ui_view(&state, iced::window::Id::unique());
+    let mut view = banner_ui_view(&state, state.surface.window().unwrap());
     tree.diff(view.as_widget());
     let node = view.as_widget_mut().layout(
         &mut tree,

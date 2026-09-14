@@ -504,7 +504,7 @@ fn notification_banner_surface_maps_to_iced_layer_shell_settings() {
     );
     assert_eq!(settings.layer, Layer::Overlay);
     assert_eq!(settings.keyboard_interactivity, KeyboardInteractivity::None);
-    assert!(matches!(settings.start_mode, StartMode::Active));
+    assert!(matches!(settings.start_mode, StartMode::Background));
     assert_eq!(settings.exclusive_zone, 0);
 }
 

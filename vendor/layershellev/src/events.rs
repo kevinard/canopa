@@ -71,6 +71,9 @@ pub enum LayerShellEvent<'a, T, Message> {
 /// Define the output for new layershell
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum OutputOption {
+    /// Pass a null output for a layer surface so the compositor chooses placement.
+    /// Input panels require an explicit output and do not support this option.
+    Compositor,
     LastOutput,
 
     OutputName(String),

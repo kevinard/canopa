@@ -2675,6 +2675,7 @@ impl<T: 'static> WindowState<T> {
                             info,
                         )) => {
                             let output = match output_type {
+                                OutputOption::Compositor => None,
                                 OutputOption::Output(output) => Some(output),
                                 OutputOption::OutputName(name) => window_state
                                     .xdg_info_cache
@@ -2900,6 +2901,7 @@ impl<T: 'static> WindowState<T> {
                             info,
                         )) => {
                             let output = match output_type {
+                                OutputOption::Compositor => None,
                                 OutputOption::Output(output) => Some(output),
                                 OutputOption::OutputName(name) => window_state
                                     .xdg_info_cache
