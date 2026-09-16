@@ -376,11 +376,4 @@ impl Directory {
     }
 }
 
-pub(super) fn valid_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 255
-        && !matches!(name, "." | "..")
-        && !name
-            .chars()
-            .any(|character| character.is_control() || matches!(character, '/' | '\\'))
-}
+use super::valid_icon_name as valid_name;

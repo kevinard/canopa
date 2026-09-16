@@ -36,6 +36,10 @@ _Avoid_: Required compositor when Notify can run elsewhere
 A compositor-owned privacy behavior that may hide or suppress notification content during sensitive display states.
 _Avoid_: Notification body hiding when implying Notify owns the behavior
 
+**Requires Attention**:
+The retained notification content has not been deliberately acknowledged or removed. This state is independent of banner visibility and sender lifecycle. Expiry and restart preserve it; dismissal, sender recall, or a sender action acknowledge it. A new replacement requires attention again.
+_Avoid_: Active notification when referring to pending content whose sender lifecycle has already ended
+
 **Notification Center**:
 An interactive view of notification state owned by the **Notification Daemon**, including recent and historical notifications.
 _Avoid_: Niribar panel when referring to the notification domain, popup
@@ -331,8 +335,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Malformed **Notification Body Markup** should degrade to visible text without exposing raw markup syntax when possible.
 - Excessively complex **Notification Body Markup** should degrade to safe visible text rather than reject an otherwise meaningful notification.
 - Hyperlink activation and body-embedded images are separate feature boundaries from initial **Notification Body Markup** support.
-- Initial **Notification Body Markup** support keeps hyperlink text but does not retain hyperlink targets.
-- Initial **Notification Body Markup** support may include body-embedded image alternative text, but does not retain the body-embedded image reference.
+- **Notification Body Hyperlinks** retain validated HTTP(S) targets and styled visible text under ADR 0050. Unsupported targets remain text; activation is revision-guarded and independent of sender actions.
+- Ordered **Notification Body Segments** retain safe local body-image references and alternative text; raw image payloads are not persisted.
 - **Body-Embedded Notification Image** alternative text contributes to the plain **Notification Body** fallback.
 - A **Body-Embedded Notification Image** without alternative text does not add invented placeholder text to the plain **Notification Body** fallback.
 - A body-display surface that renders a **Body-Embedded Notification Image** should not also show that image's alternative text for the same **Notification Body Segment**.
@@ -410,7 +414,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Default **Notification History** retention keeps up to 30 days and 1,000 **Notification Threads**, with either limit allowed to remove older history.
 - **Notification History** retention is pruned after every persisted **Notification History** mutation and at daemon startup.
 - **Notification History** retention pruning is persistence policy owned by **Notification History**, not **Notification Lifecycle** meaning.
-- **Active Notifications** are exempt from **Notification History** retention pruning.
+- **Active Notifications** and retained content that **Requires Attention** are exempt from **Notification History** archive pruning. Expiry and restart end or invalidate sender lifecycles without acknowledging content (ADR 0049).
 - **Notification History** does not store **Notification Banner** runtime visibility state.
 - **Notification Daemon** restart does not restore old **Notification Banners**.
 - **Active Notifications** loaded after **Notification Daemon** restart become **Stale Notifications**.
@@ -549,7 +553,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification History** is not app-level encrypted in the first version.
 - The **Notification Center** shows retained **Active Notifications**, recent **Notification History**, and live runtime-only **Transient Notifications** without archiving transient content.
 - The **Notification Center** groups notifications by **App Identity**.
-- The **Notification Center** includes an app-wide **App Permission Control** for each recent sender and category-specific controls for valid categories present in that app's retained or live transient threads.
+- The **Notification Center** includes an app-wide **App Permission Control** for each nonempty claimed sender identity and category-specific controls for valid categories on the page. Unnamed senders display as “Unknown application” without a persistent permission control.
 - A category-specific control shows its explicit category rule when present and otherwise the app-wide fallback. Historical records keep their original **Delivery Outcome**.
 - **Notification Center** requirements must not define core **Notification Daemon** state or lifecycle rules.
 - **Notification Center Projection** is Notify-owned state and is mapped to shared panel protocol types by **Panel Provider Mode**.

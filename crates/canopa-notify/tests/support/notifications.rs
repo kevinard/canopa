@@ -1,3 +1,8 @@
+#![allow(
+    dead_code,
+    reason = "Shared fixtures are also imported directly by individual test binaries"
+)]
+
 use canopa_notify::NotificationInput;
 
 pub fn notification(app_name: impl Into<String>, summary: impl Into<String>) -> NotificationInput {

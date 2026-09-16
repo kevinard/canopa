@@ -167,6 +167,7 @@ fn accepted_text_bytes(notification: &AcceptedNotification) -> usize {
     for segment in &body_content.segments {
         bytes += match segment {
             NotificationBodySegment::Text { text, .. } => text.len(),
+            NotificationBodySegment::Link { text, uri, .. } => text.len() + uri.as_str().len(),
             NotificationBodySegment::Image { image } => {
                 let NotificationBodyImageSource::LocalPath { path } = &image.source;
                 path.len() + image.alt.as_ref().map_or(0, String::len)

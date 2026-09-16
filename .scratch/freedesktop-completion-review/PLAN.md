@@ -2,7 +2,7 @@
 
 Prepared 2026-09-10 for baseline `d3f12df1888acbeb1cf05fd81baa00fb500e6a89`.
 
-Status: approved for incremental implementation. This document records the full target; its unchecked criteria are not completed work. Current progress is recorded in [IMPLEMENTATION.md](IMPLEMENTATION.md). Supporting documents: [review and evidence](REVIEW.md), [authoritative standards research](standards-research.md).
+Status: selected W01–W14 profile implemented and verified on 2026-09-16; W15 remains optional and unselected. Supported-format and environment limits are explicit in [the release record](../../docs/notification-release-verification.md). Current progress is recorded in [IMPLEMENTATION.md](IMPLEMENTATION.md). Supporting documents: [review and evidence](REVIEW.md), [authoritative standards research](standards-research.md).
 
 ## Recommended target
 
@@ -81,10 +81,10 @@ Convert the reproduced ID collision and 130-event overflow into failing regressi
 
 Acceptance:
 
-- [ ] A clean checkout runs the protocol suite without a graphical desktop or an existing session bus.
-- [ ] Method introspection, server information, capabilities, error replies, and event payloads are checked at the D-Bus interface.
-- [ ] Every selected requirement has a named evidence location or an explicit open work item.
-- [ ] Tests fail clearly when their fixture cannot start; unavailable graphical jobs are distinguished from passing headless coverage.
+- [x] A clean checkout runs the protocol suite without a graphical desktop or an existing session bus.
+- [x] Method introspection, server information, capabilities, error replies, and event payloads are checked at the D-Bus interface.
+- [x] Every selected requirement has a named evidence location or an explicit open work item.
+- [x] Tests fail clearly when their fixture cannot start; unavailable graphical jobs are distinguished from passing headless coverage.
 
 ### W02 — Make startup ownership and state paths safe
 
@@ -98,10 +98,10 @@ Support a recoverable import from the old runtime-path database if it still exis
 
 Acceptance:
 
-- [ ] Competing startup on the same socket/database leaves the first daemon's rows, actions, IDs, and timers unchanged.
-- [ ] Failure to acquire the D-Bus name or graphical readiness does not mark existing history stale.
-- [ ] A changed/clean runtime directory retains history, DND, and user rules at the persistent state path.
-- [ ] Custom paths, invalid relative XDG values, restrictive permissions, stale sockets, regular-file collisions, and database-import interruption are covered.
+- [x] Competing startup on the same socket/database leaves the first daemon's rows, actions, IDs, and timers unchanged.
+- [x] Failure to acquire the D-Bus name or graphical readiness does not mark existing history stale.
+- [x] A changed/clean runtime directory retains history, DND, and user rules at the persistent state path.
+- [x] Custom paths, invalid relative XDG values, restrictive permissions, stale sockets, regular-file collisions, and database-import failure/cleanup/retry are covered.
 
 ### W03 — Separate sender IDs from thread identity
 
@@ -113,10 +113,10 @@ Write the identity/replacement ADR before changing compatibility behavior. Recom
 
 Acceptance:
 
-- [ ] The empty-wire-1 / AppA-wire-2-thread-1 / AppB-replaces-1 sequence cannot overwrite AppA or break its ID.
-- [ ] Closed, dropped, transient, unknown, restarted, and wrapping IDs never select unrelated rows or return zero.
-- [ ] Live replacement preserves the chosen wire ID and thread identity without visual remove/add behavior.
-- [ ] Identity evidence, allowed cross-sender behavior, disconnect handling, and existing rule/history compatibility are documented and tested.
+- [x] The empty-wire-1 / AppA-wire-2-thread-1 / AppB-replaces-1 sequence cannot overwrite AppA or break its ID.
+- [x] Closed, dropped, transient, unknown, restarted, and wrapping IDs never select unrelated rows or return zero.
+- [x] Live replacement preserves the chosen wire ID and thread identity without visual remove/add behavior.
+- [x] Identity evidence, allowed cross-sender behavior, disconnect handling, and existing rule/history compatibility are documented and tested.
 
 Reuse existing identity issues [26](../canopa-notify/issues/26-decide-trustworthy-app-identity-boundary.md) and [27](../canopa-notify/issues/27-enforce-resolved-app-identity.md). The typed-ID correction need not wait for a comprehensive application-authentication system.
 
@@ -130,10 +130,10 @@ Carry revision/generation in asynchronous UI interactions and asset/display call
 
 Acceptance:
 
-- [ ] Barrier-controlled tests cover expiry/read → replacement → expiry/write and action/read → replacement → dismissal/write.
-- [ ] Close/replace, action/close, duplicate action, and delayed earlier effects cannot resurrect banners or publish events for the wrong revision.
-- [ ] Delayed display acknowledgements start only their eligible revision's timer and cannot recreate a cancelled timer.
-- [ ] Slow activation-token or resource resolution does not hold the entire mutation path indefinitely.
+- [x] Barrier-controlled tests cover expiry/read → replacement → expiry/write and action/read → replacement → dismissal/write.
+- [x] Close/replace, action/close, duplicate action, and delayed earlier effects cannot resurrect banners or publish events for the wrong revision.
+- [x] Delayed display acknowledgements start only their eligible revision's timer and cannot recreate a cancelled timer.
+- [x] Slow activation-token or resource resolution does not hold the entire mutation path indefinitely.
 
 ### W05 — Make sender publication reliable and presentation failure recoverable
 
@@ -145,11 +145,11 @@ Keep diagnostic subscribers separate. Use coalesced current-state presentation w
 
 Acceptance:
 
-- [ ] Bulk clear well beyond 128 events and an intentionally slow sink deliver every required event while the bus remains healthy.
-- [ ] Token → action → closure ordering is preserved for nonresident actions; resident invocations remain separate opportunities.
-- [ ] Full/closed renderer queues preserve accepted receipts and center state, and eventually display the latest eligible state after recovery.
-- [ ] Immediate dropped-request replies/events work with real client subscriptions; the chosen wire ordering is recorded as compatibility behavior.
-- [ ] Failed signal transport, renderer exit, and shutdown drain/cancellation have explicit observable outcomes.
+- [x] Bulk clear well beyond 128 events and an intentionally slow sink deliver every required event while the bus remains healthy.
+- [x] Token → action → closure ordering is preserved for nonresident actions; resident invocations remain separate opportunities.
+- [x] Full/closed renderer queues preserve accepted receipts and center state, and eventually display the latest eligible state after recovery.
+- [x] Immediate dropped-request replies/events work with real client subscriptions; the chosen wire ordering is recorded as compatibility behavior.
+- [x] Failed signal transport, renderer exit, and shutdown drain/cancellation have explicit observable outcomes.
 
 ### W06 — Give SQLite writes and migrations explicit commit semantics
 
@@ -161,10 +161,10 @@ Introduce numbered, forward-only migrations and fixtures for the historical sche
 
 Acceptance:
 
-- [ ] Injected prune/readback/busy/write failures never produce a misleading receipt or silently suppress committed lifecycle effects.
-- [ ] Concurrent writes return their own committed revision; precondition failure does not modify state.
-- [ ] Each supported historical schema upgrades with history, user rules, and DND intact; interrupted migration resumes safely.
-- [ ] Bulk clear failure, retention limits, active exemptions, and deletion have tested, documented semantics.
+- [x] Injected prune/write failures roll back without misleading receipts; partial clear publishes committed effects. Atomic RETURNING removes the former post-write readback failure boundary.
+- [x] Concurrent writes return their own committed revision; precondition failure does not modify state.
+- [x] Supported historical-schema upgrade fixtures preserve history, user rules and DND; future versions are rejected before recovery.
+- [x] Bulk clear failure, retention limits, active exemptions, and deletion have tested, documented semantics.
 
 ### W07 — Bound input, retained runtime resources, and diagnostics
 
@@ -176,10 +176,10 @@ Replace unbounded production event/log vectors with injectable test recording an
 
 Acceptance:
 
-- [ ] Table/fuzz cases cover malformed UTF-8-independent strings, XML entities, repeated `<`, deeply nested styles, huge action lists, corrupt images, and negative/wrapped numeric hints.
-- [ ] Long-running notification churn has bounded post-completion memory, worker count, and diagnostic storage.
-- [ ] DND and transient bursts remain responsive and produce documented lifecycle outcomes at resource limits.
-- [ ] Limits are configurable only where users need a meaningful choice; defaults and rejection/degradation behavior are documented.
+- [x] Table/fuzz cases cover malformed UTF-8-independent strings, XML entities, repeated `<`, deeply nested styles, huge action lists, corrupt images, and negative/wrapped numeric hints.
+- [x] Long-running notification churn has bounded post-completion memory, worker count, and diagnostic storage.
+- [x] DND and transient bursts remain responsive and produce documented lifecycle outcomes at resource limits.
+- [x] Limits are configurable only where users need a meaningful choice; defaults and rejection/degradation behavior are documented.
 
 ### W08 — Finish configuration and control as installed product features
 
@@ -191,11 +191,11 @@ Parse a candidate, validate all slices, then commit one coherent active version.
 
 Acceptance:
 
-- [ ] An installed-style startup honors a temporary user's KDL rule without any in-process test call.
-- [ ] CLI DND survives restart and affects subsequent Notify requests; invalid commands and failed reloads return useful exit status.
-- [ ] Concurrent reload and failing-adapter tests prove one coherent active config/rule/capability version.
-- [ ] Timeout `-1`, `0`, and positive cases, critical defaults, and any configured override policy have explicit tests.
-- [ ] Samples and help cover every supported setting and command, with no undocumented library-only completion claim.
+- [x] An installed-style startup honors a temporary user's KDL rule without any in-process test call.
+- [x] CLI DND survives restart and affects subsequent Notify requests; invalid commands and failed reloads return useful exit status.
+- [x] Concurrent reload and failing-adapter tests prove one coherent active config/rule/capability version.
+- [x] Timeout `-1`, `0`, and positive cases, critical defaults, and any configured override policy have explicit tests.
+- [x] Samples and help cover every supported setting and command, with no undocumented library-only completion claim.
 
 Reconcile existing configuration/DND tickets [08](../canopa-notify/issues/08-add-do-not-disturb-end-to-end.md), [09](../canopa-notify/issues/09-load-kdl-notification-configuration-rules.md), and [10](../canopa-notify/issues/10-add-user-rule-store-app-policy.md).
 
@@ -209,10 +209,10 @@ Evaluate maintained resolver implementations against Icon Theme and Sound Theme 
 
 Acceptance:
 
-- [ ] Conflicting visual hints, raw RGB/RGBA, file URIs, corrupt/missing/changed files, and theme fallback resolve predictably.
-- [ ] Decode failure displays image alternative text where supplied; encoded-byte and decoded-pixel limits both hold.
-- [ ] Temporary theme fixtures cover inheritance cycles, multiple XDG roots, requested scale, cache refresh, and `.disabled` sound behavior.
-- [ ] Asset discovery/decoding does not block notification mutation; playback workers and decoder lifetimes are bounded.
+- [x] Conflicting visual hints, raw RGB/RGBA, file URIs, corrupt/missing/changed files, and theme fallback resolve predictably.
+- [x] Decode failure displays image alternative text where supplied; encoded-byte and decoded-pixel limits both hold.
+- [x] Temporary theme fixtures cover inheritance cycles, multiple XDG roots, requested scale, cache refresh, and `.disabled` sound behavior.
+- [x] Asset discovery/decoding does not block notification mutation; playback workers and decoder lifetimes are bounded.
 
 ### W10 — Make every action reachable and verify banner geometry
 
@@ -222,24 +222,24 @@ Replace assumptions based on fixed banner heights with measured layout and a cle
 
 Acceptance:
 
-- [ ] Four named transient actions, a default action, body image, progress, and long labels remain reachable at supported scales.
-- [ ] Rich-body/action combinations do not clip required controls; multiple images have explicit overflow/fallback behavior.
-- [ ] Replacement does not remove/recreate the visible card or move focus unexpectedly.
-- [ ] Graphical fixtures validate actual frame/display acknowledgement timing, output fallback, and interaction hit regions.
-- [ ] Keyboard access is provided through the intentional interactive surface while banners never steal keyboard focus.
+- [x] Four named transient actions, a default action, body image, progress, and long labels remain reachable at supported scales.
+- [x] Rich-body/action combinations do not clip required controls; multiple images have explicit overflow/fallback behavior.
+- [x] Replacement does not remove/recreate the visible card or move focus unexpectedly.
+- [x] Graphical fixtures validate actual frame/display acknowledgement timing, output fallback, and interaction hit regions.
+- [x] Keyboard access is provided through the intentional interactive surface while banners never steal keyboard focus.
 
 ### W11 — Finish Notification Center rich-body and accessibility integration
 
 Dependencies: W09, W10; external host coordination. Size: large/host-dependent. Findings: C04.
 
-Verify the active Niribar host consumes protocol v3 and renders ordered text/image segments. Keep the protocol generic. Add host contract fixtures, protocol-version mismatch behavior, alt-text fallback, action labels/roles, focus order, and update-announcement policy. Verify the actual iced/host accessibility path rather than assuming serialized labels reach assistive technology.
+Verify the active Niribar host consumes the current protocol (v4 at completion) and renders ordered text/image segments. Keep the protocol generic. Add host contract fixtures, protocol-version mismatch behavior, alt-text fallback, action labels/roles, focus order, and update-announcement policy. Verify the actual iced/host accessibility path rather than assuming serialized labels reach assistive technology.
 
 Acceptance:
 
-- [ ] The real Notification Center shows interleaved text/images without duplicating alt text and remains keyboard navigable during replacements.
-- [ ] Banner and center dismissal/actions expose useful accessible names and expected activation behavior.
-- [ ] A documented screen-reader/keyboard pass is recorded on the supported host; gaps become explicit blockers.
-- [ ] Only after banner and host evidence passes, advertise `body-images` and update exact capability tests.
+- [x] The real Notification Center shows interleaved text/images without duplicating alt text and remains keyboard navigable during replacements.
+- [x] Banner and center dismissal/actions expose useful accessible names and expected activation behavior.
+- [x] A documented screen-reader/keyboard pass is recorded on the supported host; gaps become explicit blockers.
+- [x] Only after banner and host evidence passes, advertise `body-images` and update exact capability tests.
 
 Reuse the [body-images completion ticket](../body-images/issues/05-advertise-body-images-after-notification-center-rendering.md) and accessibility issue [35](../canopa-notify/issues/35-make-notification-interactions-accessible.md). This repository can prepare protocol/fixtures independently; changes to Niribar require that repository's scope and actual renderer verification.
 
@@ -253,10 +253,10 @@ Carry generic link presentation through the panel protocol with a version change
 
 Acceptance:
 
-- [ ] Banner and actual center host display distinguishable, accessible link text and open the intended target on deliberate interaction.
-- [ ] Invalid schemes, credentials, control characters, malformed/oversized URIs, nested markup, and stale revisions degrade safely.
-- [ ] Link activation does not accidentally invoke a sender action or close a resident notification.
-- [ ] Parser, storage migration, protocol, opener, UI, and D-Bus capability tests pass before advertising `body-hyperlinks`.
+- [x] Banner and actual center host display distinguishable, accessible link text and open the intended target on deliberate interaction.
+- [x] Invalid schemes, credentials, control characters, malformed/oversized URIs, nested markup, and stale revisions degrade safely.
+- [x] Link activation does not accidentally invoke a sender action or close a resident notification.
+- [x] Parser, storage migration, protocol, opener, UI, and D-Bus capability tests pass before advertising `body-hyperlinks`.
 
 Reuse hyperlink issue [34](../canopa-notify/issues/34-open-safe-notification-body-hyperlinks.md); add its external-host and protocol dependencies to the implementation brief.
 
@@ -270,11 +270,11 @@ Recommended direction: keep retained notifications discoverable until deliberate
 
 Acceptance:
 
-- [ ] A client relying on persistence cannot lose an unacknowledged retained notification to ordinary banner expiry or archive pruning.
-- [ ] Transient notifications never enter durable history; explicit drop/recall/user removal behavior matches the ADR.
-- [ ] Restart restores the promised retained view while disabling invalid sender callbacks.
-- [ ] Migration preserves existing history meaning; capability advertisement and lifecycle/UI tests agree.
-- [ ] `persistence` is advertised only after these behaviors are demonstrated, not at the start of the work package.
+- [x] A client relying on persistence cannot lose an unacknowledged retained notification to ordinary banner expiry or archive pruning.
+- [x] Transient notifications never enter durable history; explicit drop/recall/user removal behavior matches the ADR.
+- [x] Restart restores the promised retained view while disabling invalid sender callbacks.
+- [x] Migration preserves existing history meaning; capability advertisement and lifecycle/UI tests agree.
+- [x] `persistence` is advertised only after these behaviors are demonstrated, not at the start of the work package.
 
 ### W14 — Complete release tooling, maintainability documentation, and final evidence
 
@@ -288,11 +288,11 @@ Extend CI to private-bus integration, formatting, a clean clippy policy, migrati
 
 Acceptance:
 
-- [ ] Another maintainer can build, test, install, configure, diagnose, upgrade, and remove the daemon using repository documentation.
-- [ ] No selected capability relies only on projection-model tests; rendered and transport evidence are linked in the release matrix.
-- [ ] The service uses persistent state and private runtime paths and starts/stops reliably in the supported graphical session.
-- [ ] Core-only checks avoid GUI/audio dependencies; full graphical checks still exercise the real adapters.
-- [ ] All release-blocking findings are resolved, and optional omissions/deviations are accurately documented.
+- [x] Another maintainer can build, test, install, configure, diagnose, upgrade, and remove the daemon using repository documentation.
+- [x] No selected capability relies only on projection-model tests; rendered and transport evidence are linked in the release matrix.
+- [x] The service uses persistent state and private runtime paths and starts/stops reliably in the supported graphical session.
+- [x] Core-only checks avoid GUI/audio dependencies; full graphical checks still exercise the real adapters.
+- [x] All release-blocking findings are resolved, and optional omissions/deviations are accurately documented.
 
 ### W15 — Optional: implement a native Notification portal v2 backend
 
@@ -333,11 +333,15 @@ Prioritize identity 26/27, hyperlinks 34, accessibility 35, and the body-images 
 
 ## Release definition of done
 
-- [ ] W01's versioned matrix is complete for the selected static profile, with required/optional/extension distinctions intact.
-- [ ] The reproduced ID collision and event loss, plus the code-established duplicate-start mutation risk, have passing regression coverage; concurrent and failure-injection regressions pass.
-- [ ] State survives a full runtime-directory replacement; installed configuration, DND, reload, and user rules behave as documented.
-- [ ] All advertised visual/action capabilities work on both relevant presentation surfaces, including transient action reachability and accessibility evidence.
-- [ ] Resource budgets hold under bursts, malformed inputs, slow consumers, missing assets, and adapter failures.
-- [ ] Persistence is either proven and advertised or explicitly excluded from the release's completion claim; do not call the entire proposed optional profile complete while deferring it.
-- [ ] CI, release build, migrations, installation, service lifecycle, and maintainability documentation pass a clean-checkout review.
-- [ ] Portal results identify the actual tested versions; native v2 completion is claimed only if W15 is selected and passes.
+- [x] W01's versioned matrix is complete for the selected static profile, with required/optional/extension distinctions intact.
+- [x] The reproduced ID collision and event loss, plus the code-established duplicate-start mutation risk, have passing regression coverage; concurrent and failure-injection regressions pass.
+- [x] State survives a full runtime-directory replacement; installed configuration, DND, reload, and user rules behave as documented.
+- [x] All advertised visual/action capabilities work on both relevant presentation surfaces, including transient action reachability and accessibility evidence.
+- [x] Resource budgets hold under bursts, malformed inputs, slow consumers, missing assets, and adapter failures.
+- [x] Persistence is either proven and advertised or explicitly excluded from the release's completion claim; do not call the entire proposed optional profile complete while deferring it.
+- [x] CI, release build, migrations, installation, service lifecycle, and maintainability documentation pass a clean-checkout review.
+- [x] Portal results identify the actual tested versions; native v2 completion is claimed only if W15 is selected and passes.
+
+## Verification limits recorded at completion
+
+The checked entries above describe the final executed acceptance coverage. The original investigation also proposed abrupt migration/import interruption and SQLite busy-error injection; those specific experiments were not run. They remain additional robustness verification, alongside the explicit platform/format limits in the release record. No claim of tested process-kill or power-loss recovery follows from ordinary transaction rollback and failed-import retry tests.

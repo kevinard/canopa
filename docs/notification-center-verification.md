@@ -1,25 +1,43 @@
 # Notification Center verification
 
-The compatible host is the Canopa-v3 Niribar port described in [provider setup](niribar-panel-provider.md). Automated checks validate the wire stream, content identifiers, typed interactions, snapshot generations, keyboard-action selection, bounded image preparation, and the existing Wi-Fi transport. They do not validate compositor rendering or accessibility integration.
+The compatible host consumes **Canopa protocol v4**. Use the [provider setup](niribar-panel-provider.md)
+and [recorded desktop acceptance](notification-desktop-acceptance.md). Banners and
+Center expose native AT-SPI; the acceptance record includes actual Orca speech,
+keyboard reading, links, images/fallbacks and four named actions on a narrow transient.
 
-Before enabling additional advertised body capabilities, run this checklist in a disposable or explicitly selected Wayland session. Do not replace a user's running bar/notification service as part of an automated headless test.
+Run these checks in a disposable compositor with a private session bus and fresh
+XDG paths. Build both applications and verify the protocol snapshot before starting.
+Native tests need the AT-SPI launcher/registry; see the [Orca fixture](orca-isolated-fixture-research.md)
+for real speech and compositor shortcuts. Click the Center header to give its
+on-demand surface keyboard focus when another application retains focus.
 
-The subsequent [long-label graphical check](../.scratch/freedesktop-completion-review/LONG-LABEL-EVIDENCE.md) corrects overlapping/clipped banner summaries and action labels. It verifies full fixture text, final-line named/default clicks, unchanged focus and replacement shrink/click-through at scale 1 and a narrow scale-2 output. Bounded oversized-card evidence is linked in the status below; the full scale/font/label matrix remains open.
+- Send default/named/resident/transient notifications, including four wrapping
+  actions, progress and a rich body. Confirm actual mouse and Enter activation,
+  opaque signal keys, and resident/nonresident lifecycle behavior.
+- Verify interleaved styled text, PNG/JPEG images, alt fallback for missing/unsafe
+  assets and distinguishable HTTP(S) links. A link opens only after deliberate
+  activation, without sender action, closure or attention acknowledgement.
+- Read with Orca: notification arrival once without focus theft; useful button/link
+  names and roles; radio selected state; ordered image alternatives; destination
+  details. Updates must not repeat the entire Center.
+- Use Tab/arrows, Enter and Escape; PageUp/PageDown/Home/End scroll content. With
+  long history, First/Previous/Next navigation reaches every notification. Open two
+  provider sessions and confirm their pages are independent. Empty app names must
+  not create invalid pages, and category controls cover every included category.
+- Replace while an action is selected/pressed, close/reopen, and restart the daemon.
+  Old node/session/revision controls must not activate newer content. Keep one panel
+  window during navigation and refresh.
+- Fill the banner stack and enable DND. Hidden transient items remain actionable
+  in Center without entering durable history or starting their banner timeout.
+- Expire retained content and restart with zero archive retention: pending attention
+  remains discoverable, old sender actions are absent, and Mark as read/removal works.
+- Change app/category rules and DND, close/reopen/restart, and verify durable controls.
+  Clear dismisses live notifications; Delete History removes inactive rows explicitly.
+- Stop the provider/daemon/compositor. Verify bounded cleanup, visible failure/status,
+  safe restart, stale callbacks disabled and transient removal. Existing framed-v1
+  providers retain their own behavior and continue passing their host suite.
 
-The [Center keyboard continuation](../.scratch/freedesktop-completion-review/CENTER-KEYBOARD-EVIDENCE.md) records actual Tab/Shift-Tab/arrow selection, fourth/default action invocation, selection reset on replacement, Escape and hidden transient action reachability on nested Niri. It corrects long-selection clipping and stale pointer presses activating replacement controls, with 1,145 passing host tests. An explicit accessibility blocker remains: the pinned Iced/layer-shell stack has no implemented semantic-tree bridge. Visible labels are not a screen-reader pass. Full keyboard reading of overflowing context, held-key/repeat behavior, accessible names/roles/states, image alternatives and non-disruptive update announcements still need implementation and verification.
-
-The subsequent [window-lifetime correction](../.scratch/freedesktop-completion-review/CENTER-WINDOW-EVIDENCE.md) resolves lost rapid keys: Canopa navigation and content updates retain the existing panel window. Forty nested-Niri trials (Up/Up bursts, 300ms pacing and Up/Up/Return bursts) invoke the correct action with exactly one panel opening. Replacement clears selection without activation, and Escape closes the panel. All 1,151 host tests pass. Framed-v1 providers retain their previous lifecycle because their widgets lack Canopa's generation-owned press state.
-
-- Start Notify and the rebuilt Niribar with the provider configured as `canopa-v3`; open Notifications from a module action.
-- Confirm banner readiness on the actual compositor, including the initial empty surface and the first notification. In a disposable session, disconnect the daemon's renderer connection or stop that compositor; verify `ctl status --json` reports terminal presentation failure without sending another notification, while receipt and Center state remain available through their transports. Reconnecting the compositor alone does not restore banners: explicitly restart Notify and check normal retained/stale and transient restart behavior. The automated first-redraw/readiness tests do not prove visible pixels or compositor-disconnect handling.
-- Send several applications' notifications. Confirm section titles, summaries, metadata, permission controls, and all named actions are visible/reachable. Verify active state changes replace content without opening a second panel.
-- Send a transient notification with four named actions and default activation while three critical banners occupy the stack. Confirm its runtime-only center item and every action are reachable by mouse and keyboard. Invoke resident actions, replace it, close it, and restart the daemon: no transient archive should remain. Repeat with DND enabled. Center opening must not start an undisplayed banner's timeout or change keyboard focus outside the deliberately opened panel.
-- Send interleaved bold/italic/underlined text, a valid local PNG, and following text. Confirm ordering and styling. A valid image must not duplicate its alternative text; a missing/unsafe image must show its fallback.
-- Send a long body and many actions. Confirm scrolling, wrapping and all actions remain usable. Verify arrows/Tab/Shift-Tab select actions, the persistent selected-action affordance identifies its notification/control, Enter invokes exactly that action, and Escape closes the panel.
-- Replace an item while an action is selected. Confirm selection clears and an old click cannot invoke the new snapshot. Close/reopen the panel and confirm old-session clicks remain stale.
-- Queue an advertised Open/Dismiss or named action, then replace its notification before dispatch, including reuse of the same sender key. Confirm no replacement action or dismissal occurs; fresh controls still work. Repeat after daemon restart with a new transient item. ADR 0042's daemon-side target checks are automated, but this checklist also verifies actual host event capture and focus behavior.
-- Invoke resident and nonresident actions while watching the private test D-Bus signals. Confirm opaque action keys survive, resident items remain active, and token/action/closure order is preserved where token acquisition is available.
-- Change an app/category permission, close and reopen the panel, and confirm the selected option persists. Confirm Clear dismisses active items and Delete History removes only inactive history.
-- Stop the test daemon/provider and verify visible failure content, bounded cleanup, and successful reopening after restart. Verify normal Wi-Fi provider operation remains unchanged.
-
-Status as of 2026-09-14: the [initial nested-Niri pass](../.scratch/freedesktop-completion-review/BANNER-LAYOUT-EVIDENCE.md) corrected rich-banner clipping and opened the Canopa-v3 Niribar panel. [Compositor-sized geometry evidence](../.scratch/freedesktop-completion-review/OUTPUT-FIT-EVIDENCE.md) covers scales 1/1.5/2, action clicks, focus, click-through and clipped lower-card expiry after scrolling. The [oversized-card continuation](../.scratch/freedesktop-completion-review/OVERSIZED-CARD-EVIDENCE.md) adds bounded internal scrolling, separate stack/card rails and normal finite expiry when the full bounded card viewport is shown, under ADR 0046. Actual clicks and replacement click-through pass at scale 1 and a narrow scale-2 output. [Two-output Sway evidence](../.scratch/freedesktop-completion-review/OUTPUT-LIFETIME-EVIDENCE.md) now covers new-stack placement, stable replacement, reserved-panel spacing, surviving-output fallback, actions, expiry and click-through under ADR 0047. This remains partial W10/W11 evidence: multi-output Niri/physical hotplug, the complete scale/font/locale matrix, Center keyboard/action scrolling and screen-reader integration remain open. Drawing-viewport acknowledgement is not compositor presentation feedback, occlusion detection or read completion. `body-images`, `body-hyperlinks`, and `persistence` remain unadvertised. Actual transient overflow/action reachability, projection overflow/pagination, and safe hyperlinks remain tracked work.
+Historical scale, output-loss, timing, rapid-key and overflow captures remain linked
+from [desktop acceptance](notification-desktop-acceptance.md) and the implementation
+tracker. No exhaustive hardware/font/locale or native Notification portal-v2 claim
+follows from these fixtures.

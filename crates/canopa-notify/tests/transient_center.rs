@@ -69,7 +69,7 @@ impl Provider {
             protocol_version,
             content,
         } = serde_json::from_str(&line).unwrap();
-        assert_eq!(protocol_version, 3);
+        assert_eq!(protocol_version, 4);
         assert!(
             content.error.is_none(),
             "unexpected provider error: {:?}",
@@ -262,8 +262,20 @@ async fn provider_marks_transient_items_and_routes_every_action_to_the_live_send
             .iter()
             .any(|entry| entry.key == "retention" && entry.value == "Runtime only")
     );
-    assert_eq!(item.body.as_deref(), Some("Preview body"));
-    assert!(item.styled_body.as_ref().unwrap().runs[0].style.bold);
+    let body = item.rich_body.as_ref().unwrap();
+    assert!(
+        matches!(&body.segments[0], canopa_panel_protocol::RichBodySegment::Text { text, style } if text == "Preview" && style.bold)
+    );
+    assert_eq!(
+        body.segments
+            .iter()
+            .filter_map(|segment| match segment {
+                canopa_panel_protocol::RichBodySegment::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>(),
+        "Preview body"
+    );
     let activation = item
         .actions
         .iter()
@@ -545,7 +557,7 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
                 == if transient {
                     "Runtime only"
                 } else {
-                    "Retained"
+                    "Requires attention"
                 }));
         provider
             .invoke(&item.id, &dismissal.key, dismissal.value.clone())

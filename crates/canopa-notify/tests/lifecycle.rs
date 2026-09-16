@@ -46,6 +46,7 @@ impl NotificationHistory for MemoryHistory {
         let id = InternalNotificationId::new(threads.len() as i64 + 1).unwrap();
         let thread = NotificationThread {
             id,
+            requires_attention: thread.requires_attention,
             accepted_notification: thread.accepted_notification,
             status: thread.status,
             delivery_outcome: thread.delivery_outcome,

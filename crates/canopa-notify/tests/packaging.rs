@@ -1,7 +1,7 @@
 #[test]
 fn service_unit_starts_service_mode_without_autostart_desktop_file() {
     let unit = std::fs::read_to_string("../../packaging/systemd/canopa-notify.service").unwrap();
-    assert!(unit.contains("ExecStart=canopa-notify daemon --service"));
+    assert!(unit.contains("ExecStart=%h/.local/bin/canopa-notify daemon --service"));
     assert!(unit.contains("--socket %t/canopa-notify/control.sock"));
 
     let autostart = std::path::Path::new("../../packaging/canopa-notify.desktop");

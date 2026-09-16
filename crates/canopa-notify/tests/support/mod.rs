@@ -1,3 +1,8 @@
+#![allow(
+    dead_code,
+    reason = "Each integration test binary imports only the shared helpers it needs"
+)]
+
 use assert_cmd::Command;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};

@@ -5,14 +5,25 @@ on:
 permissions:
   contents: read
 jobs:
+  core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install private-bus runner
+        run: sudo apt-get update && sudo apt-get install -y dbus ripgrep
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - run: bash scripts/check-core-dependencies.sh
+      - run: cargo check --workspace --all-targets --no-default-features --locked
+      - run: bash scripts/test.sh --no-default-features
   check:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install desktop build dependencies
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev dbus
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev dbus at-spi2-core
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: bash scripts/test.sh

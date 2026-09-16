@@ -20,8 +20,10 @@ const IMPLEMENTED_SPECIFICATION_CAPABILITIES: &[&str] = &[
     "actions",
     "action-icons",
     "body",
+    "body-images",
     "body-markup",
     "icon-static",
+    "persistence",
 ];
 const ACTIVATION_TOKEN_EXTENSION_CAPABILITY: &str = "activation-token";
 
@@ -32,8 +34,11 @@ struct CapabilityAdvertisement {
 }
 
 impl CapabilityAdvertisement {
-    fn for_runtime(sound: bool, activation_token: bool) -> Self {
+    fn for_runtime(sound: bool, activation_token: bool, links: bool) -> Self {
         let mut specification = IMPLEMENTED_SPECIFICATION_CAPABILITIES.to_vec();
+        if links {
+            specification.push("body-hyperlinks");
+        }
         if sound {
             specification.push("sound");
         }
@@ -62,6 +67,7 @@ fn capability_advertisement(daemon: &Daemon) -> CapabilityAdvertisement {
     CapabilityAdvertisement::for_runtime(
         daemon.supports_sound(),
         daemon.supports_activation_tokens(),
+        daemon.link_opening_status().available,
     )
 }
 
@@ -214,9 +220,14 @@ async fn attach_with_ids(
 }
 
 struct DbusSenderPublisher {
-    queue: tokio::sync::mpsc::Sender<(SenderNotificationId, SenderEvent)>,
+    queue: tokio::sync::mpsc::Sender<SenderPublication>,
     sender_ids: NotificationSenderIds,
     error: Arc<Mutex<Option<String>>>,
+}
+
+enum SenderPublication {
+    Event(SenderNotificationId, SenderEvent),
+    Flush(tokio::sync::oneshot::Sender<()>),
 }
 
 impl DbusSenderPublisher {
@@ -230,11 +241,18 @@ impl DbusSenderPublisher {
         let error = Arc::new(Mutex::new(None));
         let transport_error = error.clone();
         tokio::spawn(async move {
-            while let Some((sender_id, event)) = events.recv().await {
-                if let Err(error) = emit_sender_event(&emitter, sender_id, &event).await {
-                    *transport_error.lock().unwrap() = Some(format!("{error:#}"));
-                    eprintln!("level=error component=dbus event=sender_signal_failed");
-                    break;
+            while let Some(publication) = events.recv().await {
+                match publication {
+                    SenderPublication::Event(sender_id, event) => {
+                        if let Err(error) = emit_sender_event(&emitter, sender_id, &event).await {
+                            *transport_error.lock().unwrap() = Some(format!("{error:#}"));
+                            eprintln!("level=error component=dbus event=sender_signal_failed");
+                            break;
+                        }
+                    }
+                    SenderPublication::Flush(complete) => {
+                        let _ = complete.send(());
+                    }
                 }
             }
         });
@@ -265,11 +283,25 @@ impl canopa_notify::SenderEventPublisher for DbusSenderPublisher {
         Box::pin(async move {
             if let Some(sender_id) = sender_id {
                 queue
-                    .send((sender_id, event))
+                    .send(SenderPublication::Event(sender_id, event))
                     .await
                     .map_err(|_| anyhow::anyhow!("D-Bus sender publisher disconnected"))?;
             }
             Ok(())
+        })
+    }
+
+    fn flush(&self) -> canopa_notify::SenderEventPublication {
+        let queue = self.queue.clone();
+        Box::pin(async move {
+            let (complete, received) = tokio::sync::oneshot::channel();
+            queue
+                .send(SenderPublication::Flush(complete))
+                .await
+                .map_err(|_| anyhow::anyhow!("D-Bus sender publisher disconnected during drain"))?;
+            received
+                .await
+                .map_err(|_| anyhow::anyhow!("D-Bus sender publisher failed during drain"))
         })
     }
 

@@ -135,11 +135,18 @@ fn prepare_pixels(
                 .and_then(|visual| budget.resolve(visual, &mut icons, 16));
         }
         let mut segments = Vec::new();
-        for segment in &banner.body_content.segments {
+        for (segment_index, segment) in banner.body_content.segments.iter().enumerate() {
             if cancelled() {
                 return None;
             }
             match segment {
+                NotificationBodySegment::Link { text, style, .. } => {
+                    segments.push(BannerBodySegment::Link {
+                        text: text.clone(),
+                        style: *style,
+                        segment_index,
+                    });
+                }
                 NotificationBodySegment::Text { text, style } => {
                     push_banner_body_text_segment(&mut segments, text, *style);
                 }

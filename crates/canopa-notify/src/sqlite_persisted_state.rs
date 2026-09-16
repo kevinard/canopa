@@ -15,7 +15,7 @@ use std::path::PathBuf;
 #[cfg(test)]
 use std::str::FromStr;
 
-const CURRENT_SCHEMA_VERSION: i64 = 1;
+const CURRENT_SCHEMA_VERSION: i64 = 2;
 
 #[derive(Clone)]
 pub(crate) struct SqlitePersistedState {
@@ -30,7 +30,7 @@ struct RetentionPolicy {
 }
 
 const NOTIFICATION_THREAD_ID_COLUMN: &str = "id";
-const NOTIFICATION_THREAD_WRITE_COLUMNS: [&str; 21] = [
+const NOTIFICATION_THREAD_WRITE_COLUMNS: [&str; 23] = [
     "app_identity",
     "app_name",
     "replaces_id",
@@ -52,6 +52,8 @@ const NOTIFICATION_THREAD_WRITE_COLUMNS: [&str; 21] = [
     "created_at",
     "updated_at",
     "closed_at",
+    "requires_attention",
+    "retained_bytes",
 ];
 
 fn notification_thread_columns() -> String {
@@ -121,6 +123,7 @@ struct NotificationThreadRecord {
     raw_body: String,
     urgency: Urgency,
     status: NotificationStatus,
+    requires_attention: bool,
     delivery_outcome: DeliveryOutcome,
     rule_reference: Option<String>,
     category: Option<String>,
@@ -140,6 +143,7 @@ impl NotificationThreadRecord {
             None,
             thread.accepted_notification,
             thread.status,
+            thread.requires_attention,
             thread.delivery_outcome,
             thread.rule_reference,
             1,
@@ -154,6 +158,7 @@ impl NotificationThreadRecord {
             Some(thread.id.get()),
             thread.accepted_notification,
             thread.status,
+            thread.requires_attention,
             thread.delivery_outcome,
             thread.rule_reference,
             thread.revision,
@@ -163,10 +168,15 @@ impl NotificationThreadRecord {
         )
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Private serialization boundary mirrors the persisted thread columns"
+    )]
     fn from_thread_parts(
         id: Option<i64>,
         notification: AcceptedNotification,
         status: NotificationStatus,
+        requires_attention: bool,
         delivery_outcome: DeliveryOutcome,
         rule_reference: Option<String>,
         revision: i64,
@@ -190,6 +200,7 @@ impl NotificationThreadRecord {
             raw_body: notification.raw_body,
             urgency: notification.urgency,
             status,
+            requires_attention,
             delivery_outcome,
             rule_reference,
             category: notification.category,
@@ -221,6 +232,7 @@ impl NotificationThreadRecord {
             raw_body: row.try_get("raw_body")?,
             urgency: Urgency::from_persisted_str(&row.try_get::<String, _>("urgency")?),
             status: NotificationStatus::from_persisted_str(&row.try_get::<String, _>("status")?),
+            requires_attention: row.try_get("requires_attention")?,
             delivery_outcome: DeliveryOutcome::from_persisted_str(
                 &row.try_get::<String, _>("delivery_outcome")?,
             ),
@@ -287,6 +299,32 @@ impl NotificationThreadRecord {
             .bind(self.created_at)
             .bind(self.updated_at)
             .bind(self.closed_at)
+            .bind(self.requires_attention)
+            .bind(self.storage_bytes())
+    }
+
+    fn storage_bytes(&self) -> i64 {
+        [
+            &self.app_identity,
+            &self.app_name,
+            &self.summary,
+            &self.body,
+            &self.raw_body,
+            &self.actions_json,
+        ]
+        .into_iter()
+        .map(|value| value.len() as i64)
+        .sum::<i64>()
+            + [
+                &self.app_icon_json,
+                &self.body_content_json,
+                &self.rule_reference,
+                &self.category,
+                &self.image_reference_json,
+            ]
+            .into_iter()
+            .map(|value| value.as_ref().map_or(0, |value| value.len() as i64))
+            .sum::<i64>()
     }
 
     fn into_thread(self) -> anyhow::Result<NotificationThread> {
@@ -333,6 +371,7 @@ impl NotificationThreadRecord {
                 transient: false,
             },
             status: self.status,
+            requires_attention: self.requires_attention,
             delivery_outcome: self.delivery_outcome,
             rule_reference: self.rule_reference,
             revision: self.revision,
@@ -419,6 +458,11 @@ impl SqlitePersistedState {
             Self::create_schema(&mut transaction).await?;
             Self::migrate_schema(&mut transaction).await?;
             sqlx::raw_sql(include_str!("../migrations/0001-baseline.sql"))
+                .execute(&mut *transaction)
+                .await?;
+        }
+        if version < 2 {
+            sqlx::raw_sql(include_str!("../migrations/0002-retained-attention.sql"))
                 .execute(&mut *transaction)
                 .await?;
         }
@@ -627,6 +671,27 @@ impl SqlitePersistedState {
         NotificationThreadRecord::from_row(&row)?.into_thread()
     }
 
+    pub(crate) async fn center_threads_after(
+        &self,
+        after: Option<crate::NotificationCenterCursor>,
+        limit: u8,
+    ) -> anyhow::Result<Vec<NotificationThread>> {
+        let sql = notification_thread_select_sql(
+            "WHERE ?1 IS NULL OR (requires_attention, created_at, id) < (?1, ?2, ?3)
+             ORDER BY requires_attention DESC, created_at DESC, id DESC LIMIT ?4",
+        );
+        sqlx::query(&sql)
+            .bind(after.map(|cursor| i64::from(cursor.requires_attention)))
+            .bind(after.map(|cursor| cursor.created_at))
+            .bind(after.map(|cursor| cursor.id.get()))
+            .bind(i64::from(limit))
+            .fetch_all(&self.pool)
+            .await?
+            .iter()
+            .map(|row| NotificationThreadRecord::from_row(row)?.into_thread())
+            .collect()
+    }
+
     pub(crate) async fn delete_inactive_history(&self) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM notification_threads WHERE status != 'active'")
             .execute(&self.pool)
@@ -720,7 +785,7 @@ impl SqlitePersistedState {
             now_millis().saturating_sub(self.retention.days.max(0).saturating_mul(86_400_000));
 
         sqlx::query(
-            "DELETE FROM notification_threads WHERE status != 'active' AND updated_at < ?1",
+            "DELETE FROM notification_threads WHERE status != 'active' AND requires_attention = 0 AND updated_at < ?1",
         )
         .bind(cutoff)
         .execute(&mut *connection)
@@ -729,11 +794,11 @@ impl SqlitePersistedState {
         sqlx::query(
             r#"
             DELETE FROM notification_threads
-            WHERE status != 'active'
+            WHERE status != 'active' AND requires_attention = 0
               AND id IN (
                   SELECT id
                   FROM notification_threads
-                  WHERE status != 'active'
+                  WHERE status != 'active' AND requires_attention = 0
                   ORDER BY updated_at DESC, id DESC
                   LIMIT -1 OFFSET ?1
               )
@@ -745,6 +810,21 @@ impl SqlitePersistedState {
 
         Ok(())
     }
+}
+
+// Pending content is never evicted to make room. Refuse new work atomically when
+// count or logical stored UTF-8 reaches the fixed budget; recovery remains possible.
+async fn check_attention_budget(connection: &mut SqliteConnection) -> anyhow::Result<()> {
+    let (count, bytes): (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*), COALESCE(SUM(retained_bytes), 0) FROM notification_threads WHERE requires_attention = 1")
+        .fetch_one(connection).await?;
+    if count > 4096 {
+        return Err(crate::NotificationLimitExceeded("retained count").into());
+    }
+    if bytes > 64 * 1024 * 1024 {
+        return Err(crate::NotificationLimitExceeded("retained text").into());
+    }
+    Ok(())
 }
 
 fn category_key(category: Option<&str>) -> &str {
@@ -775,6 +855,9 @@ impl NotificationHistory for SqlitePersistedState {
             .fetch_one(&mut *transaction)
             .await?;
         let thread = NotificationThreadRecord::from_row(&row)?.into_thread()?;
+        if thread.status == NotificationStatus::Active && thread.requires_attention {
+            check_attention_budget(&mut transaction).await?;
+        }
         self.prune_history_in(&mut transaction).await?;
         transaction.commit().await?;
         Ok(thread)
@@ -821,6 +904,9 @@ impl NotificationHistory for SqlitePersistedState {
         };
 
         let thread = NotificationThreadRecord::from_row(&row)?.into_thread()?;
+        if thread.status == NotificationStatus::Active && thread.requires_attention {
+            check_attention_budget(&mut transaction).await?;
+        }
         self.prune_history_in(&mut transaction).await?;
         transaction.commit().await?;
         Ok(thread)
@@ -1132,6 +1218,7 @@ mod tests {
 
         storage
             .create_thread(NewNotificationThread {
+                requires_attention: true,
                 accepted_notification: notification,
                 status: NotificationStatus::Active,
                 delivery_outcome: DeliveryOutcome::Shown,
@@ -1215,6 +1302,7 @@ mod tests {
 
         let mut dismissed = active.clone();
         dismissed.status = NotificationStatus::Dismissed;
+        dismissed.requires_attention = false;
         dismissed.updated_at = now + 1;
         dismissed.closed_at = Some(now + 1);
         let dismissed = storage
@@ -1230,7 +1318,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn persist_stale_threads_prunes_after_returning_stale_threads() {
+    async fn persist_stale_threads_preserves_pending_attention() {
         let (_temp, storage) = open_history(1).await;
         let now = now_millis();
         storage
@@ -1270,7 +1358,16 @@ mod tests {
                 .all(|thread| thread.status == NotificationStatus::Stale)
         );
         let snapshot = storage.snapshot().await.unwrap();
-        assert_eq!(summaries(&snapshot.history), vec!["new active"]);
+        assert_eq!(
+            summaries(&snapshot.history),
+            vec!["new active", "old active"]
+        );
+        assert!(
+            snapshot
+                .history
+                .iter()
+                .all(|thread| thread.requires_attention)
+        );
     }
 
     #[tokio::test]
@@ -1341,6 +1438,7 @@ mod tests {
         updated_at: i64,
     ) -> NewNotificationThread {
         NewNotificationThread {
+            requires_attention: status == NotificationStatus::Active,
             accepted_notification: accepted_notification(summary),
             status,
             delivery_outcome: DeliveryOutcome::Shown,

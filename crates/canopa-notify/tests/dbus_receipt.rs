@@ -86,8 +86,10 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
             "actions",
             "action-icons",
             "body",
+            "body-images",
             "body-markup",
             "icon-static",
+            "persistence",
         ]
     );
 
@@ -231,7 +233,7 @@ async fn dev_dbus_notify_accepts_body_image_markup_without_advertising_capabilit
             .any(|capability| capability == "body-markup")
     );
     assert!(
-        !capabilities
+        capabilities
             .iter()
             .any(|capability| capability == "body-images")
     );

@@ -1,3 +1,5 @@
+#![cfg(feature = "gui")]
+
 use canopa_notify::{Daemon, DaemonOptions, NotificationInput};
 use std::os::unix::net::UnixListener;
 use std::time::Duration;

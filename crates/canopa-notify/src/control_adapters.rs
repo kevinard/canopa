@@ -10,12 +10,14 @@ use canopa_panel_protocol::{
     PanelControlOption, PanelItem, PanelMetadata, PanelSection, RichBody, RichBodyImage,
     RichBodyImageSource, RichBodySegment, StyledText, StyledTextRun, StyledTextStyle,
 };
+mod pages;
 mod transport;
 
 pub(crate) use transport::{ControlSocket, run_ctl, run_panel_provider};
 use transport::{control_reply_line, panel_response_line};
 
 const PANEL_NOTIFICATION_ACTION_KEY: &str = "canopa-notify:notification-action";
+const PANEL_ACKNOWLEDGE_ITEM_KEY: &str = "canopa-notify:acknowledge-item";
 const PANEL_ACTIVATE_ITEM_KEY: &str = "canopa-notify:activate-item";
 const PANEL_APP_PERMISSION_KEY: &str = "canopa-notify:app-permission";
 const PANEL_CATEGORY_PERMISSION_KEY_PREFIX: &str = "canopa-notify:category-permission:";
@@ -97,6 +99,10 @@ impl CtlRequest {
                             ControlReply::ClearPartiallyApplied { .. }
                         )
                         | (
+                            ControlCommand::NotificationCenterBatch { .. },
+                            ControlReply::NotificationCenterBatch(_)
+                        )
+                        | (
                             ControlCommand::ReloadConfiguration { .. }
                                 | ControlCommand::SetAppPermission { .. }
                                 | ControlCommand::SetCategoryPermission { .. }
@@ -151,6 +157,7 @@ enum SocketControlRequest {
     ActiveCount,
     PanelSnapshot,
     PanelSubscribe,
+    PanelSession,
     InvokeNotificationAction {
         notification_id: InternalNotificationId,
         action_key: String,
@@ -203,6 +210,7 @@ const SOCKET_CONTROL_REQUESTS: &[SocketControlRequestSpec] = &[
 impl SocketControlRequest {
     fn kind(&self) -> &'static str {
         match self {
+            Self::PanelSession => "panel-session",
             Self::TypedCommand(_) => "control",
             Self::PanelInteraction(_) => "panel-interaction",
             Self::InvokeNotificationAction { .. } => "invoke-action",
@@ -214,6 +222,9 @@ impl SocketControlRequest {
     }
 
     fn parse(request: &str) -> Self {
+        if request == "panel-session" {
+            return Self::PanelSession;
+        }
         if let Some(json) = request.strip_prefix("control ") {
             return serde_json::from_str(json)
                 .map(Self::TypedCommand)
@@ -347,8 +358,12 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
             .groups
             .into_iter()
             .map(|group| PanelSection {
-                id: group.app_identity.clone(),
-                title: group.app_identity,
+                id: format!("app/{}", group.app_identity),
+                title: if group.app_identity.is_empty() {
+                    "Unknown application".into()
+                } else {
+                    group.app_identity.clone()
+                },
                 items: group
                     .items
                     .into_iter()
@@ -357,15 +372,20 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                         title: item.summary,
                         body: (!item.body.is_empty()).then_some(item.body),
                         styled_body: styled_text_from_body_content(item.body_content.clone()),
-                        rich_body: rich_body_from_body_content(item.body_content),
+                        rich_body: rich_body_from_body_content(
+                            item.body_content,
+                            item.target.clone(),
+                        ),
                         metadata: vec![
                             PanelMetadata {
                                 key: "retention".to_string(),
                                 label: "Retention".to_string(),
                                 value: if item.transient {
                                     "Runtime only"
+                                } else if item.requires_attention {
+                                    "Requires attention"
                                 } else {
-                                    "Retained"
+                                    "Archive"
                                 }
                                 .to_string(),
                             },
@@ -408,14 +428,38 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                     },
                                 ),
                             )
+                            .chain(
+                                ((item.requires_attention
+                                    && item.status != canopa_notify::NotificationStatus::Active)
+                                    || (item.status == canopa_notify::NotificationStatus::Active
+                                        && item.has_default_action))
+                                    .then(|| {
+                                        panel_center_action(
+                                            item.target.clone(),
+                                            NotificationCenterAction::Acknowledge,
+                                            if item.status
+                                                == canopa_notify::NotificationStatus::Active
+                                            {
+                                                "Dismiss notification"
+                                            } else {
+                                                "Mark as read"
+                                            }
+                                            .to_string(),
+                                        )
+                                    }),
+                            )
                             .collect(),
                     })
                     .collect(),
-                controls: std::iter::once(app_permission_control(group.permission))
-                    .chain(group.category_permissions.into_iter().map(|control| {
-                        category_permission_control(control.category, control.permission)
-                    }))
-                    .collect(),
+                controls: if group.app_identity.is_empty() {
+                    Vec::new()
+                } else {
+                    std::iter::once(app_permission_control(group.permission))
+                        .chain(group.category_permissions.into_iter().map(|control| {
+                            category_permission_control(control.category, control.permission)
+                        }))
+                        .collect()
+                },
             })
             .collect(),
         actions: vec![
@@ -446,6 +490,8 @@ fn panel_center_action(
 
 fn panel_center_action_key(action: &NotificationCenterAction) -> &'static str {
     match action {
+        NotificationCenterAction::OpenLink { .. } => "canopa-notify:open-link",
+        NotificationCenterAction::Acknowledge => PANEL_ACKNOWLEDGE_ITEM_KEY,
         NotificationCenterAction::Activate => PANEL_ACTIVATE_ITEM_KEY,
         NotificationCenterAction::InvokeAction { .. } => PANEL_NOTIFICATION_ACTION_KEY,
     }
@@ -470,12 +516,18 @@ fn styled_text_from_body_content(body_content: NotificationBodyContent) -> Optio
     (!styled.is_empty()).then_some(styled)
 }
 
-fn rich_body_from_body_content(body_content: NotificationBodyContent) -> Option<RichBody> {
+fn rich_body_from_body_content(
+    body_content: NotificationBodyContent,
+    target: NotificationCenterTarget,
+) -> Option<RichBody> {
     let rich_body = RichBody {
         segments: body_content
             .segments
             .into_iter()
-            .map(rich_body_segment_from_notification_segment)
+            .enumerate()
+            .map(|(index, segment)| {
+                rich_body_segment_from_notification_segment(segment, index, &target)
+            })
             .collect(),
     };
 
@@ -484,8 +536,23 @@ fn rich_body_from_body_content(body_content: NotificationBodyContent) -> Option<
 
 fn rich_body_segment_from_notification_segment(
     segment: NotificationBodySegment,
+    segment_index: usize,
+    target: &NotificationCenterTarget,
 ) -> RichBodySegment {
     match segment {
+        NotificationBodySegment::Link { text, style, uri } => RichBodySegment::Link {
+            uri: uri.as_str().to_owned(),
+            action: panel_center_action(
+                target.clone(),
+                NotificationCenterAction::OpenLink { segment_index },
+                text,
+            ),
+            style: StyledTextStyle {
+                bold: style.bold,
+                italic: style.italic,
+                underline: style.underline,
+            },
+        },
         NotificationBodySegment::Text { text, style } => RichBodySegment::Text {
             text,
             style: StyledTextStyle {
@@ -564,7 +631,7 @@ fn control_command_from_panel_interaction(event: InteractionEvent) -> Option<Con
             }
             InteractionTarget::Section { id } if action_key == PANEL_APP_PERMISSION_KEY => {
                 Some(ControlCommand::SetAppPermission {
-                    app_identity: id,
+                    app_identity: id.strip_prefix("app/")?.to_owned(),
                     permission: app_permission_from_panel_value(value.as_deref()?)?,
                 })
             }
@@ -574,7 +641,7 @@ fn control_command_from_panel_interaction(event: InteractionEvent) -> Option<Con
                 let category = action_key.strip_prefix(PANEL_CATEGORY_PERMISSION_KEY_PREFIX)?;
                 let category = normalize_notification_category(category)?;
                 Some(ControlCommand::SetCategoryPermission {
-                    app_identity: id,
+                    app_identity: id.strip_prefix("app/")?.to_owned(),
                     category,
                     permission: app_permission_from_panel_value(value.as_deref()?)?,
                 })
@@ -712,6 +779,7 @@ mod tests {
                     permission: AppPermissionControl::Silence,
                 }],
                 items: vec![canopa_notify::NotificationCenterItem {
+                    requires_attention: false,
                     notification_id: InternalNotificationId::new(42).unwrap(),
                     target: center_target_fixture(),
                     transient: false,
@@ -776,7 +844,7 @@ mod tests {
         assert_eq!(
             control_command_from_panel_interaction(InteractionEvent::Invoke {
                 target: InteractionTarget::Section {
-                    id: "Mail".to_string()
+                    id: "app/Mail".to_string()
                 },
                 action_key: "canopa-notify:category-permission:email.arrived".to_string(),
                 value: Some("drop".to_string()),
@@ -790,7 +858,7 @@ mod tests {
         assert_eq!(
             control_command_from_panel_interaction(InteractionEvent::Invoke {
                 target: InteractionTarget::Section {
-                    id: "Mail".to_string()
+                    id: "app/Mail".to_string()
                 },
                 action_key: "canopa-notify:category-permission:bad category".to_string(),
                 value: Some("drop".to_string()),
@@ -815,7 +883,7 @@ mod tests {
         assert_eq!(
             control_command_from_panel_interaction(InteractionEvent::Invoke {
                 target: InteractionTarget::Section {
-                    id: "Mail".to_string()
+                    id: "app/Mail".to_string()
                 },
                 action_key: PANEL_APP_PERMISSION_KEY.to_string(),
                 value: Some("silence".to_string()),

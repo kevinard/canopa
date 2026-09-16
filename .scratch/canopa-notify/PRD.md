@@ -1,6 +1,6 @@
 # Canopa Notify PRD
 
-Status: ready-for-agent
+Status: implemented (selected freedesktop static profile; see completion record)
 
 ## Problem Statement
 
@@ -134,7 +134,7 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - Notification Configuration uses KDL and should align with Niribar's parser approach and diagnostic style where practical.
 - Canopa Notify has one active Notification Configuration at a time.
 - Invalid configuration reloads are rejected while the previous valid configuration stays active.
-- Valid configuration reloads re-evaluate Active Notifications under the new rules.
+- Valid configuration reloads affect future requests, including replacements, under ADR 0027; existing notifications keep their committed delivery decision.
 - Notification Daemon and configuration errors are reported through logs and control surfaces, not self-notifications.
 - App Identity is primarily the desktop entry hint, with app name fallback.
 - Unknown App Identities are allowed unless a Notification Rule says otherwise.
@@ -144,8 +144,8 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - User Rule Store rules are keyed by App Identity, optional Notification Category, and optional Notification Urgency.
 - User Rule Store rules take precedence over Notification Configuration rules.
 - Notification Configuration rules may define optional Config Rule IDs; unnamed config rules use generated references.
-- Rule changes affect future notifications and re-evaluate Active Notifications without changing inactive Notification History records.
-- Rule re-evaluation may close banners but does not create late banners.
+- Rule changes affect future requests without re-evaluating existing active or inactive notifications (ADR 0027).
+- Policy changes alone do not close or create banners.
 - Do Not Disturb persists across restarts, silences non-critical notifications, and takes precedence over app allow rules for non-critical notifications.
 - Explicit drop rules apply even to critical notifications.
 - Silenced Notifications remain retained and may remain active without a visible banner.
@@ -155,23 +155,23 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - Eligible replacements may create banners even when prior revisions did not.
 - Notification History persists across restarts, with default retention of 30 days and 1,000 Notification Threads.
 - Retention pruning runs after writes and at daemon startup.
-- Active Notifications are exempt from retention pruning.
+- Active Notifications and retained content requiring attention are exempt from archive pruning (ADR 0049).
 - Active Notifications loaded after daemon restart become Stale Notifications, and old banners are not restored.
 - Notification History does not persist arbitrary notification image payloads by default and is not app-level encrypted in version one.
 - Notification Category is validated metadata and is available to category-specific Notification Rules and Notification Center controls.
 - Notification Progress is stored as metadata and may be rendered by Notification Banners; first Niribar-hosted Notification Center does not require progress rendering.
-- Raw Notification Body is retained while the user-visible Notification Body renders as conservative plain text.
+- Raw Notification Body is retained; ordered safe markup, local body images and HTTP(S) links render with a plain fallback.
 - Body-only notifications are valid. Empty no-op notifications are dropped.
 - Notification Banners are daemon-owned, top-right on the focused output by default, capped at three visible banners, and never steal keyboard focus.
 - Banner visibility prefers critical Active Notifications and then newest eligible Active Notifications.
 - Hidden Active Notifications are not promoted later solely because a banner slot opens.
 - First-version banner placement is global, not per-output.
-- Sender-requested Notification Timeout values are respected within user-configured bounds. First-version timeout config is global with per-urgency defaults.
+- Notification Timeout follows ADR 0028: zero never expires, positive values apply after first display, and negative values use the daemon default; critical defaults do not expire.
 - Critical Active Notifications do not expire automatically by default.
-- Notification sounds are outside first-version scope.
+- Bounded local notification sound and sound-theme lookup are implemented when the audio adapter is available.
 - Hiding notification body content for privacy-sensitive display states belongs to Compositor Privacy Mode, not Notify.
 - Notification Actions are invokable only while a Notification Thread is active, including silenced Active Notifications shown in the Notification Center.
-- Inactive Notification History is read-only except for deletion. Stale action labels may remain as read-only metadata.
+- Inactive Notification History supports acknowledgement and deletion, plus safe body links. Stale sender actions remain unavailable.
 - Invoking an action closes the notification unless it is a Resident Notification.
 - User dismissal has the same Sender Notification Lifecycle effect whether it starts from a banner or the Notification Center.
 - The Notification Center shows Active Notifications and recent Notification History grouped by App Identity.
@@ -189,10 +189,10 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - Lifecycle tests should cover Active, Dismissed, Expired, Closed, Stale, Silenced, and Dropped states; sender-visible close behavior; action availability; Resident Notification behavior; and restart stale conversion.
 - Replacement tests should cover thread revision, silenced replacements closing banners, dropped replacements not updating history, and eligible replacements creating new presentation opportunities.
 - History storage tests should cover SQLite migrations, insert/update of Notification Threads, retention pruning, active retention exemption, stale startup transition, history deletion, and omission of arbitrary image payload persistence.
-- Configuration tests should cover KDL parsing, invalid reload rejection, one active configuration, config rule IDs, generated references for unnamed rules, and re-evaluation of Active Notifications.
+- Configuration tests should cover KDL parsing, invalid reload rejection, one active configuration, config rule IDs, generated references for unnamed rules, and future-request-only policy changes.
 - Control API tests should cover Unix socket request/response behavior, daemon unavailable errors, state subscriptions, DND commands, reload commands, active notification listing, and unstable JSON output for diagnostics.
 - D-Bus integration tests should run against the dev/test service name where possible and cover `Notify`, `CloseNotification`, server information, action invocation signals, and close signals.
-- Presentation coordinator tests should cover banner eligibility, maximum visible banners, critical-first ordering, no delayed promotion, no late banners from rule re-evaluation, focused-output fallback, timeout decisions, and non-focus-stealing intent.
+- Presentation coordinator tests should cover banner eligibility, maximum visible banners, critical-first ordering, no delayed promotion, no late banners from policy changes, focused-output fallback, timeout decisions, and non-focus-stealing intent.
 - Wayland/iced rendering should have smoke/integration coverage for a real minimal banner in a graphical test environment where available. Headless Mode should cover the same policy/storage/control behavior without graphical surfaces.
 - Panel provider tests should cover daemon unavailable provider error content, initial snapshot rendering, live state updates through Notification State Subscription, App Permission Control events, clear/delete actions, and mapping Notify state into the shared panel protocol.
 - CLI tests should cover exit codes and stable documented behavior for status, reload, DND, and active notification diagnostics. Non-documented human output should not be over-specified.
@@ -207,8 +207,8 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - Standalone settings UI.
 - Standalone tray or status indicator.
 - Full-text Notification History search.
-- Unread/read notification state.
-- Notification sounds in version one.
+- General unread/read workflows beyond retained-attention acknowledgement (ADR 0049).
+- Remote audio resources and unbounded playback.
 - Inline replies in version one.
 - App-level body hiding or screenshot privacy mode; this belongs to Compositor Privacy Mode.
 - Arbitrary notification image persistence in history by default.
@@ -228,3 +228,7 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 - The shared panel protocol crate is a prerequisite for the final provider portion of the tracer bullet. The rest of the daemon can proceed independently.
 - Canopa Notify should include first-version documentation showing how to configure Niribar to open `canopa-notify panel-provider` through its external panel provider mechanism.
 - The repository uses local markdown tracking for now. Follow-up implementation issues should live under this feature directory and carry `Status: ready-for-agent` when fully specified.
+
+## Completion alignment (2026-09-16)
+
+The current contract is the [selected completion scope](../freedesktop-completion-review/PLAN.md), its ADRs, and the [release record](../../docs/notification-release-verification.md). Safe body links, all actions, local body images, retained attention and native accessibility are implemented together with Canopa-v4 Niribar support. Native portal v2, replies, grouping, snoozing and authenticated app permissions remain separate work.

@@ -1,10 +1,11 @@
-use crate::InternalNotificationId;
 use crate::{
     AcceptedNotification, NotificationBodyContent, NotificationBodyImage,
     NotificationBodyImageSource, NotificationBodySegment, NotificationBodyStyle,
     NotificationImageData, NotificationInput, NotificationSoundRequest,
     normalize_notification_category,
 };
+use crate::{InternalNotificationId, NotificationLink};
+use std::sync::Arc;
 
 const MAX_BODY_CONTENT_SEGMENTS: usize = 256;
 const MAX_BODY_STYLE_DEPTH: u16 = 64;
@@ -133,9 +134,10 @@ impl StyleCounts {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct StyledChar {
     ch: char,
+    link: Option<Arc<NotificationLink>>,
     style: NotificationBodyStyle,
 }
 
@@ -150,7 +152,9 @@ struct BodyMarkupParser<'a> {
     index: usize,
     output: Vec<ParsedBodyNode>,
     style: StyleCounts,
+    link: Option<Arc<NotificationLink>>,
     plain: bool,
+    anchor_open: bool,
     segments: usize,
 }
 
@@ -161,7 +165,9 @@ impl<'a> BodyMarkupParser<'a> {
             index: 0,
             output: Vec::new(),
             style: StyleCounts::default(),
+            link: None,
             plain: false,
+            anchor_open: false,
             segments: 0,
         }
     }
@@ -254,7 +260,24 @@ impl<'a> BodyMarkupParser<'a> {
                     self.push_text(&alt);
                 }
             }
-            "a" | "img" => {}
+            "a" => {
+                if closing {
+                    self.link = None;
+                    self.anchor_open = false;
+                } else if !self_closing && !self.plain {
+                    // Nested anchors are malformed: retain readable content but
+                    // remove all clickable meaning rather than guess a target.
+                    if self.anchor_open {
+                        self.degrade_to_plain();
+                    } else {
+                        self.anchor_open = true;
+                        self.link = attribute_value(tag_without_direction, "href")
+                            .and_then(|value| NotificationLink::parse(&value).ok())
+                            .map(Arc::new);
+                    }
+                }
+            }
+            "img" => {}
             _ => {}
         }
     }
@@ -262,7 +285,11 @@ impl<'a> BodyMarkupParser<'a> {
     fn push_text(&mut self, text: &str) {
         let style = self.style.style();
         for ch in text.chars() {
-            self.push_node(ParsedBodyNode::Text(StyledChar { ch, style }));
+            self.push_node(ParsedBodyNode::Text(StyledChar {
+                ch,
+                style,
+                link: self.link.clone(),
+            }));
         }
     }
 
@@ -272,11 +299,12 @@ impl<'a> BodyMarkupParser<'a> {
             && text.ch == '\n'
         {
             text.style = NotificationBodyStyle::default();
+            text.link = None;
         }
         if !self.plain {
             let same_run = matches!((&node, self.output.last()),
                 (ParsedBodyNode::Text(current), Some(ParsedBodyNode::Text(previous)))
-                    if current.style == previous.style);
+                    if current.style == previous.style && current.link == previous.link);
             if !same_run {
                 if self.segments == MAX_BODY_CONTENT_SEGMENTS {
                     self.degrade_to_plain();
@@ -289,6 +317,7 @@ impl<'a> BodyMarkupParser<'a> {
             ParsedBodyNode::Text(mut text) => {
                 if self.plain {
                     text.style = NotificationBodyStyle::default();
+                    text.link = None;
                 }
                 self.output.push(ParsedBodyNode::Text(text));
             }
@@ -304,6 +333,7 @@ impl<'a> BodyMarkupParser<'a> {
     fn degrade_to_plain(&mut self) {
         self.plain = true;
         self.style = StyleCounts::default();
+        self.link = None;
         let nodes = std::mem::take(&mut self.output);
         for node in nodes {
             self.push_node(node);
@@ -318,6 +348,7 @@ impl<'a> BodyMarkupParser<'a> {
         if !last_is_newline {
             self.push_node(ParsedBodyNode::Text(StyledChar {
                 ch: '\n',
+                link: None,
                 style: NotificationBodyStyle::default(),
             }));
         }
@@ -520,6 +551,7 @@ fn parsed_body_nodes_to_content(nodes: Vec<ParsedBodyNode>) -> NotificationBodyC
         if index > 0 {
             normalized.push(ParsedBodyNode::Text(StyledChar {
                 ch: '\n',
+                link: None,
                 style: NotificationBodyStyle::default(),
             }));
         }
@@ -547,40 +579,40 @@ fn parsed_body_nodes_to_content(nodes: Vec<ParsedBodyNode>) -> NotificationBodyC
 
     let mut segments = Vec::new();
     let mut current_text = String::new();
-    let mut current_style: Option<NotificationBodyStyle> = None;
-
+    let mut current: Option<(NotificationBodyStyle, Option<Arc<NotificationLink>>)> = None;
+    let flush =
+        |segments: &mut Vec<NotificationBodySegment>,
+         text: &mut String,
+         current: &mut Option<(NotificationBodyStyle, Option<Arc<NotificationLink>>)>| {
+            if let Some((style, link)) = current.take() {
+                let text = std::mem::take(text);
+                segments.push(match link {
+                    Some(uri) => NotificationBodySegment::Link {
+                        text,
+                        style,
+                        uri: (*uri).clone(),
+                    },
+                    None => NotificationBodySegment::styled_text(text, style),
+                });
+            }
+        };
     for node in normalized.into_iter().skip(start).take(end - start) {
         match node {
-            ParsedBodyNode::Text(styled) => match current_style {
-                Some(style) if style == styled.style => current_text.push(styled.ch),
-                Some(style) => {
-                    segments.push(NotificationBodySegment::styled_text(
-                        std::mem::take(&mut current_text),
-                        style,
-                    ));
-                    current_text.push(styled.ch);
-                    current_style = Some(styled.style);
+            ParsedBodyNode::Text(styled) => {
+                let key = (styled.style, styled.link);
+                if current.as_ref() != Some(&key) {
+                    flush(&mut segments, &mut current_text, &mut current);
+                    current = Some(key);
                 }
-                None => {
-                    current_text.push(styled.ch);
-                    current_style = Some(styled.style);
-                }
-            },
+                current_text.push(styled.ch);
+            }
             ParsedBodyNode::Image(image) => {
-                if let Some(style) = current_style.take() {
-                    segments.push(NotificationBodySegment::styled_text(
-                        std::mem::take(&mut current_text),
-                        style,
-                    ));
-                }
+                flush(&mut segments, &mut current_text, &mut current);
                 segments.push(NotificationBodySegment::body_image(image));
             }
         }
     }
-
-    if let Some(style) = current_style {
-        segments.push(NotificationBodySegment::styled_text(current_text, style));
-    }
+    flush(&mut segments, &mut current_text, &mut current);
 
     NotificationBodyContent::from_segments(segments)
 }
@@ -594,6 +626,7 @@ fn is_whitespace_text_node(node: &ParsedBodyNode) -> bool {
 
 #[cfg(test)]
 mod tests {
+    mod fuzz_smoke;
     use super::*;
     use crate::{NotificationAction, NotificationBodyRun};
 
@@ -692,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn intake_keeps_link_text_and_image_alt_without_targets() {
+    fn intake_keeps_safe_link_targets_and_relative_image_alternatives() {
         let accepted = accepted(intake_notification(NotificationInput {
             app_name: "Reporter".to_string(),
             summary: "Report".to_string(),
@@ -703,12 +736,14 @@ mod tests {
         assert_eq!(accepted.body, "Open chart & notes");
         assert_eq!(
             accepted.body_content,
-            NotificationBodyContent::plain("Open chart & notes")
-        );
-        assert!(
-            !serde_json::to_string(&accepted.body_content)
-                .unwrap()
-                .contains("example.invalid")
+            NotificationBodyContent::from_segments(vec![
+                NotificationBodySegment::Link {
+                    text: "Open".into(),
+                    style: NotificationBodyStyle::default(),
+                    uri: NotificationLink::parse("https://example.invalid/report").unwrap()
+                },
+                NotificationBodySegment::plain_text(" chart & notes"),
+            ])
         );
         assert!(
             !serde_json::to_string(&accepted.body_content)

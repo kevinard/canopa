@@ -52,6 +52,11 @@ pub(crate) struct NotificationRuntime {
     resources: Arc<Mutex<RuntimeResources>>,
     activation_token_provider: Arc<dyn ActivationTokenProvider>,
     sound_presenter: Arc<dyn SoundPresenter>,
+    link_opener: Arc<dyn crate::NotificationLinkOpener>,
+    link_requests: Arc<tokio::sync::Semaphore>,
+    link_error: Arc<Mutex<Option<String>>>,
+    links_stopping: Arc<std::sync::atomic::AtomicBool>,
+    stopping: Arc<std::sync::atomic::AtomicBool>,
     headless: bool,
     activation_token_capable: bool,
     sender_events: Arc<Mutex<VecDeque<SenderEvent>>>,
@@ -69,6 +74,10 @@ pub(crate) struct NotificationRuntime {
 }
 
 impl NotificationRuntime {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "One constructor wires the runtime adapters; callers use DaemonOptions"
+    )]
     pub(crate) async fn new(
         storage: SqlitePersistedState,
         headless: bool,
@@ -76,6 +85,7 @@ impl NotificationRuntime {
         banner_presenter: Arc<dyn BannerPresenter>,
         activation_token_provider: Arc<dyn ActivationTokenProvider>,
         sound_presenter: Arc<dyn SoundPresenter>,
+        link_opener: Arc<dyn crate::NotificationLinkOpener>,
         configuration_rules: Vec<DeliveryPolicyRule>,
     ) -> anyhow::Result<Self> {
         // External center events can outlive this runtime and its transient ID allocator.
@@ -116,6 +126,11 @@ impl NotificationRuntime {
             resources: Arc::new(Mutex::new(RuntimeResources::default())),
             activation_token_provider,
             sound_presenter,
+            link_opener,
+            link_requests: Arc::new(tokio::sync::Semaphore::new(8)),
+            link_error: Arc::default(),
+            links_stopping: Arc::default(),
+            stopping: Arc::default(),
             headless,
             activation_token_capable,
             sender_events: Arc::new(Mutex::new(VecDeque::new())),
@@ -132,8 +147,17 @@ impl NotificationRuntime {
         })
     }
 
-    pub(crate) async fn begin_receipt(&self) -> anyhow::Result<tokio::sync::OwnedMutexGuard<()>> {
+    async fn begin_mutation(&self) -> anyhow::Result<tokio::sync::OwnedMutexGuard<()>> {
         let command = self.commands.clone().lock_owned().await;
+        anyhow::ensure!(
+            !self.stopping.load(Ordering::SeqCst),
+            "notification daemon is stopping"
+        );
+        Ok(command)
+    }
+
+    pub(crate) async fn begin_receipt(&self) -> anyhow::Result<tokio::sync::OwnedMutexGuard<()>> {
+        let command = self.begin_mutation().await?;
         anyhow::ensure!(
             self.sender_publication_error().is_none(),
             "notification transport is unavailable"
@@ -257,7 +281,7 @@ impl NotificationRuntime {
                     .await
             }
         };
-        let _command = self.commands.lock().await;
+        let _command = self.begin_mutation().await?;
         let effects = self
             .lifecycle
             .invoke_action_if_current_revision(notification_id, action_key, Some(thread.revision))
@@ -270,7 +294,7 @@ impl NotificationRuntime {
         &self,
         notification_id: InternalNotificationId,
     ) -> anyhow::Result<()> {
-        let _command = self.commands.lock().await;
+        let _command = self.begin_mutation().await?;
         let effects = self.lifecycle.dismiss(notification_id).await?;
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
@@ -279,7 +303,7 @@ impl NotificationRuntime {
         &self,
         notification_id: InternalNotificationId,
     ) -> anyhow::Result<()> {
-        let _command = self.commands.lock().await;
+        let _command = self.begin_mutation().await?;
         let effects = self.lifecycle.expire(notification_id).await?;
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
@@ -288,7 +312,7 @@ impl NotificationRuntime {
         &self,
         notification_id: InternalNotificationId,
     ) -> anyhow::Result<()> {
-        let _command = self.commands.lock().await;
+        let _command = self.begin_mutation().await?;
         let effects = self.lifecycle.close(notification_id).await?;
         self.apply_lifecycle_effects_and_notify(&effects).await
     }
@@ -342,7 +366,7 @@ impl NotificationRuntime {
         notification_id: InternalNotificationId,
         revision: i64,
     ) -> anyhow::Result<()> {
-        let _command = self.commands.lock().await;
+        let _command = self.begin_mutation().await?;
         let effects = self
             .lifecycle
             .dismiss_if_current_revision(notification_id, revision)
@@ -363,6 +387,20 @@ impl NotificationRuntime {
         interaction: BannerInteraction,
     ) -> anyhow::Result<()> {
         match interaction {
+            BannerInteraction::OpenLink {
+                target,
+                segment_index,
+                activation_token,
+            } => {
+                self.open_link_for_revision(
+                    target.notification_id,
+                    target.revision,
+                    segment_index,
+                    activation_token,
+                    true,
+                )
+                .await
+            }
             BannerInteraction::Activate {
                 target,
                 activation_token,
@@ -404,6 +442,26 @@ impl NotificationRuntime {
             "notification center target is obsolete"
         );
         match action {
+            NotificationCenterAction::OpenLink { segment_index } => {
+                self.open_link_for_revision(
+                    target.notification_id,
+                    target.revision,
+                    segment_index,
+                    None,
+                    false,
+                )
+                .await
+            }
+            NotificationCenterAction::Acknowledge => {
+                let _command = self.begin_mutation().await?;
+                let effects = self
+                    .lifecycle
+                    .acknowledge_if_current_revision(target.notification_id, target.revision)
+                    .await?;
+                self.apply_lifecycle_effects_and_notify(&effects).await?;
+                self.notify_state_changed();
+                Ok(())
+            }
             NotificationCenterAction::Activate => {
                 self.activate_notification_for_revision(
                     target.notification_id,
@@ -433,8 +491,154 @@ impl NotificationRuntime {
             .await
     }
 
+    async fn link_for_revision(
+        &self,
+        id: InternalNotificationId,
+        revision: i64,
+        segment_index: usize,
+        active_only: bool,
+    ) -> anyhow::Result<crate::NotificationLink> {
+        let thread = self.lifecycle.thread(id).await?;
+        anyhow::ensure!(
+            thread.revision == revision
+                && (!active_only || thread.status == NotificationStatus::Active),
+            "notification link is obsolete"
+        );
+        match thread
+            .accepted_notification
+            .body_content
+            .segments
+            .get(segment_index)
+        {
+            Some(crate::NotificationBodySegment::Link { uri, .. }) => Ok(uri.clone()),
+            _ => anyhow::bail!("notification link is unavailable"),
+        }
+    }
+
+    async fn open_link_for_revision(
+        &self,
+        id: InternalNotificationId,
+        revision: i64,
+        segment_index: usize,
+        token: Option<String>,
+        active_only: bool,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.link_opener.available() && !self.links_stopping.load(Ordering::SeqCst),
+            "notification link opener unavailable"
+        );
+        // Capacity includes token waits and portal requests. It is admission, not
+        // a waiting queue that can grow with repeated interactions.
+        let permit = self
+            .link_requests
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| anyhow::anyhow!("too many pending notification link requests"))?;
+        self.link_for_revision(id, revision, segment_index, active_only)
+            .await?;
+        let token = match token.filter(|token| !token.is_empty()) {
+            Some(token) => Some(token),
+            None => self.activation_token(String::new()).await,
+        };
+        {
+            let _command = self.begin_mutation().await?;
+            anyhow::ensure!(
+                !self.links_stopping.load(Ordering::SeqCst),
+                "notification link opener is shutting down"
+            );
+            let uri = self
+                .link_for_revision(id, revision, segment_index, active_only)
+                .await?;
+            let opener = self.link_opener.clone();
+            let error = self.link_error.clone();
+            *error.lock().unwrap() = None;
+            // Commit the selected URI under the mutation coordinator. After
+            // admission replacements cannot change the user's opening intent.
+            // The task also finishes cleanup if its control caller disconnects.
+            tokio::spawn(async move {
+                let _permit = permit;
+                use futures_util::FutureExt;
+                let result = std::panic::AssertUnwindSafe(async { opener.open(uri, token).await })
+                    .catch_unwind()
+                    .await
+                    .unwrap_or(crate::LinkOpeningResult::Failed);
+                let failure = match result {
+                    crate::LinkOpeningResult::Opened | crate::LinkOpeningResult::Cancelled => None,
+                    crate::LinkOpeningResult::Unavailable => {
+                        Some("notification link opener unavailable")
+                    }
+                    crate::LinkOpeningResult::TimedOut => {
+                        Some("notification link opening timed out")
+                    }
+                    crate::LinkOpeningResult::Failed => Some("notification link opening failed"),
+                };
+                if let Some(failure) = failure {
+                    *error.lock().unwrap() = Some(failure.into());
+                    eprintln!(
+                        "level=warn component=links event=opening_failed category={result:?}"
+                    );
+                }
+            });
+        }
+        // Success means the selected request was admitted. A chooser may remain
+        // open for minutes; it must not occupy a control socket or serial input
+        // forwarder. Completion/failure is observable in daemon status.
+        Ok(())
+    }
+
+    pub(crate) fn link_opening_status(&self) -> crate::LinkOpeningStatus {
+        crate::LinkOpeningStatus {
+            available: self.link_opener.available() && !self.links_stopping.load(Ordering::SeqCst),
+            pending: 8 - self.link_requests.available_permits(),
+            last_error: self.link_error.lock().unwrap().clone(),
+        }
+    }
+
+    pub(crate) async fn shutdown_link_opening(&self) -> anyhow::Result<()> {
+        {
+            let _command = self.commands.lock().await;
+            self.links_stopping.store(true, Ordering::SeqCst);
+            self.link_opener.cancel_pending();
+        }
+        let _drained =
+            tokio::time::timeout(Duration::from_secs(8), self.link_requests.acquire_many(8))
+                .await
+                .map_err(|_| anyhow::anyhow!("notification link cleanup timed out"))?
+                .map_err(|_| anyhow::anyhow!("notification link cleanup failed"))?;
+        Ok(())
+    }
+
+    pub(crate) async fn shutdown(&self) -> anyhow::Result<()> {
+        {
+            // Wait for the current commitment before rejecting queued and future mutations.
+            let _command = self.commands.lock().await;
+            self.stopping.store(true, Ordering::SeqCst);
+            self.timeouts.lock().unwrap().cancel_all();
+            self.sound_presenter.stop_all_sounds();
+        }
+        let publisher = self.sender_publisher.lock().unwrap().clone();
+        let publication = async {
+            if let Some(publisher) = publisher {
+                tokio::time::timeout(Duration::from_secs(5), publisher.flush())
+                    .await
+                    .map_err(|_| anyhow::anyhow!("sender publication drain timed out"))??;
+            }
+            Ok::<_, anyhow::Error>(())
+        };
+        // Always attempt every adapter's cleanup even if another one fails.
+        let (links, presentation, publication) = tokio::join!(
+            self.shutdown_link_opening(),
+            self.presentation.shutdown(),
+            publication
+        );
+        links?;
+        presentation?;
+        publication?;
+        Ok(())
+    }
+
     pub(crate) async fn clear_active_notifications(&self) -> anyhow::Result<()> {
-        let _command = self.commands.lock().await;
+        let _command = self.begin_mutation().await?;
         let batch = self.lifecycle.clear_active_notifications().await?;
         self.apply_lifecycle_effects_and_notify(&batch.effects)
             .await?;
@@ -442,7 +646,7 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn delete_notification_history(&self) -> anyhow::Result<()> {
-        let _command = self.commands.lock().await;
+        let _command = self.begin_mutation().await?;
         self.storage.delete_inactive_history().await?;
         self.notify_state_changed();
         Ok(())
@@ -456,7 +660,7 @@ impl NotificationRuntime {
         &self,
         enabled: Option<bool>,
     ) -> anyhow::Result<bool> {
-        let _change = self.commands.lock().await;
+        let _change = self.begin_mutation().await?;
         let enabled =
             enabled.unwrap_or_else(|| !self.loaded_policy_state.lock().unwrap().do_not_disturb());
         self.storage.set_do_not_disturb(enabled).await?;
@@ -470,7 +674,7 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn upsert_user_rule(&self, rule: UserRule) -> anyhow::Result<()> {
-        let _change = self.commands.lock().await;
+        let _change = self.begin_mutation().await?;
         self.storage.upsert_user_rule(&rule).await?;
         self.replace_loaded_policy_state(|state| {
             state.with_user_rule(DeliveryPolicyRule::from(rule))
@@ -502,7 +706,7 @@ impl NotificationRuntime {
         app_identity: &str,
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
-        let _change = self.commands.lock().await;
+        let _change = self.begin_mutation().await?;
         self.storage
             .remove_user_rule(app_identity, None, urgency)
             .await?;
@@ -519,7 +723,7 @@ impl NotificationRuntime {
         category: &str,
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
-        let _change = self.commands.lock().await;
+        let _change = self.begin_mutation().await?;
         self.storage
             .remove_user_rule(app_identity, Some(category), urgency)
             .await?;
@@ -536,7 +740,7 @@ impl NotificationRuntime {
         sound_settings: NotificationSoundSettings,
         icon_settings: crate::BannerIconSettings,
     ) -> anyhow::Result<()> {
-        let _change = self.commands.lock().await;
+        let _change = self.begin_mutation().await?;
         if !self.headless {
             let disable = !sound_settings.enabled;
             self.sound_presenter.apply_sound_settings(sound_settings)?;
@@ -611,7 +815,9 @@ impl NotificationRuntime {
         let mut threads = self.snapshot().await?.history;
         threads.extend(self.lifecycle.transient_threads());
         // Match retained ordering and keep runtime-only HashMap iteration out of the UI.
-        threads.sort_by_key(|thread| std::cmp::Reverse((thread.created_at, thread.id)));
+        threads.sort_by_key(|thread| {
+            std::cmp::Reverse((thread.requires_attention, thread.created_at, thread.id))
+        });
         let user_rules = self.user_rules().await?;
         Ok(projection_from_threads(
             threads,
@@ -626,6 +832,27 @@ impl NotificationRuntime {
             changes: self.state_changes.subscribe(),
             initial_pending: true,
         }
+    }
+
+    pub(crate) async fn notification_center_batch(
+        &self,
+        after: Option<crate::NotificationCenterCursor>,
+        limit: u8,
+    ) -> anyhow::Result<crate::NotificationCenterBatch> {
+        let mut threads = self.storage.center_threads_after(after, limit).await?;
+        threads.extend(self.lifecycle.transient_center_threads_after(after, limit));
+        threads.sort_by_key(|thread| {
+            std::cmp::Reverse(crate::NotificationCenterCursor::for_thread(thread))
+        });
+        threads.truncate(usize::from(limit));
+        let last = threads
+            .last()
+            .map(crate::NotificationCenterCursor::for_thread);
+        let rules = self.user_rules().await?;
+        Ok(crate::NotificationCenterBatch {
+            last,
+            projection: projection_from_threads(threads, &rules, self.center_instance),
+        })
     }
 
     fn delivery_policy(&self) -> DeliveryPolicy {
@@ -920,7 +1147,7 @@ impl NotificationRuntime {
         notification_id: InternalNotificationId,
         revision: i64,
     ) -> anyhow::Result<()> {
-        let _command = self.commands.lock().await;
+        let _command = self.begin_mutation().await?;
         let effects = self
             .lifecycle
             .expire_timeout_if_current_revision(notification_id, revision)
@@ -936,17 +1163,23 @@ pub struct NotificationStateSubscription {
 }
 
 impl NotificationStateSubscription {
+    /// Coalesced change notification without constructing an unbounded full projection.
+    pub async fn changed(&mut self) -> bool {
+        if self.initial_pending {
+            self.initial_pending = false;
+            true
+        } else {
+            self.changes.changed().await.is_ok()
+        }
+    }
+
     pub async fn next_projection(
         &mut self,
     ) -> anyhow::Result<Option<NotificationCenterProjection>> {
-        if self.initial_pending {
-            self.initial_pending = false;
-            return Ok(Some(self.runtime.notification_center_projection().await?));
-        }
-
-        match self.changes.changed().await {
-            Ok(()) => Ok(Some(self.runtime.notification_center_projection().await?)),
-            Err(_) => Ok(None),
+        if self.changed().await {
+            Ok(Some(self.runtime.notification_center_projection().await?))
+        } else {
+            Ok(None)
         }
     }
 }
@@ -1004,6 +1237,7 @@ fn projection_from_threads(
             .entry(notification.app_identity.clone())
             .or_default()
             .push(NotificationCenterItem {
+                requires_attention: thread.requires_attention,
                 notification_id: thread.id,
                 target: NotificationCenterTarget {
                     instance,

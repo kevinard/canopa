@@ -57,7 +57,7 @@ canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" reload
 
 If another process already owns the runtime socket or the freedesktop notification service name, startup fails clearly instead of replacing the running daemon.
 
-`dnd` without an argument reports the current state; changes survive restart. `reload [PATH]` installs a validated candidate atomically. `clear` dismisses active notifications; `delete-history` removes inactive local history. JSON status includes configuration generation/error, presentation error and sender-publication error. These controls do not imply a freedesktop `persistence` capability.
+`dnd` without an argument reports the current state; changes survive restart. `reload [PATH]` installs a validated candidate atomically. `clear` dismisses active notifications; `delete-history` removes inactive local history. JSON status includes configuration generation/error, presentation error and sender-publication error. Retained attention follows the advertised `persistence` contract: expiry and restart preserve pending content; explicit deletion can remove inactive pending content.
 
 If the renderer exits after startup, JSON status reports `banner renderer stopped; restart the daemon to restore banners` even without another notification. Notification receipt, sender lifecycles and Center controls remain available. The error is terminal for that renderer lifetime; restart the daemon explicitly to restore banners. The process stays running, so the unit's `Restart=on-failure` does not automatically recover this degraded state. Restart also invalidates live sender IDs and removes runtime-only transient notifications; retained history becomes stale as usual. See [ADR 0043](adr/0043-renderer-readiness-and-degraded-service.md).
 
@@ -88,3 +88,25 @@ scripts/manual/watch-notification-signals.sh
 ```
 
 Run the signal watcher in a second terminal while using the `actions` scenario to confirm `ActivationToken` is emitted before `ActionInvoked` when the compositor provides a token.
+
+## Shutdown and bounded background work
+
+SIGTERM and session shutdown stop accepting mutations, cancel display timers and
+sound, retire banner transport, close pending portal requests, and drain committed
+sender events before closing the bus. Component waits are bounded and the service
+has a fifteen-second daemon-drain deadline; remaining native blocking workers have
+a five-second Tokio shutdown budget. Failed publication is reported as failure;
+committed lifecycle state is not undone. Shutdown does not fabricate notification
+closures, so restart can recover pending attention and invalidate old sender actions.
+
+`status --json` also reports `link_opening.available`, `pending`, and a sanitized
+`last_error`. No raw notification link target is logged. Body hyperlinks are
+advertised only while an opener is available; lack of a portal leaves readable
+text and does not prevent notification receipt. GUI/audio can be built separately;
+see [build profiles](maintaining.md).
+
+The installed Canopa-v4 provider uses bounded independent pages. Every accepted
+retained or live transient item remains reachable, including unnamed senders;
+unnamed groups are displayed as “Unknown application” without a persistent app-rule
+control. Opaque section identifiers are distinct from claimed application identities.
+Category controls cover categories on the current page and are deduplicated.

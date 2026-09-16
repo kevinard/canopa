@@ -23,6 +23,14 @@ pub(crate) struct RuntimeTimeouts {
 }
 
 impl RuntimeTimeouts {
+    pub(crate) fn cancel_all(&mut self) {
+        for (_, entry) in self.entries.drain() {
+            if let State::Scheduled(handle) = entry.state {
+                handle.abort();
+            }
+        }
+    }
+
     /// Only ordered, committed lifecycle effects register timers. In particular,
     /// an asynchronous display callback must use `start`, never `apply`.
     pub(crate) fn apply(&mut self, changes: impl IntoIterator<Item = NotificationTimeoutChange>) {

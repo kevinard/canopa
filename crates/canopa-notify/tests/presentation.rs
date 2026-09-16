@@ -3,15 +3,19 @@ mod daemon_support;
 #[path = "support/notifications.rs"]
 mod notifications;
 
+#[cfg(feature = "gui")]
+use canopa_notify::IcedLayerShellBannerPresenter;
 use canopa_notify::{
     BannerBodySegment, BannerInteraction, BannerKeyboardInteractivity, BannerLayer,
     BannerOutputSelection, BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter,
     BannerSurfaceSpec, BannerView, BannerVisual, Daemon, DaemonOptions, DeliveryOutcome,
-    IcedLayerShellBannerPresenter, NotificationAction, NotificationImageData, NotificationInput,
-    NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
-    NotificationVisualReference, SenderEvent, Urgency, UserRule,
+    NotificationAction, NotificationImageData, NotificationInput, NotificationThread,
+    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference, SenderEvent,
+    Urgency, UserRule,
 };
+#[cfg(feature = "gui")]
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer};
+#[cfg(feature = "gui")]
 use iced_layershell::settings::StartMode;
 use notifications::{notification, notification_with_body};
 use std::sync::{Arc, Mutex};
@@ -482,6 +486,7 @@ fn notification_banner_surface_uses_focused_output_fallback_without_taking_focus
     assert_eq!(spec.exclusive_zone, 0);
 }
 
+#[cfg(feature = "gui")]
 #[test]
 fn notification_banner_surface_maps_to_iced_layer_shell_settings() {
     let settings = IcedLayerShellBannerPresenter::layer_shell_settings(
@@ -1986,7 +1991,7 @@ async fn activating_banner_invokes_default_notification_action_when_present() {
 }
 
 #[tokio::test]
-async fn visible_banner_projects_two_non_default_actions_in_sender_order() {
+async fn visible_banner_keeps_every_named_action_in_sender_order() {
     let daemon = daemon_support::open_headless_daemon().await;
 
     daemon
@@ -1996,6 +2001,7 @@ async fn visible_banner_projects_two_non_default_actions_in_sender_order() {
                 NotificationAction::new("reply", "Reply"),
                 NotificationAction::new("archive", "Archive"),
                 NotificationAction::new("mark_read", "Mark read"),
+                NotificationAction::new("Fourth/α", "Fourth action"),
             ],
             ..notification("Mail", "Inbox")
         })
@@ -2009,7 +2015,12 @@ async fn visible_banner_projects_two_non_default_actions_in_sender_order() {
             .iter()
             .map(|action| (action.key.as_str(), action.label.as_str()))
             .collect::<Vec<_>>(),
-        vec![("reply", "Reply"), ("archive", "Archive")]
+        vec![
+            ("reply", "Reply"),
+            ("archive", "Archive"),
+            ("mark_read", "Mark read"),
+            ("Fourth/α", "Fourth action"),
+        ]
     );
     assert_eq!(banners[0].default_action_key.as_deref(), Some("default"));
 }

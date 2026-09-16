@@ -11,6 +11,179 @@ async fn software_renderer() -> iced::Renderer {
         .expect("software renderer")
 }
 
+#[tokio::test]
+async fn body_link_click_is_separate_from_the_card_default_action() {
+    let renderer = software_renderer().await;
+    let mut banner = banner_view(42, "Read the page");
+    banner.default_action_key = Some("default".into());
+    banner.body_content = crate::intake::interpreted_body_content(
+        "<a href='https://example.org/page'><b>Read the page</b></a>",
+    );
+    banner.body_segments = banner_body_segments_from_body_content(&banner.body_content);
+    for width in [360.0, 276.0] {
+        let mut card = notification_banner_widget(&banner);
+        let mut tree = Tree::new(card.as_widget());
+        let node = card.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &core::layout::Limits::new(Size::ZERO, Size::new(width, 1000.0)),
+        );
+        let mut measure = accessibility_bounds::Measure::new(
+            std::iter::once((banner.target(), 1)),
+            Default::default(),
+        );
+        card.as_widget_mut().operate(
+            &mut tree,
+            Layout::new(&node),
+            &renderer,
+            &mut core::widget::operation::black_box(&mut measure),
+        );
+        let point = measure.bounds[&(banner.target(), 1)].center();
+        let mut messages = Vec::new();
+        for event in [
+            core::mouse::Event::ButtonPressed(core::mouse::Button::Left),
+            core::mouse::Event::ButtonReleased(core::mouse::Button::Left),
+        ] {
+            card.as_widget_mut().update(
+                &mut tree,
+                &core::Event::Mouse(event),
+                Layout::new(&node),
+                core::mouse::Cursor::Available(point),
+                &renderer,
+                &mut core::clipboard::Null,
+                &mut core::Shell::new(&mut messages),
+                &Rectangle::with_size(node.size()),
+            );
+        }
+        assert_eq!(messages.len(), 1, "one deliberate link interaction");
+        assert!(
+            matches!(&messages[0], BannerUiMessage::OpenLinkRequested(target, 0) if *target == banner.target()),
+            "wrong link control: {messages:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn every_named_action_has_a_readable_row_and_invokes_its_opaque_key() {
+    let renderer = software_renderer().await;
+    let mut banner = banner_view(42, "Mail");
+    banner.actions = ["Reply", "Archive", "Mark read", "Forward"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, label)| BannerAction {
+            key: format!("opaque/{index}/α"),
+            label: label.into(),
+            icon: None,
+        })
+        .collect();
+    for width in [360.0, 276.0] {
+        let mut card = notification_banner_widget(&banner);
+        let mut tree = Tree::new(card.as_widget());
+        let node = card.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &core::layout::Limits::new(Size::ZERO, Size::new(width, 1000.0)),
+        );
+        let mut labels = TextBounds::default();
+        card.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut labels);
+        let bounds: Vec<_> = banner
+            .actions
+            .iter()
+            .map(|action| {
+                labels
+                    .0
+                    .iter()
+                    .find(|(label, _)| label == &action.label)
+                    .unwrap()
+                    .1
+            })
+            .collect();
+        assert!(
+            bounds[2].y >= bounds[0].y + bounds[0].height,
+            "additional actions need another readable row at width {width}: {bounds:?}"
+        );
+        for (index, bounds) in bounds.into_iter().enumerate() {
+            let mut messages = Vec::new();
+            for event in [
+                core::mouse::Event::ButtonPressed(core::mouse::Button::Left),
+                core::mouse::Event::ButtonReleased(core::mouse::Button::Left),
+            ] {
+                card.as_widget_mut().update(
+                    &mut tree,
+                    &core::Event::Mouse(event),
+                    Layout::new(&node),
+                    core::mouse::Cursor::Available(bounds.center()),
+                    &renderer,
+                    &mut core::clipboard::Null,
+                    &mut core::Shell::new(&mut messages),
+                    &Rectangle::with_size(node.size()),
+                );
+            }
+            assert!(
+                matches!(messages.as_slice(),
+                [BannerUiMessage::InvokeActionRequested(target, key)]
+                if *target == banner.target() && key == &format!("opaque/{index}/α")),
+                "wrong action at width {width}: {messages:?}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn pointer_press_cannot_activate_replacement_content() {
+    let renderer = software_renderer().await;
+    let mut banner = banner_view(42, "Mail");
+    banner.actions = vec![BannerAction {
+        key: "old".into(),
+        label: "Reply".into(),
+        icon: None,
+    }];
+    let limits = core::layout::Limits::new(Size::ZERO, Size::new(360.0, 1000.0));
+    let mut tree = Tree::empty();
+    let mut messages = Vec::new();
+    for (revision, event) in [
+        (
+            0,
+            core::mouse::Event::ButtonPressed(core::mouse::Button::Left),
+        ),
+        (
+            1,
+            core::mouse::Event::ButtonReleased(core::mouse::Button::Left),
+        ),
+    ] {
+        banner.revision = revision;
+        banner.actions[0].key = format!("revision-{revision}");
+        let mut card = notification_banner_widget(&banner);
+        tree.diff(card.as_widget());
+        let node = card.as_widget_mut().layout(&mut tree, &renderer, &limits);
+        let mut labels = TextBounds::default();
+        card.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut labels);
+        let point = labels
+            .0
+            .iter()
+            .find(|(label, _)| label == "Reply")
+            .unwrap()
+            .1
+            .center();
+        card.as_widget_mut().update(
+            &mut tree,
+            &core::Event::Mouse(event),
+            Layout::new(&node),
+            core::mouse::Cursor::Available(point),
+            &renderer,
+            &mut core::clipboard::Null,
+            &mut core::Shell::new(&mut messages),
+            &Rectangle::with_size(node.size()),
+        );
+    }
+    assert!(
+        messages.is_empty(),
+        "a press on an old revision activated the replacement: {messages:?}"
+    );
+}
+
 async fn frame_actions(
     state: &mut BannerUiState,
     renderer: &iced::Renderer,
@@ -678,10 +851,29 @@ async fn oversized_card_wheel_scrolling_preserves_body_navigation_and_action_cli
             .find(|(text, _)| text.contains("in the editor"))
             .unwrap()
             .1;
-        core::Point::new(
+        let point = core::Point::new(
             action.center_x(),
             action.y + action.height - scrolled.0[1].2.y - 5.0,
-        )
+        );
+        let mut geometry = crate::presentation::renderer::accessibility_bounds::Measure::new(
+            (0..5).map(|slot| (target, slot)),
+            Default::default(),
+        );
+        view.as_widget_mut().operate(
+            &mut tree,
+            Layout::new(&node),
+            &renderer,
+            &mut core::widget::operation::black_box(&mut geometry),
+        );
+        assert!(
+            geometry.bounds[&(target, 4)].contains(point),
+            "accessible bounds must follow the actual scrolled action hit region"
+        );
+        assert!(
+            geometry.bounds[&(target, 0)].is_within(&Rectangle::with_size(viewport)),
+            "accessible card clips its oversized descendants"
+        );
+        point
     };
     assert!(
         Rectangle::with_size(viewport).contains(point),

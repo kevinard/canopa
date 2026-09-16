@@ -238,8 +238,10 @@ async fn all_four_methods_return_the_documented_types_and_server_identity() {
             "actions",
             "action-icons",
             "body",
+            "body-images",
             "body-markup",
-            "icon-static"
+            "icon-static",
+            "persistence"
         ])
     );
 
@@ -539,7 +541,7 @@ async fn action_signals_preserve_opaque_keys_and_precede_nonresident_closure() {
             assert_eq!(id, wire_id, "replacement changed the sender ID");
         }
         wire_id = id;
-        let ControlReply::ActiveNotifications(active) =
+        let ControlReply::ActiveNotifications(mut active) =
             server.control(ControlCommand::ActiveNotifications).await
         else {
             panic!("expected active notifications");
@@ -564,6 +566,7 @@ async fn action_signals_preserve_opaque_keys_and_precede_nonresident_closure() {
             );
         }
         if resident {
+            active[0].requires_attention = false;
             assert_eq!(
                 server.control(ControlCommand::ActiveNotifications).await,
                 ControlReply::ActiveNotifications(active)

@@ -10,8 +10,10 @@ mod domain;
 mod input_limits;
 mod intake;
 mod lifecycle;
+mod link_opening;
 mod local_file;
 mod notification_id;
+mod notification_link;
 mod notification_server_intake;
 mod presentation;
 mod runtime;
@@ -21,15 +23,15 @@ mod sender_events;
 mod sound;
 mod sqlite_persisted_state;
 
-pub use activation::{
-    ActivationTokenFuture, ActivationTokenProvider, NoopActivationTokenProvider,
-    WaylandActivationTokenProvider,
-};
+#[cfg(feature = "gui")]
+pub use activation::WaylandActivationTokenProvider;
+pub use activation::{ActivationTokenFuture, ActivationTokenProvider, NoopActivationTokenProvider};
 pub use configuration::ConfigurationStatus;
 pub use control::{
     AppPermissionControl, CategoryPermissionControl, ControlCommand, ControlReply, ControlStatus,
-    NotificationCenterAction, NotificationCenterGroup, NotificationCenterItem,
-    NotificationCenterProjection, NotificationCenterTarget, NotifyControl,
+    NotificationCenterAction, NotificationCenterBatch, NotificationCenterCursor,
+    NotificationCenterGroup, NotificationCenterItem, NotificationCenterProjection,
+    NotificationCenterTarget, NotifyControl,
 };
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
@@ -51,18 +53,27 @@ pub use lifecycle::{
     NewNotificationThread, NotificationHistory, NotificationLifecycle, NotificationTimeoutChange,
     PartialClearError, PersistPrecondition,
 };
+pub use link_opening::{
+    LinkOpeningFuture, LinkOpeningResult, LinkOpeningStatus, NoopNotificationLinkOpener,
+    NotificationLinkOpener, PortalNotificationLinkOpener,
+};
 pub use notification_id::InternalNotificationId;
+pub use notification_link::NotificationLink;
 pub use notification_server_intake::NotificationServerRequest;
+#[cfg(feature = "gui")]
+pub use presentation::IcedLayerShellBannerPresenter;
 pub use presentation::{
     BannerAction, BannerBodySegment, BannerFocusBehavior, BannerIconSettings, BannerInteraction,
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPlacement,
     BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerRendererState,
-    BannerSurfaceSpec, BannerTarget, BannerView, BannerVisual, IcedLayerShellBannerPresenter,
-    NoopBannerPresenter, NotificationBannerState, StructuredLogBannerPresenter,
+    BannerSurfaceSpec, BannerTarget, BannerView, BannerVisual, NoopBannerPresenter,
+    NotificationBannerState, StructuredLogBannerPresenter,
 };
 pub use runtime::NotificationStateSubscription;
 pub use sender_events::{SenderEventPublication, SenderEventPublisher};
-pub use sound::{NoopSoundPresenter, RodioSoundPresenter, SoundPresenter};
+#[cfg(feature = "audio")]
+pub use sound::RodioSoundPresenter;
+pub use sound::{NoopSoundPresenter, SoundPresenter};
 
 use configuration::LoadedNotificationConfiguration;
 use intake::{NotificationIntakeResult, intake_notification};
@@ -79,6 +90,7 @@ pub struct DaemonOptions {
     banner_presenter: Arc<dyn BannerPresenter>,
     activation_token_provider: Arc<dyn ActivationTokenProvider>,
     sound_presenter: Arc<dyn SoundPresenter>,
+    link_opener: Arc<dyn NotificationLinkOpener>,
     configuration_path: Option<PathBuf>,
 }
 
@@ -93,6 +105,7 @@ impl DaemonOptions {
             banner_presenter: Arc::new(NoopBannerPresenter),
             activation_token_provider: Arc::new(NoopActivationTokenProvider),
             sound_presenter: Arc::new(NoopSoundPresenter),
+            link_opener: Arc::new(NoopNotificationLinkOpener),
             configuration_path: None,
         }
     }
@@ -110,6 +123,7 @@ impl DaemonOptions {
             banner_presenter: Arc::new(banner_presenter),
             activation_token_provider: Arc::new(NoopActivationTokenProvider),
             sound_presenter: Arc::new(NoopSoundPresenter),
+            link_opener: Arc::new(NoopNotificationLinkOpener),
             configuration_path: None,
         }
     }
@@ -150,6 +164,11 @@ impl DaemonOptions {
 
     pub fn with_sound_presenter(mut self, sound_presenter: impl SoundPresenter + 'static) -> Self {
         self.sound_presenter = Arc::new(sound_presenter);
+        self
+    }
+
+    pub fn with_link_opener(mut self, opener: impl NotificationLinkOpener + 'static) -> Self {
+        self.link_opener = Arc::new(opener);
         self
     }
 }
@@ -198,6 +217,7 @@ impl Daemon {
             options.banner_presenter,
             options.activation_token_provider,
             options.sound_presenter,
+            options.link_opener,
             configuration.delivery_policy_rules(),
         )
         .await?;
@@ -493,6 +513,19 @@ impl Daemon {
         self.runtime.presentation_error()
     }
 
+    pub fn link_opening_status(&self) -> LinkOpeningStatus {
+        self.runtime.link_opening_status()
+    }
+
+    pub async fn shutdown_link_opening(&self) -> anyhow::Result<()> {
+        self.runtime.shutdown_link_opening().await
+    }
+
+    /// Stop mutations and presentation, then drain committed sender publications.
+    pub async fn shutdown(&self) -> anyhow::Result<()> {
+        self.runtime.shutdown().await
+    }
+
     pub(crate) fn timeout_record_count(&self) -> usize {
         self.runtime.timeout_record_count()
     }
@@ -501,6 +534,14 @@ impl Daemon {
         &self,
     ) -> anyhow::Result<NotificationCenterProjection> {
         self.runtime.notification_center_projection().await
+    }
+
+    pub(crate) async fn notification_center_batch(
+        &self,
+        after: Option<NotificationCenterCursor>,
+        limit: u8,
+    ) -> anyhow::Result<NotificationCenterBatch> {
+        self.runtime.notification_center_batch(after, limit).await
     }
 
     pub(crate) fn subscribe_notification_state(&self) -> NotificationStateSubscription {

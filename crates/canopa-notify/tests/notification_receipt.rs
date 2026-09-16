@@ -10,6 +10,148 @@ use canopa_notify::{
 use notifications::{blank_notification, notification_with_body};
 
 #[tokio::test]
+async fn nested_body_anchors_degrade_to_text_even_when_the_outer_target_is_invalid() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    for outer in ["https://example.org/outer", "javascript:unsafe"] {
+        let receipt = daemon
+            .receive_notification(notification_with_body(
+                "Mail",
+                "Nested",
+                format!(
+                    "<a href='{outer}'>Outer <a href='https://example.org/inner'>inner</a> tail</a>"
+                ),
+            ))
+            .await
+            .unwrap();
+        let content = daemon
+            .snapshot()
+            .await
+            .unwrap()
+            .active
+            .into_iter()
+            .find(|thread| thread.id == receipt.notification_id)
+            .unwrap()
+            .accepted_notification
+            .body_content;
+        assert_eq!(content.plain_text(), "Outer inner tail");
+        assert!(
+            !content.segments.iter().any(|segment| matches!(
+                segment,
+                canopa_notify::NotificationBodySegment::Link { .. }
+            )),
+            "malformed nested anchors must not guess an activation target"
+        );
+    }
+}
+
+#[tokio::test]
+async fn safe_body_links_preserve_labels_styles_and_persisted_targets() {
+    let temp = tempfile::tempdir().unwrap();
+    let options = DaemonOptions::headless(temp.path().join("history.db"));
+    let daemon = Daemon::open(options.clone()).await.unwrap();
+    let receipt = daemon
+        .receive_notification(notification_with_body(
+            "Mail",
+            "Link",
+            "Before <a href='https://example.org/read?a=1&amp;b=2'><b>Read</b> more</a> after",
+        ))
+        .await
+        .unwrap();
+    let thread = daemon
+        .snapshot()
+        .await
+        .unwrap()
+        .history
+        .into_iter()
+        .find(|thread| thread.id == receipt.notification_id)
+        .unwrap();
+    let content = &thread.accepted_notification.body_content;
+    assert_eq!(content.plain_text(), "Before Read more after");
+    let stored = serde_json::to_value(content).unwrap();
+    assert_eq!(
+        stored["segments"][1],
+        serde_json::json!({"kind":"link", "text":"Read", "style":{"bold":true,"italic":false,"underline":false}, "uri":"https://example.org/read?a=1&b=2"})
+    );
+    assert_eq!(stored["segments"][2]["kind"], "link");
+    assert_eq!(stored["segments"][3]["kind"], "text");
+    drop(daemon);
+    let restarted = Daemon::open(options).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(
+            &restarted.snapshot().await.unwrap().history[0]
+                .accepted_notification
+                .body_content
+        )
+        .unwrap(),
+        stored
+    );
+}
+
+#[tokio::test]
+async fn unsafe_body_link_targets_are_readable_text_and_cannot_be_deserialized() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    for uri in [
+        "javascript:alert(1)",
+        "file:///tmp/private",
+        "data:text/html,bad",
+        "//example.org",
+        "https:///example.org",
+        "https://user:pass@example.org",
+        "https://example.org/\npath",
+        "https://example.org/%0Apath",
+        "https://example.org/%5cpath",
+        "https://example.org/%zz",
+        "https://example.org/\\path",
+        "https://example.org/\u{202e}path",
+        "https://example.org/with space",
+    ] {
+        let receipt = daemon
+            .receive_notification(notification_with_body(
+                "Mail",
+                "Unsafe",
+                format!("Before <a href='{uri}'><b>Read</b></a> after"),
+            ))
+            .await
+            .unwrap();
+        let content = daemon
+            .snapshot()
+            .await
+            .unwrap()
+            .active
+            .into_iter()
+            .find(|thread| thread.id == receipt.notification_id)
+            .unwrap()
+            .accepted_notification
+            .body_content;
+        assert_eq!(content.plain_text(), "Before Read after");
+        assert!(
+            !content.segments.iter().any(|segment| matches!(
+                segment,
+                canopa_notify::NotificationBodySegment::Link { .. }
+            ))
+        );
+        assert!(
+            serde_json::from_value::<canopa_notify::NotificationLink>(serde_json::json!(uri))
+                .is_err()
+        );
+    }
+    for uri in [
+        "HTTP://example.org/a%20b",
+        "https://example.org:8443/?a=1#part",
+        "https://例え.jp/path",
+    ] {
+        assert!(canopa_notify::NotificationLink::parse(uri).is_ok());
+    }
+    assert!(
+        canopa_notify::NotificationLink::parse(&format!(
+            "https://example.org/{}",
+            "x".repeat(2048)
+        ))
+        .is_err()
+    );
+}
+
+#[tokio::test]
 async fn decoding_an_unresolved_wire_id_cannot_replace_an_internal_thread() {
     let daemon = daemon_support::open_headless_daemon().await;
     let original = daemon

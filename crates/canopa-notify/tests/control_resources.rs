@@ -211,6 +211,7 @@ fn cli_preserves_success_formats_and_committed_partial_clear_counts() {
         }
     }
     let reply = canopa_notify::ControlReply::Status(canopa_notify::ControlStatus {
+        link_opening: Default::default(),
         available: true,
         do_not_disturb: false,
         configuration: Default::default(),

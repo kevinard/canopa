@@ -81,6 +81,44 @@ fn assert_dbus_error<T: std::fmt::Debug>(result: zbus::Result<T>, expected_name:
 }
 
 #[tokio::test]
+async fn lost_bus_reports_publication_failure_without_undoing_closure() {
+    let fixture = ServerFixture::new("LostBus", NotificationSenderIds::new()).await;
+    fixture.notify(0, "Accepted before bus loss").await.unwrap();
+    let id = fixture.daemon.snapshot().await.unwrap().active[0].id;
+    // Close only this fixture's service connection; the shared private test bus stays healthy.
+    fixture._server.clone().close().await.unwrap();
+    fixture.daemon.close_notification(id).await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while fixture.daemon.sender_publication_error().is_none() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("lost sender transport did not report its failure");
+    let snapshot = fixture.daemon.snapshot().await.unwrap();
+    assert!(snapshot.active.is_empty());
+    assert_eq!(
+        snapshot.history[0].status,
+        canopa_notify::NotificationStatus::Closed
+    );
+    assert!(
+        fixture
+            .daemon
+            .receive_notification(canopa_notify::NotificationInput {
+                app_name: "After bus loss".into(),
+                summary: "Reject".into(),
+                ..Default::default()
+            })
+            .await
+            .is_err()
+    );
+    assert!(
+        fixture.daemon.shutdown().await.is_err(),
+        "failed publication cannot be reported as a successful drain"
+    );
+}
+
+#[tokio::test]
 async fn wire_input_limits_reject_before_normalization_without_consuming_ids_or_replacements() {
     let fixture = ServerFixture::new("InputLimits", NotificationSenderIds::new()).await;
     assert_eq!(fixture.notify(0, "Original").await.unwrap(), 1);
@@ -536,8 +574,10 @@ async fn notification_server_emits_activation_token_before_action_invoked() {
             "actions",
             "action-icons",
             "body",
+            "body-images",
             "body-markup",
             "icon-static",
+            "persistence",
             "activation-token",
         ]
     );
@@ -665,7 +705,7 @@ async fn notification_server_expires_notification_after_banner_display() {
 }
 
 #[tokio::test]
-async fn notification_server_advertises_sound_when_runtime_supports_sound() {
+async fn notification_server_advertises_available_sound_and_body_links() {
     let temp = tempfile::tempdir().unwrap();
     let bus_name = test_bus_name("SoundCapability");
     let daemon = Daemon::open(
@@ -673,7 +713,8 @@ async fn notification_server_advertises_sound_when_runtime_supports_sound() {
             temp.path().join("history.db"),
             canopa_notify::NoopBannerPresenter,
         )
-        .with_sound_presenter(AvailableSoundPresenter),
+        .with_sound_presenter(AvailableSoundPresenter)
+        .with_link_opener(AvailableLinkOpener),
     )
     .await
     .unwrap();
@@ -698,8 +739,11 @@ async fn notification_server_advertises_sound_when_runtime_supports_sound() {
             "actions",
             "action-icons",
             "body",
+            "body-images",
             "body-markup",
             "icon-static",
+            "persistence",
+            "body-hyperlinks",
             "sound",
         ]
     );
@@ -737,8 +781,10 @@ async fn capability_classification_is_exact_for_each_runtime_mode() {
             "actions",
             "action-icons",
             "body",
+            "body-images",
             "body-markup",
             "icon-static",
+            "persistence",
         ],
         extensions: vec![],
     };
@@ -752,8 +798,10 @@ async fn capability_classification_is_exact_for_each_runtime_mode() {
                 "actions",
                 "action-icons",
                 "body",
+                "body-images",
                 "body-markup",
                 "icon-static",
+                "persistence",
                 "sound",
             ],
             extensions: vec![],
@@ -770,4 +818,18 @@ async fn capability_classification_is_exact_for_each_runtime_mode() {
 
 fn test_bus_name(suffix: &str) -> String {
     format!("org.canopa.NotifyUnitTest{}{}", std::process::id(), suffix)
+}
+
+struct AvailableLinkOpener;
+impl canopa_notify::NotificationLinkOpener for AvailableLinkOpener {
+    fn available(&self) -> bool {
+        true
+    }
+    fn open(
+        &self,
+        _: canopa_notify::NotificationLink,
+        _: Option<String>,
+    ) -> canopa_notify::LinkOpeningFuture {
+        Box::pin(async { canopa_notify::LinkOpeningResult::Opened })
+    }
 }

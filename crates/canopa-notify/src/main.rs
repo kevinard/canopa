@@ -1,8 +1,10 @@
+#[cfg(feature = "gui")]
 use anyhow::Context;
-use canopa_notify::{
-    BannerInteraction, Daemon, DaemonOptions, IcedLayerShellBannerPresenter, NotifyControl,
-    RodioSoundPresenter, WaylandActivationTokenProvider,
-};
+#[cfg(all(feature = "gui", feature = "audio"))]
+use canopa_notify::RodioSoundPresenter;
+use canopa_notify::{BannerInteraction, Daemon, DaemonOptions, NotifyControl};
+#[cfg(feature = "gui")]
+use canopa_notify::{IcedLayerShellBannerPresenter, WaylandActivationTokenProvider};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -102,9 +104,16 @@ struct PanelProviderArgs {
     socket: PathBuf,
 }
 
-#[tokio::main]
-async fn main() {
-    if let Err(error) = run().await {
+fn main() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("could not start notification runtime");
+    let result = runtime.block_on(run());
+    // A native device/compositor call may remain blocked after adapter cancellation.
+    // It must not keep service termination waiting forever.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(5));
+    if let Err(error) = result {
         eprintln!("{error:#}");
         std::process::exit(1);
     }
@@ -144,6 +153,11 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         None
     };
     let mut startup = daemon_startup(mode, paths.database.clone()).await?;
+    if mode == DaemonMode::Service {
+        startup.options = startup.options.with_link_opener(
+            canopa_notify::PortalNotificationLinkOpener::connect_to_session().await,
+        );
+    }
     paths.import_legacy_history().await?;
     let configuration = startup::configuration_path(args.config)?;
     let reload_path = configuration.clone().unwrap_or(
@@ -193,6 +207,14 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         }
     }
 
+    tokio::time::timeout(std::time::Duration::from_secs(15), daemon.shutdown())
+        .await
+        .map_err(|_| anyhow::anyhow!("notification daemon shutdown timed out"))??;
+    if let Some(connection) = bus_connection {
+        tokio::time::timeout(std::time::Duration::from_secs(1), connection.close())
+            .await
+            .map_err(|_| anyhow::anyhow!("notification bus close timed out"))??;
+    }
     Ok(())
 }
 
@@ -218,6 +240,11 @@ async fn daemon_startup(mode: DaemonMode, database: PathBuf) -> anyhow::Result<D
             options: DaemonOptions::headless(database),
             banner_interactions: None,
         }),
+        #[cfg(not(feature = "gui"))]
+        DaemonMode::Service => anyhow::bail!(
+            "service mode requires the gui Cargo feature; use --headless with this build"
+        ),
+        #[cfg(feature = "gui")]
         DaemonMode::Service => {
             let (interactions, banner_interactions) = mpsc::channel();
             Ok(graphical_daemon_startup(
@@ -229,19 +256,23 @@ async fn daemon_startup(mode: DaemonMode, database: PathBuf) -> anyhow::Result<D
     }
 }
 
+#[cfg(feature = "gui")]
 fn graphical_daemon_startup(
     database: PathBuf,
     banner_presenter: impl canopa_notify::BannerPresenter + 'static,
     banner_interactions: Option<mpsc::Receiver<BannerInteraction>>,
 ) -> DaemonStartup {
+    let options = DaemonOptions::graphical(database, banner_presenter)
+        .with_activation_token_provider(WaylandActivationTokenProvider::connect_to_env());
+    #[cfg(feature = "audio")]
+    let options = options.with_sound_presenter(RodioSoundPresenter::start());
     DaemonStartup {
-        options: DaemonOptions::graphical(database, banner_presenter)
-            .with_activation_token_provider(WaylandActivationTokenProvider::connect_to_env())
-            .with_sound_presenter(RodioSoundPresenter::start()),
+        options,
         banner_interactions,
     }
 }
 
+#[cfg(feature = "gui")]
 fn ensure_wayland_session() -> anyhow::Result<()> {
     if std::env::var_os("WAYLAND_DISPLAY").is_none() {
         anyhow::bail!(
@@ -252,6 +283,11 @@ fn ensure_wayland_session() -> anyhow::Result<()> {
         "service mode requires a reachable Wayland Session; failed to connect to WAYLAND_DISPLAY"
     })?;
     Ok(())
+}
+
+#[cfg(not(feature = "gui"))]
+fn ensure_wayland_session() -> anyhow::Result<()> {
+    anyhow::bail!("service mode requires the gui Cargo feature; use --headless with this build")
 }
 
 fn spawn_banner_interaction_forwarder(
@@ -325,6 +361,7 @@ mod tests {
     use super::*;
     use canopa_notify::SenderEvent;
 
+    #[cfg(feature = "gui")]
     #[test]
     fn service_mode_uses_non_headless_daemon_options() {
         let args = daemon_args(false, true);

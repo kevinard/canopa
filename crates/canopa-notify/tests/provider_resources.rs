@@ -134,7 +134,7 @@ fn provider_interaction_replies_are_bounded_and_failures_do_not_expose_payloads(
     listener.set_nonblocking(true).unwrap();
     let (mut provider, frames) = provider(&socket);
     let mut subscription = accept(&listener);
-    assert_eq!(frame(&mut subscription), "panel-subscribe\n");
+    assert_eq!(frame(&mut subscription), "panel-session\n");
     subscription
         .get_mut()
         .write_all(wire_content("ready").as_bytes())
@@ -200,7 +200,7 @@ fn interaction_deadline_is_total_and_releases_serial_forwarding() {
     listener.set_nonblocking(true).unwrap();
     let (mut provider, frames) = provider(&socket);
     let mut subscription = accept(&listener);
-    assert_eq!(frame(&mut subscription), "panel-subscribe\n");
+    assert_eq!(frame(&mut subscription), "panel-session\n");
     subscription
         .get_mut()
         .write_all(wire_content("ready").as_bytes())
@@ -251,7 +251,7 @@ fn provider_bounds_interaction_lines_and_recovers_after_invalid_input() {
     listener.set_nonblocking(true).unwrap();
     let (mut provider, frames) = provider(&socket);
     let mut subscription = accept(&listener);
-    assert_eq!(frame(&mut subscription), "panel-subscribe\n");
+    assert_eq!(frame(&mut subscription), "panel-session\n");
     subscription
         .get_mut()
         .write_all(wire_content("ready").as_bytes())
@@ -299,7 +299,7 @@ fn provider_validates_complete_frames_and_accepts_the_exact_host_byte_limit() {
     let base = wire_content("é");
     let exact = wire_content(&format!("é{}", "x".repeat(1_048_576 - base.len())));
     assert_eq!(exact.len(), 1_048_576);
-    let invalid_content = r#"{"type":"replace_content","protocol_version":3,"content":{"title":"private","sections":[],"actions":[{"key":"","label":"private","value":null}],"error":null}}"#;
+    let invalid_content = r#"{"type":"replace_content","protocol_version":4,"content":{"title":"private","sections":[],"actions":[{"key":"","label":"private","value":null}],"error":null}}"#;
     let cases = [
         (exact.as_bytes().to_vec(), true),
         (
@@ -309,7 +309,7 @@ fn provider_validates_complete_frames_and_accepts_the_exact_host_byte_limit() {
         (b"{private malformed json}\n".to_vec(), false),
         (
             wire_content("private")
-                .replace("\"protocol_version\":3", "\"protocol_version\":2")
+                .replace("\"protocol_version\":4", "\"protocol_version\":2")
                 .into_bytes(),
             false,
         ),
@@ -327,7 +327,7 @@ fn provider_validates_complete_frames_and_accepts_the_exact_host_byte_limit() {
         listener.set_nonblocking(true).unwrap();
         let (_provider, output_frames) = provider(&socket);
         let mut subscription = accept(&listener);
-        assert_eq!(frame(&mut subscription), "panel-subscribe\n");
+        assert_eq!(frame(&mut subscription), "panel-session\n");
         subscription
             .get_mut()
             .write_all(wire_content("ready").as_bytes())
@@ -381,6 +381,216 @@ fn panel_subscription_limit_reserves_ordinary_control_capacity() {
         Some("Too many Notification Center subscriptions; close a panel and retry.")
     );
     assert!(frame(&mut connect(&socket, b"status\n")).contains("available"));
+}
+
+#[tokio::test]
+async fn installed_provider_pages_large_history_without_losing_content() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let socket = temp.path().join("control.sock");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    for index in 0..24 {
+        let mut input = notification_with_body(
+            if index == 23 || index == 7 {
+                ""
+            } else {
+                "Mail"
+            },
+            format!("Message {index}"),
+            "x".repeat(60_000),
+        );
+        input.category = Some(
+            if index % 2 == 0 {
+                "email.arrived"
+            } else {
+                "email.error"
+            }
+            .into(),
+        );
+        seed.receive_notification(input).await.unwrap();
+    }
+    drop(seed);
+    let _daemon = start_daemon(&socket, &database);
+    let (mut provider, output) = provider(&socket);
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..24 {
+        let line = output
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        assert!(line.len() <= canopa_panel_protocol::MAX_FRAME_BYTES);
+        let ProviderResponse::ReplaceContent { content, .. } = serde_json::from_str(&line).unwrap();
+        assert!(
+            content.error.is_none(),
+            "large history needs navigable pages: {:?}",
+            content.error
+        );
+        content.validate().unwrap();
+        for section in &content.sections {
+            assert!(!section.id.is_empty());
+            if section.title == "Unknown application" {
+                assert!(
+                    section.controls.is_empty(),
+                    "an absent app identity cannot own a persistent rule"
+                );
+                continue;
+            }
+            let categories: std::collections::BTreeSet<_> = section
+                .items
+                .iter()
+                .map(|item| {
+                    let index: usize = item
+                        .title
+                        .strip_prefix("Message ")
+                        .unwrap()
+                        .parse()
+                        .unwrap();
+                    if index.is_multiple_of(2) {
+                        "email.arrived"
+                    } else {
+                        "email.error"
+                    }
+                })
+                .collect();
+            assert_eq!(
+                section.controls.len(),
+                categories.len() + 1,
+                "category controls must be deduplicated and page-local"
+            );
+            for category in categories {
+                assert!(
+                    section
+                        .controls
+                        .iter()
+                        .any(|control| control.key.ends_with(category)),
+                    "missing category permission for {category}"
+                );
+            }
+        }
+        for item in content.sections.iter().flat_map(|section| &section.items) {
+            assert!(
+                seen.insert(item.title.clone()),
+                "a stable notification appeared on two pages"
+            );
+            let body = item.rich_body.as_ref().unwrap();
+            assert_eq!(
+                body.segments
+                    .iter()
+                    .filter_map(|segment| match segment {
+                        canopa_panel_protocol::RichBodySegment::Text { text, .. } =>
+                            Some(text.len()),
+                        _ => None,
+                    })
+                    .sum::<usize>(),
+                60_000
+            );
+        }
+        let Some(next) = content
+            .actions
+            .iter()
+            .find(|action| action.label == "Next page")
+        else {
+            break;
+        };
+        let event = canopa_panel_protocol::InteractionEvent::Invoke {
+            target: canopa_panel_protocol::InteractionTarget::Content,
+            action_key: next.key.clone(),
+            value: next.value.clone(),
+        };
+        writeln!(
+            provider.0.stdin.as_mut().unwrap(),
+            "{}",
+            serde_json::to_string(&event).unwrap()
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        seen.len(),
+        24,
+        "every retained notification must be reachable"
+    );
+}
+
+#[tokio::test]
+async fn paginated_views_navigate_independently_and_reject_stale_navigation() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let socket = temp.path().join("control.sock");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    for index in 0..36 {
+        seed.receive_notification(notification_with_body(
+            "Mail",
+            format!("Message {index}"),
+            "x".repeat(60_000),
+        ))
+        .await
+        .unwrap();
+    }
+    drop(seed);
+    let _daemon = start_daemon(&socket, &database);
+    let mut a = connect(&socket, b"panel-session\n");
+    let mut b = connect(&socket, b"panel-session\n");
+    let read = |reader: &mut BufReader<UnixStream>| {
+        let line = frame(reader);
+        assert!(line.len() <= canopa_panel_protocol::MAX_FRAME_BYTES);
+        let ProviderResponse::ReplaceContent { content, .. } = serde_json::from_str(&line).unwrap();
+        assert!(content.error.is_none());
+        content
+    };
+    let send = |reader: &mut BufReader<UnixStream>, content: &PanelContent, label: &str| {
+        let action = content
+            .actions
+            .iter()
+            .find(|action| action.label == label)
+            .unwrap();
+        let event = canopa_panel_protocol::InteractionEvent::Invoke {
+            target: canopa_panel_protocol::InteractionTarget::Content,
+            action_key: action.key.clone(),
+            value: action.value.clone(),
+        };
+        writeln!(
+            reader.get_mut(),
+            "{}",
+            serde_json::to_string(&event).unwrap()
+        )
+        .unwrap();
+    };
+    let titles = |content: &PanelContent| {
+        content
+            .sections
+            .iter()
+            .flat_map(|section| &section.items)
+            .map(|item| item.title.clone())
+            .collect::<Vec<_>>()
+    };
+    let first = read(&mut a);
+    let independent_first = read(&mut b);
+    assert_eq!(titles(&first), titles(&independent_first));
+    send(&mut a, &first, "Next page");
+    let second = read(&mut a);
+    assert_ne!(titles(&first), titles(&second));
+    assert!(
+        second
+            .actions
+            .iter()
+            .any(|action| action.label == "Next page")
+    );
+    // Queue an obsolete Next and then a current Previous as a processing barrier.
+    // The obsolete action must not advance the generation or consume the new one.
+    send(&mut a, &first, "Next page");
+    send(&mut a, &second, "Previous page");
+    let returned = read(&mut a);
+    assert_eq!(titles(&returned), titles(&first));
+    send(&mut b, &independent_first, "Next page");
+    assert_eq!(titles(&read(&mut b)), titles(&second));
+    send(&mut a, &returned, "Next page");
+    let second = read(&mut a);
+    send(&mut a, &second, "First page");
+    assert_eq!(titles(&read(&mut a)), titles(&first));
 }
 
 #[tokio::test]

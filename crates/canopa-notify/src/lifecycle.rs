@@ -49,6 +49,7 @@ impl LifecycleDelivery {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewNotificationThread {
+    pub requires_attention: bool,
     pub accepted_notification: AcceptedNotification,
     pub status: NotificationStatus,
     pub delivery_outcome: DeliveryOutcome,
@@ -266,6 +267,10 @@ pub enum NotificationTimeoutChange {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Owned committed effects preserve the public lifecycle contract"
+)]
 pub enum BannerLifecycleChange {
     ConsiderOpportunity(NotificationThread),
     Remove {
@@ -471,6 +476,31 @@ where
             .await
     }
 
+    pub(crate) async fn acknowledge_if_current_revision(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+    ) -> anyhow::Result<LifecycleEffects> {
+        let mut thread = self.thread(notification_id).await?;
+        anyhow::ensure!(
+            thread.revision == revision,
+            "notification was replaced before acknowledgement"
+        );
+        if thread.status == NotificationStatus::Active {
+            return self
+                .transition_thread(thread, NotificationStatus::Dismissed)
+                .await;
+        }
+        if thread.requires_attention {
+            thread.requires_attention = false;
+            thread.updated_at = self.now_millis();
+            self.persist_thread(thread, PersistPrecondition::ExpectedRevision(revision))
+                .await?;
+        }
+        // This sender lifecycle already ended. Acknowledgement emits no second closure.
+        Ok(LifecycleEffects::empty())
+    }
+
     pub async fn expire(
         &self,
         notification_id: InternalNotificationId,
@@ -561,7 +591,7 @@ where
         action_key: &str,
         revision: Option<i64>,
     ) -> anyhow::Result<LifecycleEffects> {
-        let thread = self.prepare_action(notification_id, action_key).await?;
+        let mut thread = self.prepare_action(notification_id, action_key).await?;
         anyhow::ensure!(
             revision.is_none_or(|revision| thread.revision == revision),
             "notification was replaced before action invocation"
@@ -578,6 +608,7 @@ where
                     .await?,
             );
         } else {
+            thread.requires_attention = false;
             let revision = thread.revision;
             self.persist_thread(
                 thread,
@@ -668,6 +699,7 @@ where
     ) -> NewNotificationThread {
         let now = self.now_millis();
         NewNotificationThread {
+            requires_attention: !notification.transient,
             accepted_notification: notification,
             status: NotificationStatus::Active,
             delivery_outcome: delivery.outcome,
@@ -684,6 +716,7 @@ where
         delivery: LifecycleDelivery,
     ) -> NotificationThread {
         notification.transient = thread.accepted_notification.transient;
+        thread.requires_attention = !notification.transient;
         thread.accepted_notification = notification;
         thread.status = NotificationStatus::Active;
         thread.delivery_outcome = delivery.outcome;
@@ -701,6 +734,12 @@ where
     ) -> NotificationThread {
         let now = self.now_millis();
         thread.status = status;
+        if matches!(
+            status,
+            NotificationStatus::Dismissed | NotificationStatus::Closed
+        ) {
+            thread.requires_attention = false;
+        }
         thread.updated_at = now;
         thread.closed_at = Some(now);
         thread
@@ -736,6 +775,31 @@ where
             .collect()
     }
 
+    pub(crate) fn transient_center_threads_after(
+        &self,
+        after: Option<crate::NotificationCenterCursor>,
+        limit: u8,
+    ) -> Vec<NotificationThread> {
+        let threads = self.transient_threads.lock().unwrap();
+        // Sort references before cloning: a page never clones the full transient budget.
+        let mut candidates: Vec<_> = threads
+            .values()
+            .filter(|thread| {
+                after.is_none_or(|cursor| {
+                    crate::NotificationCenterCursor::for_thread(thread) < cursor
+                })
+            })
+            .collect();
+        candidates.sort_by_key(|thread| {
+            std::cmp::Reverse(crate::NotificationCenterCursor::for_thread(thread))
+        });
+        candidates
+            .into_iter()
+            .take(usize::from(limit))
+            .cloned()
+            .collect()
+    }
+
     async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
         let mut threads = self.history.active_threads().await?;
         threads.extend(
@@ -764,6 +828,7 @@ where
         let id = self.allocate_runtime_id()?;
         let thread = NotificationThread {
             id,
+            requires_attention: false,
             accepted_notification: thread.accepted_notification,
             status: thread.status,
             delivery_outcome: thread.delivery_outcome,

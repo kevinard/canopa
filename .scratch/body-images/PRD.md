@@ -1,6 +1,6 @@
 # Body-Embedded Notification Images
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 
@@ -80,3 +80,7 @@ Canopa Notify will interpret **Notification Body Markup** into ordered **Notific
 ## Further Notes
 
 ADR 0026 records the ordered body segment and panel protocol decision. The compliance matrix should remain conservative during intermediate implementation: body images may be decoded and carried before they are advertised.
+
+## Completion record
+
+2026-09-16: Ordered body images, fallback and advertisement are verified on banners and the compatible Canopa-v4 Niribar Center. See [desktop acceptance](../../docs/notification-desktop-acceptance.md) and [release verification](../../docs/notification-release-verification.md). The v3 references above describe the original delivery stages; v4 preserves those image segments and adds generic links.

@@ -5,21 +5,24 @@ members = [
     "crates/canopa-notify",
 ]
 exclude = [
+    "vendor/accesskit_unix",
     "vendor/iced_layershell",
     "vendor/layershellev",
 ]
 
 [workspace.package]
 edition = "2024"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
-repository = "https://example.invalid/canopa/notify"
 
 [workspace.dependencies]
+accesskit = "0.25.0"
+accesskit_unix = { version = "0.23.0", default-features = false, features = ["tokio"] }
 anyhow = "1"
 assert_cmd = "2"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
-iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "wayland", "image"] }
+iced = { version = "0.14", default-features = false, features = ["advanced", "wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "wayland", "image"] }
 iced_layershell = { version = "0.18", default-features = false }
 iced_runtime = "0.14"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
@@ -36,7 +39,9 @@ tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-threa
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+url = "2.5"
 
 [patch.crates-io]
+accesskit_unix = { path = "vendor/accesskit_unix" }
 iced_layershell = { path = "vendor/iced_layershell" }
 layershellev = { path = "vendor/layershellev" }

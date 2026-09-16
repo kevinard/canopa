@@ -80,8 +80,8 @@ pub(crate) fn run_panel_provider(socket: &Path) -> anyhow::Result<()> {
         }
     };
     stream.set_write_timeout(Some(CONTROL_WRITE_TIMEOUT))?;
-    stream.write_all(SocketControlRequest::PanelSubscribe.line().as_bytes())?;
-    spawn_panel_interaction_forwarder(socket.to_path_buf())?;
+    stream.write_all(b"panel-session\n")?;
+    spawn_panel_interaction_forwarder(socket.to_path_buf(), stream.try_clone()?)?;
     let mut reader = std::io::BufReader::new(stream);
     let mut stdout = std::io::stdout().lock();
     loop {
@@ -126,7 +126,10 @@ fn read_panel_frame(reader: &mut impl BufRead) -> anyhow::Result<Option<Vec<u8>>
     Ok(Some(frame))
 }
 
-fn spawn_panel_interaction_forwarder(socket: PathBuf) -> anyhow::Result<()> {
+fn spawn_panel_interaction_forwarder(
+    socket: PathBuf,
+    mut navigation: StdUnixStream,
+) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -145,6 +148,13 @@ fn spawn_panel_interaction_forwarder(socket: PathBuf) -> anyhow::Result<()> {
                     }
                 };
                 let result = runtime.block_on(async {
+                    if is_page_navigation(&line) {
+                        // This socket clone belongs to this provider view. Ordinary
+                        // actions keep their existing bounded request/reply exchange.
+                        return Ok(navigation
+                            .write_all(line.as_bytes())
+                            .map_err(anyhow::Error::from));
+                    }
                     tokio::time::timeout(
                         PANEL_INTERACTION_TIMEOUT,
                         send_panel_interaction(&socket, &line),
@@ -157,6 +167,12 @@ fn spawn_panel_interaction_forwarder(socket: PathBuf) -> anyhow::Result<()> {
             }
         })?;
     Ok(())
+}
+
+fn is_page_navigation(line: &str) -> bool {
+    matches!(serde_json::from_str::<InteractionEvent>(line), Ok(InteractionEvent::Invoke {
+        target: canopa_panel_protocol::InteractionTarget::Content, action_key, ..
+    }) if action_key == super::pages::PAGE_KEY)
 }
 
 fn read_panel_interaction(reader: &mut impl BufRead) -> std::io::Result<Option<String>> {
@@ -273,7 +289,10 @@ impl ControlSocket {
             request.kind()
         );
 
-        if matches!(request, SocketControlRequest::PanelSubscribe) {
+        if matches!(
+            request,
+            SocketControlRequest::PanelSubscribe | SocketControlRequest::PanelSession
+        ) {
             let Ok(_permit) = self.panel_subscriptions.try_acquire() else {
                 let response = panel_response_line(PanelContent::error(
                     "Canopa Notify",
@@ -283,7 +302,11 @@ impl ControlSocket {
                 stream.get_mut().shutdown().await?;
                 return Ok(());
             };
-            stream_projection_subscription(&mut stream, control).await?;
+            if matches!(request, SocketControlRequest::PanelSession) {
+                stream_paged_subscription(&mut stream, control).await?;
+            } else {
+                stream_projection_subscription(&mut stream, control).await?;
+            }
             return Ok(());
         }
 
@@ -299,6 +322,49 @@ impl ControlSocket {
         stream.shutdown().await?;
         Ok(())
     }
+}
+
+async fn stream_paged_subscription(
+    stream: &mut BufReader<tokio::net::UnixStream>,
+    control: NotifyControl,
+) -> anyhow::Result<()> {
+    let mut session = super::pages::Session::default();
+    let mut changes = control.subscribe_notification_state();
+    let mut incoming = Vec::new();
+    let mut deadline = None;
+    let mut buffer = [0; 512];
+    loop {
+        if let Some(end) = incoming.iter().position(|byte| *byte == b'\n') {
+            let line: Vec<_> = incoming.drain(..=end).collect();
+            deadline =
+                (!incoming.is_empty()).then(|| tokio::time::Instant::now() + CONTROL_READ_TIMEOUT);
+            if session.navigate(&line) {
+                let frame = session.frame(&control, false).await?;
+                write_socket_frame(stream.get_mut(), frame.as_bytes()).await?;
+            }
+            continue;
+        }
+        if incoming.len() >= buffer.len() {
+            break;
+        }
+        let remaining = buffer.len() - incoming.len();
+        tokio::select! {
+            count = stream.read(&mut buffer[..remaining]) => {
+                let count = count?;
+                if count == 0 { break; }
+                incoming.extend_from_slice(&buffer[..count]);
+                deadline.get_or_insert_with(|| tokio::time::Instant::now() + CONTROL_READ_TIMEOUT);
+            }
+            changed = changes.changed() => {
+                if !changed { break; }
+                let frame = session.frame(&control, true).await?;
+                write_socket_frame(stream.get_mut(), frame.as_bytes()).await?;
+            }
+            _ = tokio::time::sleep_until(deadline.unwrap_or_else(|| tokio::time::Instant::now() + CONTROL_READ_TIMEOUT)), if deadline.is_some() => break,
+        }
+    }
+    stream.get_mut().shutdown().await?;
+    Ok(())
 }
 
 async fn write_socket_frame(
@@ -361,7 +427,10 @@ pub(super) fn control_reply_line(value: &impl serde::Serialize) -> anyhow::Resul
     )
 }
 
-fn json_line(value: &impl serde::Serialize, maximum: usize) -> anyhow::Result<Option<String>> {
+pub(super) fn json_line(
+    value: &impl serde::Serialize,
+    maximum: usize,
+) -> anyhow::Result<Option<String>> {
     let mut buffer = JsonLineBuffer {
         bytes: Vec::with_capacity(4096.min(maximum)),
         maximum,

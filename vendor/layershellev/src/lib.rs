@@ -1571,7 +1571,9 @@ impl<T> WindowState<T> {
         };
 
         let token_request = activation.get_activation_token(&qh, ());
-        token_request.set_app_id(app_id);
+        if !app_id.is_empty() {
+            token_request.set_app_id(app_id);
+        }
         token_request.set_serial(context.serial, &seat);
         token_request.set_surface(&surface);
         token_request.commit();

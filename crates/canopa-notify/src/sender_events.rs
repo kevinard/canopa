@@ -9,6 +9,11 @@ pub type SenderEventPublication = Pin<Box<dyn Future<Output = anyhow::Result<()>
 pub trait SenderEventPublisher: Send + Sync {
     fn publish(&self, event: SenderEvent) -> SenderEventPublication;
 
+    /// Complete after all previously accepted records have reached the transport.
+    fn flush(&self) -> SenderEventPublication {
+        Box::pin(async { Ok(()) })
+    }
+
     /// Includes failures that happen after enqueueing, such as a disconnected bus.
     fn error(&self) -> Option<String> {
         None

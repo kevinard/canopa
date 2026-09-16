@@ -34,6 +34,448 @@ async fn center_item(
         .unwrap()
 }
 
+type LinkCalls = Arc<Mutex<Vec<(String, Option<String>)>>>;
+
+#[derive(Clone, Default)]
+struct RecordedLinks(LinkCalls);
+impl canopa_notify::NotificationLinkOpener for RecordedLinks {
+    fn available(&self) -> bool {
+        true
+    }
+    fn open(
+        &self,
+        uri: canopa_notify::NotificationLink,
+        token: Option<String>,
+    ) -> canopa_notify::LinkOpeningFuture {
+        let recorded = self.clone();
+        Box::pin(async move {
+            recorded
+                .0
+                .lock()
+                .unwrap()
+                .push((uri.as_str().into(), token));
+            canopa_notify::LinkOpeningResult::Opened
+        })
+    }
+}
+
+#[tokio::test]
+async fn queued_link_cannot_open_replaced_or_deleted_content() {
+    #[derive(Clone, Default)]
+    struct Gate {
+        started: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    }
+    impl ActivationTokenProvider for Gate {
+        fn available(&self) -> bool {
+            true
+        }
+        fn activation_token(&self, identity: String) -> ActivationTokenFuture {
+            assert!(identity.is_empty());
+            let gate = self.clone();
+            Box::pin(async move {
+                gate.started.notify_one();
+                gate.release.notified().await;
+                Some("token".into())
+            })
+        }
+    }
+    for delete in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let gate = Gate::default();
+        let links = RecordedLinks::default();
+        let daemon = Daemon::open(
+            DaemonOptions::headless(temp.path().join("history.db"))
+                .with_link_opener(links.clone())
+                .with_activation_token_provider(gate.clone()),
+        )
+        .await
+        .unwrap();
+        let control = NotifyControl::new(daemon.clone());
+        let receipt = daemon
+            .receive_notification(notification_with_body(
+                "Mail",
+                "Original",
+                "<a href='https://example.org/old'>Read</a>",
+            ))
+            .await
+            .unwrap();
+        if delete {
+            daemon
+                .expire_notification(receipt.notification_id)
+                .await
+                .unwrap();
+        }
+        let captured = center_item(&control, receipt.notification_id).await;
+        let mut invocation = Box::pin(control.execute(
+            ControlCommand::InteractWithNotificationCenter {
+                target: captured.target,
+                action: NotificationCenterAction::OpenLink { segment_index: 0 },
+            },
+        ));
+        tokio::select! {
+            _ = gate.started.notified() => {},
+            result = &mut invocation => panic!("link completed before token gate: {result:?}"),
+        }
+        tokio::time::timeout(Duration::from_secs(3), async {
+            if delete {
+                daemon.delete_notification_history().await.unwrap();
+            } else {
+                daemon
+                    .receive_notification(NotificationInput {
+                        replaces_id: Some(receipt.notification_id),
+                        ..notification_with_body(
+                            "Mail",
+                            "Replacement",
+                            "<a href='https://example.org/new'>Read</a>",
+                        )
+                    })
+                    .await
+                    .unwrap();
+            }
+        })
+        .await
+        .expect("token acquisition blocked a mutation");
+        gate.release.notify_one();
+        assert!(invocation.await.is_err());
+        assert!(links.0.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn slow_link_chooser_is_bounded_and_does_not_hold_the_control_reply() {
+    #[derive(Clone)]
+    struct SlowOpener(Arc<tokio::sync::Semaphore>);
+    impl canopa_notify::NotificationLinkOpener for SlowOpener {
+        fn available(&self) -> bool {
+            true
+        }
+        fn open(
+            &self,
+            _: canopa_notify::NotificationLink,
+            _: Option<String>,
+        ) -> canopa_notify::LinkOpeningFuture {
+            let gate = self.0.clone();
+            Box::pin(async move {
+                let _ = gate.acquire().await;
+                canopa_notify::LinkOpeningResult::Failed
+            })
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let daemon = Daemon::open(
+        DaemonOptions::headless(temp.path().join("history.db"))
+            .with_link_opener(SlowOpener(gate.clone())),
+    )
+    .await
+    .unwrap();
+    let control = NotifyControl::new(daemon.clone());
+    let receipt = daemon
+        .receive_notification(notification_with_body(
+            "Mail",
+            "Message",
+            "<a href='https://example.org/private?token=secret'>Read</a>",
+        ))
+        .await
+        .unwrap();
+    let target = center_item(&control, receipt.notification_id).await.target;
+    let command = ControlCommand::InteractWithNotificationCenter {
+        target,
+        action: NotificationCenterAction::OpenLink { segment_index: 0 },
+    };
+    for _ in 0..8 {
+        tokio::time::timeout(Duration::from_millis(250), control.execute(command.clone()))
+            .await
+            .expect("portal completion must not hold the control reply")
+            .unwrap();
+    }
+    assert!(
+        control.execute(command).await.is_err(),
+        "a ninth pending opening must be rejected"
+    );
+    tokio::time::timeout(Duration::from_millis(250), daemon.set_do_not_disturb(true))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(daemon.link_opening_status().pending, 8);
+    gate.close();
+    wait_for_link_completion(&daemon).await;
+    assert_eq!(
+        daemon.link_opening_status().last_error.as_deref(),
+        Some("notification link opening failed")
+    );
+    let ControlReply::Status(status) = control.execute(ControlCommand::Status).await.unwrap()
+    else {
+        panic!("status reply")
+    };
+    assert_eq!(status.link_opening, daemon.link_opening_status());
+    assert!(!serde_json::to_string(&status).unwrap().contains("secret"));
+    daemon.shutdown_link_opening().await.unwrap();
+    assert!(!daemon.link_opening_status().available);
+}
+
+async fn wait_for_link_completion(daemon: &Daemon) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while daemon.link_opening_status().pending != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn center_links_open_the_captured_target_without_sender_actions_or_acknowledgement() {
+    let temp = tempfile::tempdir().unwrap();
+    let links = RecordedLinks::default();
+    let tokens = FakeActivationTokenProvider::new(["browser-token", "history-token"]);
+    let daemon = Daemon::open(
+        DaemonOptions::headless(temp.path().join("history.db"))
+            .with_link_opener(links.clone())
+            .with_activation_token_provider(tokens.clone()),
+    )
+    .await
+    .unwrap();
+    let control = NotifyControl::new(daemon.clone());
+    let receipt = daemon
+        .receive_notification(NotificationInput {
+            actions: vec![NotificationAction::new("default", "Open message")],
+            ..notification_with_body(
+                "Mail",
+                "Message",
+                "Read <a href='https://example.org/page'>the page</a>",
+            )
+        })
+        .await
+        .unwrap();
+    let captured = center_item(&control, receipt.notification_id).await;
+    let command = ControlCommand::InteractWithNotificationCenter {
+        target: captured.target.clone(),
+        action: NotificationCenterAction::OpenLink { segment_index: 1 },
+    };
+    control.execute(command.clone()).await.unwrap();
+    wait_for_link_completion(&daemon).await;
+    assert_eq!(
+        *links.0.lock().unwrap(),
+        vec![(
+            "https://example.org/page".into(),
+            Some("browser-token".into())
+        )]
+    );
+    assert!(daemon.sender_events().await.is_empty());
+    assert_eq!(
+        center_item(&control, receipt.notification_id).await,
+        captured
+    );
+    daemon
+        .expire_notification(receipt.notification_id)
+        .await
+        .unwrap();
+    let events = daemon.sender_events().await;
+    control.execute(command).await.unwrap();
+    wait_for_link_completion(&daemon).await;
+    assert_eq!(links.0.lock().unwrap().len(), 2);
+    assert_eq!(daemon.sender_events().await, events);
+    assert!(
+        center_item(&control, receipt.notification_id)
+            .await
+            .requires_attention
+    );
+    assert_eq!(
+        tokens.requested_app_identities(),
+        vec![String::new(), String::new()],
+        "the selected browser is not the notification sender"
+    );
+}
+
+#[tokio::test]
+async fn retained_attention_can_be_acknowledged_after_expiry_without_sender_callbacks() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon =
+        Daemon::open(DaemonOptions::headless(temp.path().join("history.db")).with_history_limit(0))
+            .await
+            .unwrap();
+    let control = NotifyControl::new(daemon.clone());
+    let receipt = daemon
+        .receive_notification(notification("Mail", "Original"))
+        .await
+        .unwrap();
+    let original = center_item(&control, receipt.notification_id).await;
+    assert!(original.requires_attention);
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(receipt.notification_id),
+            ..notification("Mail", "Replacement")
+        })
+        .await
+        .unwrap();
+    assert!(
+        control
+            .execute(ControlCommand::InteractWithNotificationCenter {
+                target: original.target,
+                action: NotificationCenterAction::Acknowledge,
+            })
+            .await
+            .is_err()
+    );
+    daemon
+        .expire_notification(receipt.notification_id)
+        .await
+        .unwrap();
+    let expired = center_item(&control, receipt.notification_id).await;
+    assert!(expired.requires_attention);
+    let events = daemon.sender_events().await;
+    control
+        .execute(ControlCommand::InteractWithNotificationCenter {
+            target: expired.target,
+            action: NotificationCenterAction::Acknowledge,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        daemon.sender_events().await,
+        events,
+        "acknowledgement must not repeat closure or invoke stale actions"
+    );
+    assert!(
+        daemon.snapshot().await.unwrap().history.is_empty(),
+        "acknowledged archive may now be pruned"
+    );
+}
+
+#[tokio::test]
+async fn resident_actions_acknowledge_and_replacement_restores_attention() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+        .await
+        .unwrap();
+    let control = NotifyControl::new(daemon.clone());
+    let input = NotificationInput {
+        resident: true,
+        actions: vec![NotificationAction::new("read", "Read")],
+        ..notification("Mail", "Message")
+    };
+    let receipt = daemon.receive_notification(input.clone()).await.unwrap();
+    assert!(
+        center_item(&control, receipt.notification_id)
+            .await
+            .requires_attention
+    );
+    daemon
+        .invoke_action(receipt.notification_id, "read")
+        .await
+        .unwrap();
+    let read = center_item(&control, receipt.notification_id).await;
+    assert!(!read.requires_attention);
+    assert_eq!(read.status, canopa_notify::NotificationStatus::Active);
+    daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(receipt.notification_id),
+            ..input
+        })
+        .await
+        .unwrap();
+    assert!(
+        center_item(&control, receipt.notification_id)
+            .await
+            .requires_attention
+    );
+    daemon
+        .close_notification(receipt.notification_id)
+        .await
+        .unwrap();
+    assert!(
+        !center_item(&control, receipt.notification_id)
+            .await
+            .requires_attention
+    );
+    let transient = daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            ..notification("Mail", "Transient")
+        })
+        .await
+        .unwrap();
+    assert!(
+        !center_item(&control, transient.notification_id)
+            .await
+            .requires_attention
+    );
+    control
+        .execute(ControlCommand::ChangeDoNotDisturb {
+            enabled: Some(true),
+        })
+        .await
+        .unwrap();
+    let silenced = daemon
+        .receive_notification(notification("Mail", "Silenced"))
+        .await
+        .unwrap();
+    assert!(
+        center_item(&control, silenced.notification_id)
+            .await
+            .requires_attention
+    );
+}
+
+#[tokio::test]
+async fn center_batches_merge_retained_and_transient_content_without_duplicates() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+        .await
+        .unwrap();
+    let control = NotifyControl::new(daemon.clone());
+    let mut expected = std::collections::BTreeSet::new();
+    for index in 0..19 {
+        let receipt = daemon
+            .receive_notification(NotificationInput {
+                transient: index % 2 == 0,
+                ..notification(
+                    if index % 3 == 0 { "Chat" } else { "Mail" },
+                    format!("Item {index}"),
+                )
+            })
+            .await
+            .unwrap();
+        expected.insert(receipt.notification_id);
+    }
+    let mut after = None;
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..10 {
+        let ControlReply::NotificationCenterBatch(batch) = control
+            .execute(ControlCommand::NotificationCenterBatch { after, limit: 3 })
+            .await
+            .unwrap()
+        else {
+            panic!("expected bounded batch");
+        };
+        let items: Vec<_> = batch
+            .projection
+            .groups
+            .into_iter()
+            .flat_map(|group| group.items)
+            .collect();
+        assert!(items.len() <= 3);
+        for item in items {
+            assert!(seen.insert(item.notification_id));
+        }
+        let Some(last) = batch.last else {
+            break;
+        };
+        after = Some(last);
+    }
+    assert_eq!(seen, expected);
+    for limit in [0, 17, 255] {
+        assert!(
+            control
+                .execute(ControlCommand::NotificationCenterBatch { after: None, limit })
+                .await
+                .is_err()
+        );
+    }
+}
+
 #[tokio::test]
 async fn center_activation_rejects_replaced_and_terminal_targets_without_requesting_tokens() {
     let temp = tempfile::tempdir().unwrap();

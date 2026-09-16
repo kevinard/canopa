@@ -33,6 +33,7 @@ impl NotifyControl {
                 presentation_error: self.daemon.presentation_error(),
                 sender_publication_error: self.daemon.sender_publication_error(),
                 timeout_records: self.daemon.timeout_record_count(),
+                link_opening: self.daemon.link_opening_status(),
             })),
             ControlCommand::DoNotDisturb => Ok(ControlReply::DoNotDisturb(
                 self.daemon.do_not_disturb().await?,
@@ -54,6 +55,15 @@ impl NotifyControl {
             ControlCommand::NotificationCenterProjection => {
                 Ok(ControlReply::NotificationCenterProjection(
                     self.notification_center_projection().await?,
+                ))
+            }
+            ControlCommand::NotificationCenterBatch { after, limit } => {
+                anyhow::ensure!(
+                    (1..=16).contains(&limit),
+                    "center batch limit must be between 1 and 16"
+                );
+                Ok(ControlReply::NotificationCenterBatch(
+                    self.daemon.notification_center_batch(after, limit).await?,
                 ))
             }
             ControlCommand::SetAppPermission {
@@ -141,6 +151,10 @@ pub enum ControlCommand {
     },
     ActiveNotifications,
     NotificationCenterProjection,
+    NotificationCenterBatch {
+        after: Option<NotificationCenterCursor>,
+        limit: u8,
+    },
     SetAppPermission {
         app_identity: String,
         permission: AppPermissionControl,
@@ -184,6 +198,12 @@ impl NotificationCenterTarget {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum NotificationCenterAction {
+    /// Open a captured body segment without invoking a sender action or acknowledging it.
+    OpenLink {
+        segment_index: usize,
+    },
+    /// Acknowledge retained content, dismissing it if its sender lifecycle is still active.
+    Acknowledge,
     /// Invoke the captured revision's default action, or dismiss if it has none.
     Activate,
     InvokeAction {
@@ -198,12 +218,15 @@ pub enum ControlReply {
     DoNotDisturb(bool),
     ActiveNotifications(Vec<NotificationThread>),
     NotificationCenterProjection(NotificationCenterProjection),
+    NotificationCenterBatch(NotificationCenterBatch),
     CommandApplied,
     ClearPartiallyApplied { dismissed: usize },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ControlStatus {
+    #[serde(default)]
+    pub link_opening: crate::LinkOpeningStatus,
     pub available: bool,
     pub do_not_disturb: bool,
     pub configuration: crate::ConfigurationStatus,
@@ -217,6 +240,33 @@ pub struct ControlStatus {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationCenterProjection {
     pub groups: Vec<NotificationCenterGroup>,
+}
+
+/// Exclusive keyset position in the retained/runtime Center ordering. It carries
+/// no notification content and does not authorize interactions with an item.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationCenterCursor {
+    pub(crate) requires_attention: bool,
+    pub(crate) created_at: i64,
+    pub(crate) id: InternalNotificationId,
+}
+
+impl NotificationCenterCursor {
+    pub(crate) fn for_thread(thread: &NotificationThread) -> Self {
+        Self {
+            requires_attention: thread.requires_attention,
+            created_at: thread.created_at,
+            id: thread.id,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationCenterBatch {
+    pub projection: NotificationCenterProjection,
+    /// Cursor of the last returned item; None means that no more items were found.
+    pub last: Option<NotificationCenterCursor>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -235,6 +285,8 @@ pub struct CategoryPermissionControl {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationCenterItem {
+    #[serde(default)]
+    pub requires_attention: bool,
     pub notification_id: InternalNotificationId,
     pub target: NotificationCenterTarget,
     /// Live runtime-only content, never an entry in durable Notification History.

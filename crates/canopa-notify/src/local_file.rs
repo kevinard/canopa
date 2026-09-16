@@ -5,6 +5,7 @@ use std::path::Path;
 #[derive(Debug)]
 pub(crate) struct BoundedReadError {
     /// Bytes consumed before failure, including an overflow-detection probe.
+    #[cfg_attr(not(any(feature = "gui", feature = "audio")), allow(dead_code))]
     pub(crate) bytes_read: usize,
 }
 

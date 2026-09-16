@@ -222,7 +222,8 @@ impl NotificationBodyContent {
         let mut text = String::new();
         for segment in &self.segments {
             match segment {
-                NotificationBodySegment::Text { text: segment, .. } => text.push_str(segment),
+                NotificationBodySegment::Text { text: segment, .. }
+                | NotificationBodySegment::Link { text: segment, .. } => text.push_str(segment),
                 NotificationBodySegment::Image {
                     image: NotificationBodyImage { alt: Some(alt), .. },
                 } => text.push_str(alt),
@@ -240,7 +241,8 @@ impl NotificationBodyContent {
         self.segments
             .iter()
             .filter_map(|segment| match segment {
-                NotificationBodySegment::Text { text, style } => {
+                NotificationBodySegment::Text { text, style }
+                | NotificationBodySegment::Link { text, style, .. } => {
                     Some(NotificationBodyRun::styled(text.clone(), *style))
                 }
                 NotificationBodySegment::Image { .. } => None,
@@ -261,6 +263,17 @@ impl NotificationBodyContent {
         for segment in segments {
             match segment {
                 NotificationBodySegment::Text { text, .. } if text.is_empty() => {}
+                NotificationBodySegment::Link { text, .. } if text.is_empty() => {}
+                NotificationBodySegment::Link { text, style, uri } => match normalized.last_mut() {
+                    Some(NotificationBodySegment::Link {
+                        text: previous,
+                        style: previous_style,
+                        uri: previous_uri,
+                    }) if *previous_style == style && *previous_uri == uri => {
+                        previous.push_str(&text)
+                    }
+                    _ => normalized.push(NotificationBodySegment::Link { text, style, uri }),
+                },
                 NotificationBodySegment::Text { text, style } => match normalized.last_mut() {
                     Some(NotificationBodySegment::Text {
                         text: previous_text,
@@ -291,6 +304,11 @@ impl NotificationBodyContent {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum NotificationBodySegment {
+    Link {
+        text: String,
+        style: NotificationBodyStyle,
+        uri: crate::NotificationLink,
+    },
     Text {
         text: String,
         style: NotificationBodyStyle,
@@ -967,6 +985,9 @@ pub struct NotificationReceipt {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationThread {
     pub id: InternalNotificationId,
+    /// Retained content awaiting deliberate acknowledgement, independent of sender lifecycle.
+    #[serde(default)]
+    pub requires_attention: bool,
     pub accepted_notification: AcceptedNotification,
     pub status: NotificationStatus,
     pub delivery_outcome: DeliveryOutcome,
