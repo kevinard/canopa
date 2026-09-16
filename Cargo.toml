@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+accesskit = "0.25.0"
+accesskit_unix = { version = "0.23.0", default-features = false, features = ["tokio"] }
 canopa-panel-protocol = { path = "vendor/canopa-panel-protocol" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 rustix = { version = "1.1", features = ["fs"] }
@@ -45,5 +47,6 @@ iced = { version = "0.14", default-features = false, features = ["tiny-skia"] }
 tempfile = "3"
 
 [patch.crates-io]
+accesskit_unix = { path = "vendor/accesskit_unix" }
 iced_layershell = { path = "vendor/iced_layershell" }
 layershellev = { path = "vendor/layershellev" }

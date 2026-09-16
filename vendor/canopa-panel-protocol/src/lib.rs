@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 3;
+pub const PROTOCOL_VERSION: u16 = 4;
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const MAX_INTERACTIVE_ELEMENTS: usize = 8192;
 
@@ -65,7 +65,7 @@ impl PanelContent {
         let mut section_ids = HashSet::new();
         let mut item_ids = HashSet::new();
         let mut count = self.actions.len();
-        validate_actions(&self.actions)?;
+        validate_actions(self.actions.iter())?;
         for section in &self.sections {
             if section.id.is_empty() || !section_ids.insert(&section.id) {
                 return Err(InvalidPanelContent);
@@ -90,8 +90,25 @@ impl PanelContent {
                 if item.id.is_empty() || !item_ids.insert(&item.id) {
                     return Err(InvalidPanelContent);
                 }
-                validate_actions(&item.actions)?;
-                count = count.saturating_add(item.actions.len());
+                for segment in item.rich_body.iter().flat_map(|body| &body.segments) {
+                    if let RichBodySegment::Link { uri, .. } = segment
+                        && (uri.is_empty() || uri.len() > 2048 || uri.chars().any(char::is_control))
+                    {
+                        return Err(InvalidPanelContent);
+                    }
+                }
+                let links = item
+                    .rich_body
+                    .iter()
+                    .flat_map(|body| &body.segments)
+                    .filter_map(|segment| match segment {
+                        RichBodySegment::Link { action, .. } => Some(action),
+                        _ => None,
+                    });
+                count = count
+                    .saturating_add(item.actions.len())
+                    .saturating_add(links.clone().count());
+                validate_actions(item.actions.iter().chain(links))?;
             }
         }
         if count > MAX_INTERACTIVE_ELEMENTS || item_ids.len() > 4096 || section_ids.len() > 1024 {
@@ -152,6 +169,12 @@ impl RichBody {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum RichBodySegment {
+    /// A labeled provider action. URI is assistive-technology metadata; activation stays opaque.
+    Link {
+        uri: String,
+        action: PanelAction,
+        style: StyledTextStyle,
+    },
     Text {
         text: String,
         style: StyledTextStyle,
@@ -242,7 +265,9 @@ impl PanelAction {
     }
 }
 
-fn validate_actions(actions: &[PanelAction]) -> Result<(), InvalidPanelContent> {
+fn validate_actions<'a>(
+    actions: impl IntoIterator<Item = &'a PanelAction>,
+) -> Result<(), InvalidPanelContent> {
     let mut keys = std::collections::HashSet::new();
     for action in actions {
         if action.key.is_empty()
@@ -292,13 +317,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ordered_body_links_carry_opaque_actions_and_share_item_validation() {
+        let input = serde_json::json!({
+            "title":"Links", "sections":[{"id":"s", "title":"Section", "controls":[], "items":[{
+                "id":"i", "title":"Message", "body":null, "styled_body":null, "metadata":[], "actions":[],
+                "rich_body":{"segments":[
+                    {"kind":"text", "text":"Before ", "style":{"bold":false,"italic":false,"underline":false}},
+                    {"kind":"link", "uri":"https://example.org/page", "action":{"key":"opaque", "label":"Read the page", "value":"revision-owned-target"}, "style":{"bold":true,"italic":false,"underline":false}},
+                    {"kind":"text", "text":" after", "style":{"bold":false,"italic":false,"underline":false}}
+                ]}
+            }]}], "actions":[], "error":null
+        });
+        let mut content: PanelContent = serde_json::from_value(input.clone()).unwrap();
+        content.validate().unwrap();
+        assert_eq!(serde_json::to_value(&content).unwrap(), input);
+        content.sections[0].items[0].actions.push(PanelAction {
+            key: "opaque".into(),
+            label: "Duplicate".into(),
+            value: Some("revision-owned-target".into()),
+        });
+        assert!(
+            content.validate().is_err(),
+            "link and item controls must not collide"
+        );
+    }
+
+    #[test]
     fn protocol_messages_carry_explicit_version() {
         let message = ProviderResponse::replace_content(PanelContent::error(
             "Example Panel",
             "provider unavailable",
         ));
         let encoded = serde_json::to_string(&message).unwrap();
-        assert!(encoded.contains("\"protocol_version\":3"));
+        assert!(encoded.contains("\"protocol_version\":4"));
         assert!(encoded.contains("provider unavailable"));
     }
 

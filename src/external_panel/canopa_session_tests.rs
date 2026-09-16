@@ -2,8 +2,8 @@ use super::*;
 
 #[tokio::test]
 async fn canopa_process_receives_typed_actions_and_streams_replacements() {
-    let initial = r#"{"type":"replace_content","protocol_version":3,"content":{"title":"Initial","sections":[],"actions":[{"key":"refresh","label":"Refresh","value":null}],"error":null}}"#;
-    let updated = r#"{"type":"replace_content","protocol_version":3,"content":{"title":"Updated","sections":[],"actions":[],"error":null}}"#;
+    let initial = r#"{"type":"replace_content","protocol_version":4,"content":{"title":"Initial","sections":[],"actions":[{"key":"refresh","label":"Refresh","value":null}],"error":null}}"#;
+    let updated = r#"{"type":"replace_content","protocol_version":4,"content":{"title":"Updated","sections":[],"actions":[],"error":null}}"#;
     let expected_event =
         r#"{"type":"invoke","target":{"target":"content"},"action_key":"refresh","value":null}"#;
     // A host-first handshake would fail this fixture's exact event comparison.
@@ -25,7 +25,7 @@ async fn canopa_process_receives_typed_actions_and_streams_replacements() {
                     origin_kind: "module".into(),
                 },
             },
-            ProviderProtocol::CanopaV3,
+            ProviderProtocol::CanopaV4,
         ),
     )
     .await

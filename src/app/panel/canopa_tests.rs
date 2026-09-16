@@ -8,7 +8,7 @@ use niribar::external_panel::canopa::{CanopaSession, CanopaSnapshot};
 
 async fn document(session: &mut CanopaSession) -> ExternalPanelDocument {
     let content = serde_json::json!({
-        "type": "replace_content", "protocol_version": 3,
+        "type": "replace_content", "protocol_version": 4,
         "content": {
             "title": "Notifications", "error": null,
             "actions": [
@@ -216,4 +216,49 @@ fn v1_button_replacement_retires_the_window_with_the_old_press_state() {
     ));
     assert_ne!(app.foreground.active_panel_window(), Some(window));
     assert_eq!(displayed_content(&app).elements, button("new").elements);
+}
+
+#[tokio::test]
+async fn accessibility_focus_uses_the_current_opaque_action_without_recreating_the_window() {
+    let mut session = CanopaSession::default();
+    let (mut app, window) = open(document(&mut session).await);
+    let snapshot = displayed(&app);
+    let id = snapshot.action_id(
+        canopa_panel_protocol::InteractionTarget::Content,
+        &snapshot.content.actions[1],
+    );
+    let _ = app.update(Message::CanopaAccessibilityFocus {
+        provider: "notifications".into(),
+        action_id: id.clone(),
+    });
+    assert_eq!(displayed(&app).focused_label(), Some("Second"));
+    assert_eq!(app.foreground.active_panel_window(), Some(window));
+    let _ = app.update(Message::ExternalPanel(
+        ExternalPanelEvent::ProviderContentReceived {
+            session_id: "session-1".into(),
+            provider_name: "notifications".into(),
+            content: document(&mut session).await,
+        },
+    ));
+    let _ = app.update(Message::CanopaAccessibilityFocus {
+        provider: "notifications".into(),
+        action_id: id,
+    });
+    assert_eq!(displayed(&app).focused_action_id(), None);
+    let snapshot = displayed(&app);
+    let id = snapshot.action_id(
+        canopa_panel_protocol::InteractionTarget::Content,
+        &snapshot.content.actions[0],
+    );
+    let _ = app.update(Message::CanopaAccessibilityFocus {
+        provider: "other".into(),
+        action_id: id.clone(),
+    });
+    assert_eq!(displayed(&app).focused_action_id(), None);
+    let _ = app.update(Message::Surface(SurfaceEvent::EscapePressed(window)));
+    let _ = app.update(Message::CanopaAccessibilityFocus {
+        provider: "notifications".into(),
+        action_id: id,
+    });
+    assert_eq!(app.foreground.active_panel_window(), None);
 }

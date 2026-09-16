@@ -111,6 +111,10 @@ impl App {
         };
 
         iced::Subscription::batch([
+            self.canopa_accessibility.as_ref().map_or_else(
+                iced::Subscription::none,
+                super::canopa_accessibility::PanelAccessibility::subscription,
+            ),
             module_subs,
             niri_sub,
             dbus_sub,

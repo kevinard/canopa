@@ -19,7 +19,7 @@ pub(crate) mod protocol {
 pub enum ProviderProtocol {
     #[default]
     NiribarV1,
-    CanopaV3,
+    CanopaV4,
 }
 pub(crate) struct ExternalPanelStartedSession {
     pub(crate) content: crate::surface::panel::ExternalPanelDocument,
@@ -309,7 +309,7 @@ impl ExternalPanelProcess {
         if let Some(stderr) = self.child.stderr.take() {
             capture_provider_stderr(stderr, stderr_tail.clone());
         }
-        let canopa = (transport == ProviderProtocol::CanopaV3)
+        let canopa = (transport == ProviderProtocol::CanopaV4)
             .then(niribar::external_panel::canopa::CanopaSession::default);
         let content = if let Some(canopa) = &canopa {
             canopa_document(canopa.read_content(&mut stdout).await?)

@@ -297,12 +297,12 @@ fn parse_panel_providers_section(
             .transpose()?;
         let protocol = match transport.as_deref() {
             None | Some("niribar-v1") => crate::external_panel::ProviderProtocol::NiribarV1,
-            Some("canopa-v3") => crate::external_panel::ProviderProtocol::CanopaV3,
+            Some("canopa-v4") => crate::external_panel::ProviderProtocol::CanopaV4,
             Some(_) => {
                 return Err(provider_ctx.node_err(
                     node,
                     "unsupported provider protocol",
-                    Some("expected niribar-v1 or canopa-v3".into()),
+                    Some("expected niribar-v1 or canopa-v4".into()),
                 ));
             }
         };

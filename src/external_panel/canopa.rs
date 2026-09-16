@@ -21,6 +21,22 @@ pub struct CanopaSnapshot {
 }
 
 impl CanopaSnapshot {
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn focus_action(&mut self, id: &str) -> bool {
+        let Some(index) = self
+            .affordances
+            .iter()
+            .position(|(candidate, _)| candidate == id)
+        else {
+            return false;
+        };
+        self.focused = Some(index);
+        true
+    }
+
     pub fn move_focus(&mut self, forward: bool) {
         if self.affordances.is_empty() {
             self.focused = None;
@@ -140,7 +156,15 @@ impl CanopaSession {
                 }
             }
             for item in &section.items {
-                for action in &item.actions {
+                let links = item
+                    .rich_body
+                    .iter()
+                    .flat_map(|body| &body.segments)
+                    .filter_map(|segment| match segment {
+                        canopa_panel_protocol::RichBodySegment::Link { action, .. } => Some(action),
+                        _ => None,
+                    });
+                for action in links.chain(&item.actions) {
                     affordances.push((
                         snapshot.action_id(
                             InteractionTarget::Item {

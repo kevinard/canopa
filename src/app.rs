@@ -1,7 +1,10 @@
 mod animation;
 mod app_effects;
 mod bar_surface_plan;
+mod canopa_accessibility;
+mod canopa_accessibility_bounds;
 mod canopa_panel;
+mod canopa_semantics;
 mod dynamic_modules;
 pub(crate) mod eligible_outputs;
 mod external_panel_session;
@@ -54,6 +57,8 @@ pub(crate) struct App {
     tray: tray::TrayState,
     perf: Option<perf::PerfTracker>,
     external_panel_session: external_panel_session::ExternalPanelSessionRuntime,
+    canopa_accessibility: Option<canopa_accessibility::PanelAccessibility>,
+    accessibility_focused_window: Option<iced::window::Id>,
     #[cfg(test)]
     external_panel_responses_for_test: std::collections::HashMap<
         String,
@@ -67,6 +72,16 @@ pub(crate) struct App {
 #[to_layer_message(multi)]
 #[derive(Debug, Clone)]
 pub enum Message {
+    CanopaAccessibilityFrame(iced::window::Id),
+    CanopaAccessibilityBounds {
+        window: iced::window::Id,
+        generation: Option<u64>,
+        bounds: canopa_accessibility_bounds::Bounds,
+    },
+    CanopaAccessibilityFocus {
+        provider: String,
+        action_id: String,
+    },
     Ipc(messages::IpcEvent),
     ExternalPanel(messages::ExternalPanelEvent),
     Surface(messages::SurfaceEvent),
@@ -248,6 +263,8 @@ impl App {
             tray: tray::TrayState::default(),
             perf: perf::PerfTracker::from_env(),
             external_panel_session: external_panel_session::ExternalPanelSessionRuntime::default(),
+            canopa_accessibility: None,
+            accessibility_focused_window: None,
             #[cfg(test)]
             external_panel_responses_for_test: std::collections::HashMap::new(),
             #[cfg(test)]
@@ -273,6 +290,17 @@ impl App {
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
+        match &message {
+            Message::Surface(messages::SurfaceEvent::BarFocusGained(window)) => {
+                self.accessibility_focused_window = Some(*window);
+            }
+            Message::Surface(messages::SurfaceEvent::BarFocusLost(window))
+                if self.accessibility_focused_window == Some(*window) =>
+            {
+                self.accessibility_focused_window = None;
+            }
+            _ => {}
+        }
         tracing::trace!(
             target: "niribar::runtime",
             app_message = message.diagnostic_label(),
@@ -283,7 +311,28 @@ impl App {
             perf.record_update(message.perf_label());
         }
 
-        match message {
+        let task = match message {
+            Message::CanopaAccessibilityFrame(window) => self.measure_canopa_accessibility(window),
+            Message::CanopaAccessibilityBounds {
+                window,
+                generation,
+                bounds,
+            } => {
+                self.update_canopa_accessibility_bounds(window, generation, bounds);
+                Task::none()
+            }
+            Message::CanopaAccessibilityFocus {
+                provider,
+                action_id,
+            } => {
+                let panel = self.active_external_panel_identity();
+                let effects = self.external_panel_session.canopa_focus_action(
+                    &provider,
+                    &action_id,
+                    panel.as_ref(),
+                );
+                self.apply_external_panel_session_effects(effects)
+            }
             Message::Surface(event) => self.handle_surface_event(event),
             Message::WaylandOutputSnapshot(outputs) => self.handle_wayland_output_snapshot(outputs),
             Message::Ipc(event) => self.handle_ipc_event(event),
@@ -334,7 +383,11 @@ impl App {
                 Task::none()
             }
             _ => Task::none(),
+        };
+        if !cfg!(test) {
+            self.sync_canopa_accessibility();
         }
+        task
     }
 }
 

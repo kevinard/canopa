@@ -3,7 +3,7 @@ use niribar::external_panel::canopa::CanopaSession;
 #[tokio::test]
 async fn keyboard_selection_names_action_before_context_and_preserves_wire_target() {
     let mut input = serde_json::json!({
-        "type": "replace_content", "protocol_version": 3,
+        "type": "replace_content", "protocol_version": 4,
         "content": {"title": "Notifications", "actions": [], "error": null,
             "sections": [{"id": "mail", "title": "Mail", "controls": [{
                 "key": "permission", "label": "App permission", "value": "allow",
@@ -52,9 +52,10 @@ async fn keyboard_selection_names_action_before_context_and_preserves_wire_targe
 
 #[tokio::test]
 async fn canopa_provider_rejects_bad_versions_truncated_and_oversized_frames() {
-    let valid = "{\"type\":\"replace_content\",\"protocol_version\":3,\"content\":{\"title\":\"Ready\",\"sections\":[],\"actions\":[],\"error\":null}}\n";
+    let valid = "{\"type\":\"replace_content\",\"protocol_version\":4,\"content\":{\"title\":\"Ready\",\"sections\":[],\"actions\":[],\"error\":null}}\n";
     for input in [
-        valid.replace("version\":3", "version\":4"),
+        valid.replace("version\":4", "version\":3"),
+        valid.replace("version\":4", "version\":5"),
         valid.trim_end().to_string(),
         " ".repeat(canopa_panel_protocol::MAX_FRAME_BYTES + 1),
     ] {
@@ -68,8 +69,8 @@ async fn canopa_provider_rejects_bad_versions_truncated_and_oversized_frames() {
 }
 
 #[tokio::test]
-async fn canopa_provider_accepts_v3_content_and_sends_typed_actions() {
-    let input = br#"{"type":"replace_content","protocol_version":3,"content":{"title":"Notifications","sections":[],"actions":[{"key":"clear","label":"Clear","value":null}],"error":null}}
+async fn canopa_provider_accepts_v4_content_and_sends_typed_actions() {
+    let input = br#"{"type":"replace_content","protocol_version":4,"content":{"title":"Notifications","sections":[],"actions":[{"key":"clear","label":"Clear","value":null}],"error":null}}
 "#;
     let mut reader = tokio::io::BufReader::new(&input[..]);
     let session = CanopaSession::default();
@@ -107,7 +108,7 @@ async fn canopa_provider_prepares_only_bounded_local_images() {
     image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]))
         .save(&path)
         .unwrap();
-    let mut input = serde_json::json!({"type":"replace_content","protocol_version":3,"content":{"title":"Images","actions":[],"error":null,"sections":[{"id":"mail","title":"Mail","controls":[],"items":[{"id":"1","title":"Photo","body":"fallback","styled_body":null,"rich_body":{"segments":[{"kind":"image","image":{"source":{"kind":"local_path","path":path},"alt":"Red square"}}]},"metadata":[],"actions":[]}]}]}}).to_string();
+    let mut input = serde_json::json!({"type":"replace_content","protocol_version":4,"content":{"title":"Images","actions":[],"error":null,"sections":[{"id":"mail","title":"Mail","controls":[],"items":[{"id":"1","title":"Photo","body":"fallback","styled_body":null,"rich_body":{"segments":[{"kind":"image","image":{"source":{"kind":"local_path","path":path},"alt":"Red square"}}]},"metadata":[],"actions":[]}]}]}}).to_string();
     input.push('\n');
     let snapshot = CanopaSession::default()
         .read_content(&mut tokio::io::BufReader::new(input.as_bytes()))
@@ -134,7 +135,7 @@ async fn canopa_provider_prepares_only_bounded_local_images() {
 
 #[tokio::test]
 async fn canopa_provider_rejects_ambiguous_item_ids() {
-    let input = br#"{"type":"replace_content","protocol_version":3,"content":{"title":"Notifications","actions":[],"error":null,"sections":[{"id":"mail","title":"Mail","controls":[],"items":[{"id":"1","title":"Old","body":null,"styled_body":null,"rich_body":null,"metadata":[],"actions":[]},{"id":"1","title":"New","body":null,"styled_body":null,"rich_body":null,"metadata":[],"actions":[]}]}]}}
+    let input = br#"{"type":"replace_content","protocol_version":4,"content":{"title":"Notifications","actions":[],"error":null,"sections":[{"id":"mail","title":"Mail","controls":[],"items":[{"id":"1","title":"Old","body":null,"styled_body":null,"rich_body":null,"metadata":[],"actions":[]},{"id":"1","title":"New","body":null,"styled_body":null,"rich_body":null,"metadata":[],"actions":[]}]}]}}
 "#;
     let mut reader = tokio::io::BufReader::new(&input[..]);
     assert!(
@@ -147,7 +148,7 @@ async fn canopa_provider_rejects_ambiguous_item_ids() {
 
 #[tokio::test]
 async fn canopa_panel_keyboard_focus_visits_each_action_and_resets_on_replacement() {
-    let input = br#"{"type":"replace_content","protocol_version":3,"content":{"title":"Notifications","sections":[],"actions":[{"key":"clear","label":"Clear","value":null},{"key":"delete","label":"Delete history","value":null}],"error":null}}
+    let input = br#"{"type":"replace_content","protocol_version":4,"content":{"title":"Notifications","sections":[],"actions":[{"key":"clear","label":"Clear","value":null},{"key":"delete","label":"Delete history","value":null}],"error":null}}
 "#;
     let session = CanopaSession::default();
     let mut snapshot = session

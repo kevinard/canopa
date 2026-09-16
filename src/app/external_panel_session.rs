@@ -141,6 +141,28 @@ impl ActiveExternalPanelSession {
 }
 
 impl ExternalPanelSessionRuntime {
+    pub(super) fn canopa_focus_action(
+        &mut self,
+        provider: &str,
+        id: &str,
+        active_panel: Option<&ExternalPanelPanelIdentity>,
+    ) -> Vec<ExternalPanelSessionEffect> {
+        let Some(active) = self.active.as_mut() else {
+            return Vec::new();
+        };
+        if active.provider_name != provider || !active.matches_panel(active_panel) {
+            return Vec::new();
+        }
+        for element in &mut active.content.elements {
+            if let crate::surface::panel::ExternalPanelElement::Canopa { snapshot } = element
+                && snapshot.focus_action(id)
+            {
+                return vec![active.update_content_effect()];
+            }
+        }
+        Vec::new()
+    }
+
     pub(super) fn canopa_focus_move(
         &mut self,
         forward: bool,

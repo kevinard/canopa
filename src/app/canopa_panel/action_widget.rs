@@ -7,7 +7,7 @@ use iced::advanced::{
 use iced::{Event, Rectangle, Renderer, Size, Theme, mouse};
 
 pub(super) fn render<'a>(id: String, label: &str, provider: &str) -> Element<'a, Message> {
-    action(id, provider, text(label.to_owned()).into())
+    action(id, provider, text(label.to_owned()).into(), false)
 }
 
 pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, Message> {
@@ -21,11 +21,43 @@ pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, 
         .width(Length::Fill)
         .max_height(54)
         .into(),
+        false,
     )
 }
 
-fn action<'a>(id: String, provider: &str, content: Element<'a, Message>) -> Element<'a, Message> {
+pub(super) fn link<'a>(
+    id: String,
+    label: &str,
+    style: canopa_panel_protocol::StyledTextStyle,
+    provider: &str,
+) -> Element<'a, Message> {
+    let content = styled_body(
+        vec![StyledTextRun {
+            text: label.into(),
+            style: canopa_panel_protocol::StyledTextStyle {
+                underline: true,
+                ..style
+            },
+        }],
+        true,
+    );
+    action(id, provider, content, true)
+}
+
+fn action<'a>(
+    id: String,
+    provider: &str,
+    content: Element<'a, Message>,
+    link: bool,
+) -> Element<'a, Message> {
     let content = button(content)
+        .style(move |theme, status| {
+            if link {
+                iced::widget::button::text(theme, status)
+            } else {
+                iced::widget::button::primary(theme, status)
+            }
+        })
         .width(Length::Fill)
         .on_press(Message::ExternalPanel(
             ExternalPanelEvent::ButtonActivated {

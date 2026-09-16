@@ -1,6 +1,6 @@
 # Canopa panel protocol snapshot
 
-Canonical source: `canopa/notify/crates/canopa-panel-protocol`, protocol version 3.
+Canonical source: `canopa/notify/crates/canopa-panel-protocol`, protocol version 4.
 This crate is a verbatim source snapshot, not a separately maintained protocol implementation.
 It is vendored so a standalone Niribar checkout builds without a sibling Notify checkout.
 

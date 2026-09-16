@@ -7,7 +7,7 @@ fn canopa_panel_provider_selects_explicit_transport() {
         r#"
         panel-providers {
             provider "notifications" {
-                protocol "canopa-v3"
+                protocol "canopa-v4"
                 command { argv "canopa-notify" "panel-provider"; }
             }
         }
@@ -16,7 +16,7 @@ fn canopa_panel_provider_selects_explicit_transport() {
     .expect("Canopa protocol should be selectable without changing existing providers");
     assert_eq!(
         config.panel_providers[0].protocol,
-        crate::external_panel::ProviderProtocol::CanopaV3
+        crate::external_panel::ProviderProtocol::CanopaV4
     );
     assert!(
         parse(r#"panel-providers { provider "bad" { protocol "canopa-v99"; command "true"; }; }"#)
