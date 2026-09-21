@@ -9,7 +9,7 @@ Type: AFK
 
 ## What to build
 
-Implement UI/control-managed app policy in the User Rule Store. User-managed Notification Rules are persisted in SQLite, keyed by App Identity and optional Notification Urgency, take precedence over Notification Configuration rules, support allow/silence/drop outcomes, re-evaluate Active Notifications without rewriting inactive history, and preserve historical Delivery Outcomes.
+Implement UI/control-managed app policy in the User Rule Store. User-managed Notification Rules are persisted in SQLite, keyed by App Identity and optional Notification Urgency, take precedence over Notification Configuration rules, support allow/silence/drop outcomes, apply to future requests, including replacements, without reclassifying existing notifications (ADR 0027), and preserve historical Delivery Outcomes.
 
 ## Acceptance criteria
 
@@ -20,9 +20,13 @@ Implement UI/control-managed app policy in the User Rule Store. User-managed Not
 - [ ] Dropped Notifications are not retained and are immediately closed from the Sender Notification Lifecycle perspective.
 - [ ] Silenced replacements update history and close visible banners.
 - [ ] Dropped replacements do not update Notification History.
-- [ ] Rule changes affect future notifications and re-evaluate Active Notifications without reclassifying inactive history.
-- [ ] Tests cover precedence, allow/silence/drop behavior, replacements, active re-evaluation, non-retroactive history, and persisted rule storage.
+- [ ] Rule changes affect future requests, including replacements, without changing existing Delivery Outcomes or banner state (ADR 0027).
+- [ ] Tests cover precedence, allow/silence/drop behavior, replacements, future-request-only changes, non-retroactive history, and persisted rule storage.
 
 ## Blocked by
 
 - [09-load-kdl-notification-configuration-rules.md](09-load-kdl-notification-configuration-rules.md)
+
+## Maintenance note
+
+2026-09-21: Acceptance wording reconciled with the selected Notifications 1.3 profile. ADR 0027 supersedes retroactive policy re-evaluation; ADR 0040 defines atomic configuration candidates. Historical filenames and links are retained. This edit does not claim new test or rollout evidence.

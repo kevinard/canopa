@@ -8,6 +8,9 @@ on:
         default: /opt/canopa/niribar
 permissions:
   contents: read
+concurrency:
+  group: canopa-desktop
+  cancel-in-progress: false
 jobs:
   desktop:
     # Dedicated Linux runner with Niri, Sway, software Mesa, AT-SPI, Python GI,
@@ -18,8 +21,13 @@ jobs:
       NIRIBAR_ROOT: ${{ inputs.niribar_root }}
       CARGO_INCREMENTAL: '0'
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUSTUP_TOOLCHAIN: '1.95.0'
     steps:
       - uses: actions/checkout@v4
+      - name: Install the verified Rust toolchain
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      - name: Check runner prerequisites
+        run: python3 scripts/check-desktop-runner.py --niribar-root "$NIRIBAR_ROOT"
       - name: Verify compatible generic protocol
         run: bash scripts/check-panel-protocol.sh "$NIRIBAR_ROOT"
       - name: Build both desktop adapters

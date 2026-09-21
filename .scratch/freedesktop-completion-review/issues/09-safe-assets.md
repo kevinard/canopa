@@ -1,6 +1,6 @@
 # W09: Safe image decoding and standards-aware icon/sound lookup.
 
-Status: In progress
+Status: complete for the selected static Notifications 1.3 profile
 
 Specification and acceptance criteria: [PLAN.md](../PLAN.md), work package W09. Execution evidence and remaining work: [IMPLEMENTATION.md](../IMPLEMENTATION.md).
 
@@ -19,3 +19,5 @@ Specification and acceptance criteria: [PLAN.md](../PLAN.md), work package W09. 
 2026-09-11: Continuing from `2b8a21b` with renderer-side indexed icon discovery, selected theme/scale configuration and per-frame metadata refresh under ADR 0037. Tests use the existing daemon/presenter/renderer-consumer seams with temporary theme trees and real rendered pixels. Automatic compositor-scale tracking, additional codecs, alternative-resolver fixture comparison and graphical acceptance remain separate.
 
 2026-09-11: Indexed-icon continuation implemented and independently reviewed against `df88ecd`, with zero scoped findings. First-index/root precedence, declared directories, selected-theme inheritance, hicolor fallback, size/scale matching and per-frame refresh replace recursive discovery and its permanent cache. Installed icon settings load/reload atomically with policy/sound. All 81 focused presentation tests and 323 private-bus workspace tests pass, with zero failures or ignored tests. Typecheck, Clippy, formatting, whitespace and Niribar protocol drift checks pass with no new warnings. Nine real-pixel renderer fixtures and one configuration integration test replace five private helper tests; no dependency was added. See [ICON-THEME-REVIEW.md](../ICON-THEME-REVIEW.md). Automatic theme/output-scale tracking, XPM/SVG, broader alternative-resolver fixtures and graphical/host acceptance remain open; no live desktop service, audio device or installed configuration was changed.
+
+2026-09-21 maintenance: Status reconciled with the final [implementation tracker](../IMPLEMENTATION.md) and [release verification](../../../docs/notification-release-verification.md). Earlier dated comments retain historical evidence. Operational rollout, additional failure verification, and hosted CI are tracked separately in [project completion](../../project-completion/PRD.md); hosted execution remains open until a repository and runner exist.

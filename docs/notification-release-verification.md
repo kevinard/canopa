@@ -6,6 +6,10 @@ static Desktop Notifications 1.3 profile is implemented. The compatible host
 uses Canopa protocol v4. This record distinguishes source verification, actual
 desktop evidence, and environment limits.
 
+The [2026-09-21 completion follow-up](project-completion-verification.md) records
+subsequent failure-injection coverage, live installation, and the remaining hosted
+CI gate. Counts and machine measurements below retain their 2026-09-16 scope.
+
 ## Automated checks
 
 | Check | Result |
@@ -118,7 +122,8 @@ records exact interfaces, hints, policies and evidence.
   explains the choices.
 - Claimed app identity supports convenience rules, not authenticated permissions.
   Renderer reconnection uses explicit daemon restart. Abrupt migration/import
-  interruption and SQLite busy-error injection were not exercised. General power-loss/filesystem
+  interruption and SQLite busy-error injection were not exercised in this initial
+  recording; see the completion follow-up for the later tests. General power-loss/filesystem
   certification, every compositor/device/locale, and compositor occlusion feedback
   are not claimed by these fixtures.
 - The Center requires the matching Niribar host and v4 configuration. Banners

@@ -62,8 +62,9 @@ def run(args):
         flags = shlex.split(command('pkg-config', '--cflags', '--libs', 'wayland-client'))
         subprocess.check_call(['cc', '-Wall', '-Wextra', '-Werror', '-I'+str(root),
             str(source / 'click.c'), str(root / 'virtual-pointer.c'), '-o', str(root / 'click'), *flags])
-        launcher = next((p for p in ['/usr/lib/at-spi-bus-launcher', '/usr/libexec/at-spi-bus-launcher'] if Path(p).is_file()), None)
-        registry = next((p for p in ['/usr/lib/at-spi2-registryd', '/usr/libexec/at-spi2-registryd'] if Path(p).is_file()), None)
+        atspi_roots = ['/usr/lib', '/usr/libexec', '/usr/lib/at-spi2-core']
+        launcher = next((str(Path(root) / 'at-spi-bus-launcher') for root in atspi_roots if (Path(root) / 'at-spi-bus-launcher').is_file()), None)
+        registry = next((str(Path(root) / 'at-spi2-registryd') for root in atspi_roots if (Path(root) / 'at-spi2-registryd').is_file()), None)
         if not launcher or not registry:
             raise RuntimeError('AT-SPI launcher and registry are required')
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)

@@ -82,8 +82,8 @@ The first milestone is a tracer bullet: receive a freedesktop notification, appl
 58. As a desktop user, I want Do Not Disturb to persist across daemon restarts, so that a restart does not unexpectedly re-enable interruptions.
 59. As a desktop user, I want Do Not Disturb to override app allow rules for non-critical notifications, so that global quiet mode is reliable.
 60. As a desktop user, I want Notification Configuration reloads to keep the previous valid config on errors, so that a typo does not break current policy.
-61. As a desktop user, I want rule changes to re-evaluate active notifications, so that currently visible banners respect current policy.
-62. As a desktop user, I do not want rule re-evaluation to create late banners for older active notifications, so that policy changes do not create surprise interruptions.
+61. As a desktop user, I want rule changes to affect future requests, including replacements, while existing notifications preserve their committed delivery decision (ADR 0027).
+62. As a desktop user, I do not want policy changes to create late banners for existing notifications, so that removing a restriction does not create surprise interruptions (ADR 0027).
 63. As a desktop user, I want UI-managed rule changes stored separately from hand-written KDL config, so that the UI does not rewrite my configuration file.
 64. As a desktop user, I want User Rule Store rules to take precedence over config rules, so that direct UI choices apply immediately.
 65. As a desktop user, I want config rules to support optional Config Rule IDs, so that Delivery Outcomes can reference meaningful rule names.

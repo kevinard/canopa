@@ -125,6 +125,34 @@ must be provisioned before this job can run; the local passing fixture is record
 separately from hosted CI. This smoke test does not run Orca; follow the separate
 [screen-reader procedure](orca-isolated-fixture-research.md) for that acceptance.
 
+Use the [hosted CI setup guide](hosted-ci.md) to provision and register the runner.
+`scripts/check-desktop-runner.py --niribar-root /path/to/niribar` checks prerequisites
+without touching the live desktop. Registration and hosted results remain open
+until a GitHub repository and dedicated machine exist.
+
+## Storage interruption and configuration load checks
+
+`bash scripts/test.sh --test storage_failures --test legacy_import` exercises real
+SQLite busy errors, SIGKILL during an uncommitted migration, and SIGXFSZ during a
+legacy snapshot write. The last fixture needs `prlimit` from util-linux. These
+tests establish process-interruption recovery, not filesystem or power-loss
+certification. Reserved `.history-import-*` snapshots and sidecars are reclaimed
+under the destination ownership lock on the next default-path startup.
+
+Build the configuration suite with `bash scripts/test.sh --test configuration_intake
+--no-run`, then pass the executable path printed by Cargo to:
+
+```sh
+python3 scripts/stress-configuration.py --test-binary /path/to/configuration_intake-HASH \
+  --artifacts /tmp/configuration-load-new --runs 5 --cpu-workers 4
+```
+
+Each repetition creates a private session bus and records its test log and Linux
+CPU/memory/I/O pressure. SIGTERM and Ctrl-C terminate its worker/test processes
+and retain partial results. Do not count a fixture setup failure as a test failure
+or success. Complete ordinary validation after compilation finishes; a concurrent
+build is an explicit stress scenario, not the release test baseline.
+
 ## Release measurements
 
 Run `python3 scripts/measure-runtime.py /path/to/release/canopa-notify` after builds

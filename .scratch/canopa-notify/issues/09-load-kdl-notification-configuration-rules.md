@@ -9,7 +9,7 @@ Type: AFK
 
 ## What to build
 
-Add KDL Notification Configuration loading and reload behavior for first-version config-authored rules. The daemon has one active configuration, rejects invalid reloads while keeping the previous valid configuration active, evaluates ordered first-decisive rules by App Identity and optional Notification Urgency, records Rule References and Config Rule IDs where available, re-evaluates Active Notifications on valid reload, and reports configuration errors through logs/control surfaces instead of self-notifications.
+Add KDL Notification Configuration loading and reload behavior for first-version config-authored rules. The daemon has one active configuration, rejects invalid reloads while keeping the previous valid configuration active, evaluates ordered first-decisive rules by App Identity and optional Notification Urgency, records Rule References and Config Rule IDs where available, applies valid reloads to future requests, including replacements (ADR 0027), and reports configuration errors through logs/control surfaces instead of self-notifications.
 
 ## Acceptance criteria
 
@@ -20,10 +20,14 @@ Add KDL Notification Configuration loading and reload behavior for first-version
 - [ ] Config rules can match App Identity and optional Notification Urgency.
 - [ ] Explicit drop rules apply even to critical notifications.
 - [ ] Config Rule IDs are recorded as Rule References, and unnamed rules get generated references.
-- [ ] Valid reloads re-evaluate Active Notifications and may close banners without creating late banners.
+- [ ] Valid reloads atomically install a complete configuration for future requests, including replacements; existing notifications and banners remain unchanged (ADRs 0027 and 0040).
 - [ ] Configuration errors are visible through logs/control surfaces and do not create self-notifications.
-- [ ] Tests cover parsing, reload success/failure, rule evaluation, critical drop, Rule References, active re-evaluation, and error reporting.
+- [ ] Tests cover parsing, reload success/failure, rule evaluation, critical drop, Rule References, future-request-only changes, and error reporting.
 
 ## Blocked by
 
 - [08-add-do-not-disturb-end-to-end.md](08-add-do-not-disturb-end-to-end.md)
+
+## Maintenance note
+
+2026-09-21: Acceptance wording reconciled with the selected Notifications 1.3 profile. ADR 0027 supersedes retroactive policy re-evaluation; ADR 0040 defines atomic configuration candidates. Historical filenames and links are retained. This edit does not claim new test or rollout evidence.

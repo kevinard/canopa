@@ -6,6 +6,10 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use tokio::net::UnixListener;
 
+// Reserved for disposable legacy-history snapshots and their SQLite sidecars.
+// Startup holds the destination ownership lock before touching this namespace.
+const LEGACY_IMPORT_PREFIX: &str = ".history-import-";
+
 pub(crate) struct DaemonPaths {
     pub socket: PathBuf,
     pub database: PathBuf,
@@ -28,18 +32,35 @@ impl DaemonPaths {
     }
 
     pub async fn import_legacy_history(&self) -> anyhow::Result<()> {
-        let Some(source) = self.legacy_database.as_ref().filter(|source| {
-            **source != self.database && source.exists() && !self.database.exists()
-        }) else {
+        let Some(source) = self.legacy_database.as_ref() else {
             return Ok(());
         };
+        let parent = self.database.parent().context("database has no parent")?;
+        // SIGKILL/SIGXFSZ cannot run NamedTempFile's destructor. Reclaim only
+        // our reserved, owned regular files, including interrupted journals.
+        // Do this even after publication, or if the legacy source was removed.
+        for entry in fs::read_dir(parent)? {
+            let entry = entry?;
+            if entry
+                .file_name()
+                .as_encoded_bytes()
+                .starts_with(LEGACY_IMPORT_PREFIX.as_bytes())
+            {
+                check_owned_regular_file(&entry.path())?;
+                fs::remove_file(entry.path())?;
+            }
+        }
+        if *source == self.database || !source.exists() || self.database.exists() {
+            return Ok(());
+        }
         check_owned_regular_file(source)?;
         // The source may belong to a daemon listening on a different socket.
         // Keep its normal database ownership lock until publication completes.
         let _source_ownership = lock_path(source)
             .context("legacy notification history is in use or cannot be locked; stop its daemon before importing")?;
-        let parent = self.database.parent().context("database has no parent")?;
-        let copy = tempfile::NamedTempFile::new_in(parent)?;
+        let copy = tempfile::Builder::new()
+            .prefix(LEGACY_IMPORT_PREFIX)
+            .tempfile_in(parent)?;
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(

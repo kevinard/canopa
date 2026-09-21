@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "sender_actions": [
+    [
+      1,
+      "four"
+    ],
+    [
+      1,
+      "four"
+    ]
+  ],
+  "niri": "niri 26.04 (8ed0da4)",
+  "sway": "sway version 1.12",
+  "scope": "real compositor, banner native activation, host opening and image fallback; Orca is separate"
+}

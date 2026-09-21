@@ -449,7 +449,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Queued **Notification Banner** activation, dismissal and named actions carry a **Banner Target**. A replaced or inactive target is rejected without sender-visible effects, even when a replacement reuses the same action key. Ordinary **Control Commands** deliberately resolve current state.
 - Banner presentation is a coalesced current-state projection: a slow renderer may skip intermediate updates, but receives the latest state when it resumes. Superseded undisplayed updates do not count as display acknowledgements.
 - **Default Notification Actions** are invoked by activating the notification itself, not shown as separate named action controls.
-- First-version **Notification Banners** expose at most two visible named **Notification Action** controls for an **Active Notification**.
+- **Notification Banners** expose all accepted named **Notification Actions** in sender order, with at most two controls per row and bounded scrolling for additional rows (ADRs 0046 and 0048).
 - The **Notification Center** exposes all named **Notification Actions** for retained **Active Notifications** and live **Transient Notifications**, including those without a visible banner.
 - The first banner placement scope is global rather than per-output.
 - If focused output cannot be determined, **Notification Banners** fall back to a configured or default output.

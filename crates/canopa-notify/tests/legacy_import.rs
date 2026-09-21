@@ -329,3 +329,117 @@ async fn existing_destination_is_reused_even_while_legacy_source_is_owned() {
         owner_before
     );
 }
+
+#[tokio::test]
+async fn interrupted_import_preserves_source_and_retries_without_partial_copies() {
+    use std::os::unix::process::ExitStatusExt;
+
+    let fixture = Fixture::new();
+    let original = seed_history(&fixture.source, "Survives interrupted copy").await;
+    // Make the real VACUUM copy exceed the child's file-size limit. SIGXFSZ
+    // terminates it during a write without running Rust cleanup/destructors.
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&fixture.source))
+        .await
+        .unwrap();
+    sqlx::raw_sql("CREATE TABLE import_padding (bytes BLOB); INSERT INTO import_padding VALUES (zeroblob(1048576));")
+        .execute(&pool).await.unwrap();
+    pool.close().await;
+    let source_before = std::fs::read(&fixture.source).unwrap();
+    let normal = fixture.command(&fixture.socket, None);
+    let mut limited = Command::new("prlimit");
+    limited
+        .args(["--fsize=131072:131072", "--core=0:0", "--"])
+        .arg(normal.get_program())
+        .args(normal.get_args());
+    for (key, value) in normal.get_envs() {
+        if let Some(value) = value {
+            limited.env(key, value);
+        }
+    }
+    let output = assert_cmd::Command::from_std(limited)
+        .timeout(Duration::from_secs(10))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.signal(), Some(25), "{output:?}");
+    assert!(
+        !fixture.destination.exists(),
+        "partial import became authoritative"
+    );
+    assert_eq!(std::fs::read(&fixture.source).unwrap(), source_before);
+    let partials: Vec<_> = std::fs::read_dir(fixture.destination.parent().unwrap())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            let name = path.file_name().unwrap().to_string_lossy();
+            name.starts_with('.') && !name.ends_with("-journal")
+        })
+        .collect();
+    assert_eq!(
+        partials.len(),
+        1,
+        "fixture must interrupt an actual temporary copy"
+    );
+    assert!(std::fs::metadata(&partials[0]).unwrap().len() > 0);
+
+    let _daemon = Process::start(fixture.command(&fixture.socket, None), &fixture.socket);
+    assert_imported(&fixture.socket, &original);
+    assert_eq!(std::fs::read(&fixture.source).unwrap(), source_before);
+    assert!(
+        !partials[0].exists(),
+        "retry retained private notification content in an orphan copy"
+    );
+    assert!(
+        !std::fs::read_dir(fixture.destination.parent().unwrap())
+            .unwrap()
+            .any(|entry| entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".history-import-")),
+        "retry retained an interrupted SQLite sidecar"
+    );
+}
+
+#[tokio::test]
+async fn published_destination_reclaims_only_reserved_import_files_without_a_source() {
+    let fixture = Fixture::new();
+    let original = seed_history(&fixture.destination, "Published history").await;
+    let parent = fixture.destination.parent().unwrap();
+    let orphan = parent.join(".history-import-interrupted");
+    let sidecar = parent.join(".history-import-interrupted-journal");
+    let unrelated = parent.join(".user-backup");
+    for path in [&orphan, &sidecar, &unrelated] {
+        std::fs::write(path, b"preserve unless owned by import").unwrap();
+    }
+    let _daemon = Process::start(fixture.command(&fixture.socket, None), &fixture.socket);
+    assert_imported(&fixture.socket, &original);
+    assert!(!orphan.exists());
+    assert!(!sidecar.exists());
+    assert_eq!(
+        std::fs::read(unrelated).unwrap(),
+        b"preserve unless owned by import"
+    );
+}
+
+#[tokio::test]
+async fn import_cleanup_rejects_symlinks_without_removing_their_target() {
+    let fixture = Fixture::new();
+    seed_history(&fixture.destination, "Published history").await;
+    let target = fixture.temp.path().join("keep");
+    std::fs::write(&target, b"keep this content").unwrap();
+    let link = fixture
+        .destination
+        .parent()
+        .unwrap()
+        .join(".history-import-link");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    assert_cmd::Command::from_std(fixture.command(&fixture.socket, None))
+        .timeout(Duration::from_secs(3))
+        .assert()
+        .code(1)
+        .stderr(predicates::str::contains("owned regular file"));
+    assert!(link.is_symlink());
+    assert_eq!(std::fs::read(target).unwrap(), b"keep this content");
+}

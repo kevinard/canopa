@@ -1,6 +1,6 @@
 # W10: All actions reachable, including overflow/transient banners.
 
-Status: In progress
+Status: complete for the selected static Notifications 1.3 profile
 
 Specification and acceptance criteria: [PLAN.md](../PLAN.md), work package W10. Execution evidence and remaining work: [IMPLEMENTATION.md](../IMPLEMENTATION.md).
 
@@ -33,3 +33,5 @@ Specification and acceptance criteria: [PLAN.md](../PLAN.md), work package W10. 
 2026-09-14: Continuing from `5951e3d` with compositor-selected stack lifetimes under ADR 0047. A private two-output Sway fixture reproduced startup-output pinning and renderer termination after that output disappeared. The presenter now retires empty surfaces, keeps visible replacements stable and recreates the current stack on a surviving output, with one cancellable first-frame deadline and window-aware acknowledgement/input handling. A separate explicit compositor-output adapter option avoids the old cached/first-output behavior. All 113 focused presentation tests pass; [graphical evidence](../OUTPUT-LIFETIME-EVIDENCE.md) covers reserved space, selection, fallback, actions, focus, eventual expiry and click-through. Review identified a stale close retained in the adapter queue; the consumer regression and final verification are in progress. Multi-output Niri/physical hotplug and complete Center/scale/accessibility acceptance remain open.
 
 2026-09-14: Output-lifetime continuation completed. The adapter regression reproduced 100 permanently retained close requests, then passed after absent-window closes became harmless and closed-window queues were purged without tombstones. All 401 final private-bus workspace tests and four separate adapter tests pass, with no failures or ignored tests. Both final review axes report zero outstanding scoped findings; see [OUTPUT-LIFETIME-REVIEW.md](../OUTPUT-LIFETIME-REVIEW.md). Typecheck, Clippy, formatting, whitespace and protocol checks pass with existing warnings. The [execution log](../IMPLEMENTATION.md) and graphical evidence record verification boundaries and execution retries. No live desktop state changed; W10/W11 and overall completion remain open.
+
+2026-09-21 maintenance: Status reconciled with the final [implementation tracker](../IMPLEMENTATION.md) and [release verification](../../../docs/notification-release-verification.md). Earlier dated comments retain historical evidence. Operational rollout, additional failure verification, and hosted CI are tracked separately in [project completion](../../project-completion/PRD.md); hosted execution remains open until a repository and runner exist.

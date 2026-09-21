@@ -1,0 +1,27 @@
+{
+  "binary": "/home/kevinard/projects/canopa/notify/target/debug/deps/configuration_intake-464caacba6238ac3",
+  "cpu_workers": 1,
+  "cpus": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "results": [
+    {
+      "run": 1,
+      "result": "interrupted",
+      "seconds": 2.2131189480423927,
+      "pressure_before": {
+        "cpu": "some avg10=0.61 avg60=1.81 avg300=6.99 total=19381544561\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=0.32 avg60=1.42 avg300=3.04 total=2062124781\nfull avg10=0.31 avg60=1.04 avg300=1.91 total=1777463299\n",
+        "io": "some avg10=30.14 avg60=42.93 avg300=30.87 total=25164717759\nfull avg10=25.75 avg60=34.87 avg300=23.97 total=19494572200\n"
+      },
+      "pressure_after": {
+        "cpu": "some avg10=3.58 avg60=2.30 avg300=7.06 total=19381925477\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=0.44 avg60=1.40 avg300=3.03 total=2062153253\nfull avg10=0.43 avg60=1.04 avg300=1.90 total=1777487189\n",
+        "io": "some avg10=26.49 avg60=41.85 avg300=30.72 total=25165188777\nfull avg10=21.99 avg60=33.89 avg300=23.84 total=19494765587\n"
+      }
+    }
+  ]
+}

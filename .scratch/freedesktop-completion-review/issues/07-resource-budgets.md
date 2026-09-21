@@ -1,6 +1,6 @@
 # W07: Bound requests, diagnostics, parser, assets, and task growth.
 
-Status: In progress
+Status: complete for the selected static Notifications 1.3 profile
 
 Specification and acceptance criteria: [PLAN.md](../PLAN.md), work package W07. Execution evidence and remaining work: [IMPLEMENTATION.md](../IMPLEMENTATION.md).
 
@@ -45,3 +45,5 @@ Specification and acceptance criteria: [PLAN.md](../PLAN.md), work package W07. 
 2026-09-11: Continuing jointly with W08 under ADR 0040: configuration reads admit only regular UTF-8 files up to 1 MiB, do not wait on FIFO writers, and prepare serialized candidates off the async executor. Configuration diagnostics must not retain arbitrary source names/values. Parser-internal nesting/work, projection/query work, aggregate diagnostic memory and broader acceptance remain separate.
 
 2026-09-11: Configuration-intake continuation implemented and independently reviewed against `df88ecd`, with zero scoped findings. All 99 affected tests and 348 final private-bus workspace tests pass, with zero failures or ignored tests. Eleven new regressions cover exact/excessive bytes, regular-file symlinks, unsafe files, explicit schema rejection, sanitized diagnostics, queued/cancelled/concurrent reloads and failed installation. Typecheck, Clippy, formatting, whitespace and Niribar protocol drift checks pass with no new warnings. See [CONFIGURATION-INTAKE-REVIEW.md](../CONFIGURATION-INTAKE-REVIEW.md). Parser-internal nesting/work/memory limits, aggregate projection/query budgets and broader recovery/graphical acceptance remain unfinished; no live desktop state was changed.
+
+2026-09-21 maintenance: Status reconciled with the final [implementation tracker](../IMPLEMENTATION.md) and [release verification](../../../docs/notification-release-verification.md). Earlier dated comments retain historical evidence. Operational rollout, additional failure verification, and hosted CI are tracked separately in [project completion](../../project-completion/PRD.md); hosted execution remains open until a repository and runner exist.
