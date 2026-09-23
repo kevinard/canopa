@@ -78,10 +78,15 @@ To update your local desktop installation whenever you choose, run:
 ./scripts/update.sh
 ```
 
-This builds the current checkout (including uncommitted changes), installs both
-executables into `~/.local/bin`, and restarts `niribar.service` if it is running.
-It reuses the repository's build cache. The service must already be configured
-to run `~/.local/bin/niribar`; this command preserves your service configuration.
+This rebuilds the current checkout (including uncommitted changes) and its local
+dependencies, installs both executables into `~/.local/bin`, and restarts
+`niribar.service` if it is running or failed. An intentionally stopped service
+stays stopped. Registry dependencies remain cached; rebuilding local packages
+prevents an older checkout's cached release from being installed.
+
+The service must already be configured to run `~/.local/bin/niribar`; this command
+preserves your service configuration. After a restart, it checks that the process
+survives startup and is running the installed executable, then prints its SHA-256.
 If compilation fails, the installed binaries stay unchanged.
 
 ```sh
@@ -90,6 +95,7 @@ cargo +1.95.0 clippy --locked --all-targets -- -D warnings
 cargo +1.95.0 test --locked --all-targets
 python3 scripts/check-vendor.py
 python3 scripts/check-contrast.py
+python3 scripts/test-update.py
 bash scripts/package-release.sh target/release dist
 ```
 
