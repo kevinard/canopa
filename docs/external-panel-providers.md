@@ -4,6 +4,11 @@ An **External Panel Provider** is an out-of-process program that owns domain log
 
 V1 providers are panel-only. They cannot create provider-owned menus or tooltips, and provider content cannot ask Niribar to run configured commands.
 
+Content replacements redraw the existing panel window, including background
+network updates and local search or text edits. They do not close and reopen
+the panel. Input state stays with the same control identity; a replacement
+button or text field cannot inherit a held click or keyboard focus.
+
 The Wi-Fi provider requirements in this document define protocol version `1`; earlier experimental request/response-only behavior is not a separate compatibility target.
 
 ## Configuration
@@ -20,7 +25,15 @@ panel-providers {
 }
 ```
 
-Open a provider from any panel action with `open-provider`:
+Open a provider from any panel action with `open-provider`.
+
+Clicking the same module again dismisses its provider panel. This also cancels a
+provider that is still opening; a late handshake cannot reopen the dismissed
+panel. Activating a different module or a different bar surface opens that
+origin's panel. This repeat-click behavior also applies to module panel and menu
+actions. Direct panel actions retain their explicit open/toggle semantics.
+
+For example:
 
 ```kdl
 modules {

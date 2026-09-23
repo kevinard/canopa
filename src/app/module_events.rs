@@ -129,6 +129,34 @@ impl App {
         event: InteractionEvent,
         origin_window: iced::window::Id,
     ) -> Task<Message> {
+        // Re-activating the module that opened a panel dismisses it before
+        // requesting bounds or starting another provider process.
+        let trigger = match event {
+            InteractionEvent::Clicked => Some(crate::config::ActionTrigger::Click),
+            InteractionEvent::RightClicked(_) => Some(crate::config::ActionTrigger::RightClick),
+            _ => None,
+        };
+        if let Some(action) = trigger.and_then(|trigger| self.modules.action_for(id, &trigger)) {
+            let pending_provider = match action {
+                crate::config::PanelAction::OpenProvider(name) => {
+                    self.external_panel_session.pending_matches_panel(
+                        &super::external_panel_session::ExternalPanelPanelIdentity {
+                            origin_window,
+                            origin: crate::surface::panel::PanelOrigin::Module(id.clone()),
+                            provider_name: name.clone(),
+                        },
+                    )
+                }
+                _ => false,
+            };
+            if pending_provider
+                || self
+                    .foreground
+                    .module_action_targets_active_panel(origin_window, id, action)
+            {
+                return Task::batch(self.close_active_panel());
+            }
+        }
         let effects = self.modules.handle(
             super::module_runtime::ModuleRuntimeIntent::ModuleInteraction {
                 id: id.clone(),

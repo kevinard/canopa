@@ -58,7 +58,8 @@ fn panel_window_settings(plan: PanelPhysicalPlan) -> NewLayerShellSettings {
 
     NewLayerShellSettings {
         anchor,
-        exclusive_zone: Some(-1),
+        // Ask the compositor to keep the panel outside all reserved bar space.
+        exclusive_zone: Some(0),
         size: Some(plan.layer_size()),
         margin: Some(margin),
         layer: Layer::Overlay,
@@ -107,7 +108,8 @@ fn panel_layer_margin(
     width: PlannedDimension,
     height: PlannedDimension,
 ) -> (i32, i32, i32, i32) {
-    let (top, mut right, mut bottom, mut left) = margin;
+    let (top, mut right, mut bottom, mut left) =
+        crate::surface::placement::usable_area_margin(edge, margin, 0);
     if width.fills() && matches!(edge, crate::config::Edge::Top | crate::config::Edge::Bottom) {
         right = 0;
         left = 0;
@@ -681,8 +683,14 @@ impl App {
         anchor: Option<iced::Rectangle>,
     ) -> Task<Message> {
         let session_id = crate::external_panel::next_session_id();
-        self.external_panel_session
-            .begin_open_provider(session_id.clone());
+        self.external_panel_session.begin_open_provider(
+            session_id.clone(),
+            super::external_panel_session::ExternalPanelPanelIdentity {
+                origin_window,
+                origin: origin.clone(),
+                provider_name: provider_name.clone(),
+            },
+        );
 
         #[cfg(test)]
         if let Some(response) = self
@@ -1090,17 +1098,15 @@ impl App {
             .cloned()
             .unwrap_or_default();
         let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
-        let surface_origin = self.inferred_panel_surface_origin(&origin_surface, bar);
         let panel_module_layout =
             self.panel_module_layout_for_content(tree.origin_window, &tree.origin, &tree.content);
         let menu = self.foreground.active_panel_menu_render_state();
         let plan = super::panel_sizing::panel_physical_plan(PanelSizingInput {
             bar,
             tree: &tree,
-            surface_origin: crate::surface::placement::Point {
-                x: surface_origin.0,
-                y: surface_origin.1,
-            },
+            // Layer-shell places this panel relative to the usable area.
+            // Its origin already includes bars from this and other processes.
+            surface_origin: crate::surface::placement::Point::default(),
             panel_module_layout: &panel_module_layout,
             menu,
             module_detail_preferred_size: |id| {
@@ -1141,30 +1147,6 @@ impl App {
             return apps.clone();
         }
         crate::desktop_apps::discover_installed_applications().unwrap_or_default()
-    }
-
-    fn inferred_panel_surface_origin(
-        &self,
-        origin_surface: &crate::surface::SurfaceState,
-        bar: &crate::config::BarConfig,
-    ) -> (i32, i32) {
-        if origin_surface.output_name.is_empty() {
-            return (0, 0);
-        }
-
-        let top_inset = match bar.edge {
-            crate::config::Edge::Left | crate::config::Edge::Right => {
-                self.config
-                    .bars_for_output(&origin_surface.output_name)
-                    .into_iter()
-                    .filter(|candidate| matches!(candidate.edge, crate::config::Edge::Top))
-                    .map(|candidate| candidate.collapsed_width)
-                    .sum::<u32>() as i32
-            }
-            crate::config::Edge::Top | crate::config::Edge::Bottom => 0,
-        };
-
-        (0, top_inset)
     }
 
     pub(super) fn handle_panel_escape_pressed(&mut self) -> Task<Message> {
@@ -1942,6 +1924,103 @@ mod tests {
     }
 
     #[test]
+    fn repeated_module_click_closes_its_provider_panel() {
+        for (module, provider) in [("network", "wifi"), ("notifications", "notify")] {
+            let mut config = crate::config::Config::default();
+            config.bars[0].modules.end = vec![module.into()];
+            if module == "notifications" {
+                config.modules.push(crate::config::ModuleConfig {
+                    name: module.into(),
+                    module_type: "button".into(),
+                    params: crate::config::ModuleParams::Button(crate::config::ButtonConfig {
+                        label: "Notifications".into(),
+                        icon: "N".into(),
+                        format: Default::default(),
+                        content_rotation: Default::default(),
+                        tooltip: Default::default(),
+                    }),
+                    actions: crate::config::ModuleActionsConfig {
+                        bindings: vec![crate::config::ActionBinding {
+                            trigger: crate::config::ActionTrigger::Click,
+                            action: crate::config::PanelAction::OpenProvider(provider.into()),
+                        }],
+                    },
+                });
+            }
+            let (mut app, _) = App::boot(config, vec![]);
+            let window = iced::window::Id::unique();
+            app.surface_mut(window);
+            let id = crate::modules::ModuleId::new(module);
+            app.set_external_panel_response_for_test(
+                provider,
+                Ok(crate::surface::panel::ExternalPanelDocument {
+                    elements: vec![crate::surface::panel::ExternalPanelElement::Text {
+                        text: "Ready".into(),
+                    }],
+                }),
+            );
+            // The first click resolves widget bounds before delivering this event.
+            let _ = app.handle_panel_event(super::super::messages::PanelEvent::OpenProvider {
+                origin_window: window,
+                origin: crate::surface::panel::PanelOrigin::Module(id.clone()),
+                provider_name: provider.into(),
+                anchor: None,
+            });
+            assert!(app.foreground.active_panel_tree().is_some());
+            // The same shared module on another output must not dismiss this panel.
+            let other_window = iced::window::Id::unique();
+            app.surface_mut(other_window);
+            let _ = app.handle_module_runtime_event(
+                super::super::messages::ModuleRuntimeEvent::ModuleClick(id.clone(), other_window),
+            );
+            assert!(app.foreground.active_panel_tree().is_some());
+            let _ = app.handle_module_runtime_event(
+                super::super::messages::ModuleRuntimeEvent::ModuleClick(id, window),
+            );
+            assert!(
+                app.foreground.active_panel_tree().is_none(),
+                "second {module} click must close the panel"
+            );
+            assert!(app.active_external_panel_session_id_for_test().is_none());
+        }
+    }
+
+    #[test]
+    fn repeated_module_click_cancels_pending_provider_and_ignores_late_handshake() {
+        let mut config = crate::config::Config::default();
+        config.bars[0].modules.end = vec!["network".into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let window = iced::window::Id::unique();
+        app.surface_mut(window);
+        let id = crate::modules::ModuleId::new("network");
+        let origin = crate::surface::panel::PanelOrigin::Module(id.clone());
+        let identity = super::super::external_panel_session::ExternalPanelPanelIdentity {
+            origin_window: window,
+            origin: origin.clone(),
+            provider_name: "wifi".into(),
+        };
+        app.external_panel_session
+            .begin_open_provider("opening".into(), identity.clone());
+        let _ = app.handle_module_runtime_event(
+            super::super::messages::ModuleRuntimeEvent::ModuleClick(id, window),
+        );
+        assert!(!app.external_panel_session.pending_matches_panel(&identity));
+        let _ = app.handle_external_panel_event(
+            super::super::messages::ExternalPanelEvent::HandshakeCompleted {
+                session_id: "opening".into(),
+                origin_window: window,
+                origin,
+                provider_name: "wifi".into(),
+                anchor: None,
+                session: None,
+                content: crate::surface::panel::ExternalPanelDocument { elements: vec![] },
+            },
+        );
+        assert!(app.foreground.active_panel_tree().is_none());
+        assert!(app.active_external_panel_session_id_for_test().is_none());
+    }
+
+    #[test]
     fn external_provider_button_activation_applies_full_content_replacement() {
         let (mut app, _task) = crate::app::App::boot(crate::config::Config::default(), Vec::new());
         app.set_external_panel_event_response_for_test(
@@ -2180,6 +2259,33 @@ mod tests {
     }
 
     #[test]
+    fn panel_window_respects_other_bars_reserved_space() {
+        for (edge, position) in [
+            (crate::config::Edge::Top, (100, 48)),
+            (crate::config::Edge::Bottom, (100, 852)),
+            (crate::config::Edge::Left, (48, 100)),
+            (crate::config::Edge::Right, (1622, 100)),
+        ] {
+            let settings = panel_window_settings(panel_plan_for_test(
+                edge.clone(),
+                PlannedDimension::Exact(250),
+                PlannedDimension::Exact(180),
+                position,
+                (1920, 1080),
+            ));
+            assert_eq!(settings.exclusive_zone, Some(0), "{edge:?}");
+            let (top, right, bottom, left) = settings.margin.unwrap();
+            let distance = match edge {
+                crate::config::Edge::Top => top,
+                crate::config::Edge::Bottom => bottom,
+                crate::config::Edge::Left => left,
+                crate::config::Edge::Right => right,
+            };
+            assert_eq!(distance, 0, "the compositor already accounts for all bars");
+        }
+    }
+
+    #[test]
     fn panel_window_settings_keep_layer_shell_focusable_for_search_input() {
         let settings = panel_window_settings(panel_plan_for_test(
             crate::config::Edge::Top,
@@ -2209,7 +2315,7 @@ mod tests {
         ));
 
         assert_eq!(settings.size, Some((0, 240)));
-        assert_eq!(settings.margin, Some((0, 0, 48, 0)));
+        assert_eq!(settings.margin, Some((0, 0, 0, 0)));
     }
 
     #[test]
@@ -2225,7 +2331,7 @@ mod tests {
         assert_eq!(settings.size, Some((320, 0)));
         assert!(settings.anchor.contains(Anchor::Top));
         assert!(settings.anchor.contains(Anchor::Bottom));
-        assert_eq!(settings.margin, Some((0, 0, 0, 48)));
+        assert_eq!(settings.margin, Some((0, 0, 0, 0)));
     }
 
     #[test]
@@ -2345,29 +2451,6 @@ mod tests {
         );
 
         assert_eq!(position, (48, 32));
-    }
-
-    #[test]
-    fn side_panel_origin_includes_top_bars_on_same_output() {
-        let mut config = crate::config::Config::default();
-        config.bars[0].name = "top".into();
-        config.bars[0].edge = crate::config::Edge::Top;
-        config.bars[0].collapsed_width = 32;
-        let side = crate::config::BarConfig {
-            name: "side".into(),
-            edge: crate::config::Edge::Left,
-            collapsed_width: 48,
-            ..Default::default()
-        };
-        config.bars.push(side);
-        let (app, _) = App::boot(config, vec!["DP-1".into()]);
-        let origin_surface = crate::surface::SurfaceState::new("DP-1".into(), "side".into());
-        let bar = App::bar_for_surface_name(&app.config.bars, "side");
-
-        assert_eq!(
-            app.inferred_panel_surface_origin(&origin_surface, bar),
-            (0, 32)
-        );
     }
 
     #[test]

@@ -103,6 +103,24 @@ pub fn layer_anchor(edge: &Edge) -> Anchor {
     }
 }
 
+/// Margins for a layer surface with exclusive zone zero. The compositor
+/// offsets these from the usable area after reserving space for every bar,
+/// including bars owned by other processes. Keep the alignment along the
+/// edge, but do not count the originating bar's thickness a second time.
+pub fn usable_area_margin(
+    edge: &Edge,
+    margin: (i32, i32, i32, i32),
+    gap: i32,
+) -> (i32, i32, i32, i32) {
+    let (top, right, bottom, left) = margin;
+    match edge {
+        Edge::Top => (gap, right, bottom, left),
+        Edge::Bottom => (top, right, gap, left),
+        Edge::Left => (top, right, bottom, gap),
+        Edge::Right => (top, gap, bottom, left),
+    }
+}
+
 pub fn edge_adjacent_position(
     edge: &'_ Edge,
     anchor: Point,

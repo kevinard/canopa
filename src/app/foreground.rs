@@ -556,6 +556,37 @@ impl Foreground {
         }
     }
 
+    pub(super) fn module_action_targets_active_panel(
+        &self,
+        origin_window: iced::window::Id,
+        module: &crate::modules::ModuleId,
+        action: &crate::config::PanelAction,
+    ) -> bool {
+        use crate::config::PanelAction;
+        use crate::surface::panel::{PanelContent, PanelOrigin};
+
+        let Some(tree) = self.active_panel_tree() else {
+            return false;
+        };
+        if tree.origin_window != origin_window || tree.origin != PanelOrigin::Module(module.clone())
+        {
+            return false;
+        }
+        match (action, &tree.content) {
+            (PanelAction::OpenPanel | PanelAction::TogglePanel, PanelContent::ModulePanel(id)) => {
+                id == module
+            }
+            (
+                PanelAction::OpenMenu(name) | PanelAction::ToggleMenu(name),
+                PanelContent::Menu(active),
+            ) => name == active,
+            (PanelAction::OpenProvider(name), PanelContent::ExternalProvider(active)) => {
+                name == &active.provider_name
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn panel_tree_for_window(
         &self,
         window: iced::window::Id,

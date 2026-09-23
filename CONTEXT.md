@@ -607,6 +607,7 @@ _Avoid_: Unavailable module, runtime failure
 - A **Tooltip** closes when its originating visible target disappears.
 - A **Tooltip** closes when a **Panel** opens.
 - A **Tooltip** is not **Foreground**.
+- **Tooltips** and **Panels** respect the compositor's reserved bar space, including **Bar Surfaces** owned by other processes; their layer-shell margins are relative to the usable area.
 - A **Bar Surface** shows at most one **Tooltip** at a time.
 - Opening a **Menu** closes open **Tooltips** on the same **Bar Surface**.
 - Niribar shows at most one **Menu** at a time.
@@ -664,6 +665,7 @@ _Avoid_: Unavailable module, runtime failure
 - A launched **External Panel Provider** communicates over standard input and standard output using its explicitly configured protocol. The default `niribar-v1` uses framed JSON; `canopa-v4` uses bounded JSON lines and shared Canopa wire types ([ADR 0011](docs/adr/0011-explicit-canopa-panel-protocol-adapter.md)).
 - A framed-v1 **External Panel Session** starts with a host-first protocol-version handshake. A Canopa-v4 session starts with a provider-first, versioned complete content replacement.
 - An **External Panel Provider** updates **External Panel Content** by sending a complete replacement content model, not incremental patches.
+- Replacing **External Panel Content** redraws the existing **Panel** window. Updates and local text/search edits preserve that window's focus and scroll state; a control with a different identity starts with fresh input state.
 - A failed **External Panel Provider** renders provider error content in its hosting **Panel** instead of silently closing the **Panel**.
 - **External Panel Session** owns stale provider output filtering and provider failure conversion for its active **Panel**.
 - **External Panel Session** owns the current **External Panel Content** document for its active **Panel**.
@@ -705,6 +707,7 @@ _Avoid_: Unavailable module, runtime failure
 
 - **Panel Actions** are typed operations, not shell commands by default.
 - A **Panel Action** trigger may be a pointer trigger such as `click` or `right-click`, or a focused keybind such as `Ctrl+E`.
+- Repeating a **Module** click that targets its current **Panel** on the same **Bar Surface** dismisses that **Panel**. A repeat click also cancels that origin's pending **External Panel Session**. Direct **Panel Actions** keep their explicit open/toggle semantics.
 - **Module** keybind **Panel Actions** fire only while that **Module** is the **Keyboard Focus** target.
 - **Bar** keybind **Panel Actions** fire while that **Bar Surface** or its **Panel** has keyboard focus.
 - If both a focused **Module** and its **Bar** define the same keybind, the **Module** binding takes precedence.

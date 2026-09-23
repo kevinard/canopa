@@ -1,6 +1,7 @@
 #[derive(Debug, Default)]
 pub(super) struct ExternalPanelSessionRuntime {
     pending_session_id: Option<String>,
+    pending_panel: Option<ExternalPanelPanelIdentity>,
     active: Option<ActiveExternalPanelSession>,
 }
 
@@ -122,21 +123,8 @@ impl ActiveExternalPanelSession {
         &mut self,
         content: crate::surface::panel::ExternalPanelContent,
     ) -> ExternalPanelSessionEffect {
-        let was_canopa = self.content.elements.iter().any(|element| {
-            matches!(
-                element,
-                crate::surface::panel::ExternalPanelElement::Canopa { .. }
-            )
-        });
         self.content = content;
-        if was_canopa {
-            // Canopa widgets bind retained interaction state to snapshot IDs.
-            self.update_content_effect()
-        } else {
-            // Framed-v1 widgets have no generation-owned press state. Preserve
-            // their existing window replacement until that contract is added.
-            self.open_content_effect()
-        }
+        self.update_content_effect()
     }
 }
 
@@ -214,9 +202,18 @@ impl ExternalPanelSessionRuntime {
         )
     }
 
-    pub(super) fn begin_open_provider(&mut self, session_id: String) {
+    pub(super) fn begin_open_provider(
+        &mut self,
+        session_id: String,
+        identity: ExternalPanelPanelIdentity,
+    ) {
         self.close();
         self.pending_session_id = Some(session_id);
+        self.pending_panel = Some(identity);
+    }
+
+    pub(super) fn pending_matches_panel(&self, identity: &ExternalPanelPanelIdentity) -> bool {
+        self.pending_panel.as_ref() == Some(identity)
     }
 
     pub(super) fn handshake_completed(
@@ -236,6 +233,7 @@ impl ExternalPanelSessionRuntime {
             return Vec::new();
         }
         self.pending_session_id = None;
+        self.pending_panel = None;
         let content = crate::surface::panel::ExternalPanelContent::from_provider_document(
             provider_name.clone(),
             content,
@@ -268,6 +266,7 @@ impl ExternalPanelSessionRuntime {
             return Vec::new();
         }
         self.pending_session_id = None;
+        self.pending_panel = None;
         self.active = None;
         vec![ExternalPanelSessionEffect::OpenPanel {
             origin_window,
@@ -403,7 +402,7 @@ impl ExternalPanelSessionRuntime {
             return Vec::new();
         }
         active.content = active.content.with_list_search(&list_id, query);
-        vec![active.open_content_effect()]
+        vec![active.update_content_effect()]
     }
 
     pub(super) fn list_entry_activated(
@@ -456,7 +455,7 @@ impl ExternalPanelSessionRuntime {
         active.content = active
             .content
             .with_text_input_value(&element_id, value.clone());
-        let mut effects = vec![active.open_content_effect()];
+        let mut effects = vec![active.update_content_effect()];
         if let Some(handle) = active.handle.clone() {
             effects.push(ExternalPanelSessionEffect::SendProviderEvent {
                 session_id: active.session_id.clone(),
@@ -489,6 +488,7 @@ impl ExternalPanelSessionRuntime {
     }
 
     pub(super) fn close(&mut self) -> bool {
+        self.pending_panel = None;
         let had_pending = self.pending_session_id.take().is_some();
         let had_active = self.active.take().is_some();
         had_pending || had_active
@@ -584,7 +584,7 @@ mod tests {
         origin_window: iced::window::Id,
         document: crate::surface::panel::ExternalPanelDocument,
     ) -> Vec<ExternalPanelSessionEffect> {
-        runtime.begin_open_provider("session-1".into());
+        runtime.begin_open_provider("session-1".into(), active_panel(origin_window));
         runtime.handshake_completed(
             "session-1".into(),
             origin_window,
@@ -670,7 +670,7 @@ mod tests {
         assert!(stale_panel_effects.is_empty());
         assert_eq!(current_effects.len(), 1);
         match &current_effects[0] {
-            ExternalPanelSessionEffect::OpenPanel { content, .. } => {
+            ExternalPanelSessionEffect::UpdatePanelContent { content, .. } => {
                 assert_eq!(
                     content.elements,
                     vec![crate::surface::panel::ExternalPanelElement::Text {
@@ -678,7 +678,7 @@ mod tests {
                     }]
                 );
             }
-            other => panic!("expected open panel effect, got {other:?}"),
+            other => panic!("expected content update effect, got {other:?}"),
         }
     }
 
@@ -699,10 +699,10 @@ mod tests {
         assert_eq!(runtime.active_session_id(), None);
         assert_eq!(effects.len(), 1);
         match &effects[0] {
-            ExternalPanelSessionEffect::OpenPanel { content, .. } => {
+            ExternalPanelSessionEffect::UpdatePanelContent { content, .. } => {
                 assert!(content.failure_text().contains("boom"));
             }
-            other => panic!("expected open panel effect, got {other:?}"),
+            other => panic!("expected content update effect, got {other:?}"),
         }
     }
 
@@ -721,7 +721,7 @@ mod tests {
         );
 
         match &effects[0] {
-            ExternalPanelSessionEffect::OpenPanel { content, .. } => {
+            ExternalPanelSessionEffect::UpdatePanelContent { content, .. } => {
                 assert_eq!(
                     content.elements,
                     vec![
@@ -734,7 +734,7 @@ mod tests {
                     ]
                 );
             }
-            other => panic!("expected open panel effect, got {other:?}"),
+            other => panic!("expected content update effect, got {other:?}"),
         }
     }
 
@@ -754,7 +754,7 @@ mod tests {
 
         assert_eq!(effects.len(), 1);
         match &effects[0] {
-            ExternalPanelSessionEffect::OpenPanel { content, .. } => {
+            ExternalPanelSessionEffect::UpdatePanelContent { content, .. } => {
                 assert_eq!(
                     content.elements,
                     vec![crate::surface::panel::ExternalPanelElement::TextInput {
@@ -766,7 +766,7 @@ mod tests {
                     }]
                 );
             }
-            other => panic!("expected open panel effect, got {other:?}"),
+            other => panic!("expected content update effect, got {other:?}"),
         }
     }
 

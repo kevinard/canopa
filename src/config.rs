@@ -84,6 +84,7 @@ impl Default for Config {
 
 impl Config {
     /// Return all bar configs whose Output Target matches the given Output name.
+    #[cfg(test)]
     pub fn bars_for_output(&self, output_name: &str) -> Vec<&BarConfig> {
         self.bars
             .iter()

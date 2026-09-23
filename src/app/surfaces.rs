@@ -98,7 +98,7 @@ fn tooltip_margin(
         },
         gap,
     );
-    placement.layer_margin()
+    crate::surface::placement::usable_area_margin(&tree.bar_edge, placement.layer_margin(), gap)
 }
 
 pub(super) fn tooltip_popup_window_settings(
@@ -107,7 +107,7 @@ pub(super) fn tooltip_popup_window_settings(
     let size = crate::surface::tooltip_popup::popup_size(tree);
     NewLayerShellSettings {
         anchor: crate::surface::placement::layer_anchor(&tree.bar_edge),
-        exclusive_zone: Some(-1),
+        exclusive_zone: Some(0),
         size: Some(size),
         margin: Some(tooltip_margin(tree, size, 4)),
         layer: iced_layershell::reexport::Layer::Overlay,
@@ -1495,13 +1495,32 @@ mod tests {
     }
 
     #[test]
+    fn tooltip_window_respects_other_bars_reserved_space() {
+        for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
+            let settings = tooltip_popup_window_settings(&tooltip_tree(edge.clone()));
+            assert_eq!(settings.exclusive_zone, Some(0), "{edge:?}");
+            let (top, right, bottom, left) = settings.margin.unwrap();
+            let distance = match edge {
+                Edge::Top => top,
+                Edge::Bottom => bottom,
+                Edge::Left => left,
+                Edge::Right => right,
+            };
+            assert_eq!(
+                distance, 4,
+                "only the tooltip gap is added to the reserved area"
+            );
+        }
+    }
+
+    #[test]
     fn tooltip_popup_window_is_sized_to_content_not_full_overlay() {
         let tree = tooltip_tree(crate::config::Edge::Left);
         let settings = tooltip_popup_window_settings(&tree);
 
         assert_eq!(settings.size, Some((32, 34)));
         assert_eq!(settings.anchor, Anchor::Left | Anchor::Top);
-        assert_eq!(settings.margin, Some((483, 0, 0, 52)));
+        assert_eq!(settings.margin, Some((483, 0, 0, 4)));
     }
 
     #[test]
@@ -1510,7 +1529,7 @@ mod tests {
         let settings = tooltip_popup_window_settings(&tree);
 
         assert_eq!(settings.anchor, Anchor::Right | Anchor::Top);
-        assert_eq!(settings.margin, Some((483, 52, 0, 0)));
+        assert_eq!(settings.margin, Some((483, 4, 0, 0)));
     }
 
     #[test]

@@ -156,8 +156,8 @@ async fn provider_failure_remains_in_the_same_keyboard_dismissible_window() {
 }
 
 #[test]
-fn v1_text_and_search_echo_retain_existing_reopen_behavior() {
-    let (mut app, mut window) = open(ExternalPanelDocument {
+fn v1_text_and_search_echo_keep_the_focused_window() {
+    let (mut app, window) = open(ExternalPanelDocument {
         elements: vec![
             ExternalPanelElement::TextInput {
                 id: "entry".into(),
@@ -189,8 +189,7 @@ fn v1_text_and_search_echo_retain_existing_reopen_behavior() {
                 query: value.into(),
             },
         ));
-        assert_ne!(app.foreground.active_panel_window(), Some(window));
-        window = app.foreground.active_panel_window().unwrap();
+        assert_eq!(app.foreground.active_panel_window(), Some(window));
         assert!(matches!(&displayed_content(&app).elements[0],
             ExternalPanelElement::TextInput { value: actual, .. } if actual == value));
         assert!(matches!(&displayed_content(&app).elements[1],
@@ -199,7 +198,7 @@ fn v1_text_and_search_echo_retain_existing_reopen_behavior() {
 }
 
 #[test]
-fn v1_button_replacement_retires_the_window_with_the_old_press_state() {
+fn v1_background_updates_keep_the_existing_panel_window() {
     let button = |id: &str| ExternalPanelDocument {
         elements: vec![ExternalPanelElement::Button {
             id: id.into(),
@@ -207,15 +206,148 @@ fn v1_button_replacement_retires_the_window_with_the_old_press_state() {
         }],
     };
     let (mut app, window) = open(button("old"));
+    for revision in 0..20 {
+        let content = button(&format!("new-{revision}"));
+        let _ = app.update(Message::ExternalPanel(
+            ExternalPanelEvent::ProviderContentReceived {
+                session_id: "session-1".into(),
+                provider_name: "notifications".into(),
+                content: content.clone(),
+            },
+        ));
+        assert_eq!(app.foreground.active_panel_window(), Some(window));
+        assert_eq!(displayed_content(&app).elements, content.elements);
+    }
+}
+
+fn widget_event(
+    app: &App,
+    window: iced::window::Id,
+    state: &mut iced::advanced::widget::Tree,
+    renderer: &iced::Renderer,
+    event: iced::Event,
+) -> Vec<Message> {
+    let mut view = app.view(window);
+    state.diff(view.as_widget());
+    let viewport = iced::Rectangle::with_size(iced::Size::new(360.0, 400.0));
+    let node = view.as_widget_mut().layout(
+        state,
+        renderer,
+        &iced::advanced::layout::Limits::new(iced::Size::ZERO, viewport.size()),
+    );
+    let mut messages = Vec::new();
+    view.as_widget_mut().update(
+        state,
+        &event,
+        iced::advanced::Layout::new(&node),
+        iced::mouse::Cursor::Available(iced::Point::new(20.0, 20.0)),
+        renderer,
+        &mut iced::advanced::clipboard::Null,
+        &mut iced::advanced::Shell::new(&mut messages),
+        &viewport,
+    );
+    messages
+}
+
+fn provider_update(app: &mut App, content: ExternalPanelDocument) {
     let _ = app.update(Message::ExternalPanel(
         ExternalPanelEvent::ProviderContentReceived {
             session_id: "session-1".into(),
             provider_name: "notifications".into(),
-            content: button("new"),
+            content,
         },
     ));
-    assert_ne!(app.foreground.active_panel_window(), Some(window));
-    assert_eq!(displayed_content(&app).elements, button("new").elements);
+}
+
+#[tokio::test]
+async fn v1_replacement_cancels_an_old_button_press_without_recreating_the_window() {
+    use iced::advanced::renderer::Headless;
+    let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
+        .await
+        .expect("software renderer");
+    let button = |id: &str| ExternalPanelDocument {
+        elements: vec![ExternalPanelElement::Button {
+            id: id.into(),
+            label: "Action".into(),
+        }],
+    };
+    let (mut app, window) = open(button("old"));
+    let mut state = iced::advanced::widget::Tree::empty();
+    let press = iced::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left));
+    let release = iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+        iced::mouse::Button::Left,
+    ));
+    assert!(widget_event(&app, window, &mut state, &renderer, press.clone()).is_empty());
+    provider_update(&mut app, button("new"));
+    assert_eq!(app.foreground.active_panel_window(), Some(window));
+    assert!(
+        widget_event(&app, window, &mut state, &renderer, release.clone()).is_empty(),
+        "a held click must not activate the replacement button"
+    );
+    assert!(widget_event(&app, window, &mut state, &renderer, press).is_empty());
+    assert!(
+        matches!(widget_event(&app, window, &mut state, &renderer, release).as_slice(),
+        [Message::ExternalPanel(ExternalPanelEvent::ButtonActivated { element_id, .. })] if element_id == "new")
+    );
+}
+
+#[tokio::test]
+async fn v1_typing_survives_echo_and_background_updates_but_not_a_different_field() {
+    use iced::advanced::renderer::Headless;
+    let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
+        .await
+        .expect("software renderer");
+    let input = |id: &str, value: &str| ExternalPanelDocument {
+        elements: vec![ExternalPanelElement::TextInput {
+            id: id.into(),
+            label: "Name".into(),
+            value: value.into(),
+            secret: false,
+            error: None,
+        }],
+    };
+    let (mut app, window) = open(input("name", ""));
+    let mut state = iced::advanced::widget::Tree::empty();
+    for event in [
+        iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left),
+        iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left),
+    ] {
+        let _ = widget_event(
+            &app,
+            window,
+            &mut state,
+            &renderer,
+            iced::Event::Mouse(event),
+        );
+    }
+    let key = |value: &str| {
+        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(value.into()),
+            modified_key: iced::keyboard::Key::Character(value.into()),
+            physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyA),
+            location: iced::keyboard::Location::Standard,
+            modifiers: iced::keyboard::Modifiers::empty(),
+            text: Some(value.into()),
+            repeat: false,
+        })
+    };
+    for (character, value) in [("a", "a"), ("b", "ab"), ("c", "abc")] {
+        let messages = widget_event(&app, window, &mut state, &renderer, key(character));
+        assert!(
+            matches!(messages.as_slice(), [Message::ExternalPanel(ExternalPanelEvent::TextInputChanged { value: actual, .. })] if actual == value)
+        );
+        for message in messages {
+            let _ = app.update(message);
+        }
+        assert_eq!(app.foreground.active_panel_window(), Some(window));
+        provider_update(&mut app, input("name", value));
+        assert_eq!(app.foreground.active_panel_window(), Some(window));
+    }
+    provider_update(&mut app, input("different-field", ""));
+    assert!(
+        widget_event(&app, window, &mut state, &renderer, key("d")).is_empty(),
+        "keyboard focus must not transfer to a different field"
+    );
 }
 
 #[tokio::test]

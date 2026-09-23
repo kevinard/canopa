@@ -168,6 +168,29 @@ fn render_external_panel_model<'a>(
                     .into()
             }
         };
+        // Preserve edits and focus on the same field while replacing the
+        // retained state of controls whose provider-owned identity changed.
+        let rendered = match element {
+            crate::surface::panel::ExternalPanelElement::Button { id, label } => {
+                crate::surface::identity::identify(
+                    (content.provider_name.clone(), id.clone(), label.clone()),
+                    rendered,
+                )
+            }
+            crate::surface::panel::ExternalPanelElement::TextInput { id, secret, .. } => {
+                crate::surface::identity::identify(
+                    (content.provider_name.clone(), id.clone(), *secret),
+                    rendered,
+                )
+            }
+            crate::surface::panel::ExternalPanelElement::SelectableList { id, .. } => {
+                crate::surface::identity::identify(
+                    (content.provider_name.clone(), id.clone()),
+                    rendered,
+                )
+            }
+            _ => rendered,
+        };
         body = body.push(rendered);
     }
 
