@@ -15,3 +15,6 @@ target
 
 # Git worktrees
 .worktrees/
+
+# Python validation helpers
+__pycache__/

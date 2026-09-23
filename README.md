@@ -63,6 +63,11 @@ External providers use explicit `niribar-v1` or `canopa-v4` protocols. See
 
 ## Development and validation
 
+For a desktop that automatically follows successful builds of local commits,
+use the [development installation](docs/development-installation.md). It builds
+from a separate checkout, installs both binaries together, and retains the
+previous working version if a build or initial service check fails.
+
 ```sh
 cargo +1.95.0 fmt --all -- --check
 cargo +1.95.0 clippy --locked --all-targets -- -D warnings
