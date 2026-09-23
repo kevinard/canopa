@@ -107,6 +107,7 @@ mod tests {
             keywords: Vec::new(),
             icon: Some(format!("{id}-icon")),
             desktop_file: "fixture.desktop".into(),
+            dbus_activatable: false,
         }
     }
 

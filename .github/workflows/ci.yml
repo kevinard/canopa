@@ -43,6 +43,7 @@ jobs:
             dbus \
             libglib2.0-bin \
             pipewire \
+            pipewire-bin \
             pipewire-pulse \
             pulseaudio-utils \
             at-spi2-core \

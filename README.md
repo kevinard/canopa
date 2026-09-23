@@ -18,8 +18,8 @@ cargo +1.95.0 build --locked --release --bins
 Run inside a Niri/Wayland desktop session with its session D-Bus environment.
 Keep `niribar-wifi-provider` alongside `niribar` or on PATH. PulseAudio or
 PipeWire's PulseAudio compatibility service supplies audio state and control.
-Installed application launching requires `gio` (`libglib2.0-bin` on Debian/Ubuntu).
-Application launches use niri's IPC; without `NIRI_SOCKET`, they require
+Ordinary desktop-entry launching requires `gio` (`libglib2.0-bin` on Debian/Ubuntu).
+D-Bus-enabled entries activate through the session bus. Executable launches use niri's IPC; without `NIRI_SOCKET`, they require
 `systemd-run` and a systemd user manager.
 
 Configuration is read from `$XDG_CONFIG_HOME/niribar/config.kdl`, falling back
@@ -93,7 +93,7 @@ python3 scripts/check-contrast.py
 bash scripts/package-release.sh target/release dist
 ```
 
-The transport suite also requires `libglib2.0-bin`, `pipewire`, `pipewire-pulse`
+The transport suite also requires `libglib2.0-bin`, `pipewire`, `pipewire-bin`, `pipewire-pulse`
 and `pulseaudio-utils`. Tests start private D-Bus/audio daemons and Unix sockets;
 environments that forbid local socket binding cannot run the transport suite.
 Audio fixtures use synthetic sinks without hardware discovery. Tests do not

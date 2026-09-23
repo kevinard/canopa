@@ -10,6 +10,7 @@ pub struct DesktopApplication {
     pub keywords: Vec<String>,
     pub icon: Option<String>,
     pub desktop_file: PathBuf,
+    pub dbus_activatable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,6 +219,7 @@ fn application_from_entry(
             .unwrap_or_default(),
         icon: optional_non_empty_field(&fields, "Icon"),
         desktop_file: entry.path,
+        dbus_activatable: bool_field(&fields, "DBusActivatable"),
     })
 }
 

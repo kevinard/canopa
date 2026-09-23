@@ -1242,6 +1242,7 @@ mod tests {
                     keywords: Vec::new(),
                     icon: None,
                     desktop_file: "fixture.desktop".into(),
+                    dbus_activatable: false,
                 }],
             },
         );

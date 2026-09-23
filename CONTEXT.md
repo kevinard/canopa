@@ -742,7 +742,7 @@ _Avoid_: Unavailable module, runtime failure
 - Launching **Installed Desktop Applications** follows Niribar's centralized process-launch boundary.
 - An application `launch` **Panel Action** and **Installed Desktop Application** activation hand ownership to the desktop session, independently of Niribar's service and command timeout. niri Spawn is preferred; a systemd user scope is the fallback when no niri socket is advertised ([ADR 0012](docs/adr/0012-session-owned-application-launches.md)).
 - `launch` accepts literal argv strings. **Configured Commands** keep their bounded automation lifetime; the application lifetime is not inferred from a command's executable name.
-- Installed entries retain their selected source path and localized metadata. GIO owns desktop-entry field expansion, working directory and D-Bus activation. Synchronous launch failures are logged; later application failures are reported by the session launcher.
+- Installed entries retain their selected source path and localized metadata. GIO owns ordinary desktop-entry field expansion and working directory. D-Bus-enabled entries use an acknowledged session-bus Activate call with no retry after an ambiguous failure. Synchronous launch failures are logged; later application failures are reported by the session launcher.
 - A failed launch of an **Installed Desktop Application** is a failed **Panel Action** and does not change the normal **Panel Menu** entry by default.
 - A **Desktop Application ID** identifies an **Installed Desktop Application** even when multiple applications share the same display name.
 - A **Panel Menu** may use secondary metadata to disambiguate **Installed Desktop Applications** with the same display name.

@@ -118,10 +118,10 @@ bar "main" {
 // Rotate formatted bar content. Values: "none", "auto", "clockwise", "counter-clockwise".
 // "auto" rotates on left/right bars and stays unrotated on top/bottom bars.
 //
-// Optional actions can be added to any module. They run shell commands and
-// override the built-in behavior for that click type:
+// Optional actions override built-in behavior for that click type. Use launch
+// for applications, command for bounded automation, or an operation like open-panel:
 //     actions {
-//         click { command "my-command" }
+//         click { launch "my-application" }
 //         right-click { command "my-other-command" }
 //     }
 modules {

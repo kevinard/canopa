@@ -17,6 +17,16 @@ impl AudioServer {
             directory,
             children: Vec::new(),
         };
+        std::fs::write(
+            server.directory.path().join("client.conf"),
+            r#"
+            context.modules = [
+                { name = libpipewire-module-protocol-native }
+                { name = libpipewire-module-metadata }
+            ]
+        "#,
+        )
+        .unwrap();
         let core_config = r#"
             context.properties = { core.daemon = true core.name = pipewire-0 }
             context.spa-libs = { audio.convert.* = audioconvert/libspa-audioconvert support.* = support/libspa-support }
@@ -29,6 +39,7 @@ impl AudioServer {
                 { name = libpipewire-module-adapter }
                 { name = libpipewire-module-link-factory }
             ]
+            context.objects = [ { factory = metadata args = { metadata.name = default } } ]
         "#;
         let pulse_config = r#"
             context.properties = { }
@@ -92,22 +103,45 @@ impl AudioServer {
     }
 
     async fn pactl(&self, args: &[&str]) -> String {
-        let mut command = tokio::process::Command::from(self.command("pactl"));
+        self.run("pactl", args).await
+    }
+
+    async fn set_default_sink(&self, name: &str) {
+        // A real session manager copies the configured choice into active
+        // default metadata. This hardware-free fixture supplies that policy.
+        self.pactl(&["set-default-sink", name]).await;
+        self.run(
+            "pw-metadata",
+            &[
+                "-n",
+                "default",
+                "0",
+                "default.audio.sink",
+                &format!(r#"{{"name":"{name}"}}"#),
+                "Spa:String:JSON",
+            ],
+        )
+        .await;
+        self.pactl(&["get-sink-volume", "@DEFAULT_SINK@"]).await;
+    }
+
+    async fn run(&self, program: &str, args: &[&str]) -> String {
+        let mut command = tokio::process::Command::from(self.command(program));
         command.args(args).kill_on_drop(true);
         let output = tokio::time::timeout(Duration::from_secs(3), command.output())
             .await
             .unwrap_or_else(|_| {
                 panic!(
-                    "private pactl {args:?} deadline; core: {}; pulse: {}",
+                    "private {program} {args:?} deadline; core: {}; pulse: {}",
                     std::fs::read_to_string(self.directory.path().join("pipewire.log")).unwrap(),
                     std::fs::read_to_string(self.directory.path().join("pipewire-pulse.log"))
                         .unwrap()
                 )
             })
-            .expect("install pulseaudio-utils for audio tests");
+            .expect("install pipewire-bin and pulseaudio-utils for audio tests");
         assert!(
             output.status.success(),
-            "pactl {args:?}: {}",
+            "{program} {args:?}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8(output.stdout).unwrap().trim().into()
@@ -127,9 +161,11 @@ async fn expect(
     rx: &mut mpsc::UnboundedReceiver<Result<Option<(f64, bool)>, ()>>,
     expected: Option<(f64, bool)>,
 ) {
+    let mut last = None;
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             let reading = rx.recv().await.unwrap().unwrap();
+            last = Some(reading);
             match (reading, expected) {
                 (None, None) => break,
                 (Some((actual, muted)), Some((volume, expected_muted)))
@@ -142,7 +178,7 @@ async fn expect(
         }
     })
     .await
-    .expect("audio subscription must report the changed sink state");
+    .unwrap_or_else(|_| panic!("audio subscription expected {expected:?}, last reading {last:?}"));
 }
 
 #[tokio::test]
@@ -156,7 +192,7 @@ async fn pulse_protocol_controls_and_tracks_default_sink_removal_and_reappearanc
     let first = server
         .pactl(&["load-module", "module-null-sink", "sink_name=first"])
         .await;
-    server.pactl(&["set-default-sink", "first"]).await;
+    server.set_default_sink("first").await;
     server.pactl(&["set-sink-volume", "first", "30%"]).await;
     expect(&mut rx, Some((30.0, false))).await;
     adjust_volume_on(Some(&server.server), 5, true).unwrap();
@@ -168,7 +204,7 @@ async fn pulse_protocol_controls_and_tracks_default_sink_removal_and_reappearanc
         .await;
     server.pactl(&["set-sink-volume", "second", "70%"]).await;
     server.pactl(&["set-sink-mute", "second", "1"]).await;
-    server.pactl(&["set-default-sink", "second"]).await;
+    server.set_default_sink("second").await;
     expect(&mut rx, Some((70.0, true))).await;
     server.pactl(&["unload-module", &first]).await;
     server.pactl(&["unload-module", &second]).await;
@@ -176,7 +212,7 @@ async fn pulse_protocol_controls_and_tracks_default_sink_removal_and_reappearanc
     server
         .pactl(&["load-module", "module-null-sink", "sink_name=returned"])
         .await;
-    server.pactl(&["set-default-sink", "returned"]).await;
+    server.set_default_sink("returned").await;
     server.pactl(&["set-sink-volume", "returned", "45%"]).await;
     expect(&mut rx, Some((45.0, false))).await;
     server.children.last_mut().unwrap().kill().unwrap();

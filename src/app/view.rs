@@ -983,6 +983,7 @@ mod tests {
                     keywords: vec![],
                     icon: None,
                     desktop_file: "fixture.desktop".into(),
+                    dbus_activatable: false,
                 })
                 .collect(),
         );

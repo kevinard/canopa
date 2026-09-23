@@ -71,7 +71,7 @@ Configured click actions always win:
 modules {
     module "network" {
         actions {
-            click { command "nm-connection-editor" }
+            click { launch "nm-connection-editor" }
         }
     }
 }

@@ -182,9 +182,9 @@ impl App {
                 Vec::new()
             }
             AppEffect::LaunchApplication(argv) => {
-                tokio::task::spawn_blocking(move || {
-                    if let Err(error) = crate::command::launch_application(&argv) {
-                        tracing::warn!(target: "niribar::launcher", program = ?argv.first(), %error, "application launch failed");
+                tokio::spawn(async move {
+                    if let Err(error) = crate::command::launch_application(&argv).await {
+                        tracing::warn!(target: "niribar::launcher", %error, "application launch failed");
                     }
                 });
                 Vec::new()
@@ -321,14 +321,18 @@ impl App {
         #[cfg(not(test))]
         {
             let id = id.to_owned();
-            tokio::task::spawn_blocking(move || {
-                if let Some(app) = crate::desktop_apps::discover_installed_applications()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .find(|app| app.id == id)
-                {
+            tokio::spawn(async move {
+                let lookup_id = id.clone();
+                let app = tokio::task::spawn_blocking(move || {
+                    crate::desktop_apps::discover_installed_applications()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|app| app.id == lookup_id)
+                })
+                .await;
+                if let Ok(Some(app)) = app {
                     if let Err(error) =
-                        crate::command::spawn_desktop_application_fire_and_forget(&app)
+                        crate::command::spawn_desktop_application_fire_and_forget(&app).await
                     {
                         tracing::warn!(target: "niribar::launcher", %id, %error, "desktop application launch failed");
                     }
