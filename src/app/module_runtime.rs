@@ -2481,6 +2481,26 @@ mod tests {
     }
 
     #[test]
+    fn missing_system_bus_immediately_invalidates_populated_battery_state() {
+        let mut app = make_battery_app();
+        let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(
+            BatteryEvent::StateChanged {
+                percentage: 72.0,
+                is_charging: false,
+            },
+        )));
+        assert!(matches!(
+            app.modules.state(&ModuleId::new("battery")),
+            Some(ModuleState::Battery(_))
+        ));
+        let _ = app.update(Message::DbusReady(crate::dbus::DbusConnections::default()));
+        assert!(matches!(
+            app.modules.state(&ModuleId::new("battery")),
+            Some(ModuleState::Unavailable)
+        ));
+    }
+
+    #[test]
     fn battery_unavailable_marks_module_unavailable() {
         let mut app = make_battery_app();
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(

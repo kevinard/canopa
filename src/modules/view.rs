@@ -488,8 +488,7 @@ impl<Message> canvas::Program<Message> for RotatedVisualSegments {
                     frame,
                     segment,
                     Point::new(x, origin.y + (self.content_height - segment_height) / 2.0),
-                    segment_width,
-                    segment_height,
+                    Size::new(segment_width, segment_height),
                     self.fallback_size,
                     self.fallback_color,
                     text_alignment,
@@ -506,12 +505,12 @@ fn draw_canvas_visual_segment(
     frame: &mut canvas::Frame,
     segment: &FormattedSegmentVisual,
     origin: Point,
-    width: f32,
-    height: f32,
+    size: Size,
     fallback_size: u32,
     fallback_color: iced::Color,
     text_alignment: CanvasTextAlignment,
 ) {
+    let Size { width, height } = size;
     match segment {
         FormattedSegmentVisual::Image { path, style, .. } if path.exists() => {
             let size = visual_segment_size(*style, fallback_size).ceil().max(1.0);

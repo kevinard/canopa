@@ -172,8 +172,7 @@ impl App {
                     origin,
                     provider_name.clone(),
                     anchor,
-                    session,
-                    content,
+                    (session, content),
                 );
                 if effects.is_empty() {
                     tracing::debug!(
@@ -851,6 +850,12 @@ impl App {
         use super::messages::PanelEvent;
 
         match event {
+            PanelEvent::InstalledAppsLoaded { generation, apps } => {
+                let effects =
+                    self.foreground
+                        .installed_apps_loaded(generation, apps, &self.config.menus);
+                Task::batch(self.apply_foreground_effects(effects))
+            }
             PanelEvent::Open {
                 origin_window,
                 origin,
@@ -1112,6 +1117,7 @@ impl App {
         Task::batch(tasks)
     }
 
+    #[cfg(test)]
     pub(super) fn load_installed_apps_for_panel(
         &self,
     ) -> Vec<crate::desktop_apps::DesktopApplication> {

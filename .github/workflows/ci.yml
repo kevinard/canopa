@@ -17,9 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: '1.95.0'
           components: rustfmt, clippy
 
       - name: Cache Rust build artifacts
@@ -33,29 +34,31 @@ jobs:
             libwayland-dev \
             libxkbcommon-dev \
             libudev-dev \
+            dbus \
+            at-spi2-core \
             pkg-config
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
       - name: cargo clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: cargo test
-        run: cargo test
+        run: cargo test --locked --all-targets
 
   nix:
     name: nix build
     runs-on: ubuntu-latest
-    # Only runs on push to main AND only when flake.nix exists.
-    # This job activates automatically when Story 8.2 adds flake.nix.
-    if: github.event_name == 'push' && hashFiles('flake.nix') != ''
+    if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Nix
+        if: hashFiles('flake.nix') != ''
         uses: DeterminateSystems/nix-installer-action@v14
 
       - name: nix build
+        if: hashFiles('flake.nix') != ''
         run: nix build

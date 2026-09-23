@@ -115,6 +115,29 @@ pub(super) async fn start_watcher(
     }
 }
 
+/// Retire every object owned by a disappearing bus name, including path registrations.
+pub(super) async fn remove_owner(conn: &zbus::Connection, owner: &str) -> zbus::Result<()> {
+    let interface = conn
+        .object_server()
+        .interface::<_, StatusNotifierWatcher>("/StatusNotifierWatcher")
+        .await?;
+    let watcher = interface.get().await;
+    let mut items = watcher.items.lock().await;
+    let removed: Vec<_> = items
+        .iter()
+        .filter(|item| item.split('/').next() == Some(owner))
+        .cloned()
+        .collect();
+    items.retain(|item| !removed.contains(item));
+    drop(items);
+    watcher.hosts.lock().await.retain(|host| host != owner);
+    for item in removed {
+        StatusNotifierWatcher::status_notifier_item_unregistered(interface.signal_emitter(), &item)
+            .await?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

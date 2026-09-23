@@ -20,3 +20,12 @@ Enforce the accepted identity model for **Bar Names**, **Module Names**, and **M
 ## Blocked by
 
 - .scratch/domain-alignment/issues/01-migrate-bar-zones-to-start-center-end.md
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/config/validate.rs; src/app/surfaces.rs; src/app/niri.rs. Evidence: configuration, output matching, per-surface and Niri tests.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

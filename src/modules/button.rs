@@ -18,6 +18,7 @@ pub(super) struct ButtonModule {
 }
 
 impl ButtonModule {
+    #[cfg(test)]
     pub(super) fn new(
         id: crate::modules::ModuleId,
         label: String,

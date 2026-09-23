@@ -90,6 +90,7 @@ pub(super) struct BatteryModule {
 }
 
 impl BatteryModule {
+    #[cfg(test)]
     pub(super) fn new(
         id: crate::modules::ModuleId,
         critical_threshold: u8,

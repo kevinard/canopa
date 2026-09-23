@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod test_bus;
 pub mod external_panel {
     pub mod canopa;
     mod canopa_images;

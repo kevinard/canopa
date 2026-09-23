@@ -57,10 +57,6 @@ impl OutputTarget {
             OutputTarget::Exclude(outputs) => !outputs.iter().any(|output| output == output_name),
         }
     }
-
-    pub fn is_all(&self) -> bool {
-        matches!(self, OutputTarget::All)
-    }
 }
 
 /// Per-zone ordered list of module names for the bar layout.
@@ -93,7 +89,7 @@ impl Default for PanelAnimationConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PanelConfig {
     pub width: Option<u32>,
     pub max_width: Option<u32>,
@@ -101,19 +97,6 @@ pub struct PanelConfig {
     pub max_height: Option<u32>,
     pub modules: PanelModules,
     pub animation: PanelAnimationConfig,
-}
-
-impl Default for PanelConfig {
-    fn default() -> Self {
-        Self {
-            width: None,
-            max_width: None,
-            height: None,
-            max_height: None,
-            modules: PanelModules::default(),
-            animation: PanelAnimationConfig::default(),
-        }
-    }
 }
 
 /// Bar-level configuration: placement edge, size, layer, modules, and panel behavior.
@@ -160,10 +143,6 @@ impl Default for BarConfig {
 impl BarConfig {
     pub fn matches_output(&self, output_name: &str) -> bool {
         self.output_target.matches(output_name)
-    }
-
-    pub fn targets_all_outputs(&self) -> bool {
-        self.output_target.is_all()
     }
 }
 

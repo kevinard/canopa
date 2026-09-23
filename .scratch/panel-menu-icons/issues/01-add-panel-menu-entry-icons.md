@@ -92,3 +92,12 @@ Resolved domain language is captured in `CONTEXT.md` under **Panel Menu Entry Ic
 
 - Created from a `grill-with-docs` design session on 2026-05-22.
 - Implemented with TDD on 2026-05-22. Verification: `cargo test` passed with 776 tests.
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/app/panel.rs; src/surface/panel.rs. Evidence: panel menu icon tests; graphical inspection remains pending.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

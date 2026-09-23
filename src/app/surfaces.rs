@@ -773,6 +773,7 @@ impl App {
             ModuleParams::Button(c) => (&c.tooltip, td::button_default()),
             ModuleParams::Script(c) => (&c.tooltip, td::script_default()),
             ModuleParams::Tray(c) => (&c.tooltip, td::tray_default()),
+            #[cfg(test)]
             ModuleParams::None => return None,
         };
         let _ = window;

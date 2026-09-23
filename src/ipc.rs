@@ -26,7 +26,18 @@ fn remove_stale_socket_if_safe(path: &std::path::Path) -> std::io::Result<()> {
     use std::os::unix::fs::FileTypeExt;
 
     match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_socket() => std::fs::remove_file(path),
+        Ok(metadata) if metadata.file_type().is_socket() => {
+            match std::os::unix::net::UnixStream::connect(path) {
+                Ok(_) => Err(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    "IPC socket is still active",
+                )),
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => {
+                    std::fs::remove_file(path)
+                }
+                Err(error) => Err(error),
+            }
+        }
         Ok(_) => Err(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
             format!("refusing to remove non-socket IPC path {}", path.display()),
@@ -44,100 +55,156 @@ fn set_owner_only_permissions(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::set_permissions(path, perms)
 }
 
-/// Iced subscription that listens on the Unix socket for IPC commands.
-///
-/// Emits wrapped `SurfaceEvent::TogglePanel` when it receives `"toggle-panel"` on any connection.
-/// Removes a stale socket file on first startup. Runs indefinitely.
-///
-/// Pattern mirrors `niri_subscription`: a `tokio::spawn` task handles blocking/async I/O
-/// and sends events via an `mpsc` channel; the stream yields from the channel.
+/// Own the socket name for exactly the lifetime of the listener. The lock also
+/// serializes stale-socket recovery by simultaneous starting instances.
+struct IpcServer {
+    listener: UnixListener,
+    _lock: std::fs::File,
+    path: PathBuf,
+    identity: (u64, u64),
+}
+
+impl IpcServer {
+    fn bind(path: PathBuf) -> std::io::Result<Self> {
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .mode(0o600)
+            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
+            .open(path.with_extension("lock"))?;
+        rustix::fs::flock(&lock, rustix::fs::FlockOperation::NonBlockingLockExclusive).map_err(
+            |_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    "another Niribar instance owns the IPC socket",
+                )
+            },
+        )?;
+        remove_stale_socket_if_safe(&path)?;
+        let listener = UnixListener::bind(&path)?;
+        set_owner_only_permissions(&path)?;
+        let metadata = std::fs::metadata(&path)?;
+        Ok(Self {
+            listener,
+            _lock: lock,
+            path,
+            identity: (metadata.dev(), metadata.ino()),
+        })
+    }
+
+    async fn run(self, tx: mpsc::Sender<Message>) {
+        let mut clients = tokio::task::JoinSet::new();
+        loop {
+            tokio::select! {
+                _ = tx.closed() => break,
+                _ = clients.join_next(), if !clients.is_empty() => {},
+                accepted = self.listener.accept() => match accepted {
+                    Ok((socket, _)) if clients.len() < 64 => {
+                        let tx = tx.clone();
+                        clients.spawn(async move {
+                            if let Err(error) = serve_client(socket, tx).await {
+                                tracing::debug!(target: "niribar::ipc", %error, "IPC request ended");
+                            }
+                        });
+                    }
+                    Ok(_) => {}, // Bound concurrent stalled clients.
+                    Err(error) => {
+                        tracing::warn!(target: "niribar::ipc", %error, "IPC accept failed");
+                        break;
+                    }
+                }
+            }
+        }
+        // JoinSet aborts pending clients when the subscription is cancelled.
+    }
+}
+
+impl Drop for IpcServer {
+    fn drop(&mut self) {
+        use std::os::unix::fs::MetadataExt;
+        if let Ok(metadata) = std::fs::symlink_metadata(&self.path)
+            && (metadata.dev(), metadata.ino()) == self.identity
+        {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+async fn read_request(socket: &mut tokio::net::UnixStream) -> anyhow::Result<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+    let mut bytes = Vec::new();
+    for expected in protocol::FRAMED_MAGIC.bytes() {
+        let byte = socket.read_u8().await?;
+        bytes.push(byte);
+        if byte != expected {
+            socket.take(256).read_to_end(&mut bytes).await?;
+            anyhow::ensure!(bytes.len() <= 256, "legacy IPC command is too large");
+            return Ok(bytes);
+        }
+    }
+    let len = socket.read_u64().await?;
+    anyhow::ensure!(
+        len <= protocol::MAX_FRAME_BYTES as u64,
+        "IPC frame is too large"
+    );
+    bytes.extend_from_slice(&len.to_be_bytes());
+    let header_len = bytes.len();
+    bytes.resize(header_len + len as usize, 0);
+    socket.read_exact(&mut bytes[header_len..]).await?;
+    Ok(bytes)
+}
+
+async fn serve_client(
+    mut socket: tokio::net::UnixStream,
+    tx: mpsc::Sender<Message>,
+) -> anyhow::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let bytes = tokio::time::timeout(std::time::Duration::from_secs(2), read_request(&mut socket))
+        .await??;
+    if bytes.starts_with(protocol::FRAMED_MAGIC.as_bytes()) {
+        let protocol::IpcRequest::DmenuSelection(request) = protocol::decode_frame_payload(&bytes)?;
+        protocol::validate_dmenu_request(&request)?;
+        let (responder, response_rx) = tokio::sync::oneshot::channel();
+        tx.send(Message::Ipc(
+            crate::app::messages::IpcEvent::DmenuSelection {
+                request,
+                responder: crate::app::messages::ipc_responder(responder),
+            },
+        ))
+        .await?;
+        // No selection deadline: the UI owns the user's interactive wait.
+        let response = response_rx.await?;
+        let frame = protocol::encode_frame(&response)?;
+        tokio::time::timeout(std::time::Duration::from_secs(2), socket.write_all(&frame)).await??;
+    } else if let Some(message) = ipc_message_for_bytes(&bytes) {
+        tx.send(message).await?;
+    }
+    Ok(())
+}
+
+/// Concurrent, bounded IPC service. Dropping its receiver stops the listener.
 pub fn ipc_subscription() -> iced::Subscription<Message> {
     iced::Subscription::run_with(IpcSubscriptionKey, |_: &IpcSubscriptionKey| {
-        stream::unfold(None::<mpsc::UnboundedReceiver<Message>>, |rx| async move {
+        stream::unfold(None::<mpsc::Receiver<Message>>, |rx| async move {
             let mut rx = match rx {
-                Some(r) => r,
+                Some(rx) => rx,
                 None => {
-                    // First call: bind socket and spawn the listener task.
-                    let path = match socket_path() {
-                        Ok(path) => path,
-                        Err(_) => {
-                            std::future::pending::<()>().await;
-                            unreachable!()
+                    let (tx, rx) = mpsc::channel(32);
+                    match socket_path().and_then(IpcServer::bind) {
+                        Ok(server) => {
+                            tokio::spawn(server.run(tx));
                         }
-                    };
-                    if remove_stale_socket_if_safe(&path).is_err() {
-                        std::future::pending::<()>().await;
-                        unreachable!()
+                        Err(error) => {
+                            tracing::error!(target: "niribar::ipc", %error, "IPC listener unavailable");
+                        }
                     }
-                    let listener = match UnixListener::bind(&path) {
-                        Ok(l) => l,
-                        Err(_) => {
-                            // Cannot bind — keep stream alive but emit nothing.
-                            std::future::pending::<()>().await;
-                            unreachable!()
-                        }
-                    };
-                    let _ = set_owner_only_permissions(&path);
-                    let (tx, rx) = mpsc::unbounded_channel();
-                    tokio::spawn(async move {
-                        loop {
-                            let Ok((stream, _)) = listener.accept().await else {
-                                continue;
-                            };
-                            let mut stream = stream;
-                            let mut bytes = Vec::new();
-                            if tokio::io::AsyncReadExt::read_to_end(&mut stream, &mut bytes)
-                                .await
-                                .is_err()
-                            {
-                                continue;
-                            }
-                            if bytes.starts_with(protocol::FRAMED_MAGIC.as_bytes()) {
-                                if let Ok(protocol::IpcRequest::DmenuSelection(request)) =
-                                    protocol::decode_frame_payload(&bytes)
-                                {
-                                    let (responder, response_rx) = tokio::sync::oneshot::channel();
-                                    if tx
-                                        .send(Message::Ipc(
-                                            crate::app::messages::IpcEvent::DmenuSelection {
-                                                request,
-                                                responder: crate::app::messages::ipc_responder(
-                                                    responder,
-                                                ),
-                                            },
-                                        ))
-                                        .is_ok()
-                                        && let Ok(response) = response_rx.await
-                                        && let Ok(frame) = protocol::encode_frame(&response)
-                                    {
-                                        let _ = tokio::io::AsyncWriteExt::write_all(
-                                            &mut stream,
-                                            &frame,
-                                        )
-                                        .await;
-                                    }
-                                }
-                                continue;
-                            }
-                            if let Some(message) = ipc_message_for_bytes(&bytes)
-                                && tx.send(message).is_err()
-                            {
-                                break;
-                            }
-                        }
-                    });
                     rx
                 }
             };
-            // Wait for the next command from the listener task.
-            match rx.recv().await {
-                Some(msg) => Some((msg, Some(rx))),
-                None => {
-                    // Channel closed — keep stream alive but emit nothing.
-                    std::future::pending::<()>().await;
-                    unreachable!()
-                }
-            }
+            rx.recv().await.map(|message| (message, Some(rx)))
         })
     })
 }
@@ -301,5 +368,94 @@ mod tests {
             decoded,
             Message::Surface(crate::app::messages::SurfaceEvent::TogglePanel)
         ));
+    }
+    #[tokio::test]
+    async fn pending_selection_does_not_block_other_clients() {
+        use tokio::io::AsyncWriteExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("niribar.sock");
+        let server = IpcServer::bind(path.clone()).unwrap();
+        let (tx, mut rx) = mpsc::channel(8);
+        let task = tokio::spawn(server.run(tx));
+        let request = protocol::IpcRequest::DmenuSelection(protocol::DmenuRequest {
+            prompt: None,
+            entries: vec![protocol::DmenuEntry::plain("one")],
+            allow_custom: false,
+        });
+        let mut first = tokio::net::UnixStream::connect(&path).await.unwrap();
+        first
+            .write_all(&protocol::encode_frame(&request).unwrap())
+            .await
+            .unwrap();
+        let Message::Ipc(crate::app::messages::IpcEvent::DmenuSelection { responder, .. }) =
+            rx.recv().await.unwrap()
+        else {
+            panic!("expected dmenu")
+        };
+        let mut second = tokio::net::UnixStream::connect(&path).await.unwrap();
+        second.write_all(b"toggle-panel\n").await.unwrap();
+        second.shutdown().await.unwrap();
+        assert!(matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+                .await
+                .unwrap(),
+            Some(Message::Surface(
+                crate::app::messages::SurfaceEvent::TogglePanel
+            ))
+        ));
+        // A second selection must reach the app while the first responder lives.
+        let mut third = tokio::net::UnixStream::connect(&path).await.unwrap();
+        third
+            .write_all(&protocol::encode_frame(&request).unwrap())
+            .await
+            .unwrap();
+        assert!(matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+                .await
+                .unwrap(),
+            Some(Message::Ipc(_))
+        ));
+        drop(responder);
+        drop(rx);
+        task.await.unwrap();
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn oversized_header_is_rejected_without_waiting_for_payload() {
+        use tokio::io::AsyncWriteExt;
+        let (mut client, mut server) = tokio::net::UnixStream::pair().unwrap();
+        client
+            .write_all(protocol::FRAMED_MAGIC.as_bytes())
+            .await
+            .unwrap();
+        client
+            .write_u64(protocol::MAX_FRAME_BYTES as u64 + 1)
+            .await
+            .unwrap();
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(200),
+                read_request(&mut server)
+            )
+            .await
+            .unwrap()
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn second_instance_preserves_first_listener_and_stale_socket_can_recover() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("niribar.sock");
+        let first = IpcServer::bind(path.clone()).unwrap();
+        assert!(IpcServer::bind(path.clone()).is_err());
+        assert!(tokio::net::UnixStream::connect(&path).await.is_ok());
+        drop(first);
+        let stale = UnixListener::bind(&path).unwrap();
+        drop(stale);
+        let recovered = IpcServer::bind(path.clone()).unwrap();
+        drop(recovered);
+        assert!(!path.exists());
     }
 }

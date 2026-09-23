@@ -33,6 +33,7 @@ pub(super) struct ScriptModule {
 }
 
 impl ScriptModule {
+    #[cfg(test)]
     pub(super) fn new(
         id: crate::modules::ModuleId,
         command: crate::config::ConfiguredCommand,

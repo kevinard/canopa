@@ -226,9 +226,12 @@ impl ExternalPanelSessionRuntime {
         origin: crate::surface::panel::PanelOrigin,
         provider_name: String,
         anchor: Option<iced::Rectangle>,
-        session: Option<crate::external_panel::ExternalPanelSessionHandle>,
-        content: crate::surface::panel::ExternalPanelDocument,
+        completed: (
+            Option<crate::external_panel::ExternalPanelSessionHandle>,
+            crate::surface::panel::ExternalPanelDocument,
+        ),
     ) -> Vec<ExternalPanelSessionEffect> {
+        let (session, content) = completed;
         if !self.pending_matches(&session_id) {
             return Vec::new();
         }
@@ -353,6 +356,7 @@ impl ExternalPanelSessionRuntime {
         should_close
     }
 
+    #[cfg(test)]
     pub(super) fn replace_content_from_provider_response(
         &mut self,
         provider_name: String,
@@ -490,6 +494,7 @@ impl ExternalPanelSessionRuntime {
         had_pending || had_active
     }
 
+    #[cfg(test)]
     pub(super) fn active_session_id(&self) -> Option<&str> {
         self.active
             .as_ref()
@@ -586,8 +591,7 @@ mod tests {
             crate::surface::panel::PanelOrigin::Bar,
             "wifi".into(),
             None,
-            None,
-            document,
+            (None, document),
         )
     }
 
@@ -601,8 +605,7 @@ mod tests {
             crate::surface::panel::PanelOrigin::Bar,
             "wifi".into(),
             None,
-            None,
-            text_document("stale"),
+            (None, text_document("stale")),
         );
 
         assert!(effects.is_empty());

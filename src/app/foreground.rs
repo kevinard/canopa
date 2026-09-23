@@ -322,10 +322,63 @@ pub(super) struct Foreground {
     closing_panel_windows: HashSet<iced::window::Id>,
     closing_menu_windows: HashMap<iced::window::Id, MenuPopupMeta>,
     pending_menu: Option<MenuForegroundRequest>,
+    pending_apps: Option<super::panel_runtime::PendingPanelOpen>,
+    apps_generation: u64,
 }
 
 impl Foreground {
+    pub(super) fn apps_generation(&self) -> u64 {
+        self.apps_generation
+    }
+
+    pub(super) fn installed_apps_loaded(
+        &mut self,
+        generation: u64,
+        apps: Vec<crate::desktop_apps::DesktopApplication>,
+        menus: &[crate::config::MenuConfig],
+    ) -> Vec<ForegroundEffect> {
+        if generation != self.apps_generation {
+            return Vec::new();
+        }
+        let Some(pending) = self.pending_apps.take() else {
+            return Vec::new();
+        };
+        self.handle(ForegroundIntent::PanelInstalledAppsLoaded {
+            pending,
+            apps,
+            menus,
+        })
+    }
+
     pub(super) fn handle(&mut self, intent: ForegroundIntent<'_>) -> Vec<ForegroundEffect> {
+        if let ForegroundIntent::TogglePanel { request, .. } = &intent
+            && self
+                .pending_apps
+                .as_ref()
+                .is_some_and(|pending| pending.request == *request)
+        {
+            self.pending_apps = None;
+            return Vec::new();
+        }
+        match &intent {
+            ForegroundIntent::OpenPanel { .. }
+            | ForegroundIntent::TogglePanel { .. }
+            | ForegroundIntent::ClosePanel
+            | ForegroundIntent::OpenMenu { .. }
+            | ForegroundIntent::BeginDmenuSelection { .. }
+            | ForegroundIntent::PanelEscape => {
+                self.pending_apps = None;
+            }
+            ForegroundIntent::BarSurfaceRemoved { window, .. }
+                if self
+                    .pending_apps
+                    .as_ref()
+                    .is_some_and(|pending| pending.request.origin_window == *window) =>
+            {
+                self.pending_apps = None;
+            }
+            _ => {}
+        }
         match intent {
             ForegroundIntent::UpdateExternalPanelContent { identity, content } => {
                 self.update_external_panel_content(identity, content);
@@ -760,6 +813,7 @@ impl Foreground {
         request: PanelForegroundRequest,
         context: PanelOpenContext<'_>,
     ) -> Vec<ForegroundEffect> {
+        self.pending_apps = None;
         let catalog = super::panel_runtime::PanelMenuCatalog::new(context.menus);
         let effects = self
             .panel
@@ -817,6 +871,7 @@ impl Foreground {
     }
 
     fn close_panel(&mut self) -> Vec<ForegroundEffect> {
+        self.pending_apps = None;
         if matches!(self.active, Some(ForegroundOverlay::Panel { .. })) {
             self.close_active_panel()
         } else {
@@ -825,6 +880,7 @@ impl Foreground {
     }
 
     fn open_menu(&mut self, request: MenuForegroundRequest) -> Vec<ForegroundEffect> {
+        self.pending_apps = None;
         let mut effects = vec![ForegroundEffect::CloseAllTooltips];
         effects.extend(self.close_for_menu_open(request));
         effects
@@ -965,6 +1021,8 @@ impl Foreground {
                 super::panel_runtime::PanelRuntimeEffect::LoadInstalledAppsThenPreparePanel(
                     pending,
                 ) => {
+                    self.apps_generation = self.apps_generation.wrapping_add(1);
+                    self.pending_apps = Some(pending.clone());
                     foreground_effects
                         .push(ForegroundEffect::LoadInstalledAppsThenPreparePanel(pending));
                 }
@@ -1246,6 +1304,50 @@ mod tests {
             anchor: (0, 0),
             screen_size: (1920, 1080),
         }
+    }
+
+    #[test]
+    fn stale_launcher_discovery_cannot_reopen_closed_or_replaced_panel() {
+        let menus = vec![crate::config::MenuConfig {
+            name: "apps".into(),
+            prompt: None,
+            show_icons: true,
+            source: Some(crate::config::MenuSourceConfig {
+                kind: crate::config::MenuSourceKind::InstalledApps,
+            }),
+            items: Vec::new(),
+        }];
+        let request = panel_request(
+            wid(),
+            crate::surface::panel::PanelContent::Menu("apps".into()),
+        );
+        let mut foreground = Foreground::default();
+        let open = |foreground: &mut Foreground| {
+            foreground.handle(ForegroundIntent::OpenPanel {
+                request: request.clone(),
+                context: PanelOpenContext::new(&menus, HashMap::new()),
+            });
+            foreground.apps_generation()
+        };
+        let closed = open(&mut foreground);
+        foreground.handle(ForegroundIntent::ClosePanel);
+        assert!(
+            foreground
+                .installed_apps_loaded(closed, vec![], &menus)
+                .is_empty()
+        );
+        let stale = open(&mut foreground);
+        let current = open(&mut foreground);
+        assert!(
+            foreground
+                .installed_apps_loaded(stale, vec![], &menus)
+                .is_empty()
+        );
+        assert!(
+            !foreground
+                .installed_apps_loaded(current, vec![], &menus)
+                .is_empty()
+        );
     }
 
     fn menu_request(service: &str, search_enabled: bool) -> super::MenuForegroundRequest {

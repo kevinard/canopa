@@ -29,10 +29,10 @@ pub(super) fn parse_content_rotation_with_default_ctx(
     default: ContentRotation,
 ) -> ConfigResult<ContentRotation> {
     let expected = ContentRotation::ACCEPTED_VALUES.join(", ");
-    Ok(fields::field(children, module_ctx, "content-rotation")
+    fields::field(children, module_ctx, "content-rotation")
         .optional()
         .one_of(&expected, ContentRotation::parse)
-        .unwrap_or(default)?)
+        .unwrap_or(default)
 }
 
 fn parse_optional_ctx(

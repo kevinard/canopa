@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Reset SNI Menu Session On Layout Update
 
@@ -23,3 +23,12 @@ When a **SNI Menu** layout updates while it is open, reset its **Selectable Menu
 ## Blocked by
 
 - .scratch/foreground-selectable-menu-session/issues/09-add-searchable-sni-menus.md
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/app/foreground.rs; src/app/selectable_menu_session.rs; src/app/panel_runtime.rs. Evidence: Foreground, menu-session and panel tests; repeated D-Bus menu signal regression.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

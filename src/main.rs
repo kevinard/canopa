@@ -1,4 +1,7 @@
 mod app;
+#[cfg(test)]
+mod test_bus;
+
 mod cli;
 mod command;
 mod config;
@@ -101,11 +104,18 @@ fn run_dmenu_cli(options: cli::DmenuOptions) -> i32 {
     use std::io::{Read, Write};
 
     let mut input = String::new();
-    if let Err(err) = std::io::stdin().read_to_string(&mut input) {
+    if let Err(err) = std::io::stdin()
+        .take((ipc::protocol::MAX_FRAME_BYTES + 1) as u64)
+        .read_to_string(&mut input)
+    {
         eprintln!("niribar: failed to read stdin: {err}");
         return DMENU_USAGE_EXIT;
     }
 
+    if input.len() > ipc::protocol::MAX_FRAME_BYTES {
+        eprintln!("niribar: dmenu input exceeds 1 MiB");
+        return DMENU_USAGE_EXIT;
+    }
     let entries = match parse_dmenu_stdin(&input, &options) {
         Ok(entries) => entries,
         Err(err) => {
@@ -155,7 +165,9 @@ fn send_dmenu_request(
     stream.shutdown(std::net::Shutdown::Write)?;
 
     let mut response_bytes = Vec::new();
-    stream.read_to_end(&mut response_bytes)?;
+    stream
+        .take((ipc::protocol::MAX_FRAME_BYTES + ipc::protocol::FRAMED_MAGIC.len() + 9) as u64)
+        .read_to_end(&mut response_bytes)?;
     ipc::decode_response_frame(&response_bytes)
 }
 

@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Implement Exact Output Target Lists
 
@@ -19,3 +19,12 @@ Implement **Output Target** list semantics for Bars. A Bar may use one exact inc
 ## Blocked by
 
 - .scratch/domain-alignment/issues/02-replace-per-output-bar-overrides-with-output-targets.md
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/config/validate.rs; src/app/surfaces.rs; src/app/niri.rs. Evidence: configuration, output matching, per-surface and Niri tests.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

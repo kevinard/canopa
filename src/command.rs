@@ -10,6 +10,31 @@ pub const MAX_COMMAND_OUTPUT_BYTES: usize = 4096;
 
 use tokio::io::AsyncReadExt;
 
+/// Lifetime guard for a command tree we own. Desktop launches deliberately do
+/// not use this guard: their lifetime is independent of the bar.
+#[derive(Debug)]
+pub(crate) struct ProcessGroup(std::sync::atomic::AtomicU32);
+
+impl ProcessGroup {
+    pub(crate) fn new(id: Option<u32>) -> Self {
+        Self(std::sync::atomic::AtomicU32::new(id.unwrap_or(0)))
+    }
+
+    pub(crate) fn terminate(&self) {
+        if let Some(pid) = rustix::process::Pid::from_raw(
+            self.0.swap(0, std::sync::atomic::Ordering::AcqRel) as i32,
+        ) {
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        }
+    }
+}
+
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        self.terminate();
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum CaptureResult {
     Success(String),
@@ -126,7 +151,9 @@ pub async fn run_command_capture_stdout(
     let mut child = tokio_command(spec);
     child.stdout(std::process::Stdio::piped());
     child.kill_on_drop(true);
+    child.process_group(0);
     let mut child = child.spawn()?;
+    let group = ProcessGroup::new(child.id());
     let mut stdout = child
         .stdout
         .take()
@@ -141,6 +168,7 @@ pub async fn run_command_capture_stdout(
         tokio::select! {
             biased;
             _ = &mut deadline => {
+                group.terminate();
                 kill_and_wait(&mut child).await;
                 return Ok(CaptureResult::TimedOut);
             }
@@ -160,6 +188,7 @@ pub async fn run_command_capture_stdout(
     tokio::select! {
         biased;
         _ = &mut deadline => {
+            group.terminate();
             kill_and_wait(&mut child).await;
             Ok(CaptureResult::TimedOut)
         }
@@ -213,13 +242,17 @@ pub fn spawn_command_with_timeout_fire_and_forget(
     spec: CommandSpec<'_>,
     timeout: std::time::Duration,
 ) -> std::io::Result<SpawnResult> {
-    let mut child = std_command(spec).spawn()?;
+    use std::os::unix::process::CommandExt;
+    let mut child = std_command(spec).process_group(0).spawn()?;
+    let group = ProcessGroup::new(Some(child.id()));
     std::thread::spawn(move || {
+        let _group = group;
         let deadline = std::time::Instant::now() + timeout;
         loop {
             match child.try_wait() {
                 Ok(Some(_)) => return,
                 Ok(None) if std::time::Instant::now() >= deadline => {
+                    _group.terminate();
                     let _ = child.kill();
                     let _ = child.wait();
                     return;
@@ -599,5 +632,26 @@ mod tests {
             .unwrap();
 
         assert_eq!(out, CaptureResult::Success("hello world".to_string()));
+    }
+    #[tokio::test]
+    async fn command_timeout_terminates_descendants() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("survived");
+        let command = format!("sh -c 'sleep 0.3; touch {}' & wait", marker.display());
+        assert_eq!(
+            run_command_capture_stdout(
+                CommandSpec::Shell(&command),
+                Duration::from_millis(50),
+                4096
+            )
+            .await
+            .unwrap(),
+            CaptureResult::TimedOut
+        );
+        tokio::time::sleep(Duration::from_millis(450)).await;
+        assert!(
+            !marker.exists(),
+            "descendant performed work after the command timeout"
+        );
     }
 }

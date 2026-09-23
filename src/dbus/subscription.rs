@@ -1,40 +1,9 @@
-//! Generic builder for D-Bus subscription streams.
-//!
-//! Each D-Bus subscription in this crate follows the same three-state shape:
-//! spawn a task that pushes updates onto an mpsc channel, emit a mapped
-//! `Message` for each update, and terminate after the channel closes.
-//!
-//! This module encapsulates that shape so each D-Bus backend only supplies
-//! (a) the task body and (b) the message-mapping closures.
-
+//! Recovering subscriptions with bounded backoff. Backends must stop when the
+//! receiver closes; each retry gets a fresh channel and fresh service proxies.
 use iced::futures::{Stream, stream};
-use std::{pin::Pin, sync::Arc};
+use std::{pin::Pin, time::Duration};
 use tokio::sync::mpsc;
 
-type SpawnFn<T> = Box<dyn FnOnce(mpsc::UnboundedSender<Result<T, ()>>) + Send>;
-
-/// Internal state for the generated stream.
-enum SubState<T, M> {
-    Init {
-        spawn: Option<SpawnFn<T>>,
-        on_ok: Arc<dyn Fn(T) -> M + Send + Sync>,
-        on_err: Arc<dyn Fn() -> M + Send + Sync>,
-    },
-    Running {
-        rx: mpsc::UnboundedReceiver<Result<T, ()>>,
-        on_ok: Arc<dyn Fn(T) -> M + Send + Sync>,
-        on_err: Arc<dyn Fn() -> M + Send + Sync>,
-    },
-    Done,
-}
-
-/// Build a boxed iced subscription stream from:
-/// - `spawn`: starts the backend task, taking the `tx` side of the channel.
-/// - `on_ok`: maps a successful update into the outgoing `Message`.
-/// - `on_err`: produces the single "unavailable" message emitted before termination.
-///
-/// The returned stream emits one `Message` per update, followed by a single
-/// `on_err` message if the backend task exits or the channel closes.
 pub(super) fn build<T, M, Spawn, OnOk, OnErr>(
     spawn: Spawn,
     on_ok: OnOk,
@@ -43,76 +12,100 @@ pub(super) fn build<T, M, Spawn, OnOk, OnErr>(
 where
     T: Send + 'static,
     M: Send + 'static,
-    Spawn: FnOnce(mpsc::UnboundedSender<Result<T, ()>>) + Send + 'static,
-    OnOk: Fn(T) -> M + Send + Sync + 'static,
-    OnErr: Fn() -> M + Send + Sync + 'static,
+    Spawn: Fn(mpsc::UnboundedSender<Result<T, ()>>) + Send + 'static,
+    OnOk: Fn(T) -> M + Send + 'static,
+    OnErr: Fn() -> M + Send + 'static,
 {
-    let init = SubState::Init {
-        spawn: Some(Box::new(spawn)),
-        on_ok: Arc::new(on_ok),
-        on_err: Arc::new(on_err),
-    };
-
-    Box::pin(stream::unfold(init, |state| async move {
-        match state {
-            SubState::Init {
-                spawn,
-                on_ok,
-                on_err,
-            } => {
-                let (tx, mut rx) = mpsc::unbounded_channel();
-                if let Some(f) = spawn {
-                    f(tx);
+    let state = (
+        spawn,
+        on_ok,
+        on_err,
+        None::<mpsc::UnboundedReceiver<Result<T, ()>>>,
+        Duration::ZERO,
+        false,
+    );
+    Box::pin(stream::unfold(
+        state,
+        |(spawn, on_ok, on_err, mut rx, mut delay, mut unavailable)| async move {
+            loop {
+                if rx.is_none() {
+                    tokio::time::sleep(delay).await;
+                    let (tx, receiver) = mpsc::unbounded_channel();
+                    spawn(tx);
+                    rx = Some(receiver);
                 }
-                match rx.recv().await {
+                match rx.as_mut().expect("receiver initialized").recv().await {
                     Some(Ok(value)) => {
-                        let msg = on_ok(value);
-                        Some((msg, SubState::Running { rx, on_ok, on_err }))
+                        let message = on_ok(value);
+                        return Some((message, (spawn, on_ok, on_err, rx, Duration::ZERO, false)));
                     }
-                    _ => Some((on_err(), SubState::Done)),
+                    _ => {
+                        rx = None;
+                        delay = (delay * 2)
+                            .max(Duration::from_millis(250))
+                            .min(Duration::from_secs(30));
+                        if !unavailable {
+                            unavailable = true;
+                            let message = on_err();
+                            return Some((message, (spawn, on_ok, on_err, rx, delay, unavailable)));
+                        }
+                    }
                 }
             }
-            SubState::Running {
-                mut rx,
-                on_ok,
-                on_err,
-            } => match rx.recv().await {
-                Some(Ok(value)) => {
-                    let msg = on_ok(value);
-                    Some((msg, SubState::Running { rx, on_ok, on_err }))
-                }
-                _ => Some((on_err(), SubState::Done)),
-            },
-            SubState::Done => None,
+        },
+    ))
+}
+
+/// A service can disappear without emitting a final property change. Watch its
+/// owner as well as its data, and cancel the backend promptly with its subscriber.
+pub(super) async fn while_service_owned<T>(
+    conn: &zbus::Connection,
+    service: &str,
+    tx: &mpsc::UnboundedSender<T>,
+    work: impl std::future::Future,
+) {
+    use iced::futures::StreamExt;
+    let Ok(dbus) = zbus::fdo::DBusProxy::new(conn).await else {
+        return;
+    };
+    let Ok(mut owners) = dbus.receive_name_owner_changed().await else {
+        return;
+    };
+    tokio::pin!(work);
+    loop {
+        tokio::select! {
+            _ = tx.closed() => return,
+            _ = &mut work => return,
+            signal = owners.next() => {
+                let Some(signal) = signal else { return };
+                if let Ok(args) = signal.args()
+                    && args.name().as_str() == service
+                { return; }
+            }
         }
-    }))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use iced::futures::StreamExt;
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn emits_ok_messages_then_terminates_with_err() {
-        let mut stream = build::<u32, &'static str, _, _, _>(
-            |tx| {
-                tokio::spawn(async move {
-                    let _ = tx.send(Ok(1));
-                    let _ = tx.send(Ok(2));
-                    // dropping tx closes the channel and triggers on_err
-                });
+    #[tokio::test]
+    async fn recovers_after_initial_failure_and_later_disconnect() {
+        let attempts = std::sync::atomic::AtomicUsize::new(0);
+        let mut stream = build(
+            move |tx| {
+                let attempt = attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if attempt > 0 {
+                    let _ = tx.send(Ok(attempt));
+                }
             },
-            |n| match n {
-                1 => "one",
-                2 => "two",
-                _ => "other",
-            },
-            || "unavailable",
+            Some,
+            || None,
         );
-        assert_eq!(stream.next().await, Some("one"));
-        assert_eq!(stream.next().await, Some("two"));
-        assert_eq!(stream.next().await, Some("unavailable"));
-        assert_eq!(stream.next().await, None);
+        assert_eq!(stream.next().await, Some(None));
+        assert_eq!(stream.next().await, Some(Some(1)));
+        assert_eq!(stream.next().await, Some(None));
+        assert_eq!(stream.next().await, Some(Some(2)));
     }
 }

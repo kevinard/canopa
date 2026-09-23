@@ -249,6 +249,10 @@ impl MenuEvent {
 
 #[derive(Debug, Clone)]
 pub enum PanelEvent {
+    InstalledAppsLoaded {
+        generation: u64,
+        apps: Vec<crate::desktop_apps::DesktopApplication>,
+    },
     Open {
         origin_window: iced::window::Id,
         origin: crate::surface::panel::PanelOrigin,
@@ -287,6 +291,7 @@ pub enum PanelEvent {
 impl PanelEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
+            PanelEvent::InstalledAppsLoaded { .. } => "Panel::InstalledAppsLoaded",
             PanelEvent::Open { .. } => "Panel::Open",
             PanelEvent::Close => "Panel::Close",
             PanelEvent::Toggle { .. } => "Panel::Toggle",

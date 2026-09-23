@@ -48,6 +48,7 @@ pub(super) struct FocusedWindowModule {
 }
 
 impl FocusedWindowModule {
+    #[cfg(test)]
     pub(super) fn new(
         id: crate::modules::ModuleId,
         format: crate::config::FormatConfig,
@@ -92,6 +93,7 @@ impl FocusedWindowModule {
         })
     }
 
+    #[cfg(test)]
     fn styled_segments_with_default(
         &self,
         info: &FocusedWindowInfo,

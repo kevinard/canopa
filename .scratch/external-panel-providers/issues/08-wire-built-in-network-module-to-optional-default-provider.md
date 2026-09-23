@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Wire Built-In Network Module To Optional Default Provider
 
@@ -31,3 +31,12 @@ This slice proves how built-in modules can launch optional external providers wh
 
 - [01 - Open Provider Action Shows Provider Failure Panel](01-open-provider-action-shows-provider-failure-panel.md)
 - [04 - Own External Panel Session Lifecycle In Foreground](04-own-external-panel-session-lifecycle-in-foreground.md)
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/external_panel.rs; src/external_panel/protocol.rs; src/app/external_panel_session.rs. Evidence: provider protocol, transport and lifecycle tests.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

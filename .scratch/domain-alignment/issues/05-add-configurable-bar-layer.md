@@ -18,3 +18,12 @@ Expose **Layer** as a configurable property of each Bar. Bar Surfaces use the La
 ## Blocked by
 
 None - can start immediately
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/config/validate.rs; src/app/surfaces.rs; src/app/niri.rs. Evidence: configuration, output matching, per-surface and Niri tests.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

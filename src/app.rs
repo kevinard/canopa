@@ -349,9 +349,30 @@ impl App {
                     system_bus = connections.system.is_some(),
                     "dbus connections ready"
                 );
-                // Store shared handles; modules borrow clones of these (AR5, Story 5.1).
+                // Invalidate state before recomputing subscriptions; canceled
+                // source streams cannot deliver their final unavailable event.
+                let mut tasks = Vec::new();
+                if connections.system.is_none() {
+                    tasks.push(self.handle_module_runtime_event(
+                        messages::ModuleRuntimeEvent::Battery(
+                            crate::modules::battery::BatteryEvent::Unavailable,
+                        ),
+                    ));
+                    tasks.push(self.handle_module_runtime_event(
+                        messages::ModuleRuntimeEvent::Network(
+                            crate::modules::network::NetworkEvent::Unavailable,
+                        ),
+                    ));
+                }
+                if connections.session.is_none() {
+                    tasks.push(
+                        self.handle_tray_runtime_event(messages::TrayRuntimeEvent::Host(
+                            crate::dbus::sni::host::TrayEvent::Snapshot(vec![]),
+                        )),
+                    );
+                }
                 self.shared.dbus = connections;
-                Task::none()
+                Task::batch(tasks)
             }
             Message::Tray(event) => self.handle_tray_runtime_event(event),
             Message::NiriFocusWorkspace { id } => {

@@ -274,3 +274,23 @@ The Rust protocol serializes provider events as enum variants with these fields:
 - `close`: no fields.
 
 Secret text input values are provider-owned form data. Niribar does not log typed event payload values in provider diagnostics.
+
+
+## Shutdown and Wi-Fi validation (2026-09-23)
+
+Panels disappear immediately on close. Generic providers retain a 250 ms exit
+grace. The `wifi` provider name has a 35-second process-cleanup allowance: a
+pending NetworkManager profile-creation call is bounded to 30 seconds and
+rollback calls to two seconds. This lets a delayed creation reply be consumed
+and its temporary activation/profile retired before the host kills the process
+group. Successful NetworkManager profiles are saved after activation; iwd owns
+its usual known-network persistence. Cleanup is best effort if the daemon stops
+responding or the entire bar is forcibly terminated.
+
+Adapter tests use private D-Bus services, including delayed operations and
+cancellation. Real radio, policy-agent and credential persistence behavior still
+needs the [desktop acceptance matrix](manual-validation.md).
+
+Wire references: [NetworkManager manager API](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.html),
+[iwd station API](https://kernel.googlesource.com/pub/scm/network/wireless/iwd/%2B/master/doc/station-api.txt),
+[iwd credential agent API](https://kernel.googlesource.com/pub/scm/network/wireless/iwd/%2B/master/doc/agent-api.txt).

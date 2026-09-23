@@ -412,6 +412,7 @@ impl Default for VolumeConfig {
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
 #[derive(Debug, Clone)]
 pub enum ModuleParams {
+    #[cfg(test)]
     None,
     Battery(BatteryConfig),
     Network(NetworkConfig),

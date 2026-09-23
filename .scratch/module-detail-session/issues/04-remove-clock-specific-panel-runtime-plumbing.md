@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Remove Clock-Specific Panel Runtime Plumbing
 
@@ -23,3 +23,12 @@ This slice should leave **Panel Runtime** responsible for generic panel lifecycl
 ## Blocked by
 
 - .scratch/module-detail-session/issues/03-migrate-clock-calendar-to-module-detail-session.md
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/modules.rs; src/app/module_runtime.rs; src/modules/clock.rs. Evidence: module detail and clock/calendar tests.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

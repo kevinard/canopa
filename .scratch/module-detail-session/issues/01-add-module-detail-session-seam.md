@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Add the Module Detail Session Seam
 
@@ -23,3 +23,12 @@ This slice should establish the seam end-to-end without migrating clock behavior
 ## Blocked by
 
 None - can start immediately
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/modules.rs; src/app/module_runtime.rs; src/modules/clock.rs. Evidence: module detail and clock/calendar tests.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

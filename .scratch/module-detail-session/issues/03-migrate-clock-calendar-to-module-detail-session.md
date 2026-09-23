@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Migrate Clock Calendar to a Module Detail Session
 
@@ -24,3 +24,12 @@ The user-facing clock calendar behavior should remain unchanged: opening clock *
 
 - .scratch/module-detail-session/issues/01-add-module-detail-session-seam.md
 - .scratch/module-detail-session/issues/02-route-opaque-module-detail-messages.md
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/modules.rs; src/app/module_runtime.rs; src/modules/clock.rs. Evidence: module detail and clock/calendar tests.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

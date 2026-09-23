@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Join Hidden Personal Wi-Fi Networks From Custom List Values
 
@@ -28,3 +28,12 @@ This slice covers hidden personal networks while keeping enterprise/EAP setup ou
 
 - [03 - Collect And Save Personal Wi-Fi Credentials Through Iwd](03-collect-and-save-personal-wifi-credentials-through-iwd.md)
 - [External provider issue 12 - Support External Custom List Values](../../external-panel-providers/issues/12-support-external-custom-list-values.md)
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/wifi_provider.rs; src/wifi_provider/backends.rs; src/wifi_provider/session.rs. Evidence: tests/wifi_provider.rs plus isolated D-Bus adapter and delayed-session tests; hardware validation remains pending.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

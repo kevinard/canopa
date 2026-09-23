@@ -63,6 +63,7 @@ pub(super) struct VolumeModule {
 }
 
 impl VolumeModule {
+    #[cfg(test)]
     pub(super) fn new(
         id: crate::modules::ModuleId,
         step: u8,

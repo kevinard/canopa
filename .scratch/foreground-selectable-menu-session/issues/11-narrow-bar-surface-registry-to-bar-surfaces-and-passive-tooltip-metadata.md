@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Narrow Bar Surface Registry To Bar Surfaces And Passive Tooltip Metadata
 
@@ -28,3 +28,12 @@ This slice should update tests so they no longer preserve the old interactive ov
 - .scratch/foreground-selectable-menu-session/issues/03-route-panel-entry-points-through-foreground.md
 - .scratch/foreground-selectable-menu-session/issues/04-route-menu-keyboard-and-focus-close-paths-through-foreground.md
 - .scratch/foreground-selectable-menu-session/issues/08-use-selectable-menu-session-for-sni-menus-without-search.md
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/app/foreground.rs; src/app/selectable_menu_session.rs; src/app/panel_runtime.rs. Evidence: Foreground, menu-session and panel tests; repeated D-Bus menu signal regression.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

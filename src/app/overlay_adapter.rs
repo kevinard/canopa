@@ -101,15 +101,41 @@ impl super::App {
                     tasks.push(super::panel::request_panel_search_focus());
                 }
                 super::foreground::ForegroundEffect::LoadInstalledAppsThenPreparePanel(pending) => {
-                    let apps = self.load_installed_apps_for_panel();
-                    let effects = self.foreground.handle(
-                        super::foreground::ForegroundIntent::PanelInstalledAppsLoaded {
-                            pending,
+                    let generation = self.foreground.apps_generation();
+                    #[cfg(test)]
+                    {
+                        let _ = pending;
+                        let apps = self.load_installed_apps_for_panel();
+                        let effects = self.foreground.installed_apps_loaded(
+                            generation,
                             apps,
-                            menus: self.config.menus.as_slice(),
-                        },
-                    );
-                    tasks.extend(self.apply_foreground_effects(effects));
+                            &self.config.menus,
+                        );
+                        tasks.extend(self.apply_foreground_effects(effects));
+                    }
+                    #[cfg(not(test))]
+                    {
+                        let _ = pending;
+                        tasks.push(iced::Task::perform(
+                            async {
+                                tokio::task::spawn_blocking(
+                                    crate::desktop_apps::discover_installed_applications,
+                                )
+                                .await
+                                .ok()
+                                .and_then(Result::ok)
+                                .unwrap_or_default()
+                            },
+                            move |apps| {
+                                super::Message::Panel(
+                                    super::messages::PanelEvent::InstalledAppsLoaded {
+                                        generation,
+                                        apps,
+                                    },
+                                )
+                            },
+                        ));
+                    }
                 }
                 super::foreground::ForegroundEffect::RunPanelAction {
                     origin_window,

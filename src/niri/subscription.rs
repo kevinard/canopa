@@ -1,10 +1,11 @@
 use iced::futures::stream;
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use niri_ipc::{Event, Request, Response};
-use std::io::{self, BufRead, BufReader, Write};
-use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
-use tokio::sync::mpsc;
+use std::io;
+use std::path::PathBuf;
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::UnixStream;
 
 use crate::app::Message;
 use crate::app::messages::AppNiriEvent;
@@ -44,138 +45,141 @@ fn looks_like_unknown_event_variant(line: &str, error: &serde_json::Error) -> bo
     )
 }
 
-fn connect_event_stream() -> io::Result<BufReader<UnixStream>> {
-    let socket_path = std::env::var_os(SOCKET_PATH_ENV).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("{SOCKET_PATH_ENV} is not set, are you running this within niri?"),
-        )
-    })?;
-    let stream = UnixStream::connect(std::path::PathBuf::from(socket_path))?;
+async fn connect_event_stream(path: &std::path::Path) -> io::Result<BufReader<UnixStream>> {
+    let stream = UnixStream::connect(path).await?;
     let mut reader = BufReader::new(stream);
-
     let mut request = serde_json::to_string(&Request::EventStream).unwrap();
     request.push('\n');
-    reader.get_mut().write_all(request.as_bytes())?;
-
+    reader.get_mut().write_all(request.as_bytes()).await?;
     let mut reply_line = String::new();
-    reader.read_line(&mut reply_line)?;
+    reader.read_line(&mut reply_line).await?;
     let reply = serde_json::from_str::<niri_ipc::Reply>(&reply_line)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     match reply {
-        Ok(Response::Handled) => {
-            let _ = reader.get_mut().shutdown(Shutdown::Write);
-            Ok(reader)
-        }
-        Ok(other) => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("unexpected EventStream response: {other:?}"),
-        )),
-        Err(message) => Err(io::Error::new(io::ErrorKind::ConnectionRefused, message)),
+        Ok(Response::Handled) => Ok(reader),
+        other => Err(io::Error::other(format!(
+            "unexpected EventStream response: {other:?}"
+        ))),
     }
 }
 
-/// Internal subscription state machine.
-enum NiriSubState {
-    /// Not yet connected; will attempt connection on next poll.
-    Disconnected,
-    /// Connected; receiving events from the background thread via channel.
-    Running(mpsc::UnboundedReceiver<Result<Event, String>>),
-    /// Terminal state — no Niri socket or connection dropped. Stream ends here.
-    Done,
+fn event_stream(path: Option<PathBuf>) -> impl iced::futures::Stream<Item = Message> {
+    stream::unfold(
+        (path, None::<BufReader<UnixStream>>, Duration::ZERO, false),
+        |(path, mut reader, mut delay, mut unavailable)| async move {
+            loop {
+                if reader.is_none() {
+                    tokio::time::sleep(delay).await;
+                    let connected = match &path {
+                        Some(path) => {
+                            tokio::time::timeout(Duration::from_secs(2), connect_event_stream(path))
+                                .await
+                                .ok()
+                                .and_then(Result::ok)
+                        }
+                        None => None,
+                    };
+                    if let Some(connected) = connected {
+                        return Some((
+                            Message::Niri(AppNiriEvent::Ipc(NiriEvent::Connected)),
+                            (path, Some(connected), Duration::ZERO, false),
+                        ));
+                    }
+                } else {
+                    let mut line = String::new();
+                    if let Ok(count) = reader.as_mut().unwrap().read_line(&mut line).await
+                        && count > 0
+                    {
+                        match decode_event_line(&line) {
+                            Ok(DecodedNiriEvent::Event(event)) if should_emit_event(&event) => {
+                                return Some((
+                                    Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(event))),
+                                    (path, reader, delay, false),
+                                ));
+                            }
+                            Ok(_) => continue,
+                            Err(_) => {}
+                        }
+                    }
+                    reader = None;
+                }
+                delay = (delay * 2)
+                    .max(Duration::from_millis(250))
+                    .min(Duration::from_secs(30));
+                if !unavailable {
+                    unavailable = true;
+                    return Some((
+                        Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)),
+                        (path, reader, delay, unavailable),
+                    ));
+                }
+            }
+        },
+    )
 }
 
-/// Returns an Iced Subscription that connects to the Niri IPC socket and emits
-/// `Message::NiriEvent(NiriEvent)` for each event from the compositor.
-///
-/// Emits `NiriEvent::Unavailable` (once) and terminates if the socket is unreachable.
-/// Uses a single OS thread for blocking I/O, bridged to async via mpsc channel (AR4).
+/// Async socket ownership follows the subscription, including cancellation.
 pub fn niri_subscription() -> iced::Subscription<Message> {
     iced::Subscription::run_with(NiriSubscriptionKey, |_: &NiriSubscriptionKey| {
-        stream::unfold(NiriSubState::Disconnected, |state| async move {
-            match state {
-                NiriSubState::Disconnected => {
-                    // Attempt connection on a blocking thread (socket open may block briefly).
-                    let result =
-                        tokio::task::spawn_blocking(|| -> Option<BufReader<UnixStream>> {
-                            connect_event_stream().ok()
-                        })
-                        .await;
-
-                    match result {
-                        Ok(Some(mut reader)) => {
-                            // Connected — hand off blocking read loop to an OS thread.
-                            let (tx, rx) = mpsc::unbounded_channel();
-                            std::thread::spawn(move || {
-                                let mut line = String::new();
-                                loop {
-                                    line.clear();
-                                    match reader.read_line(&mut line) {
-                                        Ok(0) => {
-                                            let _ = tx.send(Err("niri event stream closed".into()));
-                                            break;
-                                        }
-                                        Ok(_) => match decode_event_line(&line) {
-                                            Ok(DecodedNiriEvent::Event(event)) => {
-                                                if tx.send(Ok(event)).is_err() {
-                                                    break; // Receiver dropped — bar shutting down
-                                                }
-                                            }
-                                            Ok(DecodedNiriEvent::Ignored) => {}
-                                            Err(error) => {
-                                                let _ = tx.send(Err(error));
-                                                break;
-                                            }
-                                        },
-                                        Err(error) => {
-                                            let _ = tx.send(Err(error.to_string()));
-                                            break;
-                                        }
-                                    }
-                                }
-                            });
-                            Some((
-                                Message::Niri(AppNiriEvent::Ipc(NiriEvent::Connected)),
-                                NiriSubState::Running(rx),
-                            ))
-                        }
-                        _ => {
-                            // No Niri socket — graceful degradation (FR21, AC #2).
-                            // Do NOT log to stderr. Emit once and terminate.
-                            Some((
-                                Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)),
-                                NiriSubState::Done,
-                            ))
-                        }
-                    }
-                }
-                NiriSubState::Running(mut rx) => loop {
-                    match rx.recv().await {
-                        Some(Ok(event)) if should_emit_event(&event) => {
-                            break Some((
-                                Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(event))),
-                                NiriSubState::Running(rx),
-                            ));
-                        }
-                        Some(Ok(_)) => {}
-                        _ => {
-                            // Channel closed or error — treat as disconnection.
-                            break Some((
-                                Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)),
-                                NiriSubState::Done,
-                            ));
-                        }
-                    }
-                },
-                NiriSubState::Done => None, // Stream exhausted; Iced will not restart it.
-            }
-        })
+        event_stream(std::env::var_os(SOCKET_PATH_ENV).map(PathBuf::from))
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn reconnects_after_initial_absence_and_after_eof() {
+        use iced::futures::StreamExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("niri.sock");
+        let events = event_stream(Some(path.clone()));
+        tokio::pin!(events);
+        assert!(matches!(
+            events.next().await,
+            Some(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)))
+        ));
+        let listener = tokio::net::UnixListener::bind(&path).unwrap();
+        let server = tokio::spawn(async move {
+            for _ in 0..2 {
+                let (socket, _) = listener.accept().await.unwrap();
+                let mut reader = BufReader::new(socket);
+                let mut request = String::new();
+                reader.read_line(&mut request).await.unwrap();
+                assert!(matches!(
+                    serde_json::from_str::<Request>(&request).unwrap(),
+                    Request::EventStream
+                ));
+                reader
+                    .get_mut()
+                    .write_all(b"{\"Ok\":\"Handled\"}\n{\"WindowFocusChanged\":{\"id\":7}}\n")
+                    .await
+                    .unwrap();
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(3), async {
+            for _ in 0..2 {
+                assert!(matches!(
+                    events.next().await,
+                    Some(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Connected)))
+                ));
+                assert!(matches!(
+                    events.next().await,
+                    Some(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+                        Event::WindowFocusChanged { id: Some(7) }
+                    ))))
+                ));
+                assert!(matches!(
+                    events.next().await,
+                    Some(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)))
+                ));
+            }
+        })
+        .await
+        .unwrap();
+        server.await.unwrap();
+    }
 
     #[test]
     fn niri_subscription_filters_focus_timestamp_events() {

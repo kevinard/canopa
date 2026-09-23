@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Harden Provider Protocol And Content Validation
 
@@ -31,3 +31,12 @@ This slice makes the platform reliable enough for external domain providers.
 ## Blocked by
 
 - [02 - Render Static External Panel Content After Handshake](02-render-static-external-panel-content-after-handshake.md)
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/external_panel.rs; src/external_panel/protocol.rs; src/app/external_panel_session.rs. Evidence: provider protocol, transport and lifecycle tests.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

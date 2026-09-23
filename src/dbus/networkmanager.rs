@@ -71,6 +71,8 @@ struct NetworkConnData(zbus::Connection);
 impl std::hash::Hash for NetworkConnData {
     fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
         "network-subscription".hash(h);
+        self.0.unique_name().hash(h);
+        self.0.server_guid().hash(h);
     }
 }
 
@@ -86,8 +88,10 @@ fn build_network_stream(
         _,
     >(
         move |tx| {
+            let conn = conn.clone();
             tokio::spawn(async move {
-                let _ = run_network_task(conn, tx).await;
+                let work = run_network_task(conn.clone(), tx.clone());
+                tokio::select! { _ = tx.closed() => {}, _ = work => {} }
             });
         },
         |(connectivity, label)| {
@@ -137,9 +141,27 @@ async fn run_network_task(
         .unwrap_or(false);
 
     if has_nm {
-        run_nm_task(conn, tx).await
+        {
+            crate::dbus::subscription::while_service_owned(
+                &conn,
+                "org.freedesktop.NetworkManager",
+                &tx,
+                run_nm_task(conn.clone(), tx.clone()),
+            )
+            .await;
+            zbus::Error::Failure("NetworkManager disconnected".into())
+        }
     } else if has_nd {
-        run_networkd_task(conn, tx).await
+        {
+            crate::dbus::subscription::while_service_owned(
+                &conn,
+                "org.freedesktop.network1",
+                &tx,
+                run_networkd_task(conn.clone(), tx.clone()),
+            )
+            .await;
+            zbus::Error::Failure("networkd disconnected".into())
+        }
     } else {
         let _ = tx.send(Err(()));
         zbus::Error::Failure("no network backend available".into())

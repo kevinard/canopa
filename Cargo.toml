@@ -2,13 +2,15 @@
 name = "niribar"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.95"
+license = "MIT"
 
 [dependencies]
 accesskit = "0.25.0"
 accesskit_unix = { version = "0.23.0", default-features = false, features = ["tokio"] }
 canopa-panel-protocol = { path = "vendor/canopa-panel-protocol" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
-rustix = { version = "1.1", features = ["fs"] }
+rustix = { version = "1.1", features = ["fs", "process"] }
 iced_layershell = "0.18.0"
 iced = { version = "0.14", default-features = false, features = [
   "image",

@@ -59,6 +59,7 @@ pub(super) struct NetworkModule {
 }
 
 impl NetworkModule {
+    #[cfg(test)]
     pub(super) fn new(
         id: crate::modules::ModuleId,
         icons: crate::config::IconRulesConfig,

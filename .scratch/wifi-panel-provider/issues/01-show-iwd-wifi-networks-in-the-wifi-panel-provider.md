@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Show Iwd Wi-Fi Networks In The Wi-Fi Panel Provider
 
@@ -32,3 +32,12 @@ This slice proves the first real **Wi-Fi Panel Provider** end to end without imp
 - [External provider issue 12 - Support External Custom List Values](../../external-panel-providers/issues/12-support-external-custom-list-values.md)
 - [External provider issue 13 - Resolve Built-In Panel Provider Names](../../external-panel-providers/issues/13-resolve-built-in-panel-provider-names.md)
 - [External provider issue 14 - Close Provider Sessions Gracefully And Capture Diagnostics](../../external-panel-providers/issues/14-close-provider-sessions-gracefully-and-capture-diagnostics.md)
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/wifi_provider.rs; src/wifi_provider/backends.rs; src/wifi_provider/session.rs. Evidence: tests/wifi_provider.rs plus isolated D-Bus adapter and delayed-session tests; hardware validation remains pending.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

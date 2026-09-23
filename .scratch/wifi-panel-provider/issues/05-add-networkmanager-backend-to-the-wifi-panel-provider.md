@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Add NetworkManager Backend To The Wi-Fi Panel Provider
 
@@ -29,3 +29,12 @@ This slice completes the documented backend policy while preserving the provider
 - [02 - Connect Known And Open Wi-Fi Networks Through Iwd](02-connect-known-and-open-wifi-networks-through-iwd.md)
 - [03 - Collect And Save Personal Wi-Fi Credentials Through Iwd](03-collect-and-save-personal-wifi-credentials-through-iwd.md)
 - [04 - Join Hidden Personal Wi-Fi Networks From Custom List Values](04-join-hidden-personal-wifi-networks-from-custom-list-values.md)
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/wifi_provider.rs; src/wifi_provider/backends.rs; src/wifi_provider/session.rs. Evidence: tests/wifi_provider.rs plus isolated D-Bus adapter and delayed-session tests; hardware validation remains pending.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

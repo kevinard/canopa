@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: ready-for-human
 
 # Collect And Save Personal Wi-Fi Credentials Through Iwd
 
@@ -28,3 +28,12 @@ This slice completes the common “join a new secured network” path through th
 
 - [02 - Connect Known And Open Wi-Fi Networks Through Iwd](02-connect-known-and-open-wifi-networks-through-iwd.md)
 - [External provider issue 06 - Render External Text Input With Secret Mode](../../external-panel-providers/issues/06-render-external-text-input-with-secret-mode.md)
+
+## Implementation review — 2026-09-23
+
+Implementation is present in src/wifi_provider.rs; src/wifi_provider/backends.rs; src/wifi_provider/session.rs. Evidence: tests/wifi_provider.rs plus isolated D-Bus adapter and delayed-session tests; hardware validation remains pending.
+
+Routed to human acceptance review to avoid reimplementing an existing feature.
+The original acceptance boxes are retained; this routing change does not certify
+manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
+for known limits and remaining checks.

@@ -1,3 +1,7 @@
+pub mod backends;
+pub mod cleanup;
+pub mod session;
+
 use std::future::Future;
 use std::pin::Pin;
 
@@ -101,12 +105,26 @@ pub struct WifiSnapshot {
     pub scanning: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct WifiConnectRequest {
     pub network_id: Option<String>,
     pub label: String,
     pub credential: Option<String>,
     pub hidden: bool,
+}
+
+impl std::fmt::Debug for WifiConnectRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WifiConnectRequest")
+            .field("network_id", &self.network_id)
+            .field("label", &self.label)
+            .field(
+                "credential",
+                &self.credential.as_ref().map(|_| "[redacted]"),
+            )
+            .field("hidden", &self.hidden)
+            .finish()
+    }
 }
 
 pub trait WifiControlBackend {
@@ -138,6 +156,7 @@ pub struct WifiPanelProvider<B> {
     connecting_network_id: Option<String>,
     failed_network_id: Option<String>,
     credential_prompt: Option<CredentialPrompt>,
+    progress: Option<tokio::sync::mpsc::UnboundedSender<ExternalPanelDocument>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,7 +185,43 @@ where
             connecting_network_id: None,
             failed_network_id: None,
             credential_prompt: None,
+            progress: None,
         }
+    }
+
+    pub fn stream_progress(
+        &mut self,
+        sender: tokio::sync::mpsc::UnboundedSender<ExternalPanelDocument>,
+    ) {
+        self.progress = Some(sender);
+    }
+
+    fn progress_documents(&self) -> Vec<ExternalPanelDocument> {
+        let content = self.render();
+        if let Some(sender) = &self.progress {
+            let _ = sender.send(content);
+            Vec::new()
+        } else {
+            vec![content]
+        }
+    }
+
+    fn completed(
+        &self,
+        mut documents: Vec<ExternalPanelDocument>,
+        content: ExternalPanelDocument,
+    ) -> Vec<ExternalPanelDocument> {
+        documents.push(content);
+        documents
+    }
+
+    pub async fn synchronize(&mut self) -> Result<ExternalPanelDocument, WifiBackendError> {
+        self.snapshot = normalize_snapshot(self.backend.initial_snapshot().await?);
+        Ok(if self.credential_prompt.is_some() {
+            self.render_credential_prompt()
+        } else {
+            self.render()
+        })
     }
 
     pub async fn initial_content(&mut self) -> Result<ExternalPanelDocument, WifiBackendError> {
@@ -176,6 +231,7 @@ where
 
     pub async fn refresh(&mut self) -> Result<ExternalPanelDocument, WifiBackendError> {
         self.snapshot.scanning = true;
+        self.progress_documents();
         self.snapshot = normalize_snapshot(self.backend.scan().await?);
         Ok(self.render())
     }
@@ -294,10 +350,10 @@ where
 
         self.failed_network_id = None;
         self.connecting_network_id = Some(network.id.clone());
-        let connecting = self.render();
+        let connecting = self.progress_documents();
         let request = WifiConnectRequest {
             network_id: Some(network.id.clone()),
-            label: network.label,
+            label: network.label.clone(),
             credential: None,
             hidden: false,
         };
@@ -306,12 +362,25 @@ where
             Ok(snapshot) => {
                 self.connecting_network_id = None;
                 self.snapshot = normalize_snapshot(snapshot);
-                Ok(vec![connecting, self.render()])
+                Ok(self.completed(connecting, self.render()))
+            }
+            Err(err)
+                if network.security == WifiSecurity::Personal
+                    && err.category() == WifiBackendErrorCategory::CredentialRejected =>
+            {
+                self.connecting_network_id = None;
+                self.credential_prompt = Some(CredentialPrompt {
+                    network,
+                    value: String::new(),
+                    error: Some("Credential required".into()),
+                    hidden: false,
+                });
+                Ok(self.completed(connecting, self.render_credential_prompt()))
             }
             Err(err) => {
                 self.connecting_network_id = None;
                 self.failed_network_id = Some(network.id);
-                Ok(vec![connecting, self.render_error(err.category())])
+                Ok(self.completed(connecting, self.render_error(err.category())))
             }
         }
     }
@@ -326,8 +395,16 @@ where
 
         self.credential_prompt = None;
         self.failed_network_id = None;
+        if !self
+            .snapshot
+            .networks
+            .iter()
+            .any(|network| network.id == prompt.network.id)
+        {
+            self.snapshot.networks.push(prompt.network.clone());
+        }
         self.connecting_network_id = Some(prompt.network.id.clone());
-        let connecting = self.render();
+        let connecting = self.progress_documents();
         let request = WifiConnectRequest {
             network_id: if prompt.hidden {
                 None
@@ -343,7 +420,7 @@ where
             Ok(snapshot) => {
                 self.connecting_network_id = None;
                 self.snapshot = normalize_snapshot(snapshot);
-                Ok(vec![connecting, self.render()])
+                Ok(self.completed(connecting, self.render()))
             }
             Err(err) if err.category() == WifiBackendErrorCategory::CredentialRejected => {
                 self.connecting_network_id = None;
@@ -356,8 +433,12 @@ where
             }
             Err(err) => {
                 self.connecting_network_id = None;
-                self.failed_network_id = Some(prompt.network.id);
-                Ok(vec![connecting, self.render_error(err.category())])
+                self.credential_prompt = Some(CredentialPrompt {
+                    value: String::new(),
+                    error: Some(user_message_for_error(err.category()).into()),
+                    ..prompt
+                });
+                Ok(self.completed(connecting, self.render_credential_prompt()))
             }
         }
     }
@@ -375,7 +456,7 @@ where
             "Choose a Wi-Fi network".to_string()
         };
 
-        ExternalPanelDocument {
+        let mut document = ExternalPanelDocument {
             elements: vec![
                 ExternalPanelElement::Status {
                     title: "Wi-Fi".into(),
@@ -398,7 +479,11 @@ where
                     search_query: String::new(),
                 },
             ],
+        };
+        if self.connecting_network_id.is_some() && !self.capabilities.can_scan_while_connecting {
+            document.elements.retain(|element| !matches!(element, ExternalPanelElement::Button { id, .. } if id == "refresh"));
         }
+        document
     }
 
     fn render_error(&self, category: WifiBackendErrorCategory) -> ExternalPanelDocument {
@@ -455,7 +540,7 @@ where
             id: network.id.clone(),
             label: network.label.clone(),
             description: Some(network_description(network)),
-            disabled: connecting,
+            disabled: self.connecting_network_id.is_some(),
             active: network.active,
             status: Some(if connecting {
                 "connecting".into()

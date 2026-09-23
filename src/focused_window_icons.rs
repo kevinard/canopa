@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ApplicationIcon {
+pub struct ApplicationIcon {
     pub(crate) name: String,
     pub(crate) path: Option<PathBuf>,
 }

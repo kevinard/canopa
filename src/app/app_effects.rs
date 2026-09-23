@@ -311,14 +311,16 @@ impl App {
 
         #[cfg(not(test))]
         {
-            let Some(app) = self
-                .load_installed_apps_for_panel()
-                .into_iter()
-                .find(|app| app.id == id)
-            else {
-                return;
-            };
-            let _ = crate::command::spawn_desktop_application_fire_and_forget(&app);
+            let id = id.to_owned();
+            tokio::task::spawn_blocking(move || {
+                if let Some(app) = crate::desktop_apps::discover_installed_applications()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|app| app.id == id)
+                {
+                    let _ = crate::command::spawn_desktop_application_fire_and_forget(&app);
+                }
+            });
         }
     }
 }

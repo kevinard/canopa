@@ -165,14 +165,14 @@ impl PanelRuntime {
     pub(super) fn handle(&mut self, intent: PanelRuntimeIntent<'_>) -> Vec<PanelRuntimeEffect> {
         match intent {
             PanelRuntimeIntent::UpdateExternalContent(content) => {
-                if let Some(panel) = &mut self.active_panel {
-                    if matches!(
+                if let Some(panel) = &mut self.active_panel
+                    && matches!(
                         panel.tree.content,
                         crate::surface::panel::PanelContent::ExternalProvider(_)
-                    ) {
-                        panel.tree.content =
-                            crate::surface::panel::PanelContent::ExternalProvider(content);
-                    }
+                    )
+                {
+                    panel.tree.content =
+                        crate::surface::panel::PanelContent::ExternalProvider(content);
                 }
                 Vec::new()
             }

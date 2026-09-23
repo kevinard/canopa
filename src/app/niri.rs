@@ -53,7 +53,8 @@ impl App {
                 Task::none()
             }
             NiriEvent::Unavailable => {
-                self.niri.state_mut().connected = false;
+                *self.niri.state_mut() = crate::niri::NiriState::default();
+                self.reconcile_workspace_dynamic_modules(&[]);
                 let affected_module_count = self.modules.count_by_kind(ModuleKind::Workspaces)
                     + self.modules.count_by_kind(ModuleKind::FocusedWindow);
                 tracing::info!(
@@ -402,6 +403,28 @@ mod tests {
             .filter(|(_, m)| m.kind() == ModuleKind::WorkspaceItem)
             .collect();
         assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn unavailable_clears_workspace_children_and_cached_compositor_state() {
+        let mut app = make_workspaces_app();
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            niri_ipc::Event::WorkspacesChanged {
+                workspaces: vec![make_workspace(0, true)],
+            },
+        ))));
+        assert!(
+            app.modules
+                .iter()
+                .any(|(_, module)| module.kind() == ModuleKind::WorkspaceItem)
+        );
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Unavailable)));
+        assert!(
+            !app.modules
+                .iter()
+                .any(|(_, module)| module.kind() == ModuleKind::WorkspaceItem)
+        );
+        assert!(app.niri.state().workspaces.is_empty());
     }
 
     #[test]

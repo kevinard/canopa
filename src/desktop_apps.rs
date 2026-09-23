@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,8 +78,10 @@ pub fn applications_from_entries(
     entries: Vec<RawDesktopEntry>,
     env: &DesktopEnvironment,
 ) -> Vec<DesktopApplication> {
+    let mut seen = HashSet::new();
     let mut apps = entries
         .into_iter()
+        .filter(|entry| seen.insert(entry.id.clone()))
         .filter_map(|entry| application_from_entry(entry, env))
         .collect::<Vec<_>>();
     apps.sort_by(|left, right| {
@@ -122,13 +124,21 @@ fn collect_desktop_entries(
         return Ok(());
     };
     for item in read_dir {
-        let item = item?;
+        let Ok(item) = item else { continue };
         let path = item.path();
-        let file_type = item.file_type()?;
+        let Ok(file_type) = item.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             collect_desktop_entries(root, &path, entries)?;
         } else if path.extension().and_then(|value| value.to_str()) == Some("desktop") {
-            let body = std::fs::read_to_string(&path)?;
+            let body = match std::fs::read_to_string(&path) {
+                Ok(body) => body,
+                Err(error) => {
+                    tracing::debug!(target: "niribar::desktop_apps", path = %path.display(), %error, "skipping unreadable desktop entry");
+                    continue;
+                }
+            };
             let relative = path.strip_prefix(root).unwrap_or(&path);
             let id = relative
                 .components()
@@ -329,5 +339,40 @@ mod tests {
         assert_eq!(apps[0].comment.as_deref(), Some("Browse the web"));
         assert_eq!(apps[0].keywords, vec!["web", "internet"]);
         assert_eq!(apps[0].icon.as_deref(), Some("browser"));
+    }
+    #[test]
+    fn user_hidden_override_suppresses_system_entry_before_filtering() {
+        let entries = vec![
+            RawDesktopEntry {
+                id: "app.desktop".into(),
+                body: "[Desktop Entry]\nType=Application\nName=Hidden\nHidden=true\nExec=true\n"
+                    .into(),
+            },
+            RawDesktopEntry {
+                id: "app.desktop".into(),
+                body: "[Desktop Entry]\nType=Application\nName=System\nExec=true\n".into(),
+            },
+        ];
+        assert!(applications_from_entries(entries, &DesktopEnvironment::unknown()).is_empty());
+    }
+
+    #[test]
+    fn unreadable_entry_does_not_hide_other_applications() {
+        let dir = tempfile::tempdir().unwrap();
+        let apps = dir.path().join("applications");
+        std::fs::create_dir(&apps).unwrap();
+        std::fs::write(apps.join("broken.desktop"), [0xff]).unwrap();
+        std::fs::write(
+            apps.join("working.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Working\nExec=true\n",
+        )
+        .unwrap();
+        let found = discover_installed_applications_in_data_dirs(
+            vec![dir.path().into()],
+            &DesktopEnvironment::unknown(),
+        )
+        .unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "Working");
     }
 }

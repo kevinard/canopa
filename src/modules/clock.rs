@@ -177,6 +177,7 @@ pub(super) struct ClockModule {
 }
 
 impl ClockModule {
+    #[cfg(test)]
     pub(super) fn new(
         id: crate::modules::ModuleId,
         time_format: String,

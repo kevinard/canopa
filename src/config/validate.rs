@@ -314,21 +314,21 @@ fn validate_action_references_declared_targets(
     panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> ConfigResult<()> {
     match action {
-        super::PanelAction::OpenMenu(name) | super::PanelAction::ToggleMenu(name) => {
-            if !declared_menus.contains(name.as_str()) {
-                return Err(validation_error(
-                    source,
-                    format!("{path}: menu {:?} is not declared.", name),
-                ));
-            }
+        super::PanelAction::OpenMenu(name) | super::PanelAction::ToggleMenu(name)
+            if !declared_menus.contains(name.as_str()) =>
+        {
+            return Err(validation_error(
+                source,
+                format!("{path}: menu {:?} is not declared.", name),
+            ));
         }
-        super::PanelAction::OpenProvider(name) => {
-            if !provider_name_is_resolvable(name, panel_provider_catalog) {
-                return Err(validation_error(
-                    source,
-                    format!("{path}: panel provider {:?} is not declared.", name),
-                ));
-            }
+        super::PanelAction::OpenProvider(name)
+            if !provider_name_is_resolvable(name, panel_provider_catalog) =>
+        {
+            return Err(validation_error(
+                source,
+                format!("{path}: panel provider {:?} is not declared.", name),
+            ));
         }
         _ => {}
     }

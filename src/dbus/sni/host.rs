@@ -206,11 +206,42 @@ pub enum TrayEvent {
 fn parse_service_string(s: &str) -> (&str, &str) {
     // Find the first '/' that is not at position 0 (unique names start with ':').
     // Well-known names contain only dots and alphanumerics, no slashes.
-    if let Some(slash_pos) = s[1..].find('/') {
+    if let Some(slash_pos) = s.get(1..).unwrap_or_default().find('/') {
         let slash_pos = slash_pos + 1; // adjust for the skipped leading char
         (&s[..slash_pos], &s[slash_pos..])
     } else {
         (s, "/StatusNotifierItem")
+    }
+}
+
+async fn item_signals(
+    conn: &zbus::Connection,
+    service: &str,
+    path: &zbus::zvariant::ObjectPath<'_>,
+) -> zbus::Result<zbus::proxy::SignalStream<'static>> {
+    let proxy = SniItemProxy::builder(conn)
+        .destination(service)?
+        .path(path)?
+        .build()
+        .await?;
+    proxy.inner().receive_all_signals().await
+}
+
+async fn forward_item_changes(
+    mut signals: zbus::proxy::SignalStream<'static>,
+    key: String,
+    tx: tokio::sync::mpsc::Sender<String>,
+) {
+    use iced::futures::StreamExt;
+    while let Some(signal) = signals.next().await {
+        if signal
+            .header()
+            .member()
+            .is_some_and(|member| member.as_str().starts_with("New"))
+            && tx.send(key.clone()).await.is_err()
+        {
+            break;
+        }
     }
 }
 
@@ -230,7 +261,7 @@ pub(super) async fn run_sni_task(
 
     // 1. Start or connect to watcher.
     let watcher_items_opt = crate::dbus::sni_watcher::start_watcher(&conn).await;
-    let _watcher_items = match watcher_items_opt {
+    let watcher_items = match watcher_items_opt {
         Ok(opt) => opt,
         Err(e) => return e,
     };
@@ -278,12 +309,25 @@ pub(super) async fn run_sni_task(
         .await
         .unwrap_or_default();
     let mut items: HashMap<String, TrayItem> = HashMap::new();
+    let (change_tx, mut change_rx) = tokio::sync::mpsc::channel(32);
+    let mut watches = HashMap::new();
+    let mut watch_tasks = tokio::task::JoinSet::new();
     for service_str in initial_services {
         let (svc, path_str) = parse_service_string(&service_str);
-        if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str)
-            && let Some(item) = fetch_item(&conn, svc, &path).await
-        {
-            items.insert(service_str, item);
+        if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str) {
+            if let Ok(signals) = item_signals(&conn, svc, &path).await {
+                watches.insert(
+                    service_str.clone(),
+                    watch_tasks.spawn(forward_item_changes(
+                        signals,
+                        service_str.clone(),
+                        change_tx.clone(),
+                    )),
+                );
+            }
+            if let Some(item) = fetch_item(&conn, svc, &path).await {
+                items.insert(service_str, item);
+            }
         }
     }
     let snapshot: Vec<TrayItem> = items.values().cloned().collect();
@@ -294,10 +338,26 @@ pub(super) async fn run_sni_task(
     // 6. Event loop.
     loop {
         tokio::select! {
+            _ = tx.closed() => break,
+            _ = watch_tasks.join_next(), if !watch_tasks.is_empty() => {},
+            Some(key) = change_rx.recv() => {
+                if let Some(current) = items.get_mut(&key) {
+                    let (service, path) = parse_service_string(&key);
+                    if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path)
+                        && let Some(item) = fetch_item(&conn, service, &path).await
+                    {
+                        *current = item.clone();
+                        if tx.send(TrayEvent::ItemAdded(item)).is_err() { break; }
+                    }
+                }
+            }
             Some(signal) = item_registered.next() => {
                 if let Ok(args) = signal.args() {
                     let service_str = args.service.to_string();
                     let (svc, path_str) = parse_service_string(&service_str);
+                    if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str)
+                        && let Ok(signals) = item_signals(&conn, svc, &path).await
+                        && let Some(previous) = watches.insert(service_str.clone(), watch_tasks.spawn(forward_item_changes(signals, service_str.clone(), change_tx.clone()))) { previous.abort(); }
                     if let Ok(path) = zbus::zvariant::ObjectPath::try_from(path_str)
                         && let Some(item) = fetch_item(&conn, svc, &path).await {
                             // If this service was already known, remove the old entry first.
@@ -316,6 +376,7 @@ pub(super) async fn run_sni_task(
             Some(signal) = item_unregistered.next() => {
                 if let Ok(args) = signal.args() {
                     let service_str = args.service.to_string();
+                    if let Some(watch) = watches.remove(&service_str) { watch.abort(); }
                     if items.remove(&service_str).is_some()
                         && tx.send(TrayEvent::ItemRemoved(service_str)).is_err()
                     {
@@ -332,11 +393,17 @@ pub(super) async fn run_sni_task(
                         .unwrap_or(true);
                     if new_owner_empty {
                         let gone = args.name().to_string();
-                        if items.remove(&gone).is_some()
-                            && tx.send(TrayEvent::ItemRemoved(gone)).is_err()
-                        {
-                            break;
+                        let removed: Vec<_> = items.keys().filter(|key| parse_service_string(key).0 == gone).cloned().collect();
+                        for key in removed {
+                            if let Some(item) = items.remove(&key) {
+                                if let Some(watch) = watches.remove(&key) { watch.abort(); }
+                                let _ = tx.send(TrayEvent::ItemRemoved(item.runtime_id()));
+                            }
                         }
+                        if watcher_items.is_some() {
+                            let _ = crate::dbus::sni_watcher::remove_owner(&conn, &gone).await;
+                        }
+                        if gone == "org.kde.StatusNotifierWatcher" { break; }
                     }
                 }
             }

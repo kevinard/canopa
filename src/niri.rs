@@ -32,6 +32,7 @@ impl NiriState {
 
     /// Returns the title of the active window on the given output, or `None` if
     /// there is no active workspace or active window on that output.
+    #[cfg(test)]
     pub fn active_window_title_for_output(&self, output: &str) -> Option<String> {
         self.active_window_for_output(output)
             .and_then(|w| w.title.clone())

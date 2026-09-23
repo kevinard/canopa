@@ -271,14 +271,14 @@ impl App {
             );
             return Task::none();
         }
-        return Task::batch(self.apply_app_effects(vec![AppEffect::FetchSniMenuForOpen {
+        Task::batch(self.apply_app_effects(vec![AppEffect::FetchSniMenuForOpen {
             dbus_service,
             event_service: service,
             menu_path,
             anchor,
             screen_size,
             origin_window,
-        }]));
+        }]))
     }
 }
 

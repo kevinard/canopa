@@ -264,8 +264,10 @@ mod tests {
             name: "wifi".into(),
             command: crate::config::ConfiguredCommand::argv_for_test("wifi-provider", Vec::new()),
         }];
-        let mut network = crate::config::NetworkConfig::default();
-        network.default_provider = None;
+        let network = crate::config::NetworkConfig {
+            default_provider: None,
+            ..Default::default()
+        };
         config.modules = vec![crate::config::ModuleConfig {
             name: "network".into(),
             module_type: "network".into(),

@@ -36,6 +36,8 @@ struct BatteryConnData(zbus::Connection);
 impl std::hash::Hash for BatteryConnData {
     fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
         "battery-subscription".hash(h);
+        self.0.unique_name().hash(h);
+        self.0.server_guid().hash(h);
     }
 }
 
@@ -45,8 +47,16 @@ fn build_battery_stream(
     let conn = data.0.clone();
     crate::dbus::subscription::build::<(f64, bool), crate::app::Message, _, _, _>(
         move |tx| {
+            let conn = conn.clone();
             tokio::spawn(async move {
-                let _ = run_upower_task(conn, tx).await;
+                let work = run_upower_task(conn.clone(), tx.clone());
+                crate::dbus::subscription::while_service_owned(
+                    &conn,
+                    "org.freedesktop.UPower",
+                    &tx,
+                    work,
+                )
+                .await;
             });
         },
         |(pct, charging)| {
@@ -141,6 +151,70 @@ async fn read_state(proxy: &UPowerDeviceProxy<'_>) -> zbus::Result<(f64, bool)> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct Device;
+    #[zbus::interface(name = "org.freedesktop.UPower.Device")]
+    impl Device {
+        #[zbus(property)]
+        fn percentage(&self) -> f64 {
+            73.0
+        }
+        #[zbus(property)]
+        fn state(&self) -> u32 {
+            2
+        }
+    }
+
+    #[tokio::test]
+    async fn absent_service_and_owner_restart_recover_on_same_bus() {
+        use iced::futures::StreamExt;
+        let bus = crate::test_bus::TestBus::new();
+        let data = BatteryConnData(bus.connect().await);
+        let mut stream = build_battery_stream(&data);
+        let next = async |stream: &mut std::pin::Pin<
+            Box<dyn iced::futures::Stream<Item = crate::app::Message> + Send>,
+        >| {
+            tokio::time::timeout(std::time::Duration::from_secs(3), stream.next())
+                .await
+                .unwrap()
+                .unwrap()
+        };
+        fn unavailable(message: crate::app::Message) -> bool {
+            matches!(
+                message,
+                crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Battery(
+                    BatteryEvent::Unavailable
+                ))
+            )
+        }
+        assert!(unavailable(next(&mut stream).await));
+        for _ in 0..2 {
+            let service = bus.connect().await;
+            service
+                .object_server()
+                .at("/org/freedesktop/UPower/devices/DisplayDevice", Device)
+                .await
+                .unwrap();
+            service
+                .request_name("org.freedesktop.UPower")
+                .await
+                .unwrap();
+            assert!(matches!(
+                next(&mut stream).await,
+                crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Battery(
+                    BatteryEvent::StateChanged {
+                        percentage: 73.0,
+                        ..
+                    }
+                ))
+            ));
+            service.close().await.unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                while !unavailable(next(&mut stream).await) {}
+            })
+            .await
+            .unwrap();
+        }
+    }
 
     #[test]
     fn charging_state_1_is_charging() {

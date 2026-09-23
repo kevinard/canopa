@@ -35,19 +35,6 @@ pub(crate) fn volume_subscription() -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(VolumeConnData, build_volume_stream)
 }
 
-fn mainloop_signal_callback(
-    mainloop: &mut libpulse_binding::mainloop::threaded::Mainloop,
-) -> Box<dyn FnMut() + 'static> {
-    let ml_ptr = mainloop as *mut libpulse_binding::mainloop::threaded::Mainloop as usize;
-    Box::new(move || {
-        // SAFETY: `ml_ptr` points to the `Mainloop` stack value owned by `run_pa_thread`.
-        // The callback is cleared before that function can return, and libpulse invokes it
-        // while the threaded mainloop is alive.
-        let ml = unsafe { &mut *(ml_ptr as *mut libpulse_binding::mainloop::threaded::Mainloop) };
-        ml.signal(false);
-    })
-}
-
 /// Runs in a dedicated std::thread. Sets up the PA threaded mainloop,
 /// sends initial state, subscribes to sink changes, and blocks until PA terminates.
 fn run_pa_thread(tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>) {
@@ -73,20 +60,7 @@ fn run_pa_thread(tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>) {
         }
     };
 
-    // PA threaded mainloop pattern:
-    // 1. Install a state callback that calls mainloop.signal() when context state changes.
-    //    Without this, mainloop.wait() blocks forever — the PA background thread never wakes
-    //    up the waiting main thread.
-    // 2. Start the mainloop background thread.
-    // 3. Lock, connect, wait for Ready using the lock/wait/signal protocol.
-    //
-    // mainloop stays on the stack for the entire function lifetime; the state callback uses
-    // a raw pointer to avoid RefCell borrow conflicts (wait() holds exclusive access while
-    // sleeping, which would prevent signal() from acquiring a borrow_mut()).
-    context.set_state_callback(Some(mainloop_signal_callback(&mut mainloop)));
-
     if mainloop.start().is_err() {
-        context.set_state_callback(None);
         let _ = tx.send(Err(()));
         return;
     }
@@ -96,29 +70,36 @@ fn run_pa_thread(tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>) {
         .connect(None, pulse::context::FlagSet::NOAUTOSPAWN, None)
         .is_err()
     {
-        context.set_state_callback(None);
         mainloop.unlock();
+        mainloop.stop();
         let _ = tx.send(Err(()));
         return;
     }
 
-    // Wait for context Ready. mainloop.wait() atomically releases the lock, sleeps until
-    // signal() is called from within the PA background thread, then re-acquires the lock.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
         match context.get_state() {
             pulse::context::State::Ready => break,
             pulse::context::State::Failed | pulse::context::State::Terminated => {
-                context.set_state_callback(None);
                 mainloop.unlock();
+                mainloop.stop();
                 let _ = tx.send(Err(()));
                 return;
             }
-            _ => mainloop.wait(),
+            _ if tx.is_closed() || std::time::Instant::now() >= deadline => {
+                context.disconnect();
+                mainloop.unlock();
+                mainloop.stop();
+                let _ = tx.send(Err(()));
+                return;
+            }
+            _ => {
+                mainloop.unlock();
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                mainloop.lock();
+            }
         }
     }
-
-    // Clear state callback — no longer needed after Ready.
-    context.set_state_callback(None);
 
     // Send initial volume state.
     fetch_volume(&context, &tx);
@@ -148,7 +129,10 @@ fn run_pa_thread(tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>) {
 
     // Block this thread until PA terminates (PA mainloop runs in its own thread).
     loop {
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if tx.is_closed() {
+            break;
+        }
         mainloop.lock();
         let state = context.borrow().get_state();
         mainloop.unlock();
@@ -159,6 +143,11 @@ fn run_pa_thread(tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>) {
             break;
         }
     }
+    mainloop.lock();
+    context.borrow_mut().set_subscribe_callback(None);
+    context.borrow_mut().disconnect();
+    mainloop.unlock();
+    mainloop.stop();
     let _ = tx.send(Err(())); // Signal stream end
 }
 

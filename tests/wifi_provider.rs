@@ -16,6 +16,12 @@ struct FakeBackend {
     connect_requests: Arc<Mutex<Vec<WifiConnectRequest>>>,
 }
 
+type FakeBackendFixture = (
+    FakeBackend,
+    Arc<Mutex<Vec<&'static str>>>,
+    Arc<Mutex<Vec<WifiConnectRequest>>>,
+);
+
 impl FakeBackend {
     fn new(snapshot: WifiSnapshot) -> (Self, Arc<Mutex<Vec<&'static str>>>) {
         Self::with_scan(snapshot.clone(), snapshot)
@@ -42,11 +48,7 @@ impl FakeBackend {
         initial_snapshot: WifiSnapshot,
         scan_snapshot: WifiSnapshot,
         connect_snapshot: WifiSnapshot,
-    ) -> (
-        Self,
-        Arc<Mutex<Vec<&'static str>>>,
-        Arc<Mutex<Vec<WifiConnectRequest>>>,
-    ) {
+    ) -> FakeBackendFixture {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let connect_requests = Arc::new(Mutex::new(Vec::new()));
         (
@@ -66,11 +68,7 @@ impl FakeBackend {
         initial_snapshot: WifiSnapshot,
         scan_snapshot: WifiSnapshot,
         connect_error: WifiBackendError,
-    ) -> (
-        Self,
-        Arc<Mutex<Vec<&'static str>>>,
-        Arc<Mutex<Vec<WifiConnectRequest>>>,
-    ) {
+    ) -> FakeBackendFixture {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let connect_requests = Arc::new(Mutex::new(Vec::new()));
         (
@@ -317,12 +315,15 @@ async fn known_wifi_row_activation_streams_connecting_then_active_content() {
     let ExternalPanelElement::SelectableList {
         entries: connecting,
         ..
-    } = &documents[0].elements[2]
+    } = documents[0].elements.iter().find(|element| matches!(element, ExternalPanelElement::SelectableList { id, .. } if id == "networks")).expect("connecting view has network list")
     else {
         panic!("expected connecting list");
     };
     assert_eq!(connecting[0].status.as_deref(), Some("connecting"));
     assert!(connecting[0].disabled);
+    assert!(!documents[0].elements.iter().any(
+        |element| matches!(element, ExternalPanelElement::Button { id, .. } if id == "refresh")
+    ));
 
     let ExternalPanelElement::SelectableList {
         entries: active, ..

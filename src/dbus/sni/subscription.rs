@@ -11,6 +11,8 @@ struct SniConnData(zbus::Connection);
 impl Hash for SniConnData {
     fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
         "sni-subscription".hash(h);
+        self.0.unique_name().hash(h);
+        self.0.server_guid().hash(h);
     }
 }
 
@@ -20,17 +22,19 @@ fn build_sni_stream(
     let conn = data.0.clone();
     crate::dbus::subscription::build::<TrayEvent, crate::app::Message, _, _, _>(
         move |tx| {
+            let conn = conn.clone();
             tokio::spawn(async move {
-                let _ = tx.send(Ok(TrayEvent::Snapshot(vec![])));
-
                 let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
-                tokio::spawn(async move {
-                    let _ = run_sni_task(conn, event_tx).await;
-                });
-
-                while let Some(event) = event_rx.recv().await {
-                    if tx.send(Ok(event)).is_err() {
-                        break;
+                let work = run_sni_task(conn, event_tx);
+                tokio::pin!(work);
+                loop {
+                    tokio::select! {
+                        _ = tx.closed() => return,
+                        _ = &mut work => return,
+                        event = event_rx.recv() => match event {
+                            Some(event) => { if tx.send(Ok(event)).is_err() { return; } }
+                            None => return,
+                        }
                     }
                 }
             });
@@ -61,14 +65,11 @@ struct MenuWatchKey {
 impl Hash for MenuWatchKey {
     fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
         "menu-layout-watcher".hash(h);
+        self.conn.unique_name().hash(h);
+        self.conn.server_guid().hash(h);
         self.service.hash(h);
         self.menu_path.as_str().hash(h);
     }
-}
-
-enum MenuWatchState {
-    Init,
-    Watching,
 }
 
 fn build_menu_layout_stream(
@@ -77,53 +78,40 @@ fn build_menu_layout_stream(
     let conn = data.conn.clone();
     let service = data.service.clone();
     let menu_path = data.menu_path.clone();
-
+    // The stream itself owns the proxy subscription: cancellation releases it.
     Box::pin(iced::futures::stream::unfold(
-        MenuWatchState::Init,
-        move |state| {
-            let conn = conn.clone();
-            let service = service.clone();
-            let menu_path = menu_path.clone();
-            async move {
-                match state {
-                    MenuWatchState::Init => {
-                        let proxy = match DbusMenuProxy::builder(&conn)
-                            .destination(service.as_str())
-                            .and_then(|b| b.path(menu_path.as_ref()))
-                        {
-                            Ok(b) => match b.build().await {
-                                Ok(p) => p,
-                                Err(_) => return None,
-                            },
-                            Err(_) => return None,
-                        };
-                        let mut layout_stream = match proxy.receive_layout_updated().await {
-                            Ok(s) => s,
-                            Err(_) => return None,
-                        };
-                        let mut props_stream = match proxy.receive_items_properties_updated().await
-                        {
-                            Ok(s) => s,
-                            Err(_) => return None,
-                        };
-
-                        tokio::select! {
-                            _ = layout_stream.next() => {}
-                            _ = props_stream.next() => {}
-                        }
-                        Some((
-                            crate::app::Message::Menu(
-                                crate::app::messages::MenuEvent::LayoutChanged {
-                                    service: service.clone(),
-                                    menu_path: menu_path.clone(),
-                                },
-                            ),
-                            MenuWatchState::Watching,
-                        ))
-                    }
-                    MenuWatchState::Watching => None,
+        (
+            conn,
+            service,
+            menu_path,
+            None::<zbus::proxy::SignalStream<'static>>,
+        ),
+        |(conn, service, menu_path, mut signals)| async move {
+            if signals.is_none() {
+                let proxy = DbusMenuProxy::builder(&conn)
+                    .destination(service.clone())
+                    .ok()?
+                    .path(menu_path.clone())
+                    .ok()?
+                    .build()
+                    .await
+                    .ok()?;
+                signals = Some(proxy.inner().receive_all_signals().await.ok()?);
+            }
+            let stream = signals.as_mut()?;
+            while let Some(signal) = stream.next().await {
+                if signal.header().member().is_some_and(|member| {
+                    matches!(member.as_str(), "LayoutUpdated" | "ItemsPropertiesUpdated")
+                }) {
+                    let message =
+                        crate::app::Message::Menu(crate::app::messages::MenuEvent::LayoutChanged {
+                            service: service.clone(),
+                            menu_path: menu_path.clone(),
+                        });
+                    return Some((message, (conn, service, menu_path, signals)));
                 }
             }
+            None
         },
     ))
 }
@@ -144,4 +132,40 @@ pub(crate) fn menu_layout_subscription(
         },
         build_menu_layout_stream,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn menu_watcher_delivers_more_than_one_layout_and_property_change() {
+        let bus = crate::test_bus::TestBus::new();
+        let service = bus.connect().await;
+        let client = bus.connect().await;
+        let key = MenuWatchKey {
+            conn: client,
+            service: service.unique_name().unwrap().to_string(),
+            menu_path: "/Menu".try_into().unwrap(),
+        };
+        let mut stream = build_menu_layout_stream(&key);
+        for member in ["LayoutUpdated", "LayoutUpdated", "ItemsPropertiesUpdated"] {
+            // Polling establishes the match rule. Repeated emission also avoids
+            // relying on scheduler timing during that initial subscription.
+            let emit = async {
+                loop {
+                    service
+                        .emit_signal(None::<&str>, "/Menu", "com.canonical.dbusmenu", member, &())
+                        .await
+                        .unwrap();
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            };
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                tokio::select! {
+                    message = stream.next() => assert!(matches!(message, Some(crate::app::Message::Menu(crate::app::messages::MenuEvent::LayoutChanged { .. })))),
+                    _ = emit => unreachable!(),
+                }
+            }).await.unwrap();
+        }
+    }
 }

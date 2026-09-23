@@ -27,11 +27,13 @@ pub(crate) struct ExternalPanelStartedSession {
 }
 
 #[derive(Clone)]
-pub(crate) struct ExternalPanelSessionHandle {
+pub struct ExternalPanelSessionHandle {
     session_id: String,
     stdin: Arc<tokio::sync::Mutex<ProviderStdin>>,
     stdout: Arc<tokio::sync::Mutex<ProviderStdout>>,
     child: Arc<tokio::sync::Mutex<Option<Child>>>,
+    group: Arc<crate::command::ProcessGroup>,
+    close_grace: std::time::Duration,
     closed: Arc<AtomicBool>,
     stderr_tail: Arc<tokio::sync::Mutex<ProviderStderrTail>>,
     canopa: Option<niribar::external_panel::canopa::CanopaSession>,
@@ -48,6 +50,16 @@ impl std::fmt::Debug for ExternalPanelSessionHandle {
 type ProviderStdin = Box<dyn AsyncWrite + Unpin + Send>;
 type ProviderStdout = Box<dyn AsyncBufRead + Unpin + Send>;
 const PROVIDER_CLOSE_GRACE: std::time::Duration = std::time::Duration::from_millis(250);
+// Wi-Fi may need to finish a 30s creation RPC, then undo daemon resources.
+// The panel closes immediately; this deadline only bounds process cleanup.
+const WIFI_PROVIDER_CLOSE_GRACE: std::time::Duration = std::time::Duration::from_secs(35);
+fn provider_close_grace(name: &str) -> std::time::Duration {
+    if name == "wifi" {
+        WIFI_PROVIDER_CLOSE_GRACE
+    } else {
+        PROVIDER_CLOSE_GRACE
+    }
+}
 const PROVIDER_STDERR_TAIL_BYTES: usize = 4096;
 
 #[derive(Debug)]
@@ -78,10 +90,6 @@ impl ProviderStderrTail {
 }
 
 impl ExternalPanelSessionHandle {
-    pub(crate) fn session_id(&self) -> &str {
-        &self.session_id
-    }
-
     pub(crate) fn close(&self) {
         self.closed.store(true, Ordering::Release);
     }
@@ -100,6 +108,7 @@ impl ExternalPanelSessionHandle {
                 };
                 match child.try_wait() {
                     Ok(Some(status)) => {
+                        self.group.terminate();
                         *child_slot = None;
                         self.trace_stderr_tail("external panel provider exited unexpectedly")
                             .await;
@@ -131,7 +140,7 @@ impl ExternalPanelSessionHandle {
     }
 
     async fn wait_for_close_or_terminate(&self) -> Result<Option<String>, protocol::ProtocolError> {
-        let deadline = tokio::time::Instant::now() + PROVIDER_CLOSE_GRACE;
+        let deadline = tokio::time::Instant::now() + self.close_grace;
         loop {
             {
                 let mut child_slot = self.child.lock().await;
@@ -140,6 +149,7 @@ impl ExternalPanelSessionHandle {
                 };
                 match child.try_wait() {
                     Ok(Some(_status)) => {
+                        self.group.terminate();
                         *child_slot = None;
                         return Ok(None);
                     }
@@ -154,6 +164,7 @@ impl ExternalPanelSessionHandle {
                     child_slot.take()
                 };
                 if let Some(mut child) = child {
+                    self.group.terminate();
                     let _ = child.start_kill();
                     let _ =
                         tokio::time::timeout(std::time::Duration::from_secs(1), child.wait()).await;
@@ -245,6 +256,8 @@ impl ExternalPanelSessionHandle {
             stdin: Arc::new(tokio::sync::Mutex::new(Box::new(stdin))),
             stdout: Arc::new(tokio::sync::Mutex::new(Box::new(BufReader::new(stdout)))),
             child: Arc::new(tokio::sync::Mutex::new(None)),
+            group: Arc::new(crate::command::ProcessGroup::new(None)),
+            close_grace: PROVIDER_CLOSE_GRACE,
             canopa: None,
             closed: Arc::new(AtomicBool::new(false)),
             stderr_tail: Arc::new(tokio::sync::Mutex::new(ProviderStderrTail::new(
@@ -257,44 +270,17 @@ impl ExternalPanelSessionHandle {
 #[derive(Debug)]
 pub(crate) struct ExternalPanelProcess {
     child: Child,
+    group: crate::command::ProcessGroup,
 }
 
 impl ExternalPanelProcess {
-    pub(crate) async fn perform_handshake(
-        mut self,
-        handshake: protocol::HostHandshake,
-    ) -> Result<crate::surface::panel::ExternalPanelDocument, protocol::ProtocolError> {
-        let stdout = self.child.stdout.take().ok_or_else(|| {
-            protocol::ProtocolError::Io("provider stdout pipe unavailable".into())
-        })?;
-        let stdin =
-            self.child.stdin.take().ok_or_else(|| {
-                protocol::ProtocolError::Io("provider stdin pipe unavailable".into())
-            })?;
-        let stderr_tail = Arc::new(tokio::sync::Mutex::new(ProviderStderrTail::new(
-            PROVIDER_STDERR_TAIL_BYTES,
-        )));
-        if let Some(stderr) = self.child.stderr.take() {
-            capture_provider_stderr(stderr, stderr_tail);
-        }
-        protocol::perform_handshake(stdout, stdin, handshake).await
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn start_session(
-        self,
-        handshake: protocol::HostHandshake,
-    ) -> Result<ExternalPanelStartedSession, protocol::ProtocolError> {
-        self.start_session_for_protocol(handshake, ProviderProtocol::NiribarV1)
-            .await
-    }
-
     pub(crate) async fn start_session_for_protocol(
         mut self,
         handshake: protocol::HostHandshake,
         transport: ProviderProtocol,
     ) -> Result<ExternalPanelStartedSession, protocol::ProtocolError> {
         let session_id = handshake.session_id.clone();
+        let close_grace = provider_close_grace(&handshake.provider_name);
         let stdout = self.child.stdout.take().ok_or_else(|| {
             protocol::ProtocolError::Io("provider stdout pipe unavailable".into())
         })?;
@@ -321,6 +307,8 @@ impl ExternalPanelProcess {
             stdin: Arc::new(tokio::sync::Mutex::new(Box::new(stdin))),
             stdout: Arc::new(tokio::sync::Mutex::new(Box::new(stdout))),
             child: Arc::new(tokio::sync::Mutex::new(Some(self.child))),
+            group: Arc::new(self.group),
+            close_grace,
             canopa,
             closed: Arc::new(AtomicBool::new(false)),
             stderr_tail,
@@ -367,8 +355,10 @@ pub(crate) fn spawn_provider_process(
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
     command.kill_on_drop(true);
+    command.process_group(0);
     let child = command.spawn()?;
-    Ok(ExternalPanelProcess { child })
+    let group = crate::command::ProcessGroup::new(child.id());
+    Ok(ExternalPanelProcess { child, group })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -586,6 +576,8 @@ mod tests {
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .process_group(0)
+            .kill_on_drop(true)
             .spawn()
             .unwrap();
         let stdin = child.stdin.take().unwrap();
@@ -596,6 +588,7 @@ mod tests {
         if let Some(stderr) = child.stderr.take() {
             capture_provider_stderr(stderr, stderr_tail.clone());
         }
+        let group = Arc::new(crate::command::ProcessGroup::new(child.id()));
         let child = Arc::new(tokio::sync::Mutex::new(Some(child)));
         let handle = ExternalPanelSessionHandle {
             session_id: "session-1".into(),
@@ -603,6 +596,8 @@ mod tests {
             stdin: Arc::new(tokio::sync::Mutex::new(Box::new(stdin))),
             stdout: Arc::new(tokio::sync::Mutex::new(Box::new(BufReader::new(stdout)))),
             child: child.clone(),
+            group,
+            close_grace: PROVIDER_CLOSE_GRACE,
             closed: Arc::new(AtomicBool::new(false)),
             stderr_tail,
         };
@@ -614,6 +609,39 @@ mod tests {
             .unwrap();
 
         assert!(child.lock().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn wifi_close_allows_daemon_cleanup_after_generic_provider_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("cleaned");
+        let mut child = tokio::process::Command::new("sh")
+            .args(["-c", "sleep 0.4; printf done > \"$1\"", "fixture"])
+            .arg(&marker)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .process_group(0)
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let group = Arc::new(crate::command::ProcessGroup::new(child.id()));
+        let mut handle = ExternalPanelSessionHandle::for_test(
+            "cleanup",
+            child.stdin.take().unwrap(),
+            child.stdout.take().unwrap(),
+        );
+        handle.child = Arc::new(tokio::sync::Mutex::new(Some(child)));
+        handle.group = group;
+        handle.close_grace = provider_close_grace("wifi");
+        handle.close();
+        tokio::time::timeout(std::time::Duration::from_secs(2), handle.wait_for_exit())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            marker.exists(),
+            "host killed Wi-Fi before its daemon cleanup completed"
+        );
     }
 
     #[test]
