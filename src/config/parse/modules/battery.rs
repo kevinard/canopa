@@ -57,7 +57,13 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<BatteryC
     let critical_threshold = states_config.threshold_of("critical").unwrap_or(15);
     let icons = icons::parse_optional_ctx(children, ctx)?;
 
-    let mut allowed_states: Vec<&str> = vec!["charging"];
+    let mut allowed_states: Vec<&str> = vec![
+        "charging",
+        "full",
+        "pending-charge",
+        "pending-discharge",
+        "unknown",
+    ];
     allowed_states.extend(states_config.names());
     let (format, tooltip) = formats::parse_format_and_tooltip_ctx(
         children,

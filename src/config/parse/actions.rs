@@ -87,6 +87,7 @@ fn parse_panel_action(
     match operation.name().value() {
         "command" => parse_command_node_ctx(operation, &operation_ctx, command_policy)
             .map(PanelAction::Command),
+        "launch" => parse_launch(operation, &operation_ctx).map(PanelAction::Launch),
         "open-panel" => {
             require_no_arguments(operation, &operation_ctx)?;
             Ok(PanelAction::OpenPanel)
@@ -110,11 +111,39 @@ fn parse_panel_action(
             operation,
             format!("unknown action operation {other:?}"),
             Some(
-                "expected `command`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
+                "expected `command`, `launch`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
                     .into(),
             ),
         )),
     }
+}
+
+pub(super) fn parse_launch(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Vec<String>> {
+    if node.children().is_some() || node.entries().is_empty() {
+        return Err(ctx.node_err(node, "expected `launch \"program\" [\"arg\" ...]`", None));
+    }
+    let mut argv = Vec::new();
+    for entry in node.entries() {
+        if entry.name().is_some() {
+            return Err(ctx.entry_err(
+                entry,
+                "launch accepts only positional string arguments",
+                None,
+            ));
+        }
+        let Some(value) = entry.value().as_string() else {
+            return Err(ctx.entry_err(entry, "expected string argument", None));
+        };
+        if value.contains('\0') || (argv.is_empty() && value.is_empty()) {
+            return Err(ctx.entry_err(
+                entry,
+                "launch requires a non-empty program and arguments without NUL",
+                None,
+            ));
+        }
+        argv.push(value.to_owned());
+    }
+    Ok(argv)
 }
 
 fn require_no_arguments(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<()> {

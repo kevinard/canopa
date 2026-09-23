@@ -437,15 +437,4 @@ mod tests {
                 .is_some()
         );
     }
-
-    #[test]
-    fn spawn_command_fire_and_forget_preserves_shell_mode() {
-        assert_eq!(
-            crate::command::spawn_command_fire_and_forget(crate::command::CommandSpec::Shell(
-                "true"
-            ))
-            .unwrap(),
-            crate::command::SpawnResult::Spawned
-        );
-    }
 }

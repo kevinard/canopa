@@ -20,7 +20,8 @@ impl ModuleDataSourceIdentity {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BatteryReading {
     pub percentage: f64,
-    pub is_charging: bool,
+    pub power_state: crate::modules::battery::BatteryPowerState,
+    pub present: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,7 +79,8 @@ mod tests {
         assert_eq!(
             ModuleDataSourceState::Battery(BatteryReading {
                 percentage: 42.0,
-                is_charging: false,
+                power_state: crate::modules::battery::BatteryPowerState::Discharging,
+                present: true,
             })
             .identity(),
             ModuleDataSourceIdentity::Battery

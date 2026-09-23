@@ -1,10 +1,9 @@
 //! Centralized external process execution helpers.
 //!
 //! This is the app's process-launch audit point. Configured script polling and
-//! button clicks use `ConfiguredCommand`, which is already accepted by command
-//! policy during config parsing. Internal app commands, such as `wpctl` volume
-//! adjustment, must use `CommandSpec::Argv` so fixed program/argument
-//! boundaries stay explicit.
+//! automation actions use policy-validated `ConfiguredCommand`. Application
+//! launches use an argv-only handoff to the desktop session, with no worker
+//! timeout and no process ownership by the bar.
 
 pub const MAX_COMMAND_OUTPUT_BYTES: usize = 4096;
 
@@ -54,12 +53,6 @@ pub enum CommandSpec<'a> {
         program: &'a str,
         args: &'a [&'a str],
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesktopLaunchArgv {
-    pub program: String,
-    pub args: Vec<String>,
 }
 
 pub fn sanitize_stdout(stdout: &[u8], max_bytes: usize) -> String {
@@ -227,17 +220,6 @@ pub async fn run_configured_command_capture_stdout(
     }
 }
 
-/// Spawn a command detached. An OS thread is created per call to reap the
-/// child. Intended for user-initiated actions (button clicks, keybinds) where
-/// invocation rate is low; do not call in tight loops.
-pub fn spawn_command_fire_and_forget(spec: CommandSpec<'_>) -> std::io::Result<SpawnResult> {
-    let mut child = std_command(spec).spawn()?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(SpawnResult::Spawned)
-}
-
 pub fn spawn_command_with_timeout_fire_and_forget(
     spec: CommandSpec<'_>,
     timeout: std::time::Duration,
@@ -265,37 +247,10 @@ pub fn spawn_command_with_timeout_fire_and_forget(
     Ok(SpawnResult::Spawned)
 }
 
-pub fn desktop_exec_to_argv(exec: &str) -> std::io::Result<DesktopLaunchArgv> {
-    let tokens = split_desktop_exec(exec)?;
-    let mut cleaned = Vec::new();
-    for token in tokens {
-        let token = strip_desktop_field_codes(&token);
-        if !token.is_empty() {
-            cleaned.push(token);
-        }
-    }
-    let Some(program) = cleaned.first().cloned() else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "desktop Exec produced no program",
-        ));
-    };
-    Ok(DesktopLaunchArgv {
-        program,
-        args: cleaned.into_iter().skip(1).collect(),
-    })
-}
-
-pub fn spawn_desktop_application_fire_and_forget(
-    app: &crate::desktop_apps::DesktopApplication,
-) -> std::io::Result<SpawnResult> {
-    let argv = desktop_exec_to_argv(&app.exec)?;
-    let borrowed: Vec<&str> = argv.args.iter().map(String::as_str).collect();
-    spawn_command_fire_and_forget(CommandSpec::Argv {
-        program: &argv.program,
-        args: &borrowed,
-    })
-}
+mod applications;
+pub use applications::launch_application;
+#[cfg(not(test))]
+pub use applications::spawn_desktop_application_fire_and_forget;
 
 pub fn spawn_configured_command_fire_and_forget(
     command: &crate::config::ConfiguredCommand,
@@ -316,77 +271,6 @@ pub fn spawn_configured_command_fire_and_forget(
             )
         }
     }
-}
-
-fn split_desktop_exec(exec: &str) -> std::io::Result<Vec<String>> {
-    let mut tokens = Vec::new();
-    let mut token = String::new();
-    let mut chars = exec.chars().peekable();
-    let mut quote = None;
-
-    while let Some(ch) = chars.next() {
-        match (quote, ch) {
-            (None, ch) if ch.is_whitespace() => {
-                if !token.is_empty() {
-                    tokens.push(std::mem::take(&mut token));
-                }
-            }
-            (None, '\'' | '"') => quote = Some(ch),
-            (Some(active), ch) if ch == active => quote = None,
-            (_, '\\') => {
-                if let Some(next) = chars.next() {
-                    token.push(next);
-                }
-            }
-            _ => token.push(ch),
-        }
-    }
-
-    if quote.is_some() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "desktop Exec contains unterminated quote",
-        ));
-    }
-    if !token.is_empty() {
-        tokens.push(token);
-    }
-    Ok(tokens)
-}
-
-fn strip_desktop_field_codes(token: &str) -> String {
-    let mut cleaned = String::new();
-    let mut chars = token.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '%' {
-            cleaned.push(ch);
-            continue;
-        }
-        match chars.next() {
-            Some('%') => cleaned.push('%'),
-            Some('f' | 'F' | 'u' | 'U' | 'i' | 'c' | 'k') => {}
-            Some(_) => {}
-            None => cleaned.push('%'),
-        }
-    }
-    cleaned
-}
-
-async fn run_command_status(spec: CommandSpec<'_>) -> std::io::Result<std::process::ExitStatus> {
-    tokio_command(spec).status().await
-}
-
-fn default_sink_volume_args(arg: &str) -> [&str; 5] {
-    ["set-volume", "-l", "1", "@DEFAULT_AUDIO_SINK@", arg]
-}
-
-pub async fn set_default_sink_volume(arg: &str) -> std::io::Result<std::process::ExitStatus> {
-    let args = default_sink_volume_args(arg);
-    run_command_status(CommandSpec::Argv {
-        program: "wpctl",
-        args: &args,
-    })
-    .await
 }
 
 #[cfg(test)]
@@ -505,20 +389,6 @@ mod tests {
     }
 
     #[test]
-    fn spawn_command_fire_and_forget_returns_spawned_for_argv() {
-        let args: [&str; 0] = [];
-
-        assert_eq!(
-            spawn_command_fire_and_forget(CommandSpec::Argv {
-                program: "true",
-                args: &args,
-            })
-            .unwrap(),
-            SpawnResult::Spawned
-        );
-    }
-
-    #[test]
     fn spawn_configured_command_returns_spawned() {
         let path = unique_tmp_path("policy-spawned");
         let _ = std::fs::remove_file(&path);
@@ -555,60 +425,6 @@ mod tests {
         assert!(
             !std::path::Path::new(&path).exists(),
             "timed-out command should not create {path}"
-        );
-    }
-
-    #[test]
-    fn spawn_desktop_application_fire_and_forget_returns_spawned() {
-        let app = crate::desktop_apps::DesktopApplication {
-            id: "true.desktop".into(),
-            name: "True".into(),
-            generic_name: None,
-            comment: None,
-            keywords: Vec::new(),
-            icon: None,
-            exec: "true %U".into(),
-        };
-
-        assert_eq!(
-            spawn_desktop_application_fire_and_forget(&app).unwrap(),
-            SpawnResult::Spawned
-        );
-    }
-
-    #[test]
-    fn desktop_exec_removes_file_field_codes_for_plain_launch() {
-        let argv = desktop_exec_to_argv("firefox %U --new-window").unwrap();
-        assert_eq!(argv.program, "firefox");
-        assert_eq!(argv.args, vec!["--new-window"]);
-    }
-
-    #[test]
-    fn desktop_exec_unescapes_literal_percent() {
-        let argv = desktop_exec_to_argv("app --label 100%%").unwrap();
-        assert_eq!(argv.program, "app");
-        assert_eq!(argv.args, vec!["--label", "100%"]);
-    }
-
-    #[test]
-    fn desktop_exec_removes_metadata_field_codes() {
-        let argv = desktop_exec_to_argv("app %i %c %k").unwrap();
-        assert_eq!(argv.program, "app");
-        assert!(argv.args.is_empty());
-    }
-
-    #[test]
-    fn desktop_exec_preserves_quoted_arguments() {
-        let argv = desktop_exec_to_argv("app --name \"Two Words\"").unwrap();
-        assert_eq!(argv.program, "app");
-        assert_eq!(argv.args, vec!["--name", "Two Words"]);
-    }
-
-    #[test]
-    fn default_sink_volume_args_keep_wpctl_on_argv_path() {
-        assert_eq!(
-            default_sink_volume_args("5%+"),
-            ["set-volume", "-l", "1", "@DEFAULT_AUDIO_SINK@", "5%+"]
         );
     }
 

@@ -17,6 +17,7 @@ pub struct TrayItem {
     /// Resolved icon — Named preferred, Pixmap as fallback.
     pub(crate) icon: TrayIcon,
     pub(crate) status: ItemStatus,
+    pub(crate) item_is_menu: bool,
     /// D-Bus path for the context menu (`org.kde.DBusMenu`), if the item exposes one.
     pub(crate) menu_path: Option<OwnedObjectPath>,
     /// SNI ToolTip property, if the item exposes one. None when the property
@@ -136,6 +137,7 @@ pub(crate) async fn fetch_item(
         object_path: zbus::zvariant::OwnedObjectPath::try_from(object_path.as_str()).ok()?,
         icon,
         status,
+        item_is_menu: proxy.item_is_menu().await.unwrap_or(false),
         menu_path,
         tooltip,
     })
@@ -143,7 +145,7 @@ pub(crate) async fn fetch_item(
 
 // -- D-Bus call helpers -------------------------------------------------------
 
-/// Call `Activate(0, 0)` on an SNI item. Errors are silently ignored.
+/// Activate an SNI item, or ask menu-only items to present their context menu.
 pub(crate) async fn call_activate(
     conn: &zbus::Connection,
     service: &str,
@@ -154,7 +156,11 @@ pub(crate) async fn call_activate(
         .path(object_path.as_ref())?
         .build()
         .await?;
-    proxy.activate(0, 0).await
+    if proxy.item_is_menu().await.unwrap_or(false) {
+        proxy.context_menu(0, 0).await
+    } else {
+        proxy.activate(0, 0).await
+    }
 }
 
 /// Call `SecondaryActivate(0, 0)` on an SNI item.
@@ -423,6 +429,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("utilities-terminal".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -437,6 +444,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/org/kde/tray").unwrap(),
             icon: TrayIcon::Named("utilities-terminal".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -459,6 +467,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("utilities-terminal".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };

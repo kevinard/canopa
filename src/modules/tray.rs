@@ -270,6 +270,20 @@ impl crate::modules::Module for TrayIconModule {
 }
 
 impl crate::modules::interaction::ModuleInteractionHandler for TrayIconModule {
+    fn on_interaction_in_window(
+        &self,
+        event: InteractionEvent,
+        window: iced::window::Id,
+    ) -> Option<crate::app::Message> {
+        if matches!(event, InteractionEvent::Clicked)
+            && self.item.item_is_menu
+            && self.item.menu_path.is_some()
+        {
+            return self.on_interaction(InteractionEvent::RightClicked(window));
+        }
+        self.on_interaction(event)
+    }
+
     fn on_interaction(&self, event: InteractionEvent) -> Option<crate::app::Message> {
         match event {
             InteractionEvent::Clicked => Some(crate::app::Message::Tray(
@@ -386,6 +400,7 @@ mod tests {
             object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -402,6 +417,7 @@ mod tests {
             object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -422,6 +438,7 @@ mod tests {
             object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: Some(
                 zbus::zvariant::OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap(),
             ),
@@ -437,5 +454,27 @@ mod tests {
                 crate::app::messages::TrayRuntimeEvent::MenuRequestKeyboard { service, .. }
             ) if service == "org.test.App"
         ));
+    }
+
+    #[test]
+    fn menu_only_primary_click_opens_host_menu_on_the_clicked_output() {
+        let path = zbus::zvariant::OwnedObjectPath::try_from("/Menu").unwrap();
+        let item = TrayItem {
+            service: "org.test.MenuOnly".into(),
+            object_path: "/Item".try_into().unwrap(),
+            icon: TrayIcon::Named("app".into()),
+            status: ItemStatus::Active,
+            item_is_menu: true,
+            menu_path: Some(path.clone()),
+            tooltip: None,
+        };
+        let module = TrayIconModule::new(item, "tray".into());
+        let clicked = iced::window::Id::unique();
+        assert!(
+            matches!(module.on_interaction_in_window(InteractionEvent::Clicked, clicked),
+            Some(crate::app::Message::Tray(crate::app::messages::TrayRuntimeEvent::MenuRequest {
+                menu_path: Some(menu), source_window: Some(window), ..
+            })) if menu == path && window == clicked)
+        );
     }
 }

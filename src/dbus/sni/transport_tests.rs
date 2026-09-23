@@ -15,6 +15,53 @@ impl Item {
     }
 }
 
+struct MenuOnlyItem(tokio::sync::mpsc::UnboundedSender<&'static str>);
+#[zbus::interface(name = "org.kde.StatusNotifierItem")]
+impl MenuOnlyItem {
+    #[zbus(property)]
+    fn item_is_menu(&self) -> bool {
+        true
+    }
+    #[zbus(property)]
+    fn icon_name(&self) -> &str {
+        "menu"
+    }
+    #[zbus(property)]
+    fn status(&self) -> &str {
+        "Active"
+    }
+    fn activate(&self, _x: i32, _y: i32) {
+        self.0.send("activate").unwrap();
+    }
+    fn context_menu(&self, _x: i32, _y: i32) {
+        self.0.send("menu").unwrap();
+    }
+}
+
+#[tokio::test]
+async fn menu_only_item_without_exported_menu_uses_context_menu() {
+    let bus = TestBus::new();
+    let service = bus.connect().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    service
+        .object_server()
+        .at("/Item", MenuOnlyItem(tx))
+        .await
+        .unwrap();
+    let client = bus.connect().await;
+    let name = service.unique_name().unwrap().as_str();
+    let item = fetch_item(&client, name, &"/Item".try_into().unwrap())
+        .await
+        .unwrap();
+    assert!(item.item_is_menu);
+    assert!(item.menu_path.is_none());
+    call_activate(&client, name, &item.object_path)
+        .await
+        .unwrap();
+    assert_eq!(rx.recv().await.unwrap(), "menu");
+    assert!(rx.try_recv().is_err());
+}
+
 #[tokio::test]
 async fn item_changes_repeat_and_owner_loss_removes_path_registration() {
     let bus = TestBus::new();

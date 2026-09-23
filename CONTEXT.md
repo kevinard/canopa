@@ -355,7 +355,7 @@ A text-entry primitive in **External Panel Content**, optionally rendered as sec
 _Avoid_: Search input when the text is provider-owned form data
 
 **Panel Action**:
-A typed configured operation triggered by pointer input, focused keyboard input, **Panel Menu** item activation, or IPC. Examples: `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, `open-provider`, and `command`.
+A typed configured operation triggered by pointer input, focused keyboard input, **Panel Menu** item activation, or IPC. Examples: `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, `open-provider`, `launch`, and `command`.
 _Avoid_: Shell action when the action is not a command
 
 **Global Panel Toggle**:
@@ -576,6 +576,9 @@ _Avoid_: Unavailable module, runtime failure
 - When NetworkManager is available, the network status provider and **Wi-Fi Control Integration** use NetworkManager.
 - When NetworkManager is unavailable, systemd-networkd may provide **Network Status Integration** and iwd may provide **Wi-Fi Control Integration**.
 - When no **Wi-Fi Control Integration** is available, the network **Module** remains status-only.
+- **Network Status Integration** distinguishes unknown connectivity, captive portals and confirmed Internet access. networkd's online state means connected links, not measured Internet access; its label lists usable online links and refreshes on link changes.
+- Battery readings retain UPower presence and power state. An absent display battery maps to **Empty Module**, while charging, full and pending states remain distinct for formatting.
+- Audio observation and adjustment use the same PulseAudio protocol server, including PipeWire's compatibility server. Losing the default sink invalidates its reading without requiring the audio server to disconnect.
 - Niribar does not mix NetworkManager status with iwd Wi-Fi control.
 
 ### Dynamic Modules and Data Sources
@@ -737,6 +740,9 @@ _Avoid_: Unavailable module, runtime failure
 - Activating an **Installed Desktop Application** from a **Panel Menu** launches the application and closes the **Panel**.
 - Launching an **Installed Desktop Application** from a **Panel Menu** is source-owned behavior, not a separate public **Panel Action** type.
 - Launching **Installed Desktop Applications** follows Niribar's centralized process-launch boundary.
+- An application `launch` **Panel Action** and **Installed Desktop Application** activation hand ownership to the desktop session, independently of Niribar's service and command timeout. niri Spawn is preferred; a systemd user scope is the fallback when no niri socket is advertised ([ADR 0012](docs/adr/0012-session-owned-application-launches.md)).
+- `launch` accepts literal argv strings. **Configured Commands** keep their bounded automation lifetime; the application lifetime is not inferred from a command's executable name.
+- Installed entries retain their selected source path and localized metadata. GIO owns desktop-entry field expansion, working directory and D-Bus activation. Synchronous launch failures are logged; later application failures are reported by the session launcher.
 - A failed launch of an **Installed Desktop Application** is a failed **Panel Action** and does not change the normal **Panel Menu** entry by default.
 - A **Desktop Application ID** identifies an **Installed Desktop Application** even when multiple applications share the same display name.
 - A **Panel Menu** may use secondary metadata to disambiguate **Installed Desktop Applications** with the same display name.

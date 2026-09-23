@@ -973,6 +973,7 @@ mod tests {
             object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: crate::dbus::sni::host::ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };

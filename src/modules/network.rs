@@ -4,16 +4,19 @@ use crate::theme;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum NetworkConnectivity {
     Full,    // full internet access
-    Limited, // local/site connectivity only or captive portal
+    Limited, // local/site connectivity only
     #[default]
-    None, // no connectivity
+    Unknown, // no reachability result yet
+    Connected, // link is online, Internet reachability is unmeasured
+    Portal,  // captive portal detected
+    None,    // no connectivity
 }
 
 /// Runtime state for the network module.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct NetworkState {
     pub connectivity: NetworkConnectivity,
-    /// Connection label: NM profile name or networkd interface name.
+    /// Connection label: NM profile name or networkd's sorted usable link names.
     pub label: Option<String>,
 }
 
@@ -32,6 +35,9 @@ fn icon_str(connectivity: &NetworkConnectivity) -> &'static str {
         NetworkConnectivity::Full => "◆",
         NetworkConnectivity::Limited => "◈",
         NetworkConnectivity::None => "✕",
+        NetworkConnectivity::Unknown => "?",
+        NetworkConnectivity::Connected => "◆",
+        NetworkConnectivity::Portal => "◈",
     }
 }
 
@@ -40,6 +46,9 @@ fn connectivity_state(connectivity: &NetworkConnectivity) -> &'static str {
         NetworkConnectivity::Full => "full",
         NetworkConnectivity::Limited => "limited",
         NetworkConnectivity::None => "none",
+        NetworkConnectivity::Unknown => "unknown",
+        NetworkConnectivity::Connected => "connected",
+        NetworkConnectivity::Portal => "portal",
     }
 }
 
@@ -48,6 +57,9 @@ fn icon_color(connectivity: &NetworkConnectivity) -> iced::Color {
         NetworkConnectivity::Full => theme::ACCENT,
         NetworkConnectivity::Limited => theme::WARNING,
         NetworkConnectivity::None => theme::CRITICAL,
+        NetworkConnectivity::Unknown => theme::SUBTEXT,
+        NetworkConnectivity::Connected => theme::ACCENT,
+        NetworkConnectivity::Portal => theme::WARNING,
     }
 }
 
@@ -88,6 +100,9 @@ impl NetworkModule {
                 NetworkConnectivity::Full => "online",
                 NetworkConnectivity::Limited => "limited",
                 NetworkConnectivity::None => "offline",
+                NetworkConnectivity::Unknown => "unknown",
+                NetworkConnectivity::Connected => "connected",
+                NetworkConnectivity::Portal => "sign-in required",
             }
             .to_owned()
         })
@@ -438,10 +453,10 @@ mod tests {
     }
 
     #[test]
-    fn network_state_default_connectivity_is_none() {
+    fn network_state_default_connectivity_is_unknown() {
         assert_eq!(
             NetworkState::default().connectivity,
-            NetworkConnectivity::None
+            NetworkConnectivity::Unknown
         );
     }
 

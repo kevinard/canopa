@@ -1,16 +1,50 @@
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BatteryPowerState {
+    #[default]
+    Unknown,
+    Charging,
+    Discharging,
+    Empty,
+    FullyCharged,
+    PendingCharge,
+    PendingDischarge,
+}
+
+impl BatteryPowerState {
+    pub fn from_upower(value: u32) -> Self {
+        match value {
+            1 => Self::Charging,
+            2 => Self::Discharging,
+            3 => Self::Empty,
+            4 => Self::FullyCharged,
+            5 => Self::PendingCharge,
+            6 => Self::PendingDischarge,
+            _ => Self::Unknown,
+        }
+    }
+    pub fn is_charging(self) -> bool {
+        self == Self::Charging
+    }
+}
+
 use crate::theme;
 
 /// Runtime state for the battery module, fed by UPower D-Bus signals via app.rs.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct BatteryState {
     pub percentage: f64, // 0.0–100.0
-    pub is_charging: bool,
+    pub power_state: crate::modules::battery::BatteryPowerState,
+    pub present: bool,
 }
 
 /// Events emitted by the UPower D-Bus subscription.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BatteryEvent {
-    StateChanged { percentage: f64, is_charging: bool },
+    StateChanged {
+        percentage: f64,
+        power_state: BatteryPowerState,
+        present: bool,
+    },
     Unavailable,
 }
 
@@ -55,8 +89,13 @@ pub(crate) fn battery_state_key(
     battery: &BatteryState,
     states: &crate::config::StatesConfig,
 ) -> String {
-    if battery.is_charging {
-        return "charging".to_string();
+    match battery.power_state {
+        BatteryPowerState::Charging => return "charging".into(),
+        BatteryPowerState::FullyCharged => return "full".into(),
+        BatteryPowerState::PendingCharge => return "pending-charge".into(),
+        BatteryPowerState::PendingDischarge => return "pending-discharge".into(),
+        BatteryPowerState::Unknown => return "unknown".into(),
+        BatteryPowerState::Discharging | BatteryPowerState::Empty => {}
     }
     states
         .resolve(battery.percentage)
@@ -149,7 +188,7 @@ impl BatteryModule {
         self.icons
             .icon_for_state_or_value(Some(&state), Some(battery.percentage))
             .unwrap_or_else(|| {
-                if battery.is_charging {
+                if battery.power_state.is_charging() {
                     "⚡"
                 } else {
                     tier_icon(charge_tier(battery.percentage, self.critical_threshold))
@@ -225,9 +264,11 @@ impl crate::modules::view::IconLabel for BatteryModule {
 
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
         match state {
-            crate::modules::ModuleState::Battery(s) => {
-                icon_color(s.percentage, s.is_charging, self.critical_threshold)
-            }
+            crate::modules::ModuleState::Battery(s) => icon_color(
+                s.percentage,
+                s.power_state.is_charging(),
+                self.critical_threshold,
+            ),
             _ => crate::theme::TEXT,
         }
     }
@@ -265,10 +306,14 @@ impl crate::modules::data_source::ModuleDataSourceMapper for BatteryModule {
             return crate::modules::data_source::ModuleInstanceOutcome::Unavailable;
         };
 
+        if !reading.present {
+            return crate::modules::data_source::ModuleInstanceOutcome::Empty;
+        }
         crate::modules::data_source::ModuleInstanceOutcome::Visible(
             crate::modules::ModuleState::Battery(BatteryState {
                 percentage: reading.percentage,
-                is_charging: reading.is_charging,
+                power_state: reading.power_state,
+                present: reading.present,
             }),
         )
     }
@@ -307,7 +352,7 @@ impl crate::modules::render::ModuleRender for BatteryModule {
 
         let color = icon_color(
             battery.percentage,
-            battery.is_charging,
+            battery.power_state.is_charging(),
             self.critical_threshold,
         );
         let style = crate::modules::view::fallback_resolved_style(bar_style);
@@ -369,7 +414,7 @@ impl crate::modules::render::ModuleRender for BatteryModule {
         };
         let color = icon_color(
             battery.percentage,
-            battery.is_charging,
+            battery.power_state.is_charging(),
             self.critical_threshold,
         );
         let segments = self.collapsed_styled_segments_with_default(battery, bar_style)?;
@@ -535,11 +580,26 @@ mod tests {
             crate::config::FormatConfig::default(),
         );
 
+        let absent = module.map_data_source_state(
+            &crate::modules::data_source::ModuleDataSourceState::Battery(
+                crate::modules::data_source::BatteryReading {
+                    percentage: 0.0,
+                    power_state: BatteryPowerState::Unknown,
+                    present: false,
+                },
+            ),
+        );
+        assert_eq!(
+            absent,
+            crate::modules::data_source::ModuleInstanceOutcome::Empty
+        );
+
         let outcome = module.map_data_source_state(
             &crate::modules::data_source::ModuleDataSourceState::Battery(
                 crate::modules::data_source::BatteryReading {
                     percentage: 66.0,
-                    is_charging: true,
+                    power_state: crate::modules::battery::BatteryPowerState::Charging,
+                    present: true,
                 },
             ),
         );
@@ -549,7 +609,8 @@ mod tests {
             crate::modules::data_source::ModuleInstanceOutcome::Visible(
                 crate::modules::ModuleState::Battery(BatteryState {
                     percentage: 66.0,
-                    is_charging: true,
+                    power_state: crate::modules::battery::BatteryPowerState::Charging,
+                    present: true,
                 })
             )
         );
@@ -562,7 +623,7 @@ mod tests {
 
     #[test]
     fn battery_state_default_not_charging() {
-        assert!(!BatteryState::default().is_charging);
+        assert!(!BatteryState::default().power_state.is_charging());
     }
 
     #[test]
@@ -630,7 +691,8 @@ mod tests {
         );
         let state = crate::modules::ModuleState::Battery(BatteryState {
             percentage: 20.0,
-            is_charging: true,
+            power_state: crate::modules::battery::BatteryPowerState::Charging,
+            present: true,
         });
 
         assert_eq!(m.icon(&state), "plug");
@@ -656,7 +718,8 @@ mod tests {
         );
         let state = crate::modules::ModuleState::Battery(BatteryState {
             percentage: 10.0,
-            is_charging: false,
+            power_state: crate::modules::battery::BatteryPowerState::Discharging,
+            present: true,
         });
 
         assert_eq!(m.icon(&state), "crit");
@@ -680,7 +743,8 @@ mod tests {
         );
         let state = crate::modules::ModuleState::Battery(BatteryState {
             percentage: 75.0,
-            is_charging: false,
+            power_state: crate::modules::battery::BatteryPowerState::Discharging,
+            present: true,
         });
 
         assert_eq!(m.icon(&state), "half");
@@ -704,7 +768,8 @@ mod tests {
         );
         let state = crate::modules::ModuleState::Battery(BatteryState {
             percentage: 75.0,
-            is_charging: false,
+            power_state: crate::modules::battery::BatteryPowerState::Discharging,
+            present: true,
         });
 
         assert_eq!(m.icon(&state), "▓");
@@ -721,7 +786,8 @@ mod tests {
         );
         let state = BatteryState {
             percentage: 42.0,
-            is_charging: false,
+            power_state: crate::modules::battery::BatteryPowerState::Discharging,
+            present: true,
         };
 
         assert_eq!(
@@ -741,7 +807,8 @@ mod tests {
         );
         let state = BatteryState {
             percentage: 5.0,
-            is_charging: false,
+            power_state: crate::modules::battery::BatteryPowerState::Discharging,
+            present: true,
         };
 
         assert_eq!(
@@ -761,7 +828,8 @@ mod tests {
         );
         let state = BatteryState {
             percentage: 5.0,
-            is_charging: false,
+            power_state: crate::modules::battery::BatteryPowerState::Discharging,
+            present: true,
         };
 
         let segments = m
@@ -786,7 +854,8 @@ mod tests {
         );
         let state = BatteryState {
             percentage: 5.0,
-            is_charging: false,
+            power_state: crate::modules::battery::BatteryPowerState::Discharging,
+            present: true,
         };
 
         let segments = m

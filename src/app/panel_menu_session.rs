@@ -711,7 +711,7 @@ mod tests {
             comment: None,
             keywords: vec![],
             icon: None,
-            exec: name.to_ascii_lowercase(),
+            desktop_file: "fixture.desktop".into(),
         }
     }
 

@@ -22,6 +22,7 @@ pub(super) enum AppEffect {
     SuspendBarKeyboardInteractivity,
     RestoreBarKeyboardInteractivity,
     RunConfiguredCommand(crate::config::ConfiguredCommand),
+    LaunchApplication(Vec<String>),
     AdjustDefaultSinkVolume {
         step: u8,
         up: bool,
@@ -180,6 +181,14 @@ impl App {
                 let _ = crate::command::spawn_configured_command_fire_and_forget(&command);
                 Vec::new()
             }
+            AppEffect::LaunchApplication(argv) => {
+                tokio::task::spawn_blocking(move || {
+                    if let Err(error) = crate::command::launch_application(&argv) {
+                        tracing::warn!(target: "niribar::launcher", program = ?argv.first(), %error, "application launch failed");
+                    }
+                });
+                Vec::new()
+            }
             AppEffect::AdjustDefaultSinkVolume { step, up } => {
                 adjust_default_sink_volume(step, up);
                 Vec::new()
@@ -318,7 +327,13 @@ impl App {
                     .into_iter()
                     .find(|app| app.id == id)
                 {
-                    let _ = crate::command::spawn_desktop_application_fire_and_forget(&app);
+                    if let Err(error) =
+                        crate::command::spawn_desktop_application_fire_and_forget(&app)
+                    {
+                        tracing::warn!(target: "niribar::launcher", %id, %error, "desktop application launch failed");
+                    }
+                } else {
+                    tracing::warn!(target: "niribar::launcher", %id, "desktop application is no longer available");
                 }
             });
         }
@@ -339,24 +354,9 @@ fn send_ipc_response(
 }
 
 fn adjust_default_sink_volume(step: u8, up: bool) {
-    let arg = if up {
-        format!("{step}%+")
-    } else {
-        format!("{step}%-")
-    };
     tokio::task::spawn(async move {
-        match crate::command::set_default_sink_volume(&arg).await {
-            Ok(status) if status.success() => {}
-            Ok(status) => tracing::warn!(
-                target: "niribar::modules",
-                ?status,
-                "wpctl set-volume exited unsuccessfully"
-            ),
-            Err(err) => tracing::warn!(
-                target: "niribar::modules",
-                error = %err,
-                "failed to run wpctl set-volume"
-            ),
+        if let Err(error) = crate::dbus::wireplumber::adjust_default_sink_volume(step, up).await {
+            tracing::warn!(target: "niribar::modules", %error, "audio volume adjustment failed");
         }
     });
 }

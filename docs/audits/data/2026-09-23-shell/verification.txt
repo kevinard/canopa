@@ -1,0 +1,26 @@
+Niribar desktop-shell review verification — 2026-09-23
+Baseline: 988f970; no production source changed by this review.
+rustc 1.97.0-nightly (14196dbfa 2026-04-12)
+cargo 1.97.0-nightly (eb94155a9 2026-04-09)
+
+cargo test --locked --all-targets -j 2: PASS
+1,186 logical tests: 17 library + 1151 application + 6 Canopa + 2 protocol + 10 Wi-Fi.
+Exclude the recursively invoked native accessibility child test from the total.
+Initial sandbox attempt failed to start private D-Bus fixtures; permitted unsandboxed rerun passed.
+
+cargo clippy --locked --all-targets -- -D warnings: PASS
+cargo fmt --all -- --check: PASS
+python3 scripts/check-vendor.py: PASS (local manifest verification)
+python3 scripts/check-contrast.py: PASS (21 default color pairs)
+
+Command/discovery probe output (uses production modules with minimal unused config scaffolding):
+desktop field expansion: DesktopLaunchArgv { program: "example", args: ["--title", "--desktop-file"] }
+discovered apps: [("org.example.Locale.desktop", "English name")]
+configured launcher process alive at 100ms: true
+configured launcher process alive at 3400ms: false
+
+Probe build used rustc --edition=2024, -L dependency=target/debug/deps and --extern entries
+for built tokio, rustix and tracing rlibs. Run cargo test first to build those dependencies.
+Probe executable and compiler intermediate output were kept in /tmp.
+
+No live desktop service restarted, no Wi-Fi/audio state changed, and no new compositor/hardware acceptance run.

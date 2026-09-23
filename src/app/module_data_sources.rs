@@ -129,10 +129,12 @@ impl ModuleDataSourceRuntime {
         match event {
             BatteryEvent::StateChanged {
                 percentage,
-                is_charging,
+                power_state,
+                present,
             } => self.apply_source_state(ModuleDataSourceState::Battery(BatteryReading {
                 percentage,
-                is_charging,
+                power_state,
+                present,
             })),
             BatteryEvent::Unavailable => self.mark_unavailable(ModuleDataSourceIdentity::Battery),
         }
@@ -245,14 +247,16 @@ mod tests {
 
         let transition = runtime.handle_battery_event(BatteryEvent::StateChanged {
             percentage: 88.0,
-            is_charging: false,
+            power_state: crate::modules::battery::BatteryPowerState::Discharging,
+            present: true,
         });
 
         assert_eq!(
             transition,
             ModuleDataSourceTransition::Available(ModuleDataSourceState::Battery(BatteryReading {
                 percentage: 88.0,
-                is_charging: false,
+                power_state: crate::modules::battery::BatteryPowerState::Discharging,
+                present: true,
             }))
         );
     }

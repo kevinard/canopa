@@ -916,7 +916,10 @@ mod config_tests {
     #[test]
     fn state_selectors_per_module() {
         use crate::config::states;
-        assert_eq!(states::NETWORK, &["full", "limited", "none"]);
+        assert_eq!(
+            states::NETWORK,
+            &["full", "limited", "none", "unknown", "connected", "portal"]
+        );
         assert_eq!(states::WORKSPACES, &["focused", "active", "inactive"]);
         assert!(states::EMPTY.is_empty());
     }

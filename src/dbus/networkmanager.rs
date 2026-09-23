@@ -1,6 +1,10 @@
 use crate::modules::network::{NetworkConnectivity, NetworkEvent};
 use tokio::sync::mpsc;
 
+#[cfg(test)]
+#[path = "networkmanager_tests.rs"]
+mod transport_tests;
+
 // ── NetworkManager proxy ─────────────────────────────────────────────────
 
 /// Main NetworkManager proxy.
@@ -10,7 +14,7 @@ use tokio::sync::mpsc;
     default_path = "/org/freedesktop/NetworkManager"
 )]
 trait NetworkManager {
-    /// Connectivity: 0=Unknown, 1=None, 2=Limited, 3=Portal, 4=Full
+    /// Connectivity: 0=Unknown, 1=None, 2=Portal, 3=Limited, 4=Full
     #[zbus(property)]
     fn connectivity(&self) -> zbus::Result<u32>;
 
@@ -52,17 +56,20 @@ trait NetworkdManager {
 fn nm_connectivity(value: u32) -> NetworkConnectivity {
     match value {
         4 => NetworkConnectivity::Full,
-        2 | 3 => NetworkConnectivity::Limited,
-        _ => NetworkConnectivity::None, // 0=Unknown, 1=None
+        3 => NetworkConnectivity::Limited,
+        2 => NetworkConnectivity::Portal,
+        1 => NetworkConnectivity::None,
+        _ => NetworkConnectivity::Unknown,
     }
 }
 
 /// Convert networkd OnlineState string to NetworkConnectivity.
 fn networkd_connectivity(state: &str) -> NetworkConnectivity {
     match state {
-        "online" => NetworkConnectivity::Full,
+        "online" => NetworkConnectivity::Connected,
         "partial" => NetworkConnectivity::Limited,
-        _ => NetworkConnectivity::None, // "offline" or unknown
+        "offline" => NetworkConnectivity::None,
+        _ => NetworkConnectivity::Unknown,
     }
 }
 
@@ -168,54 +175,42 @@ async fn run_network_task(
     }
 }
 
+async fn network_signals(
+    conn: &zbus::Connection,
+    service: &str,
+) -> zbus::Result<zbus::MessageStream> {
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(service)?
+        .build();
+    zbus::MessageStream::for_match_rule(rule, conn, Some(64)).await
+}
+
 async fn run_nm_task(
     conn: zbus::Connection,
     tx: mpsc::UnboundedSender<Result<(NetworkConnectivity, Option<String>), ()>>,
 ) -> zbus::Error {
-    let proxy = match NetworkManagerProxy::new(&conn).await {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = tx.send(Err(()));
-            return e;
-        }
-    };
-
-    // Send initial state.
-    match read_nm_state(&proxy, &conn).await {
-        Ok(data) => {
-            if tx.send(Ok(data)).is_err() {
-                return zbus::Error::Failure("channel closed".into());
-            }
-        }
-        Err(e) => {
-            let _ = tx.send(Err(()));
-            return e;
-        }
-    }
-
-    // Watch Connectivity and PrimaryConnection property changes.
-    let mut conn_stream = proxy.receive_connectivity_changed().await;
-    let mut pc_stream = proxy.receive_primary_connection_changed().await;
-
     use iced::futures::StreamExt;
-    loop {
-        tokio::select! {
-            _ = conn_stream.next() => {}
-            _ = pc_stream.next()   => {}
-        }
-        match read_nm_state(&proxy, &conn).await {
-            Ok(data) => {
-                if tx.send(Ok(data)).is_err() {
-                    break;
-                }
-            }
-            Err(_) => {
-                let _ = tx.send(Err(()));
+    let result = async {
+        // Subscribe before the first snapshot, including active-profile renames.
+        let mut changes = network_signals(&conn, "org.freedesktop.NetworkManager").await?;
+        let proxy = NetworkManagerProxy::builder(&conn)
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await?;
+        loop {
+            let data = read_nm_state(&proxy, &conn).await?;
+            if tx.send(Ok(data)).is_err() || changes.next().await.transpose()?.is_none() {
                 break;
             }
         }
+        Ok::<_, zbus::Error>(())
     }
-    zbus::Error::Failure("NM stream ended".into())
+    .await;
+    let _ = tx.send(Err(()));
+    result
+        .err()
+        .unwrap_or_else(|| zbus::Error::Failure("NM stream ended".into()))
 }
 
 async fn read_nm_state(
@@ -248,63 +243,68 @@ async fn run_networkd_task(
     conn: zbus::Connection,
     tx: mpsc::UnboundedSender<Result<(NetworkConnectivity, Option<String>), ()>>,
 ) -> zbus::Error {
-    let proxy = match NetworkdManagerProxy::new(&conn).await {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = tx.send(Err(()));
-            return e;
-        }
-    };
-
-    // Send initial state.
-    match read_networkd_state(&proxy).await {
-        Ok(data) => {
-            if tx.send(Ok(data)).is_err() {
-                return zbus::Error::Failure("channel closed".into());
-            }
-        }
-        Err(e) => {
-            let _ = tx.send(Err(()));
-            return e;
-        }
-    }
-
-    // Watch OnlineState property changes on the Manager.
-    let mut online_stream = proxy.receive_online_state_changed().await;
-
     use iced::futures::StreamExt;
-    loop {
-        if online_stream.next().await.is_none() {
-            break;
-        }
-        match read_networkd_state(&proxy).await {
-            Ok(data) => {
-                if tx.send(Ok(data)).is_err() {
-                    break;
-                }
-            }
-            Err(_) => {
-                let _ = tx.send(Err(()));
+    let result = async {
+        // Link state, additions and removals can change the label without changing
+        // the manager's OnlineState. Observe the daemon's whole signal stream.
+        let mut changes = network_signals(&conn, "org.freedesktop.network1").await?;
+        let proxy = NetworkdManagerProxy::builder(&conn)
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await?;
+        loop {
+            let data = read_networkd_state(&proxy, &conn).await?;
+            if tx.send(Ok(data)).is_err() || changes.next().await.transpose()?.is_none() {
                 break;
             }
         }
+        Ok::<_, zbus::Error>(())
     }
-    zbus::Error::Failure("networkd stream ended".into())
+    .await;
+    let _ = tx.send(Err(()));
+    result
+        .err()
+        .unwrap_or_else(|| zbus::Error::Failure("networkd stream ended".into()))
+}
+
+#[zbus::proxy(
+    interface = "org.freedesktop.network1.Link",
+    default_service = "org.freedesktop.network1",
+    default_path = "/"
+)]
+trait NetworkdLink {
+    #[zbus(property)]
+    fn operational_state(&self) -> zbus::Result<String>;
+    #[zbus(property)]
+    fn online_state(&self) -> zbus::Result<String>;
 }
 
 async fn read_networkd_state(
     proxy: &NetworkdManagerProxy<'_>,
+    conn: &zbus::Connection,
 ) -> zbus::Result<(NetworkConnectivity, Option<String>)> {
-    let online_state = proxy.online_state().await?;
-    let connectivity = networkd_connectivity(&online_state);
-    // Get label: first non-loopback link name from ListLinks.
-    let label = proxy.list_links().await.ok().and_then(|links| {
-        links
-            .into_iter()
-            .filter(|(_, name, _)| name != "lo")
-            .map(|(_, name, _)| name)
-            .next()
-    });
+    let connectivity = networkd_connectivity(&proxy.online_state().await?);
+    let mut labels = Vec::new();
+    for (_, name, path) in proxy.list_links().await? {
+        if name == "lo" {
+            continue;
+        }
+        let link = NetworkdLinkProxy::builder(conn)
+            .path(path)?
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await?;
+        let online = link.online_state().await.unwrap_or_default();
+        let state = link.operational_state().await.unwrap_or_default();
+        if online == "online" && matches!(state.as_str(), "routable" | "degraded") {
+            labels.push(name);
+        }
+    }
+    // Networkd doesn't identify one primary connection. Report all usable links,
+    // deterministically, instead of guessing from ListLinks iteration order.
+    labels.sort();
+    labels.dedup();
+    let label = (!labels.is_empty()).then(|| labels.join(", "));
     Ok((connectivity, label))
 }
 
@@ -323,8 +323,8 @@ mod tests {
     }
 
     #[test]
-    fn nm_connectivity_2_is_limited() {
-        assert_eq!(nm_connectivity(2), NetworkConnectivity::Limited);
+    fn nm_connectivity_2_is_portal() {
+        assert_eq!(nm_connectivity(2), NetworkConnectivity::Portal);
     }
 
     #[test]
@@ -333,13 +333,16 @@ mod tests {
     }
 
     #[test]
-    fn nm_connectivity_0_is_none() {
-        assert_eq!(nm_connectivity(0), NetworkConnectivity::None);
+    fn nm_connectivity_0_is_unknown() {
+        assert_eq!(nm_connectivity(0), NetworkConnectivity::Unknown);
     }
 
     #[test]
-    fn networkd_online_state_online_is_full() {
-        assert_eq!(networkd_connectivity("online"), NetworkConnectivity::Full);
+    fn networkd_online_state_online_is_connected() {
+        assert_eq!(
+            networkd_connectivity("online"),
+            NetworkConnectivity::Connected
+        );
     }
 
     #[test]
@@ -356,7 +359,10 @@ mod tests {
     }
 
     #[test]
-    fn networkd_unknown_online_state_is_none() {
-        assert_eq!(networkd_connectivity("unknown"), NetworkConnectivity::None);
+    fn networkd_unknown_online_state_is_unknown() {
+        assert_eq!(
+            networkd_connectivity("unknown"),
+            NetworkConnectivity::Unknown
+        );
     }
 }

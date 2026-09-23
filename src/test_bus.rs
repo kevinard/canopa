@@ -6,7 +6,7 @@ use std::{
 
 pub(crate) struct TestBus {
     child: Child,
-    address: String,
+    pub(crate) address: String,
 }
 
 impl TestBus {

@@ -1211,6 +1211,23 @@ mod tests {
     }
 
     #[test]
+    fn configured_application_launch_requests_session_launch_and_closes_panel() {
+        let mut menu = menu_with_two_entries();
+        menu.items[0].action = Some(crate::config::PanelAction::Launch(vec!["kitty".into()]));
+        let mut runtime = PanelRuntime::default();
+        runtime.open_session(super::super::panel_menu_session::PanelMenuSource::Configured(menu));
+        assert_eq!(
+            runtime.activate(None),
+            vec![
+                PanelRuntimeEffect::RunPanelAction(crate::config::PanelAction::Launch(vec![
+                    "kitty".into()
+                ])),
+                PanelRuntimeEffect::RequestPanelClose,
+            ]
+        );
+    }
+
+    #[test]
     fn activating_installed_app_returns_launch_and_close_request_effects() {
         let mut runtime = PanelRuntime::default();
         runtime.open_session(
@@ -1224,7 +1241,7 @@ mod tests {
                     comment: None,
                     keywords: Vec::new(),
                     icon: None,
-                    exec: "alpha".into(),
+                    desktop_file: "fixture.desktop".into(),
                 }],
             },
         );

@@ -148,7 +148,7 @@ pub fn load() -> ConfigResult<Config> {
 }
 
 pub mod states {
-    pub const NETWORK: &[&str] = &["full", "limited", "none"];
+    pub const NETWORK: &[&str] = &["full", "limited", "none", "unknown", "connected", "portal"];
     pub const WORKSPACES: &[&str] = &["focused", "active", "inactive"];
     pub const EMPTY: &[&str] = &[];
 }

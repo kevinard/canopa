@@ -325,7 +325,7 @@ impl ModuleRuntime {
             }];
         }
 
-        if let Some(message) = self.module_owned_interaction(&id, event) {
+        if let Some(message) = self.module_owned_interaction(&id, event, origin_window) {
             let module_name = self.configured_module_name_for_instance(&id);
             tracing::trace!(
                 target: "niribar::modules",
@@ -622,10 +622,11 @@ impl ModuleRuntime {
         &self,
         id: &ModuleId,
         event: crate::modules::InteractionEvent,
+        window: iced::window::Id,
     ) -> Option<super::Message> {
         self.get(id)
             .and_then(|module| module.interaction_handler())
-            .and_then(|handler| handler.on_interaction(event))
+            .and_then(|handler| handler.on_interaction_in_window(event, window))
     }
 
     pub(super) fn dynamic_module_runtime_snapshot(
@@ -827,6 +828,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         }
@@ -1700,7 +1702,8 @@ mod tests {
                 crate::modules::data_source::ModuleDataSourceState::Battery(
                     crate::modules::data_source::BatteryReading {
                         percentage: 67.0,
-                        is_charging: true,
+                        power_state: crate::modules::battery::BatteryPowerState::Charging,
+                        present: true,
                     },
                 ),
             ));
@@ -1711,7 +1714,7 @@ mod tests {
                 panic!("expected battery state for {id}");
             };
             assert!((state.percentage - 67.0).abs() < 0.001);
-            assert!(state.is_charging);
+            assert!(state.power_state.is_charging());
         }
         assert_eq!(
             app.modules.state(&ModuleId::new("clock")),
@@ -2069,7 +2072,8 @@ mod tests {
             crate::modules::data_source::ModuleInstanceOutcome::Visible(ModuleState::Battery(
                 crate::modules::battery::BatteryState {
                     percentage: 91.0,
-                    is_charging: false,
+                    power_state: crate::modules::battery::BatteryPowerState::Discharging,
+                    present: true,
                 },
             )),
         )]);
@@ -2077,7 +2081,7 @@ mod tests {
         match app.modules.state(&ModuleId::new("battery")) {
             Some(ModuleState::Battery(state)) => {
                 assert!((state.percentage - 91.0).abs() < 0.001);
-                assert!(!state.is_charging);
+                assert!(!state.power_state.is_charging());
             }
             other => panic!("expected battery state, got {other:?}"),
         }
@@ -2119,7 +2123,8 @@ mod tests {
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(
             BatteryEvent::StateChanged {
                 percentage: 42.0,
-                is_charging: false,
+                power_state: crate::modules::battery::BatteryPowerState::Discharging,
+                present: true,
             },
         )));
 
@@ -2128,7 +2133,7 @@ mod tests {
                 panic!("expected battery state for {id}");
             };
             assert_eq!(state.percentage, 42.0);
-            assert!(!state.is_charging);
+            assert!(!state.power_state.is_charging());
         }
     }
 
@@ -2477,14 +2482,15 @@ mod tests {
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(
             BatteryEvent::StateChanged {
                 percentage: 72.0,
-                is_charging: false,
+                power_state: crate::modules::battery::BatteryPowerState::Discharging,
+                present: true,
             },
         )));
         let id = ModuleId::new("battery");
         match app.modules.state(&id) {
             Some(ModuleState::Battery(s)) => {
                 assert!((s.percentage - 72.0).abs() < 0.001);
-                assert!(!s.is_charging);
+                assert!(!s.power_state.is_charging());
             }
             other => panic!("expected Battery state, got {:?}", other),
         }
@@ -2496,7 +2502,8 @@ mod tests {
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(
             BatteryEvent::StateChanged {
                 percentage: 72.0,
-                is_charging: false,
+                power_state: crate::modules::battery::BatteryPowerState::Discharging,
+                present: true,
             },
         )));
         assert!(matches!(
@@ -2538,14 +2545,15 @@ mod tests {
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(
             BatteryEvent::StateChanged {
                 percentage: 74.0,
-                is_charging: true,
+                power_state: crate::modules::battery::BatteryPowerState::Charging,
+                present: true,
             },
         )));
 
         match app.modules.state(&ModuleId::new("battery")) {
             Some(ModuleState::Battery(state)) => {
                 assert!((state.percentage - 74.0).abs() < 0.001);
-                assert!(state.is_charging);
+                assert!(state.power_state.is_charging());
             }
             other => panic!("expected recovered battery state, got {other:?}"),
         }
@@ -2557,7 +2565,8 @@ mod tests {
         let _ = app.update(Message::Modules(ModuleRuntimeEvent::Battery(
             BatteryEvent::StateChanged {
                 percentage: 50.0,
-                is_charging: true,
+                power_state: crate::modules::battery::BatteryPowerState::Charging,
+                present: true,
             },
         )));
         let id = ModuleId::new("battery");
@@ -2944,6 +2953,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/CustomStatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -2974,6 +2984,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -3002,6 +3013,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/CustomStatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app-old".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -3030,6 +3042,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/CustomStatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };

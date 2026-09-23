@@ -9,19 +9,21 @@ pub struct DesktopApplication {
     pub comment: Option<String>,
     pub keywords: Vec<String>,
     pub icon: Option<String>,
-    pub exec: String,
+    pub desktop_file: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawDesktopEntry {
     pub id: String,
     pub body: String,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesktopEnvironment {
     names: Vec<String>,
     known: bool,
+    locales: Vec<String>,
 }
 
 impl DesktopEnvironment {
@@ -29,15 +31,30 @@ impl DesktopEnvironment {
         Self {
             names: Vec::new(),
             known: false,
+            locales: Vec::new(),
         }
     }
 
     pub fn current() -> Self {
-        std::env::var("XDG_CURRENT_DESKTOP")
+        let mut env = std::env::var("XDG_CURRENT_DESKTOP")
             .ok()
             .filter(|value| !value.trim().is_empty())
             .map(|value| Self::from_current_desktop(&value))
-            .unwrap_or_else(Self::unknown)
+            .unwrap_or_else(Self::unknown);
+        let locale = ["LC_ALL", "LC_MESSAGES", "LANG"]
+            .into_iter()
+            .filter_map(|key| std::env::var(key).ok())
+            .find(|value| !value.is_empty());
+        if let Some(locale) =
+            locale.filter(|value| value != "C" && value != "POSIX" && !value.starts_with("C."))
+        {
+            env.locales = std::env::var("LANGUAGE")
+                .ok()
+                .filter(|value| !value.is_empty())
+                .map(|value| value.split(':').map(str::to_owned).collect())
+                .unwrap_or_else(|| vec![locale]);
+        }
+        env
     }
 
     pub fn from_current_desktop(value: &str) -> Self {
@@ -48,6 +65,7 @@ impl DesktopEnvironment {
                 .filter(|name| !name.is_empty())
                 .collect(),
             known: true,
+            locales: Vec::new(),
         }
     }
 
@@ -145,7 +163,7 @@ fn collect_desktop_entries(
                 .map(|component| component.as_os_str().to_string_lossy())
                 .collect::<Vec<_>>()
                 .join("-");
-            entries.push(RawDesktopEntry { id, body });
+            entries.push(RawDesktopEntry { id, body, path });
         }
     }
     Ok(())
@@ -180,15 +198,17 @@ fn application_from_entry(
     {
         return None;
     }
-    let name = non_empty_field(&fields, "Name")?;
-    let exec = non_empty_field(&fields, "Exec")?;
+    let name = localized_field(&fields, "Name", &env.locales)?;
+    if non_empty_field(&fields, "Exec").is_none() && !bool_field(&fields, "DBusActivatable") {
+        return None;
+    }
     Some(DesktopApplication {
         id: entry.id,
         name,
-        generic_name: optional_non_empty_field(&fields, "GenericName"),
-        comment: optional_non_empty_field(&fields, "Comment"),
-        keywords: fields
-            .get("Keywords")
+        generic_name: localized_field(&fields, "GenericName", &env.locales),
+        comment: localized_field(&fields, "Comment", &env.locales),
+        keywords: localized_field(&fields, "Keywords", &env.locales)
+            .as_deref()
             .map(|value| {
                 semicolon_list(value)
                     .into_iter()
@@ -197,8 +217,63 @@ fn application_from_entry(
             })
             .unwrap_or_default(),
         icon: optional_non_empty_field(&fields, "Icon"),
-        exec,
+        desktop_file: entry.path,
     })
+}
+
+fn localized_field(
+    fields: &HashMap<String, String>,
+    key: &str,
+    locales: &[String],
+) -> Option<String> {
+    for locale in locales {
+        let (locale, modifier) = locale
+            .split_once('@')
+            .map_or((locale.as_str(), None), |(base, modifier)| {
+                (base, Some(modifier))
+            });
+        let base = locale.split('.').next().unwrap_or(locale);
+        let language = base.split('_').next().unwrap_or(base);
+        let mut candidates = Vec::new();
+        if let Some(modifier) = modifier {
+            candidates.push(format!("{base}@{modifier}"));
+        }
+        candidates.push(base.to_owned());
+        if let Some(modifier) = modifier {
+            candidates.push(format!("{language}@{modifier}"));
+        }
+        candidates.push(language.to_owned());
+        for locale in candidates {
+            if let Some(value) = optional_non_empty_field(fields, &format!("{key}[{locale}]")) {
+                return Some(unescape_string(&value));
+            }
+        }
+    }
+    optional_non_empty_field(fields, key).map(|value| unescape_string(&value))
+}
+
+fn unescape_string(value: &str) -> String {
+    let mut chars = value.chars();
+    let mut result = String::new();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            result.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('s') => result.push(' '),
+            Some('n') => result.push('\n'),
+            Some('t') => result.push('\t'),
+            Some('r') => result.push('\r'),
+            Some('\\') => result.push('\\'),
+            Some(ch) => {
+                result.push('\\');
+                result.push(ch);
+            }
+            None => result.push('\\'),
+        }
+    }
+    result
 }
 
 fn parse_desktop_entry_fields(body: &str) -> HashMap<String, String> {
@@ -254,10 +329,47 @@ fn semicolon_list(value: &str) -> Vec<&str> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn localized_metadata_uses_locale_fallbacks_and_retains_entry_path() {
+        let mut env = DesktopEnvironment::from_current_desktop("niri");
+        env.locales = vec!["fr_CA.UTF-8@custom".into(), "en".into()];
+        let apps = applications_from_entries(
+            vec![entry(
+                "app.desktop",
+                concat!(
+                    "[Desktop Entry]\nType=Application\nName=Default\nExec=true\n",
+                    "Name[fr]=Français\nName[fr_CA]=Québécois\n",
+                    "GenericName[fr]=Éditeur\\sde texte\nComment[fr]=Description\n",
+                    "Keywords[fr]=texte;édition;\n"
+                ),
+            )],
+            &env,
+        );
+        assert_eq!(apps[0].name, "Québécois");
+        assert_eq!(apps[0].generic_name.as_deref(), Some("Éditeur de texte"));
+        assert_eq!(apps[0].comment.as_deref(), Some("Description"));
+        assert_eq!(apps[0].keywords, ["texte", "édition"]);
+        assert_eq!(apps[0].desktop_file, PathBuf::from("app.desktop"));
+    }
+
+    #[test]
+    fn dbus_activatable_application_does_not_require_exec() {
+        let apps = applications_from_entries(
+            vec![entry(
+                "org.example.App.desktop",
+                "[Desktop Entry]\nType=Application\nName=Bus App\nDBusActivatable=true\n",
+            )],
+            &DesktopEnvironment::unknown(),
+        );
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].name, "Bus App");
+    }
+
     fn entry(id: &str, body: &str) -> RawDesktopEntry {
         RawDesktopEntry {
             id: id.into(),
             body: body.into(),
+            path: id.into(),
         }
     }
 
@@ -345,11 +457,13 @@ mod tests {
         let entries = vec![
             RawDesktopEntry {
                 id: "app.desktop".into(),
+                path: "app.desktop".into(),
                 body: "[Desktop Entry]\nType=Application\nName=Hidden\nHidden=true\nExec=true\n"
                     .into(),
             },
             RawDesktopEntry {
                 id: "app.desktop".into(),
+                path: "app.desktop".into(),
                 body: "[Desktop Entry]\nType=Application\nName=System\nExec=true\n".into(),
             },
         ];

@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::modules::battery::BatteryEvent;
+use crate::modules::battery::{BatteryEvent, BatteryPowerState};
 
 /// UPower DisplayDevice D-Bus proxy (zbus 5.x).
 ///
@@ -21,12 +21,9 @@ trait UPowerDevice {
 
     #[zbus(property)]
     fn state(&self) -> zbus::Result<u32>;
-}
 
-/// Returns `true` for states that indicate "not discharging":
-/// Charging (1), FullyCharged (4), PendingCharge (5).
-fn upower_state_is_charging(state: u32) -> bool {
-    matches!(state, 1 | 4 | 5)
+    #[zbus(property)]
+    fn is_present(&self) -> zbus::Result<bool>;
 }
 
 /// Wrapper around `zbus::Connection` that implements `Hash` for use as subscription data.
@@ -45,7 +42,7 @@ fn build_battery_stream(
     data: &BatteryConnData,
 ) -> std::pin::Pin<Box<dyn iced::futures::Stream<Item = crate::app::Message> + Send + 'static>> {
     let conn = data.0.clone();
-    crate::dbus::subscription::build::<(f64, bool), crate::app::Message, _, _, _>(
+    crate::dbus::subscription::build::<(f64, BatteryPowerState, bool), crate::app::Message, _, _, _>(
         move |tx| {
             let conn = conn.clone();
             tokio::spawn(async move {
@@ -59,11 +56,12 @@ fn build_battery_stream(
                 .await;
             });
         },
-        |(pct, charging)| {
+        |(pct, power_state, present)| {
             crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Battery(
                 BatteryEvent::StateChanged {
                     percentage: pct,
-                    is_charging: charging,
+                    power_state,
+                    present,
                 },
             ))
         },
@@ -78,7 +76,7 @@ fn build_battery_stream(
 /// Returns an Iced subscription that connects to the UPower DisplayDevice on `conn`
 /// and emits wrapped module battery events on each state change.
 ///
-/// Emits `BatteryEvent::Unavailable` (once) if UPower is unreachable, then terminates.
+/// Emits `BatteryEvent::Unavailable` on service loss and retries with bounded backoff.
 pub(crate) fn battery_subscription(
     conn: zbus::Connection,
 ) -> iced::Subscription<crate::app::Message> {
@@ -87,12 +85,12 @@ pub(crate) fn battery_subscription(
 
 /// Drives the UPower property subscription.
 ///
-/// Sends (percentage, is_charging) on initial read and on each property change.
+/// Sends (percentage, power state, presence) on initial read and on each property change.
 /// Sends Err(()) on any fatal error (proxy creation, property read failure).
 /// The task owns the proxy for its entire lifetime, avoiding lifetime issues with the generated proxy.
 async fn run_upower_task(
     conn: zbus::Connection,
-    tx: mpsc::UnboundedSender<Result<(f64, bool), ()>>,
+    tx: mpsc::UnboundedSender<Result<(f64, BatteryPowerState, bool), ()>>,
 ) -> zbus::Error {
     // Build proxy — error if UPower not on bus.
     let proxy = match UPowerDeviceProxy::new(&conn).await {
@@ -102,6 +100,10 @@ async fn run_upower_task(
             return e;
         }
     };
+
+    let mut pct_stream = proxy.receive_percentage_changed().await;
+    let mut state_stream = proxy.receive_state_changed().await;
+    let mut presence_stream = proxy.receive_is_present_changed().await;
 
     // Send initial state.
     match read_state(&proxy).await {
@@ -116,51 +118,61 @@ async fn run_upower_task(
         }
     }
 
-    // Subscribe to property changes.
-    // zbus 5.x: `receive_percentage_changed()` and `receive_state_changed()` return
-    // `impl Stream` (awaitable). Use tokio::select! to merge both streams.
-    let mut pct_stream = proxy.receive_percentage_changed().await;
-    let mut state_stream = proxy.receive_state_changed().await;
-
     use iced::futures::StreamExt;
     loop {
-        tokio::select! {
-            _ = pct_stream.next() => {
-                match read_state(&proxy).await {
-                    Ok(data) => { if tx.send(Ok(data)).is_err() { break; } }
-                    Err(_) => { let _ = tx.send(Err(())); break; }
+        let live = tokio::select! {
+            next = pct_stream.next() => next.is_some(),
+            next = state_stream.next() => next.is_some(),
+            next = presence_stream.next() => next.is_some(),
+        };
+        if !live {
+            break;
+        }
+        match read_state(&proxy).await {
+            Ok(data) => {
+                if tx.send(Ok(data)).is_err() {
+                    break;
                 }
             }
-            _ = state_stream.next() => {
-                match read_state(&proxy).await {
-                    Ok(data) => { if tx.send(Ok(data)).is_err() { break; } }
-                    Err(_) => { let _ = tx.send(Err(())); break; }
-                }
+            Err(_) => {
+                let _ = tx.send(Err(()));
+                break;
             }
         }
     }
     zbus::Error::Failure("stream ended".into())
 }
 
-async fn read_state(proxy: &UPowerDeviceProxy<'_>) -> zbus::Result<(f64, bool)> {
+async fn read_state(proxy: &UPowerDeviceProxy<'_>) -> zbus::Result<(f64, BatteryPowerState, bool)> {
     let pct = proxy.percentage().await?;
     let state = proxy.state().await?;
-    Ok((pct, upower_state_is_charging(state)))
+    Ok((
+        pct,
+        BatteryPowerState::from_upower(state),
+        proxy.is_present().await?,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    struct Device;
+    struct Device {
+        present: bool,
+        state: u32,
+    }
     #[zbus::interface(name = "org.freedesktop.UPower.Device")]
     impl Device {
+        #[zbus(property)]
+        fn is_present(&self) -> bool {
+            self.present
+        }
         #[zbus(property)]
         fn percentage(&self) -> f64 {
             73.0
         }
         #[zbus(property)]
         fn state(&self) -> u32 {
-            2
+            self.state
         }
     }
 
@@ -191,7 +203,13 @@ mod tests {
             let service = bus.connect().await;
             service
                 .object_server()
-                .at("/org/freedesktop/UPower/devices/DisplayDevice", Device)
+                .at(
+                    "/org/freedesktop/UPower/devices/DisplayDevice",
+                    Device {
+                        present: true,
+                        state: 2,
+                    },
+                )
                 .await
                 .unwrap();
             service
@@ -216,18 +234,86 @@ mod tests {
         }
     }
 
-    #[test]
-    fn charging_state_1_is_charging() {
-        assert!(upower_state_is_charging(1));
+    #[tokio::test]
+    async fn presence_and_power_state_changes_are_observed_without_percentage_changes() {
+        let bus = crate::test_bus::TestBus::new();
+        let service = bus.connect().await;
+        let path = "/org/freedesktop/UPower/devices/DisplayDevice";
+        service
+            .object_server()
+            .at(
+                path,
+                Device {
+                    present: false,
+                    state: 0,
+                },
+            )
+            .await
+            .unwrap();
+        service
+            .request_name("org.freedesktop.UPower")
+            .await
+            .unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let worker = tokio::spawn(run_upower_task(bus.connect().await, tx));
+        async fn expect(
+            rx: &mut mpsc::UnboundedReceiver<Result<(f64, BatteryPowerState, bool), ()>>,
+            state: BatteryPowerState,
+            present: bool,
+        ) {
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                loop {
+                    let reading = rx.recv().await.unwrap().unwrap();
+                    if reading == (73.0, state, present) {
+                        break;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+        }
+        expect(&mut rx, BatteryPowerState::Unknown, false).await;
+        let device = service
+            .object_server()
+            .interface::<_, Device>(path)
+            .await
+            .unwrap();
+        for (present, state) in [
+            (true, 1),
+            (true, 4),
+            (true, 5),
+            (true, 6),
+            (true, 2),
+            (false, 0),
+            (true, 2),
+        ] {
+            let mut guard = device.get_mut().await;
+            guard.present = present;
+            guard.state = state;
+            guard
+                .is_present_changed(device.signal_emitter())
+                .await
+                .unwrap();
+            guard.state_changed(device.signal_emitter()).await.unwrap();
+            drop(guard);
+            expect(&mut rx, BatteryPowerState::from_upower(state), present).await;
+        }
+        worker.abort();
+        let _ = worker.await;
     }
 
     #[test]
-    fn fully_charged_state_4_is_charging() {
-        assert!(upower_state_is_charging(4));
-    }
-
-    #[test]
-    fn discharging_state_2_is_not_charging() {
-        assert!(!upower_state_is_charging(2));
+    fn upower_preserves_full_and_pending_states() {
+        assert_eq!(
+            BatteryPowerState::from_upower(4),
+            BatteryPowerState::FullyCharged
+        );
+        assert_eq!(
+            BatteryPowerState::from_upower(5),
+            BatteryPowerState::PendingCharge
+        );
+        assert!(!BatteryPowerState::from_upower(4).is_charging());
+        assert!(!BatteryPowerState::from_upower(5).is_charging());
+        assert!(BatteryPowerState::from_upower(1).is_charging());
     }
 }

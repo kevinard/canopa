@@ -1317,6 +1317,7 @@ mod tests {
             object_path: zbus::zvariant::OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: crate::dbus::sni::host::ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: Some(crate::dbus::sni::host::SniTooltip {
                 title: "Test App".into(),
@@ -1370,7 +1371,8 @@ mod tests {
                 state: crate::modules::ModuleState::Battery(
                     crate::modules::battery::BatteryState {
                         percentage: 74.0,
-                        is_charging: false,
+                        power_state: crate::modules::battery::BatteryPowerState::Discharging,
+                        present: true,
                     },
                 ),
             },
@@ -1406,7 +1408,8 @@ mod tests {
                 state: crate::modules::ModuleState::Battery(
                     crate::modules::battery::BatteryState {
                         percentage: 74.0,
-                        is_charging: false,
+                        power_state: crate::modules::battery::BatteryPowerState::Discharging,
+                        present: true,
                     },
                 ),
             },

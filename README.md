@@ -17,12 +17,21 @@ cargo +1.95.0 build --locked --release --bins
 
 Run inside a Niri/Wayland desktop session with its session D-Bus environment.
 Keep `niribar-wifi-provider` alongside `niribar` or on PATH. PulseAudio or
-PipeWire's PulseAudio compatibility service supplies audio state.
+PipeWire's PulseAudio compatibility service supplies audio state and control.
+Installed application launching requires `gio` (`libglib2.0-bin` on Debian/Ubuntu).
+Application launches use niri's IPC; without `NIRI_SOCKET`, they require
+`systemd-run` and a systemd user manager.
 
 Configuration is read from `$XDG_CONFIG_HOME/niribar/config.kdl`, falling back
 to `~/.config/niribar/config.kdl`. The embedded default works without a file;
 copy [config/default.kdl](config/default.kdl) there to customize it. See
 [docs](docs/) and [CONTEXT.md](CONTEXT.md) for configuration concepts.
+
+Use `launch "kitty"` or `launch "firefox" "https://example.org"` in menu items
+and module actions to open applications. Arguments are literal strings. Launches
+belong to the desktop session and survive bar restarts. Existing `command`
+actions remain bounded automation (three seconds by default); migrate any
+application-opening `command` actions in your own config to `launch`.
 
 ```sh
 niribar --version
@@ -84,9 +93,11 @@ python3 scripts/check-contrast.py
 bash scripts/package-release.sh target/release dist
 ```
 
-Tests start private D-Bus daemons and Unix sockets; environments that forbid
-local socket binding cannot run the transport suite. They do not connect to
-your real Wi-Fi network. See [the audit](docs/audits/2026-09-23-project-state.md)
+The transport suite also requires `libglib2.0-bin`, `pipewire`, `pipewire-pulse`
+and `pulseaudio-utils`. Tests start private D-Bus/audio daemons and Unix sockets;
+environments that forbid local socket binding cannot run the transport suite.
+Audio fixtures use synthetic sinks without hardware discovery. Tests do not
+change your desktop's audio or Wi-Fi services. See [the audit](docs/audits/2026-09-23-project-state.md)
 and [follow-up evidence](docs/audits/2026-09-23-remediation.md).
 The [desktop validation harness](docs/manual-validation.md) runs a private
 compositor session for measurements and panel checks. The

@@ -17,6 +17,7 @@ pub(super) type RawMenuLayout = (u32, RawMenuItem);
 )]
 pub(super) trait SniItem {
     fn activate(&self, x: i32, y: i32) -> zbus::Result<()>;
+    fn context_menu(&self, x: i32, y: i32) -> zbus::Result<()>;
     fn secondary_activate(&self, x: i32, y: i32) -> zbus::Result<()>;
     fn scroll(&self, delta: i32, orientation: &str) -> zbus::Result<()>;
 
@@ -28,6 +29,9 @@ pub(super) trait SniItem {
 
     #[zbus(property)]
     fn status(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn item_is_menu(&self) -> zbus::Result<bool>;
 
     #[zbus(property)]
     fn menu(&self) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;

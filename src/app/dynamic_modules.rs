@@ -504,6 +504,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         }

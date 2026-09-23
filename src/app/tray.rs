@@ -311,6 +311,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/StatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         }
@@ -382,6 +383,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/CustomStatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -405,6 +407,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/AltStatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -426,6 +429,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/AltStatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: Some(OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap()),
             tooltip: None,
         };
@@ -447,6 +451,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/AltStatusNotifierItem").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: Some(OwnedObjectPath::try_from("/com/canonical/dbusmenu").unwrap()),
             tooltip: None,
         };
@@ -471,6 +476,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/StatusNotifierItemA").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app-a".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };
@@ -479,6 +485,7 @@ mod tests {
             object_path: OwnedObjectPath::try_from("/StatusNotifierItemB").unwrap(),
             icon: crate::dbus::sni::host::TrayIcon::Named("app-b".into()),
             status: ItemStatus::Active,
+            item_is_menu: false,
             menu_path: None,
             tooltip: None,
         };

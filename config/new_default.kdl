@@ -23,8 +23,8 @@
 // Named panel menus can be opened from bar or module actions.
 menus {
     menu "main" {
-        item "Terminal" { command "kitty" }
-        item "Browser" { command "firefox" }
+        item "Terminal" { launch "kitty" }
+        item "Browser" { launch "firefox" }
     }
 }
 

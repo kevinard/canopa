@@ -468,6 +468,7 @@ fn parse_menu_action_operation(
     match node.name().value() {
         "command" => actions::parse_command_node_ctx(node, ctx, command_policy)
             .map(super::PanelAction::Command),
+        "launch" => actions::parse_launch(node, ctx).map(super::PanelAction::Launch),
         "open-panel" => {
             require_no_arguments(node, ctx)?;
             Ok(super::PanelAction::OpenPanel)
@@ -487,7 +488,7 @@ fn parse_menu_action_operation(
             node,
             format!("unknown menu item operation {other:?}"),
             Some(
-                "expected `command`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
+                "expected `command`, `launch`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
                     .into(),
             ),
         )),

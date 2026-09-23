@@ -1201,3 +1201,44 @@ modules {
         assert_eq!(rotation, crate::config::ContentRotation::Clockwise);
     }
 }
+#[test]
+fn application_launch_is_argv_only_and_independent_of_command_timeout() {
+    let config = parse(
+        r#"
+        command-policy { allow-shell #false; action-timeout-ms 10; }
+        menus { menu "apps" { item "App" { launch "app" "two words" "$(literal)"; }; }; }
+        modules { module "clock" { actions { click { launch "app" ""; }; }; }; }
+    "#,
+    )
+    .unwrap();
+    assert_eq!(
+        config.menus[0].items[0].action,
+        Some(crate::config::PanelAction::Launch(vec![
+            "app".into(),
+            "two words".into(),
+            "$(literal)".into()
+        ]))
+    );
+    assert_eq!(
+        config.modules[0]
+            .actions
+            .action_for(&crate::config::ActionTrigger::Click),
+        Some(&crate::config::PanelAction::Launch(vec![
+            "app".into(),
+            "".into()
+        ]))
+    );
+    for operation in [
+        r#"launch """#,
+        r#"launch program="app""#,
+        "launch 1",
+        r#"launch "app" { argv "x"; }"#,
+    ] {
+        assert!(
+            parse(&format!(
+                "modules {{ module \"clock\" {{ actions {{ click {{ {operation}; }}; }}; }}; }}"
+            ))
+            .is_err()
+        );
+    }
+}

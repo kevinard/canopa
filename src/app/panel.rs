@@ -665,6 +665,9 @@ impl App {
             crate::config::PanelAction::Command(command) => {
                 Task::batch(self.apply_app_effects(vec![AppEffect::RunConfiguredCommand(command)]))
             }
+            crate::config::PanelAction::Launch(argv) => {
+                Task::batch(self.apply_app_effects(vec![AppEffect::LaunchApplication(argv)]))
+            }
             crate::config::PanelAction::OpenProvider(provider_name) => {
                 self.open_provider_panel(origin_window, origin, provider_name, None)
             }
@@ -1307,7 +1310,7 @@ pub(super) fn panel_event_for_action(
                 anchor,
             })
         }
-        crate::config::PanelAction::Command(_) => None,
+        crate::config::PanelAction::Command(_) | crate::config::PanelAction::Launch(_) => None,
     }
 }
 
@@ -2807,7 +2810,7 @@ mod tests {
             comment: None,
             keywords: vec![],
             icon: None,
-            exec: name.to_ascii_lowercase(),
+            desktop_file: "fixture.desktop".into(),
         }
     }
 

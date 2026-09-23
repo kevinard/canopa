@@ -982,7 +982,7 @@ mod tests {
                     comment: None,
                     keywords: vec![],
                     icon: None,
-                    exec: format!("app-{index}"),
+                    desktop_file: "fixture.desktop".into(),
                 })
                 .collect(),
         );

@@ -41,6 +41,10 @@ jobs:
             libxkbcommon-dev \
             libudev-dev \
             dbus \
+            libglib2.0-bin \
+            pipewire \
+            pipewire-pulse \
+            pulseaudio-utils \
             at-spi2-core \
             pkg-config
 

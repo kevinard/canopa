@@ -21,10 +21,11 @@
 
 // ─── Menus ───────────────────────────────────────────────────────────────────
 // Named panel menus can be opened from bar or module actions.
+// Use launch for desktop applications; command actions are bounded automation.
 menus {
     menu "main" {
-        item "Terminal" { command "kitty" }
-        item "Browser" { command "firefox" }
+        item "Terminal" { launch "kitty" }
+        item "Browser" { launch "firefox" }
     }
 }
 
@@ -351,7 +352,7 @@ modules {
         //     segment "{date}" color="subtext"
         // }
         // actions {
-        //     click { command "gnome-clocks" }
+        //     click { launch "gnome-clocks" }
         //     right-click { command "notify-send \"$(date)\"" }
         // }
         //
@@ -398,7 +399,7 @@ modules {
     //     //     segment "{label}" color="text" weight="bold"
     //     // }
     //     actions {
-    //         click { command "kitty" }
+    //         click { launch "kitty" }
     //         right-click { command "notify-send Launch" }
     //     }
     //     //

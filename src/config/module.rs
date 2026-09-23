@@ -435,6 +435,8 @@ pub enum ActionTrigger {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PanelAction {
     Command(ConfiguredCommand),
+    /// An argv application launch, owned by the compositor/session rather than the bar.
+    Launch(Vec<String>),
     OpenPanel,
     TogglePanel,
     ClosePanel,
