@@ -63,10 +63,17 @@ External providers use explicit `niribar-v1` or `canopa-v4` protocols. See
 
 ## Development and validation
 
-For a desktop that automatically follows successful builds of local commits,
-use the [development installation](docs/development-installation.md). It builds
-from a separate checkout, installs both binaries together, and retains the
-previous working version if a build or initial service check fails.
+To update your local desktop installation whenever you choose, run:
+
+```sh
+./scripts/update.sh
+```
+
+This builds the current checkout (including uncommitted changes), installs both
+executables into `~/.local/bin`, and restarts `niribar.service` if it is running.
+It reuses the repository's build cache. The service must already be configured
+to run `~/.local/bin/niribar`; this command preserves your service configuration.
+If compilation fails, the installed binaries stay unchanged.
 
 ```sh
 cargo +1.95.0 fmt --all -- --check
