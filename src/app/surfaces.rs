@@ -178,10 +178,6 @@ impl SurfaceManager {
         self.surfaces.values_mut()
     }
 
-    pub(super) fn get(&self, id: &iced::window::Id) -> Option<&SurfaceState> {
-        self.surfaces.get(id)
-    }
-
     pub(super) fn get_mut(&mut self, id: &iced::window::Id) -> Option<&mut SurfaceState> {
         self.surfaces.get_mut(id)
     }
@@ -760,6 +756,13 @@ impl App {
         use crate::config::ModuleParams;
         use crate::config::tooltip_defaults as td;
 
+        if !self
+            .effective_nav_list(window)
+            .iter()
+            .any(|(_, id)| id == module)
+        {
+            return None;
+        }
         let config_name = self.modules.configured_module_name_for_instance(module);
         let mc = self.config.modules.iter().find(|m| m.name == config_name)?;
 
@@ -776,7 +779,6 @@ impl App {
             #[cfg(test)]
             ModuleParams::None => return None,
         };
-        let _ = window;
         setting.resolve(default)
     }
 

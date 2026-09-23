@@ -3,7 +3,8 @@ use crate::theme;
 /// Returns `(background, foreground)` colours for a workspace pill.
 ///
 /// Focused workspace: accent background with base-coloured text.
-/// Active (visible on its output) but not globally focused: surface1 background with normal text.
+/// Active (visible on its output) but not globally focused: surface1 background with normal text
+/// and a contrasting outline from `pill_border`.
 /// Inactive workspace: transparent background with normal text colour.
 fn pill_colors(is_focused: bool, is_active: bool) -> (iced::Color, iced::Color) {
     if is_focused {
@@ -12,6 +13,18 @@ fn pill_colors(is_focused: bool, is_active: bool) -> (iced::Color, iced::Color) 
         (theme::SURFACE1, theme::TEXT)
     } else {
         (iced::Color::TRANSPARENT, theme::TEXT)
+    }
+}
+
+fn pill_border(is_focused: bool, is_active: bool) -> iced::Border {
+    iced::Border {
+        color: if is_active && !is_focused {
+            theme::SUBTEXT
+        } else {
+            iced::Color::TRANSPARENT
+        },
+        width: 1.0,
+        radius: 4.0.into(),
     }
 }
 
@@ -49,6 +62,14 @@ impl crate::modules::Module for WorkspacesModule {
 }
 
 impl crate::modules::render::ModuleRender for WorkspacesModule {
+    fn has_content(
+        &self,
+        _state: &crate::modules::ModuleState,
+        _mode: crate::config::FormatMode,
+    ) -> bool {
+        false
+    }
+
     fn render_collapsed_with_style(
         &self,
         _state: &crate::modules::ModuleState,
@@ -114,6 +135,7 @@ impl WorkspaceItemModule {
         use iced::{Alignment, Background, Length};
 
         let (bg, fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);
+        let border = pill_border(self.workspace.is_focused, self.workspace.is_active);
         let ws_num = self.workspace.idx as u32;
         let label_cfg = self.config.workspaces.get(&ws_num);
         let configured_icon = label_cfg.and_then(|c| c.icon.as_deref());
@@ -135,10 +157,7 @@ impl WorkspaceItemModule {
                     .align_y(Alignment::Center)
                     .style(move |_theme| container::Style {
                         background: Some(Background::Color(bg)),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            ..Default::default()
-                        },
+                        border,
                         ..Default::default()
                     })
                     .into();
@@ -162,10 +181,7 @@ impl WorkspaceItemModule {
             .align_y(Alignment::Center)
             .style(move |_theme| container::Style {
                 background: Some(Background::Color(bg)),
-                border: iced::Border {
-                    radius: 4.0.into(),
-                    ..Default::default()
-                },
+                border,
                 ..Default::default()
             })
             .into()
@@ -179,10 +195,7 @@ impl WorkspaceItemModule {
                     .padding([0, 6])
                     .style(move |_theme| container::Style {
                         background: Some(Background::Color(bg)),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            ..Default::default()
-                        },
+                        border,
                         ..Default::default()
                     })
                     .into();
@@ -201,10 +214,7 @@ impl WorkspaceItemModule {
                 .padding([0, 6])
                 .style(move |_theme| container::Style {
                     background: Some(Background::Color(bg)),
-                    border: iced::Border {
-                        radius: 4.0.into(),
-                        ..Default::default()
-                    },
+                    border,
                     ..Default::default()
                 })
                 .into();
@@ -250,10 +260,7 @@ impl WorkspaceItemModule {
             .padding([0, 6])
             .style(move |_theme| container::Style {
                 background: Some(Background::Color(bg)),
-                border: iced::Border {
-                    radius: 4.0.into(),
-                    ..Default::default()
-                },
+                border,
                 ..Default::default()
             })
             .into()
@@ -270,6 +277,7 @@ impl WorkspaceItemModule {
         use iced::{Alignment, Background, Length};
 
         let (bg, fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);
+        let border = pill_border(self.workspace.is_focused, self.workspace.is_active);
         let mode = if horizontal {
             crate::config::FormatMode::Horizontal
         } else {
@@ -292,10 +300,7 @@ impl WorkspaceItemModule {
                     .align_y(Alignment::Center)
                     .style(move |_theme| container::Style {
                         background: Some(Background::Color(bg)),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            ..Default::default()
-                        },
+                        border,
                         ..Default::default()
                     })
                     .into(),
@@ -310,10 +315,7 @@ impl WorkspaceItemModule {
                     .padding([0, 6])
                     .style(move |_theme| container::Style {
                         background: Some(Background::Color(bg)),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            ..Default::default()
-                        },
+                        border,
                         ..Default::default()
                     })
                     .into(),
@@ -440,6 +442,14 @@ impl crate::modules::dynamic::DynamicModuleInstance for WorkspaceItemModule {
 }
 
 impl crate::modules::render::ModuleRender for WorkspaceItemModule {
+    fn has_content(
+        &self,
+        state: &crate::modules::ModuleState,
+        mode: crate::config::FormatMode,
+    ) -> bool {
+        mode != crate::config::FormatMode::Expanded && self.matches_output_state(state)
+    }
+
     fn render_collapsed_with_style(
         &self,
         state: &crate::modules::ModuleState,

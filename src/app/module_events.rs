@@ -417,6 +417,11 @@ mod tests {
     }
 
     impl crate::modules::render::ModuleRender for DetailTestModule {
+        fn has_content(&self, _state: &ModuleState, _mode: crate::config::FormatMode) -> bool {
+            // This fixture owns its content in the detail session.
+            true
+        }
+
         fn render_collapsed_with_style(
             &self,
             _state: &ModuleState,

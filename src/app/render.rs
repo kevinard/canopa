@@ -155,6 +155,14 @@ impl App {
             };
 
             let state = self.module_render_state(kind, &id, &surface);
+            let mode = if is_horizontal {
+                crate::config::FormatMode::Horizontal
+            } else {
+                crate::config::FormatMode::Collapsed
+            };
+            if !self.modules.has_content(&id, &state, mode) {
+                continue;
+            }
             let hovered = surface.hovered_module.as_ref() == Some(&id);
             let focused = surface.focused_module.as_ref() == Some(&id);
             let active = self.foreground.active_panel_origin_for(window)
@@ -532,7 +540,8 @@ mod tests {
             .filter(|entry| entry.id.0.starts_with("workspace:"))
             .map(|entry| &entry.state)
             .collect();
-        assert_eq!(workspace_states.len(), 2);
+        assert_eq!(workspace_states.len(), 1);
+        assert_eq!(model.start[0].id, ModuleId::new("workspace:10"));
         assert!(
             workspace_states
                 .iter()
@@ -603,6 +612,7 @@ mod tests {
         };
         config.bars[0].panel.modules.center = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        crate::app::tests::ready_clock(&mut app);
         let origin = test_wid();
         let panel = test_wid();
         open_and_register_panel(
@@ -639,6 +649,7 @@ mod tests {
         };
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        crate::app::tests::ready_clock(&mut app);
         let origin = test_wid();
         let panel = test_wid();
         open_and_register_panel(
@@ -819,6 +830,7 @@ mod tests {
         };
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        crate::app::tests::ready_clock(&mut app);
         let origin = test_wid();
         let panel = test_wid();
         app.surfaces
@@ -950,6 +962,7 @@ mod tests {
         config.bars[0].modules.end = vec!["clock".into(), "tray".into()];
         config.bars[1].modules.end = vec!["tray".into(), "clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        crate::app::tests::ready_clock(&mut app);
         let wid = test_wid();
         app.surfaces
             .surfaces
@@ -988,6 +1001,7 @@ mod tests {
         };
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        crate::app::tests::ready_clock(&mut app);
         let wid = test_wid();
         let mut surface = SurfaceState::new(String::new(), String::new());
         surface.hovered_module = Some(ModuleId::new("clock"));

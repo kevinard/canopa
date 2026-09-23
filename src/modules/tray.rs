@@ -118,6 +118,10 @@ impl crate::modules::Module for TrayModule {
 }
 
 impl crate::modules::render::ModuleRender for TrayModule {
+    fn has_content(&self, _state: &ModuleState, _mode: crate::config::FormatMode) -> bool {
+        false
+    }
+
     fn render_collapsed_with_style(
         &self,
         _state: &ModuleState,
@@ -299,6 +303,10 @@ impl crate::modules::dynamic::DynamicModuleInstance for TrayIconModule {
 }
 
 impl crate::modules::render::ModuleRender for TrayIconModule {
+    fn has_content(&self, _state: &ModuleState, mode: crate::config::FormatMode) -> bool {
+        mode != crate::config::FormatMode::Expanded
+    }
+
     fn tooltip_values(&self, _state: &ModuleState) -> Vec<(&'static str, String)> {
         match self.item.tooltip.as_ref() {
             Some(t) => vec![

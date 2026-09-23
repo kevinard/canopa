@@ -47,7 +47,7 @@ fn tier_icon(tier: u8) -> &'static str {
 
 fn tier_color(tier: u8) -> iced::Color {
     if tier == 0 {
-        theme::OVERLAY0 // muted/dim
+        theme::SUBTEXT // muted remains readable on bar and panel surfaces
     } else {
         theme::ACCENT // normal
     }

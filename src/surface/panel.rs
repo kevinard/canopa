@@ -127,12 +127,16 @@ pub fn panel_module_frame<'a>(
         .width(iced::Length::Fill)
         .style(move |_| iced::widget::container::Style {
             background: if focused {
-                Some(iced::Background::Color(crate::theme::SURFACE0))
+                Some(iced::Background::Color(crate::theme::BASE))
             } else {
-                Some(iced::Background::Color(crate::theme::SURFACE1))
+                Some(iced::Background::Color(crate::theme::SURFACE0))
             },
             border: iced::Border {
-                color: crate::theme::BORDER,
+                color: if focused {
+                    crate::theme::ACCENT
+                } else {
+                    crate::theme::BORDER
+                },
                 width: 1.0,
                 radius: iced::border::Radius::from(4.0),
             },

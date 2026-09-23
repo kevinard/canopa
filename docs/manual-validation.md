@@ -6,10 +6,14 @@ do not convert unexecuted steps into passing evidence.
 
 ## Current evidence boundary
 
-The 2026-09-23 remediation is covered by headless unit, transport and process
-tests. The following desktop checks have **not been executed for that change**.
-No CPU/RSS/startup comparison or whole-application accessibility certification
-is claimed.
+The 2026-09-23 remediation is covered by unit, transport and process tests.
+An isolated compositor harness now covers real bar mapping and repeated panel
+open/close; see the dated follow-up report for executed measurements. The wider
+hardware matrix below still requires operator acceptance. Whole-application
+accessibility certification is not claimed.
+
+See [executed results](audits/2026-09-23-desktop-validation.md) and the
+[accessibility assessment](../ACCESSIBILITY.md) for the current evidence.
 
 ## Desktop matrix
 
@@ -46,6 +50,42 @@ desktop workload for baseline and candidate. Record at least five runs.
 - Include the baseline commit and candidate commit in the report. Investigate
   regressions before assigning a performance acceptance result.
 
-Nix packaging remains unprovided and explicitly unsupported in the README.
-The optional Nix CI path should become required only with an implemented,
-validated flake and an agreed support commitment.
+### Repeatable isolated compositor check
+
+Linux prerequisites: Python 3, Niri 26.04 or compatible, Weston with a headless
+backend, Mesa software rendering, `wtype`, and `dbus-daemon`. Build release binaries first,
+then run from the repository root:
+
+```sh
+python3 scripts/validate-desktop.py \
+  --binary target/release/niribar \
+  --label 'COMMIT release; RUST_VERSION' \
+  --output /tmp/niribar-measurements
+```
+
+The output directory must be new. Defaults are five runs, each settling for
+60 seconds and sampling for 60 seconds. The script starts private Weston/Niri
+and session D-Bus instances, uses the repository's default configuration,
+disables Xwayland and Weston's idle timeout, and points system D-Bus and
+PulseAudio to unavailable private paths. It does not use the running desktop's sockets or network daemon.
+Child services and their process groups are retired on exit.
+
+Results include binary/config hashes, compositor and kernel versions, output
+geometry, raw `/proc/PID/stat` samples, per-run CPU/RSS measurements, compositor
+layer registration time, and bar/panel screenshots. CPU percent is relative to
+one core; RSS is the process resident set, not total graphics memory. Each run
+also checks two panel open/close cycles through real IPC and compositor layer
+queries, sends Tab with a virtual keyboard, and verifies Escape closes the first
+panel. Every panel cycle waits one second after registration before input;
+this verifies interaction after settling, not immediate keyboard readiness.
+Registration timing includes compositor polling and is **not** a
+measurement of the first visible populated frame. Screenshots need visual review.
+
+Use the same compiler, profile, configuration and hardware for both binaries;
+avoid builds or other changing loads while measuring. Software rendering and
+unavailable services are a repeatable diagnostic workload, not a substitute for
+the hardware matrix, busy-tray/launcher workloads, or screen-reader acceptance.
+`--config` can select another reviewed configuration; commands in it will run.
+For a quick harness smoke check, set `--runs 1 --settle-seconds 1 --sample-seconds 2`.
+
+Nix packaging is deferred at the owner's request (2026-09-23).

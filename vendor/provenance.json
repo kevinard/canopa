@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "crates": {
+    "iced_layershell": {
+      "version": "0.18.0",
+      "repository": "https://github.com/waycrate/exwlshelleventloop",
+      "archive_url": "https://static.crates.io/crates/iced_layershell/iced_layershell-0.18.0.crate",
+      "archive_sha256": "e9af23def8028c786e97b72dc3b596968ad23bca4faa865ec96a134ffe3d71ca",
+      "git_revision": null,
+      "files": {
+        "Cargo.lock": {
+          "upstream": "c78e9aad332a20ca0fa0e09be24cb5c32162c2c774379715042f83920f07f0b4",
+          "local": null
+        },
+        "Cargo.toml": {
+          "upstream": "16472381317bc0af9696aa08b02e12d7c5ba4bcaa5a5aa6ca226b8e2c06a5942",
+          "local": "19f68ea32c068ccab49a62d99cde53526de26944ed30aaae3532ec6e61dac68c"
+        },
+        "Cargo.toml.orig": {
+          "upstream": "26d68e8ba243bd62f101c60bf2c61b23dc605de8ea38fdfab79477a12b324d35",
+          "local": null
+        },
+        "LICENSE": {
+          "upstream": null,
+          "local": "f42393dbd25860cd6e95c3da8aa4d7fde6fe60eedaccf44a72155f90a1556c6c"
+        },
+        "README.md": {
+          "upstream": "51b842eb38ae441601d14ec5d5d8d3cf8f2fd9e40de1b501d608c3be9f600d8c",
+          "local": "51b842eb38ae441601d14ec5d5d8d3cf8f2fd9e40de1b501d608c3be9f600d8c"
+        },
+        "src/actions.rs": {
+          "upstream": "476add8dc4e07132c5f203f3f263f110f771e6eb6acdd9319ba3cfd73fd6ff0d",
+          "local": "b306f1f2eba1725525242ef2a35e8ad1f699442c600cdcc70a739c9e5e3cf36c"
+        },
+        "src/build_pattern.rs": {
+          "upstream": "b98221d296bf4135fbfdc8a4f025f4f711c37010969615bb957bd632b7a77529",
+          "local": "b98221d296bf4135fbfdc8a4f025f4f711c37010969615bb957bd632b7a77529"
+        },
+        "src/build_pattern/application.md": {
+          "upstream": "0b20660c7d06f124f0017e6a24a51b17d8f4090e1960f3003e5b43055eac81f0",
+          "local": "0b20660c7d06f124f0017e6a24a51b17d8f4090e1960f3003e5b43055eac81f0"
+        },
+        "src/build_pattern/application.rs": {
+          "upstream": "d267f9cc81847eba0519fe9c0dfba41760cac0082eeefc23137e6df46de92337",
+          "local": "c17746fb3d7d712bdf5e42d901b95d4b1091855270bfa7845ca2eb2f183c6753"
+        },
+        "src/build_pattern/application/time.rs": {
+          "upstream": "e628d3a0d67ebe57efa7e8a5e9ed487a023ab1fb6648cd27c0bb0b5ff6cce6ab",
+          "local": "e628d3a0d67ebe57efa7e8a5e9ed487a023ab1fb6648cd27c0bb0b5ff6cce6ab"
+        },
+        "src/build_pattern/daemon.md": {
+          "upstream": "8ef89572ec8463a87131227f834d5938db5f3e28bc0f2dbe8a0756b603294229",
+          "local": "8ef89572ec8463a87131227f834d5938db5f3e28bc0f2dbe8a0756b603294229"
+        },
+        "src/build_pattern/daemon.rs": {
+          "upstream": "a485b29e959e0599760095df1d47868c02aa33c20b17f510daf9c61b0516ec7f",
+          "local": "34c84794b7c650c0b555361a6de2533653c3d83f412e05345b42fc21879e45e9"
+        },
+        "src/clipboard.rs": {
+          "upstream": "068edbe151ba602579a333febcd65384813b36f07fdca1c73df3c1c2c066f0ef",
+          "local": "068edbe151ba602579a333febcd65384813b36f07fdca1c73df3c1c2c066f0ef"
+        },
+        "src/conversion.rs": {
+          "upstream": "602aca902b09e832251860c67ba8abfbd0d875eb844fc4c31cb01323a68a20d6",
+          "local": "602aca902b09e832251860c67ba8abfbd0d875eb844fc4c31cb01323a68a20d6"
+        },
+        "src/conversion/keymap.rs": {
+          "upstream": "a354d92129317d5fe3647c82ca20cddefbcf252892fdb4b2267013fe16a7310b",
+          "local": "a354d92129317d5fe3647c82ca20cddefbcf252892fdb4b2267013fe16a7310b"
+        },
+        "src/error.rs": {
+          "upstream": "23e316e5e7b39dd70e45fd5c29094ffb7632fa1962b438304172e5289a59e458",
+          "local": "23e316e5e7b39dd70e45fd5c29094ffb7632fa1962b438304172e5289a59e458"
+        },
+        "src/event.rs": {
+          "upstream": "3f5f40fe4db49899aaa61cfa82a7f25ca5602959670600478d32bde3a5aa05c7",
+          "local": "70874e99c284a645c9bf99128f9897fcdcfe8581e2da398fdd14b4af77f6fa7e"
+        },
+        "src/ime_preedit.rs": {
+          "upstream": "5f16a01d26f0262e3084f291cbf46df920935538e41daf8a447179fe1fddff52",
+          "local": "5f16a01d26f0262e3084f291cbf46df920935538e41daf8a447179fe1fddff52"
+        },
+        "src/lib.rs": {
+          "upstream": "611875b39589b1b4280bd7c46d3a04b6a7de75cebaf832fa92256e78fa221286",
+          "local": "628884779b1a0644679f1c90d5198750e34755469530550873b601857ccacbf7"
+        },
+        "src/multi_window.rs": {
+          "upstream": "d5ff40e2e8a9a0be9466176c3498190167291be867959c1c993214e0d047b5f2",
+          "local": "a4e0541d2d04a652e5a686f7d8de0e0320f64dac5f46a2f23498a564ba984c8f"
+        },
+        "src/multi_window/state.rs": {
+          "upstream": "9c55f882d39dcf8458998ab7ff36671faa7839a12f3ab61cf0e82984853ecfb2",
+          "local": "9c55f882d39dcf8458998ab7ff36671faa7839a12f3ab61cf0e82984853ecfb2"
+        },
+        "src/multi_window/window_manager.rs": {
+          "upstream": "a76936ac55c65225c94b713d99b79f1bc8ed33038e7d62e38e18b6ae32a0ed83",
+          "local": "a76936ac55c65225c94b713d99b79f1bc8ed33038e7d62e38e18b6ae32a0ed83"
+        },
+        "src/proxy.rs": {
+          "upstream": "61fad30aa737c153e163ac41512a3a554030bcf0d25de2cd2c5cebee8e8942c7",
+          "local": "61fad30aa737c153e163ac41512a3a554030bcf0d25de2cd2c5cebee8e8942c7"
+        },
+        "src/settings.rs": {
+          "upstream": "02c54223668d6ee710da32776eb7af208faa5decc00d640b3a09efb144fe1244",
+          "local": "02c54223668d6ee710da32776eb7af208faa5decc00d640b3a09efb144fe1244"
+        },
+        "src/user_interface.rs": {
+          "upstream": "dfed49b4f06caef04d24def790b7aa48c8bf4e662c15a33cce3e2085da612fd0",
+          "local": "dfed49b4f06caef04d24def790b7aa48c8bf4e662c15a33cce3e2085da612fd0"
+        },
+        "tests/test_macro.rs": {
+          "upstream": "1927f9672a6f64b41b820ff48208d1d80547e94d482c4c51389c231909ca9fdd",
+          "local": "1927f9672a6f64b41b820ff48208d1d80547e94d482c4c51389c231909ca9fdd"
+        }
+      }
+    },
+    "layershellev": {
+      "version": "0.18.0",
+      "repository": "https://github.com/waycrate/exwlshelleventloop",
+      "archive_url": "https://static.crates.io/crates/layershellev/layershellev-0.18.0.crate",
+      "archive_sha256": "aa93feb9ad2defd5a7420460a8491649cb81709d84cb3759135069624f8ee9a1",
+      "git_revision": null,
+      "files": {
+        "Cargo.lock": {
+          "upstream": "3cb93b4cfccc527bbedd6d4c9ab234494fe5b465a13bf14cd02a6328673cb4ab",
+          "local": null
+        },
+        "Cargo.toml": {
+          "upstream": "c9d8f67e981f90d1fc1e4f4d7160631fc3b554c2df4fc5e394375396eaeca3ac",
+          "local": "c9d8f67e981f90d1fc1e4f4d7160631fc3b554c2df4fc5e394375396eaeca3ac"
+        },
+        "Cargo.toml.orig": {
+          "upstream": "030037444583265676c89da29894f5a8e6d1d5852f4b3408680b085ea4fc0841",
+          "local": null
+        },
+        "LICENSE": {
+          "upstream": null,
+          "local": "f42393dbd25860cd6e95c3da8aa4d7fde6fe60eedaccf44a72155f90a1556c6c"
+        },
+        "README.md": {
+          "upstream": "1f7d4303e5c2c4034900f93051df8917926f3a81d19008e298f14dff2c777c24",
+          "local": "1f7d4303e5c2c4034900f93051df8917926f3a81d19008e298f14dff2c777c24"
+        },
+        "examples/simplelayer.rs": {
+          "upstream": "c740da8dd542f5ede5429fc3bba6d575f04bdc6eb7839c207dd33010d2c8e66b",
+          "local": "c740da8dd542f5ede5429fc3bba6d575f04bdc6eb7839c207dd33010d2c8e66b"
+        },
+        "src/dpi.rs": {
+          "upstream": "70ea5fe95b0e03ea219aa9b33f40670666febece6ecc6340ed1364e1009def55",
+          "local": "70ea5fe95b0e03ea219aa9b33f40670666febece6ecc6340ed1364e1009def55"
+        },
+        "src/events.rs": {
+          "upstream": "4942b5e1d4ea68a24012f340fbbafd9a7ddc82742ba8e4d5bd1583863bdbee0b",
+          "local": "39ea9f3c816f9148c3cbbf2f91f3b29ac0824a8674ea701d6e9e3edb6cb31a82"
+        },
+        "src/id.rs": {
+          "upstream": "37dc25a14c7d00cb643fb5f10042e092c548b7332bb5ba0268819146f3883425",
+          "local": "37dc25a14c7d00cb643fb5f10042e092c548b7332bb5ba0268819146f3883425"
+        },
+        "src/lib.rs": {
+          "upstream": "a4d531bf88292d315db080a1821abdb99ee9f75e8868d84d02ae976f74e36417",
+          "local": "073b378e778ed5f9c1b992ac843683781480d31e87ed6c7ae2041458224f66ab"
+        },
+        "src/seat.rs": {
+          "upstream": "96b1023e0b0faae9c88f5940bd8f579bdf6e848ed7ceb66ae3d4ebc37244b536",
+          "local": "790c4b5475253678eaeab8fa3ec06daaf471fc893a1bfa385ef3c9619edc7cd6"
+        },
+        "src/strtoshape.rs": {
+          "upstream": "fff27c0030cf43549a4db801321430dbdf70db001ef773074861ba33bb00efed",
+          "local": "fff27c0030cf43549a4db801321430dbdf70db001ef773074861ba33bb00efed"
+        }
+      }
+    }
+  }
+}

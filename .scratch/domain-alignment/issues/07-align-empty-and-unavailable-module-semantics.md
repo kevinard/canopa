@@ -29,3 +29,14 @@ Routed to human acceptance review to avoid reimplementing an existing feature.
 The original acceptance boxes are retained; this routing change does not certify
 manual acceptance. See [the remediation record](../../../docs/audits/2026-09-23-remediation.md)
 for known limits and remaining checks.
+
+### Desktop verification follow-up — 2026-09-23
+
+The private compositor check exposed blank panel frames and invisible navigation
+targets despite the existing state transitions. A shared module content policy
+now filters bar/panel frames, navigation and tooltips, including output-specific
+workspace children and empty script output. Data-source loss retires stale focus
+and tooltip state; recovery restores the visible target. App-level regressions
+cover omission and loss/recovery. See the
+[desktop record](../../../docs/audits/2026-09-23-desktop-validation.md).
+Operator acceptance remains open.

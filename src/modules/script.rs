@@ -145,6 +145,22 @@ impl crate::modules::Module for ScriptModule {
 }
 
 impl crate::modules::render::ModuleRender for ScriptModule {
+    fn has_content(
+        &self,
+        state: &crate::modules::ModuleState,
+        mode: crate::config::FormatMode,
+    ) -> bool {
+        let crate::modules::ModuleState::Script(state) = state else {
+            return false;
+        };
+        !self
+            .formatted_text(state, mode)
+            .as_deref()
+            .unwrap_or(&state.output)
+            .trim()
+            .is_empty()
+    }
+
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Script(s) = state {
             vec![

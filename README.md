@@ -67,6 +67,8 @@ External providers use explicit `niribar-v1` or `canopa-v4` protocols. See
 cargo +1.95.0 fmt --all -- --check
 cargo +1.95.0 clippy --locked --all-targets -- -D warnings
 cargo +1.95.0 test --locked --all-targets
+python3 scripts/check-vendor.py
+python3 scripts/check-contrast.py
 bash scripts/package-release.sh target/release dist
 ```
 
@@ -74,9 +76,11 @@ Tests start private D-Bus daemons and Unix sockets; environments that forbid
 local socket binding cannot run the transport suite. They do not connect to
 your real Wi-Fi network. See [the audit](docs/audits/2026-09-23-project-state.md)
 and [follow-up evidence](docs/audits/2026-09-23-remediation.md).
-Hardware/compositor checks and performance/accessibility measurements are
-documented separately from automated checks. Nix packaging is not currently
-provided; the optional CI job runs only if a flake is added.
+The [desktop validation harness](docs/manual-validation.md) runs a private
+compositor session for measurements and panel checks. The
+[accessibility assessment](ACCESSIBILITY.md) records default contrast ratios,
+native AT-SPI coverage, and remaining operator checks. Nix packaging is deferred;
+the optional CI job runs only if a flake is added.
 
 Niribar is [MIT licensed](LICENSE). Vendored dependencies retain their own
 licenses; see [vendor maintenance](docs/vendor-maintenance.md).

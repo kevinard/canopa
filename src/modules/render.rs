@@ -7,6 +7,16 @@ pub struct BarRenderContext<'a> {
 }
 
 pub trait ModuleRender: Send + Sync {
+    /// Whether this presentation has content, before adding frames or input targets.
+    fn has_content(&self, state: &ModuleState, _mode: crate::config::FormatMode) -> bool {
+        match state {
+            ModuleState::Empty | ModuleState::Unavailable => false,
+            ModuleState::FocusedWindow(state) => state.window.is_some(),
+            ModuleState::Script(state) => !state.output.trim().is_empty(),
+            _ => true,
+        }
+    }
+
     fn render_collapsed_with_style(
         &self,
         state: &ModuleState,

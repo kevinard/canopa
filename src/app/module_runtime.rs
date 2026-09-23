@@ -377,6 +377,16 @@ impl ModuleRuntime {
         Some(render_bar_form(module, state, &request))
     }
 
+    pub(super) fn has_content(
+        &self,
+        id: &ModuleId,
+        state: &ModuleState,
+        mode: crate::config::FormatMode,
+    ) -> bool {
+        self.get(id)
+            .is_some_and(|module| module.has_content(state, mode))
+    }
+
     pub(super) fn render_module_detail<'a>(
         &'a self,
         request: ModuleDetailRenderRequest<'a>,

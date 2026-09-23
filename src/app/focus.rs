@@ -41,9 +41,8 @@ impl App {
             s.module_activated = false;
             return Task::none();
         }
-        if s.focused_module.is_none() {
-            return Task::none();
-        }
+        // The bar may still own keyboard focus after its last visible module
+        // disappears. Escape must release the surface even without a target.
         Task::done(Message::KeyboardInteractivityChange {
             id: window,
             keyboard_interactivity: KeyboardInteractivity::None,

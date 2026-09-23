@@ -74,8 +74,13 @@ pub fn view_menu_popup<'a>(
                             None
                         },
                         border: iced::Border {
+                            color: if is_highlighted {
+                                crate::theme::ACCENT
+                            } else {
+                                iced::Color::TRANSPARENT
+                            },
+                            width: 1.0,
                             radius: iced::border::Radius::from(3.0),
-                            ..Default::default()
                         },
                         ..Default::default()
                     });

@@ -451,7 +451,11 @@ fn render_panel_menu_model<'a>(
                     Some(iced::Background::Color(crate::theme::SURFACE1))
                 },
                 border: iced::Border {
-                    color: crate::theme::BORDER,
+                    color: if focused {
+                        crate::theme::ACCENT
+                    } else {
+                        crate::theme::BORDER
+                    },
                     width: 1.0,
                     radius: iced::border::Radius::from(4.0),
                 },
@@ -611,8 +615,13 @@ fn render_searchable_sni_popup_model<'a>(
                     None
                 },
                 border: iced::Border {
+                    color: if highlighted {
+                        crate::theme::ACCENT
+                    } else {
+                        iced::Color::TRANSPARENT
+                    },
+                    width: 1.0,
                     radius: iced::border::Radius::from(3.0),
-                    ..Default::default()
                 },
                 ..Default::default()
             });

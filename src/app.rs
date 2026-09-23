@@ -36,6 +36,7 @@ mod surface_input_router;
 mod surfaces;
 mod tray;
 mod view;
+mod visibility;
 mod widget_ops;
 
 use iced::Task;
@@ -290,6 +291,10 @@ impl App {
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
+        let visibility_changed = matches!(
+            &message,
+            Message::Modules(_) | Message::Niri(_) | Message::DbusReady(_) | Message::Tray(_)
+        );
         match &message {
             Message::Surface(messages::SurfaceEvent::BarFocusGained(window)) => {
                 self.accessibility_focused_window = Some(*window);
@@ -408,7 +413,11 @@ impl App {
         if !cfg!(test) {
             self.sync_canopa_accessibility();
         }
-        task
+        if visibility_changed {
+            Task::batch(std::iter::once(task).chain(self.reconcile_module_visibility()))
+        } else {
+            task
+        }
     }
 }
 
@@ -421,6 +430,16 @@ mod tests {
 
     fn make_config() -> Config {
         Config::default()
+    }
+
+    pub(super) fn ready_clock(app: &mut App) {
+        app.modules.set_state(
+            ModuleId::new("clock"),
+            crate::modules::ModuleState::Clock(crate::modules::clock::ClockState {
+                time: "12:00".into(),
+                date: "Wed 23 Sep".into(),
+            }),
+        );
     }
 
     /// Returns a consistent unique window ID for use across a single test.
@@ -667,7 +686,7 @@ mod tests {
         let wid = test_wid();
         assert!(
             app.surfaces
-                .get(&wid)
+                .surface(wid)
                 .map(|s| s.focused_module.is_none())
                 .unwrap_or(true)
         );
@@ -687,6 +706,7 @@ mod tests {
         };
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        ready_clock(&mut app);
         let wid = test_wid();
         app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
@@ -712,6 +732,7 @@ mod tests {
         };
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        ready_clock(&mut app);
         let wid = test_wid();
         app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
@@ -736,6 +757,7 @@ mod tests {
         };
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        ready_clock(&mut app);
         let wid = test_wid();
         app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
@@ -747,12 +769,13 @@ mod tests {
     }
 
     #[test]
-    fn escape_pressed_when_not_focused_is_noop() {
+    fn escape_without_a_focused_module_still_releases_keyboard() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(wid)));
+        let task = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(wid)));
         assert!(app.surfaces[&wid].focused_module.is_none());
+        assert_eq!(task.units(), 1);
     }
 
     #[test]
@@ -769,6 +792,7 @@ mod tests {
         };
         config.bars[0].modules.center = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        ready_clock(&mut app);
         let wid = test_wid();
         app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
@@ -805,20 +829,38 @@ mod tests {
                 },
                 ModuleConfig {
                     name: "battery".into(),
-                    module_type: "battery".into(),
-                    params: ModuleParams::None,
+                    module_type: "button".into(),
+                    params: ModuleParams::Button(crate::config::ButtonConfig {
+                        label: "Navigation target".into(),
+                        icon: ">".into(),
+                        format: Default::default(),
+                        content_rotation: Default::default(),
+                        tooltip: Default::default(),
+                    }),
                     actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "network".into(),
-                    module_type: "network".into(),
-                    params: ModuleParams::None,
+                    module_type: "button".into(),
+                    params: ModuleParams::Button(crate::config::ButtonConfig {
+                        label: "Navigation target".into(),
+                        icon: ">".into(),
+                        format: Default::default(),
+                        content_rotation: Default::default(),
+                        tooltip: Default::default(),
+                    }),
                     actions: crate::config::ModuleActionsConfig::default(),
                 },
                 ModuleConfig {
                     name: "workspaces".into(),
-                    module_type: "workspaces".into(),
-                    params: ModuleParams::None,
+                    module_type: "button".into(),
+                    params: ModuleParams::Button(crate::config::ButtonConfig {
+                        label: "Navigation target".into(),
+                        icon: ">".into(),
+                        format: Default::default(),
+                        content_rotation: Default::default(),
+                        tooltip: Default::default(),
+                    }),
                     actions: crate::config::ModuleActionsConfig::default(),
                 },
             ],
@@ -828,6 +870,13 @@ mod tests {
         config.bars[0].modules.center = vec!["network".into()];
         config.bars[0].modules.end = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        ready_clock(&mut app);
+        for id in ["battery", "network", "workspaces"] {
+            app.modules.set_state(
+                ModuleId::new(id),
+                crate::modules::ModuleState::Button(crate::modules::button::ButtonState),
+            );
+        }
         let wid = test_wid();
         app.surface_mut(wid); // pre-initialize surface
         (app, wid)
@@ -948,8 +997,14 @@ mod tests {
                 },
                 ModuleConfig {
                     name: "workspaces".into(),
-                    module_type: "workspaces".into(),
-                    params: ModuleParams::None,
+                    module_type: "button".into(),
+                    params: ModuleParams::Button(crate::config::ButtonConfig {
+                        label: "Navigation target".into(),
+                        icon: ">".into(),
+                        format: Default::default(),
+                        content_rotation: Default::default(),
+                        tooltip: Default::default(),
+                    }),
                     actions: crate::config::ModuleActionsConfig::default(),
                 },
             ],
@@ -958,6 +1013,13 @@ mod tests {
         config.bars[0].modules.start = vec!["clock".into()];
         config.bars[0].modules.end = vec!["workspaces".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        ready_clock(&mut app);
+        for id in ["battery", "network", "workspaces"] {
+            app.modules.set_state(
+                ModuleId::new(id),
+                crate::modules::ModuleState::Button(crate::modules::button::ButtonState),
+            );
+        }
         let wid = test_wid();
         app.surface_mut(wid);
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
@@ -1030,6 +1092,18 @@ mod tests {
         config.bars[0].modules.start = vec!["clock".into(), "volume".into()];
         config.bars[0].modules.center = vec!["button".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        ready_clock(&mut app);
+        app.modules.set_state(
+            ModuleId::new("volume"),
+            crate::modules::ModuleState::Volume(crate::modules::volume::VolumeState {
+                volume: 50.0,
+                muted: false,
+            }),
+        );
+        app.modules.set_state(
+            ModuleId::new("button"),
+            crate::modules::ModuleState::Button(crate::modules::button::ButtonState),
+        );
         let wid = test_wid();
         app.surface_mut(wid); // pre-initialize
         (app, wid)
@@ -1129,6 +1203,10 @@ mod tests {
                 as Box<dyn crate::modules::Module>,
             crate::config::ModuleActionsConfig::default(),
         )]);
+        app.modules.set_state(
+            ModuleId::new("probe"),
+            crate::modules::ModuleState::Button(crate::modules::button::ButtonState),
+        );
         let wid = test_wid();
         app.surface_mut(wid);
 
@@ -1358,6 +1436,7 @@ mod tests {
         };
         config.bars[0].modules.start = vec!["clock".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        ready_clock(&mut app);
         let wid_a = test_wid();
         let wid_b = test_wid();
         app.surface_mut(wid_a);

@@ -1029,6 +1029,13 @@ impl App {
                 let bar = Self::bar_for_surface_name(&self.config.bars, &origin_surface.bar_name);
                 self.effective_panel_module_layout_for_bar(bar)
                     .into_iter()
+                    .filter(|(_, id)| {
+                        self.module_has_content_on_surface(
+                            id,
+                            &origin_surface,
+                            crate::config::FormatMode::Expanded,
+                        )
+                    })
                     .map(|(zone, id)| {
                         let focused =
                             origin == &crate::surface::panel::PanelOrigin::Module(id.clone());
@@ -1037,6 +1044,14 @@ impl App {
                     .collect()
             }
             crate::surface::panel::PanelContent::ModulePanel(id) => {
+                let surface = self.surface(origin_window).cloned().unwrap_or_default();
+                if !self.module_has_content_on_surface(
+                    id,
+                    &surface,
+                    crate::config::FormatMode::Expanded,
+                ) {
+                    return Vec::new();
+                }
                 vec![crate::surface::panel::PanelModuleEntry {
                     id: id.clone(),
                     zone: crate::modules::Zone::Center,

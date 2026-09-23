@@ -98,3 +98,7 @@ upstream revisions/complete patch inventories for the layer-shell vendor forks
 also remain to be established. These limitations do not prevent the documented
 Cargo build, but they should not be mistaken for completed packaging/provenance
 work.
+
+Follow-up: [desktop, contrast and vendor verification](2026-09-23-desktop-validation.md)
+records the subsequent provenance inventory, accessibility fixes and executed
+compositor measurements. Nix was explicitly deferred by the owner.

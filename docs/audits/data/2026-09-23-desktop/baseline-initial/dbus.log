@@ -1,0 +1,62 @@
+unix:path=/tmp/dbus-38ZYiXim94,guid=6c58bf36cf28361ed62084536ab3b232
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.portal.Desktop' requested by ':1.1' (uid=1000 pid=942670 comm="/home/kevinard/projects/niribar/target/release/nir")
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.impl.portal.PermissionStore' requested by ':1.3' (uid=1000 pid=942687 comm="/usr/lib/xdg-desktop-portal")
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Successfully activated service 'org.freedesktop.impl.portal.PermissionStore'
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.portal.Documents' requested by ':1.3' (uid=1000 pid=942687 comm="/usr/lib/xdg-desktop-portal")
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Successfully activated service 'org.freedesktop.portal.Documents'
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.impl.portal.desktop.gnome' requested by ':1.3' (uid=1000 pid=942687 comm="/usr/lib/xdg-desktop-portal")
+
+** (xdg-desktop-portal-gnome:942710): WARNING **: 13:04:21.386: Failed to open service channel Wayland connection, portals dialogs may missbehave (Cannot invoke method; proxy is for the well-known name org.gnome.Mutter.ServiceChannel without an owner, and proxy was constructed with the G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START flag).
+Non-compatible display server, exposing settings only.
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.gtk.vfs.Daemon' requested by ':1.6' (uid=1000 pid=942710 comm="/usr/lib/xdg-desktop-portal-gnome")
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Successfully activated service 'org.gtk.vfs.Daemon'
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Successfully activated service 'org.freedesktop.impl.portal.desktop.gnome'
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.impl.portal.desktop.gtk' requested by ':1.3' (uid=1000 pid=942687 comm="/usr/lib/xdg-desktop-portal")
+
+(xdg-desktop-portal-gtk:942750): Gtk-WARNING **: 13:04:21.719: cannot open display:
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activated service 'org.freedesktop.impl.portal.desktop.gtk' failed: Process org.freedesktop.impl.portal.desktop.gtk exited with status 1
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:21.815: Failed to create RealtimeKit proxy: Could not connect: No such file or directory
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.impl.portal.desktop.gtk' requested by ':1.3' (uid=1000 pid=942687 comm="/usr/lib/xdg-desktop-portal")
+
+(xdg-desktop-portal-gtk:942759): Gtk-WARNING **: 13:04:21.914: cannot open display:
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activated service 'org.freedesktop.impl.portal.desktop.gtk' failed: Process org.freedesktop.impl.portal.desktop.gtk exited with status 1
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:21.920: Failed to create settings proxy: Error calling StartServiceByName for org.freedesktop.impl.portal.desktop.gtk: Process org.freedesktop.impl.portal.desktop.gtk exited with status 1
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.impl.portal.desktop.gtk' requested by ':1.3' (uid=1000 pid=942687 comm="/usr/lib/xdg-desktop-portal")
+
+(xdg-desktop-portal-gtk:942762): Gtk-WARNING **: 13:04:21.994: cannot open display:
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activated service 'org.freedesktop.impl.portal.desktop.gtk' failed: Process org.freedesktop.impl.portal.desktop.gtk exited with status 1
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:21.997: Failed to create notification proxy: Error calling StartServiceByName for org.freedesktop.impl.portal.desktop.gtk: Process org.freedesktop.impl.portal.desktop.gtk exited with status 1
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.impl.portal.desktop.gtk' requested by ':1.3' (uid=1000 pid=942687 comm="/usr/lib/xdg-desktop-portal")
+
+(xdg-desktop-portal-gtk:942765): Gtk-WARNING **: 13:04:22.032: cannot open display:
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activated service 'org.freedesktop.impl.portal.desktop.gtk' failed: Process org.freedesktop.impl.portal.desktop.gtk exited with status 1
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:22.035: Failed to create inhibit proxy: Error calling StartServiceByName for org.freedesktop.impl.portal.desktop.gtk: Process org.freedesktop.impl.portal.desktop.gtk exited with status 1
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:22.035: The location portal requires an access impl
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:22.035: The camera portal requires an access impl
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:22.035: The screenshot portal requires an access impl
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:22.035: The background portal requires an access impl
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:22.035: The wallpaper portal requires an access impl
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.impl.portal.desktop.gtk' requested by ':1.3' (uid=1000 pid=942687 comm="/usr/lib/xdg-desktop-portal")
+
+(xdg-desktop-portal-gtk:942768): Gtk-WARNING **: 13:04:22.071: cannot open display:
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activated service 'org.freedesktop.impl.portal.desktop.gtk' failed: Process org.freedesktop.impl.portal.desktop.gtk exited with status 1
+
+(/usr/lib/xdg-desktop-portal:942687): xdg-desktop-portal-WARNING **: 13:04:22.074: Failed to create email proxy: Error calling StartServiceByName for org.freedesktop.impl.portal.desktop.gtk: Process org.freedesktop.impl.portal.desktop.gtk exited with status 1
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Successfully activated service 'org.freedesktop.portal.Desktop'
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.Notifications' requested by ':1.9' (uid=1000 pid=942647 comm="niri -c /tmp/niribar-validation-9gfanoc4/niri.kdl")
+WARNING: Cannot open X11 display.
+CRITICAL: [  get_x11_output:0077] Couldn't initialize X11 output. Aborting...
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activated service 'org.freedesktop.Notifications' failed: Process org.freedesktop.Notifications exited with status 1
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activating service name='org.freedesktop.Notifications' requested by ':1.11' (uid=1000 pid=942647 comm="niri -c /tmp/niribar-validation-9gfanoc4/niri.kdl")
+WARNING: Cannot open X11 display.
+CRITICAL: [  get_x11_output:0077] Couldn't initialize X11 output. Aborting...
+dbus-daemon[942643]: [session uid=1000 pid=942643 pidfd=4] Activated service 'org.freedesktop.Notifications' failed: Process org.freedesktop.Notifications exited with status 1

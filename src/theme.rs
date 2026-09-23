@@ -18,7 +18,7 @@ pub const SURFACE0: Color = Color::from_rgb8(0x31, 0x32, 0x44);
 pub const SURFACE1: Color = Color::from_rgb8(0x45, 0x47, 0x5a);
 /// Border colour for popup surfaces and frames.
 pub const BORDER: Color = Color::from_rgb8(0x58, 0x5b, 0x70);
-/// Dim overlay — muted/zero-volume icon.
+/// Dim overlay — disabled tray-menu text; unsuitable for active status text.
 pub const OVERLAY0: Color = Color::from_rgb8(0x6c, 0x70, 0x86);
 /// Error / critical state — low battery badge, battery-critical icon, network-offline icon.
 pub const CRITICAL: Color = Color::from_rgb8(0xf3, 0x8b, 0xa8);

@@ -331,6 +331,7 @@ mod tests {
         config.bars[0].modules.start = vec!["clock".into(), "volume".into()];
         config.bars[0].modules.center = vec!["button".into()];
         let (mut app, _) = App::boot(config, vec![]);
+        crate::app::tests::ready_clock(&mut app);
         let wid = test_wid();
         app.surface_mut(wid);
         (app, wid)

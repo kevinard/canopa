@@ -17,6 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify vendored layer-shell provenance
+        run: python3 scripts/check-vendor.py
+
+      - name: Check default theme contrast
+        run: python3 scripts/check-contrast.py
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:

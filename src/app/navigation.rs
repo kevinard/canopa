@@ -5,13 +5,17 @@ impl App {
     /// Build an ordered list of (zone, module_id) for the given surface's effective module layout.
     /// This filters self.modules to only those visible on this bar's module list, in zone order.
     pub(super) fn effective_nav_list(&self, window: iced::window::Id) -> Vec<(Zone, ModuleId)> {
-        let bar_name = self
-            .surfaces
-            .get(&window)
-            .map(|s| s.bar_name.as_str())
-            .unwrap_or("");
-        let bar = Self::bar_for_surface_name(&self.config.bars, bar_name);
+        let surface = self.surface(window).cloned().unwrap_or_default();
+        let bar = Self::bar_for_surface_name(&self.config.bars, &surface.bar_name);
+        let mode = if bar.edge.is_horizontal() {
+            crate::config::FormatMode::Horizontal
+        } else {
+            crate::config::FormatMode::Collapsed
+        };
         self.effective_module_layout_for_bar(bar)
+            .into_iter()
+            .filter(|(_, id)| self.module_has_content_on_surface(id, &surface, mode))
+            .collect()
     }
 
     /// Returns the ID of the next module in the surface's effective layout (wraps last→first).
