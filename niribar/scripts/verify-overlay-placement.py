@@ -23,7 +23,7 @@ desktop = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(desktop)
 
 
-def verify(binary, output, session, edge, bar_count):
+def verify(binary, output, session, edge, bar_count, scale):
     niri_config = session.runtime / "niri.kdl"
     niri_config.write_text(
         'prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\n'
@@ -56,10 +56,20 @@ def verify(binary, output, session, edge, bar_count):
                  if p.is_socket() and p.name != "wayland-parent"], "Niri socket"
     )[0]
     session.env["WAYLAND_DISPLAY"] = str(display)
+    outputs = json.loads(session.run(["niri", "msg", "--json", "outputs"]))
+    output_name = next(iter(outputs))
+    session.run(["niri", "msg", "output", output_name, "scale", str(scale)])
+    session.wait_for(
+        lambda: json.loads(session.run(["niri", "msg", "--json", "outputs"]))
+        [output_name]["logical"]["scale"] == scale, "output scale",
+    )
     compositor_env = session.env.copy()
     bars = []
     thicknesses = [38, 54][:bar_count]
-    reserved = sum(thicknesses)
+    reserved = round(sum(thicknesses) * scale)
+    # A fractional origin and extent can round independently when rasterized
+    # (e.g. x=852.5 and width=312.5 become 853 and 313 physical pixels).
+    rounding_tolerance = 0 if scale.is_integer() else 1
     for index, thickness in enumerate(thicknesses):
         runtime = session.runtime / f"bar-{index}"
         runtime.mkdir(mode=0o700)
@@ -117,8 +127,9 @@ modules {{
             "top": bounds[1], "bottom": after.height - bounds[3],
             "left": bounds[0], "right": after.width - bounds[2],
         }[edge]
-        results.append({"bar": index, "bounds": bounds, "clearance": clearance,
-                        "required_clearance": reserved, "passed": clearance == reserved})
+        results.append({"bar": index, "scale": scale, "bounds": bounds, "clearance": clearance,
+                        "required_clearance": reserved, "rounding_tolerance_px": rounding_tolerance,
+                        "passed": abs(clearance - reserved) <= rounding_tolerance})
         session.run(["wtype", "-k", "Escape"])
         session.wait_for_layers(bar_count)
         time.sleep(0.2)
@@ -133,6 +144,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--edge", nargs="+", choices=["top", "bottom", "left", "right"], default=["top"])
     parser.add_argument("--bars", type=int, choices=[1, 2], default=2)
+    parser.add_argument("--scale", type=float, choices=[1.0, 1.25, 1.5, 2.0], default=1.0)
     args = parser.parse_args()
     binary = args.binary.resolve(strict=True)
     output = args.output.resolve()
@@ -143,7 +155,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix="niribar-placement-") as directory:
             session = desktop.Session(Path(directory), case_output)
             try:
-                verify(binary, case_output, session, edge, args.bars)
+                verify(binary, case_output, session, edge, args.bars, args.scale)
             finally:
                 session.close()
 

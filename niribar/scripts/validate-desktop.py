@@ -52,6 +52,7 @@ class Session:
             XDG_RUNTIME_DIR=str(runtime),
             XDG_CONFIG_HOME=str(runtime / "config"),
             XDG_DATA_HOME=str(runtime / "data"),
+            XDG_STATE_HOME=str(runtime / "state"),
             XDG_CACHE_HOME=str(runtime / "cache"),
             DBUS_SYSTEM_BUS_ADDRESS=f"unix:path={runtime}/no-system-bus",
             PULSE_SERVER=f"unix:{runtime}/no-pulse",

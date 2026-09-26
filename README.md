@@ -27,7 +27,8 @@ python3 scripts/check-vendor.py --archives /path/to/verified-crate-archives
 Tests use private D-Bus sessions. Full transport tests additionally need
 `libglib2.0-bin`, `pipewire`, `pipewire-bin`, `pipewire-pulse`, and `pulseaudio-utils`.
 The optional graphical acceptance workflow uses a dedicated runner with Niri, Sway,
-grim, Python GI/AT-SPI, and software Mesa; see `notify/scripts/check-desktop-runner.py`.
+grim, Weston, wtype, Python GI/AT-SPI/Pillow, and software Mesa;
+see `notify/scripts/check-desktop-runner.py`.
 
 There is one lockfile, one set of dependency forks, and one panel protocol source.
 Cargo unifies dependency features when building applications together: combined GUI
@@ -46,9 +47,13 @@ Build a release with `cargo build --workspace --bins --locked --release`, then r
 binaries, current example configurations, service units, manuals, and source license
 notices. Service units retain their existing executable locations; choose installation
 paths accordingly. Packaging does not install or restart anything.
+Check the archive with `bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz`.
 
 Start development with [CONTEXT-MAP.md](CONTEXT-MAP.md), the
 [workspace decision](docs/adr/0001-shared-workspace-and-upstream-forks.md), and
 [fork maintenance](docs/vendor-maintenance.md). Both original Git histories are
 preserved as parents of the import commit and through `legacy/niribar` and
 `legacy/notify` branches. [Source licenses](LICENSES.md) remain unchanged.
+
+See the [integration validation record](docs/integration-validation.md) for local
+test results, graphical fixture coverage and release-packaging evidence.

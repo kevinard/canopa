@@ -100,8 +100,10 @@ cargo +1.95.0 test --locked --all-targets
 python3 scripts/check-vendor.py
 python3 scripts/check-contrast.py
 python3 scripts/test-update.py
-bash scripts/package-release.sh target/release dist
 ```
+
+For the combined release archive, build all workspace binaries and run the root
+packager as described in the [Canopa guide](../README.md).
 
 The transport suite also requires `libglib2.0-bin`, `pipewire`, `pipewire-bin`, `pipewire-pulse`
 and `pulseaudio-utils`. Tests start private D-Bus/audio daemons and Unix sockets;

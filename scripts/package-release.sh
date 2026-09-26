@@ -18,12 +18,9 @@ install -m644 notify/README.md notify/LICENSE-MIT notify/LICENSE-APACHE \
     notify/examples/config.kdl "$dest/share/canopa-notify/"
 install -m644 niribar/contrib/systemd/niribar.service notify/packaging/systemd/canopa-notify.service "$dest/share/systemd/user/"
 install -m644 notify/packaging/canopa-notify.1 "$dest/share/man/man1/"
-for name in accesskit_unix iced_layershell layershellev; do
-    mkdir -p "$dest/share/licenses/$name"
-    install -m644 vendor/"$name"/LICENSE* "$dest/share/licenses/$name/"
-done
-mkdir -p "$dest/share/licenses/canopa-panel-protocol"
-install -m644 crates/canopa-panel-protocol/LICENSE* "$dest/share/licenses/canopa-panel-protocol/"
+python3 scripts/dependency-attributions.py \
+    --output "$dest/share/canopa/dependency-attributions.md" \
+    --notices "$dest/share/licenses/dependencies"
 "$dest/bin/niribar" --version
 "$dest/bin/canopa-notify" --help > /dev/null
 tar -C "$stage" -czf "$output_dir/$bundle.tar.gz" "$bundle"

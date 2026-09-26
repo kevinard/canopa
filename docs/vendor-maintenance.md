@@ -55,3 +55,24 @@ isolated desktop fixtures. Compilation alone does not establish popup grabs,
 activation, output removal, fractional scaling, physical input regions, or native
 screen-reader behavior. The experimental rotation prototype's vendored renderer
 remains outside the supported workspace.
+
+After building root debug binaries, run these fixtures sequentially:
+
+```sh
+python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts /tmp/canopa-notifications-new
+python3 scripts/test-fork-desktop.py --niribar target/debug/niribar --artifacts /tmp/canopa-forks-new
+python3 niribar/scripts/verify-overlay-placement.py --binary target/debug/niribar --output /tmp/canopa-placement-new --edge top bottom left right --scale 1.25
+```
+
+Each artifact directory must be new. The first and third fixtures use Niri; the
+second uses disposable Sway outputs to remove and restore every output without
+terminating the compositor. It checks actual rendered frames and Wayland popup
+grabs/dismissal. These are local adapter checks; Orca and physical monitor/device
+acceptance remain separate procedures.
+
+`scripts/test-vendor.py` runs library tests from temporary copies because Cargo
+cannot test an excluded dependency's development targets in the root workspace.
+It seeds the temporary lockfile from the root lockfile, gives the upstream Iced
+test dependency the combined application's features, and rejects any active
+registry dependency version absent from the root lockfile. Source files and
+tracked vendor manifests are unchanged by this fixture.

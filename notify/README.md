@@ -23,7 +23,7 @@ same desktop dependencies used by CI:
 sudo apt-get install pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev dbus at-spi2-core
 cargo build --release --locked -p canopa-notify
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy -p canopa-notify --all-targets --locked -- -D warnings
 bash scripts/test.sh
 bash scripts/check-core-dependencies.sh
 ```

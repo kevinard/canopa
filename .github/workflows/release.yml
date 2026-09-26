@@ -22,6 +22,7 @@ jobs:
       - run: python3 scripts/check-vendor.py
       - run: cargo build --locked --release --workspace --bins --target x86_64-unknown-linux-gnu
       - run: bash scripts/package-release.sh target/x86_64-unknown-linux-gnu/release dist
+      - run: bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*.tar.gz

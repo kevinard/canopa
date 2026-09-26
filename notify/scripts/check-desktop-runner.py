@@ -15,7 +15,8 @@ def main():
     args = parser.parse_args()
     failures = []
     for command in ['cargo', 'rustc', 'git', 'dbus-daemon', 'dbus-run-session',
-                    'niri', 'sway', 'grim', 'cc', 'pkg-config', 'wayland-scanner']:
+                    'niri', 'sway', 'grim', 'weston', 'wtype', 'busctl', 'swaymsg',
+                    'cc', 'pkg-config', 'wayland-scanner']:
         path = shutil.which(command)
         print(f'{command}: {path or "MISSING"}')
         if not path:
@@ -31,6 +32,7 @@ def main():
         [sys.executable, '-c',
          "import gi; gi.require_version('Gio', '2.0'); "
          "gi.require_version('Atspi', '2.0'); from gi.repository import Gio, Atspi"],
+        [sys.executable, '-c', 'from PIL import Image, ImageChops'],
         ['pkg-config', '--exists', 'wayland-client', 'alsa', 'libudev', 'xkbcommon', 'libpulse'],
     ]
     for command in checks:

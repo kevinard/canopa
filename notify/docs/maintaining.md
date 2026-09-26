@@ -1,5 +1,7 @@
 # Maintaining Canopa Notify
 
+Run these commands from the Canopa workspace root.
+
 ## Build profiles and ownership
 
 The default Cargo features are `gui` and `audio`. `gui` includes Iced, Wayland,
@@ -9,7 +11,7 @@ control and D-Bus interfaces compile without either adapter:
 
 ```sh
 cargo check -p canopa-notify --all-targets --no-default-features --locked
-bash scripts/test.sh --no-default-features
+bash notify/scripts/test.sh --no-default-features
 cargo build -p canopa-notify --no-default-features --features gui --locked
 ```
 
@@ -75,7 +77,7 @@ regressions for reported inputs.
 
 ## Repeatable desktop check
 
-`scripts/test-desktop.py` requires a compatible Niribar binary, Niri, Sway, grim,
+`notify/scripts/test-desktop.py` requires a compatible Niribar binary, Niri, Sway, grim,
 software Mesa, Python GI with Gio/AT-SPI, the AT-SPI launcher/registry, a C compiler,
 `pkg-config` and `wayland-scanner`. It builds its small private pointer helper,
 starts a nonactivating private bus and fresh XDG directories, then exercises both
@@ -83,35 +85,35 @@ actual adapters and sender callbacks. It records screenshots, logs, compositor
 versions and results, and terminates only its own process groups.
 
 ```sh
-python3 scripts/test-desktop.py --notify target/debug/canopa-notify \
-  --niribar /path/to/niribar/target/debug/niribar --artifacts /tmp/notify-desktop-new
+python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify \
+  --niribar target/debug/niribar --artifacts /tmp/notify-desktop-new
 ```
 
-The manually dispatched `Desktop acceptance` workflow runs the same check on a
-runner labeled `canopa-desktop` with a supplied compatible host checkout. A runner
+The manually dispatched `Desktop acceptance` workflow runs this check, the shared
+fork popup/output fixture, and Niri panel placement at fractional scale on a
+runner labeled `canopa-desktop`, building both applications from this workspace. A runner
 must be provisioned before this job can run; the local passing fixture is recorded
 separately from hosted CI. This smoke test does not run Orca; follow the separate
 [screen-reader procedure](orca-isolated-fixture-research.md) for that acceptance.
 
 Use the [hosted CI setup guide](hosted-ci.md) to provision and register the runner.
-`scripts/check-desktop-runner.py --niribar-root /path/to/niribar` checks prerequisites
-without touching the live desktop. Registration and hosted results remain open
-until a GitHub repository and dedicated machine exist.
+`dbus-run-session -- python3 notify/scripts/check-desktop-runner.py` checks prerequisites
+without touching the live desktop. Runner registration and hosted results must be recorded separately from local results.
 
 ## Storage interruption and configuration load checks
 
-`bash scripts/test.sh --test storage_failures --test legacy_import` exercises real
+`bash notify/scripts/test.sh --test storage_failures --test legacy_import` exercises real
 SQLite busy errors, SIGKILL during an uncommitted migration, and SIGXFSZ during a
 legacy snapshot write. The last fixture needs `prlimit` from util-linux. These
 tests establish process-interruption recovery, not filesystem or power-loss
 certification. Reserved `.history-import-*` snapshots and sidecars are reclaimed
 under the destination ownership lock on the next default-path startup.
 
-Build the configuration suite with `bash scripts/test.sh --test configuration_intake
+Build the configuration suite with `bash notify/scripts/test.sh --test configuration_intake
 --no-run`, then pass the executable path printed by Cargo to:
 
 ```sh
-python3 scripts/stress-configuration.py --test-binary /path/to/configuration_intake-HASH \
+python3 notify/scripts/stress-configuration.py --test-binary /path/to/configuration_intake-HASH \
   --artifacts /tmp/configuration-load-new --runs 5 --cpu-workers 4
 ```
 
@@ -123,7 +125,7 @@ build is an explicit stress scenario, not the release test baseline.
 
 ## Release measurements
 
-Run `python3 scripts/measure-runtime.py /path/to/release/canopa-notify` after builds
+Run `python3 notify/scripts/measure-runtime.py /path/to/release/canopa-notify` after builds
 finish. It uses its own bus and state, warms up 32 transient receipts, then measures
 1,000 transient and 1,000 retained serial Notify/Close pairs with 4 KiB bodies.
 JSON includes receipt percentiles, RSS/high-water memory, CPU/platform, binary hash
@@ -131,6 +133,7 @@ and clean shutdown. Compare equivalent machines and workloads against the
 [recorded release baseline](notification-release-verification.md). This workload
 is not a burst or graphical-latency benchmark.
 
-[Dependency attributions](dependency-attributions.md) record the resolved Linux
-normal/build graph. Regenerate this inventory when the lockfile or features change;
-include the appropriate upstream notices with a distributed release.
+[Dependency attributions](../../docs/dependency-attributions.md) record the resolved Linux
+normal/build graph. Regenerate this inventory when the lockfile or features change with
+`python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md`.
+The root release packager includes original dependency notices.

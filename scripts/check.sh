@@ -15,9 +15,9 @@ case "${1:-}" in
         python3 niribar/scripts/test-update.py
         cargo fmt --all -- --check
         cargo clippy --workspace --all-targets --locked -- -D warnings
+        python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md --check
         dbus-run-session -- cargo test --workspace --all-targets --locked
-        cargo test --locked -p iced_layershell --lib
-        cargo test --locked -p layershellev --lib
+        python3 scripts/test-vendor.py
         ;;
     *)
         echo 'Usage: bash scripts/check.sh [--core]' >&2

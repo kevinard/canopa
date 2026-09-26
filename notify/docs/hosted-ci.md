@@ -1,11 +1,11 @@
 # Hosted CI setup
 
-Status on 2026-09-21: no GitHub repository exists and no dedicated runner machine
-has been selected. No hosted workflow result is claimed. The local release and
-desktop evidence remain in [release verification](notification-release-verification.md).
+Run the following commands from the Canopa workspace root. Local validation does
+not establish a hosted workflow result. Earlier Notify release and desktop evidence
+remain in [release verification](notification-release-verification.md).
 
-The workflows use Rust 1.95.0, matching the verified release toolchain. `Rust
-checks` runs core and GUI checks on GitHub's Ubuntu 24.04 workers on push, PR,
+The workflows use Rust 1.95.0, selected by the root toolchain file. `Canopa checks`
+runs core and GUI checks on GitHub's Ubuntu 24.04 workers on push, PR,
 or manual dispatch. `Desktop acceptance` is manually dispatched to a Linux
 runner with the custom label `canopa-desktop`.
 
@@ -13,20 +13,20 @@ runner with the custom label `canopa-desktop`.
 
 1. Select a Linux machine or VM with software Mesa, a writable runner account,
    Rustup, Git, Python 3, D-Bus, Niri 26.04 (the local acceptance version), Sway,
-   grim, C compiler, pkg-config, wayland-scanner, AT-SPI launcher/registry, and
-   Python GI exposing Gio and Atspi. Include ALSA, udev, Wayland, XKB and PulseAudio
+   grim, Weston, wtype, C compiler, pkg-config, wayland-scanner, AT-SPI launcher/registry,
+   Python Pillow and GI exposing Gio and Atspi. Include ALSA, udev, Wayland, XKB and PulseAudio
    development packages for both Rust builds. On Ubuntu the common dependencies
    are `build-essential pkg-config libasound2-dev libudev-dev libwayland-dev
    libxkbcommon-dev libpulse-dev dbus at-spi2-core python3-gi gir1.2-atspi-2.0
-   sway grim libgl1-mesa-dri`. Install a compatible Niri separately if the
+   sway grim weston wtype python3-pil libgl1-mesa-dri`. Install a compatible Niri separately if the
    distribution does not supply it.
-2. Place the compatible Niribar checkout at `/opt/canopa/niribar` (or supply its
-   actual path at dispatch). Its `Cargo.lock` and matching v4 protocol/vendor
-   changes must be present. Record the exact Notify and Niribar commit IDs.
-3. Run `python3 scripts/check-desktop-runner.py --niribar-root /opt/canopa/niribar`
-   as the runner account, followed by `bash scripts/check-panel-protocol.sh
-   /opt/canopa/niribar`. These are read-only checks, not a graphical pass.
-4. Once the repository exists, use **Settings → Actions → Runners → New
+2. Check out the Canopa repository. It contains both applications, the shared
+   panel protocol, dependency forks and a single root `Cargo.lock`. Record the
+   workspace commit ID; a separate host checkout is no longer required.
+3. Run `dbus-run-session -- python3 notify/scripts/check-desktop-runner.py`
+   as the runner account, followed by `bash notify/scripts/check-panel-protocol.sh`.
+   These are prerequisite checks, not a graphical pass.
+4. In the hosting repository, use **Settings → Actions → Runners → New
    self-hosted runner → Linux** and the repository-generated download and
    registration commands. Add `--labels canopa-desktop` to registration. Install
    and start the runner service as documented by GitHub. Registration tokens
@@ -40,10 +40,10 @@ concurrency and restricted to manual dispatch.
 
 ## Run and record the gates
 
-Push the reviewed source to the chosen repository. Put both workflow files on
+Push the reviewed source to the chosen repository. Put the root workflow files on
 its default branch before dispatch: GitHub requires this for
 [manual workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch).
-Run **Rust checks**, then **Desktop acceptance**, supplying `niribar_root`.
+Run **Canopa checks**, then **Desktop acceptance**; no checkout-path input is needed.
 The latter builds both adapters and uploads `desktop-acceptance` artifacts.
 
 Record the run URLs, exact revisions, runner/toolchain versions, result, and
