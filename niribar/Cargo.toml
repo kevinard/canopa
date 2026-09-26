@@ -6,6 +6,7 @@ rust-version = "1.95"
 license = "MIT"
 
 [dependencies]
+canopa-notify-client.workspace = true
 canopa-config.workspace = true
 canopa-theme.workspace = true
 canopa-ui.workspace = true

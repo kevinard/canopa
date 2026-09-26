@@ -256,6 +256,10 @@ _Avoid_: Notification server API when referring to freedesktop notification rece
 A **Notify Control API** stream that delivers notification state changes to a connected client.
 _Avoid_: Polling when referring to push updates
 
+**Notification Status Summary**:
+A bounded snapshot of the daemon instance, retained **Requires Attention** count and **Do Not Disturb**. Notify computes its count without decoding history content. Niribar subscribes to this summary; it never derives notification policy or attention from Center items.
+_Avoid_: Unread count, active count
+
 **Notification Center Projection**:
 A derived current-state representation of **Notification Center** content produced from **Notification Daemon** state, including grouped **Active Notifications**, **Notification History**, and **App Permission Control** state.
 _Avoid_: Event log when referring to display state, Notification Snapshot when referring to display-ready content

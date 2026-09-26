@@ -377,7 +377,11 @@ impl<'a> PanelProviderCatalog<'a> {
             .iter()
             .find(|provider| provider.name == name)
             .map(|provider| provider.protocol)
-            .unwrap_or_default()
+            .unwrap_or(if name == "notifications" {
+                ProviderProtocol::CanopaV4
+            } else {
+                ProviderProtocol::default()
+            })
     }
     pub(crate) fn new(configured: &'a [crate::config::PanelProviderConfig]) -> Self {
         Self { configured }
@@ -408,25 +412,35 @@ impl<'a> PanelProviderCatalog<'a> {
 }
 
 pub(crate) fn is_builtin_provider_name(name: &str) -> bool {
-    matches!(name, "wifi")
+    matches!(name, "wifi" | "notifications")
 }
 
 pub(crate) fn builtin_provider_command(name: &str) -> Option<crate::config::ConfiguredCommand> {
     let binary_name = match name {
         "wifi" => "niribar-wifi-provider",
+        "notifications" => "canopa-notify",
         _ => return None,
     };
-    let program = match std::env::current_exe() {
+    let program = companion_binary(binary_name);
+    let args = if name == "notifications" {
+        vec!["panel-provider".into()]
+    } else {
+        Vec::new()
+    };
+    Some(crate::config::ConfiguredCommand::argv(
+        program,
+        args,
+        &crate::config::CommandPolicy::default(),
+    ))
+}
+
+pub(crate) fn companion_binary(binary_name: &str) -> String {
+    match std::env::current_exe() {
         Ok(current_exe) => {
             resolve_builtin_provider_binary(binary_name, &current_exe, |path| path.is_file())
         }
         Err(_) => binary_name.to_string(),
-    };
-    Some(crate::config::ConfiguredCommand::argv(
-        program,
-        Vec::new(),
-        &crate::config::CommandPolicy::default(),
-    ))
+    }
 }
 
 fn resolve_builtin_provider_binary(
@@ -688,6 +702,33 @@ mod tests {
         let catalog = PanelProviderCatalog::new(&configured);
 
         assert_eq!(catalog.resolve("wifi").unwrap(), command);
+    }
+
+    #[test]
+    fn notification_provider_uses_v4_and_allows_an_explicit_override() {
+        let catalog = PanelProviderCatalog::new(&[]);
+        assert_eq!(
+            catalog.protocol("notifications"),
+            ProviderProtocol::CanopaV4
+        );
+        let command = catalog.resolve("notifications").unwrap();
+        let crate::config::ConfiguredCommandSpec::Argv { program, args } = command.spec() else {
+            panic!("expected argv")
+        };
+        assert!(program.ends_with("canopa-notify"));
+        assert_eq!(args, &["panel-provider"]);
+        let custom = crate::config::ConfiguredCommand::argv_for_test("custom", vec![]);
+        let configured = vec![crate::config::PanelProviderConfig {
+            name: "notifications".into(),
+            protocol: ProviderProtocol::default(),
+            command: custom.clone(),
+        }];
+        let catalog = PanelProviderCatalog::new(&configured);
+        assert_eq!(
+            catalog.protocol("notifications"),
+            ProviderProtocol::default()
+        );
+        assert_eq!(catalog.resolve("notifications").unwrap(), custom);
     }
 
     #[test]

@@ -158,6 +158,7 @@ enum SocketControlRequest {
     ActiveCount,
     PanelSnapshot,
     PanelSubscribe,
+    SummarySubscribe,
     PanelSession,
     InvokeNotificationAction {
         notification_id: InternalNotificationId,
@@ -176,6 +177,12 @@ struct SocketControlRequestSpec {
 }
 
 const SOCKET_CONTROL_REQUESTS: &[SocketControlRequestSpec] = &[
+    SocketControlRequestSpec {
+        request: SocketControlRequest::SummarySubscribe,
+        line: canopa_notify_client::SUMMARY_REQUEST,
+        command: None,
+        format_reply: None,
+    },
     SocketControlRequestSpec {
         request: SocketControlRequest::Status,
         line: "status\n",

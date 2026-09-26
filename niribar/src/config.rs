@@ -21,8 +21,9 @@ pub use module::{
     ActionBinding, ActionTrigger, ActionsConfig, BatteryConfig, ButtonConfig, ClockConfig,
     CommandPolicy, ConfiguredCommand, FocusedWindowConfig, IconRulesConfig, IconThreshold,
     MenuConfig, MenuItemConfig, MenuSourceConfig, MenuSourceKind, ModuleActionsConfig,
-    ModuleConfig, ModuleParams, NetworkConfig, PanelAction, PanelProviderConfig, ScriptConfig,
-    StateRule, StatesConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    ModuleConfig, ModuleParams, NetworkConfig, NotificationsConfig, PanelAction,
+    PanelProviderConfig, ScriptConfig, StateRule, StatesConfig, TrayConfig, VolumeConfig,
+    WorkspaceLabelConfig, WorkspacesConfig,
 };
 pub(crate) use module::{CommandPolicyError, ConfiguredCommandSpec};
 #[allow(unused_imports)]

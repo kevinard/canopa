@@ -136,6 +136,12 @@ _Avoid_: Orientation, rotated bar, edge rotation
 The icon associated with the application that owns a compositor window, used when a **Module** represents that window rather than a generic module glyph.
 _Avoid_: Window icon, module icon
 
+### Notifications
+
+**Notification Module**:
+The built-in `notifications` **Module** displaying Notify's attention count, DND and availability. It shares one **Module Data Source**, opens the built-in Center provider on primary activation and requests an atomic DND toggle on secondary activation. It stays visible when unavailable and replaces its snapshot after reconnect; Notify owns history and policy.
+_Avoid_: Notification daemon, unread counter
+
 ### Network
 
 **Network Status Integration**:
@@ -562,7 +568,7 @@ _Avoid_: Unavailable module, runtime failure
 - A **Module Action** may run a **Panel Action** when configured.
 - A **Module** may expose a **Tooltip**.
 - A **Module** may expose a **Menu**.
-- An **Unavailable Module** renders no visible content, leaves no **Module Gap**, has no **Tooltip**, and is skipped by **Keyboard Focus** navigation.
+- An **Unavailable Module** normally renders no visible content, leaves no **Module Gap**, has no **Tooltip**, and is skipped by **Keyboard Focus** navigation. The **Notification Module** deliberately stays visible, with an unavailable indicator, tooltip and keyboard actions while it reconnects (Canopa ADR 0004).
 - An **Unavailable Module** can recover automatically when its data source or **Compositor Integration** becomes available.
 - An **Empty Module** renders no visible content, leaves no **Module Gap**, has no **Tooltip**, and is skipped by **Keyboard Focus** navigation.
 - An **Empty Module** is not a runtime failure.

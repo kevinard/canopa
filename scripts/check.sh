@@ -5,8 +5,8 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 case "${1:-}" in
     --core)
         bash notify/scripts/check-core-dependencies.sh
-        cargo check --locked -p canopa-notify -p canopa-panel-protocol -p canopa-config -p canopa-file -p canopa-cli --all-targets --no-default-features
-        cargo test --locked -p canopa-config -p canopa-file -p canopa-cli -p canopa-theme
+        cargo check --locked -p canopa-notify -p canopa-panel-protocol -p canopa-config -p canopa-file -p canopa-cli -p canopa-notify-client --all-targets --no-default-features
+        cargo test --locked -p canopa-config -p canopa-file -p canopa-cli -p canopa-theme -p canopa-notify-client
         bash notify/scripts/test.sh --no-default-features
         ;;
     '')
@@ -14,6 +14,7 @@ case "${1:-}" in
         bash notify/scripts/check-panel-protocol.sh
         python3 niribar/scripts/check-contrast.py
         python3 niribar/scripts/test-update.py
+        python3 scripts/test-session-units.py
         cargo fmt --all -- --check
         cargo clippy --workspace --all-targets --locked -- -D warnings
         python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md --check

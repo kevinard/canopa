@@ -24,7 +24,8 @@ static uint32_t timestamp(void) {
     return value.tv_sec * 1000 + value.tv_nsec / 1000000;
 }
 int main(int argc, char **argv) {
-    if (argc != 3) return 2;
+    if (argc != 3 && argc != 4) return 2;
+    uint32_t button = argc == 4 && !strcmp(argv[3], "right") ? 273 : 272;
     struct wl_display *display = wl_display_connect(NULL);
     if (!display) return 3;
     struct wl_registry *registry = wl_display_get_registry(display);
@@ -38,11 +39,11 @@ int main(int argc, char **argv) {
     zwlr_virtual_pointer_v1_frame(pointer);
     wl_display_roundtrip(display);
     usleep(250000);
-    zwlr_virtual_pointer_v1_button(pointer, timestamp(), 272, WL_POINTER_BUTTON_STATE_PRESSED);
+    zwlr_virtual_pointer_v1_button(pointer, timestamp(), button, WL_POINTER_BUTTON_STATE_PRESSED);
     zwlr_virtual_pointer_v1_frame(pointer);
     wl_display_roundtrip(display);
     usleep(100000);
-    zwlr_virtual_pointer_v1_button(pointer, timestamp(), 272, WL_POINTER_BUTTON_STATE_RELEASED);
+    zwlr_virtual_pointer_v1_button(pointer, timestamp(), button, WL_POINTER_BUTTON_STATE_RELEASED);
     zwlr_virtual_pointer_v1_frame(pointer);
     wl_display_roundtrip(display);
     usleep(250000);

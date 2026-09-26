@@ -15,6 +15,7 @@ gui = ["dep:canopa-ui", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:
 audio = ["dep:rodio"]
 
 [dependencies]
+canopa-notify-client.workspace = true
 miette.workspace = true
 canopa-file.workspace = true
 canopa-config.workspace = true

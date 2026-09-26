@@ -17,6 +17,8 @@ test -s "$bundle/share/systemd/user/canopa-notify.service"
 test -s "$bundle/share/niribar/LICENSE"
 test -s "$bundle/share/niribar/default.kdl"
 test -s "$bundle/share/systemd/user/niribar.service"
+test -s "$bundle/share/systemd/user/canopa-session.target"
+test -s "$bundle/share/canopa/notifications.md"
 PATH="$bundle/bin" niribar --version
 python3 - "$bundle/bin/niribar-wifi-provider" <<'PY'
 import json

@@ -640,6 +640,15 @@ impl SqlitePersistedState {
         Ok(())
     }
 
+    pub(crate) async fn requires_attention_count(&self) -> anyhow::Result<u64> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM notification_threads WHERE requires_attention = 1",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(u64::try_from(count)?)
+    }
+
     pub(crate) async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
         let sql = notification_thread_select_sql("ORDER BY created_at DESC, id DESC");
         let rows = sqlx::query(&sql).fetch_all(&self.pool).await?;

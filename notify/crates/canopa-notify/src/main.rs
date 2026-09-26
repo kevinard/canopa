@@ -51,7 +51,7 @@ struct DaemonArgs {
     #[arg(long)]
     headless: bool,
     #[arg(long)]
-    socket: PathBuf,
+    socket: Option<PathBuf>,
     #[arg(long)]
     database: Option<PathBuf>,
     #[arg(long, conflicts_with = "canopa_config")]
@@ -67,7 +67,7 @@ struct DaemonArgs {
 #[derive(Parser)]
 struct CtlArgs {
     #[arg(long)]
-    socket: PathBuf,
+    socket: Option<PathBuf>,
     #[command(subcommand)]
     command: CtlCommand,
 }
@@ -107,7 +107,7 @@ enum DndCommand {
 #[derive(Parser)]
 struct PanelProviderArgs {
     #[arg(long)]
-    socket: PathBuf,
+    socket: Option<PathBuf>,
 }
 
 #[derive(Parser)]
@@ -120,6 +120,12 @@ struct CheckConfigArgs {
     defaults: bool,
     #[arg(long)]
     show_source: bool,
+}
+
+fn resolve_socket(socket: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    socket
+        .map(Ok)
+        .unwrap_or_else(canopa_notify_client::default_socket)
 }
 
 fn configuration_request(
@@ -204,7 +210,7 @@ async fn run() -> anyhow::Result<()> {
 
 async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
     let mode = daemon_mode(&args)?;
-    let paths = startup::DaemonPaths::resolve(args.socket, args.database)?;
+    let paths = startup::DaemonPaths::resolve(resolve_socket(args.socket)?, args.database)?;
     if mode == DaemonMode::Service {
         ensure_wayland_session()?;
     }
@@ -389,11 +395,15 @@ async fn run_ctl(mut args: CtlArgs) -> anyhow::Result<()> {
     if let CtlCommand::ReloadCanopa { path } = &mut args.command {
         *path = std::path::absolute(&*path)?;
     }
-    control_adapters::run_ctl(&args.socket, control_request_for_ctl(&args.command)).await
+    control_adapters::run_ctl(
+        &resolve_socket(args.socket)?,
+        control_request_for_ctl(&args.command),
+    )
+    .await
 }
 
 fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
-    control_adapters::run_panel_provider(&args.socket)
+    control_adapters::run_panel_provider(&resolve_socket(args.socket)?)
 }
 
 fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest {
@@ -564,7 +574,7 @@ mod tests {
     fn daemon_args(headless: bool, service: bool) -> DaemonArgs {
         DaemonArgs {
             headless,
-            socket: PathBuf::from("control.sock"),
+            socket: Some(PathBuf::from("control.sock")),
             database: None,
             config: None,
             canopa_config: None,

@@ -91,10 +91,10 @@ mod config_tests {
         assert_eq!(config.bars[0].modules.center, vec!["focused-window"]);
         assert_eq!(
             config.bars[0].modules.end,
-            vec!["volume", "network", "battery", "clock"]
+            vec!["notifications", "volume", "network", "battery", "clock"]
         );
-        // All 6 default modules declared
-        assert_eq!(config.modules.len(), 6);
+        // All default modules declared
+        assert_eq!(config.modules.len(), 7);
         let names: Vec<&str> = config.modules.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"workspaces"));
         assert!(names.contains(&"focused-window"));
@@ -102,6 +102,7 @@ mod config_tests {
         assert!(names.contains(&"network"));
         assert!(names.contains(&"battery"));
         assert!(names.contains(&"clock"));
+        assert!(names.contains(&"notifications"));
     }
 
     #[test]

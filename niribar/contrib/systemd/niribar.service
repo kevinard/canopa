@@ -1,10 +1,11 @@
 [Unit]
 Description=niribar status bar
-After=graphical-session.target
-PartOf=graphical-session.target
+After=graphical-session-pre.target
+Before=graphical-session.target
+PartOf=graphical-session.target canopa-session.target
 
 [Service]
-ExecStart=/usr/bin/niribar
+ExecStart=%h/.local/bin/niribar
 Restart=on-failure
 RestartSec=3
 

@@ -34,6 +34,10 @@ pub fn clock_default() -> Option<FormatTemplate> {
     Some(template("{date}", &["icon", "value", "time", "date"]))
 }
 
+pub fn notifications_default() -> Option<FormatTemplate> {
+    Some(template("{label}", &["icon", "value", "label", "state"]))
+}
+
 pub fn network_default() -> Option<FormatTemplate> {
     Some(template("{label}", &["icon", "value", "label", "state"]))
 }

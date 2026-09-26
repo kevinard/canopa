@@ -6,6 +6,7 @@ members = [
     "crates/canopa-config",
     "crates/canopa-theme",
     "crates/canopa-ui",
+    "crates/canopa-notify-client",
     "crates/canopa-panel-protocol",
     "notify/crates/canopa-notify",
     "niribar",
@@ -23,6 +24,7 @@ rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+canopa-notify-client = { path = "crates/canopa-notify-client" }
 canopa-file = { path = "crates/canopa-file" }
 canopa-config = { path = "crates/canopa-config" }
 canopa-theme = { path = "crates/canopa-theme" }

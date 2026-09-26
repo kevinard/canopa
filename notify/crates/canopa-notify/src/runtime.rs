@@ -818,6 +818,19 @@ impl NotificationRuntime {
         self.presentation.error()
     }
 
+    pub(crate) async fn notification_summary(
+        &self,
+    ) -> anyhow::Result<canopa_notify_client::Summary> {
+        // Read the count and policy under the same coordinator as commits. The
+        // indexed aggregate never decodes content; transient items require no attention.
+        let _read = self.begin_mutation().await?;
+        Ok(canopa_notify_client::Summary {
+            instance: self.center_instance,
+            requires_attention: self.storage.requires_attention_count().await?,
+            do_not_disturb: self.loaded_policy_state.lock().unwrap().do_not_disturb(),
+        })
+    }
+
     pub(crate) async fn notification_center_projection(
         &self,
     ) -> anyhow::Result<NotificationCenterProjection> {
@@ -1180,6 +1193,14 @@ impl NotificationStateSubscription {
             true
         } else {
             self.changes.changed().await.is_ok()
+        }
+    }
+
+    pub async fn next_summary(&mut self) -> anyhow::Result<Option<canopa_notify_client::Summary>> {
+        if self.changed().await {
+            Ok(Some(self.runtime.notification_summary().await?))
+        } else {
+            Ok(None)
         }
     }
 

@@ -16,6 +16,16 @@ struct ModuleDataSourceCatalogEntry {
 
 const SOURCE_CATALOG: &[ModuleDataSourceCatalogEntry] = &[
     ModuleDataSourceCatalogEntry {
+        identity: ModuleDataSourceIdentity::Notifications,
+        subscription: |enabled, _| {
+            if enabled {
+                crate::modules::notifications::subscription()
+            } else {
+                iced::Subscription::none()
+            }
+        },
+    },
+    ModuleDataSourceCatalogEntry {
         identity: ModuleDataSourceIdentity::Battery,
         subscription: battery_subscription,
     },
@@ -156,6 +166,16 @@ impl ModuleDataSourceRuntime {
         }
     }
 
+    pub(super) fn handle_notifications_event(
+        &mut self,
+        summary: Option<canopa_notify_client::Summary>,
+    ) -> ModuleDataSourceTransition {
+        match summary {
+            Some(summary) => self.apply_source_state(ModuleDataSourceState::Notifications(summary)),
+            None => self.mark_unavailable(ModuleDataSourceIdentity::Notifications),
+        }
+    }
+
     pub(super) fn handle_volume_event(&mut self, event: VolumeEvent) -> ModuleDataSourceTransition {
         match event {
             VolumeEvent::StateChanged { volume, muted } => {
@@ -218,6 +238,70 @@ mod tests {
         };
         config.bars[0].modules.end = vec!["battery-main".into(), "battery-side".into()];
         App::boot(config, vec![]).0
+    }
+
+    #[test]
+    fn notification_instances_share_one_source_and_recover_together() {
+        let mut config = Config::default();
+        config.bars[0].modules.end = vec!["first".into(), "second".into()];
+        config.modules = ["first", "second"]
+            .into_iter()
+            .map(|name| ModuleConfig {
+                name: name.into(),
+                module_type: "notifications".into(),
+                params: ModuleParams::Notifications(Default::default()),
+                actions: Default::default(),
+            })
+            .collect();
+        let (mut app, _) = App::boot(config, vec![]);
+        assert_eq!(
+            app.data_sources.active_identities_for_test(),
+            vec![ModuleDataSourceIdentity::Notifications]
+        );
+        let summary = canopa_notify_client::Summary {
+            instance: [2; 16],
+            requires_attention: 9,
+            do_not_disturb: true,
+        };
+        for reading in [Some(summary), None, Some(summary)] {
+            let _ = app.handle_module_runtime_event(
+                crate::app::messages::ModuleRuntimeEvent::Notifications(reading),
+            );
+            for name in ["first", "second"] {
+                assert_eq!(
+                    app.modules.state(&crate::modules::ModuleId::new(name)),
+                    Some(&reading.map_or(
+                        crate::modules::ModuleState::Unavailable,
+                        crate::modules::ModuleState::Notifications
+                    ))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn notification_source_clears_stale_state_and_accepts_a_new_daemon_snapshot() {
+        let mut runtime = ModuleDataSourceRuntime::default();
+        let first = canopa_notify_client::Summary {
+            instance: [1; 16],
+            requires_attention: 42,
+            do_not_disturb: true,
+        };
+        runtime.handle_notifications_event(Some(first));
+        assert!(matches!(
+            runtime.handle_notifications_event(None),
+            ModuleDataSourceTransition::Unavailable(ModuleDataSourceIdentity::Notifications)
+        ));
+        let new = canopa_notify_client::Summary {
+            instance: [2; 16],
+            requires_attention: 1,
+            do_not_disturb: false,
+        };
+        assert_eq!(
+            runtime.handle_notifications_event(Some(new)),
+            ModuleDataSourceTransition::Available(ModuleDataSourceState::Notifications(new))
+        );
+        assert_eq!(runtime.sources.len(), 1);
     }
 
     #[test]

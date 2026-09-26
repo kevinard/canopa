@@ -52,20 +52,22 @@ The IPC commands require a running bar. Selection input is bounded to 1 MiB.
 
 ## Install a release
 
-Extract the Linux x86-64 release archive. It contains both executables, the
-default configuration, this guide, the MIT license, and a user systemd unit.
-From the extracted directory:
+The Canopa Linux x86-64 archive contains all four companion executables, shared
+configuration, documentation and user service units. From the extracted directory:
 
 ```sh
-sudo install -m755 bin/niribar bin/niribar-wifi-provider /usr/bin/
-mkdir -p ~/.config/systemd/user
-cp share/systemd/user/niribar.service ~/.config/systemd/user/
+mkdir -p ~/.local/bin ~/.config/systemd/user
+install -m755 bin/niribar bin/niribar-wifi-provider bin/canopa-notify bin/canopa ~/.local/bin/
+cp share/systemd/user/*.service share/systemd/user/canopa-session.target ~/.config/systemd/user/
 systemctl --user daemon-reload
 ```
 
-Start Niribar from Niri's startup configuration, or enable the supplied user
-unit once your graphical session exports `WAYLAND_DISPLAY` and `NIRI_SOCKET`
-to the systemd user manager. Do not start it through both mechanisms.
+The units use `~/.local/bin`. Once the Niri session exports `WAYLAND_DISPLAY` and
+`NIRI_SOCKET` to the user service manager, enable `canopa-session.target` to start
+both companions. Use one notification daemon in the session. See the
+[notification and session guide](../docs/notifications.md) for controls and restart
+behavior. Niribar can still be launched directly from Niri's startup configuration;
+use one startup mechanism for each process.
 
 ## Wi-Fi and external panels
 

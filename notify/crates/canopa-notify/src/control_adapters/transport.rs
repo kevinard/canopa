@@ -241,6 +241,7 @@ pub(crate) struct ControlSocket {
     control: NotifyControl,
     connections: Arc<tokio::sync::Semaphore>,
     panel_subscriptions: Arc<tokio::sync::Semaphore>,
+    summary_subscriptions: Arc<tokio::sync::Semaphore>,
 }
 
 impl ControlSocket {
@@ -249,6 +250,7 @@ impl ControlSocket {
             control,
             connections: Arc::new(tokio::sync::Semaphore::new(64)),
             panel_subscriptions: Arc::new(tokio::sync::Semaphore::new(8)),
+            summary_subscriptions: Arc::new(tokio::sync::Semaphore::new(8)),
         }
     }
 
@@ -288,6 +290,15 @@ impl ControlSocket {
             "level=info component=control event=request command={}",
             request.kind()
         );
+
+        if matches!(request, SocketControlRequest::SummarySubscribe) {
+            let Ok(_permit) = self.summary_subscriptions.try_acquire() else {
+                write_socket_frame(stream.get_mut(), b"error too many summary subscriptions\n")
+                    .await?;
+                return Ok(());
+            };
+            return stream_summary_subscription(&mut stream, control).await;
+        }
 
         if matches!(
             request,
@@ -471,4 +482,34 @@ impl Write for JsonLineBuffer {
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
+}
+
+async fn stream_summary_subscription(
+    stream: &mut BufReader<tokio::net::UnixStream>,
+    control: NotifyControl,
+) -> anyhow::Result<()> {
+    if !stream.buffer().is_empty() {
+        return Ok(());
+    }
+    let mut subscription = control.subscribe_notification_state();
+    let mut unexpected = [0];
+    let mut last = None;
+    loop {
+        let snapshot = tokio::select! {
+            biased;
+            result = stream.read(&mut unexpected) => { result?; break; }
+            snapshot = subscription.next_summary() => snapshot?,
+        };
+        let Some(snapshot) = snapshot else {
+            break;
+        };
+        if last == Some(snapshot) {
+            continue;
+        }
+        let line = json_line(&snapshot, canopa_notify_client::MAX_SUMMARY_BYTES)?
+            .ok_or_else(|| anyhow::anyhow!("summary exceeds frame limit"))?;
+        write_socket_frame(stream.get_mut(), line.as_bytes()).await?;
+        last = Some(snapshot);
+    }
+    Ok(())
 }

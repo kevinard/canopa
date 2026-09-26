@@ -144,6 +144,13 @@ V1 does not support disconnecting from or forgetting saved networks from the bui
 
 ### Canopa Notify (JSON-lines v4)
 
+Canopa includes a built-in `notifications` module and Center provider. Place
+`"notifications"` in a bar zone or use `open-provider "notifications"`; no provider
+block is required for the standard session socket. See the root
+[notification guide](../../docs/notifications.md) for DND, session setup and restart
+behavior. The explicit declarations below remain useful for custom socket paths
+and override the built-in provider when the name matches.
+
 Select `protocol "canopa-v4"` inside the `provider` declaration to host Canopa Notify. The default remains `niribar-v1`; unknown names are rejected at configuration load. The two versions name different transports, not successive versions of the Wi-Fi protocol.
 
 ```kdl

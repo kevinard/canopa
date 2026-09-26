@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import shlex
@@ -92,9 +93,13 @@ def run(args):
         output = next(iter(json.loads(command('niri', 'msg', '--json', 'outputs'))))
         command('niri', 'msg', 'output', output, 'scale', str(args.scale))
         eventually(lambda: json.loads(command('niri', 'msg', '--json', 'outputs'))[output]['logical']['scale'] == args.scale, 'output scale')
-        notify_socket = root / 'runtime' / 'notify.sock'
-        start('notify', [str(args.notify), 'daemon', '--service', '--socket', str(notify_socket)])
-        start('niribar', [str(args.niribar)])
+        # Keep keyboard capability present between short input commands. A
+        # headless seat otherwise loses its last keyboard when wtype exits,
+        # legitimately clearing native window focus before AT-SPI can inspect it.
+        start('keyboard', ['wtype', '-s', '600000'])
+        notify_socket = root / 'runtime' / 'canopa-notify' / 'control.sock'
+        notify = start('notify', [str(args.notify), 'daemon', '--service'])
+        shell_process = start('niribar', [str(args.niribar)])
         def ready():
             try:
                 with socket.socket(socket.AF_UNIX) as client:
@@ -143,12 +148,12 @@ def run(args):
             action_received()
             return seen.count((ident, 'four')) == 2
         eventually(center_action_received, 'real sender action from Center')
-        command('wtype', '-k', 'Tab')
         def focused(obj, depth=0):
             if obj is None or depth > 12:
                 return None
             try:
-                if obj.get_state_set().contains(Atspi.StateType.FOCUSED):
+                if (obj.get_state_set().contains(Atspi.StateType.FOCUSED)
+                        and obj.get_role() in (Atspi.Role.PUSH_BUTTON, Atspi.Role.LINK)):
                     return obj.get_name()
                 for index in range(min(obj.get_child_count(), 256)):
                     value = focused(obj.get_child_at_index(index), depth + 1)
@@ -157,7 +162,17 @@ def run(args):
             except GLib.Error:
                 pass # A provider revision can retire nodes while this walk is in progress.
             return None
-        focus = eventually(lambda: focused(center), 'keyboard focus in Center accessibility tree')
+        def focus_after_update():
+            # Sender publication precedes the Center's replacement snapshot.
+            # A replacement intentionally clears keyboard selection; navigate
+            # again if that update retired the selection before AT-SPI observed it.
+            current = focused(center)
+            if current:
+                return current
+            command('wtype', '-k', 'Tab')
+            return focused(center)
+        command('wtype', '-k', 'Tab')
+        focus = eventually(focus_after_update, 'keyboard focus in Center accessibility tree')
         subprocess.check_call(
             ['grim', '-o', 'HEADLESS-1', str(root / 'desktop.png')], env={**env, 'WAYLAND_DISPLAY': str(outer)})
         initial = (30, 30, 46) if args.color_scheme == 'dark' else (239, 241, 245)
@@ -183,12 +198,75 @@ def run(args):
             return palette_visible(root / 'reloaded.png', initial, changed)
         eventually(repainted, 'banner repaint with shell unchanged until restart')
         command('wtype', '-k', 'Escape')
+        def shell_summary(log, available, count, dnd):
+            records = re.findall(r'available=(true|false).*requires_attention=(\d+).*dnd=(true|false)',
+                                 re.sub(r'\x1b\[[0-9;]*m', '', (root / log).read_text()))
+            return records and records[-1] == (str(available).lower(), str(count), str(dnd).lower())
+        # The resident action above acknowledged its item. A new retained item
+        # supplies pending attention for both independent restart checks.
+        call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
+             'org.freedesktop.Notifications', 'Notify', GLib.Variant('(susssasa{sv}i)',
+             ('Desktop fixture', 0, '', 'Retained across restarts', 'Restart fixture', [], {}, 0)), '(u)')
+        eventually(lambda: shell_summary('niribar.log', True, 1, False), 'shell attention count')
+        command(str(root / 'click'), '25', '20', 'right')
+        eventually(lambda: shell_summary('niribar.log', True, 1, True), 'built-in DND toggle')
+        os.killpg(shell_process.pid, signal.SIGTERM)
+        shell_process.wait(timeout=10)
+        assert ready(), 'Notify stopped with Niribar'
+        # Receipt continues while the shell is stopped, even with DND enabled.
+        call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
+             'org.freedesktop.Notifications', 'Notify', GLib.Variant('(susssasa{sv}i)',
+             ('Desktop fixture', 0, '', 'Received without shell', 'Independent daemon', [], {}, 0)), '(u)')
+        shell_process = start('niribar-restarted', [str(args.niribar)])
+        eventually(lambda: shell_summary('niribar-restarted.log', True, 2, True), 'shell restart fresh snapshot')
+        os.killpg(notify.pid, signal.SIGTERM)
+        notify.wait(timeout=20)
+        eventually(lambda: shell_summary('niribar-restarted.log', False, 0, False), 'unavailable shell state')
+        subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'unavailable.png')],
+                              env={**env, 'WAYLAND_DISPLAY': str(outer)})
+        notify = start('notify-restarted', [str(args.notify), 'daemon', '--service'])
+        eventually(ready, 'restarted daemon')
+        eventually(lambda: shell_summary('niribar-restarted.log', True, 2, True), 'reconnected summary with retained history and DND')
+        command(str(root / 'click'), '25', '20')
+        clear = eventually(lambda: find('Clear active notifications'), 'Center after independent restarts')
+        eventually(lambda: find('Retained across restarts', clear.get_application()), 'retained Center item')
+        eventually(lambda: find('Received without shell', clear.get_application()), 'notification received without shell')
+        def recovered_frame():
+            subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'recovered.png')],
+                                  env={**env, 'WAYLAND_DISPLAY': str(outer)})
+            frame = Image.open(root / 'recovered.png').convert('RGB')
+            center_area = frame.crop((0, 80, frame.width // 2, frame.height))
+            return sum(count for count, rgb in center_area.getcolors(center_area.width * center_area.height)
+                       if rgb == changed) > 3000
+        eventually(recovered_frame, 'recovered Center pixels beyond the bar')
+        command('wtype', '-k', 'Escape')
         (root / 'result.json').write_text(json.dumps({'passed': True, 'sender_actions': seen,
+            'built_in_notifications': True, 'dnd_control': True,
+            'shell_restart': True, 'daemon_restart': True, 'retained_attention': 2,
+
             'color_scheme': args.color_scheme, 'scale': args.scale, 'keyboard_focus': focus,
-            'appearance_reload': True,
+            'appearance_reload': True, 'persistent_keyboard': True,
             'niri': command('niri', '--version'), 'sway': command('sway', '--version'),
             'scope': 'real compositor, banner native activation, host opening and image fallback; Orca is separate'}, indent=2))
         print(f'Desktop smoke check passed; artifacts: {root}')
+    except Exception:
+        # Preserve the native tree and the last rendered frame before cleanup.
+        # These describe the actual failing seam, without production debug hooks.
+        def describe(obj, depth=0):
+            if obj is None or depth > 12:
+                return None
+            try:
+                return {'name': obj.get_name(), 'role': obj.get_role_name(),
+                        'focused': obj.get_state_set().contains(Atspi.StateType.FOCUSED),
+                        'children': [describe(obj.get_child_at_index(i), depth + 1)
+                                     for i in range(min(obj.get_child_count(), 256))]}
+            except GLib.Error:
+                return {'retired': True}
+        (root / 'failure-accessibility.json').write_text(json.dumps(describe(Atspi.get_desktop(0)), indent=2))
+        if 'outer' in locals():
+            subprocess.run(['grim', '-o', 'HEADLESS-1', str(root / 'failure.png')],
+                           env={**env, 'WAYLAND_DISPLAY': str(outer)}, check=False)
+        raise
     finally:
         for child in reversed(children):
             try:
@@ -230,6 +308,7 @@ if __name__ == '__main__':
         for key in ['runtime','state','config','data','cache']:
             (root / key).mkdir(mode=0o700)
             env['XDG_RUNTIME_DIR' if key == 'runtime' else f'XDG_{key.upper()}_HOME'] = str(root / key)
+        env['RUST_LOG'] = 'niribar::notifications=debug'
         env.update(WLR_BACKENDS='headless', WLR_HEADLESS_OUTPUTS='1', WLR_RENDERER='pixman',
                    LIBGL_ALWAYS_SOFTWARE='1', GTK_A11Y='always', DCONF_BACKEND='memory')
         (root / 'alsa.conf').write_text('pcm.!default { type null }\n')
@@ -240,15 +319,11 @@ if __name__ == '__main__':
         (root / 'sway.conf').write_text('output HEADLESS-1 mode 1600x1000\noutput * bg #20242c solid_color\nseat seat0 fallback true\nxwayland disable\ndefault_border none\nfor_window [app_id="niri"] fullscreen enable\n')
         (root / 'niri.kdl').write_text('prefer-no-csd\nhotkey-overlay { skip-at-startup; }\nanimations { off; }\nlayout { gaps 0; focus-ring { off; }; border { off; }; }\n')
         (root / 'config' / 'canopa').mkdir()
-        shell = '''panel-providers {
- provider "notifications" {
-  protocol "canopa-v4"
-  command { argv %s "panel-provider" "--socket" %s; }
- }
-}
-bar "test" { panel { height 720; }; edge "top"; collapsed-width 44; modules { start "notifications"; }; }
-modules { module "notifications" { type "button"; label "Notifications"; icon "N"; format "{label}"; horizontal-format "{label}"; actions { click { open-provider "notifications"; }; }; }; }
-''' % (json.dumps(str(args.notify)), json.dumps(str(root / 'runtime' / 'notify.sock')))
+        # Exercise built-in module, provider, actions and default socket discovery.
+        # Custom placement keeps pointer coordinates deterministic across scales.
+        shell = '''bar "test" { panel { height 720; }; edge "top"; collapsed-width 44; modules { start "notifications"; }; }
+modules { module "notifications"; }
+'''
         (root / 'config' / 'canopa' / 'config.kdl').write_text(
             'schema-version 1\nappearance { color-scheme "' + args.color_scheme + '"; }\n'
             'notifications { sound enabled=#false; }\nshell {\n' + shell + '\n}\n')

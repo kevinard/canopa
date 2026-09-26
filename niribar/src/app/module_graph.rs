@@ -91,6 +91,27 @@ fn effective_module_actions(
     panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> ModuleActionsConfig {
     let mut actions = module_config.actions.clone();
+    if descriptor.kind == crate::modules::ModuleKind::Notifications {
+        for (trigger, action) in [
+            (
+                ActionTrigger::Click,
+                crate::config::PanelAction::OpenProvider("notifications".into()),
+            ),
+            (
+                ActionTrigger::RightClick,
+                crate::config::PanelAction::Command(crate::config::ConfiguredCommand::argv(
+                    crate::external_panel::companion_binary("canopa-notify"),
+                    vec!["ctl".into(), "dnd".into(), "toggle".into()],
+                    &crate::config::CommandPolicy::default(),
+                )),
+            ),
+        ] {
+            if actions.action_for(&trigger).is_none() {
+                actions.bindings.push(ActionBinding { trigger, action });
+            }
+        }
+        return actions;
+    }
     if descriptor.kind != crate::modules::ModuleKind::Network
         || actions.action_for(&ActionTrigger::Click).is_some()
     {
@@ -286,5 +307,57 @@ mod tests {
             actions.action_for(&crate::config::ActionTrigger::Click),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+    #[test]
+    fn notifications_get_default_actions_and_preserve_configured_overrides() {
+        let (config, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
+        let graph = build_module_graph(&config).unwrap();
+        let (_, _, actions) = graph
+            .modules
+            .iter()
+            .find(|(_, module, _)| module.kind() == crate::modules::ModuleKind::Notifications)
+            .expect("default notification module");
+        assert_eq!(
+            actions.action_for(&ActionTrigger::Click),
+            Some(&crate::config::PanelAction::OpenProvider(
+                "notifications".into()
+            ))
+        );
+        let Some(crate::config::PanelAction::Command(command)) =
+            actions.action_for(&ActionTrigger::RightClick)
+        else {
+            panic!("expected DND command")
+        };
+        let crate::config::ConfiguredCommandSpec::Argv { program, args } = command.spec() else {
+            panic!("expected argv")
+        };
+        assert!(program.ends_with("canopa-notify"));
+        assert_eq!(args, &["ctl", "dnd", "toggle"]);
+        let mut config = config;
+        let module = config
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type == "notifications")
+            .unwrap();
+        module.actions.bindings.push(ActionBinding {
+            trigger: ActionTrigger::Click,
+            action: crate::config::PanelAction::OpenPanel,
+        });
+        let graph = build_module_graph(&config).unwrap();
+        let (_, _, actions) = graph
+            .modules
+            .iter()
+            .find(|(_, module, _)| module.kind() == crate::modules::ModuleKind::Notifications)
+            .unwrap();
+        assert_eq!(
+            actions.action_for(&ActionTrigger::Click),
+            Some(&crate::config::PanelAction::OpenPanel)
+        );
+        assert!(actions.action_for(&ActionTrigger::RightClick).is_some());
     }
 }

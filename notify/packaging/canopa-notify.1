@@ -94,3 +94,9 @@ transmission can have an unknown command outcome; inspect state before retrying.
 .BR notify-send (1),
 .BR systemctl (1),
 .BR journalctl (1)
+
+.SH CANOPA INTEGRATION
+The daemon, ctl and panel-provider commands use
+$XDG_RUNTIME_DIR/canopa-notify/control.sock when --socket is omitted.
+The runtime directory must be absolute. Niribar's built-in notifications module
+uses this endpoint for its attention count, DND commands and Notification Center.

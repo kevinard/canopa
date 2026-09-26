@@ -1,5 +1,12 @@
 # Niribar Notification Center Provider
 
+Canopa includes a built-in `notifications` module and Center provider. Place
+`"notifications"` in a bar zone or use `open-provider "notifications"`; no provider
+block is required for the standard session socket. See the root
+[notification guide](../../docs/notifications.md) for DND, session setup and restart
+behavior. The explicit declarations below remain useful for custom socket paths
+and override the built-in provider when the name matches.
+
 Canopa Notify exposes Notification Center content through `panel-provider` mode. The provider talks to the running Notification Daemon through the private runtime socket, streams complete replacement pages of Notification Center content while connected, and returns provider-visible error content if the daemon is unavailable.
 
 Minimal command:

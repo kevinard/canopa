@@ -47,9 +47,10 @@ install -Dm755 ../target/release/canopa-notify "$HOME/.local/bin/canopa-notify"
 install -Dm644 packaging/systemd/canopa-notify.service "$HOME/.config/systemd/user/canopa-notify.service"
 install -Dm644 packaging/canopa-notify.1 "$HOME/.local/share/man/man1/canopa-notify.1"
 systemctl --user daemon-reload
-systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
 systemctl --user enable --now canopa-notify.service
 ```
+
+Before starting services, follow the shared [graphical session environment setup](../docs/notifications.md#start-the-desktop-companions). For the full desktop, that guide installs and starts both companions together.
 
 The supplied user unit uses `%h/.local/bin/canopa-notify`. System packages should
 replace that path with their installed binary path. The compositor must support

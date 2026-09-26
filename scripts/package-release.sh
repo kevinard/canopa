@@ -12,11 +12,11 @@ mkdir -p "$dest/bin" "$dest/share/canopa" "$dest/share/niribar" \
     "$dest/share/canopa-notify" "$dest/share/systemd/user" "$dest/share/man/man1"
 install -m755 "$build_dir/niribar" "$build_dir/niribar-wifi-provider" \
     "$build_dir/canopa-notify" "$build_dir/canopa" "$dest/bin/"
-install -m644 docs/configuration.md config/canopa.kdl README.md LICENSES.md "$dest/share/canopa/"
+install -m644 docs/notifications.md docs/configuration.md config/canopa.kdl README.md LICENSES.md "$dest/share/canopa/"
 install -m644 niribar/README.md niribar/LICENSE niribar/config/default.kdl "$dest/share/niribar/"
 install -m644 notify/README.md notify/LICENSE-MIT notify/LICENSE-APACHE \
     notify/examples/config.kdl "$dest/share/canopa-notify/"
-install -m644 niribar/contrib/systemd/niribar.service notify/packaging/systemd/canopa-notify.service "$dest/share/systemd/user/"
+install -m644 packaging/systemd/canopa-session.target niribar/contrib/systemd/niribar.service notify/packaging/systemd/canopa-notify.service "$dest/share/systemd/user/"
 install -m644 notify/packaging/canopa-notify.1 "$dest/share/man/man1/"
 python3 scripts/dependency-attributions.py \
     --output "$dest/share/canopa/dependency-attributions.md" \

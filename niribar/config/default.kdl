@@ -14,7 +14,7 @@
 //   Environment=RUST_LOG=niribar=debug
 //   Environment=NIRIBAR_PERF=1
 //
-// The service starts after graphical-session.target and restarts on failure.
+// The service starts with the graphical session and restarts on failure.
 //
 // niribar default configuration
 // Copy to $XDG_CONFIG_HOME/niribar/config.kdl (or ~/.config/niribar/config.kdl) to customise.
@@ -85,14 +85,14 @@ bar "main" {
         center "focused-window"
         // End zone: stacks from the trailing edge of the bar.
         // Multiple modules: list as separate string arguments on the same line.
-        end "volume" "network" "battery" "clock"
+        end "notifications" "volume" "network" "battery" "clock"
     }
 
     // Default panel content for this bar.
     panel {
         start "workspaces"
         center "focused-window"
-        end "volume" "network" "battery" "clock"
+        end "notifications" "volume" "network" "battery" "clock"
     }
 }
 
@@ -125,6 +125,8 @@ bar "main" {
 //         right-click { command "my-other-command" }
 //     }
 modules {
+    // Click opens the Center; right-click toggles DND.
+    module "notifications"
     // workspaces: Niri workspace indicators. Click or scroll to switch workspace.
     // Optional: assign labels and icons to specific workspace numbers (1-based).
     module "workspaces" {

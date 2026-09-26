@@ -764,12 +764,20 @@ impl App {
             return None;
         }
         let config_name = self.modules.configured_module_name_for_instance(module);
-        let mc = self.config.modules.iter().find(|m| m.name == config_name)?;
+        let synthesized;
+        let params = if let Some(mc) = self.config.modules.iter().find(|m| m.name == config_name) {
+            &mc.params
+        } else {
+            let kind = self.modules.kind_for(module)?;
+            synthesized = crate::modules::descriptor_for_kind(kind)?.synthesized_params()?;
+            &synthesized
+        };
 
-        let (setting, default) = match &mc.params {
+        let (setting, default) = match params {
             ModuleParams::Battery(c) => (&c.tooltip, td::battery_default()),
             ModuleParams::Volume(c) => (&c.tooltip, td::volume_default()),
             ModuleParams::Clock(c) => (&c.tooltip, td::clock_default()),
+            ModuleParams::Notifications(c) => (&c.tooltip, td::notifications_default()),
             ModuleParams::Network(c) => (&c.tooltip, td::network_default()),
             ModuleParams::FocusedWindow(c) => (&c.tooltip, td::focused_window_default()),
             ModuleParams::Workspaces(c) => (&c.tooltip, td::workspaces_default()),

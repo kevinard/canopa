@@ -44,6 +44,8 @@ is absent. Run `canopa config check` to validate both schemas, and see the
 Shell changes require restarting Niribar; Notify supports reload while running.
 Notify continues to deliver banners while the shell is stopped. Both UIs use the
 shared `appearance` settings for dark/light palettes and an optional accent color.
+The default notification module opens the Center and controls DND without provider
+wiring. See [notifications and session setup](docs/notifications.md).
 See [the appearance decision](docs/adr/0003-shared-appearance.md) and the remaining
 phases in the [integration proposal](docs/canopa-integration-proposal.md).
 
@@ -53,8 +55,8 @@ for feature options, using root `target/` paths. Runtime state paths are unchang
 Build a release with `cargo build --workspace --bins --locked --release`, then run
 `bash scripts/package-release.sh target/release dist`. The archive contains all four
 binaries, current example configurations, service units, manuals, and source license
-notices. Service units retain their existing executable locations; choose installation
-paths accordingly. Packaging does not install or restart anything.
+notices. The companion user services use `~/.local/bin`; `canopa-session.target` starts
+both. See the session setup guide before enabling them. Packaging does not install or restart anything.
 Check the archive with `bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz`.
 
 Start development with [CONTEXT-MAP.md](CONTEXT-MAP.md), the
@@ -71,3 +73,6 @@ covers discovery, migration, namespace isolation, diagnostics, and reload behavi
 
 The [shared appearance validation record](docs/shared-appearance-validation.md)
 covers palette contrast, shared controls, appearance reloads and desktop fixtures.
+
+The [integrated notification validation record](docs/integrated-notifications-validation.md)
+covers summary bounds, attention persistence, companion setup and restart recovery.

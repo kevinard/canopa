@@ -14,6 +14,7 @@ mod focused_window;
 mod formats;
 mod icons;
 mod network;
+mod notifications;
 mod script;
 mod segment_styles;
 mod states;
@@ -38,6 +39,9 @@ pub(super) fn dispatch(
             button::parse_ctx(node, actions, ctx, command_policy).map(ModuleParams::Button)
         }
         ModuleKind::Clock => clock::parse_ctx(node, ctx).map(ModuleParams::Clock),
+        ModuleKind::Notifications => {
+            notifications::parse_ctx(node, ctx).map(ModuleParams::Notifications)
+        }
         ModuleKind::Network => network::parse_ctx(node, ctx).map(ModuleParams::Network),
         ModuleKind::Volume => volume::parse_ctx(node, ctx).map(ModuleParams::Volume),
         ModuleKind::Workspaces => workspaces::parse_ctx(node, ctx).map(ModuleParams::Workspaces),
@@ -65,6 +69,7 @@ mod tests {
             kind,
             ModuleKind::Battery
                 | ModuleKind::Clock
+                | ModuleKind::Notifications
                 | ModuleKind::Network
                 | ModuleKind::Volume
                 | ModuleKind::Script

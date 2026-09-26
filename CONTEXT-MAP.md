@@ -14,3 +14,7 @@ the Notification Center through generic declarative panel content.
 
 Use each context's terminology for its domain. Shared panel types contain no
 notification policy. Source sharing does not merge application lifetimes or stores.
+
+The built-in notification module consumes only Notify’s bounded summary through
+`canopa-notify-client`; Notify owns attention meaning and history. The Center stays
+a declarative provider. See [ADR 0004](docs/adr/0004-integrated-notifications.md).

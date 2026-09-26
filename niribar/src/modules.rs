@@ -7,6 +7,7 @@ pub mod dynamic;
 pub mod focused_window;
 pub mod interaction;
 pub mod network;
+pub mod notifications;
 pub mod render;
 pub mod script;
 pub mod tray;
@@ -83,6 +84,7 @@ pub enum ModuleKind {
     Battery,
     Button,
     Network,
+    Notifications,
     Volume,
     Clock,
     Script,
@@ -110,6 +112,7 @@ impl ModuleKind {
             ModuleKind::Battery => "battery",
             ModuleKind::Button => "button",
             ModuleKind::Network => "network",
+            ModuleKind::Notifications => "notifications",
             ModuleKind::Volume => "volume",
             ModuleKind::Clock => "clock",
             ModuleKind::Script => "script",
@@ -150,6 +153,7 @@ pub enum ModuleState {
     Unavailable,
     Battery(battery::BatteryState),
     Network(network::NetworkState),
+    Notifications(canopa_notify_client::Summary),
     Volume(volume::VolumeState),
     Clock(clock::ClockState),
     Script(script::ScriptState),
@@ -287,6 +291,7 @@ macro_rules! config_module_descriptors {
             (ModuleKind::Button, "button", button_ctor, None, ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY),
             (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
             (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor, Some(focused_window_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Notifications, "notifications", notifications_ctor, Some(notifications_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY_AND_SECONDARY),
             (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
             (ModuleKind::Script, "script", script_ctor, None, ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
             (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, needs_session_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
@@ -346,6 +351,21 @@ pub(crate) fn descriptor_for_kind(kind: ModuleKind) -> Option<&'static ModuleDes
     MODULE_DESCRIPTORS
         .iter()
         .find(|descriptor| descriptor.kind == kind)
+}
+
+fn notifications_synthesized_params() -> ModuleParams {
+    ModuleParams::Notifications(crate::config::NotificationsConfig::default())
+}
+
+fn notifications_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
+    let config = match &mc.params {
+        ModuleParams::Notifications(config) => config.clone(),
+        _ => crate::config::NotificationsConfig::default(),
+    };
+    Ok(Box::new(notifications::NotificationsModule {
+        id: ModuleId::new(&mc.name),
+        config,
+    }))
 }
 
 fn network_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
@@ -580,6 +600,7 @@ mod tests {
             (ModuleKind::Button, "button"),
             (ModuleKind::Clock, "clock"),
             (ModuleKind::FocusedWindow, "focused-window"),
+            (ModuleKind::Notifications, "notifications"),
             (ModuleKind::Network, "network"),
             (ModuleKind::Script, "script"),
             (ModuleKind::Tray, "tray"),
@@ -639,6 +660,7 @@ mod tests {
             ModuleKind::Clock,
             ModuleKind::FocusedWindow,
             ModuleKind::Network,
+            ModuleKind::Notifications,
             ModuleKind::Script,
             ModuleKind::Tray,
             ModuleKind::Volume,

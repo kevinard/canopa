@@ -55,6 +55,13 @@ impl App {
             ModuleRuntimeEvent::Battery(event) => self.handle_battery_event(event),
             ModuleRuntimeEvent::Network(event) => self.handle_network_event(event),
             ModuleRuntimeEvent::Volume(event) => self.handle_volume_event(event),
+            ModuleRuntimeEvent::Notifications(summary) => {
+                tracing::debug!(target: "niribar::notifications", available = summary.is_some(),
+                    requires_attention = summary.map_or(0, |s| s.requires_attention),
+                    dnd = summary.is_some_and(|s| s.do_not_disturb), "notification summary updated");
+                let transition = self.data_sources.handle_notifications_event(summary);
+                self.apply_module_data_source_transition(transition)
+            }
         }
     }
 

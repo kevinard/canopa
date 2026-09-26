@@ -836,6 +836,7 @@ dependencies = [
  "assert_cmd",
  "canopa-config",
  "canopa-file",
+ "canopa-notify-client",
  "canopa-panel-protocol",
  "canopa-theme",
  "canopa-ui",
@@ -860,6 +861,17 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "zbus",
+]
+
+[[package]]
+name = "canopa-notify-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -3396,6 +3408,7 @@ dependencies = [
  "accesskit_unix",
  "anyhow",
  "canopa-config",
+ "canopa-notify-client",
  "canopa-panel-protocol",
  "canopa-theme",
  "canopa-ui",

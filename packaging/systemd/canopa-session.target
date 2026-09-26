@@ -1,0 +1,9 @@
+[Unit]
+Description=Canopa desktop shell and notifications
+Wants=niribar.service canopa-notify.service
+After=graphical-session-pre.target
+Before=graphical-session.target
+PartOf=graphical-session.target
+
+[Install]
+WantedBy=graphical-session.target

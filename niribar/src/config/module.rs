@@ -409,9 +409,16 @@ impl Default for VolumeConfig {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct NotificationsConfig {
+    pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
+}
+
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
 #[derive(Debug, Clone)]
 pub enum ModuleParams {
+    Notifications(NotificationsConfig),
     #[cfg(test)]
     None,
     Battery(BatteryConfig),
