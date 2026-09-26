@@ -22,6 +22,7 @@ pub struct ConfigurationStatus {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LoadedNotificationConfiguration {
     active: NotificationConfiguration,
+    appearance: canopa_theme::Appearance,
     last_error: Option<String>,
     generation: u64,
     path: Option<PathBuf>,
@@ -47,10 +48,15 @@ impl LoadedNotificationConfiguration {
         let result = (|| {
             let document = Document::load(&request, Component::Notifications, "")?;
             let configuration = NotificationConfiguration::parse_document(document.selected())?;
-            Ok::<_, anyhow::Error>((configuration, document.info().clone()))
+            Ok::<_, anyhow::Error>((
+                configuration,
+                document.info().clone(),
+                document.appearance(),
+            ))
         })();
         match result {
-            Ok((configuration, source)) => {
+            Ok((configuration, source, appearance)) => {
+                self.appearance = appearance;
                 self.active = configuration;
                 self.last_error = None;
                 self.generation = self.generation.saturating_add(1);
@@ -78,6 +84,10 @@ impl LoadedNotificationConfiguration {
 
     pub(crate) fn sound_settings(&self) -> NotificationSoundSettings {
         self.active.sound_settings()
+    }
+
+    pub(crate) fn appearance(&self) -> canopa_theme::Appearance {
+        self.appearance
     }
 
     pub(crate) fn icon_settings(&self) -> BannerIconSettings {

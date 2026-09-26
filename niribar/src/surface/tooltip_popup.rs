@@ -97,9 +97,9 @@ pub fn view_tooltip<'a, Message: 'a + Clone>(tree: &'a TooltipTree) -> iced::Ele
     .max_width(MAX_WIDTH)
     .height(iced::Length::Shrink)
     .style(|_| iced::widget::container::Style {
-        background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+        background: Some(iced::Background::Color(crate::theme::palette().raised)),
         border: iced::Border {
-            color: crate::theme::BORDER,
+            color: crate::theme::palette().border,
             width: 1.0,
             radius: iced::border::Radius::from(4.0),
         },

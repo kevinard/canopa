@@ -228,6 +228,7 @@ impl Daemon {
         )
         .await?;
         runtime.set_icon_settings(configuration.icon_settings());
+        runtime.set_appearance(configuration.appearance());
         Ok(Self {
             runtime,
             configuration: Arc::new(Mutex::new(configuration)),
@@ -470,6 +471,7 @@ impl Daemon {
                 candidate.delivery_policy_rules(),
                 candidate.sound_settings(),
                 candidate.icon_settings(),
+                candidate.appearance(),
             )
             .await
             .map_err(|_| {

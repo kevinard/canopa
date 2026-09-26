@@ -6,7 +6,8 @@ decisions or implemented features. Both source repositories were clean when insp
 
 Accepted implementation decisions are recorded separately in
 [ADR 0001](adr/0001-shared-workspace-and-upstream-forks.md) (workspace/forks) and
-[ADR 0002](adr/0002-shared-configuration.md) (configuration). The original inventory
+[ADR 0002](adr/0002-shared-configuration.md) (configuration), and
+[ADR 0003](adr/0003-shared-appearance.md) (appearance). The original inventory
 and proposed later phases below remain a historical planning reference.
 
 Build Canopa as one product and one Rust workspace, with Niribar as the shell and

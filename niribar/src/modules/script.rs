@@ -192,7 +192,7 @@ impl crate::modules::render::ModuleRender for ScriptModule {
                     crate::config::FormatMode::Collapsed,
                     bar_style,
                 ) {
-                    return styled_segments_row(segments, 11, crate::theme::TEXT)
+                    return styled_segments_row(segments, 11, crate::theme::palette().text)
                         .width(Length::Fill)
                         .into();
                 }
@@ -202,8 +202,8 @@ impl crate::modules::render::ModuleRender for ScriptModule {
                 let truncated: String = output.chars().take(5).collect();
                 let style = fallback_resolved_style(bar_style);
                 column![
-                    styled_segment_text(">_".to_string(), 16, crate::theme::TEXT, style),
-                    styled_segment_text(truncated, 11, crate::theme::TEXT, style),
+                    styled_segment_text(">_".to_string(), 16, crate::theme::palette().text, style),
+                    styled_segment_text(truncated, 11, crate::theme::palette().text, style),
                 ]
                 .align_x(Alignment::Center)
                 .width(Length::Fill)
@@ -240,7 +240,7 @@ impl crate::modules::render::ModuleRender for ScriptModule {
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
                 11,
-                crate::theme::TEXT,
+                crate::theme::palette().text,
                 rotation,
             ))
             .width(iced::Length::Fill)
@@ -270,7 +270,7 @@ impl crate::modules::render::ModuleRender for ScriptModule {
                     crate::config::FormatMode::Expanded,
                     bar_style,
                 ) {
-                    return styled_segments_row(segments, 13, crate::theme::TEXT)
+                    return styled_segments_row(segments, 13, crate::theme::palette().text)
                         .width(Length::Fill)
                         .into();
                 }
@@ -279,9 +279,9 @@ impl crate::modules::render::ModuleRender for ScriptModule {
                     .unwrap_or_else(|| s.output.clone());
                 let style = fallback_resolved_style(bar_style);
                 row![
-                    styled_segment_text(">_".to_string(), 16, crate::theme::TEXT, style),
+                    styled_segment_text(">_".to_string(), 16, crate::theme::palette().text, style),
                     iced::widget::Space::new().width(Length::Fill),
-                    styled_segment_text(output, 13, crate::theme::TEXT, style),
+                    styled_segment_text(output, 13, crate::theme::palette().text, style),
                 ]
                 .align_y(Alignment::Center)
                 .width(Length::Fill)
@@ -309,16 +309,20 @@ impl crate::modules::render::ModuleRender for ScriptModule {
                     bar_style,
                 ) {
                     return Some(
-                        container(styled_segments_row(segments, 12, crate::theme::TEXT))
-                            .height(Length::Fill)
-                            .align_y(Alignment::Center)
-                            .padding([0, 6])
-                            .into(),
+                        container(styled_segments_row(
+                            segments,
+                            12,
+                            crate::theme::palette().text,
+                        ))
+                        .height(Length::Fill)
+                        .align_y(Alignment::Center)
+                        .padding([0, 6])
+                        .into(),
                     );
                 }
                 Some(horizontal_icon_label_with_style(
                     ">_",
-                    crate::theme::TEXT,
+                    crate::theme::palette().text,
                     self.formatted_text(s, crate::config::FormatMode::Horizontal)
                         .unwrap_or_else(|| s.output.clone()),
                     bar_style,
@@ -355,7 +359,7 @@ impl crate::modules::render::ModuleRender for ScriptModule {
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
                 12,
-                crate::theme::TEXT,
+                crate::theme::palette().text,
                 rotation,
             ))
             .height(iced::Length::Fill)
@@ -451,7 +455,7 @@ mod tests {
             )
             .unwrap()[0];
 
-        assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
+        assert_eq!(segment.1.color, Some(crate::theme::palette().accent));
         assert_eq!(segment.1.weight, Some(Weight::Bold));
     }
 

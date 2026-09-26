@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 canopa-file.workspace = true
+canopa-theme.workspace = true
 kdl.workspace = true
 serde.workspace = true
 sha2.workspace = true

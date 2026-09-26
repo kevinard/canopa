@@ -290,13 +290,13 @@ async fn queued_input_regions_use_the_latest_viewport_and_remain_empty_after_cle
     let reset = (2, vec![0, 0, i32::MAX, i32::MAX]);
     assert_eq!(
         region_requests(old),
-        vec![reset.clone(), (1, vec![616, 0, 360, 112])]
+        vec![reset.clone(), (1, vec![616, 0, 360, 114])]
     );
     let resized = frame_actions(&mut state, &renderer, Size::new(276.0, 216.0), &mut tree).await;
     let [LayerShellCustomAction::SetInputRegion(current)] = resized.as_slice() else {
         panic!("{resized:?}");
     };
-    let narrow = vec![reset.clone(), (1, vec![0, 0, 276, 112])];
+    let narrow = vec![reset.clone(), (1, vec![0, 0, 276, 114])];
     assert_eq!(region_requests(current), narrow);
     assert_eq!(
         region_requests(old),
@@ -1343,7 +1343,7 @@ async fn late_layout_from_lost_output_cannot_restore_its_input_region() {
         region_requests(current),
         vec![
             (2, vec![0, 0, i32::MAX, i32::MAX]),
-            (1, vec![0, 0, 276, 112]),
+            (1, vec![0, 0, 276, 114]),
         ],
         "late geometry cannot change the fallback output's input region"
     );
@@ -1629,7 +1629,7 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
         region_requests(region),
         vec![
             (2, vec![0, 0, i32::MAX, i32::MAX]),
-            (1, vec![616, 0, 360, 112])
+            (1, vec![616, 0, 360, 114])
         ]
     );
     assert!(

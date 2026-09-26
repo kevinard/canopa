@@ -1,8 +1,19 @@
 //! Action widgets whose scroll and press state belong to an opaque interaction ID.
 use super::*;
 
-pub(super) fn render<'a>(id: String, label: &str, provider: &str) -> Element<'a, Message> {
-    action(id, provider, text(label.to_owned()).into(), false)
+pub(super) fn render<'a>(
+    id: String,
+    label: &str,
+    provider: &str,
+    focused: bool,
+) -> Element<'a, Message> {
+    action(
+        id,
+        provider,
+        text(label.to_owned()).size(metrics::BODY).into(),
+        false,
+        focused,
+    )
 }
 
 pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, Message> {
@@ -17,6 +28,7 @@ pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, 
         .max_height(54)
         .into(),
         false,
+        true,
     )
 }
 
@@ -25,6 +37,7 @@ pub(super) fn link<'a>(
     label: &str,
     style: canopa_panel_protocol::StyledTextStyle,
     provider: &str,
+    focused: bool,
 ) -> Element<'a, Message> {
     let content = styled_body(
         vec![StyledTextRun {
@@ -36,7 +49,7 @@ pub(super) fn link<'a>(
         }],
         true,
     );
-    action(id, provider, content, true)
+    action(id, provider, content, true, focused)
 }
 
 fn action<'a>(
@@ -44,21 +57,23 @@ fn action<'a>(
     provider: &str,
     content: Element<'a, Message>,
     link: bool,
+    focused: bool,
 ) -> Element<'a, Message> {
-    let content = button(content)
-        .style(move |theme, status| {
-            if link {
-                iced::widget::button::text(theme, status)
-            } else {
-                iced::widget::button::primary(theme, status)
-            }
-        })
-        .width(Length::Fill)
-        .on_press(Message::ExternalPanel(
+    let content = canopa_ui::action(
+        content,
+        Some(Message::ExternalPanel(
             ExternalPanelEvent::ButtonActivated {
                 provider_name: provider.to_owned(),
                 element_id: id.clone(),
             },
-        ));
+        )),
+        if link {
+            canopa_ui::Action::Quiet
+        } else {
+            canopa_ui::Action::Normal
+        },
+        focused,
+    )
+    .width(Length::Fill);
     crate::surface::identity::identify(id, content)
 }

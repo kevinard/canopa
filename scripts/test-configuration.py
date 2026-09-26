@@ -44,6 +44,15 @@ def main():
         assert output.read_bytes() == candidate
         assert shell.read_text().startswith("/- kdl-version 2\n// retained shell comment")
         invalid = base / "invalid.kdl"
+        for scheme in ('dark', 'light'):
+            invalid.write_text(f'schema-version 1\nappearance {{ color-scheme "{scheme}"; accent "#123456"; }}\n')
+            appearance = reports(run("check", "--file", invalid))
+            assert all(r["source"]["defaults"] for r in appearance)
+            assert appearance[0]["source"]["fingerprint"] == appearance[1]["source"]["fingerprint"]
+        invalid.write_text('schema-version 1\nappearance { color-scheme "private-appearance"; }\n')
+        failed = run("check", "--file", invalid, success=False)
+        assert all(r["error"]["code"] == "appearance" for r in reports(failed))
+        assert "private-appearance" not in failed.stdout + failed.stderr
         invalid.write_text('schema-version 1\nshell { private-shell 42; }\nnotifications { private-notify 42; }\n')
         failed = run("check", "--file", invalid, success=False)
         assert all("error" in r for r in reports(failed))

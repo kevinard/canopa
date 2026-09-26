@@ -143,7 +143,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
                 if let Some(segments) = self
                     .styled_segments_with_default(crate::config::FormatMode::Collapsed, bar_style)
                 {
-                    return styled_segments_row(segments, 16, crate::theme::TEXT)
+                    return styled_segments_row(segments, 16, crate::theme::palette().text)
                         .width(Length::Fill)
                         .into();
                 }
@@ -153,7 +153,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
                 column![styled_segment_text(
                     content,
                     16,
-                    crate::theme::TEXT,
+                    crate::theme::palette().text,
                     fallback_resolved_style(bar_style),
                 )]
                 .align_x(Alignment::Center)
@@ -188,7 +188,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
                 16,
-                crate::theme::TEXT,
+                crate::theme::palette().text,
                 rotation,
             ))
             .width(iced::Length::Fill)
@@ -216,19 +216,19 @@ impl crate::modules::render::ModuleRender for ButtonModule {
                 if let Some(segments) = self
                     .styled_segments_with_default(crate::config::FormatMode::Expanded, bar_style)
                 {
-                    return styled_segments_row(segments, 13, crate::theme::TEXT)
+                    return styled_segments_row(segments, 13, crate::theme::palette().text)
                         .width(Length::Fill)
                         .into();
                 }
                 let style = fallback_resolved_style(bar_style);
                 row![
-                    styled_segment_text(self.icon.clone(), 16, crate::theme::TEXT, style),
+                    styled_segment_text(self.icon.clone(), 16, crate::theme::palette().text, style),
                     iced::widget::Space::new().width(Length::Fill),
                     styled_segment_text(
                         self.formatted_text(crate::config::FormatMode::Expanded)
                             .unwrap_or_else(|| self.label.clone()),
                         13,
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                         style,
                     ),
                 ]
@@ -256,16 +256,20 @@ impl crate::modules::render::ModuleRender for ButtonModule {
                     .styled_segments_with_default(crate::config::FormatMode::Horizontal, bar_style)
                 {
                     return Some(
-                        container(styled_segments_row(segments, 12, crate::theme::TEXT))
-                            .height(Length::Fill)
-                            .align_y(Alignment::Center)
-                            .padding([0, 6])
-                            .into(),
+                        container(styled_segments_row(
+                            segments,
+                            12,
+                            crate::theme::palette().text,
+                        ))
+                        .height(Length::Fill)
+                        .align_y(Alignment::Center)
+                        .padding([0, 6])
+                        .into(),
                     );
                 }
                 Some(horizontal_icon_label_with_style(
                     self.icon.clone(),
-                    crate::theme::TEXT,
+                    crate::theme::palette().text,
                     self.formatted_text(crate::config::FormatMode::Horizontal)
                         .unwrap_or_else(|| self.label.clone()),
                     bar_style,
@@ -299,7 +303,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
                 12,
-                crate::theme::TEXT,
+                crate::theme::palette().text,
                 rotation,
             ))
             .height(iced::Length::Fill)
@@ -379,7 +383,7 @@ mod tests {
             )
             .unwrap()[0];
 
-        assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
+        assert_eq!(segment.1.color, Some(crate::theme::palette().accent));
         assert_eq!(segment.1.weight, Some(Weight::Bold));
     }
 

@@ -2,6 +2,9 @@
 
 Status: accepted for integration phase 3 (2026-09-26).
 
+The appearance extension is now implemented by [ADR 0003](0003-shared-appearance.md).
+References below to future appearance support describe the original phase-3 scope.
+
 Canopa has one user configuration entry point and two independently running schema
 owners. Niribar remains restart-required in this phase, as explicitly selected by
 the user. Notify preserves its serialized candidate preparation and atomic runtime

@@ -72,6 +72,7 @@ pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigR
     let menus = parse_menus_section(doc, &ctx, &command_policy)?;
     let panel_providers = parse_panel_providers_section(doc, &ctx, &command_policy)?;
     Ok(Config {
+        appearance: Default::default(),
         bars,
         modules,
         menus,

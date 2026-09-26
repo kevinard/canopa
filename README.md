@@ -2,7 +2,8 @@
 
 Canopa is a desktop environment built around the Niri Wayland compositor. Its Rust
 workspace currently contains Niribar (the shell and Wi-Fi provider), Canopa Notify,
-the `canopa` configuration tool, and shared configuration and panel protocol crates.
+the `canopa` configuration tool, and shared configuration, appearance, Iced controls
+and panel protocol crates.
 
 Use Rust 1.95.0, selected by `rust-toolchain.toml`. On Debian/Ubuntu:
 
@@ -41,8 +42,10 @@ Both applications discover `$XDG_CONFIG_HOME/canopa/config.kdl` (with the usual
 is absent. Run `canopa config check` to validate both schemas, and see the
 [configuration guide](docs/configuration.md) for explicit migration and reloads.
 Shell changes require restarting Niribar; Notify supports reload while running.
-Notify continues to deliver banners while the shell is stopped. Shared appearance
-is the next phase in the [integration proposal](docs/canopa-integration-proposal.md).
+Notify continues to deliver banners while the shell is stopped. Both UIs use the
+shared `appearance` settings for dark/light palettes and an optional accent color.
+See [the appearance decision](docs/adr/0003-shared-appearance.md) and the remaining
+phases in the [integration proposal](docs/canopa-integration-proposal.md).
 
 Follow the [shell guide](niribar/README.md) and [notification guide](notify/README.md)
 for feature options, using root `target/` paths. Runtime state paths are unchanged.
@@ -65,3 +68,6 @@ test results, graphical fixture coverage and release-packaging evidence.
 
 The [shared configuration validation record](docs/shared-configuration-validation.md)
 covers discovery, migration, namespace isolation, diagnostics, and reload behavior.
+
+The [shared appearance validation record](docs/shared-appearance-validation.md)
+covers palette contrast, shared controls, appearance reloads and desktop fixtures.

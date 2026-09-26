@@ -33,6 +33,8 @@ defaults. See the [shared configuration guide](../docs/configuration.md) for val
 explicit sources, and migration. Shell changes require a restart. Existing option
 examples in [config/default.kdl](config/default.kdl), [docs](docs/) and
 [CONTEXT.md](CONTEXT.md) go inside the shared `shell` block.
+The adjacent shared `appearance` block controls the dark/light palette and accent
+for the shell, Notification Center, and Notify banners.
 
 Use `launch "kitty"` or `launch "firefox" "https://example.org"` in menu items
 and module actions to open applications. Arguments are literal strings. Launches

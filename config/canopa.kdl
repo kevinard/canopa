@@ -1,6 +1,11 @@
 // Canopa configuration schema 1. Missing namespaces use embedded defaults.
 schema-version 1
 
+appearance {
+    color-scheme "dark" // dark or light; Catppuccin-based presets
+    // accent "#89b4fa" // omit to use the selected preset's accent
+}
+
 // To customize Niribar, put its bar/modules/menus/panel-providers declarations
 // inside a shell block. Omitting it keeps the complete embedded shell defaults.
 // shell {

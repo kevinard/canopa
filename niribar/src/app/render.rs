@@ -896,6 +896,7 @@ mod tests {
     #[test]
     fn bar_render_model_omits_modules_absent_from_surface_bar_layout() {
         let mut config = Config {
+            appearance: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -932,6 +933,7 @@ mod tests {
     #[test]
     fn bar_render_model_uses_surface_bar_order_for_dynamic_tray_icons() {
         let mut config = Config {
+            appearance: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),

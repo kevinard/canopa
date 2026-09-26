@@ -4,6 +4,8 @@ members = [
     "crates/canopa-cli",
     "crates/canopa-file",
     "crates/canopa-config",
+    "crates/canopa-theme",
+    "crates/canopa-ui",
     "crates/canopa-panel-protocol",
     "notify/crates/canopa-notify",
     "niribar",
@@ -23,6 +25,8 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 canopa-file = { path = "crates/canopa-file" }
 canopa-config = { path = "crates/canopa-config" }
+canopa-theme = { path = "crates/canopa-theme" }
+canopa-ui = { path = "crates/canopa-ui" }
 sha2 = "0.10"
 canopa-panel-protocol = { path = "crates/canopa-panel-protocol" }
 chrono = { version = "0.4", features = ["clock"] }

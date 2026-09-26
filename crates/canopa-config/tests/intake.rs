@@ -9,6 +9,53 @@ use std::{
 };
 
 #[test]
+fn appearance_is_shared_even_when_feature_namespaces_default() {
+    let source = "schema-version 1\nappearance { color-scheme \"light\"; accent \"#123456\"; }\n";
+    for component in [Component::Shell, Component::Notifications] {
+        let document = Document::parse(
+            source.into(),
+            None,
+            Format::CanopaV1,
+            component,
+            "fallback\n",
+        )
+        .unwrap();
+        assert!(document.info().defaults);
+        assert_eq!(document.selected().nodes()[0].name().value(), "fallback");
+        assert_eq!(
+            document.appearance(),
+            canopa_theme::Appearance {
+                color_scheme: canopa_theme::ColorScheme::Light,
+                accent: Some(canopa_theme::Rgb(18, 52, 86)),
+            }
+        );
+    }
+}
+
+#[test]
+fn invalid_appearance_rejects_both_consumers_with_original_safe_location() {
+    for option in [
+        "color-scheme \"private-value\"",
+        "accent \"private-value\"",
+        "font \"private-value\"",
+        "accent (private-value)\"#123456\"",
+        "accent value=\"#123456\"",
+        "accent \"#123456\" {}",
+        "accent \"#123456\"; accent \"#123456\"",
+        "color-scheme 1",
+    ] {
+        let source = format!("schema-version 1\nappearance {{ {option}; }}\n");
+        for component in [Component::Shell, Component::Notifications] {
+            let error =
+                Document::parse(source.clone(), None, Format::CanopaV1, component, "").unwrap_err();
+            assert_eq!(error.code, Code::Appearance, "{source}");
+            assert!(error.offset.unwrap() >= source.find(option).unwrap());
+            assert!(!format!("{error} {error:?}").contains("private-value"));
+        }
+    }
+}
+
+#[test]
 fn discovery_prefers_common_even_when_invalid_and_never_merges_legacy() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(
@@ -88,7 +135,7 @@ fn envelope_is_strict_but_namespace_semantics_belong_to_owners() {
         "schema-version 1\nshell\n",
         "schema-version 1\nshell 1 {}",
         "schema-version 1\nprivate-value {}",
-        "schema-version 1\nappearance {}",
+        "schema-version 1\nappearance {}\nappearance {}",
         "schema-version 1\nshell {}\nshell {}",
         "schema-version 1\n(x)shell {}",
         "schema-version (x)1",

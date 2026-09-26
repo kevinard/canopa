@@ -6,7 +6,7 @@ case "${1:-}" in
     --core)
         bash notify/scripts/check-core-dependencies.sh
         cargo check --locked -p canopa-notify -p canopa-panel-protocol -p canopa-config -p canopa-file -p canopa-cli --all-targets --no-default-features
-        cargo test --locked -p canopa-config -p canopa-file -p canopa-cli
+        cargo test --locked -p canopa-config -p canopa-file -p canopa-cli -p canopa-theme
         bash notify/scripts/test.sh --no-default-features
         ;;
     '')

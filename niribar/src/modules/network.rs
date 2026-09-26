@@ -54,12 +54,12 @@ fn connectivity_state(connectivity: &NetworkConnectivity) -> &'static str {
 
 fn icon_color(connectivity: &NetworkConnectivity) -> iced::Color {
     match connectivity {
-        NetworkConnectivity::Full => theme::ACCENT,
-        NetworkConnectivity::Limited => theme::WARNING,
-        NetworkConnectivity::None => theme::CRITICAL,
-        NetworkConnectivity::Unknown => theme::SUBTEXT,
-        NetworkConnectivity::Connected => theme::ACCENT,
-        NetworkConnectivity::Portal => theme::WARNING,
+        NetworkConnectivity::Full => theme::palette().accent,
+        NetworkConnectivity::Limited => theme::palette().warning,
+        NetworkConnectivity::None => theme::palette().danger,
+        NetworkConnectivity::Unknown => theme::palette().muted,
+        NetworkConnectivity::Connected => theme::palette().accent,
+        NetworkConnectivity::Portal => theme::palette().warning,
     }
 }
 
@@ -172,7 +172,7 @@ impl crate::modules::view::IconLabel for NetworkModule {
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
         match state {
             crate::modules::ModuleState::Network(s) => icon_color(&s.connectivity),
-            _ => crate::theme::TEXT,
+            _ => crate::theme::palette().text,
         }
     }
 }
@@ -561,7 +561,7 @@ mod tests {
             .unwrap()[0]
                 .1
                 .color,
-            Some(crate::theme::WARNING)
+            Some(crate::theme::palette().warning)
         );
         assert_eq!(
             m.styled_segments_with_default(
@@ -572,7 +572,7 @@ mod tests {
             .unwrap()[0]
                 .1
                 .color,
-            Some(crate::theme::CRITICAL)
+            Some(crate::theme::palette().danger)
         );
     }
 }

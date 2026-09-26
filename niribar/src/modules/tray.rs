@@ -64,7 +64,7 @@ fn icon_widget(
                 crate::modules::view::styled_segment_text(
                     "?".to_string(),
                     14,
-                    crate::theme::TEXT,
+                    crate::theme::palette().text,
                     crate::modules::view::fallback_resolved_style(bar_style),
                 )
             }
@@ -74,7 +74,7 @@ fn icon_widget(
     if item.status == ItemStatus::NeedsAttention {
         let dot = iced::widget::container(iced::widget::Space::new().width(6u32).height(6u32))
             .style(|_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(crate::theme::ACCENT)),
+                background: Some(iced::Background::Color(crate::theme::palette().accent)),
                 border: iced::Border {
                     radius: iced::border::Radius::from(3.0),
                     ..Default::default()

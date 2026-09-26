@@ -47,9 +47,9 @@ fn tier_icon(tier: u8) -> &'static str {
 
 fn tier_color(tier: u8) -> iced::Color {
     if tier == 0 {
-        theme::SUBTEXT // muted remains readable on bar and panel surfaces
+        theme::palette().muted // muted remains readable on bar and panel surfaces
     } else {
-        theme::ACCENT // normal
+        theme::palette().accent // normal
     }
 }
 
@@ -176,7 +176,7 @@ impl crate::modules::view::IconLabel for VolumeModule {
     fn color(&self, state: &crate::modules::ModuleState) -> iced::Color {
         match state {
             crate::modules::ModuleState::Volume(s) => tier_color(volume_tier(s.volume, s.muted)),
-            _ => crate::theme::TEXT,
+            _ => crate::theme::palette().text,
         }
     }
 }
@@ -664,7 +664,7 @@ mod tests {
             .unwrap()[0]
                 .1
                 .color,
-            Some(crate::theme::OVERLAY0)
+            Some(crate::theme::palette().disabled)
         );
         assert_eq!(
             m.styled_segments_with_default(

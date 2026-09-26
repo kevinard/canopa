@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real compositor/host smoke check. Requires Niri, Sway, grim and Python GI/AT-SPI."""
+"""Private compositor/host appearance check. Requires Niri, Sway, grim, wtype, Pillow and GI/AT-SPI."""
 import argparse
 import json
 import os
@@ -23,6 +23,7 @@ def eventually(probe, description, timeout=15):
 
 
 def run(args):
+    from PIL import Image
     import gi
     gi.require_version('Gio', '2.0')
     gi.require_version('Atspi', '2.0')
@@ -88,6 +89,9 @@ def run(args):
         env['NIRI_SOCKET'] = str(niri_socket)
         inner = eventually(lambda: next((p for p in (root / 'runtime').glob('wayland-*') if p.is_socket() and p != outer), None), 'nested Wayland socket')
         env['WAYLAND_DISPLAY'] = str(inner)
+        output = next(iter(json.loads(command('niri', 'msg', '--json', 'outputs'))))
+        command('niri', 'msg', 'output', output, 'scale', str(args.scale))
+        eventually(lambda: json.loads(command('niri', 'msg', '--json', 'outputs'))[output]['logical']['scale'] == args.scale, 'output scale')
         notify_socket = root / 'runtime' / 'notify.sock'
         start('notify', [str(args.notify), 'daemon', '--service', '--socket', str(notify_socket)])
         start('niribar', [str(args.niribar)])
@@ -139,9 +143,49 @@ def run(args):
             action_received()
             return seen.count((ident, 'four')) == 2
         eventually(center_action_received, 'real sender action from Center')
+        command('wtype', '-k', 'Tab')
+        def focused(obj, depth=0):
+            if obj is None or depth > 12:
+                return None
+            try:
+                if obj.get_state_set().contains(Atspi.StateType.FOCUSED):
+                    return obj.get_name()
+                for index in range(min(obj.get_child_count(), 256)):
+                    value = focused(obj.get_child_at_index(index), depth + 1)
+                    if value:
+                        return value
+            except GLib.Error:
+                pass # A provider revision can retire nodes while this walk is in progress.
+            return None
+        focus = eventually(lambda: focused(center), 'keyboard focus in Center accessibility tree')
         subprocess.check_call(
             ['grim', '-o', 'HEADLESS-1', str(root / 'desktop.png')], env={**env, 'WAYLAND_DISPLAY': str(outer)})
+        initial = (30, 30, 46) if args.color_scheme == 'dark' else (239, 241, 245)
+        changed = (239, 241, 245) if args.color_scheme == 'dark' else (30, 30, 46)
+        def palette_visible(path, left, right):
+            frame = Image.open(path).convert('RGB')
+            halves = [frame.crop((0, 0, frame.width // 2, frame.height)),
+                      frame.crop((frame.width // 2, 80, frame.width, frame.height))]
+            return all(sum(count for count, rgb in part.getcolors(part.width * part.height) if rgb == color) > 3000
+                       for part, color in zip(halves, (left, right)))
+        def initial_palette():
+            subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'desktop.png')],
+                                  env={**env, 'WAYLAND_DISPLAY': str(outer)})
+            return palette_visible(root / 'desktop.png', initial, initial)
+        eventually(initial_palette, 'selected palette in both consumers')
+        common = root / 'config' / 'canopa' / 'config.kdl'
+        alternate = 'light' if args.color_scheme == 'dark' else 'dark'
+        common.write_text(common.read_text().replace(f'color-scheme "{args.color_scheme}"', f'color-scheme "{alternate}"'))
+        command(str(args.notify), 'ctl', '--socket', str(notify_socket), 'reload')
+        def repainted():
+            subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'reloaded.png')],
+                                  env={**env, 'WAYLAND_DISPLAY': str(outer)})
+            return palette_visible(root / 'reloaded.png', initial, changed)
+        eventually(repainted, 'banner repaint with shell unchanged until restart')
+        command('wtype', '-k', 'Escape')
         (root / 'result.json').write_text(json.dumps({'passed': True, 'sender_actions': seen,
+            'color_scheme': args.color_scheme, 'scale': args.scale, 'keyboard_focus': focus,
+            'appearance_reload': True,
             'niri': command('niri', '--version'), 'sway': command('sway', '--version'),
             'scope': 'real compositor, banner native activation, host opening and image fallback; Orca is separate'}, indent=2))
         print(f'Desktop smoke check passed; artifacts: {root}')
@@ -166,6 +210,8 @@ if __name__ == '__main__':
     parser.add_argument('--notify', type=Path, required=True)
     parser.add_argument('--niribar', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
+    parser.add_argument('--color-scheme', choices=['dark', 'light'], default='dark')
+    parser.add_argument('--scale', type=float, choices=[1.0, 1.25, 1.5, 2.0], default=1.0)
     parser.add_argument('--inside-private-bus', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.notify = args.notify.resolve(strict=True)
@@ -193,10 +239,8 @@ if __name__ == '__main__':
         (root / 'bus.conf').write_text('<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen><auth>EXTERNAL</auth><policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy></busconfig>')
         (root / 'sway.conf').write_text('output HEADLESS-1 mode 1600x1000\noutput * bg #20242c solid_color\nseat seat0 fallback true\nxwayland disable\ndefault_border none\nfor_window [app_id="niri"] fullscreen enable\n')
         (root / 'niri.kdl').write_text('prefer-no-csd\nhotkey-overlay { skip-at-startup; }\nanimations { off; }\nlayout { gaps 0; focus-ring { off; }; border { off; }; }\n')
-        (root / 'config' / 'canopa-notify').mkdir()
-        (root / 'config' / 'canopa-notify' / 'config.kdl').write_text('sound enabled=#false\n')
-        (root / 'config' / 'niribar').mkdir()
-        (root / 'config' / 'niribar' / 'config.kdl').write_text('''panel-providers {
+        (root / 'config' / 'canopa').mkdir()
+        shell = '''panel-providers {
  provider "notifications" {
   protocol "canopa-v4"
   command { argv %s "panel-provider" "--socket" %s; }
@@ -204,7 +248,10 @@ if __name__ == '__main__':
 }
 bar "test" { panel { height 720; }; edge "top"; collapsed-width 44; modules { start "notifications"; }; }
 modules { module "notifications" { type "button"; label "Notifications"; icon "N"; format "{label}"; horizontal-format "{label}"; actions { click { open-provider "notifications"; }; }; }; }
-''' % (json.dumps(str(args.notify)), json.dumps(str(root / 'runtime' / 'notify.sock'))))
+''' % (json.dumps(str(args.notify)), json.dumps(str(root / 'runtime' / 'notify.sock')))
+        (root / 'config' / 'canopa' / 'config.kdl').write_text(
+            'schema-version 1\nappearance { color-scheme "' + args.color_scheme + '"; }\n'
+            'notifications { sound enabled=#false; }\nshell {\n' + shell + '\n}\n')
         sys.exit(subprocess.call(['dbus-run-session', '--config-file='+str(root/'bus.conf'), '--', sys.executable,
             str(Path(__file__).resolve()), '--notify', str(args.notify), '--niribar', str(args.niribar),
-            '--artifacts', str(root), '--inside-private-bus'], env=env))
+            '--artifacts', str(root), '--color-scheme', args.color_scheme, '--scale', str(args.scale), '--inside-private-bus'], env=env))

@@ -50,7 +50,7 @@ impl App {
     pub(crate) fn style(&self, _theme: &iced::Theme) -> iced::theme::Style {
         iced::theme::Style {
             background_color: iced::Color::TRANSPARENT,
-            text_color: crate::theme::TEXT,
+            text_color: crate::theme::palette().text,
         }
     }
 }
@@ -78,10 +78,10 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::BASE)),
+            background: Some(iced::Background::Color(crate::theme::palette().background)),
             text_color,
             border: iced::Border {
-                color: crate::theme::BORDER,
+                color: crate::theme::palette().border,
                 width: 1.0,
                 ..Default::default()
             },
@@ -150,14 +150,18 @@ fn render_external_panel_model<'a>(
                 severity,
             } => {
                 let border_color = match severity {
-                    crate::surface::panel::ExternalPanelSeverity::Info => crate::theme::BORDER,
-                    crate::surface::panel::ExternalPanelSeverity::Error => crate::theme::CRITICAL,
+                    crate::surface::panel::ExternalPanelSeverity::Info => {
+                        crate::theme::palette().border
+                    }
+                    crate::surface::panel::ExternalPanelSeverity::Error => {
+                        crate::theme::palette().danger
+                    }
                 };
                 container(column![text(title.clone()), text(message.clone()).size(13)].spacing(4))
                     .padding([8, 10])
                     .width(Length::Fill)
                     .style(move |_| iced::widget::container::Style {
-                        background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+                        background: Some(iced::Background::Color(crate::theme::palette().raised)),
                         border: iced::Border {
                             color: border_color,
                             width: 1.0,
@@ -198,10 +202,10 @@ fn render_external_panel_model<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::BASE)),
+            background: Some(iced::Background::Color(crate::theme::palette().background)),
             text_color,
             border: iced::Border {
-                color: crate::theme::BORDER,
+                color: crate::theme::palette().border,
                 width: 1.0,
                 ..Default::default()
             },
@@ -284,9 +288,9 @@ fn render_external_selectable_list<'a>(
                     row_content = row_content.push(text(status.clone()).size(12));
                 }
                 let border_color = if entry.active {
-                    crate::theme::ACCENT
+                    crate::theme::palette().accent
                 } else {
-                    crate::theme::BORDER
+                    crate::theme::palette().border
                 };
                 let row = external_selectable_row(row_content, border_color);
                 if entry.disabled {
@@ -307,7 +311,7 @@ fn render_external_selectable_list<'a>(
                 let submitted_value = value.clone();
                 let row_content =
                     column![text(value), text("Use custom value").size(12)].spacing(2);
-                let row = external_selectable_row(row_content, crate::theme::ACCENT);
+                let row = external_selectable_row(row_content, crate::theme::palette().accent);
                 rows = rows.push(mouse_area(row).on_press(Message::ExternalPanel(
                     super::messages::ExternalPanelEvent::ListCustomValueSubmitted {
                         provider_name: provider,
@@ -332,7 +336,7 @@ fn external_selectable_row<'a>(
         .padding([8, 10])
         .width(Length::Fill)
         .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+            background: Some(iced::Background::Color(crate::theme::palette().raised)),
             border: iced::Border {
                 color: border_color,
                 width: 1.0,
@@ -469,15 +473,15 @@ fn render_panel_menu_model<'a>(
             .width(Length::Fill)
             .style(move |_| iced::widget::container::Style {
                 background: if focused {
-                    Some(iced::Background::Color(crate::theme::SURFACE0))
+                    Some(iced::Background::Color(crate::theme::palette().surface))
                 } else {
-                    Some(iced::Background::Color(crate::theme::SURFACE1))
+                    Some(iced::Background::Color(crate::theme::palette().raised))
                 },
                 border: iced::Border {
                     color: if focused {
-                        crate::theme::ACCENT
+                        crate::theme::palette().accent
                     } else {
-                        crate::theme::BORDER
+                        crate::theme::palette().border
                     },
                     width: 1.0,
                     radius: iced::border::Radius::from(4.0),
@@ -512,10 +516,10 @@ fn render_panel_menu_model<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::BASE)),
+            background: Some(iced::Background::Color(crate::theme::palette().background)),
             text_color,
             border: iced::Border {
-                color: crate::theme::BORDER,
+                color: crate::theme::palette().border,
                 width: 1.0,
                 ..Default::default()
             },
@@ -633,13 +637,13 @@ fn render_searchable_sni_popup_model<'a>(
             .width(Length::Fill)
             .style(move |_| iced::widget::container::Style {
                 background: if highlighted {
-                    Some(iced::Background::Color(crate::theme::SURFACE0))
+                    Some(iced::Background::Color(crate::theme::palette().surface))
                 } else {
                     None
                 },
                 border: iced::Border {
                     color: if highlighted {
-                        crate::theme::ACCENT
+                        crate::theme::palette().accent
                     } else {
                         iced::Color::TRANSPARENT
                     },
@@ -674,9 +678,9 @@ fn render_searchable_sni_popup_model<'a>(
     let menu = mouse_area(
         container(column![search, entries].spacing(4))
             .style(|_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+                background: Some(iced::Background::Color(crate::theme::palette().raised)),
                 border: iced::Border {
-                    color: crate::theme::BORDER,
+                    color: crate::theme::palette().border,
                     width: 1.0,
                     radius: iced::border::Radius::from(4.0),
                 },
@@ -709,7 +713,7 @@ fn render_bar_model<'a>(
     let end: Vec<Element<'_, Message>> = model.end.into_iter().map(|entry| entry.element).collect();
 
     let border_style = |_theme: &_| container::Style {
-        background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+        background: Some(iced::Background::Color(crate::theme::palette().raised)),
         ..Default::default()
     };
 
@@ -760,7 +764,7 @@ fn render_bar_model<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::BASE)),
+            background: Some(iced::Background::Color(crate::theme::palette().background)),
             ..Default::default()
         });
 

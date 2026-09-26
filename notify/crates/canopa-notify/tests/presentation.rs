@@ -56,31 +56,100 @@ impl BannerPresenter for RecordingPresenter {
     }
 }
 
+struct RejectSoundTheme;
+impl canopa_notify::SoundPresenter for RejectSoundTheme {
+    fn apply_sound_settings(
+        &self,
+        settings: canopa_notify::NotificationSoundSettings,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            settings.theme != "reject",
+            "injected sound settings failure"
+        );
+        Ok(())
+    }
+    fn play_notification_sound(
+        &self,
+        _: canopa_notify::NotificationSoundPlayback,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+    fn stop_all_sounds(&self) {}
+    fn supports_sound(&self) -> bool {
+        false
+    }
+}
+
+#[tokio::test]
+async fn appearance_reload_repaints_existing_banners_without_revising_notifications() {
+    use canopa_theme::{Appearance, ColorScheme, Rgb};
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("canopa.kdl");
+    std::fs::write(
+        &config,
+        "schema-version 1\nappearance { color-scheme \"light\"; }\n",
+    )
+    .unwrap();
+    let presenter = RecordingPresenter::default();
+    let daemon = Daemon::open(
+        DaemonOptions::graphical(temp.path().join("history.db"), presenter.clone())
+            .with_sound_presenter(RejectSoundTheme)
+            .with_configuration_source(canopa_config::Request::common(&config)),
+    )
+    .await
+    .unwrap();
+    daemon
+        .receive_notification(notification("Mail", "Still here"))
+        .await
+        .unwrap();
+    let before = presenter.presentation_updates().last().unwrap().clone();
+    assert_eq!(before.appearance.color_scheme, ColorScheme::Light);
+    std::fs::write(
+        &config,
+        "schema-version 1\nappearance { accent \"#abcdef\"; }\n",
+    )
+    .unwrap();
+    daemon.reload_configuration_source(None).await.unwrap();
+    let after = presenter.presentation_updates().last().unwrap().clone();
+    assert_eq!(before.banners, after.banners);
+    assert_eq!(
+        after.appearance,
+        Appearance {
+            accent: Some(Rgb(171, 205, 239)),
+            ..Default::default()
+        }
+    );
+    let committed = daemon.configuration_status();
+    std::fs::write(
+        &config,
+        "schema-version 1\nappearance { color-scheme \"private-invalid\"; }\n",
+    )
+    .unwrap();
+    assert!(daemon.reload_configuration_source(None).await.is_err());
+    assert_eq!(presenter.presentation_updates().last().unwrap(), &after);
+    assert_eq!(daemon.configuration_status().source, committed.source);
+    assert_eq!(
+        daemon.configuration_status().generation,
+        committed.generation
+    );
+    assert!(
+        !daemon
+            .configuration_status()
+            .error
+            .unwrap()
+            .contains("private-invalid")
+    );
+    std::fs::write(&config, "schema-version 1\nappearance { color-scheme \"light\"; }\nnotifications { sound theme=\"reject\"; }\n").unwrap();
+    assert!(daemon.reload_configuration_source(None).await.is_err());
+    assert_eq!(presenter.presentation_updates().last().unwrap(), &after);
+    assert_eq!(
+        daemon.configuration_status().generation,
+        committed.generation
+    );
+}
+
 #[tokio::test]
 async fn icon_configuration_loads_and_reloads_without_reclassifying_notifications() {
-    struct RejectSoundTheme;
-    impl canopa_notify::SoundPresenter for RejectSoundTheme {
-        fn apply_sound_settings(
-            &self,
-            settings: canopa_notify::NotificationSoundSettings,
-        ) -> anyhow::Result<()> {
-            anyhow::ensure!(
-                settings.theme != "reject",
-                "injected sound settings failure"
-            );
-            Ok(())
-        }
-        fn play_notification_sound(
-            &self,
-            _: canopa_notify::NotificationSoundPlayback,
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
-        fn stop_all_sounds(&self) {}
-        fn supports_sound(&self) -> bool {
-            false
-        }
-    }
     let temp = tempfile::tempdir().unwrap();
     let config = temp.path().join("notify.kdl");
     std::fs::write(&config, "icons theme=\"Birch\" scale=2\n").unwrap();

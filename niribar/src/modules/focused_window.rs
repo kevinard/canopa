@@ -254,7 +254,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             crate::config::FormatMode::Collapsed,
             bar_style,
             16,
-            theme::TEXT,
+            theme::palette().text,
         ) {
             return iced::widget::container(content)
                 .width(iced::Length::Fill)
@@ -264,12 +264,12 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
                 .into();
         }
         if let Some(formatted) = self.formatted_text(info, crate::config::FormatMode::Collapsed) {
-            return collapsed_icon_with_style(formatted, theme::TEXT, bar_style);
+            return collapsed_icon_with_style(formatted, theme::palette().text, bar_style);
         }
 
         // Window is focused -> show icon placeholder (AC #2).
         // "□" (U+25A1) is a window-shape placeholder; replaced when icon system is added.
-        collapsed_icon_with_style(self.fallback_icon.clone(), theme::TEXT, bar_style)
+        collapsed_icon_with_style(self.fallback_icon.clone(), theme::palette().text, bar_style)
     }
 
     fn render_bar_collapsed_with_style(
@@ -297,7 +297,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             iced::widget::container(crate::modules::view::formatted_segment_visuals_content(
                 segments,
                 16,
-                theme::TEXT,
+                theme::palette().text,
                 rotation,
             ))
             .width(iced::Length::Fill)
@@ -333,7 +333,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             crate::config::FormatMode::Expanded,
             bar_style,
             12,
-            theme::TEXT,
+            theme::palette().text,
         ) {
             return container(content)
                 .width(Length::Fill)
@@ -353,7 +353,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
         container(crate::modules::view::styled_segment_text(
             display,
             12,
-            theme::TEXT,
+            theme::palette().text,
             crate::modules::view::fallback_resolved_style(bar_style),
         ))
         .width(Length::Fill)
@@ -388,7 +388,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             crate::config::FormatMode::Horizontal,
             bar_style,
             12,
-            theme::TEXT,
+            theme::palette().text,
         ) {
             return Some(
                 container(content)
@@ -409,7 +409,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             container(crate::modules::view::styled_segment_text(
                 display,
                 12,
-                theme::TEXT,
+                theme::palette().text,
                 crate::modules::view::fallback_resolved_style(bar_style),
             ))
             .width(Length::Shrink)
@@ -446,7 +446,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             iced::widget::container(crate::modules::view::formatted_segment_visuals_content(
                 segments,
                 12,
-                theme::TEXT,
+                theme::palette().text,
                 rotation,
             ))
             .width(iced::Length::Shrink)
@@ -566,7 +566,7 @@ mod tests {
             )
             .unwrap()[0];
 
-        assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
+        assert_eq!(segment.1.color, Some(crate::theme::palette().accent));
         assert_eq!(segment.1.weight, Some(Weight::Bold));
     }
 

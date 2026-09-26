@@ -161,6 +161,7 @@ pub trait BannerPresenter: Send + Sync {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BannerPresentation {
+    pub appearance: canopa_theme::Appearance,
     pub banners: Vec<BannerView>,
     pub overflow_count: usize,
     pub icon_settings: BannerIconSettings,
@@ -172,6 +173,7 @@ impl BannerPresentation {
             banners,
             overflow_count: 0,
             icon_settings: BannerIconSettings::default(),
+            appearance: Default::default(),
         }
     }
 }
@@ -583,6 +585,7 @@ pub(crate) struct PresentationCoordinator {
     renderer_state: Option<tokio::sync::watch::Receiver<BannerRendererState>>,
     last_error: Arc<Mutex<Option<String>>>,
     icon_settings: Arc<Mutex<BannerIconSettings>>,
+    appearance: Arc<Mutex<canopa_theme::Appearance>>,
 }
 
 impl PresentationCoordinator {
@@ -608,8 +611,17 @@ impl PresentationCoordinator {
             renderer_state: enabled.then(|| banner_presenter.renderer_state()).flatten(),
             banner_presenter,
             last_error: Arc::new(Mutex::new(None)),
+            appearance: Default::default(),
             icon_settings: Arc::new(Mutex::new(BannerIconSettings::default())),
         }
+    }
+
+    pub(crate) fn set_appearance(&self, appearance: canopa_theme::Appearance) {
+        *self.appearance.lock().unwrap() = appearance;
+    }
+
+    pub(crate) fn appearance(&self) -> canopa_theme::Appearance {
+        *self.appearance.lock().unwrap()
     }
 
     pub(crate) fn set_icon_settings(&self, settings: BannerIconSettings) {
@@ -687,6 +699,7 @@ impl NotificationBannerState {
             banners: self.visible_banners(),
             overflow_count: self.overflow_count(),
             icon_settings: BannerIconSettings::default(),
+            appearance: Default::default(),
         }
     }
 

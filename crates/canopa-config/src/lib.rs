@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use kdl::KdlDocument;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+mod appearance;
 
 pub const MAX_BYTES: usize = 1024 * 1024;
 
@@ -143,6 +144,7 @@ pub enum Code {
     Syntax,
     Envelope,
     Schema,
+    Appearance,
 }
 
 impl Diagnostic {
@@ -156,8 +158,9 @@ impl std::fmt::Display for Diagnostic {
             Code::Location => "configuration requires an absolute XDG_CONFIG_HOME or HOME",
             Code::Read => "configuration must be a readable regular UTF-8 file of at most 1 MiB",
             Code::Syntax => "invalid configuration KDL",
-            Code::Envelope => "expected schema-version 1 and unique shell/notifications blocks without arguments or annotations",
+            Code::Envelope => "expected schema-version 1 and unique appearance/shell/notifications blocks without arguments or annotations",
             Code::Schema => "invalid component configuration; use the local configuration checker for details",
+            Code::Appearance => "invalid appearance; expected unique color-scheme (dark|light) and accent (#rrggbb) strings",
         })?;
         if let Some(offset) = self.offset {
             write!(f, " near byte {offset}")?;
@@ -236,6 +239,7 @@ pub struct Document {
     document: KdlDocument,
     info: SourceInfo,
     namespace: Option<&'static str>,
+    appearance: canopa_theme::Appearance,
 }
 impl std::fmt::Debug for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -258,6 +262,7 @@ impl Document {
             text: defaults.into(),
             document: parse_kdl(defaults)?,
             namespace: None,
+            appearance: Default::default(),
             info: SourceInfo {
                 path: None,
                 format: None,
@@ -284,10 +289,13 @@ impl Document {
             fingerprint: fingerprint(&text),
             defaults: false,
         };
+        let mut appearance = canopa_theme::Appearance::default();
         if format == Format::CanopaV1 {
             validate_envelope(&document)?;
+            appearance = appearance::parse(&document)?;
             if document.get(component.namespace()).is_none() {
                 let mut fallback = Self::embedded(defaults)?;
+                fallback.appearance = appearance;
                 fallback.info = SourceInfo {
                     defaults: true,
                     ..info
@@ -298,6 +306,7 @@ impl Document {
         Ok(Self {
             text,
             document,
+            appearance,
             info,
             namespace: (format == Format::CanopaV1).then_some(component.namespace()),
         })
@@ -314,6 +323,9 @@ impl Document {
     }
     pub fn info(&self) -> &SourceInfo {
         &self.info
+    }
+    pub fn appearance(&self) -> canopa_theme::Appearance {
+        self.appearance
     }
 }
 
@@ -350,7 +362,7 @@ fn validate_envelope(document: &KdlDocument) -> Result<(), Diagnostic> {
                     return Err(fail());
                 }
             }
-            "shell" | "notifications" => {
+            "shell" | "notifications" | "appearance" => {
                 if !node.entries().is_empty() || node.children().is_none() {
                     return Err(fail());
                 }

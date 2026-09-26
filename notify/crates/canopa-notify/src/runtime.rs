@@ -739,6 +739,7 @@ impl NotificationRuntime {
         rules: Vec<DeliveryPolicyRule>,
         sound_settings: NotificationSoundSettings,
         icon_settings: crate::BannerIconSettings,
+        appearance: canopa_theme::Appearance,
     ) -> anyhow::Result<()> {
         let _change = self.begin_mutation().await?;
         if !self.headless {
@@ -750,8 +751,16 @@ impl NotificationRuntime {
         }
         self.replace_loaded_policy_state(|state| state.with_config_rules(rules));
         self.set_icon_settings(icon_settings);
+        self.set_appearance(appearance);
+        // A renderer outage is presentation status, not rejection of a valid local snapshot.
+        // Publication is synchronous and coalesced; it does not await redraw or restart timeouts.
+        let _ = self.sync_presentation();
         self.notify_state_changed();
         Ok(())
+    }
+
+    pub(crate) fn set_appearance(&self, appearance: canopa_theme::Appearance) {
+        self.presentation.set_appearance(appearance);
     }
 
     pub(crate) fn set_icon_settings(&self, settings: crate::BannerIconSettings) {
@@ -946,7 +955,7 @@ impl NotificationRuntime {
         if let Some(sound) = sound {
             self.play_notification_sound(sound);
         }
-        if let Err(error) = self.sync_presentation().await {
+        if let Err(error) = self.sync_presentation() {
             // Lifecycle commitment is independent of the replaceable UI projection.
             eprintln!("level=warn component=presentation event=update_failed error={error:#}");
         }
@@ -1053,7 +1062,7 @@ impl NotificationRuntime {
         .filter(|token| !token.is_empty())
     }
 
-    async fn sync_presentation(&self) -> anyhow::Result<()> {
+    fn sync_presentation(&self) -> anyhow::Result<()> {
         let (presentation, visible_revisions) = self.banner_presentation_with_visible_revisions();
         let presented_timeout_revisions: Vec<_> =
             self.timeouts.lock().unwrap().pending_in(&visible_revisions);
@@ -1106,6 +1115,7 @@ impl NotificationRuntime {
                     .collect(),
                 overflow_count,
                 icon_settings: self.presentation.icon_settings(),
+                appearance: self.presentation.appearance(),
             },
             visible_revisions,
         )

@@ -21,14 +21,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--markdown", action="store_true", help="print the measured documentation table")
     args = parser.parse_args()
-    source = (Path(__file__).resolve().parents[1] / "src/theme.rs").read_text()
-    colors = {
-        name: tuple(int(channel, 16) for channel in (r, g, b))
-        for name, r, g, b in re.findall(
-            r"pub const (\w+): Color = Color::from_rgb8\(0x([\da-f]+), 0x([\da-f]+), 0x([\da-f]+)\);",
-            source,
-        )
-    }
+    source = (Path(__file__).resolve().parents[2] / "crates/canopa-theme/src/lib.rs").read_text()
+    names = dict(background="BASE", surface="SURFACE0", raised="SURFACE1", text="TEXT",
+                 muted="SUBTEXT", accent="ACCENT", danger="CRITICAL", warning="WARNING", success="SUCCESS")
+    presets = {}
+    for scheme in ("Dark", "Light"):
+        block = source.split(f"ColorScheme::{scheme} => Palette {{", 1)[1].split("},", 1)[0]
+        presets[scheme] = {
+            names[name]: tuple(int(c, 16) for c in (r, g, b))
+            for name, r, g, b in re.findall(
+                r"(\w+): Rgb\(0x([\da-f]+), 0x([\da-f]+), 0x([\da-f]+)\)", block)
+            if name in names
+        }
     pairs = [
         (fg, bg, 4.5)
         for fg in ("TEXT", "SUBTEXT", "ACCENT", "CRITICAL", "WARNING", "SUCCESS")
@@ -40,18 +44,19 @@ def main():
         print("| Foreground | Background | Ratio | Required | Result |")
         print("| --- | --- | ---: | ---: | --- |")
     failed = False
-    for fg, bg, minimum in pairs:
-        value = ratio(colors[fg], colors[bg])
-        passed = value >= minimum  # Compare before rounding for display.
-        failed |= not passed
-        if args.markdown:
-            print(f"| {fg} | {bg} | {value:.2f}:1 | {minimum:g}:1 | {'Pass' if passed else 'FAIL'} |")
-        elif not passed:
-            print(f"FAIL: {fg} on {bg}: {value:.4f}:1 < {minimum:g}:1")
+    for scheme, colors in presets.items():
+        for fg, bg, minimum in pairs:
+            value = ratio(colors[fg], colors[bg])
+            passed = value >= minimum  # Compare before rounding for display.
+            failed |= not passed
+            if args.markdown:
+                print(f"| {scheme} {fg} | {bg} | {value:.2f}:1 | {minimum:g}:1 | {'Pass' if passed else 'FAIL'} |")
+            elif not passed:
+                print(f"FAIL: {scheme} {fg} on {bg}: {value:.4f}:1 < {minimum:g}:1")
     if failed:
         parser.exit(1, "Default theme contrast check failed.\n")
     if not args.markdown:
-        print(f"All {len(pairs)} documented default theme contrast pairs pass.")
+        print(f"All {len(pairs) * len(presets)} shared theme contrast pairs pass.")
 
 
 if __name__ == "__main__":

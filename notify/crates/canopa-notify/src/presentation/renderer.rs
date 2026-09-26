@@ -1,6 +1,7 @@
 //! Wayland/Iced adapter; the projection and presenter contract remain desktop independent.
 use super::*;
 use crate::NotificationBodyRun;
+use canopa_ui::metrics;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{OnceLock, mpsc};
@@ -225,6 +226,7 @@ struct PendingBannerAcknowledgement {
 type BannerInputRegion = Arc<Mutex<Option<iced::Rectangle<i32>>>>;
 
 struct BannerUiState {
+    theme: iced::Theme,
     surface: surface::Surface,
     runtime_id: u64,
     presentation: BannerPresentation,
@@ -468,6 +470,7 @@ fn run_banner_ui(
     iced_layershell::daemon(
         move || {
             let mut state = BannerUiState {
+                theme: canopa_ui::theme(Default::default()),
                 surface: surface::Surface::new(),
                 runtime_id,
                 presentation: BannerPresentation::default(),
@@ -488,6 +491,7 @@ fn run_banner_ui(
         banner_ui_view,
     )
     .subscription(banner_ui_subscription)
+    .theme(|state: &BannerUiState, _| state.theme.clone())
     .style(banner_ui_style)
     .settings(Settings {
         id: Some("canopa-notify-banners".to_string()),
@@ -573,6 +577,9 @@ fn banner_ui_update(
             presentation,
             acknowledgement,
         }) => {
+            if state.presentation.appearance != presentation.appearance {
+                state.theme = canopa_ui::theme(presentation.appearance);
+            }
             state.presentation = presentation;
             state.presentation_generation = state
                 .presentation_generation
@@ -1157,6 +1164,7 @@ mod tests {
     fn banner_ui_test_state() -> BannerUiState {
         let (interactions, _interaction_receiver) = mpsc::channel();
         BannerUiState {
+            theme: canopa_ui::theme(Default::default()),
             surface: surface::Surface::new(),
             runtime_id: 0,
             presentation: BannerPresentation::default(),
@@ -1638,7 +1646,7 @@ fn notification_banner_content(banner: &BannerView) -> iced::Element<'_, BannerU
 
     let content = column![
         text(banner_title(banner))
-            .size(15)
+            .size(metrics::TITLE)
             .width(Length::Fill)
             .line_height(iced::Pixels(22.0))
             .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
@@ -1646,9 +1654,9 @@ fn notification_banner_content(banner: &BannerView) -> iced::Element<'_, BannerU
             .id(accessibility_bounds::widget_id(banner.target(), 1))
             .width(Length::Fill),
         text(&banner.app_name)
-            .size(11)
+            .size(metrics::LABEL)
             .width(Length::Fill)
-            .style(metadata_text_style),
+            .style(canopa_ui::muted),
     ]
     .spacing(1)
     .width(Length::Fill);
@@ -1676,7 +1684,7 @@ fn notification_banner_content(banner: &BannerView) -> iced::Element<'_, BannerU
     header = header.push(activate).push(dismiss);
 
     let mut card = column![header, banner_actions_widget(banner)]
-        .spacing(8)
+        .spacing(metrics::GAP)
         .width(Length::Fill);
 
     if let Some(progress) = banner.progress {
@@ -1689,7 +1697,7 @@ fn notification_banner_content(banner: &BannerView) -> iced::Element<'_, BannerU
 
     container(card)
         .id(accessibility_bounds::widget_id(banner.target(), 0))
-        .padding(10)
+        .padding(metrics::PADDING)
         .width(Length::Fill)
         .height(Length::Shrink)
         .clip(true)
@@ -1698,7 +1706,7 @@ fn notification_banner_content(banner: &BannerView) -> iced::Element<'_, BannerU
 }
 
 fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
-    use iced::widget::{button, column, container, row};
+    use iced::widget::{column, container, row};
     use iced::{Alignment, Length};
 
     let mut actions =
@@ -1719,15 +1727,17 @@ fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessa
         for (column_index, action) in pair.iter().enumerate() {
             action_row = action_row.push(
                 container(
-                    button(banner_action_content(action))
-                        .padding([4, 8])
-                        .height(Length::Shrink)
-                        .width(Length::Fill)
-                        .style(content_button_style)
-                        .on_press(BannerUiMessage::InvokeActionRequested(
+                    canopa_ui::action(
+                        banner_action_content(action),
+                        Some(BannerUiMessage::InvokeActionRequested(
                             banner.target(),
                             action.key.clone(),
                         )),
+                        canopa_ui::Action::Normal,
+                        false,
+                    )
+                    .height(Length::Shrink)
+                    .width(Length::Fill),
                 )
                 .id(accessibility_bounds::widget_id(
                     banner.target(),
@@ -1747,7 +1757,7 @@ fn banner_action_content(action: &BannerAction) -> iced::Element<'_, BannerUiMes
     use iced::{Alignment, Length};
 
     let label = text(action.label.as_str())
-        .size(12)
+        .size(metrics::BODY)
         .line_height(iced::Pixels(20.0))
         .width(Length::Fill)
         .wrapping(iced::widget::text::Wrapping::WordOrGlyph);
@@ -1769,10 +1779,10 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
     if banner.body_segments.is_empty() {
         return body_preview(
             text(&banner.body)
-                .size(13)
+                .size(metrics::BODY)
                 .width(Length::Fill)
                 .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
-                .style(subdued_text_style)
+                .style(canopa_ui::muted)
                 .into(),
         );
     }
@@ -1911,20 +1921,14 @@ fn styled_body_widget(
         .collect();
 
     rich_text(spans)
-        .size(13)
+        .size(metrics::BODY)
         .width(Length::Fill)
         .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
         .style(move |theme: &iced::Theme| {
             if link {
-                iced::widget::text::Style {
-                    color: Some(if theme.extended_palette().is_dark {
-                        iced::Color::from_rgb8(117, 183, 255)
-                    } else {
-                        iced::Color::from_rgb8(0, 85, 170)
-                    }),
-                }
+                canopa_ui::link(theme)
             } else {
-                subdued_text_style(theme)
+                canopa_ui::muted(theme)
             }
         })
         .into()
@@ -1957,7 +1961,7 @@ fn overflow_count_banner_widget(count: usize) -> iced::Element<'static, BannerUi
     } else {
         format!("+{count} more notifications")
     };
-    let badge = container(text("+").size(13))
+    let badge = container(text("+").size(metrics::BODY))
         .center(26)
         .style(|theme| app_badge_style(theme, Urgency::Normal));
 
@@ -1967,9 +1971,9 @@ fn overflow_count_banner_widget(count: usize) -> iced::Element<'static, BannerUi
             text(label)
                 .size(14)
                 .width(Length::Fill)
-                .style(metadata_text_style)
+                .style(canopa_ui::muted)
         ]
-        .spacing(8)
+        .spacing(metrics::GAP)
         .align_y(Alignment::Center),
     )
     .padding(8)
@@ -2000,7 +2004,7 @@ fn app_initial(app_name: &str) -> String {
 fn app_badge(app_name: &str, urgency: Urgency) -> iced::Element<'_, BannerUiMessage> {
     use iced::widget::{container, text};
 
-    container(text(app_initial(app_name)).size(15))
+    container(text(app_initial(app_name)).size(metrics::TITLE))
         .center(34)
         .style(move |theme| app_badge_style(theme, urgency))
         .into()
@@ -2110,39 +2114,14 @@ fn close_button<'a>(target: BannerTarget) -> iced::widget::Button<'a, BannerUiMe
 }
 
 fn card_container_style(theme: &iced::Theme) -> iced::widget::container::Style {
-    let palette = theme.extended_palette();
-
     iced::widget::container::Style {
-        background: Some(palette.background.base.color.into()),
-        text_color: Some(palette.background.base.text),
-        border: iced::Border {
-            width: 1.0,
-            radius: 8.0.into(),
-            color: palette.background.weak.color,
-        },
         shadow: banner_shadow(),
-        ..Default::default()
+        ..canopa_ui::surface(theme)
     }
 }
 
 fn stacked_card_container_style(theme: &iced::Theme) -> iced::widget::container::Style {
-    let palette = theme.extended_palette();
-
-    iced::widget::container::Style {
-        background: Some(palette.background.weakest.color.into()),
-        text_color: Some(palette.background.weakest.text),
-        border: iced::Border {
-            width: 1.0,
-            radius: 8.0.into(),
-            color: palette.background.weak.color.scale_alpha(0.8),
-        },
-        shadow: iced::Shadow {
-            color: iced::Color::from_rgba8(0, 0, 0, 0.12),
-            offset: iced::Vector::new(0.0, 2.0),
-            blur_radius: 10.0,
-        },
-        ..Default::default()
-    }
+    canopa_ui::surface(theme)
 }
 
 fn app_badge_style(theme: &iced::Theme, urgency: Urgency) -> iced::widget::container::Style {
@@ -2178,74 +2157,14 @@ fn content_button_style(
     theme: &iced::Theme,
     status: iced::widget::button::Status,
 ) -> iced::widget::button::Style {
-    let palette = theme.extended_palette();
-    let background = match status {
-        iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed => {
-            Some(palette.background.weakest.color.scale_alpha(0.55).into())
-        }
-        _ => None,
-    };
-
-    iced::widget::button::Style {
-        background,
-        text_color: palette.background.base.text,
-        border: iced::Border {
-            radius: 6.0.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    }
+    canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false)
 }
 
 fn close_button_style(
     theme: &iced::Theme,
     status: iced::widget::button::Status,
 ) -> iced::widget::button::Style {
-    let palette = theme.extended_palette();
-    let hovered = matches!(
-        status,
-        iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed
-    );
-
-    iced::widget::button::Style {
-        background: hovered.then(|| palette.danger.weak.color.scale_alpha(0.4).into()),
-        text_color: if hovered {
-            palette.danger.base.color
-        } else {
-            palette.background.base.text.scale_alpha(0.58)
-        },
-        border: iced::Border {
-            radius: 6.0.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-}
-
-fn subdued_text_style(theme: &iced::Theme) -> iced::widget::text::Style {
-    iced::widget::text::Style {
-        color: Some(
-            theme
-                .extended_palette()
-                .background
-                .base
-                .text
-                .scale_alpha(0.72),
-        ),
-    }
-}
-
-fn metadata_text_style(theme: &iced::Theme) -> iced::widget::text::Style {
-    iced::widget::text::Style {
-        color: Some(
-            theme
-                .extended_palette()
-                .background
-                .base
-                .text
-                .scale_alpha(0.54),
-        ),
-    }
+    canopa_ui::action_style(theme, status, canopa_ui::Action::Destructive, false)
 }
 
 fn urgency_accent_color(theme: &iced::Theme, urgency: Urgency) -> iced::Color {

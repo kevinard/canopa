@@ -1058,6 +1058,7 @@ mod tests {
     fn bar_for_surface_name_returns_matching_bar() {
         use crate::config::BarConfig;
         let config = crate::config::Config {
+            appearance: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -1081,6 +1082,7 @@ mod tests {
     fn bar_for_surface_name_falls_back_to_first_on_miss() {
         use crate::config::BarConfig;
         let config = crate::config::Config {
+            appearance: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
                 ..BarConfig::default()
@@ -1097,6 +1099,7 @@ mod tests {
     fn boot_manual_mode_creates_surface_per_bar_per_output() {
         use crate::config::BarConfig;
         let config = crate::config::Config {
+            appearance: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -1208,6 +1211,7 @@ mod tests {
     fn surface_bar_name_set_from_pending_surface_key() {
         use crate::config::BarConfig;
         let config = crate::config::Config {
+            appearance: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
                 output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]),
@@ -1233,6 +1237,7 @@ mod tests {
     fn surface_output_name_set_from_pending_surface_key() {
         use crate::config::BarConfig;
         let config = crate::config::Config {
+            appearance: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
                 output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]),
@@ -1268,6 +1273,7 @@ mod tests {
     #[test]
     fn boot_spawns_horizontal_bars_before_side_bars() {
         let config = crate::config::Config {
+            appearance: Default::default(),
             bars: vec![
                 crate::config::BarConfig {
                     name: "left".into(),

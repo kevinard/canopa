@@ -3,7 +3,8 @@ use super::canopa_semantics::{
 };
 // Host-owned layout for Canopa's declarative model. No notification-domain keys here.
 use canopa_panel_protocol::{InteractionTarget, PanelAction, RichBodySegment, StyledTextRun};
-use iced::widget::{button, column, container, rich_text, scrollable, span, text};
+use canopa_ui::metrics;
+use iced::widget::{column, container, rich_text, scrollable, span, text};
 use iced::{Element, Length, Theme};
 use niribar::external_panel::canopa::CanopaSnapshot;
 
@@ -23,7 +24,7 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
             snapshot,
             provider,
             &SemanticNode::Error,
-            text(error.clone()).color(crate::theme::CRITICAL),
+            text(error.clone()).color(crate::theme::palette().danger),
         ));
     }
     for action in &snapshot.content.actions {
@@ -35,9 +36,9 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
         ));
     }
     for section in &snapshot.content.sections {
-        let mut group = column![text(section.title.clone()).size(17)].spacing(8);
+        let mut group = column![text(section.title.clone()).size(17)].spacing(metrics::GAP);
         for control in &section.controls {
-            let mut options = column![text(control.label.clone())].spacing(8);
+            let mut options = column![text(control.label.clone())].spacing(metrics::GAP);
             for option in &control.options {
                 let action = PanelAction {
                     key: control.key.clone(),
@@ -69,7 +70,7 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
             ));
         }
         for item in &section.items {
-            let mut card = column![text(item.title.clone()).size(16)].spacing(6);
+            let mut card = column![text(item.title.clone()).size(metrics::TITLE)].spacing(6);
             match selected_body(item) {
                 Body::Rich(body) => {
                     let mut runs = Vec::new();
@@ -104,7 +105,13 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
                                     snapshot,
                                     provider,
                                     &SemanticNode::Action(id.clone()),
-                                    action_widget::link(id, &action.label, *style, provider),
+                                    action_widget::link(
+                                        id.clone(),
+                                        &action.label,
+                                        *style,
+                                        provider,
+                                        snapshot.focused_action_id() == Some(id.as_str()),
+                                    ),
                                 ));
                             }
                             RichBodySegment::Image { image } => {
@@ -166,7 +173,7 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
                         snapshot,
                         provider,
                         &SemanticNode::Body(item.id.clone(), None),
-                        text(body.to_owned()),
+                        text(body.to_owned()).size(metrics::BODY),
                     ));
                 }
                 Body::None => {}
@@ -176,7 +183,9 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
                     snapshot,
                     provider,
                     &SemanticNode::Metadata(item.id.clone(), index),
-                    text(format!("{}: {}", metadata.label, metadata.value)).size(12),
+                    text(format!("{}: {}", metadata.label, metadata.value))
+                        .size(metrics::LABEL)
+                        .style(canopa_ui::muted),
                 ));
             }
             for action in &item.actions {
@@ -194,9 +203,9 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
                     .id(super::canopa_accessibility_bounds::widget_id(
                         &semantic_key(snapshot, provider, &SemanticNode::Item(item.id.clone())),
                     ))
-                    .padding(10)
+                    .padding(metrics::PADDING)
                     .width(Length::Fill)
-                    .style(iced::widget::container::rounded_box),
+                    .style(canopa_ui::surface),
             );
         }
         panel = panel.push(semantic(
@@ -211,7 +220,8 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
         header = header.push(action_widget::preview(id, label, provider));
     } else {
         header = header.push(
-            text("Tab / arrows: select · Enter: activate · PgUp/PgDn: read · Esc: close").size(12),
+            text("Tab / arrows: select · Enter: activate · PgUp/PgDn: read · Esc: close")
+                .size(metrics::LABEL),
         );
     }
     reading::wrap(
@@ -227,12 +237,12 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
         .id(super::canopa_accessibility_bounds::widget_id(
             &semantic_key(snapshot, provider, &SemanticNode::Root),
         ))
-        .padding(10)
+        .padding(metrics::PADDING)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::BASE)),
-            text_color: Some(crate::theme::TEXT),
+            background: Some(iced::Background::Color(crate::theme::palette().background)),
+            text_color: Some(crate::theme::palette().text),
             ..Default::default()
         })
         .into(),
@@ -251,7 +261,12 @@ fn action_button<'a>(
         snapshot,
         provider,
         &SemanticNode::Action(id.clone()),
-        action_widget::render(id, &action.label, provider),
+        action_widget::render(
+            id.clone(),
+            &action.label,
+            provider,
+            snapshot.focused_action_id() == Some(id.as_str()),
+        ),
     )
 }
 
@@ -281,16 +296,14 @@ fn styled_body<'a>(runs: Vec<StyledTextRun>, link: bool) -> Element<'a, Message>
         })
         .collect();
     rich_text(spans)
-        .size(14)
+        .size(metrics::BODY)
         .width(Length::Fill)
-        .style(move |theme: &Theme| iced::widget::text::Style {
-            color: link.then(|| {
-                if theme.extended_palette().is_dark {
-                    iced::Color::from_rgb8(117, 183, 255)
-                } else {
-                    iced::Color::from_rgb8(0, 85, 170)
-                }
-            }),
+        .style(move |theme: &Theme| {
+            if link {
+                canopa_ui::link(theme)
+            } else {
+                iced::widget::text::Style::default()
+            }
         })
         .into()
 }

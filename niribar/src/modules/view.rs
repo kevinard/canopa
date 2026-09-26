@@ -63,7 +63,7 @@ pub(super) trait IconLabel {
     }
 
     fn color(&self, _state: &super::ModuleState) -> iced::Color {
-        crate::theme::TEXT
+        crate::theme::palette().text
     }
 }
 
@@ -119,7 +119,7 @@ pub(super) fn horizontal_icon_label_with_style<'a>(
             styled_segment_text(
                 label.to_string(),
                 12,
-                crate::theme::SUBTEXT,
+                crate::theme::palette().muted,
                 fallback_resolved_style(default_style)
             ),
         ]
@@ -156,7 +156,7 @@ pub(super) fn expanded_icon_label_with_style<'a>(
             styled_segment_text(
                 label.to_string(),
                 12,
-                crate::theme::SUBTEXT,
+                crate::theme::palette().muted,
                 fallback_resolved_style(default_style)
             ),
         ]
@@ -204,10 +204,10 @@ where
                 collapsed_formatted_segments(segments, 16, module.color(state), rotation)
             }
             IconLabelLayout::Expanded => {
-                expanded_formatted_segments(segments, 12, crate::theme::SUBTEXT, rotation)
+                expanded_formatted_segments(segments, 12, crate::theme::palette().muted, rotation)
             }
             IconLabelLayout::Horizontal => {
-                horizontal_formatted_segments(segments, 12, crate::theme::SUBTEXT, rotation)
+                horizontal_formatted_segments(segments, 12, crate::theme::palette().muted, rotation)
             }
         };
     }
@@ -693,7 +693,7 @@ mod tests {
 
         let resolved = super::fallback_resolved_style(&bar_style);
 
-        assert_eq!(resolved.color, Some(crate::theme::ACCENT));
+        assert_eq!(resolved.color, Some(crate::theme::palette().accent));
         assert_eq!(resolved.size, Some(14.0));
         assert_eq!(resolved.weight, Some(Weight::Bold));
     }
@@ -705,19 +705,19 @@ mod tests {
         let _ = super::formatted_segments_content(
             segments.clone(),
             12,
-            crate::theme::TEXT,
+            crate::theme::palette().text,
             crate::config::ResolvedContentRotation::None,
         );
         let _ = super::formatted_segments_content(
             segments.clone(),
             12,
-            crate::theme::TEXT,
+            crate::theme::palette().text,
             crate::config::ResolvedContentRotation::Clockwise,
         );
         let _ = super::formatted_segments_content(
             segments,
             12,
-            crate::theme::TEXT,
+            crate::theme::palette().text,
             crate::config::ResolvedContentRotation::CounterClockwise,
         );
     }
@@ -803,13 +803,13 @@ mod tests {
         let _ = super::formatted_segment_visuals_content(
             segments.clone(),
             12,
-            crate::theme::TEXT,
+            crate::theme::palette().text,
             crate::config::ResolvedContentRotation::None,
         );
         let _ = super::formatted_segment_visuals_content(
             segments,
             12,
-            crate::theme::TEXT,
+            crate::theme::palette().text,
             crate::config::ResolvedContentRotation::Clockwise,
         );
 

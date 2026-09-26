@@ -54,9 +54,9 @@ pub fn view_menu_popup<'a>(
                     .into()
             } else {
                 let color = if item.enabled {
-                    crate::theme::TEXT
+                    crate::theme::palette().text
                 } else {
-                    crate::theme::OVERLAY0
+                    crate::theme::palette().disabled
                 };
                 let label = text(&item.label).size(13).color(color);
                 let is_highlighted = item.enabled
@@ -69,13 +69,13 @@ pub fn view_menu_popup<'a>(
                     .width(Length::Fill)
                     .style(move |_| iced::widget::container::Style {
                         background: if is_highlighted {
-                            Some(iced::Background::Color(crate::theme::SURFACE0))
+                            Some(iced::Background::Color(crate::theme::palette().surface))
                         } else {
                             None
                         },
                         border: iced::Border {
                             color: if is_highlighted {
-                                crate::theme::ACCENT
+                                crate::theme::palette().accent
                             } else {
                                 iced::Color::TRANSPARENT
                             },
@@ -120,9 +120,9 @@ pub fn view_menu_popup<'a>(
     let menu_content = iced::widget::mouse_area(
         container(column(items).spacing(0))
             .style(|_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(crate::theme::SURFACE1)),
+                background: Some(iced::Background::Color(crate::theme::palette().raised)),
                 border: iced::Border {
-                    color: crate::theme::BORDER,
+                    color: crate::theme::palette().border,
                     width: 1.0,
                     radius: iced::border::Radius::from(4.0),
                 },

@@ -108,13 +108,13 @@ pub(crate) fn battery_state_key(
 /// Priority: charging > critical > warning > normal
 fn icon_color(percentage: f64, is_charging: bool, critical_threshold: u8) -> iced::Color {
     if is_charging {
-        return theme::SUCCESS;
+        return theme::palette().success;
     }
     let tier = charge_tier(percentage, critical_threshold);
     match tier {
-        0 => theme::CRITICAL,
-        1 => theme::WARNING,
-        _ => theme::ACCENT,
+        0 => theme::palette().danger,
+        1 => theme::palette().warning,
+        _ => theme::palette().accent,
     }
 }
 
@@ -269,7 +269,7 @@ impl crate::modules::view::IconLabel for BatteryModule {
                 s.power_state.is_charging(),
                 self.critical_threshold,
             ),
-            _ => crate::theme::TEXT,
+            _ => crate::theme::palette().text,
         }
     }
 }
@@ -378,10 +378,10 @@ impl crate::modules::render::ModuleRender for BatteryModule {
         // CriticalBadge: shown when collapsed AND at/below threshold (AC: #3, UX-DR17).
         if battery.percentage <= self.critical_threshold as f64 {
             let badge_label = format!("{}%", battery.percentage.round() as u8);
-            let badge = container(text(badge_label).size(9).color(theme::BASE))
+            let badge = container(text(badge_label).size(9).color(theme::palette().on_danger))
                 .padding([1, 3])
                 .style(|_| iced::widget::container::Style {
-                    background: Some(iced::Background::Color(theme::CRITICAL)),
+                    background: Some(iced::Background::Color(theme::palette().danger)),
                     border: iced::Border {
                         radius: iced::border::Radius::from(4.0),
                         ..Default::default()
@@ -648,27 +648,27 @@ mod tests {
 
     #[test]
     fn icon_color_charging_returns_success() {
-        assert_eq!(icon_color(10.0, true, 15), theme::SUCCESS);
+        assert_eq!(icon_color(10.0, true, 15), theme::palette().success);
     }
 
     #[test]
     fn icon_color_critical_not_charging_returns_critical() {
-        assert_eq!(icon_color(10.0, false, 15), theme::CRITICAL);
+        assert_eq!(icon_color(10.0, false, 15), theme::palette().danger);
     }
 
     #[test]
     fn icon_color_uses_exact_percentage_above_threshold() {
-        assert_eq!(icon_color(15.6, false, 15), theme::WARNING);
+        assert_eq!(icon_color(15.6, false, 15), theme::palette().warning);
     }
 
     #[test]
     fn icon_color_warning_not_charging_returns_warning() {
-        assert_eq!(icon_color(25.0, false, 15), theme::WARNING);
+        assert_eq!(icon_color(25.0, false, 15), theme::palette().warning);
     }
 
     #[test]
     fn icon_color_normal_returns_accent() {
-        assert_eq!(icon_color(80.0, false, 15), theme::ACCENT);
+        assert_eq!(icon_color(80.0, false, 15), theme::palette().accent);
     }
 
     #[test]
@@ -839,7 +839,7 @@ mod tests {
                 &crate::config::Style::default(),
             )
             .unwrap();
-        assert_eq!(segments[0].1.color, Some(crate::theme::CRITICAL));
+        assert_eq!(segments[0].1.color, Some(crate::theme::palette().danger));
         assert_eq!(segments[1].1, crate::config::ResolvedStyle::default());
     }
 
@@ -862,7 +862,7 @@ mod tests {
             .collapsed_styled_segments_with_default(&state, &crate::config::Style::default())
             .unwrap();
 
-        assert_eq!(segments[0].1.color, Some(crate::theme::CRITICAL));
+        assert_eq!(segments[0].1.color, Some(crate::theme::palette().danger));
         assert_eq!(segments[1].1, crate::config::ResolvedStyle::default());
     }
 }

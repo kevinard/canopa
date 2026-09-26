@@ -63,6 +63,7 @@ fn bar_module_placements(bar: &BarConfig) -> [(crate::modules::Zone, &[String]);
 /// Fully populated before any surface is created (AR7).
 #[derive(Debug, Clone)]
 pub struct Config {
+    pub appearance: canopa_theme::Appearance,
     /// All named bar sections. At least one is always present (falls back to defaults when
     /// no `bar` sections appear in the config file).
     pub bars: Vec<BarConfig>,
@@ -74,6 +75,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            appearance: Default::default(),
             bars: vec![BarConfig::default()],
             modules: vec![],
             menus: vec![],
@@ -130,7 +132,8 @@ pub fn load(
             .unwrap_or(ConfigSourceName::EmbeddedDefault)
     };
     let source = ConfigSource::new(source_name, document.text());
-    let config = parse::parse_document(document.selected(), source.clone())?;
+    let mut config = parse::parse_document(document.selected(), source.clone())?;
+    config.appearance = document.appearance();
     validate_with_source(&config, source)?;
     Ok((config, document.info().clone()))
 }

@@ -12,8 +12,10 @@ Ratios are compared before rounding. See the W3C explanations of
 [text contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)
 and [non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html).
 
-The palette is defined in `src/theme.rs`. Run `python3 scripts/check-contrast.py`
-to check the documented pairs, or add `--markdown` to reproduce the table below.
+The palette is now defined in shared `../crates/canopa-theme/src/lib.rs` (integration
+update, 2026-09-26). Run `python3 scripts/check-contrast.py` from Niribar to check both
+presets, or add `--markdown` to print their tables. The table below records the original
+dark palette. Shared controls additionally test the actual hover text/background pairs.
 CI runs this check; it checks numeric pairs, not whether every future rendering
 path uses them correctly.
 
@@ -74,10 +76,16 @@ the module to the visible navigation list. These transitions have App-level
 regression tests in addition to the isolated compositor check.
 
 Custom colors, alpha blending, user format overrides, external application/tray
-icons, emoji font rendering and Iced's independently themed widgets are outside
+icons and emoji font rendering are outside
 this token calculation. For custom text on SURFACE1, prefer TEXT; for colored
 status text, prefer the darker SURFACE0 background. No contrast guarantee is
 made for arbitrary user-defined token combinations.
+
+Niribar and Notify now select the same Canopa Iced palette explicitly. Shared
+notification card/action styles, typography and focus treatment are owned by
+`canopa-ui`; see [ADR 0003](../docs/adr/0003-shared-appearance.md). The private desktop
+fixture covers Center keyboard focus and native actions in both consumers. This
+does not extend native accessibility coverage to the remaining bar/tray controls.
 
 ## Native accessibility
 

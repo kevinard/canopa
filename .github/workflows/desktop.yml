@@ -20,8 +20,10 @@ jobs:
         run: bash notify/scripts/check-panel-protocol.sh
       - name: Build the workspace desktop binaries
         run: cargo build --locked --workspace --bins
-      - name: Exercise compositor, native actions and Center
-        run: python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts desktop-artifacts
+      - name: Exercise dark appearance, native actions and Center
+        run: python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts desktop-dark --color-scheme dark
+      - name: Exercise light appearance at fractional scale
+        run: python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts desktop-light --color-scheme light --scale 1.25
       - name: Exercise shared fork popup and output lifetimes
         run: python3 scripts/test-fork-desktop.py --niribar target/debug/niribar --artifacts fork-artifacts
       - name: Verify panels at fractional scale on Niri
@@ -31,6 +33,7 @@ jobs:
         with:
           name: desktop-acceptance
           path: |
-            desktop-artifacts
+            desktop-dark
+            desktop-light
             fork-artifacts
             placement-artifacts

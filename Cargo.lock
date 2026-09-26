@@ -812,6 +812,7 @@ name = "canopa-config"
 version = "0.1.0"
 dependencies = [
  "canopa-file",
+ "canopa-theme",
  "kdl",
  "serde",
  "sha2",
@@ -836,6 +837,8 @@ dependencies = [
  "canopa-config",
  "canopa-file",
  "canopa-panel-protocol",
+ "canopa-theme",
+ "canopa-ui",
  "clap",
  "futures-util",
  "iced",
@@ -865,6 +868,18 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "canopa-theme"
+version = "0.1.0"
+
+[[package]]
+name = "canopa-ui"
+version = "0.1.0"
+dependencies = [
+ "canopa-theme",
+ "iced",
 ]
 
 [[package]]
@@ -3382,6 +3397,8 @@ dependencies = [
  "anyhow",
  "canopa-config",
  "canopa-panel-protocol",
+ "canopa-theme",
+ "canopa-ui",
  "chrono",
  "iced",
  "iced_layershell",

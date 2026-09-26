@@ -7,6 +7,7 @@ the Notification Center through generic declarative panel content.
 - [Shell language and ownership](niribar/CONTEXT.md)
 - [Notification language and ownership](notify/CONTEXT.md)
 - [Configuration source and reload contract](docs/adr/0002-shared-configuration.md)
+- [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
 - [Configuration user guide](docs/configuration.md)
 - [Workspace decision](docs/adr/0001-shared-workspace-and-upstream-forks.md)
 - [Integration proposal and remaining phases](docs/canopa-integration-proposal.md)

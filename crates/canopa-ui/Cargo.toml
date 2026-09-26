@@ -1,0 +1,10 @@
+[package]
+name = "canopa-ui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+canopa-theme.workspace = true
+iced.workspace = true

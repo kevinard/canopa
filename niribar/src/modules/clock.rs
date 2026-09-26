@@ -319,9 +319,11 @@ impl ClockModule {
                 let cell = cell.padding([3, 0]).style(move |_| {
                     if is_today {
                         iced::widget::container::Style {
-                            background: Some(iced::Background::Color(crate::theme::SURFACE0)),
+                            background: Some(iced::Background::Color(
+                                crate::theme::palette().surface,
+                            )),
                             border: iced::Border {
-                                color: crate::theme::ACCENT,
+                                color: crate::theme::palette().accent,
                                 width: 1.0,
                                 radius: iced::border::Radius::from(4.0),
                             },
@@ -483,7 +485,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
                     return crate::modules::view::styled_segments_row(
                         segments,
                         11,
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                     )
                     .width(Length::Fill)
                     .into();
@@ -494,7 +496,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
                     return column![crate::modules::view::styled_segment_text(
                         formatted,
                         11,
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                         crate::modules::view::fallback_resolved_style(bar_style),
                     )]
                     .align_x(Alignment::Center)
@@ -506,13 +508,13 @@ impl crate::modules::render::ModuleRender for ClockModule {
                     crate::modules::view::styled_segment_text(
                         "⌚".to_string(),
                         16,
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                         style,
                     ),
                     crate::modules::view::styled_segment_text(
                         s.time.clone(),
                         11,
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                         style,
                     ),
                 ]
@@ -551,7 +553,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
                 11,
-                crate::theme::TEXT,
+                crate::theme::palette().text,
                 rotation,
             ))
             .width(iced::Length::Fill)
@@ -581,7 +583,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
                     return crate::modules::view::styled_segments_row(
                         segments,
                         12,
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                     )
                     .width(Length::Fill)
                     .into();
@@ -591,7 +593,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
                     return crate::modules::view::styled_segment_text(
                         formatted,
                         12,
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                         crate::modules::view::fallback_resolved_style(bar_style),
                     );
                 }
@@ -601,14 +603,14 @@ impl crate::modules::render::ModuleRender for ClockModule {
                         crate::modules::view::styled_segment_text(
                             "⌚".to_string(),
                             16,
-                            crate::theme::TEXT,
+                            crate::theme::palette().text,
                             style,
                         ),
                         iced::widget::Space::new().width(Length::Fill),
                         crate::modules::view::styled_segment_text(
                             s.time.clone(),
                             13,
-                            crate::theme::TEXT,
+                            crate::theme::palette().text,
                             style,
                         ),
                     ]
@@ -617,7 +619,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
                     crate::modules::view::styled_segment_text(
                         s.date.clone(),
                         11,
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                         style,
                     ),
                 ]
@@ -681,7 +683,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
                         iced::widget::container(crate::modules::view::styled_segments_row(
                             segments,
                             12,
-                            crate::theme::TEXT,
+                            crate::theme::palette().text,
                         ))
                         .height(iced::Length::Fill)
                         .align_y(iced::Alignment::Center)
@@ -694,14 +696,14 @@ impl crate::modules::render::ModuleRender for ClockModule {
                 {
                     Some(horizontal_icon_label_with_style(
                         "",
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                         formatted,
                         bar_style,
                     ))
                 } else {
                     Some(horizontal_icon_label_with_style(
                         "⌚",
-                        crate::theme::TEXT,
+                        crate::theme::palette().text,
                         &s.time,
                         bar_style,
                     ))
@@ -738,7 +740,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
                 12,
-                crate::theme::TEXT,
+                crate::theme::palette().text,
                 rotation,
             ))
             .height(iced::Length::Fill)
@@ -822,7 +824,7 @@ mod tests {
             )
             .unwrap()[0];
 
-        assert_eq!(segment.1.color, Some(crate::theme::ACCENT));
+        assert_eq!(segment.1.color, Some(crate::theme::palette().accent));
         assert_eq!(segment.1.weight, Some(Weight::Bold));
     }
 

@@ -225,6 +225,7 @@ fn send_ipc_command(cmd: &str) {
 fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
     // Load config fully before any surface is created (AR7).
     let (config, source) = config::load(request, false)?;
+    theme::install(config.appearance);
     tracing::info!(target: "niribar::configuration", source = ?source, "configuration installed; shell changes require restart");
     tracing::debug!(
         target: "niribar::runtime",
@@ -273,6 +274,7 @@ fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
         },
         ..Default::default()
     })
+    .theme(|_: &App, _| theme::current().clone())
     .style(App::style)
     .subscription(App::subscription)
     .run()

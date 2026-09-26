@@ -6,6 +6,10 @@ An empty or relative XDG value falls back to `$HOME/.config`.
 
 ```kdl
 schema-version 1
+appearance {
+    color-scheme "dark"
+    // accent "#89b4fa"
+}
 shell {
     bar "main" { edge "top"; }
     // Existing Niribar modules, menus, command-policy and panel-providers go here.
@@ -17,13 +21,21 @@ notifications {
 ```
 
 See [the shared example](../config/canopa.kdl), [shell options](../niribar/README.md),
-and [notification options](../notify/README.md). Appearance tokens are not supported
-yet. Unknown root nodes and duplicate namespaces are errors.
+and [notification options](../notify/README.md). Unknown root nodes and duplicate
+namespaces are errors.
+
+`appearance` is shared by both applications, including when `shell` or `notifications`
+is omitted. `color-scheme` accepts `"dark"` (default, Catppuccin Mocha) or `"light"`
+(a contrast-adjusted Latte preset). Optional `accent` accepts an opaque `"#rrggbb"`
+color; omit it to use the selected preset's accent. Each setting may appear once.
+Font, icon-theme and motion settings are not part of this block yet. Existing shell
+style tokens resolve against this palette; explicit color overrides still win.
+Presets have contrast checks; custom colors can reduce contrast.
 
 A missing namespace uses that application's embedded defaults. An empty `shell {}`
 uses the shell schema's empty-document defaults (one bar and no configured modules);
 omit the namespace to get Niribar's complete embedded configuration. Settings are
-never merged with legacy files. Syntax/envelope errors affect both consumers;
+never merged with legacy files. Syntax/envelope/appearance errors affect both consumers;
 invalid options inside a namespace affect only its owner.
 
 If the common file is absent, Niribar reads `niribar/config.kdl` and Notify reads
@@ -76,6 +88,12 @@ retain the last good source, rules, settings and generation. Source fingerprints
 identify the complete source bytes and can be compared across consumers; generations
 are local to each Notify process. Niribar reports its installed source at startup;
 `canopa config check` reports candidates, not the running shell's state.
+
+Appearance changes repaint Notify's existing banners after a successful reload,
+without resetting notification timeouts. Restart Niribar to apply the same changes
+to bars and the Notification Center. These are independent installations; reload
+success does not promise that a disconnected renderer has repainted. Rendering
+failures remain visible in Notify's presentation status.
 
 For explicit startup overrides, both applications accept `--canopa-config PATH`
 for the shared format or `--config PATH` for legacy syntax. Notify places these

@@ -8,18 +8,18 @@ use crate::theme;
 /// Inactive workspace: transparent background with normal text colour.
 fn pill_colors(is_focused: bool, is_active: bool) -> (iced::Color, iced::Color) {
     if is_focused {
-        (theme::ACCENT, theme::BASE)
+        (theme::palette().accent, theme::palette().on_accent)
     } else if is_active {
-        (theme::SURFACE1, theme::TEXT)
+        (theme::palette().raised, theme::palette().text)
     } else {
-        (iced::Color::TRANSPARENT, theme::TEXT)
+        (iced::Color::TRANSPARENT, theme::palette().text)
     }
 }
 
 fn pill_border(is_focused: bool, is_active: bool) -> iced::Border {
     iced::Border {
         color: if is_active && !is_focused {
-            theme::SUBTEXT
+            theme::palette().muted
         } else {
             iced::Color::TRANSPARENT
         },
@@ -589,22 +589,22 @@ mod tests {
     #[test]
     fn pill_colors_focused_returns_accent_base() {
         let (bg, fg) = pill_colors(true, true);
-        assert_eq!(bg, theme::ACCENT);
-        assert_eq!(fg, theme::BASE);
+        assert_eq!(bg, theme::palette().accent);
+        assert_eq!(fg, theme::palette().on_accent);
     }
 
     #[test]
     fn pill_colors_active_not_focused_returns_surface1_text() {
         let (bg, fg) = pill_colors(false, true);
-        assert_eq!(bg, theme::SURFACE1);
-        assert_eq!(fg, theme::TEXT);
+        assert_eq!(bg, theme::palette().raised);
+        assert_eq!(fg, theme::palette().text);
     }
 
     #[test]
     fn pill_colors_inactive_returns_transparent_text() {
         let (bg, fg) = pill_colors(false, false);
         assert_eq!(bg, iced::Color::TRANSPARENT);
-        assert_eq!(fg, theme::TEXT);
+        assert_eq!(fg, theme::palette().text);
     }
 
     // --- Story 4.3 tests: WorkspacesConfig ---
@@ -735,7 +735,7 @@ mod tests {
                 .unwrap()[0]
                 .1
                 .color,
-            Some(theme::ACCENT)
+            Some(theme::palette().accent)
         );
         assert_eq!(
             active

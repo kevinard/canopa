@@ -62,7 +62,9 @@ Configuration comes from the `notifications` namespace of
 common file is absent, the legacy `canopa-notify/config.kdl` is still supported.
 Put [the example settings](examples/config.kdl) inside that namespace, or use the
 [shared configuration guide](../docs/configuration.md) to migrate and validate both
-applications. Changes affect future requests after a successful Notify reload.
+applications. Policy changes affect future requests after a successful Notify reload.
+The shared `appearance` block selects the same palette as Niribar and repaints
+existing banners on reload; the shell applies it after a restart.
 
 ```sh
 canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" status --json

@@ -20,17 +20,17 @@ impl ThemeToken {
     pub fn resolve(self) -> Color {
         use crate::theme;
         match self {
-            ThemeToken::Accent => theme::ACCENT,
-            ThemeToken::Text => theme::TEXT,
-            ThemeToken::Subtext => theme::SUBTEXT,
-            ThemeToken::Base => theme::BASE,
-            ThemeToken::Surface0 => theme::SURFACE0,
-            ThemeToken::Surface1 => theme::SURFACE1,
-            ThemeToken::Border => theme::BORDER,
-            ThemeToken::Overlay0 => theme::OVERLAY0,
-            ThemeToken::Critical => theme::CRITICAL,
-            ThemeToken::Warning => theme::WARNING,
-            ThemeToken::Success => theme::SUCCESS,
+            ThemeToken::Accent => theme::palette().accent,
+            ThemeToken::Text => theme::palette().text,
+            ThemeToken::Subtext => theme::palette().muted,
+            ThemeToken::Base => theme::palette().background,
+            ThemeToken::Surface0 => theme::palette().surface,
+            ThemeToken::Surface1 => theme::palette().raised,
+            ThemeToken::Border => theme::palette().border,
+            ThemeToken::Overlay0 => theme::palette().disabled,
+            ThemeToken::Critical => theme::palette().danger,
+            ThemeToken::Warning => theme::palette().warning,
+            ThemeToken::Success => theme::palette().success,
         }
     }
 
