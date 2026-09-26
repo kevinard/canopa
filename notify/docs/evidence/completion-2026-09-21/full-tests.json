@@ -1,0 +1,7 @@
+{
+  "command": "bash scripts/test.sh -j1 --offline",
+  "toolchain": "rustc 1.97.0-nightly (14196dbfa 2026-04-12)",
+  "passed": 435,
+  "failed": 0,
+  "ignored": 0
+}

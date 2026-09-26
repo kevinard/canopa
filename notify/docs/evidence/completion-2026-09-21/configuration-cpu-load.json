@@ -1,0 +1,87 @@
+{
+  "binary": "/home/kevinard/projects/canopa/notify/target/debug/deps/configuration_intake-464caacba6238ac3",
+  "cpu_workers": 4,
+  "cpus": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "results": [
+    {
+      "run": 1,
+      "result": 0,
+      "seconds": 29.28000255895313,
+      "pressure_before": {
+        "cpu": "some avg10=0.00 avg60=0.56 avg300=1.10 total=19315399403\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=0.00 avg60=2.29 avg300=2.49 total=2046061923\nfull avg10=0.00 avg60=2.00 avg300=2.16 total=1769209714\n",
+        "io": "some avg10=0.26 avg60=11.15 avg300=19.43 total=25043081752\nfull avg10=0.26 avg60=9.52 avg300=16.48 total=19404227795\n"
+      },
+      "pressure_after": {
+        "cpu": "some avg10=38.55 avg60=17.27 avg300=5.25 total=19328677888\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=0.00 avg60=1.39 avg300=2.24 total=2046075484\nfull avg10=0.00 avg60=1.21 avg300=1.94 total=1769212500\n",
+        "io": "some avg10=0.95 avg60=7.30 avg300=17.67 total=25043716971\nfull avg10=0.01 avg60=5.77 avg300=14.87 total=19404229013\n"
+      }
+    },
+    {
+      "run": 2,
+      "result": 0,
+      "seconds": 25.31716591899749,
+      "pressure_before": {
+        "cpu": "some avg10=38.55 avg60=17.27 avg300=5.25 total=19328677888\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=0.00 avg60=1.39 avg300=2.24 total=2046075484\nfull avg10=0.00 avg60=1.21 avg300=1.94 total=1769212500\n",
+        "io": "some avg10=0.95 avg60=7.30 avg300=17.67 total=25043716971\nfull avg10=0.01 avg60=5.77 avg300=14.87 total=19404229013\n"
+      },
+      "pressure_after": {
+        "cpu": "some avg10=26.70 avg60=20.13 avg300=6.90 total=19335447028\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=0.00 avg60=0.93 avg300=2.06 total=2046075484\nfull avg10=0.00 avg60=0.81 avg300=1.79 total=1769212500\n",
+        "io": "some avg10=0.08 avg60=4.89 avg300=16.27 total=25043737420\nfull avg10=0.00 avg60=3.87 avg300=13.69 total=19404229013\n"
+      }
+    },
+    {
+      "run": 3,
+      "result": 0,
+      "seconds": 23.93573515198659,
+      "pressure_before": {
+        "cpu": "some avg10=26.70 avg60=20.13 avg300=6.90 total=19335447028\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=0.00 avg60=0.93 avg300=2.06 total=2046075484\nfull avg10=0.00 avg60=0.81 avg300=1.79 total=1769212500\n",
+        "io": "some avg10=0.08 avg60=4.89 avg300=16.27 total=25043737420\nfull avg10=0.00 avg60=3.87 avg300=13.69 total=19404229013\n"
+      },
+      "pressure_after": {
+        "cpu": "some avg10=42.36 avg60=27.42 avg300=9.66 total=19345820705\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=6.46 avg60=3.14 avg300=2.49 total=2047919903\nfull avg10=0.00 avg60=0.54 avg300=1.64 total=1769215010\n",
+        "io": "some avg10=1.26 avg60=3.73 avg300=15.09 total=25044207813\nfull avg10=0.00 avg60=2.59 avg300=12.60 total=19404230283\n"
+      }
+    },
+    {
+      "run": 4,
+      "result": 0,
+      "seconds": 25.91169837291818,
+      "pressure_before": {
+        "cpu": "some avg10=42.36 avg60=27.42 avg300=9.66 total=19345820705\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=6.46 avg60=3.14 avg300=2.49 total=2047919903\nfull avg10=0.00 avg60=0.54 avg300=1.64 total=1769215010\n",
+        "io": "some avg10=1.26 avg60=3.73 avg300=15.09 total=25044207813\nfull avg10=0.00 avg60=2.59 avg300=12.60 total=19404230283\n"
+      },
+      "pressure_after": {
+        "cpu": "some avg10=41.03 avg60=32.77 avg300=12.52 total=19357068962\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=2.42 avg60=3.68 avg300=2.72 total=2049318209\nfull avg10=0.00 avg60=0.34 avg300=1.50 total=1769216197\n",
+        "io": "some avg10=1.18 avg60=2.84 avg300=13.90 total=25044657245\nfull avg10=0.00 avg60=1.68 avg300=11.53 total=19404230674\n"
+      }
+    },
+    {
+      "run": 5,
+      "result": 0,
+      "seconds": 31.003260339028202,
+      "pressure_before": {
+        "cpu": "some avg10=41.03 avg60=32.77 avg300=12.52 total=19357068962\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=2.42 avg60=3.68 avg300=2.72 total=2049318209\nfull avg10=0.00 avg60=0.34 avg300=1.50 total=1769216197\n",
+        "io": "some avg10=1.18 avg60=2.84 avg300=13.90 total=25044657245\nfull avg10=0.00 avg60=1.68 avg300=11.53 total=19404230674\n"
+      },
+      "pressure_after": {
+        "cpu": "some avg10=53.23 avg60=40.35 avg300=16.49 total=19373030431\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        "memory": "some avg10=7.02 avg60=4.11 avg300=2.88 total=2050741416\nfull avg10=1.02 avg60=0.39 avg300=1.38 total=1769383575\n",
+        "io": "some avg10=16.17 avg60=7.09 avg300=13.73 total=25048724371\nfull avg10=0.00 avg60=0.98 avg300=10.32 total=19404239666\n"
+      }
+    }
+  ]
+}

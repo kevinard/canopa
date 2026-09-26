@@ -1,0 +1,51 @@
+{
+  "binary_sha256": "7256a64ad9fc377b2835f4beb649464cbb22d690a7f82194686449412a8fbdc3",
+  "platform": "Linux-7.0.12-arch1-1-x86_64-with-glibc2.43",
+  "cpu_count": 4,
+  "cpu_model": "Intel(R) Core(TM) i5-6200U CPU @ 2.30GHz",
+  "workloads": [
+    {
+      "transient": true,
+      "notifications": 1000,
+      "body_bytes": 4096,
+      "pattern": "serial Notify then CloseNotification",
+      "elapsed_seconds": 2.649,
+      "notify_ms": {
+        "median": 1.7080215,
+        "p95": 2.266021,
+        "p99": 2.600265,
+        "max": 3.025332
+      },
+      "before_kib": {
+        "VmHWM": 14672,
+        "VmRSS": 14616
+      },
+      "after_kib": {
+        "VmHWM": 14780,
+        "VmRSS": 14652
+      }
+    },
+    {
+      "transient": false,
+      "notifications": 1000,
+      "body_bytes": 4096,
+      "pattern": "serial Notify then CloseNotification",
+      "elapsed_seconds": 16.172,
+      "notify_ms": {
+        "median": 8.5011555,
+        "p95": 13.478372,
+        "p99": 14.539192,
+        "max": 15.607851
+      },
+      "before_kib": {
+        "VmHWM": 14780,
+        "VmRSS": 14652
+      },
+      "after_kib": {
+        "VmHWM": 18724,
+        "VmRSS": 18724
+      }
+    }
+  ],
+  "shutdown_ms": 3.273204085417092
+}

@@ -1,0 +1,44 @@
+5939: Wed Sep 16 17:01:14 2026 : 76918 | Link opened deliberately
+6061: Wed Sep 16 17:04:41 2026 : 124666 | Link opened deliberately
+6139: Wed Sep 16 17:05:25 2026 : 101971 | Completion: First spoken arrival. Announcement once. Blue and gold square Read the report
+6295: Wed Sep 16 17:06:45 2026 : 596462 | Link opened deliberately
+6417: Wed Sep 16 17:06:54 2026 : 645964 | Canopa Notify
+6478: Wed Sep 16 17:07:22 2026 : 469093 | Canopa Notify Accessible arrival
+6530: Wed Sep 16 17:07:22 2026 : 528046 | Clear active notifications
+6578: Wed Sep 16 17:07:22 2026 : 606653 | Delete notification history
+6631: Wed Sep 16 17:07:22 2026 : 704256 | Completion
+6692: Wed Sep 16 17:07:22 2026 : 853167 | App permission
+6740: Wed Sep 16 17:07:22 2026 : 968175 | selected Allow
+6801: Wed Sep 16 17:07:23 2026 : 90607 | not selected Silence
+6849: Wed Sep 16 17:07:23 2026 : 178846 | not selected Drop
+6892: Wed Sep 16 17:07:23 2026 : 229110 | First spoken arrival
+6948: Wed Sep 16 17:07:23 2026 : 306457 | Announcement once.
+6991: Wed Sep 16 17:07:23 2026 : 380949 | Blue and gold square
+7047: Wed Sep 16 17:07:23 2026 : 469442 | Read the report
+7095: Wed Sep 16 17:07:23 2026 : 605539 | Retention: Requires attention
+7151: Wed Sep 16 17:07:23 2026 : 706418 | Status: active
+7194: Wed Sep 16 17:07:23 2026 : 851147 | Delivery outcome: shown
+7242: Wed Sep 16 17:07:24 2026 : 2869 | First action
+7509: Wed Sep 16 17:07:46 2026 : 2146 | Clear active notifications
+7556: Wed Sep 16 17:07:46 2026 : 17312 | button.
+7639: Wed Sep 16 17:07:46 2026 : 808125 | Delete notification history
+7686: Wed Sep 16 17:07:46 2026 : 818637 | button.
+7778: Wed Sep 16 17:07:48 2026 : 204225 | Completion Retention: Requires attention Delivery outcome: shown
+7825: Wed Sep 16 17:07:48 2026 : 213289 | panel
+7881: Wed Sep 16 17:07:48 2026 : 221136 | App permission
+7928: Wed Sep 16 17:07:48 2026 : 226572 | panel
+7975: Wed Sep 16 17:07:48 2026 : 231604 | App permission.
+8018: Wed Sep 16 17:07:48 2026 : 239010 | Silence
+8065: Wed Sep 16 17:07:48 2026 : 248331 | not selected radio button
+8174: Wed Sep 16 17:07:49 2026 : 871721 | First spoken arrival Retention: Requires attention Delivery outcome: shown
+8217: Wed Sep 16 17:07:49 2026 : 877889 | Read the report
+8264: Wed Sep 16 17:07:49 2026 : 884820 | link.
+8409: Wed Sep 16 17:07:59 2026 : 340011 | Canopa Notify
+8461: Wed Sep 16 17:07:59 2026 : 359402 | Completion Retention: Requires attention Delivery outcome: shown
+8504: Wed Sep 16 17:07:59 2026 : 365918 | First spoken arrival Retention: Requires attention Delivery outcome: shown
+8551: Wed Sep 16 17:07:59 2026 : 368727 | https link spoken.
+8754: Wed Sep 16 17:08:45 2026 : 903224 | Link opened deliberately
+8810: Wed Sep 16 17:08:45 2026 : 923041 | frame
+8912: Wed Sep 16 17:09:06 2026 : 506173 | Link opened deliberately
+9018: Wed Sep 16 17:10:05 2026 : 518959 | Completion: Replacement with fallback. Before Missing chart Between Blue and gold square After Replacement report
+9189: Wed Sep 16 17:14:47 2026 : 667400 | Link opened deliberately

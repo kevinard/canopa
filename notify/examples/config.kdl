@@ -1,0 +1,8 @@
+// Omit nodes to use their defaults. Configuration changes apply to future receipts.
+sound enabled=#true theme="freedesktop" default="message-new-instant"
+icons theme="hicolor" scale=1
+
+// App identities prefer the desktop-entry hint, falling back to the sender's app name.
+// Rules are ordered: the first decisive matching rule wins.
+// rule "quiet-chat" app="org.example.Chat" category="im.received" outcome="silenced"
+// rule "block-low-priority" app="org.example.Noisy" urgency="low" outcome="drop"

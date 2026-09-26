@@ -1,0 +1,47 @@
+[package]
+name = "canopa-notify"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "canopa-notify"
+path = "src/main.rs"
+
+[features]
+default = ["gui", "audio"]
+gui = ["dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:wayland-client", "dep:wayland-protocols"]
+audio = ["dep:rodio"]
+
+[dependencies]
+accesskit = { workspace = true, optional = true }
+accesskit_unix = { workspace = true, optional = true }
+anyhow.workspace = true
+canopa-panel-protocol = { path = "../canopa-panel-protocol" }
+clap.workspace = true
+futures-util.workspace = true
+iced = { workspace = true, optional = true }
+iced_layershell = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+kdl.workspace = true
+rodio = { workspace = true, optional = true }
+rustix.workspace = true
+tempfile.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+url.workspace = true
+wayland-client = { workspace = true, optional = true }
+wayland-protocols = { workspace = true, optional = true }
+zbus.workspace = true
+
+iced_runtime = { workspace = true, optional = true }
+
+[dev-dependencies]
+assert_cmd.workspace = true
+futures-util.workspace = true
+predicates.workspace = true
+roxmltree.workspace = true
+tempfile.workspace = true

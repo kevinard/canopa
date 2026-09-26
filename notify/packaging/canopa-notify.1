@@ -1,0 +1,83 @@
+.TH CANOPA-NOTIFY 1 "September 2026" "Canopa Notify" "User Commands"
+.SH NAME
+canopa-notify \- Wayland desktop notifications and local notification history
+.SH SYNOPSIS
+.B canopa-notify daemon --service --socket
+.I PATH
+.RB [ --database " PATH"]
+.RB [ --config " PATH"]
+.br
+.B canopa-notify daemon --headless --socket
+.I PATH
+.RB [ --database " PATH"]
+.RB [ --dev-bus-name " NAME"]
+.br
+.B canopa-notify ctl --socket
+.I PATH COMMAND
+.br
+.B canopa-notify panel-provider --socket
+.I PATH
+.SH DESCRIPTION
+Canopa Notify owns org.freedesktop.Notifications on the session bus in service
+mode. It displays banners without taking keyboard focus and provides a
+Notification Center through a compatible Niribar host. Service mode requires
+Wayland and the wlr layer-shell protocol. Headless mode is intended for tests and
+development; a development bus name must be requested explicitly.
+.PP
+Startup refuses competing ownership before recovering the database. Existing
+sender IDs and actions become invalid after restart. Retained notifications keep
+their attention state; transient notifications do not survive restart.
+.SH CONTROL COMMANDS
+.TP
+.B status [--json]
+Report daemon, configuration, rendering, sender-publication and link-opening health.
+.TP
+.B active [--json]
+List current sender lifecycles. Expired retained attention is available in the Center.
+.TP
+.B dnd [status|on|off|toggle]
+Read or persist Do Not Disturb. Changes affect subsequent notification requests.
+.TP
+.B reload [PATH]
+Validate and install a configuration candidate. Failure retains the last good
+configuration. Without PATH, reload the committed or standard configuration path.
+.TP
+.B clear
+Dismiss active notifications, including runtime-only transient items.
+.TP
+.B delete-history
+Explicitly remove inactive retained history, including unacknowledged items.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/canopa-notify/config.kdl
+KDL rules, sound settings and icon theme/scale. The fallback is
+~/.config/canopa-notify/config.kdl. See the distributed examples/config.kdl.
+.TP
+.I $XDG_STATE_HOME/canopa-notify/history.db
+Durable history, attention, DND and user rules. The fallback is
+~/.local/state/canopa-notify/history.db. Back up while the daemon is stopped.
+.TP
+.I $XDG_RUNTIME_DIR/canopa-notify/control.sock
+Private control socket used by the supplied systemd user unit. CLI invocations
+always specify the socket explicitly. The runtime directory is not durable storage.
+.SH OPERATION
+The supplied user unit installs the binary at ~/.local/bin/canopa-notify and is
+bound to graphical-session.target. Import WAYLAND_DISPLAY and XDG_CURRENT_DESKTOP
+into the systemd user manager before starting the unit. Stop another notification
+daemon first. Consult journalctl --user -u canopa-notify.service for diagnostics.
+.PP
+Database migrations are forward only. Restore a pre-upgrade backup before running
+an older binary that cannot read the new schema. An unavailable renderer is
+reported in status; restart the daemon to restore banners.
+.PP
+Body links accept HTTP and HTTPS and open through the desktop OpenURI portal.
+Unsupported targets remain visible text. Opening a link does not invoke the
+sender's default action or dismiss the notification.
+.SH EXIT STATUS
+Zero indicates success. Nonzero indicates invalid arguments, startup failure,
+rejected control input or an unsuccessful exchange. A failed exchange after
+transmission can have an unknown command outcome; inspect state before retrying.
+.SH SEE ALSO
+.BR notify-send (1),
+.BR systemctl (1),
+.BR journalctl (1)
