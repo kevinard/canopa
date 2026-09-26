@@ -4,6 +4,11 @@ Proposed direction, 2026-09-26. Based on Niribar `2c0d017` and Notify `1be911d`.
 This document proposes architecture and migration work; it does not record accepted
 decisions or implemented features. Both source repositories were clean when inspected.
 
+Accepted implementation decisions are recorded separately in
+[ADR 0001](adr/0001-shared-workspace-and-upstream-forks.md) (workspace/forks) and
+[ADR 0002](adr/0002-shared-configuration.md) (configuration). The original inventory
+and proposed later phases below remain a historical planning reference.
+
 Build Canopa as one product and one Rust workspace, with Niribar as the shell and
 independently restartable processes for notifications and future desktop facilities.
 Share configuration infrastructure, appearance, widgets, and narrowly scoped desktop

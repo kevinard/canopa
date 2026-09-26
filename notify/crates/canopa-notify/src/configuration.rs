@@ -4,15 +4,19 @@ use crate::{
 };
 use anyhow::Context;
 use kdl::{KdlDocument, KdlEntry, KdlNode};
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 
-const MAX_CONFIGURATION_BYTES: usize = 1024 * 1024;
+use canopa_config::{Component, Document, Request, SourceInfo};
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ConfigurationStatus {
     pub generation: u64,
     pub path: Option<PathBuf>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub source: Option<SourceInfo>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -21,6 +25,8 @@ pub(crate) struct LoadedNotificationConfiguration {
     last_error: Option<String>,
     generation: u64,
     path: Option<PathBuf>,
+    source: Option<SourceInfo>,
+    request: Request,
 }
 
 impl LoadedNotificationConfiguration {
@@ -28,13 +34,35 @@ impl LoadedNotificationConfiguration {
         Self::default()
     }
 
+    #[cfg(test)]
     pub(crate) fn reload_file(&mut self, path: &Path) -> anyhow::Result<()> {
-        match NotificationConfiguration::load_file(path) {
-            Ok(configuration) => {
+        self.reload_source(Request::legacy(path))
+    }
+
+    pub(crate) fn request(&self) -> Request {
+        self.request.clone()
+    }
+
+    pub(crate) fn reload_source(&mut self, request: Request) -> anyhow::Result<()> {
+        let result = (|| {
+            let document = Document::load(&request, Component::Notifications, "")?;
+            let configuration = NotificationConfiguration::parse_document(document.selected())?;
+            Ok::<_, anyhow::Error>((configuration, document.info().clone()))
+        })();
+        match result {
+            Ok((configuration, source)) => {
                 self.active = configuration;
                 self.last_error = None;
                 self.generation = self.generation.saturating_add(1);
-                self.path = Some(path.to_path_buf());
+                self.path = source.path.clone();
+                self.source = Some(source);
+                self.request = match request {
+                    Request::File { format, .. } => Request::File {
+                        path: self.path.clone().expect("file source has a path"),
+                        format,
+                    },
+                    other => other,
+                };
                 Ok(())
             }
             Err(error) => {
@@ -69,6 +97,7 @@ impl LoadedNotificationConfiguration {
             generation: self.generation,
             path: self.path.clone(),
             error: self.error(),
+            source: self.source.clone(),
         }
     }
 }
@@ -81,23 +110,12 @@ struct NotificationConfiguration {
 }
 
 impl NotificationConfiguration {
-    fn load_file(path: &Path) -> anyhow::Result<Self> {
-        let bytes = crate::local_file::read_bounded(path, MAX_CONFIGURATION_BYTES).map_err(|_| {
-            anyhow::anyhow!("Notification Configuration must be a readable regular UTF-8 file of at most 1 MiB")
-        })?;
-        let source = String::from_utf8(bytes)
-            .map_err(|_| anyhow::anyhow!("Notification Configuration must be UTF-8"))?;
-        Self::parse(&source)
+    #[cfg(test)]
+    fn parse(source: &str) -> anyhow::Result<Self> {
+        Self::parse_document(&canopa_config::parse_kdl(source)?)
     }
 
-    fn parse(source: &str) -> anyhow::Result<Self> {
-        let doc: KdlDocument = source.parse().map_err(|error: kdl::KdlError| {
-            let offset = error
-                .diagnostics
-                .first()
-                .map_or(0, |diagnostic| diagnostic.span.offset());
-            anyhow::anyhow!("invalid Notification Configuration KDL near byte {offset}")
-        })?;
+    fn parse_document(doc: &KdlDocument) -> anyhow::Result<Self> {
         let mut rules = Vec::new();
         let mut sound = None;
         let mut icons = None;
@@ -389,6 +407,18 @@ fn required_property(
     rule_number: usize,
 ) -> anyhow::Result<String> {
     value.ok_or_else(|| anyhow::anyhow!("rule {rule_number} is missing {name}"))
+}
+
+/// Validate using the same intake and schema as startup/reload, without opening a service.
+pub fn check_configuration(request: &Request) -> anyhow::Result<SourceInfo> {
+    let document = Document::load(request, Component::Notifications, "")?;
+    check_configuration_document(&document)
+}
+
+/// Validate an already admitted immutable source, for local diagnostic clients.
+pub fn check_configuration_document(document: &Document) -> anyhow::Result<SourceInfo> {
+    NotificationConfiguration::parse_document(document.selected())?;
+    Ok(document.info().clone())
 }
 
 #[cfg(test)]

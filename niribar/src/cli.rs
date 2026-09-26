@@ -1,10 +1,25 @@
 #[allow(clippy::enum_variant_names)]
 pub enum Command {
-    Run,
+    Run(ConfigOptions),
+    CheckConfig(ConfigOptions),
     PrintVersion,
     IpcCommand(String),
     Dmenu(DmenuOptions),
     UsageError(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfigOptions {
+    pub request: canopa_config::Request,
+    pub show_source: bool,
+}
+impl Default for ConfigOptions {
+    fn default() -> Self {
+        Self {
+            request: canopa_config::Request::Discover,
+            show_source: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,14 +53,46 @@ pub fn parse() -> Command {
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
     let mut args = args.into_iter();
+    let mut special_mode = None;
     let mut dmenu = false;
+    let mut configuration = ConfigOptions::default();
+    let mut check_config = false;
+    let mut explicit_source = false;
     let mut dmenu_options = DmenuOptions::default();
     let mut custom_delimiter = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--version" | "-V" => return Command::PrintVersion,
-            "--toggle-panel" => return Command::IpcCommand("toggle-panel".into()),
+            "--version" | "-V" | "--toggle-panel" => {
+                if special_mode.is_some() {
+                    return Command::UsageError("choose one command mode".into());
+                }
+                special_mode = Some(if arg == "--toggle-panel" {
+                    Command::IpcCommand("toggle-panel".into())
+                } else {
+                    Command::PrintVersion
+                });
+            }
+            "--check-config" => check_config = true,
+            "--show-source" => configuration.show_source = true,
+            "--config" | "--canopa-config" | "--defaults" => {
+                if explicit_source {
+                    return Command::UsageError("choose one configuration source".into());
+                }
+                explicit_source = true;
+                configuration.request = if arg == "--defaults" {
+                    canopa_config::Request::Defaults
+                } else {
+                    let Some(path) = args.next() else {
+                        return Command::UsageError(format!("{arg} requires a path"));
+                    };
+                    if arg == "--config" {
+                        canopa_config::Request::legacy(path)
+                    } else {
+                        canopa_config::Request::common(path)
+                    }
+                };
+            }
             "--dmenu" => dmenu = true,
             "-p" | "--prompt" => {
                 let Some(value) = args.next() else {
@@ -86,6 +133,16 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
             _ => {}
         }
     }
+    if let Some(command) = special_mode {
+        if dmenu || check_config || explicit_source || configuration.show_source {
+            return Command::UsageError("choose one command mode".into());
+        }
+        return command;
+    }
+    if (configuration.show_source && !check_config) || (dmenu && (check_config || explicit_source))
+    {
+        return Command::UsageError("configuration checking options cannot be combined with other modes; --show-source requires --check-config".into());
+    }
     if dmenu {
         if custom_delimiter && matches!(dmenu_options.entry_format, DmenuEntryFormat::JsonLines) {
             return Command::UsageError(
@@ -94,13 +151,32 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
         }
         Command::Dmenu(dmenu_options)
     } else {
-        Command::Run
+        if check_config {
+            Command::CheckConfig(configuration)
+        } else {
+            Command::Run(configuration)
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_mode_never_dispatches_ipc_with_conflicting_options() {
+        for args in [
+            ["--check-config", "--toggle-panel"],
+            ["--toggle-panel", "--check-config"],
+            ["--version", "--check-config"],
+            ["--check-config", "--version"],
+        ] {
+            assert!(matches!(
+                parse_args(args.map(str::to_string)),
+                Command::UsageError(_)
+            ));
+        }
+    }
 
     #[test]
     fn toggle_panel_emits_ipc_command() {

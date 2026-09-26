@@ -797,6 +797,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "canopa-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "canopa-config",
+ "clap",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "canopa-config"
+version = "0.1.0"
+dependencies = [
+ "canopa-file",
+ "kdl",
+ "serde",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "canopa-file"
+version = "0.1.0"
+dependencies = [
+ "rustix 1.1.4",
+]
+
+[[package]]
 name = "canopa-notify"
 version = "0.1.0"
 dependencies = [
@@ -804,6 +833,8 @@ dependencies = [
  "accesskit_unix",
  "anyhow",
  "assert_cmd",
+ "canopa-config",
+ "canopa-file",
  "canopa-panel-protocol",
  "clap",
  "futures-util",
@@ -812,6 +843,7 @@ dependencies = [
  "iced_runtime",
  "image",
  "kdl",
+ "miette",
  "predicates",
  "rodio",
  "roxmltree",
@@ -3348,6 +3380,7 @@ dependencies = [
  "accesskit",
  "accesskit_unix",
  "anyhow",
+ "canopa-config",
  "canopa-panel-protocol",
  "chrono",
  "iced",

@@ -121,16 +121,6 @@ pub(crate) fn xdg_home(variable: &str, fallback: &str) -> anyhow::Result<PathBuf
     Ok(home.join(fallback))
 }
 
-pub(crate) fn configuration_path(
-    override_path: Option<PathBuf>,
-) -> anyhow::Result<Option<PathBuf>> {
-    if let Some(path) = override_path {
-        return Ok(Some(std::path::absolute(path)?));
-    }
-    let path = xdg_home("XDG_CONFIG_HOME", ".config")?.join("canopa-notify/config.kdl");
-    Ok(path.try_exists()?.then_some(path))
-}
-
 pub(crate) struct StartupOwnership {
     pub listener: UnixListener,
     socket: PathBuf,

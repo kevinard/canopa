@@ -3,10 +3,9 @@ use std::io::Read;
 use std::path::Path;
 
 #[derive(Debug)]
-pub(crate) struct BoundedReadError {
+pub struct BoundedReadError {
     /// Bytes consumed before failure, including an overflow-detection probe.
-    #[cfg_attr(not(any(feature = "gui", feature = "audio")), allow(dead_code))]
-    pub(crate) bytes_read: usize,
+    pub bytes_read: usize,
 }
 
 impl std::fmt::Display for BoundedReadError {
@@ -17,7 +16,7 @@ impl std::fmt::Display for BoundedReadError {
 
 impl std::error::Error for BoundedReadError {}
 
-pub(crate) fn read_bounded(path: &Path, maximum_bytes: usize) -> Result<Vec<u8>, BoundedReadError> {
+pub fn read_bounded(path: &Path, maximum_bytes: usize) -> Result<Vec<u8>, BoundedReadError> {
     use rustix::fs::{Mode, OFlags, open};
     let unavailable = || BoundedReadError { bytes_read: 0 };
     let probe_limit = maximum_bytes.checked_add(1).ok_or_else(unavailable)?;

@@ -156,12 +156,8 @@ impl Diagnostic for ConfigDiagnostic {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConfigError {
-    #[error("failed to read config file {path}: {source}")]
-    Io {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
+    #[error("{0}")]
+    Intake(canopa_config::Diagnostic),
     #[error("{0}")]
     Diagnostic(Box<ConfigDiagnostic>),
 }
@@ -173,6 +169,20 @@ impl From<ConfigDiagnostic> for ConfigError {
 }
 
 impl ConfigError {
+    /// Service logs never include arbitrary names, values, or source snippets.
+    pub(crate) fn safe_diagnostic(&self) -> canopa_config::Diagnostic {
+        match self {
+            Self::Intake(error) => error.clone(),
+            Self::Diagnostic(error) => canopa_config::Diagnostic::new(
+                match error.kind {
+                    ConfigDiagnosticKind::Syntax => canopa_config::Code::Syntax,
+                    _ => canopa_config::Code::Schema,
+                },
+                error.span.map(|span| span.offset()),
+            ),
+        }
+    }
+
     pub(crate) fn from_kdl(source: ConfigSource, error: kdl::KdlError) -> Self {
         let diagnostic = error.diagnostics.first().map_or_else(
             || {
@@ -208,17 +218,6 @@ impl ConfigError {
         diagnostic.into()
     }
 
-    pub(crate) fn message(source: ConfigSource, message: impl Into<String>) -> Self {
-        ConfigDiagnostic::new(
-            ConfigDiagnosticKind::Parse,
-            source,
-            None,
-            message.into(),
-            None,
-        )
-        .into()
-    }
-
     pub(crate) fn validation_message(source: ConfigSource, message: impl Into<String>) -> Self {
         ConfigDiagnostic::new(
             ConfigDiagnosticKind::Validate,
@@ -233,7 +232,7 @@ impl ConfigError {
     pub(crate) fn as_diagnostic(&self) -> Option<&ConfigDiagnostic> {
         match self {
             Self::Diagnostic(diagnostic) => Some(diagnostic.as_ref()),
-            Self::Io { .. } => None,
+            Self::Intake(_) => None,
         }
     }
 

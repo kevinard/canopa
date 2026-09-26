@@ -1,0 +1,14 @@
+// Canopa configuration schema 1. Missing namespaces use embedded defaults.
+schema-version 1
+
+// To customize Niribar, put its bar/modules/menus/panel-providers declarations
+// inside a shell block. Omitting it keeps the complete embedded shell defaults.
+// shell {
+//     bar "main" { edge "top"; }
+// }
+
+notifications {
+    sound enabled=#true theme="freedesktop" default="message-new-instant"
+    icons theme="hicolor" scale=1
+    // rule "quiet-chat" app="org.example.Chat" outcome="silenced"
+}

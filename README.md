@@ -2,7 +2,7 @@
 
 Canopa is a desktop environment built around the Niri Wayland compositor. Its Rust
 workspace currently contains Niribar (the shell and Wi-Fi provider), Canopa Notify,
-and their shared declarative panel protocol.
+the `canopa` configuration tool, and shared configuration and panel protocol crates.
 
 Use Rust 1.95.0, selected by `rust-toolchain.toml`. On Debian/Ubuntu:
 
@@ -12,7 +12,7 @@ cargo build --workspace --bins --locked
 ```
 
 Binaries are in root `target/debug/`: `niribar`, `niribar-wifi-provider`, and
-`canopa-notify`. Build one application with `cargo build --locked -p niribar` or
+`canopa-notify`, plus `canopa`. Build one application with `cargo build --locked -p niribar` or
 `cargo build --locked -p canopa-notify`. Notify's core build remains available with
 `cargo build --locked -p canopa-notify --no-default-features`.
 
@@ -36,14 +36,19 @@ builds include Niribar's theme-detection feature; Notify-only builds retain its
 disabled theme-detection default. Always select `-p canopa-notify` for core-only
 validation. The rotation prototype retains its independent experimental build.
 
-Installation, executable names, configuration paths, and persisted state are unchanged
-in this first integration step. Follow the [shell guide](niribar/README.md) and
-[notification guide](notify/README.md), using root `target/` paths. Notify continues
-to deliver banners while the shell is stopped. Shared configuration and appearance
-are subsequent phases in the [integration proposal](docs/canopa-integration-proposal.md).
+Both applications discover `$XDG_CONFIG_HOME/canopa/config.kdl` (with the usual
+`~/.config` fallback). Existing application files still work when that shared file
+is absent. Run `canopa config check` to validate both schemas, and see the
+[configuration guide](docs/configuration.md) for explicit migration and reloads.
+Shell changes require restarting Niribar; Notify supports reload while running.
+Notify continues to deliver banners while the shell is stopped. Shared appearance
+is the next phase in the [integration proposal](docs/canopa-integration-proposal.md).
+
+Follow the [shell guide](niribar/README.md) and [notification guide](notify/README.md)
+for feature options, using root `target/` paths. Runtime state paths are unchanged.
 
 Build a release with `cargo build --workspace --bins --locked --release`, then run
-`bash scripts/package-release.sh target/release dist`. The archive contains all three
+`bash scripts/package-release.sh target/release dist`. The archive contains all four
 binaries, current example configurations, service units, manuals, and source license
 notices. Service units retain their existing executable locations; choose installation
 paths accordingly. Packaging does not install or restart anything.
@@ -57,3 +62,6 @@ preserved as parents of the import commit and through `legacy/niribar` and
 
 See the [integration validation record](docs/integration-validation.md) for local
 test results, graphical fixture coverage and release-packaging evidence.
+
+The [shared configuration validation record](docs/shared-configuration-validation.md)
+covers discovery, migration, namespace isolation, diagnostics, and reload behavior.

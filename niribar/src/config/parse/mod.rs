@@ -11,12 +11,16 @@ use super::{
     BarConfig, CommandPolicy, Config, MenuConfig, MenuItemConfig, MenuSourceConfig, MenuSourceKind,
     ModuleConfig, PanelProviderConfig,
 };
+#[cfg(test)]
+use crate::config::ConfigError;
+#[cfg(test)]
 pub(crate) use crate::config::ConfigSourceName;
-use crate::config::{ConfigError, ConfigResult, ConfigSource};
+use crate::config::{ConfigResult, ConfigSource};
 use crate::modules::ModuleKind;
 use error::ParseCtx;
 use fields::field;
 
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct ConfigInput<'a> {
     pub(crate) name: ConfigSourceName,
@@ -34,23 +38,39 @@ pub(super) fn parse(input: &str) -> ConfigResult<Config> {
     })
 }
 
+#[cfg(test)]
 pub(crate) fn parse_input(input: ConfigInput<'_>) -> ConfigResult<Config> {
     let source = ConfigSource::new(input.name, input.text);
-    let ctx = ParseCtx::root(source.clone());
     let doc: KdlDocument = input
         .text
         .parse()
-        .map_err(|e| ConfigError::from_kdl(source, e))?;
-    let command_policy = parse_command_policy(&doc, &ctx.child("command-policy"))?;
-    let bars = bars::parse(&doc, &ctx, &command_policy)?;
+        .map_err(|e| ConfigError::from_kdl(source.clone(), e))?;
+    parse_document(&doc, source)
+}
+
+pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigResult<Config> {
+    let ctx = ParseCtx::root(source);
+    ctx.validate_child_schema(
+        doc,
+        &[
+            "bar",
+            "command-policy",
+            "modules",
+            "menus",
+            "panel-providers",
+        ],
+        &["command-policy", "modules", "menus", "panel-providers"],
+    )?;
+    let command_policy = parse_command_policy(doc, &ctx.child("command-policy"))?;
+    let bars = bars::parse(doc, &ctx, &command_policy)?;
     let bars = if bars.is_empty() {
         vec![BarConfig::default()]
     } else {
         bars
     };
-    let modules = parse_modules_section(&doc, &ctx, &command_policy)?;
-    let menus = parse_menus_section(&doc, &ctx, &command_policy)?;
-    let panel_providers = parse_panel_providers_section(&doc, &ctx, &command_policy)?;
+    let modules = parse_modules_section(doc, &ctx, &command_policy)?;
+    let menus = parse_menus_section(doc, &ctx, &command_policy)?;
+    let panel_providers = parse_panel_providers_section(doc, &ctx, &command_policy)?;
     Ok(Config {
         bars,
         modules,

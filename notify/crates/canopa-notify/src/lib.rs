@@ -11,7 +11,8 @@ mod input_limits;
 mod intake;
 mod lifecycle;
 mod link_opening;
-mod local_file;
+#[cfg(any(feature = "gui", feature = "audio"))]
+use canopa_file as local_file;
 mod notification_id;
 mod notification_link;
 mod notification_server_intake;
@@ -26,7 +27,7 @@ mod sqlite_persisted_state;
 #[cfg(feature = "gui")]
 pub use activation::WaylandActivationTokenProvider;
 pub use activation::{ActivationTokenFuture, ActivationTokenProvider, NoopActivationTokenProvider};
-pub use configuration::ConfigurationStatus;
+pub use configuration::{ConfigurationStatus, check_configuration, check_configuration_document};
 pub use control::{
     AppPermissionControl, CategoryPermissionControl, ControlCommand, ControlReply, ControlStatus,
     NotificationCenterAction, NotificationCenterBatch, NotificationCenterCursor,
@@ -91,7 +92,7 @@ pub struct DaemonOptions {
     activation_token_provider: Arc<dyn ActivationTokenProvider>,
     sound_presenter: Arc<dyn SoundPresenter>,
     link_opener: Arc<dyn NotificationLinkOpener>,
-    configuration_path: Option<PathBuf>,
+    configuration_source: Option<canopa_config::Request>,
 }
 
 impl DaemonOptions {
@@ -106,7 +107,7 @@ impl DaemonOptions {
             activation_token_provider: Arc::new(NoopActivationTokenProvider),
             sound_presenter: Arc::new(NoopSoundPresenter),
             link_opener: Arc::new(NoopNotificationLinkOpener),
-            configuration_path: None,
+            configuration_source: None,
         }
     }
 
@@ -124,7 +125,7 @@ impl DaemonOptions {
             activation_token_provider: Arc::new(NoopActivationTokenProvider),
             sound_presenter: Arc::new(NoopSoundPresenter),
             link_opener: Arc::new(NoopNotificationLinkOpener),
-            configuration_path: None,
+            configuration_source: None,
         }
     }
 
@@ -134,7 +135,12 @@ impl DaemonOptions {
     }
 
     pub fn with_configuration_file(mut self, path: PathBuf) -> Self {
-        self.configuration_path = Some(path);
+        self.configuration_source = Some(canopa_config::Request::legacy(path));
+        self
+    }
+
+    pub fn with_configuration_source(mut self, source: canopa_config::Request) -> Self {
+        self.configuration_source = Some(source);
         self
     }
 
@@ -186,9 +192,9 @@ impl Daemon {
             presentation::await_banner_renderer(options.banner_presenter.as_ref()).await?;
         }
         let mut configuration = LoadedNotificationConfiguration::empty();
-        if let Some(path) = options.configuration_path.clone() {
+        if let Some(source) = options.configuration_source.clone() {
             configuration = tokio::task::spawn_blocking(move || {
-                configuration.reload_file(&path)?;
+                configuration.reload_source(source)?;
                 Ok::<_, anyhow::Error>(configuration)
             })
             .await
@@ -426,16 +432,25 @@ impl Daemon {
     }
 
     pub async fn reload_configuration_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        self.reload_configuration_source(Some(canopa_config::Request::legacy(path)))
+            .await
+    }
+
+    /// None reloads the last committed selection (including discovery), under the same lock.
+    pub async fn reload_configuration_source(
+        &self,
+        source: Option<canopa_config::Request>,
+    ) -> anyhow::Result<()> {
         // Both the caller and actual file job retain serialization. Cancelling
         // the caller cannot admit another preparation while this job still runs.
         let reload = Arc::new(self.configuration_reloads.clone().lock_owned().await);
         let mut candidate = self.configuration.lock().unwrap().clone();
-        let path = path.to_path_buf();
+        let source = source.unwrap_or_else(|| candidate.request());
         let preparation = tokio::task::spawn_blocking({
             let reload = reload.clone();
             move || {
                 let _reload = reload;
-                candidate.reload_file(&path)?;
+                candidate.reload_source(source)?;
                 Ok::<_, anyhow::Error>(candidate)
             }
         })

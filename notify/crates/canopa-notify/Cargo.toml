@@ -15,6 +15,9 @@ gui = ["dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell",
 audio = ["dep:rodio"]
 
 [dependencies]
+miette.workspace = true
+canopa-file.workspace = true
+canopa-config.workspace = true
 accesskit = { workspace = true, optional = true }
 accesskit_unix = { workspace = true, optional = true }
 anyhow.workspace = true

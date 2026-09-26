@@ -593,3 +593,147 @@ async fn unsupported_sound_children_reject_the_whole_reload() {
         .unwrap();
     assert_eq!(receipt.delivery_outcome, DeliveryOutcome::Silenced);
 }
+
+#[tokio::test]
+async fn common_reload_preserves_last_committed_source_and_isolates_shell_schema() {
+    use canopa_config::{Format, Request};
+    use canopa_notify::{ControlCommand, NotifyControl};
+    let temp = tempfile::tempdir().unwrap();
+    let common = temp.path().join("common.kdl");
+    let legacy = temp.path().join("legacy.kdl");
+    std::fs::write(&common, "schema-version 1\nshell { invalid-shell-option 42; }\nnotifications { rule app=\"Mail\" outcome=\"silenced\"; }\n").unwrap();
+    std::fs::write(&legacy, "rule app=\"Mail\" outcome=\"drop\"\n").unwrap();
+    let daemon = Daemon::open(
+        DaemonOptions::headless(temp.path().join("history.db"))
+            .with_configuration_source(Request::common(&common)),
+    )
+    .await
+    .unwrap();
+    let original = daemon.configuration_status();
+    assert_eq!(
+        original.source.as_ref().unwrap().format,
+        Some(Format::CanopaV1)
+    );
+    assert_eq!(
+        daemon
+            .receive_notification(notification("Mail", "first"))
+            .await
+            .unwrap()
+            .delivery_outcome,
+        DeliveryOutcome::Silenced
+    );
+    let control = NotifyControl::new(daemon.clone()).with_configuration_path(legacy.clone());
+    std::fs::write(
+        &common,
+        "schema-version 1\nnotifications { private-value 42; }\n",
+    )
+    .unwrap();
+    assert!(
+        control
+            .execute(ControlCommand::ReloadConfiguration { path: None })
+            .await
+            .is_err()
+    );
+    let failed = daemon.configuration_status();
+    assert_eq!(failed.generation, original.generation);
+    assert_eq!(failed.source, original.source);
+    assert!(!failed.error.unwrap().contains("private-value"));
+    assert_eq!(
+        daemon
+            .receive_notification(notification("Mail", "still old"))
+            .await
+            .unwrap()
+            .delivery_outcome,
+        DeliveryOutcome::Silenced
+    );
+    // An absent namespace selects feature defaults, not any legacy source.
+    std::fs::write(&common, "schema-version 1\nshell {}\n").unwrap();
+    control
+        .execute(ControlCommand::ReloadConfiguration { path: None })
+        .await
+        .unwrap();
+    assert!(daemon.configuration_status().source.unwrap().defaults);
+    assert_eq!(
+        daemon
+            .receive_notification(notification("Mail", "defaults"))
+            .await
+            .unwrap()
+            .delivery_outcome,
+        DeliveryOutcome::Shown
+    );
+    // An explicit legacy reload becomes the committed request for subsequent no-path reloads.
+    control
+        .execute(ControlCommand::ReloadConfiguration {
+            path: Some(legacy.clone()),
+        })
+        .await
+        .unwrap();
+    std::fs::write(&legacy, "rule app=\"Mail\" outcome=\"silenced\"\n").unwrap();
+    control
+        .execute(ControlCommand::ReloadConfiguration { path: None })
+        .await
+        .unwrap();
+    assert_eq!(daemon.configuration_status().path, Some(legacy));
+    assert_eq!(
+        daemon
+            .receive_notification(notification("Mail", "legacy"))
+            .await
+            .unwrap()
+            .delivery_outcome,
+        DeliveryOutcome::Silenced
+    );
+    daemon.shutdown().await.unwrap();
+}
+
+#[test]
+fn discovery_reload_adopts_common_source_and_explicit_common_reload_stays_selected() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let legacy = config_root.join("canopa-notify/config.kdl");
+    let common = config_root.join("canopa/config.kdl");
+    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(common.parent().unwrap()).unwrap();
+    std::fs::write(&legacy, "sound enabled=#false\n").unwrap();
+    let socket = temp.path().join("control.sock");
+    let database = temp.path().join("history.db");
+    let mut daemon = Process(
+        support::canopa_notify_command()
+            .env("XDG_CONFIG_HOME", &config_root)
+            .args([
+                "daemon",
+                "--headless",
+                "--socket",
+                support::path_arg(&socket),
+                "--database",
+                support::path_arg(&database),
+            ])
+            .spawn()
+            .unwrap(),
+    );
+    support::wait_for_status_with_child(&socket, &mut daemon.0);
+    let status = || {
+        let output = cli(&socket, &["status", "--json"]);
+        assert!(output.status.success());
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["configuration"]
+            .clone()
+    };
+    assert_eq!(status()["source"]["format"], "legacy");
+    std::fs::write(
+        &common,
+        "schema-version 1\nnotifications { sound enabled=#true; }\n",
+    )
+    .unwrap();
+    assert!(cli(&socket, &["reload"]).status.success());
+    assert_eq!(status()["path"], support::path_arg(&common));
+    assert_eq!(status()["source"]["format"], "canopa-v1");
+    let explicit = temp.path().join("explicit.kdl");
+    std::fs::write(&explicit, "schema-version 1\nnotifications {}\n").unwrap();
+    assert!(
+        cli(&socket, &["reload-canopa", support::path_arg(&explicit)])
+            .status
+            .success()
+    );
+    std::fs::write(&common, "invalid shared source\n").unwrap();
+    assert!(cli(&socket, &["reload"]).status.success());
+    assert_eq!(status()["path"], support::path_arg(&explicit));
+}

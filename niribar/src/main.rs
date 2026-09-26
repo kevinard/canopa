@@ -24,7 +24,8 @@ use iced_layershell::settings::{LayerShellSettings, Settings, StartMode};
 
 fn cli_mode_label(command: &cli::Command) -> &'static str {
     match command {
-        cli::Command::Run => "run",
+        cli::Command::Run(_) => "run",
+        cli::Command::CheckConfig(_) => "check-config",
         cli::Command::PrintVersion => "version",
         cli::Command::IpcCommand(_) => "ipc",
         cli::Command::Dmenu(_) => "dmenu",
@@ -45,16 +46,42 @@ fn main() {
             eprintln!("niribar: {message}");
             std::process::exit(DMENU_USAGE_EXIT);
         }
-        cli::Command::Run => {
-            if let Err(e) = try_main() {
+        cli::Command::CheckConfig(options) => std::process::exit(check_config(options)),
+        cli::Command::Run(options) => {
+            if let Err(e) = try_main(&options.request) {
                 match e {
                     AppError::Config(config_error) => {
-                        eprintln!("{:?}", miette::Report::new(config_error));
+                        eprintln!(
+                            "niribar: {}; run niribar --check-config --show-source for details",
+                            config_error.safe_diagnostic()
+                        );
                     }
                     AppError::Other(error) => eprintln!("error: {error}"),
                 }
                 std::process::exit(1);
             }
+        }
+    }
+}
+
+fn check_config(options: cli::ConfigOptions) -> i32 {
+    match config::load(&options.request, options.show_source) {
+        Ok((_, source)) => {
+            println!(
+                "{}",
+                serde_json::json!({"component": "shell", "source": source})
+            );
+            0
+        }
+        Err(error) => {
+            println!(
+                "{}",
+                serde_json::json!({"component": "shell", "error": error.safe_diagnostic()})
+            );
+            if options.show_source {
+                eprintln!("{:?}", miette::Report::new(error));
+            }
+            1
         }
     }
 }
@@ -195,9 +222,10 @@ fn send_ipc_command(cmd: &str) {
     }
 }
 
-fn try_main() -> Result<(), AppError> {
+fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
     // Load config fully before any surface is created (AR7).
-    let config = config::load()?;
+    let (config, source) = config::load(request, false)?;
+    tracing::info!(target: "niribar::configuration", source = ?source, "configuration installed; shell changes require restart");
     tracing::debug!(
         target: "niribar::runtime",
         bar_count = config.bars.len(),
@@ -293,7 +321,10 @@ mod tests {
 
     #[test]
     fn cli_mode_label_identifies_cli_modes() {
-        assert_eq!(super::cli_mode_label(&crate::cli::Command::Run), "run");
+        assert_eq!(
+            super::cli_mode_label(&crate::cli::Command::Run(Default::default())),
+            "run"
+        );
         assert_eq!(
             super::cli_mode_label(&crate::cli::Command::PrintVersion),
             "version"

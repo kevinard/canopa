@@ -33,9 +33,9 @@ pub(crate) fn perf_enabled_from_env() -> bool {
 
 pub(crate) fn default_filter_spec(perf_enabled: bool) -> &'static str {
     if perf_enabled {
-        "niribar=warn,niribar::perf=info"
+        "niribar=warn,niribar::configuration=info,niribar::perf=info"
     } else {
-        "niribar=warn"
+        "niribar=warn,niribar::configuration=info"
     }
 }
 
@@ -103,10 +103,10 @@ mod tests {
     }
 
     #[test]
-    fn default_filter_is_warn_without_perf() {
+    fn default_filter_reports_installed_configuration_without_perf() {
         let config = filter_config(None, false);
 
-        assert_eq!(config.spec(), "niribar=warn");
+        assert_eq!(config.spec(), "niribar=warn,niribar::configuration=info");
         assert_eq!(config.source(), "default");
     }
 
@@ -114,7 +114,10 @@ mod tests {
     fn default_filter_enables_perf_info_when_perf_is_enabled() {
         let config = filter_config(None, true);
 
-        assert_eq!(config.spec(), "niribar=warn,niribar::perf=info");
+        assert_eq!(
+            config.spec(),
+            "niribar=warn,niribar::configuration=info,niribar::perf=info"
+        );
         assert_eq!(config.source(), "default");
     }
 
@@ -130,7 +133,10 @@ mod tests {
     fn empty_rust_log_uses_default_filter() {
         let config = filter_config(Some("   "), true);
 
-        assert_eq!(config.spec(), "niribar=warn,niribar::perf=info");
+        assert_eq!(
+            config.spec(),
+            "niribar=warn,niribar::configuration=info,niribar::perf=info"
+        );
         assert_eq!(config.source(), "default");
     }
 }

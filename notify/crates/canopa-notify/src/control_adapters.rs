@@ -104,6 +104,7 @@ impl CtlRequest {
                         )
                         | (
                             ControlCommand::ReloadConfiguration { .. }
+                                | ControlCommand::ReloadConfigurationSource { .. }
                                 | ControlCommand::SetAppPermission { .. }
                                 | ControlCommand::SetCategoryPermission { .. }
                                 | ControlCommand::ClearActiveNotifications

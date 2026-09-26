@@ -1,0 +1,15 @@
+[package]
+name = "canopa-config"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+canopa-file.workspace = true
+kdl.workspace = true
+serde.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

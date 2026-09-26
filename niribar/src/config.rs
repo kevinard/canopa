@@ -93,58 +93,46 @@ impl Config {
     }
 }
 
-/// Return the path to the user config file, following XDG conventions.
-///
-/// Returns an error if neither `XDG_CONFIG_HOME` nor `HOME` is set or non-empty.
-fn config_file_path() -> ConfigResult<std::path::PathBuf> {
-    let base = match std::env::var("XDG_CONFIG_HOME") {
-        Ok(value) => std::path::PathBuf::from(value),
-        Err(_) => {
-            let home = std::env::var("HOME").map_err(|_| {
-                ConfigError::message(
-                    ConfigSource::new(ConfigSourceName::EmbeddedDefault, ""),
-                    "neither XDG_CONFIG_HOME nor HOME environment variable is set",
-                )
-            })?;
-            if home.is_empty() {
-                return Err(ConfigError::message(
-                    ConfigSource::new(ConfigSourceName::EmbeddedDefault, ""),
-                    "HOME environment variable is empty",
-                ));
+/// Prepare a complete configuration before creating surfaces. Live reload is not supported.
+pub fn load(
+    request: &canopa_config::Request,
+    show_source: bool,
+) -> ConfigResult<(Config, canopa_config::SourceInfo)> {
+    let input = canopa_config::Input::load(
+        request,
+        canopa_config::Component::Shell,
+        defaults::DEFAULT_CONFIG,
+    )
+    .map_err(ConfigError::Intake)?;
+    let document = input
+        .select(canopa_config::Component::Shell, defaults::DEFAULT_CONFIG)
+        .map_err(|error| {
+            if show_source
+                && error.code == canopa_config::Code::Syntax
+                && let Err(detail) = input.text().parse::<kdl::KdlDocument>()
+            {
+                let name = input
+                    .path()
+                    .map(|path| ConfigSourceName::UserFile(path.into()))
+                    .unwrap_or(ConfigSourceName::EmbeddedDefault);
+                return ConfigError::from_kdl(ConfigSource::new(name, input.text()), detail);
             }
-            std::path::PathBuf::from(home).join(".config")
-        }
-    };
-    Ok(base.join("niribar").join("config.kdl"))
-}
-
-/// Load configuration from disk or fall back to the embedded default.
-///
-/// Config is fully parsed before returning — no lazy evaluation (AR7).
-pub fn load() -> ConfigResult<Config> {
-    let path = config_file_path()?;
-    let content = match std::fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => defaults::DEFAULT_CONFIG.to_string(),
-        Err(e) => {
-            return Err(ConfigError::Io { path, source: e });
-        }
-    };
-    let source_name = if path.exists() {
-        ConfigSourceName::UserFile(path)
-    } else {
+            ConfigError::Intake(error)
+        })?;
+    let source_name = if document.info().defaults {
         ConfigSourceName::EmbeddedDefault
+    } else {
+        document
+            .info()
+            .path
+            .clone()
+            .map(ConfigSourceName::UserFile)
+            .unwrap_or(ConfigSourceName::EmbeddedDefault)
     };
-    let validation_source_name = source_name.clone();
-    let config = parse::parse_input(parse::ConfigInput {
-        name: source_name,
-        text: &content,
-    })?;
-    validate_with_source(
-        &config,
-        ConfigSource::new(validation_source_name, content.clone()),
-    )?;
-    Ok(config)
+    let source = ConfigSource::new(source_name, document.text());
+    let config = parse::parse_document(document.selected(), source.clone())?;
+    validate_with_source(&config, source)?;
+    Ok((config, document.info().clone()))
 }
 
 pub mod states {

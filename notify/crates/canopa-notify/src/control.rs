@@ -42,11 +42,21 @@ impl NotifyControl {
                 self.daemon.change_do_not_disturb(enabled).await?,
             )),
             ControlCommand::ReloadConfiguration { path } => {
-                let path = path
-                    .or_else(|| self.configuration_path.clone())
-                    .or_else(|| self.daemon.configuration_status().path)
-                    .ok_or_else(|| anyhow::anyhow!("no configuration path is configured"))?;
-                self.daemon.reload_configuration_file(&path).await?;
+                if let Some(path) = path {
+                    self.daemon.reload_configuration_file(&path).await?;
+                } else if self.daemon.configuration_status().source.is_none()
+                    && let Some(path) = &self.configuration_path
+                {
+                    self.daemon.reload_configuration_file(path).await?;
+                } else {
+                    self.daemon.reload_configuration_source(None).await?;
+                }
+                Ok(ControlReply::CommandApplied)
+            }
+            ControlCommand::ReloadConfigurationSource { source } => {
+                self.daemon
+                    .reload_configuration_source(Some(source))
+                    .await?;
                 Ok(ControlReply::CommandApplied)
             }
             ControlCommand::ActiveNotifications => Ok(ControlReply::ActiveNotifications(
@@ -145,6 +155,9 @@ pub enum ControlCommand {
     DoNotDisturb,
     ChangeDoNotDisturb {
         enabled: Option<bool>,
+    },
+    ReloadConfigurationSource {
+        source: canopa_config::Request,
     },
     ReloadConfiguration {
         path: Option<std::path::PathBuf>,

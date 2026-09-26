@@ -43,6 +43,7 @@ enum Command {
     Daemon(DaemonArgs),
     Ctl(CtlArgs),
     PanelProvider(PanelProviderArgs),
+    CheckConfig(CheckConfigArgs),
 }
 
 #[derive(Parser)]
@@ -53,8 +54,10 @@ struct DaemonArgs {
     socket: PathBuf,
     #[arg(long)]
     database: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "canopa_config")]
     config: Option<PathBuf>,
+    #[arg(long)]
+    canopa_config: Option<PathBuf>,
     #[arg(long)]
     dev_bus_name: Option<String>,
     #[arg(long)]
@@ -86,6 +89,9 @@ enum CtlCommand {
     Reload {
         path: Option<PathBuf>,
     },
+    ReloadCanopa {
+        path: PathBuf,
+    },
     Clear,
     DeleteHistory,
 }
@@ -102,6 +108,74 @@ enum DndCommand {
 struct PanelProviderArgs {
     #[arg(long)]
     socket: PathBuf,
+}
+
+#[derive(Parser)]
+struct CheckConfigArgs {
+    #[arg(long, conflicts_with_all = ["canopa_config", "defaults"])]
+    config: Option<PathBuf>,
+    #[arg(long, conflicts_with = "defaults")]
+    canopa_config: Option<PathBuf>,
+    #[arg(long)]
+    defaults: bool,
+    #[arg(long)]
+    show_source: bool,
+}
+
+fn configuration_request(
+    legacy: Option<PathBuf>,
+    common: Option<PathBuf>,
+) -> canopa_config::Request {
+    common
+        .map(canopa_config::Request::common)
+        .or_else(|| legacy.map(canopa_config::Request::legacy))
+        .unwrap_or(canopa_config::Request::Discover)
+}
+
+fn check_config(args: CheckConfigArgs) -> anyhow::Result<()> {
+    let request = if args.defaults {
+        canopa_config::Request::Defaults
+    } else {
+        configuration_request(args.config, args.canopa_config)
+    };
+    let candidate = (|| {
+        let input =
+            canopa_config::Input::load(&request, canopa_config::Component::Notifications, "")?;
+        let document = input
+            .select(canopa_config::Component::Notifications, "")
+            .inspect_err(|error| {
+                if args.show_source
+                    && error.code == canopa_config::Code::Syntax
+                    && let Err(detail) = input.text().parse::<kdl::KdlDocument>()
+                {
+                    eprintln!("{:?}", miette::Report::new(detail));
+                }
+            })?;
+        canopa_notify::check_configuration_document(&document)
+    })();
+    match candidate {
+        Ok(source) => println!(
+            "{}",
+            serde_json::json!({"component": "notifications", "source": source})
+        ),
+        Err(error) => {
+            let diagnostic = error
+                .downcast_ref::<canopa_config::Diagnostic>()
+                .cloned()
+                .unwrap_or_else(|| {
+                    canopa_config::Diagnostic::new(canopa_config::Code::Schema, None)
+                });
+            println!(
+                "{}",
+                serde_json::json!({"component": "notifications", "error": diagnostic})
+            );
+            if args.show_source {
+                eprintln!("{error:#}");
+            }
+            anyhow::bail!("notification configuration check failed");
+        }
+    }
+    Ok(())
 }
 
 fn main() {
@@ -121,6 +195,7 @@ fn main() {
 
 async fn run() -> anyhow::Result<()> {
     match Cli::parse().command {
+        Command::CheckConfig(args) => check_config(args),
         Command::Daemon(args) => run_daemon(args).await,
         Command::Ctl(args) => run_ctl(args).await,
         Command::PanelProvider(args) => run_panel_provider(args),
@@ -159,17 +234,11 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         );
     }
     paths.import_legacy_history().await?;
-    let configuration = startup::configuration_path(args.config)?;
-    let reload_path = configuration.clone().unwrap_or(
-        startup::xdg_home("XDG_CONFIG_HOME", ".config")?.join("canopa-notify/config.kdl"),
-    );
-    if let Some(configuration) = configuration {
-        startup.options = startup.options.with_configuration_file(configuration);
-    }
+    startup.options = startup
+        .options
+        .with_configuration_source(configuration_request(args.config, args.canopa_config));
     let daemon = Daemon::open(startup.options).await?;
-    let control = control_adapters::ControlSocket::new(
-        NotifyControl::new(daemon.clone()).with_configuration_path(reload_path),
-    );
+    let control = control_adapters::ControlSocket::new(NotifyControl::new(daemon.clone()));
     if let Some(interactions) = startup.banner_interactions {
         spawn_banner_interaction_forwarder(daemon.clone(), interactions)?;
     }
@@ -317,6 +386,9 @@ async fn run_ctl(mut args: CtlArgs) -> anyhow::Result<()> {
     if let CtlCommand::Reload { path: Some(path) } = &mut args.command {
         *path = std::path::absolute(&*path)?;
     }
+    if let CtlCommand::ReloadCanopa { path } = &mut args.command {
+        *path = std::path::absolute(&*path)?;
+    }
     control_adapters::run_ctl(&args.socket, control_request_for_ctl(&args.command)).await
 }
 
@@ -346,6 +418,11 @@ fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest
         }),
         CtlCommand::Reload { path } => control_adapters::CtlRequest::Command(
             canopa_notify::ControlCommand::ReloadConfiguration { path: path.clone() },
+        ),
+        CtlCommand::ReloadCanopa { path } => control_adapters::CtlRequest::Command(
+            canopa_notify::ControlCommand::ReloadConfigurationSource {
+                source: canopa_config::Request::common(path),
+            },
         ),
         CtlCommand::Clear => control_adapters::CtlRequest::Command(
             canopa_notify::ControlCommand::ClearActiveNotifications,
@@ -490,6 +567,7 @@ mod tests {
             socket: PathBuf::from("control.sock"),
             database: None,
             config: None,
+            canopa_config: None,
             dev_bus_name: None,
             service,
         }

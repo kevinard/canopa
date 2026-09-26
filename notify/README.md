@@ -57,10 +57,12 @@ the wlr layer-shell protocol and start `graphical-session.target` for automatic
 session startup. The Center requires the compatible host configuration in
 [Niribar integration](docs/niribar-panel-provider.md).
 
-Copy [the example configuration](examples/config.kdl) to
-`$XDG_CONFIG_HOME/canopa-notify/config.kdl` (default
-`~/.config/canopa-notify/config.kdl`). Configuration changes take effect on future
-notification requests after a successful reload.
+Configuration comes from the `notifications` namespace of
+`$XDG_CONFIG_HOME/canopa/config.kdl` (default `~/.config/canopa/config.kdl`). When the
+common file is absent, the legacy `canopa-notify/config.kdl` is still supported.
+Put [the example settings](examples/config.kdl) inside that namespace, or use the
+[shared configuration guide](../docs/configuration.md) to migrate and validate both
+applications. Changes affect future requests after a successful Notify reload.
 
 ```sh
 canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" status --json

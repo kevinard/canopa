@@ -6,6 +6,7 @@ rust-version = "1.95"
 license = "MIT"
 
 [dependencies]
+canopa-config.workspace = true
 accesskit.workspace = true
 accesskit_unix.workspace = true
 canopa-panel-protocol.workspace = true

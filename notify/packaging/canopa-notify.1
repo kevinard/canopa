@@ -5,7 +5,7 @@ canopa-notify \- Wayland desktop notifications and local notification history
 .B canopa-notify daemon --service --socket
 .I PATH
 .RB [ --database " PATH"]
-.RB [ --config " PATH"]
+.RB [ --config " PATH" | --canopa-config " PATH"]
 .br
 .B canopa-notify daemon --headless --socket
 .I PATH
@@ -27,6 +27,11 @@ development; a development bus name must be requested explicitly.
 Startup refuses competing ownership before recovering the database. Existing
 sender IDs and actions become invalid after restart. Retained notifications keep
 their attention state; transient notifications do not survive restart.
+.SH CONFIGURATION CHECKING
+.B canopa-notify check-config
+validates the notification namespace without starting a service. Options include
+--config PATH (legacy), --canopa-config PATH (shared), --defaults, and --show-source
+(local diagnostic detail). The canopa config check command checks both components.
 .SH CONTROL COMMANDS
 .TP
 .B status [--json]
@@ -40,7 +45,11 @@ Read or persist Do Not Disturb. Changes affect subsequent notification requests.
 .TP
 .B reload [PATH]
 Validate and install a configuration candidate. Failure retains the last good
-configuration. Without PATH, reload the committed or standard configuration path.
+configuration. PATH selects legacy flat syntax. Without PATH, repeat the last
+committed selection, including discovery when started without an explicit file.
+.TP
+.B reload-canopa PATH
+Select and install the notifications namespace of an explicit shared Canopa file.
 .TP
 .B clear
 Dismiss active notifications, including runtime-only transient items.
@@ -49,8 +58,12 @@ Dismiss active notifications, including runtime-only transient items.
 Explicitly remove inactive retained history, including unacknowledged items.
 .SH FILES
 .TP
+.I $XDG_CONFIG_HOME/canopa/config.kdl
+Shared KDL envelope with schema-version 1 and optional shell/notifications blocks.
+The fallback directory is ~/.config. Missing namespaces use embedded defaults.
+.TP
 .I $XDG_CONFIG_HOME/canopa-notify/config.kdl
-KDL rules, sound settings and icon theme/scale. The fallback is
+Legacy flat rules, sound settings and icon theme/scale; used only when the shared file is absent. The fallback is
 ~/.config/canopa-notify/config.kdl. See the distributed examples/config.kdl.
 .TP
 .I $XDG_STATE_HOME/canopa-notify/history.db

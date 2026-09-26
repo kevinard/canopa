@@ -26,10 +26,13 @@ Ordinary desktop-entry launching requires `gio` (`libglib2.0-bin` on Debian/Ubun
 D-Bus-enabled entries activate through the session bus. Executable launches use niri's IPC; without `NIRI_SOCKET`, they require
 `systemd-run` and a systemd user manager.
 
-Configuration is read from `$XDG_CONFIG_HOME/niribar/config.kdl`, falling back
-to `~/.config/niribar/config.kdl`. The embedded default works without a file;
-copy [config/default.kdl](config/default.kdl) there to customize it. See
-[docs](docs/) and [CONTEXT.md](CONTEXT.md) for configuration concepts.
+Configuration comes from the `shell` namespace of `$XDG_CONFIG_HOME/canopa/config.kdl`
+(default `~/.config/canopa/config.kdl`). When that file is absent, the legacy
+`niribar/config.kdl` remains supported; otherwise missing namespaces use embedded
+defaults. See the [shared configuration guide](../docs/configuration.md) for validation,
+explicit sources, and migration. Shell changes require a restart. Existing option
+examples in [config/default.kdl](config/default.kdl), [docs](docs/) and
+[CONTEXT.md](CONTEXT.md) go inside the shared `shell` block.
 
 Use `launch "kitty"` or `launch "firefox" "https://example.org"` in menu items
 and module actions to open applications. Arguments are literal strings. Launches

@@ -5,6 +5,8 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 tar -xzf "$archive" -C "$stage"
 bundle="$stage/canopa-x86_64-unknown-linux-gnu"
+test -x "$bundle/bin/canopa"
+"$bundle/bin/canopa" config check --file "$bundle/share/canopa/canopa.kdl"
 test -x "$bundle/bin/niribar"
 test -x "$bundle/bin/niribar-wifi-provider"
 test -x "$bundle/bin/canopa-notify"
@@ -41,5 +43,5 @@ size = struct.unpack('>Q', result.stdout[len(magic):len(magic)+8])[0]
 message = json.loads(result.stdout[len(magic)+8:len(magic)+8+size])
 assert message['type'] == 'handshake' and message['protocol_version'] == 1
 assert message['content']['elements'][0]['title'] == 'Wi-Fi unavailable'
-print('Release bundle: all three binaries execute; provider handshake and close pass.')
+print('Release bundle: all four binaries execute; provider handshake and close pass.')
 PY

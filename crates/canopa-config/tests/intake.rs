@@ -1,0 +1,165 @@
+use canopa_config::{
+    Code, Component, Document, Format, MAX_BYTES, Request, config_home_from, discover_in,
+};
+use std::{
+    ffi::OsStr,
+    fs,
+    os::unix::{fs::FileTypeExt, fs::symlink},
+    path::Path,
+};
+
+#[test]
+fn discovery_prefers_common_even_when_invalid_and_never_merges_legacy() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(
+        discover_in(dir.path(), Component::Shell).unwrap(),
+        Request::Defaults
+    );
+    fs::create_dir(dir.path().join("niribar")).unwrap();
+    let legacy = dir.path().join("niribar/config.kdl");
+    fs::write(&legacy, "legacy\n").unwrap();
+    assert_eq!(
+        discover_in(dir.path(), Component::Shell).unwrap(),
+        Request::legacy(&legacy)
+    );
+    fs::create_dir(dir.path().join("canopa")).unwrap();
+    let common = dir.path().join("canopa/config.kdl");
+    fs::write(&common, "invalid\n").unwrap();
+    let request = discover_in(dir.path(), Component::Shell).unwrap();
+    assert_eq!(request, Request::common(&common));
+    assert_eq!(
+        Document::load(&request, Component::Shell, "default\n")
+            .unwrap_err()
+            .code,
+        Code::Envelope
+    );
+    fs::write(&common, "schema-version 1\nnotifications {}\n").unwrap();
+    let loaded = Document::load(&request, Component::Shell, "default\n").unwrap();
+    assert_eq!(loaded.selected().nodes()[0].name().value(), "default");
+    assert!(loaded.info().defaults);
+    assert_eq!(loaded.info().path.as_deref(), Some(common.as_path()));
+    fs::remove_file(&common).unwrap();
+    symlink(dir.path().join("missing"), &common).unwrap();
+    assert_eq!(discover_in(dir.path(), Component::Shell).unwrap(), request);
+    assert_eq!(
+        Document::load(&request, Component::Shell, "")
+            .unwrap_err()
+            .code,
+        Code::Read
+    );
+}
+
+#[test]
+fn namespaces_preserve_absolute_spans_and_share_revision() {
+    let text = "schema-version 1\nnotifications { private-rule 42; }\nshell { bar \"primary\"; }\n";
+    let shell = Document::parse(text.into(), None, Format::CanopaV1, Component::Shell, "").unwrap();
+    let notify = Document::parse(
+        text.into(),
+        None,
+        Format::CanopaV1,
+        Component::Notifications,
+        "",
+    )
+    .unwrap();
+    assert_eq!(
+        shell.selected().nodes()[0].span().offset(),
+        text.find("bar").unwrap()
+    );
+    assert_eq!(shell.text(), text);
+    assert_eq!(shell.info().fingerprint, notify.info().fingerprint);
+    assert_eq!(shell.info().fingerprint.len(), 64);
+    assert!(!format!("{shell:?}").contains("private-rule"));
+    let changed = Document::parse(
+        format!("{text}// comment\n"),
+        None,
+        Format::CanopaV1,
+        Component::Shell,
+        "",
+    )
+    .unwrap();
+    assert_ne!(shell.info().fingerprint, changed.info().fingerprint);
+}
+
+#[test]
+fn envelope_is_strict_but_namespace_semantics_belong_to_owners() {
+    for text in [
+        "shell {}",
+        "schema-version 2",
+        "schema-version 1\nshell\n",
+        "schema-version 1\nshell 1 {}",
+        "schema-version 1\nprivate-value {}",
+        "schema-version 1\nappearance {}",
+        "schema-version 1\nshell {}\nshell {}",
+        "schema-version 1\n(x)shell {}",
+        "schema-version (x)1",
+        "schema-version 1\nschema-version 1",
+    ] {
+        let error =
+            Document::parse(text.into(), None, Format::CanopaV1, Component::Shell, "").unwrap_err();
+        assert_eq!(error.code, Code::Envelope, "{text}");
+        assert!(!format!("{error:?} {error}").contains("private-value"));
+    }
+    Document::parse(
+        "schema-version 1\nnotifications { invalid 1; }\nshell {}".into(),
+        None,
+        Format::CanopaV1,
+        Component::Shell,
+        "",
+    )
+    .unwrap();
+    let error = Document::parse(
+        "private-value {".into(),
+        None,
+        Format::Legacy,
+        Component::Shell,
+        "",
+    )
+    .unwrap_err();
+    assert_eq!(error.code, Code::Syntax);
+    assert!(!format!("{error:?} {error}").contains("private-value"));
+}
+
+#[test]
+fn source_admission_is_bounded_descriptor_checked_and_symlink_friendly() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("config");
+    fs::write(&file, " ".repeat(MAX_BYTES)).unwrap();
+    let link = dir.path().join("link");
+    symlink(&file, &link).unwrap();
+    assert!(canopa_config::read(&link).is_ok());
+    for bytes in [vec![b' '; MAX_BYTES + 1], vec![255]] {
+        fs::write(&file, bytes).unwrap();
+        assert_eq!(canopa_config::read(&file).unwrap_err().code, Code::Read);
+    }
+    assert_eq!(
+        canopa_config::read(dir.path()).unwrap_err().code,
+        Code::Read
+    );
+    let fifo = dir.path().join("fifo");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(fs::metadata(&fifo).unwrap().file_type().is_fifo());
+    let start = std::time::Instant::now();
+    assert_eq!(canopa_config::read(&fifo).unwrap_err().code, Code::Read);
+    assert!(start.elapsed() < std::time::Duration::from_secs(1));
+}
+
+#[test]
+fn xdg_paths_require_absolute_nonempty_values() {
+    for xdg in [None, Some(OsStr::new("")), Some(OsStr::new("relative"))] {
+        assert_eq!(
+            config_home_from(xdg, Some(OsStr::new("/home/test"))).unwrap(),
+            Path::new("/home/test/.config")
+        );
+    }
+    assert_eq!(
+        config_home_from(Some(OsStr::new("/config")), None).unwrap(),
+        Path::new("/config")
+    );
+    assert!(config_home_from(None, Some(OsStr::new("relative"))).is_err());
+}
