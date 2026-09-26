@@ -239,6 +239,7 @@ struct BannerUiState {
 
 #[derive(Clone, Debug)]
 enum BannerUiMessage {
+    OutputsChanged,
     OpenLinkRequested(BannerTarget, usize),
     OpenLink {
         target: BannerTarget,
@@ -288,6 +289,13 @@ enum BannerUiMessage {
     SetInputRegion(BannerInputRegion),
 }
 
+// Banner placement remains compositor-owned; named output snapshots are for the shell.
+impl From<iced_layershell::WaylandOutputSnapshot> for BannerUiMessage {
+    fn from(_: iced_layershell::WaylandOutputSnapshot) -> Self {
+        Self::OutputsChanged
+    }
+}
+
 impl TryInto<iced_layershell::actions::LayerShellCustomActionWithId> for BannerUiMessage {
     type Error = Self;
 
@@ -312,7 +320,8 @@ impl TryInto<iced_layershell::actions::LayerShellCustomActionWithId> for BannerU
                             exclusive_zone: Some(settings.exclusive_zone),
                             margin: Some(settings.margin),
                             keyboard_interactivity: settings.keyboard_interactivity,
-                            output_option: iced_layershell::reexport::OutputOption::Compositor,
+                            // Upstream Active now passes a null output to the compositor.
+                            output_option: iced_layershell::reexport::OutputOption::Active,
                             events_transparent: true,
                             namespace: Some("canopa-notify-banners".into()),
                         },
@@ -513,6 +522,7 @@ fn banner_ui_update(
     message: BannerUiMessage,
 ) -> iced::Task<BannerUiMessage> {
     let task = match message {
+        BannerUiMessage::OutputsChanged => iced::Task::none(),
         BannerUiMessage::Shutdown => iced::exit(),
         BannerUiMessage::WindowFrame(window) => {
             let effects = state

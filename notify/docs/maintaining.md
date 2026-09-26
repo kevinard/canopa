@@ -8,7 +8,7 @@ device/decoder dependencies. The public daemon, lifecycle, storage, body parser,
 control and D-Bus interfaces compile without either adapter:
 
 ```sh
-cargo check --workspace --all-targets --no-default-features --locked
+cargo check -p canopa-notify --all-targets --no-default-features --locked
 bash scripts/test.sh --no-default-features
 cargo build -p canopa-notify --no-default-features --features gui --locked
 ```
@@ -40,46 +40,14 @@ input behavior; link those separate fixtures in the compliance matrix.
 
 ## Vendored source
 
-Notify vendors `iced_layershell` and `layershellev` 0.18.1 from
-[waycrate/exwlshelleventloop](https://github.com/waycrate/exwlshelleventloop/tree/4c172e9db9191e37e7dc6918740a6386f22acfdd).
-The published source matches tag `v0.18.1`, commit
-`4c172e9db9191e37e7dc6918740a6386f22acfdd`. Both are MIT licensed; each vendor
-directory includes the exact upstream license and `Copyright (c) 2023 DecodeTalkers`.
+The root Canopa workspace owns all dependency forks. See
+[shared fork maintenance](../../docs/vendor-maintenance.md) for current versions,
+provenance, retained patches and upgrade checks. The panel protocol is the single
+root `crates/canopa-panel-protocol` source used by both applications.
 
-Local patches provide layer-surface activation context, measured input regions,
-compositor-sized banner surfaces and independent output/surface lifetimes. They
-are needed by the actual banner adapter. The matching Niribar changes use its
-existing 0.18.0 baseline, tag content at
-`e612516167cff2c5639383ab2ccd27c0a4a70c99`; do not silently replace either consumer's
-baseline with the other's.
-
-AccessKit Unix 0.23.0 is also vendored at upstream revision
-`42e53b0d829e7a0b34dc8803bb06012db2e80cc6`. Two local changes wrap AT-SPI cache
-signals in their required single structure argument. Its exact upstream MIT and
-Apache texts are included. See [the local patch record](../vendor/accesskit_unix/LOCAL-PATCHES.md)
-and the [native wire/Orca investigation](orca-isolated-fixture-research.md). Both
-Notify and Niribar need this patch until the resolved upstream release includes it.
-
-The [provenance record](vendor-provenance-research.md) contains verified archive
-URLs, SHA-256 checksums and the exact changed-file inventory. To update:
-
-1. Download the proposed official crate archives and verify their registry
-   checksums. Compare package contents with the proposed upstream revision.
-2. Diff the current vendor tree against its recorded original archive. Reapply
-   each still-needed behavior deliberately; retain upstream notices and record the
-   new source revision/checksums. Do not copy generated build caches.
-3. Run formatting, Clippy, the private-bus suite, real widget/surface tests and the
-   graphical display/activation/output-loss fixture. An upstream compile alone
-   does not establish the local patch contract.
-4. Synchronize the generic panel crate as a complete source snapshot in Niribar,
-   run `bash scripts/check-panel-protocol.sh /path/to/niribar`, and run the host's
-   provider/widget/native accessibility tests. A wire version change needs matching
-   provider, host and configuration updates.
-
-The project currently has no configured Git remote. Cargo metadata intentionally
-omits a guessed repository URL; set it to the canonical published repository when
-one exists. Release artifacts must include the root license texts, vendored
-notices, and dependency attributions for the actual resolved build.
+Run the root `bash scripts/check.sh` and `bash scripts/check.sh --core` entry points.
+For Notify-only Cargo commands select `-p canopa-notify`; `--workspace` now also
+selects the shell. Root `target/` contains the normal build outputs.
 
 ## Evidence discipline
 

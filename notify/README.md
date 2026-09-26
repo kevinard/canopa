@@ -1,5 +1,9 @@
 # Canopa Notify
 
+This application is part of the [Canopa workspace](../README.md). Cargo uses the
+root lockfile and writes normal build outputs to `../target/` when invoked here.
+The commands below describe the application; prefer the root validation entry points.
+
 A Wayland notification daemon implementing the freedesktop Desktop Notifications
 interface, with non-focus-stealing banners, application rules, persistent local
 history, and a Notification Center hosted by Niribar.
@@ -39,7 +43,7 @@ Stop another notification daemon before starting Canopa Notify. It will fail
 startup if the freedesktop name is already owned.
 
 ```sh
-install -Dm755 target/release/canopa-notify "$HOME/.local/bin/canopa-notify"
+install -Dm755 ../target/release/canopa-notify "$HOME/.local/bin/canopa-notify"
 install -Dm644 packaging/systemd/canopa-notify.service "$HOME/.config/systemd/user/canopa-notify.service"
 install -Dm644 packaging/canopa-notify.1 "$HOME/.local/share/man/man1/canopa-notify.1"
 systemctl --user daemon-reload
@@ -95,8 +99,8 @@ the [implementation tracker](.scratch/freedesktop-completion-review/IMPLEMENTATI
 The daemon's public entry points live in `lib.rs`; runtime coordination, lifecycle,
 SQLite storage, D-Bus, control transports, presentation, and sound each have an
 owning module. Tests use those public boundaries and actual renderer widgets.
-The generic panel protocol is shared with Niribar; run
-`bash scripts/check-panel-protocol.sh /path/to/niribar` after synchronizing it.
+The generic panel protocol has one source in root `crates/canopa-panel-protocol`;
+run `bash scripts/check-panel-protocol.sh` to check both workspace dependencies.
 
 The project license is MIT OR Apache-2.0; vendored dependencies keep their upstream
 licenses.

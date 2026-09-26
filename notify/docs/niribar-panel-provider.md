@@ -12,7 +12,7 @@ The provider emits the shared Canopa panel protocol from `canopa-panel-protocol`
 
 ## Compatible Niribar host
 
-The host port targets `/home/kevinard/projects/niribar`. Configure the new explicit transport; Niribar's default framed-v1 transport is not compatible with this provider:
+The host is the `niribar` member of this Canopa workspace. Configure the new explicit transport; Niribar's default framed-v1 transport is not compatible with this provider:
 
 ```kdl
 panel-providers {
@@ -35,11 +35,9 @@ Upgrade Notify and Niribar together and change the configured transport to `cano
 
 Item action values are opaque: hosts must return the advertised value unchanged. Each now carries a typed command with a Notification Center Target bound to the displayed revision and daemon lifetime. The daemon rejects queued actions after replacement/termination, even if the action key is reused, and rejects targets from previous daemon lifetimes. Stable panel item IDs do not change on replacement. This complements the host's snapshot-generation checks; it does not add automatic retries or promise that actions are unique on a still-active resident revision. Upgrade daemon and provider together: legacy item-action values without a target fail closed. Ordinary CLI/current-state commands, bulk clear and permission controls keep their existing semantics. See [ADR 0042](adr/0042-revision-bound-notification-center-actions.md).
 
-The canonical wire types remain in `crates/canopa-panel-protocol`; Niribar vendors the same source so it can build without a sibling checkout. After protocol edits, synchronize the host snapshot and run:
-
-```bash
-bash scripts/check-panel-protocol.sh /path/to/niribar
-```
+The canonical wire types live in root `crates/canopa-panel-protocol`. Both applications
+use the same path dependency. Run `bash scripts/check-panel-protocol.sh` from Notify
+to verify that workspace relationship. No source snapshot synchronization is needed.
 
 ## Stream limits and recovery
 

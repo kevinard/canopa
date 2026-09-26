@@ -53,11 +53,12 @@ fn menu_popup_window_settings(
         0,
     );
 
-    IcedNewPopupSettings {
+    IcedNewPopupSettings::at_position_on_current_surface(
         size,
-        position: (placement.position.x, placement.position.y),
-        grab: true,
-    }
+        (placement.position.x, placement.position.y),
+    )
+    .anchor(iced_layershell::reexport::PopupAnchor::TopLeft)
+    .gravity(iced_layershell::reexport::PopupGravity::BottomRight)
 }
 
 impl App {
@@ -871,10 +872,12 @@ mod tests {
         let settings = super::menu_popup_window_settings(&crate::config::Edge::Bottom, 48, &tree);
 
         assert_eq!(settings.size, crate::surface::menu_popup::popup_size(&tree));
-        assert_eq!(settings.position.0, 350);
         assert_eq!(
-            settings.position.1,
-            -(crate::surface::menu_popup::popup_size(&tree).1 as i32)
+            settings.placement,
+            iced_layershell::reexport::PopupPlacement::Position((
+                350,
+                -(crate::surface::menu_popup::popup_size(&tree).1 as i32),
+            )),
         );
     }
 
@@ -896,6 +899,9 @@ mod tests {
         let settings = super::menu_popup_window_settings(&crate::config::Edge::Top, 48, &tree);
 
         assert_eq!(settings.size, crate::surface::menu_popup::popup_size(&tree));
-        assert_eq!(settings.position, (350, 48));
+        assert_eq!(
+            settings.placement,
+            iced_layershell::reexport::PopupPlacement::Position((350, 48)),
+        );
     }
 }

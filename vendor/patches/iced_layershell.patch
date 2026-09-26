@@ -1,0 +1,373 @@
+--- a/src/actions.rs
++++ b/src/actions.rs
+@@ -105,6 +105,7 @@
+ }
+ 
+ type Callback = Arc<dyn Fn(&WlRegion) + Send + Sync>;
++type ActivationCallback = Arc<dyn Fn(Option<String>) + Send + Sync>;
+ 
+ // Callback wrapper around dyn Fn(&WlRegion)
+ #[derive(Clone)]
+@@ -122,6 +123,24 @@
+         F: Fn(&WlRegion) + Send + Sync + 'static,
+     {
+         ActionCallback(Arc::new(callback))
++    }
++}
++
++#[derive(Clone)]
++pub struct ActivationTokenCallback(pub ActivationCallback);
++
++impl std::fmt::Debug for ActivationTokenCallback {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        write!(f, "activation token callback function")
++    }
++}
++
++impl ActivationTokenCallback {
++    pub fn new<F>(callback: F) -> Self
++    where
++        F: Fn(Option<String>) + Send + Sync + 'static,
++    {
++        ActivationTokenCallback(Arc::new(callback))
+     }
+ }
+ 
+@@ -161,6 +180,10 @@
+         settings: NewInputPanelSettings,
+         id: IcedId,
+     },
++    RequestActivationToken {
++        app_id: String,
++        callback: ActivationTokenCallback,
++    },
+     /// is same with WindowAction::Close(id)
+     RemoveWindow,
+     ForgetLastOutput,
+--- a/src/build_pattern/application.rs
++++ b/src/build_pattern/application.rs
+@@ -9,6 +9,7 @@
+ use crate::actions::LayerShellCustomActionWithId;
+ 
+ use crate::DefaultStyle;
++use crate::WaylandOutputSnapshot;
+ use crate::settings::LayerShellSettings;
+ 
+ use crate::Result;
+@@ -582,7 +583,8 @@
+         P::Message: std::fmt::Debug
+             + Send
+             + 'static
+-            + TryInto<LayerShellCustomActionWithId, Error = P::Message>,
++            + TryInto<LayerShellCustomActionWithId, Error = P::Message>
++            + From<WaylandOutputSnapshot>,
+     {
+         let settings = self.settings;
+ 
+--- a/src/build_pattern/daemon.rs
++++ b/src/build_pattern/daemon.rs
+@@ -7,6 +7,7 @@
+ use crate::actions::LayerShellCustomActionWithId;
+ 
+ use crate::DefaultStyle;
++use crate::WaylandOutputSnapshot;
+ use crate::settings::LayerShellSettings;
+ 
+ use crate::Result;
+@@ -660,7 +661,8 @@
+         P::Message: std::fmt::Debug
+             + Send
+             + 'static
+-            + TryInto<LayerShellCustomActionWithId, Error = P::Message>,
++            + TryInto<LayerShellCustomActionWithId, Error = P::Message>
++            + From<WaylandOutputSnapshot>,
+     {
+         let settings = self.settings;
+         #[cfg(all(feature = "debug", not(target_arch = "wasm32")))]
+--- a/src/event.rs
++++ b/src/event.rs
+@@ -6,6 +6,11 @@
+ use layershellev::xkb_keyboard::KeyEvent as LayerShellKeyEvent;
+ 
+ use iced_core::keyboard::Modifiers as IcedModifiers;
++
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct WaylandOutputSnapshot {
++    pub outputs: Vec<String>,
++}
+ 
+ fn from_u32_to_icedmouse(code: u32) -> mouse::Button {
+     match code {
+@@ -104,6 +109,7 @@
+ #[derive(Debug)]
+ pub enum IcedLayerShellEvent<Message> {
+     UpdateInputRegion(WlRegion),
++    WaylandOutputSnapshot(WaylandOutputSnapshot),
+     Window(WindowEvent),
+     UserAction(Action<Message>),
+     NormalDispatch,
+@@ -112,6 +118,9 @@
+ impl From<&DispatchMessage> for WindowEvent {
+     fn from(value: &DispatchMessage) -> Self {
+         match value {
++            DispatchMessage::WaylandOutputSnapshot(_) => {
++                unreachable!("Wayland output snapshots are handled outside WindowEvent")
++            }
+             DispatchMessage::RequestRefresh { .. } => WindowEvent::Refresh,
+             DispatchMessage::Closed => WindowEvent::Closed,
+             DispatchMessage::MouseEnter {
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -37,6 +37,7 @@
+ pub use iced_layershell_macros::to_layer_message;
+ 
+ pub use error::Error;
++pub use event::WaylandOutputSnapshot;
+ 
+ /// Opt-out for clipboard initialization. Call this before starting the
+ /// runtime when your app has no text input and doesn't need paste/copy —
+--- a/src/multi_window.rs
++++ b/src/multi_window.rs
+@@ -11,7 +11,7 @@
+     actions::LayerShellCustomAction, clipboard::LayerShellClipboard, conversion, error::Error,
+ };
+ use crate::{
+-    event::{IcedLayerShellEvent, WindowEvent as LayerShellWindowEvent},
++    event::{IcedLayerShellEvent, WaylandOutputSnapshot, WindowEvent as LayerShellWindowEvent},
+     proxy::IcedProxy,
+     settings::Settings,
+ };
+@@ -30,8 +30,8 @@
+ use iced_runtime::Action;
+ use iced_runtime::user_interface;
+ use layershellev::{
+-    DisplayWrapper, LayerShellEvent, NewPopUpSettings, PopupPlacement, RefreshRequest, ReturnData,
+-    WindowState, WindowWrapper,
++    DispatchMessage, DisplayWrapper, LayerShellEvent, NewPopUpSettings, PopupPlacement,
++    RefreshRequest, ReturnData, WindowState, WindowWrapper,
+     id::Id as LayerShellId,
+     reexport::{
+         wayland_client::{WlCompositor, WlRegion},
+@@ -51,6 +51,8 @@
+ use window_manager::Window;
+ 
+ mod state;
++#[cfg(test)]
++mod tests;
+ mod window_manager;
+ 
+ type MultiRuntime<E, Message> = Runtime<E, IcedProxy<Action<Message>>, Action<Message>>;
+@@ -65,7 +67,9 @@
+ where
+     P: IcedProgram + 'static,
+     P::Theme: DefaultStyle,
+-    P::Message: 'static + TryInto<LayerShellCustomActionWithId, Error = P::Message>,
++    P::Message: 'static
++        + TryInto<LayerShellCustomActionWithId, Error = P::Message>
++        + From<WaylandOutputSnapshot>,
+ {
+     use futures::task;
+     use layershellev::calloop::channel::channel;
+@@ -199,12 +203,22 @@
+                     ev.set_virtual_keyboard(virtual_keyboard_in);
+                 }
+             }
+-            LayerShellEvent::RequestMessages(message) => {
+-                waiting_layer_shell_events.push_back((
+-                    layer_shell_id,
+-                    IcedLayerShellEvent::Window(LayerShellWindowEvent::from(message)),
+-                ));
+-            }
++            LayerShellEvent::RequestMessages(message) => match message {
++                DispatchMessage::WaylandOutputSnapshot(outputs) => {
++                    waiting_layer_shell_events.push_back((
++                        None,
++                        IcedLayerShellEvent::WaylandOutputSnapshot(WaylandOutputSnapshot {
++                            outputs: outputs.clone(),
++                        }),
++                    ));
++                }
++                _ => {
++                    waiting_layer_shell_events.push_back((
++                        layer_shell_id,
++                        IcedLayerShellEvent::Window(LayerShellWindowEvent::from(message)),
++                    ));
++                }
++            },
+             LayerShellEvent::UserEvent(event) => {
+                 waiting_layer_shell_events
+                     .push_back((layer_shell_id, IcedLayerShellEvent::UserAction(event)));
+@@ -294,7 +308,9 @@
+     C: Compositor<Renderer = P::Renderer> + 'static,
+     E: Executor + 'static,
+     P::Theme: DefaultStyle,
+-    P::Message: 'static + TryInto<LayerShellCustomActionWithId, Error = P::Message>,
++    P::Message: 'static
++        + TryInto<LayerShellCustomActionWithId, Error = P::Message>
++        + From<WaylandOutputSnapshot>,
+ {
+     pub fn new(
+         application: Instance<P>,
+@@ -385,6 +401,9 @@
+ 
+         match layer_shell_event {
+             IcedLayerShellEvent::UpdateInputRegion(region) => self.wl_input_region = Some(region),
++            IcedLayerShellEvent::WaylandOutputSnapshot(snapshot) => {
++                self.messages.push(snapshot.into());
++            }
+             IcedLayerShellEvent::Window(LayerShellWindowEvent::Refresh) => {
+                 self.handle_refresh_event(ev, layer_shell_id)
+             }
+@@ -602,16 +621,20 @@
+ 
+     fn handle_closed_event(
+         &mut self,
+-        ev: &mut WindowState<IcedId>,
++        _ev: &mut WindowState<IcedId>,
+         layer_shell_id: Option<LayerShellId>,
+     ) {
++        // Output removal destroys the backend unit before dispatching Closed.
++        // The renderer's alias survives until we remove the window below.
+         let Some(iced_id) = layer_shell_id
+-            .and_then(|lid| ev.get_unit_with_id(lid))
+-            .and_then(|layer_shell_window| layer_shell_window.get_binding().copied())
++            .and_then(|lid| self.window_manager.get_alias(lid))
++            .map(|(id, _)| id)
+         else {
+             return;
+         };
+         self.cached_layer_dimensions.remove(&iced_id);
++        self.waiting_layer_shell_actions
++            .retain(|(id, _)| *id != Some(iced_id));
+         self.window_manager.remove(iced_id);
+         self.user_interfaces.remove(&iced_id);
+         self.runtime
+@@ -710,6 +733,16 @@
+             .and_then(|iced_id| self.window_manager.get(iced_id))
+             .map(|window| window.id);
+         if iced_id.is_some() && layer_shell_id.is_none() {
++            // Close can arrive after output removal has already retired the
++            // window. Retry only while a created backend unit still owns the
++            // ID (before its first refresh); absent IDs need no close or tombstone.
++            if matches!(action, LayerShellCustomAction::RemoveWindow)
++                && !ev
++                    .get_unit_iter()
++                    .any(|unit| unit.get_binding().copied() == iced_id)
++            {
++                return;
++            }
+             // still waiting
+             self.waiting_layer_shell_actions.push((iced_id, action));
+             return;
+@@ -891,6 +924,16 @@
+                     Some(iced_id),
+                 )));
+             }
++            LayerShellCustomAction::RequestActivationToken { app_id, callback } => {
++                if layer_shell_id.is_none()
++                    && let Some(window) = self.window_manager.first()
++                {
++                    layer_shell_id = Some(window.id);
++                }
++                ev.request_activation_token(app_id, layer_shell_id, move |token| {
++                    (callback.0)(token);
++                });
++            }
+             LayerShellCustomAction::ForgetLastOutput => {
+                 ev.forget_last_output();
+             }
+--- a/src/multi_window/tests.rs
++++ b/src/multi_window/tests.rs
+@@ -0,0 +1,92 @@
++use super::*;
++
++// Exercise the adapter's action consumer with no remaining windows, as after
++// output removal. No compositor, display connection or rendering is needed.
++struct EmptyDaemon;
++
++#[derive(Debug)]
++enum Message {
++    OutputsChanged,
++}
++
++impl From<WaylandOutputSnapshot> for Message {
++    fn from(_: WaylandOutputSnapshot) -> Self {
++        Self::OutputsChanged
++    }
++}
++
++impl TryInto<LayerShellCustomActionWithId> for Message {
++    type Error = Self;
++    fn try_into(self) -> Result<LayerShellCustomActionWithId, Self> {
++        Err(self)
++    }
++}
++
++impl IcedProgram for EmptyDaemon {
++    type State = ();
++    type Message = Message;
++    type Theme = iced_core::Theme;
++    type Renderer = iced_renderer::Renderer;
++    type Executor = iced_futures::backend::default::Executor;
++
++    fn name() -> &'static str {
++        "retired-window-test"
++    }
++    fn settings(&self) -> iced_core::Settings {
++        Default::default()
++    }
++    fn window(&self) -> Option<iced_core::window::Settings> {
++        None
++    }
++    fn boot(&self) -> ((), iced_runtime::Task<Message>) {
++        ((), iced_runtime::Task::none())
++    }
++    fn update(&self, _: &mut (), message: Message) -> iced_runtime::Task<Message> {
++        let _ = message;
++        iced_runtime::Task::none()
++    }
++    fn view<'a>(
++        &self,
++        _: &'a (),
++        _: IcedId,
++    ) -> iced_core::Element<'a, Message, Self::Theme, Self::Renderer> {
++        unreachable!("no window can request a view")
++    }
++}
++
++#[test]
++fn closing_retired_windows_does_not_leave_retriable_adapter_work() {
++    let (sender, _receiver) = layershellev::calloop::channel::channel();
++    let proxy = IcedProxy::new(sender);
++    let runtime = Runtime::new(
++        <EmptyDaemon as IcedProgram>::Executor::new().unwrap(),
++        proxy.clone(),
++    );
++    let (application, _) = Instance::new(EmptyDaemon);
++    let mut context: Context<EmptyDaemon, _, iced_renderer::Compositor> = Context::new(
++        application,
++        Default::default(),
++        runtime,
++        vec![],
++        iced_core::theme::Mode::Dark,
++        proxy,
++    );
++    let mut backend = WindowState::new("retired-window-test");
++    for _ in 0..100 {
++        context.handle_user_action(
++            &mut backend,
++            Action::Window(iced_runtime::window::Action::Close(IcedId::unique())),
++        );
++        let (next, _) =
++            context.handle_event(&mut backend, None, IcedLayerShellEvent::NormalDispatch);
++        let ContextState::Context(next) = next else {
++            panic!("closing an absent window must not initialize graphics")
++        };
++        context = next;
++    }
++    assert!(
++        context.waiting_layer_shell_actions.is_empty(),
++        "completed closes must not retain work: {}",
++        context.waiting_layer_shell_actions.len()
++    );
++}

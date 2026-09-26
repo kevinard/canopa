@@ -86,6 +86,9 @@ class UpdateTests(unittest.TestCase):
         (commands / "systemctl").write_text(SYSTEMCTL)
         (commands / "systemctl").chmod(0o755)
         self.env = os.environ.copy()
+        # The fixture owns its target directory, including when Canopa's checks
+        # reuse an external workspace build cache.
+        self.env.pop("CARGO_TARGET_DIR", None)
         # Preserve the toolchain/cache while isolating the user's installation.
         self.env["CARGO_HOME"] = str(Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser())
         self.env["RUSTUP_HOME"] = str(Path(os.environ.get("RUSTUP_HOME", "~/.rustup")).expanduser())

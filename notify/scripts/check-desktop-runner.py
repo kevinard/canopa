@@ -10,7 +10,8 @@ import sys
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--niribar-root', type=Path, required=True)
+    parser.add_argument('--niribar-root', type=Path,
+                        default=Path(__file__).resolve().parents[2] / 'niribar')
     args = parser.parse_args()
     failures = []
     for command in ['cargo', 'rustc', 'git', 'dbus-daemon', 'dbus-run-session',
@@ -19,9 +20,11 @@ def main():
         print(f'{command}: {path or "MISSING"}')
         if not path:
             failures.append(command)
-    for name in ['Cargo.toml', 'Cargo.lock', 'vendor/canopa-panel-protocol/Cargo.toml']:
-        if not (args.niribar_root / name).is_file():
-            failures.append(str(args.niribar_root / name))
+    workspace = args.niribar_root.resolve().parent
+    for path in [args.niribar_root / 'Cargo.toml', workspace / 'Cargo.lock',
+                 workspace / 'crates/canopa-panel-protocol/Cargo.toml']:
+        if not path.is_file():
+            failures.append(str(path))
     # Use the same system interpreter that runs the desktop fixture, without
     # importing GI into this process or touching the live accessibility bus.
     checks = [

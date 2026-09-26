@@ -1,5 +1,9 @@
 # Niribar
 
+This application is part of the [Canopa workspace](../README.md). Cargo uses the
+root lockfile and writes normal build outputs to `../target/` when invoked here.
+The commands below describe the application; prefer the root validation entry points.
+
 A configurable Wayland bar for Niri, built with Rust and Iced. It includes
 workspaces, a launcher, tray menus, battery, network, volume, clock/calendar,
 script modules, dmenu selection, and external panels.
@@ -12,7 +16,7 @@ build dependencies:
 ```sh
 sudo apt-get install build-essential pkg-config libpulse-dev libwayland-dev libxkbcommon-dev libudev-dev dbus at-spi2-core
 cargo +1.95.0 build --locked --release --bins
-./target/release/niribar
+../target/release/niribar
 ```
 
 Run inside a Niri/Wayland desktop session with its session D-Bus environment.

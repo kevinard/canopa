@@ -1,0 +1,3 @@
+# Preserve exact upstream manifests and unified-diff context lines.
+vendor/accesskit_unix/Cargo.toml.orig whitespace=-blank-at-eof
+vendor/patches/*.patch -whitespace

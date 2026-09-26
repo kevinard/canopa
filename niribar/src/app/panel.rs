@@ -67,7 +67,7 @@ fn panel_window_settings(plan: PanelPhysicalPlan) -> NewLayerShellSettings {
         output_option: plan
             .output_name
             .map(OutputOption::OutputName)
-            .unwrap_or(OutputOption::None),
+            .unwrap_or(OutputOption::Active),
         namespace: Some(App::namespace()),
         ..Default::default()
     }

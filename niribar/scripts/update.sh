@@ -17,7 +17,7 @@ load_state=$(systemctl --user show niribar.service --property=LoadState --value)
 cargo clean --locked --release --target-dir target \
     --package niribar --package canopa-panel-protocol --package accesskit_unix \
     --package iced_layershell --package layershellev
-cargo build --locked --release --bins --jobs 2 --target-dir target
+cargo build --locked --release --package niribar --bins --jobs 2 --target-dir target
 
 bin_dir="$HOME/.local/bin"
 mkdir -p "$bin_dir"

@@ -10,13 +10,13 @@ fn service_unit_starts_service_mode_without_autostart_desktop_file() {
 
 #[test]
 fn graphical_stack_does_not_enable_linux_theme_detection() {
-    let workspace_manifest = std::fs::read_to_string("../../Cargo.toml").unwrap();
+    let workspace_manifest = std::fs::read_to_string("../../../Cargo.toml").unwrap();
     let crate_manifest = std::fs::read_to_string("Cargo.toml").unwrap();
 
     assert!(workspace_manifest.contains("iced = { version = \"0.14\", default-features = false"));
     assert!(
         workspace_manifest
-            .contains("iced_layershell = { version = \"0.18\", default-features = false")
+            .contains("iced_layershell = { version = \"0.19.1\", default-features = false")
     );
     assert!(!workspace_manifest.contains("linux-theme-detection"));
     assert!(!crate_manifest.contains("mundy"));

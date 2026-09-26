@@ -18,10 +18,10 @@ audio = ["dep:rodio"]
 accesskit = { workspace = true, optional = true }
 accesskit_unix = { workspace = true, optional = true }
 anyhow.workspace = true
-canopa-panel-protocol = { path = "../canopa-panel-protocol" }
+canopa-panel-protocol.workspace = true
 clap.workspace = true
 futures-util.workspace = true
-iced = { workspace = true, optional = true }
+iced = { workspace = true, optional = true, features = ["tiny-skia"] }
 iced_layershell = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 kdl.workspace = true
