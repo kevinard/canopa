@@ -11,10 +11,11 @@ path = "src/main.rs"
 
 [features]
 default = ["gui", "audio"]
-gui = ["dep:canopa-ui", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:wayland-client", "dep:wayland-protocols"]
+gui = ["dep:canopa-assets", "dep:canopa-ui", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:wayland-client", "dep:wayland-protocols"]
 audio = ["dep:rodio"]
 
 [dependencies]
+canopa-assets = { workspace = true, optional = true }
 canopa-notify-client.workspace = true
 miette.workspace = true
 canopa-file.workspace = true

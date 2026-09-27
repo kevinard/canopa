@@ -3,7 +3,8 @@
 Canopa is a desktop environment built around the Niri Wayland compositor. Its Rust
 workspace currently contains Niribar (the shell and Wi-Fi provider), Canopa Notify,
 the `canopa` configuration tool, and shared configuration, appearance, Iced controls
-and panel protocol crates.
+and panel protocol crates. Local icon lookup and bounded raster preparation are
+shared through `canopa-assets`; see the [asset contracts](docs/adr/0005-shared-assets.md).
 
 Use Rust 1.95.0, selected by `rust-toolchain.toml`. On Debian/Ubuntu:
 
@@ -76,3 +77,6 @@ covers palette contrast, shared controls, appearance reloads and desktop fixture
 
 The [integrated notification validation record](docs/integrated-notifications-validation.md)
 covers summary bounds, attention persistence, companion setup and restart recovery.
+
+The [shared asset validation record](docs/shared-assets-validation.md) covers format
+isolation, image budgets, icon lookup compatibility and real PNG/SVG rendering.

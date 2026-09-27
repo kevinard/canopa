@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Private compositor/host appearance check. Requires Niri, Sway, grim, wtype, Pillow and GI/AT-SPI."""
 import argparse
+import html
 import json
 import os
 import re
@@ -33,11 +34,15 @@ def run(args):
     env = os.environ.copy()
     children = []
     logs = []
-    def start(name, command):
+    def start(name, command, input_text=None):
         log = (root / f'{name}.log').open('w')
         logs.append(log)
-        child = subprocess.Popen(command, env=env, stdout=log, stderr=log, start_new_session=True)
+        child = subprocess.Popen(command, env=env, stdout=log, stderr=log, start_new_session=True,
+                                 stdin=subprocess.PIPE if input_text is not None else None)
         children.append(child)
+        if input_text is not None:
+            child.stdin.write(input_text.encode())
+            child.stdin.close()
         return child
     def command(*argv):
         return subprocess.check_output(argv, env=env, text=True).strip()
@@ -57,6 +62,24 @@ def run(args):
             pass
         return None
     try:
+        # Distinct solid colors let screenshots prove the real asset adapters drew
+        # pixels, independently of accessibility labels and fallback text.
+        raster_color = (40, 210, 80)
+        icon_color = (240, 120, 20)
+        svg_color = (234, 17, 203)
+        body_image = root / 'body.png'
+        Image.new('RGB', (32, 32), raster_color).save(body_image)
+        icon_theme = root / 'data' / 'icons' / 'hicolor'
+        (icon_theme / '22x22/apps').mkdir(parents=True)
+        (icon_theme / 'scalable/apps').mkdir(parents=True)
+        (icon_theme / 'index.theme').write_text(
+            '[Icon Theme]\nDirectories=22x22/apps,scalable/apps\n'
+            '[22x22/apps]\nSize=22\nType=Fixed\n'
+            '[scalable/apps]\nSize=22\nType=Scalable\nMinSize=16\nMaxSize=128\n')
+        Image.new('RGB', (22, 22), icon_color).save(icon_theme / '22x22/apps/canopa-fixture-raster.png')
+        (icon_theme / 'scalable/apps/canopa-fixture-svg.svg').write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22">'
+            '<rect width="22" height="22" fill="#ea11cb"/></svg>')
         source = Path(__file__).resolve().parent / 'desktop-fixture'
         protocol = source / 'wlr-virtual-pointer-unstable-v1.xml'
         subprocess.check_call(['wayland-scanner', 'client-header', str(protocol), str(root / 'virtual-pointer.h')])
@@ -121,8 +144,9 @@ def run(args):
             lambda _bus, _sender, _path, _iface, _signal, values, _data: seen.append(values.unpack()), None)
         ident, = call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
             'org.freedesktop.Notifications', 'Notify', GLib.Variant('(susssasa{sv}i)',
-            ('Desktop fixture', 0, '', 'Desktop acceptance',
-             'Before <b>styled</b> <img src="/missing-fixture.png" alt="Image alternative"/> After',
+            ('Desktop fixture', 0, 'canopa-fixture-raster', 'Desktop acceptance',
+             'Before <b>styled</b> <img src="/missing-fixture.png" alt="Image alternative"/> After '
+             f'<img src="{html.escape(str(body_image), quote=True)}" alt="Green image"/>',
              ['one','First action','two','Second action','three','Third action','four','Fourth action'],
              {'resident': GLib.Variant('b', True)}, 0)), '(u)').unpack()
         fourth = eventually(lambda: find('Fourth action'), 'rendered banner accessibility')
@@ -142,6 +166,11 @@ def run(args):
         clear = eventually(lambda: find('Clear active notifications'), 'real Niribar Center')
         center = clear.get_application()
         eventually(lambda: find('Image alternative', center), 'Center image fallback')
+        # The decoded image can push the last action below the native viewport at
+        # fractional scale. Offscreen actions appear in AT-SPI after scrolling.
+        center_action_scrolled = find('Fourth action', center) is None
+        if center_action_scrolled:
+            command('wtype', '-k', 'Next')
         center_action = eventually(lambda: find('Fourth action', center), 'Center sender action')
         assert center_action.get_action_iface().do_action(0), 'native Center action rejected'
         def center_action_received():
@@ -186,7 +215,14 @@ def run(args):
         def initial_palette():
             subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'desktop.png')],
                                   env={**env, 'WAYLAND_DISPLAY': str(outer)})
-            return palette_visible(root / 'desktop.png', initial, initial)
+            frame = Image.open(root / 'desktop.png').convert('RGB')
+            halves = [frame.crop((0, 80, frame.width // 2, frame.height)),
+                      frame.crop((frame.width // 2, 80, frame.width, frame.height))]
+            colors = [dict((rgb, count) for count, rgb in part.getcolors(part.width * part.height))
+                      for part in halves]
+            return (palette_visible(root / 'desktop.png', initial, initial)
+                    and all(counts.get(raster_color, 0) > 100 for counts in colors)
+                    and colors[1].get(icon_color, 0) > 100)
         eventually(initial_palette, 'selected palette in both consumers')
         common = root / 'config' / 'canopa' / 'config.kdl'
         alternate = 'light' if args.color_scheme == 'dark' else 'dark'
@@ -240,12 +276,27 @@ def run(args):
                        if rgb == changed) > 3000
         eventually(recovered_frame, 'recovered Center pixels beyond the bar')
         command('wtype', '-k', 'Escape')
+        # Rich dmenu entries use the shell's icon lookup and its SVG renderer.
+        menu = start('svg-menu', [str(args.niribar), '--dmenu', '--json', '--no-custom'],
+                     json.dumps({'value': 'fixture', 'label': 'SVG asset fixture',
+                                 'icon': 'canopa-fixture-svg'}) + '\n')
+        def svg_frame():
+            subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'svg-menu.png')],
+                                  env={**env, 'WAYLAND_DISPLAY': str(outer)})
+            frame = Image.open(root / 'svg-menu.png').convert('RGB')
+            return sum(count for count, rgb in frame.getcolors(frame.width * frame.height)
+                       if rgb == svg_color) > 50
+        eventually(svg_frame, 'shell SVG icon pixels')
+        command('wtype', '-k', 'Escape')
+        menu.wait(timeout=10)
         (root / 'result.json').write_text(json.dumps({'passed': True, 'sender_actions': seen,
             'built_in_notifications': True, 'dnd_control': True,
             'shell_restart': True, 'daemon_restart': True, 'retained_attention': 2,
 
             'color_scheme': args.color_scheme, 'scale': args.scale, 'keyboard_focus': focus,
             'appearance_reload': True, 'persistent_keyboard': True,
+            'shared_raster_pixels': True, 'indexed_banner_icon': True, 'shell_svg_icon': True,
+            'center_action_scrolled': center_action_scrolled,
             'niri': command('niri', '--version'), 'sway': command('sway', '--version'),
             'scope': 'real compositor, banner native activation, host opening and image fallback; Orca is separate'}, indent=2))
         print(f'Desktop smoke check passed; artifacts: {root}')

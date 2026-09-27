@@ -797,6 +797,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "canopa-assets"
+version = "0.1.0"
+dependencies = [
+ "canopa-file",
+ "image",
+ "rustix 1.1.4",
+ "tempfile",
+]
+
+[[package]]
 name = "canopa-cli"
 version = "0.1.0"
 dependencies = [
@@ -834,6 +844,7 @@ dependencies = [
  "accesskit_unix",
  "anyhow",
  "assert_cmd",
+ "canopa-assets",
  "canopa-config",
  "canopa-file",
  "canopa-notify-client",
@@ -3407,6 +3418,7 @@ dependencies = [
  "accesskit",
  "accesskit_unix",
  "anyhow",
+ "canopa-assets",
  "canopa-config",
  "canopa-notify-client",
  "canopa-panel-protocol",

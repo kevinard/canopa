@@ -442,6 +442,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - First-version **Notification Banner** visual rendering does not require full freedesktop icon-theme lookup.
 - First-version **Notification Banner** file-backed visual rendering supports common static raster image formats before vector or animated image formats.
 - First-version **Body-Embedded Notification Image** rendering supports common static raster image formats before vector or animated image formats.
+- Local raster preparation and indexed icon lookup use shared `canopa-assets` mechanisms; Notify owns its PNG/JPEG policy, per-frame budgets, worker admission, cancellation and display acknowledgment. See [shared asset ownership](../docs/adr/0005-shared-assets.md).
 - Notify shows at most three **Notification Banners** at once by default.
 - **Notification Banner** visibility prefers critical **Active Notifications**, then newest eligible **Active Notifications**.
 - Hidden **Active Notifications** are not later promoted to **Notification Banners** solely because a banner slot opens.

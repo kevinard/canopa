@@ -1,6 +1,5 @@
-//! Indexed local icon discovery. One lookup context belongs to one prepared frame.
-use super::BannerIconSettings;
-use crate::local_file::read_bounded;
+//! Bounded local icon discovery. Metadata lives only for one lookup batch.
+use canopa_file::read_bounded;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -9,11 +8,36 @@ const MAX_ROOTS: usize = 32;
 const MAX_THEMES: usize = 32;
 const MAX_DIRECTORIES: usize = 1024;
 const MAX_INDEX_BYTES: usize = 256 * 1024;
-// PNG is the supported standard format; JPEG is retained as a local extension.
-const EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
+/// Extensions are explicit: raster-only consumers must not receive SVG paths.
+#[derive(Clone, Copy)]
+pub enum IconFormats {
+    PngJpeg,
+    PngSvgXpm,
+}
+
+impl IconFormats {
+    fn extensions(self) -> &'static [&'static str] {
+        match self {
+            Self::PngJpeg => &["png", "jpg", "jpeg"],
+            Self::PngSvgXpm => &["png", "svg", "xpm"],
+        }
+    }
+}
+
+/// Selection policy; source scale does not change widget geometry.
+pub struct LookupOptions<'a> {
+    pub theme: &'a str,
+    pub scale: u16,
+    pub formats: IconFormats,
+    /// Compatibility for hicolor installations without any index.theme. A bad
+    /// existing index always stops lookup; it never activates this fallback.
+    pub allow_unindexed_hicolor: bool,
+}
 type LookupResult<T> = Result<T, ()>;
 
-pub(super) fn search_roots() -> Vec<PathBuf> {
+/// Ordered absolute XDG icon roots, legacy ~/.icons, then unthemed pixmap roots.
+/// Invalid relative paths are ignored; an overflow sentinel disables lookup.
+pub fn search_roots() -> Vec<PathBuf> {
     let user_home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute());
@@ -62,9 +86,14 @@ fn push_root(roots: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
-pub(super) struct IconLookup<'a> {
+/// One synchronous lookup batch. At most 32 roots/themes, 1,024 directories per
+/// index, 256 KiB per index, 2 MiB total index bytes and 65,536 checks are admitted.
+/// Metadata is cached only in this value; callers choose its lifetime and executor.
+/// Cancellation and malformed/over-budget metadata stop lookup without falling
+/// through to a lower-priority override. Returned paths are not decoded or cached.
+pub struct IconLookup<'a> {
     roots: &'a [PathBuf],
-    settings: &'a BannerIconSettings,
+    options: LookupOptions<'a>,
     cancelled: &'a dyn Fn() -> bool,
     checks: usize,
     index_bytes: usize,
@@ -73,27 +102,27 @@ pub(super) struct IconLookup<'a> {
 }
 
 impl<'a> IconLookup<'a> {
-    pub(super) fn new(
+    pub fn new(
         roots: &'a [PathBuf],
-        settings: &'a BannerIconSettings,
+        options: LookupOptions<'a>,
         cancelled: &'a dyn Fn() -> bool,
-        enabled: bool,
     ) -> Self {
+        let stopped = roots.len() > MAX_ROOTS
+            || !valid_theme(options.theme)
+            || !(1..=8).contains(&options.scale);
         Self {
             roots,
-            settings,
+            options,
             cancelled,
             checks: 65536,
             index_bytes: 2 * 1024 * 1024,
             metadata: HashMap::new(),
-            stopped: !enabled
-                || roots.len() > MAX_ROOTS
-                || BannerIconSettings::new(settings.theme.clone(), settings.scale).is_err(),
+            stopped,
         }
     }
 
-    pub(super) fn resolve(&mut self, names: &[String], size: u16) -> Option<PathBuf> {
-        // The app-identity fallback supplies two names; sender icon references supply one.
+    /// Try at most two ordered candidate names at the requested nominal size.
+    pub fn resolve(&mut self, names: &[String], size: u16) -> Option<PathBuf> {
         for name in names.iter().take(2) {
             if !valid_name(name) {
                 continue;
@@ -113,14 +142,14 @@ impl<'a> IconLookup<'a> {
 
     fn resolve_name(&mut self, name: &str, size: u16) -> LookupResult<Option<PathBuf>> {
         let mut seen = HashSet::new();
-        if let Some(path) = self.in_theme(&self.settings.theme.clone(), name, size, &mut seen)? {
+        if let Some(path) = self.in_theme(self.options.theme, name, size, &mut seen)? {
             return Ok(Some(path));
         }
         if let Some(path) = self.in_theme("hicolor", name, size, &mut seen)? {
             return Ok(Some(path));
         }
         for root in self.roots {
-            for extension in EXTENSIONS {
+            for extension in self.options.formats.extensions() {
                 let path = root.join(format!("{name}.{extension}"));
                 if self.exists(&path)? {
                     return Ok(Some(path));
@@ -145,14 +174,17 @@ impl<'a> IconLookup<'a> {
             return Err(());
         }
         let metadata = self.theme(theme)?;
+        if theme == "hicolor" && !metadata.indexed && self.options.allow_unindexed_hicolor {
+            return self.unindexed_hicolor(name);
+        }
         let mut directories: Vec<_> = metadata.directories.iter().enumerate().collect();
         // Exact nominal-size/scale matches precede every approximate match. Ties
         // retain declaration order, then ordered roots and supported extensions.
         directories
-            .sort_by_key(|(index, directory)| (directory.rank(size, self.settings.scale), *index));
+            .sort_by_key(|(index, directory)| (directory.rank(size, self.options.scale), *index));
         for (_, directory) in directories {
             for root in self.roots {
-                for extension in EXTENSIONS {
+                for extension in self.options.formats.extensions() {
                     let path = root
                         .join(theme)
                         .join(&directory.path)
@@ -170,6 +202,34 @@ impl<'a> IconLookup<'a> {
             }
             if let Some(path) = self.in_theme(parent, name, size, seen)? {
                 return Ok(Some(path));
+            }
+        }
+        Ok(None)
+    }
+
+    fn unindexed_hicolor(&mut self, name: &str) -> LookupResult<Option<PathBuf>> {
+        // Preserve the shell's historical fallback for indexless installations.
+        // This is a fixed candidate list, never a recursive directory scan.
+        for root in self.roots {
+            if matches!(self.options.formats, IconFormats::PngSvgXpm) {
+                for category in ["apps", "status", "devices"] {
+                    let path = root.join(format!("hicolor/scalable/{category}/{name}.svg"));
+                    if self.exists(&path)? {
+                        return Ok(Some(path));
+                    }
+                }
+            }
+            for size in [22, 24, 16, 32, 48, 64, 128, 256] {
+                for category in ["apps", "status", "devices"] {
+                    for extension in self.options.formats.extensions() {
+                        let path = root.join(format!(
+                            "hicolor/{size}x{size}/{category}/{name}.{extension}"
+                        ));
+                        if self.exists(&path)? {
+                            return Ok(Some(path));
+                        }
+                    }
+                }
             }
         }
         Ok(None)
@@ -230,6 +290,7 @@ impl<'a> IconLookup<'a> {
 
 #[derive(Default)]
 struct Theme {
+    indexed: bool,
     directories: Vec<Directory>,
     parents: Vec<String>,
 }
@@ -272,10 +333,7 @@ impl Theme {
         if directories.len() + scaled.len() > MAX_DIRECTORIES {
             return Err(());
         }
-        if parents
-            .iter()
-            .any(|name| BannerIconSettings::new((*name).into(), 1).is_err())
-        {
+        if parents.iter().any(|name| !valid_theme(name)) {
             return Err(());
         }
         let directories = directories
@@ -323,6 +381,7 @@ impl Theme {
             })
             .collect::<LookupResult<Vec<_>>>()?;
         Ok(Self {
+            indexed: true,
             directories,
             parents: parents.into_iter().map(str::to_owned).collect(),
         })
@@ -376,4 +435,19 @@ impl Directory {
     }
 }
 
-use super::valid_icon_name as valid_name;
+fn valid_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 255
+        && !matches!(name, "." | "..")
+        && !name
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '/' | '\\'))
+}
+
+fn valid_theme(theme: &str) -> bool {
+    valid_name(theme)
+        && theme.is_ascii()
+        && !theme
+            .bytes()
+            .any(|byte| byte.is_ascii_whitespace() || byte == b',')
+}

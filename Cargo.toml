@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/canopa-cli",
+    "crates/canopa-assets",
     "crates/canopa-file",
     "crates/canopa-config",
     "crates/canopa-theme",
@@ -24,6 +25,7 @@ rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+canopa-assets = { path = "crates/canopa-assets" }
 canopa-notify-client = { path = "crates/canopa-notify-client" }
 canopa-file = { path = "crates/canopa-file" }
 canopa-config = { path = "crates/canopa-config" }

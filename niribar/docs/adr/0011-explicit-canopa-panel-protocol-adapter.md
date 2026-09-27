@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+The shared workspace [asset decision](../../../docs/adr/0005-shared-assets.md)
+moves local raster decoding into `canopa-assets`, preserving this adapter's size,
+format, thumbnail and worker-admission policies.
+
 ## Context
 
 Canopa Notify evolved its declarative panel protocol to JSON-lines v4 while Niribar retained framed JSON v1. Both transports have real providers. Replacing the existing protocol would break the shipped Wi-Fi provider; guessing a protocol from command names or timing would make failures ambiguous.

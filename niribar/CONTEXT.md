@@ -136,6 +136,10 @@ _Avoid_: Orientation, rotated bar, edge rotation
 The icon associated with the application that owns a compositor window, used when a **Module** represents that window rather than a generic module glyph.
 _Avoid_: Window icon, module icon
 
+Local icon lookup and Center raster preparation use shared `canopa-assets`
+mechanisms. Niribar owns SVG rendering, process-lifetime icon caches, Center image
+limits and worker admission; see [shared asset ownership](../docs/adr/0005-shared-assets.md).
+
 ### Notifications
 
 **Notification Module**:

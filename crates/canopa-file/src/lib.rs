@@ -17,6 +17,24 @@ impl std::fmt::Display for BoundedReadError {
 impl std::error::Error for BoundedReadError {}
 
 pub fn read_bounded(path: &Path, maximum_bytes: usize) -> Result<Vec<u8>, BoundedReadError> {
+    read_with_flags(path, maximum_bytes, rustix::fs::OFlags::empty())
+}
+
+/// Allow ordinary symlinked assets, but reject a replaced final symlink after
+/// resolution. As with read_bounded, validate the descriptor and never wait on FIFOs.
+pub fn read_canonical_bounded(
+    path: &Path,
+    maximum_bytes: usize,
+) -> Result<Vec<u8>, BoundedReadError> {
+    let resolved = std::fs::canonicalize(path).map_err(|_| BoundedReadError { bytes_read: 0 })?;
+    read_with_flags(&resolved, maximum_bytes, rustix::fs::OFlags::NOFOLLOW)
+}
+
+fn read_with_flags(
+    path: &Path,
+    maximum_bytes: usize,
+    additional_flags: rustix::fs::OFlags,
+) -> Result<Vec<u8>, BoundedReadError> {
     use rustix::fs::{Mode, OFlags, open};
     let unavailable = || BoundedReadError { bytes_read: 0 };
     let probe_limit = maximum_bytes.checked_add(1).ok_or_else(unavailable)?;
@@ -24,7 +42,7 @@ pub fn read_bounded(path: &Path, maximum_bytes: usize) -> Result<Vec<u8>, Bounde
     // waiting for FIFO writers; symlinks to regular files remain supported.
     let fd = open(
         path,
-        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK | additional_flags,
         Mode::empty(),
     )
     .map_err(|_| unavailable())?;

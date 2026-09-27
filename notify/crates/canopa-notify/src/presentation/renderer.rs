@@ -1,6 +1,7 @@
 //! Wayland/Iced adapter; the projection and presenter contract remain desktop independent.
 use super::*;
 use crate::NotificationBodyRun;
+use canopa_assets::icons;
 use canopa_ui::metrics;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,7 +19,6 @@ const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration
 mod accessibility;
 mod accessibility_bounds;
 mod display;
-mod icons;
 mod images;
 mod revision;
 mod surface;

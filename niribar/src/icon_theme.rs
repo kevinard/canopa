@@ -8,8 +8,8 @@ pub(crate) fn is_valid_icon_name(name: &str) -> bool {
 
 /// Resolve a file path for a named icon by searching XDG icon theme directories.
 ///
-/// Checks hicolor at multiple sizes, then pixmaps. Returns `None` for invalid
-/// icon names or names that cannot be found.
+/// Uses bounded indexed hicolor lookup with SVG support, falling back to the
+/// historical size grid only when hicolor has no index. Results live until restart.
 pub(crate) fn resolve_icon_path(name: &str) -> Option<PathBuf> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<PathBuf>>>> = OnceLock::new();
 
@@ -36,47 +36,40 @@ pub(crate) fn resolve_icon_path(name: &str) -> Option<PathBuf> {
 }
 
 fn resolve_icon_path_uncached(name: &str) -> Option<PathBuf> {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let xdg_data_home =
-        std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{home}/.local/share"));
-    let xdg_data_dirs = std::env::var("XDG_DATA_DIRS")
-        .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string());
+    resolve_in_roots(name, &canopa_assets::icons::search_roots())
+}
 
-    let mut data_dirs: Vec<String> = vec![xdg_data_home];
-    data_dirs.extend(xdg_data_dirs.split(':').map(|s| s.to_string()));
+fn resolve_in_roots(name: &str, roots: &[PathBuf]) -> Option<PathBuf> {
+    use canopa_assets::icons::{IconFormats, IconLookup, LookupOptions};
 
-    let sizes = [
-        "22x22", "24x24", "16x16", "32x32", "48x48", "64x64", "128x128", "256x256",
-    ];
-    let exts = ["png", "svg", "xpm"];
-    let categories = ["apps", "status", "devices"];
+    IconLookup::new(
+        roots,
+        LookupOptions {
+            theme: "hicolor",
+            scale: 1,
+            formats: IconFormats::PngSvgXpm,
+            allow_unindexed_hicolor: true,
+        },
+        &|| false,
+    )
+    .resolve(&[name.to_owned()], 22)
+}
 
-    for base in &data_dirs {
-        for cat in &categories {
-            let svg = PathBuf::from(format!("{base}/icons/hicolor/scalable/{cat}/{name}.svg"));
-            if svg.exists() {
-                return Some(svg);
-            }
-        }
-        for size in &sizes {
-            for cat in &categories {
-                for ext in &exts {
-                    let p =
-                        PathBuf::from(format!("{base}/icons/hicolor/{size}/{cat}/{name}.{ext}"));
-                    if p.exists() {
-                        return Some(p);
-                    }
-                }
-            }
-        }
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn shell_icons_keep_svg_support_with_and_without_theme_indexes() {
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().join("hicolor/scalable/apps");
+        std::fs::create_dir_all(&directory).unwrap();
+        let icon = directory.join("shell-fixture.svg");
+        std::fs::write(&icon, "<svg xmlns=\"http://www.w3.org/2000/svg\"/>").unwrap();
+        let roots = [temp.path().to_owned()];
+        assert_eq!(
+            super::resolve_in_roots("shell-fixture", &roots),
+            Some(icon.clone())
+        );
+        std::fs::write(temp.path().join("hicolor/index.theme"), "[Icon Theme]\nDirectories=scalable/apps\n[scalable/apps]\nSize=22\nType=Scalable\nMinSize=16\nMaxSize=128\n").unwrap();
+        assert_eq!(super::resolve_in_roots("shell-fixture", &roots), Some(icon));
     }
-
-    for ext in &["png", "svg", "xpm"] {
-        let p = PathBuf::from(format!("/usr/share/pixmaps/{name}.{ext}"));
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    None
 }

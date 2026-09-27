@@ -1,5 +1,9 @@
 # Bounded banner image preparation
 
+The shared workspace [asset decision](../../../docs/adr/0005-shared-assets.md)
+moves file decoding/accounting into `canopa-assets`, preserving this adapter's
+budgets, worker lifetime, cancellation and acknowledgment contract.
+
 Prepare local banner visuals behind the Iced presenter/renderer-consumer seam, not during notification mutation or in widget image handles. Decode each accepted PNG/JPEG file into owned RGBA pixels from the same bounded read; widgets must never reopen its path. Preserve EXIF rotations/mirroring from the same decoder metadata and publish the resulting dimensions. Corrupt, missing, unsupported or resource-unsafe images use the supplied body alternative text, or omit the visual when no alternative exists. App icons, notification images and action icons remain distinct slots. References in accepted notification/history/control data remain references, not stored pixels.
 
 One renderer update may attempt at most 32 files, consume a 32 MiB encoded-read budget and publish at most 32 MiB of RGBA pixels across all banners and visual slots. A single file remains limited to 16 MiB, a dimension to 4,096, and an image to 4,194,304 pixels. Open descriptors nonblocking, require regular files, and bound reads including growth after metadata; one extra probe byte may detect overflow, and an exhausted aggregate read budget prevents further reads. Decode only PNG/JPEG detected from content at supported raster paths. Preserve the existing format scope; SVG, animation and additional codecs are not added. The image crate is already in the locked renderer dependency graph; its [allocation limit](https://docs.rs/image/0.25.10/image/struct.Limits.html) is best-effort, so strict output/dimension checks and bounded decoder concurrency are separate requirements. These are logical application budgets, not a hard filesystem deadline or process/GPU RSS guarantee.

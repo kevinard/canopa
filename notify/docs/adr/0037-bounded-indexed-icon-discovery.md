@@ -1,5 +1,9 @@
 # Bounded indexed icon discovery
 
+The shared workspace [asset decision](../../../docs/adr/0005-shared-assets.md)
+moves this lookup mechanism into `canopa-assets`, preserving the banner format,
+theme, scale and per-frame limits. The shell supplies its own format policy.
+
 Carry unresolved local paths and ordered icon names through Notification Banner projection. Perform discovery in the existing single admitted asset-preparation job, outside Notification Runtime mutation and widgets. Replace the permanent recursive filename index with a private indexed resolver: metadata is shared only within one prepared frame and reread on later frames, so theme and file edits need no daemon restart. Already delivered pixels remain immutable under ADR 0036.
 
 Use the [Icon Theme 0.13 directory and lookup rules](https://specifications.freedesktop.org/icon-theme/latest/): first index across ordered roots, declared directories, exact nominal size/scale before closest physical size, selected theme before recursive parents, then hicolor and unthemed fallback. Preserve declaration/root/extension order for ties. Follow the prose and directory-key definitions where the published pseudocode says `Scaled` instead of `Scalable` or has inconsistent threshold-distance arithmetic. PNG is the supported standard format; JPEG remains a local extension. SVG and the standard's legacy XPM format are not supported, so full icon-format conformance is not claimed.

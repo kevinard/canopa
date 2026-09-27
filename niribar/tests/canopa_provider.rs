@@ -134,6 +134,65 @@ async fn canopa_provider_prepares_only_bounded_local_images() {
 }
 
 #[tokio::test]
+async fn canopa_image_policy_keeps_smaller_limits_thumbnailing_and_codec_support() {
+    let temp = tempfile::tempdir().unwrap();
+    let small = temp.path().join("small.gif");
+    let large = temp.path().join("thumbnail.png");
+    let wide = temp.path().join("wide.png");
+    let oversized = temp.path().join("oversized.png");
+    image::RgbaImage::from_pixel(4, 2, image::Rgba([255, 0, 0, 255]))
+        .save(&small)
+        .unwrap();
+    image::RgbaImage::from_pixel(1024, 512, image::Rgba([255, 0, 0, 255]))
+        .save(&large)
+        .unwrap();
+    image::RgbaImage::from_pixel(2049, 1, image::Rgba([255, 0, 0, 255]))
+        .save(&wide)
+        .unwrap();
+    std::fs::File::create(&oversized)
+        .unwrap()
+        .set_len(8 * 1024 * 1024 + 1)
+        .unwrap();
+    let paths = [&small, &large, &wide, &oversized];
+    let segments: Vec<_> = paths.iter().map(|path| serde_json::json!({
+        "kind": "image", "image": {"source": {"kind": "local_path", "path": path}, "alt": "Unavailable"}
+    })).collect();
+    let mut input = serde_json::json!({
+        "type": "replace_content", "protocol_version": 4,
+        "content": {"title": "Images", "actions": [], "error": null, "sections": [{
+            "id": "images", "title": "Images", "controls": [], "items": [{
+                "id": "images", "title": "Images", "rich_body": {"segments": segments},
+                "metadata": [], "actions": []
+            }]
+        }]}
+    })
+    .to_string();
+    input.push('\n');
+    let snapshot = CanopaSession::default()
+        .read_content(&mut tokio::io::BufReader::new(input.as_bytes()))
+        .await
+        .unwrap();
+    assert!(matches!(
+        snapshot.image(small.to_str().unwrap()),
+        Some(iced::widget::image::Handle::Rgba {
+            width: 4,
+            height: 2,
+            ..
+        })
+    ));
+    assert!(matches!(
+        snapshot.image(large.to_str().unwrap()),
+        Some(iced::widget::image::Handle::Rgba {
+            width: 512,
+            height: 256,
+            ..
+        })
+    ));
+    assert!(snapshot.image(wide.to_str().unwrap()).is_none());
+    assert!(snapshot.image(oversized.to_str().unwrap()).is_none());
+}
+
+#[tokio::test]
 async fn canopa_provider_rejects_ambiguous_item_ids() {
     let input = br#"{"type":"replace_content","protocol_version":4,"content":{"title":"Notifications","actions":[],"error":null,"sections":[{"id":"mail","title":"Mail","controls":[],"items":[{"id":"1","title":"Old","body":null,"styled_body":null,"rich_body":null,"metadata":[],"actions":[]},{"id":"1","title":"New","body":null,"styled_body":null,"rich_body":null,"metadata":[],"actions":[]}]}]}}
 "#;
