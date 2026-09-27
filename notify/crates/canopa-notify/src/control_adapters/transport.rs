@@ -4,13 +4,14 @@ use super::{
 };
 use anyhow::Context;
 use canopa_notify::NotifyControl;
+use canopa_panel_protocol::v5;
 use canopa_panel_protocol::{
     InteractionEvent, MAX_FRAME_BYTES as MAX_PANEL_FRAME_BYTES, PanelContent, ProviderResponse,
 };
 use std::io::{BufRead, Read, Write};
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
@@ -61,7 +62,67 @@ pub(crate) async fn run_ctl(socket: &Path, request: CtlRequest) -> anyhow::Resul
     Ok(())
 }
 
-pub(crate) fn run_panel_provider(socket: &Path) -> anyhow::Result<()> {
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub(crate) enum PanelProtocol {
+    CanopaV4,
+    CanopaV5,
+}
+
+#[derive(Clone)]
+enum PanelWire {
+    V4,
+    V5(Arc<Mutex<v5::Session>>),
+}
+impl PanelWire {
+    fn content(&self, content: PanelContent) -> anyhow::Result<Vec<u8>> {
+        match self {
+            Self::V4 => Ok(panel_response_line(content)?.into_bytes()),
+            Self::V5(state) => Ok(state
+                .lock()
+                .unwrap()
+                .replace(v5::Content::Rich(content), v5::Update::Replace)?
+                .encode()?),
+        }
+    }
+    fn frame(&self, frame: canopa_panel_protocol::v4::Frame) -> anyhow::Result<Vec<u8>> {
+        match self {
+            Self::V4 => Ok(frame.into_bytes()),
+            Self::V5(_) => self.content(frame.into_content()),
+        }
+    }
+    fn input(&self, reader: &mut impl BufRead) -> std::io::Result<Option<String>> {
+        let Self::V5(state) = self else {
+            return read_panel_interaction(reader);
+        };
+        loop {
+            let Some(message) = v5::HostMessage::read(reader).map_err(std::io::Error::other)?
+            else {
+                return Ok(None);
+            };
+            if !state.lock().unwrap().accepts(&message) {
+                continue;
+            }
+            match message {
+                v5::HostMessage::Close { .. } => return Ok(None),
+                v5::HostMessage::Event {
+                    interaction: v5::Interaction::Rich(event),
+                    ..
+                } => {
+                    let mut line = serde_json::to_string(&event).map_err(std::io::Error::other)?;
+                    line.push('\n');
+                    return Ok(Some(line));
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+pub(crate) fn run_panel_provider(socket: &Path, protocol: PanelProtocol) -> anyhow::Result<()> {
+    let wire = match protocol {
+        PanelProtocol::CanopaV4 => PanelWire::V4,
+        PanelProtocol::CanopaV5 => PanelWire::V5(Default::default()),
+    };
     let mut stream = match StdUnixStream::connect(socket) {
         Ok(stream) => stream,
         Err(source) => {
@@ -69,30 +130,29 @@ pub(crate) fn run_panel_provider(socket: &Path) -> anyhow::Result<()> {
                 "Canopa Notify daemon unavailable at {}: {source}",
                 socket.display()
             );
-            println!(
-                "{}",
-                serde_json::to_string(&ProviderResponse::replace_content(PanelContent::error(
-                    "Canopa Notify",
-                    message
-                )))?
-            );
+            let mut stdout = std::io::stdout().lock();
+            stdout.write_all(&wire.content(PanelContent::error("Canopa Notify", message))?)?;
+            stdout.flush()?;
             return Ok(());
         }
     };
     stream.set_write_timeout(Some(CONTROL_WRITE_TIMEOUT))?;
     stream.write_all(b"panel-session\n")?;
-    spawn_panel_interaction_forwarder(socket.to_path_buf(), stream.try_clone()?)?;
+    spawn_panel_interaction_forwarder(socket.to_path_buf(), stream.try_clone()?, wire.clone())?;
     let mut reader = std::io::BufReader::new(stream);
     let mut stdout = std::io::stdout().lock();
     loop {
-        match read_panel_frame(&mut reader) {
+        match canopa_panel_protocol::v4::Frame::read(&mut reader)
+            .map_err(anyhow::Error::from)
+            .and_then(|frame| frame.map(|frame| wire.frame(frame)).transpose())
+        {
             Ok(Some(frame)) => stdout.write_all(&frame)?,
             Ok(None) => break,
             Err(_) => {
-                stdout.write_all(panel_response_line(PanelContent::error(
+                stdout.write_all(&wire.content(PanelContent::error(
                     "Canopa Notify",
                     "Notification Center stream ended with an invalid or incomplete frame; reopen the panel.",
-                ))?.as_bytes())?;
+                ))?)?;
                 stdout.flush()?;
                 break;
             }
@@ -102,13 +162,10 @@ pub(crate) fn run_panel_provider(socket: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn read_panel_frame(reader: &mut impl BufRead) -> anyhow::Result<Option<Vec<u8>>> {
-    Ok(canopa_panel_protocol::v4::Frame::read(reader)?.map(|frame| frame.into_bytes()))
-}
-
 fn spawn_panel_interaction_forwarder(
     socket: PathBuf,
     mut navigation: StdUnixStream,
+    wire: PanelWire,
 ) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -119,7 +176,7 @@ fn spawn_panel_interaction_forwarder(
             let stdin = std::io::stdin();
             let mut reader = stdin.lock();
             loop {
-                let line = match read_panel_interaction(&mut reader) {
+                let line = match wire.input(&mut reader) {
                     Ok(Some(line)) => line,
                     Ok(None) => break,
                     Err(_) => {
@@ -144,6 +201,9 @@ fn spawn_panel_interaction_forwarder(
                 if !matches!(result, Ok(Ok(()))) {
                     eprintln!("level=warn component=panel_provider event=interaction_failed");
                 }
+            }
+            if matches!(wire, PanelWire::V5(_)) {
+                let _ = navigation.shutdown(std::net::Shutdown::Both);
             }
         })?;
     Ok(())

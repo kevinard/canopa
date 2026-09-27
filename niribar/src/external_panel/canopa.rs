@@ -93,6 +93,13 @@ impl CanopaSession {
             .await?
             .ok_or(ProtocolError::FrameTooShort)?
             .into_content();
+        self.prepare(content).await
+    }
+
+    pub async fn prepare(&self, content: PanelContent) -> Result<CanopaSnapshot, ProtocolError> {
+        content
+            .validate()
+            .map_err(|_| ProtocolError::InvalidContent("invalid Canopa content".into()))?;
         let images = super::canopa_images::prepare(&content).await;
         let mut state = self.state.lock().unwrap();
         // Unique across sessions as well as replacements: late clicks from a closed panel stay stale.
@@ -167,11 +174,9 @@ impl CanopaSession {
         writer: &mut W,
         action_id: &str,
     ) -> Result<bool, ProtocolError> {
-        if !self.state.lock().unwrap().actions.contains(action_id) {
+        let Some(event) = self.interaction(action_id) else {
             return Ok(false);
-        }
-        let (_, event): (u64, InteractionEvent) =
-            serde_json::from_str(action_id).map_err(|_| ProtocolError::UnexpectedMessage)?;
+        };
         let mut bytes = serde_json::to_vec(&event).map_err(|_| ProtocolError::UnexpectedMessage)?;
         bytes.push(b'\n');
         writer
@@ -183,5 +188,12 @@ impl CanopaSession {
             .await
             .map_err(|error| ProtocolError::Io(error.to_string()))?;
         Ok(true)
+    }
+    pub fn interaction(&self, action_id: &str) -> Option<InteractionEvent> {
+        if !self.state.lock().unwrap().actions.contains(action_id) {
+            return None;
+        }
+        let (_, event): (u64, InteractionEvent) = serde_json::from_str(action_id).ok()?;
+        Some(event)
     }
 }

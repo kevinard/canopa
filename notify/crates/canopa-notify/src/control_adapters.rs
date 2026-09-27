@@ -13,7 +13,7 @@ use canopa_panel_protocol::{
 mod pages;
 mod transport;
 
-pub(crate) use transport::{ControlSocket, run_ctl, run_panel_provider};
+pub(crate) use transport::{ControlSocket, PanelProtocol, run_ctl, run_panel_provider};
 use transport::{control_reply_line, panel_response_line};
 
 const PANEL_NOTIFICATION_ACTION_KEY: &str = "canopa-notify:notification-action";

@@ -78,7 +78,8 @@ credentials. New enterprise/EAP provisioning is outside the panel's scope;
 provision such profiles with the system's network tools first. iwd network
 configuration also depends on the system's existing DHCP/DNS setup.
 
-External providers use explicit `niribar-v1` or `canopa-v4` protocols. Both contracts
+Built-in providers use `canopa-v5`; configured providers also support explicit
+`niribar-v1` and `canopa-v4`. All contracts
 are available directly from [canopa-panel-protocol](../crates/canopa-panel-protocol/README.md)
 without depending on the shell. See
 [the provider guide](docs/external-panel-providers.md).

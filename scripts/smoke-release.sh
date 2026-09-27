@@ -45,5 +45,14 @@ size = struct.unpack('>Q', result.stdout[len(magic):len(magic)+8])[0]
 message = json.loads(result.stdout[len(magic)+8:len(magic)+8+size])
 assert message['type'] == 'handshake' and message['protocol_version'] == 1
 assert message['content']['elements'][0]['title'] == 'Wi-Fi unavailable'
-print('Release bundle: all four binaries execute; provider handshake and close pass.')
+result = subprocess.run([sys.argv[1], '--protocol', 'canopa-v5'],
+                        input=b'{"type":"close","protocol_version":5}\n',
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+                        env={'PATH': os.path.dirname(sys.argv[1]),
+                             'NIRIBAR_WIFI_PROVIDER_BACKEND': 'none'}, check=True)
+message = json.loads(result.stdout)
+assert message['protocol_version'] == 5 and message['revision'] == 1
+assert message['content']['kind'] == 'form'
+assert message['content']['body']['elements'][0]['title'] == 'Wi-Fi unavailable'
+print('Release bundle: all four binaries execute; v1 and v5 provider close pass.')
 PY

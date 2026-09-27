@@ -1,28 +1,34 @@
 # Canopa panel provider contracts
 
-This crate supplies the two existing provider contracts without a GUI dependency:
+This crate supplies versioned provider contracts without a GUI dependency:
 
+- `v5`: the common built-in provider contract: form/rich content, interaction
+  revisions, bounded JSON lines and explicit close. See [ADR 0007](../../docs/adr/0007-unified-panel-protocol.md).
 - `v1`: the `niribar-v1` framed JSON handshake, declarative controls and typed events.
 - `v4`: the `canopa-v4` JSON-lines content and opaque interactions. Existing root
   imports remain aliases for this contract.
 
 Use `canopa-panel-protocol` directly when writing a provider; do not depend on the
-shell for its protocol types. Enable the optional `tokio` feature for v1 asynchronous
-framing and handshakes or `v4::Frame::read_async`. The default dependency graph
+shell for its protocol types. Enable the optional `tokio` feature for asynchronous
+v1 framing and handshakes, `v4::Frame::read_async`, or v5 response/message readers.
+The default dependency graph
 contains only Serde/JSON dependencies. Synchronous v1 callers can use `encode_frame`
 and `decode_frame`; v4 forwarders can use `Frame::read` and `Frame::into_bytes`.
 
-A host selects `niribar-v1` (the existing default) or `canopa-v4` explicitly in its
-provider configuration. These are separate compatibility contracts, not negotiated
-versions of a new protocol. All v4 provider responses carry version 4; v1 establishes
-version 1 in its handshake. Existing wire field names and limits are unchanged.
+A host selects `canopa-v5`, `niribar-v1` (the configured-provider default), or
+`canopa-v4` explicitly in its provider configuration. Existing v1/v4 contracts
+remain available alongside the explicitly selected v5 successor; hosts never guess
+a protocol. All v4 provider responses carry version 4; v1 establishes version 1 in
+its handshake. Existing wire field names and limits are unchanged.
 
 `v4::Frame` validates the complete replacement, including content identifiers and
 actions. v1 callers validate `ExternalPanelDocument` before displaying replacements;
 `perform_handshake` also validates the initial document. Read errors terminate the
 stream unless a caller has a documented resynchronization policy. Read futures must
 not be cancelled midway through a frame. Callers own execution, timeouts, queues,
-process cleanup, and rejection of stale interactions.
+process cleanup, and applying the interaction contract. The v5 `Session` shares
+revision and advertised-control validation between host and provider; application
+domain guards remain caller-owned.
 
 When migrating Rust source from `niribar::external_panel::protocol`, omit the old
 `search_query` field from `SelectableList` constructors. It was host-only and never

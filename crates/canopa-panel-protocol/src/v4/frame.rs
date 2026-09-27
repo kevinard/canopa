@@ -2,7 +2,7 @@
 //! asynchronous hosts. Keep original bytes for forwarding without re-encoding.
 use super::{MAX_FRAME_BYTES, PROTOCOL_VERSION, PanelContent, ProviderResponse};
 use crate::ProtocolError;
-use std::io::{BufRead, Read};
+use std::io::BufRead;
 
 pub struct Frame {
     bytes: Vec<u8>,
@@ -34,12 +34,9 @@ impl Frame {
     /// Read exactly one JSON line. EOF is distinct from an incomplete frame.
     /// Callers own deadlines, backpressure and what to do on failure.
     pub fn read(reader: &mut impl BufRead) -> Result<Option<Self>, ProtocolError> {
-        let mut bytes = Vec::new();
-        reader
-            .take((MAX_FRAME_BYTES + 1) as u64)
-            .read_until(b'\n', &mut bytes)
-            .map_err(|error| ProtocolError::Io(error.to_string()))?;
-        Self::received(bytes)
+        crate::lines::read(reader, MAX_FRAME_BYTES)?
+            .map(Self::decode)
+            .transpose()
     }
 
     /// As with other stream reads, retain the read future across unrelated
@@ -48,22 +45,10 @@ impl Frame {
     pub async fn read_async(
         reader: &mut (impl tokio::io::AsyncBufRead + Unpin),
     ) -> Result<Option<Self>, ProtocolError> {
-        use tokio::io::{AsyncBufReadExt, AsyncReadExt};
-        let mut bytes = Vec::new();
-        reader
-            .take((MAX_FRAME_BYTES + 1) as u64)
-            .read_until(b'\n', &mut bytes)
-            .await
-            .map_err(|error| ProtocolError::Io(error.to_string()))?;
-        Self::received(bytes)
-    }
-
-    fn received(bytes: Vec<u8>) -> Result<Option<Self>, ProtocolError> {
-        if bytes.is_empty() {
-            Ok(None)
-        } else {
-            Self::decode(bytes).map(Some)
-        }
+        crate::lines::read_async(reader, MAX_FRAME_BYTES)
+            .await?
+            .map(Self::decode)
+            .transpose()
     }
 
     pub fn into_bytes(self) -> Vec<u8> {

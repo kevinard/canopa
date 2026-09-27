@@ -1,6 +1,7 @@
 pub mod backends;
 pub mod cleanup;
 pub mod session;
+pub mod transport;
 
 use std::future::Future;
 use std::pin::Pin;

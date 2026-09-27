@@ -11,6 +11,8 @@ use tokio::process::{Child, ChildStderr};
 #[cfg(test)]
 mod canopa_session_tests;
 
+mod v5;
+
 pub(crate) mod protocol {
     pub(crate) use niribar::external_panel::protocol::*;
 }
@@ -20,6 +22,7 @@ pub enum ProviderProtocol {
     #[default]
     NiribarV1,
     CanopaV4,
+    CanopaV5,
 }
 pub(crate) struct ExternalPanelStartedSession {
     pub(crate) content: crate::surface::panel::ExternalPanelDocument,
@@ -36,7 +39,14 @@ pub struct ExternalPanelSessionHandle {
     close_grace: std::time::Duration,
     closed: Arc<AtomicBool>,
     stderr_tail: Arc<tokio::sync::Mutex<ProviderStderrTail>>,
-    canopa: Option<niribar::external_panel::canopa::CanopaSession>,
+    adapter: ProviderAdapter,
+}
+
+#[derive(Clone)]
+enum ProviderAdapter {
+    V1,
+    V4(niribar::external_panel::canopa::CanopaSession),
+    V5(v5::Session),
 }
 
 impl std::fmt::Debug for ExternalPanelSessionHandle {
@@ -126,7 +136,12 @@ impl ExternalPanelSessionHandle {
     async fn send_close_event_best_effort(&self) {
         let _ = tokio::time::timeout(PROVIDER_CLOSE_GRACE, async {
             let mut stdin = self.stdin.lock().await;
-            if self.canopa.is_some() {
+            if matches!(self.adapter, ProviderAdapter::V4(_)) {
+                let _ = stdin.shutdown().await;
+            } else if let ProviderAdapter::V5(session) = &self.adapter {
+                let _ = session
+                    .write(&mut *stdin, protocol::ProviderEvent::Close)
+                    .await;
                 let _ = stdin.shutdown().await;
             } else {
                 let _ = protocol::write_frame(
@@ -202,7 +217,9 @@ impl ExternalPanelSessionHandle {
         }
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             let mut stdin = self.stdin.lock().await;
-            if let Some(canopa) = &self.canopa {
+            if let ProviderAdapter::V5(session) = &self.adapter {
+                session.write(&mut *stdin, event).await
+            } else if let ProviderAdapter::V4(canopa) = &self.adapter {
                 match event {
                     protocol::ProviderEvent::ButtonActivated { element_id } => {
                         canopa.write_interaction(&mut *stdin, &element_id).await?;
@@ -231,7 +248,10 @@ impl ExternalPanelSessionHandle {
             ));
         }
         let mut stdout = self.stdout.lock().await;
-        if let Some(canopa) = &self.canopa {
+        if let ProviderAdapter::V5(session) = &self.adapter {
+            return session.read_content(&mut *stdout).await;
+        }
+        if let ProviderAdapter::V4(canopa) = &self.adapter {
             return Ok(crate::surface::panel::ExternalPanelDocument::Canopa(
                 Box::new(canopa.read_content(&mut *stdout).await?),
             ));
@@ -260,7 +280,7 @@ impl ExternalPanelSessionHandle {
             child: Arc::new(tokio::sync::Mutex::new(None)),
             group: Arc::new(crate::command::ProcessGroup::new(None)),
             close_grace: PROVIDER_CLOSE_GRACE,
-            canopa: None,
+            adapter: ProviderAdapter::V1,
             closed: Arc::new(AtomicBool::new(false)),
             stderr_tail: Arc::new(tokio::sync::Mutex::new(ProviderStderrTail::new(
                 PROVIDER_STDERR_TAIL_BYTES,
@@ -297,16 +317,19 @@ impl ExternalPanelProcess {
         if let Some(stderr) = self.child.stderr.take() {
             capture_provider_stderr(stderr, stderr_tail.clone());
         }
-        let canopa = (transport == ProviderProtocol::CanopaV4)
-            .then(niribar::external_panel::canopa::CanopaSession::default);
-        let content = if let Some(canopa) = &canopa {
-            crate::surface::panel::ExternalPanelDocument::Canopa(Box::new(
-                canopa.read_content(&mut stdout).await?,
-            ))
-        } else {
-            protocol::perform_handshake(&mut stdout, &mut stdin, handshake)
+        let adapter = match transport {
+            ProviderProtocol::NiribarV1 => ProviderAdapter::V1,
+            ProviderProtocol::CanopaV4 => ProviderAdapter::V4(Default::default()),
+            ProviderProtocol::CanopaV5 => ProviderAdapter::V5(v5::Session::new(session_id.clone())),
+        };
+        let content = match &adapter {
+            ProviderAdapter::V1 => protocol::perform_handshake(&mut stdout, &mut stdin, handshake)
                 .await?
-                .into()
+                .into(),
+            ProviderAdapter::V4(canopa) => crate::surface::panel::ExternalPanelDocument::Canopa(
+                Box::new(canopa.read_content(&mut stdout).await?),
+            ),
+            ProviderAdapter::V5(session) => session.read_content(&mut stdout).await?,
         };
         let handle = ExternalPanelSessionHandle {
             session_id,
@@ -315,7 +338,7 @@ impl ExternalPanelProcess {
             child: Arc::new(tokio::sync::Mutex::new(Some(self.child))),
             group: Arc::new(self.group),
             close_grace,
-            canopa,
+            adapter,
             closed: Arc::new(AtomicBool::new(false)),
             stderr_tail,
         };
@@ -375,8 +398,8 @@ impl<'a> PanelProviderCatalog<'a> {
             .iter()
             .find(|provider| provider.name == name)
             .map(|provider| provider.protocol)
-            .unwrap_or(if name == "notifications" {
-                ProviderProtocol::CanopaV4
+            .unwrap_or(if is_builtin_provider_name(name) {
+                ProviderProtocol::CanopaV5
             } else {
                 ProviderProtocol::default()
             })
@@ -421,9 +444,13 @@ pub(crate) fn builtin_provider_command(name: &str) -> Option<crate::config::Conf
     };
     let program = companion_binary(binary_name);
     let args = if name == "notifications" {
-        vec!["panel-provider".into()]
+        vec![
+            "panel-provider".into(),
+            "--protocol".into(),
+            "canopa-v5".into(),
+        ]
     } else {
-        Vec::new()
+        vec!["--protocol".into(), "canopa-v5".into()]
     };
     Some(crate::config::ConfiguredCommand::argv(
         program,
@@ -604,7 +631,7 @@ mod tests {
         let child = Arc::new(tokio::sync::Mutex::new(Some(child)));
         let handle = ExternalPanelSessionHandle {
             session_id: "session-1".into(),
-            canopa: None,
+            adapter: ProviderAdapter::V1,
             stdin: Arc::new(tokio::sync::Mutex::new(Box::new(stdin))),
             stdout: Arc::new(tokio::sync::Mutex::new(Box::new(BufReader::new(stdout)))),
             child: child.clone(),
@@ -703,18 +730,19 @@ mod tests {
     }
 
     #[test]
-    fn notification_provider_uses_v4_and_allows_an_explicit_override() {
+    fn builtin_providers_use_v5_and_allow_an_explicit_override() {
         let catalog = PanelProviderCatalog::new(&[]);
         assert_eq!(
             catalog.protocol("notifications"),
-            ProviderProtocol::CanopaV4
+            ProviderProtocol::CanopaV5
         );
         let command = catalog.resolve("notifications").unwrap();
         let crate::config::ConfiguredCommandSpec::Argv { program, args } = command.spec() else {
             panic!("expected argv")
         };
         assert!(program.ends_with("canopa-notify"));
-        assert_eq!(args, &["panel-provider"]);
+        assert_eq!(args, &["panel-provider", "--protocol", "canopa-v5"]);
+        assert_eq!(catalog.protocol("wifi"), ProviderProtocol::CanopaV5);
         let custom = crate::config::ConfiguredCommand::argv_for_test("custom", vec![]);
         let configured = vec![crate::config::PanelProviderConfig {
             name: "notifications".into(),

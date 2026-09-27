@@ -2,8 +2,10 @@
 //! Wire models have no toolkit or application dependency. Tokio I/O is opt-in.
 
 mod error;
+mod lines;
 pub mod v1;
 pub mod v4;
+pub mod v5;
 
 pub use error::ProtocolError;
 // Preserve the original v4 Rust imports as well as its unchanged wire format.

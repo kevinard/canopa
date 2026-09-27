@@ -205,7 +205,9 @@ Continue the declarative provider model in
 The host owns visual treatment; providers supply meaning and receive opaque events.
 Both existing contracts now live in the shared crate, with host state separated
 from wire models ([ADR 0006](adr/0006-shared-provider-contracts.md)). This completes
-source consolidation; wire convergence below remains separate work.
+source consolidation. Built-ins now use the common v5 contract
+([ADR 0007](adr/0007-unified-panel-protocol.md)), with the earlier adapters retained
+for configured providers. The parity constraints below guided that migration.
 
 Sharing the v4 source is an immediate deduplication. Replacing `niribar-v1` with v4
 is not: v1 has selectable lists and secret text inputs used by Wi-Fi, while v4 has

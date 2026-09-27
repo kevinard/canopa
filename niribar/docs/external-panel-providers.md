@@ -9,7 +9,10 @@ network updates and local search or text edits. They do not close and reopen
 the panel. Input state stays with the same control identity; a replacement
 button or text field cannot inherit a held click or keyboard focus.
 
-The Wi-Fi provider requirements in this document define protocol version `1`; earlier experimental request/response-only behavior is not a separate compatibility target.
+The Wi-Fi requirements below originated with protocol version `1` and remain the
+behavioral baseline. Built-ins now select `canopa-v5`, described under Transport;
+explicit legacy declarations remain supported. Earlier experimental
+request/response-only behavior is not a separate compatibility target.
 
 ## Configuration
 
@@ -51,7 +54,11 @@ Provider commands obey `command-policy`. Shell-form commands are rejected when s
 
 The built-in `network` module has an optional default provider name of `"wifi"`. If the network module has no configured click action, clicking the module opens the shipped Wi-Fi provider. A declared provider named `"wifi"` overrides the shipped provider.
 
-The shipped Wi-Fi provider is a separate Cargo binary, `niribar-wifi-provider`, launched through the same framed-JSON external-provider path as user-configured providers. Zero-config launch looks for a `niribar-wifi-provider` sibling of the running `niribar` executable first, then falls back to resolving `niribar-wifi-provider` from `PATH`.
+The shipped Wi-Fi provider is a separate Cargo binary, `niribar-wifi-provider`,
+launched through the external-provider host with `--protocol canopa-v5`. Without
+that flag the binary retains its v1 handshake. Zero-config launch looks for a
+`niribar-wifi-provider` sibling of the running `niribar` executable first, then
+falls back to resolving `niribar-wifi-provider` from `PATH`.
 
 Protocol and content-model types should live in shared library code used by `niribar` and shipped provider binaries. Provider binaries must not duplicate the frame encoding, JSON message enums, or content validation rules.
 
@@ -104,7 +111,10 @@ The built-in Wi-Fi provider talks to supported control backends through structur
 
 Implementation should prioritize the iwd path first so the provider works on systems that use systemd-networkd plus iwd, then add NetworkManager support while preserving the same runtime backend selection policy. The complete built-in Wi-Fi provider must support both the NetworkManager path and the iwd fallback path.
 
-The built-in Wi-Fi provider should complete the handshake promptly with initial content instead of waiting for a scan. Initial content may show scanning status, the **Active Wi-Fi Network** when the backend can report one, and an empty or disabled network list. Scan results arrive as full content replacements.
+The built-in Wi-Fi provider should publish initial content promptly (or complete
+the handshake for v1) without waiting for a scan. Initial content may show scanning
+status, the **Active Wi-Fi Network** when the backend can report one, and an empty
+or disabled network list. Scan results arrive as full content replacements.
 
 The built-in Wi-Fi provider starts one **Wi-Fi Scan** when the panel opens and exposes a manual refresh action in its content. It does not need a background polling policy for the first version.
 
@@ -142,6 +152,34 @@ V1 does not support disconnecting from or forgetting saved networks from the bui
 
 ## Transport
 
+### Unified built-in providers (JSON-lines v5)
+
+The built-in Wi-Fi and Notification Center providers both use `canopa-v5`. Their
+commands explicitly select it; existing user-declared providers keep their command
+and protocol. For an explicit notification declaration:
+
+```kdl
+panel-providers {
+    provider "notifications" {
+        protocol "canopa-v5"
+        command { argv "canopa-notify" "panel-provider" "--protocol" "canopa-v5"; }
+    }
+}
+```
+
+For Wi-Fi use `argv "niribar-wifi-provider" "--protocol" "canopa-v5"` with the same
+protocol selection. The protocol is provider-first: no host handshake is sent.
+Each response carries version 5, a nonzero interaction revision, and either form or
+rich content. Inputs echo the revision and identify an advertised control. Password
+edits preserve a compatible prompt revision; starting another operation retires it.
+The host owns control rendering and session-scoped identities. Close is explicit.
+Responses are bounded to 1 MiB and host messages to 64 KiB, including their newline.
+See [Canopa ADR 0007](../../docs/adr/0007-unified-panel-protocol.md) and the shared
+[crate guide](../../crates/canopa-panel-protocol/README.md) for the contract.
+
+The compatibility protocols below remain supported. Omitting `protocol` in a
+configured declaration still selects v1; provider binaries keep their old defaults.
+
 ### Canopa Notify (JSON-lines v4)
 
 Canopa includes a built-in `notifications` module and Center provider. Place
@@ -170,7 +208,7 @@ The host renders grouped sections, controls, metadata, all actions, bold/italic/
 
 Arrow keys select an action, Enter activates it, and Escape closes the panel. The selected action and its item/control context remain visible above the scrolling content. A replacement clears keyboard selection and invalidates old actions. Pointer interaction remains available for every action/control option. Body links are underlined controls with opaque provider actions. Their URI stays in the provider. Native AT-SPI exposes names, button/link roles, selection, focus and actions; updates retain the panel window and retire stale controls. Page Up/Page Down and Home/End read the content without activating a control. The Notify completion evidence records the supported Orca/keyboard acceptance.
 
-See [ADR 0011](adr/0011-explicit-canopa-panel-protocol-adapter.md) and `vendor/canopa-panel-protocol/README.md` for the source-of-truth and drift-check rules.
+See [ADR 0011](adr/0011-explicit-canopa-panel-protocol-adapter.md) and the shared [crate guide](../../crates/canopa-panel-protocol/README.md) for canonical sources.
 
 ### Niribar framed JSON v1
 

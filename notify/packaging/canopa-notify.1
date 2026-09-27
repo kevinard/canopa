@@ -17,6 +17,7 @@ canopa-notify \- Wayland desktop notifications and local notification history
 .br
 .B canopa-notify panel-provider --socket
 .I PATH
+.RB [ --protocol " canopa-v4|canopa-v5"]
 .SH DESCRIPTION
 Canopa Notify owns org.freedesktop.Notifications on the session bus in service
 mode. It displays banners without taking keyboard focus and provides a
@@ -32,6 +33,9 @@ their attention state; transient notifications do not survive restart.
 validates the notification namespace without starting a service. Options include
 --config PATH (legacy), --canopa-config PATH (shared), --defaults, and --show-source
 (local diagnostic detail). The canopa config check command checks both components.
+.PP
+Panel provider mode defaults to canopa-v4 for existing hosts. The built-in Canopa
+shell explicitly selects canopa-v5 for revision-scoped interactions and close.
 .SH CONTROL COMMANDS
 .TP
 .B status [--json]

@@ -106,6 +106,8 @@ enum DndCommand {
 
 #[derive(Parser)]
 struct PanelProviderArgs {
+    #[arg(long, value_enum, default_value = "canopa-v4")]
+    protocol: control_adapters::PanelProtocol,
     #[arg(long)]
     socket: Option<PathBuf>,
 }
@@ -403,7 +405,7 @@ async fn run_ctl(mut args: CtlArgs) -> anyhow::Result<()> {
 }
 
 fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
-    control_adapters::run_panel_provider(&resolve_socket(args.socket)?)
+    control_adapters::run_panel_provider(&resolve_socket(args.socket)?, args.protocol)
 }
 
 fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest {

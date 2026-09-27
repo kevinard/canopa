@@ -105,3 +105,45 @@ async fn shipped_wifi_provider_binary_completes_handshake_with_shared_protocol()
         .expect("provider should exit after close")
         .unwrap();
 }
+
+#[tokio::test]
+async fn shipped_wifi_provider_v5_is_provider_first_and_closes_cleanly() {
+    use canopa_panel_protocol::v5;
+    use tokio::io::AsyncWriteExt;
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_niribar-wifi-provider"))
+        .args(["--protocol", "canopa-v5"])
+        .env("NIRIBAR_WIFI_PROVIDER_BACKEND", "none")
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = tokio::io::BufReader::new(child.stdout.take().unwrap());
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        v5::Response::read_async(&mut output),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .unwrap();
+    assert_eq!(response.revision, 1);
+    let v5::Content::Form(form) = response.content else {
+        panic!("form")
+    };
+    assert!(
+        matches!(&form.elements[0], v5::FormElement::Status { title, .. } if title == "Wi-Fi unavailable")
+    );
+    input
+        .write_all(&v5::HostMessage::close().encode().unwrap())
+        .await
+        .unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(2), child.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success()
+    );
+}

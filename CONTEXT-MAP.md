@@ -10,6 +10,7 @@ the Notification Center through generic declarative panel content.
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
 - [Local asset mechanisms and caller policies](docs/adr/0005-shared-assets.md)
 - [Shared provider contracts and host state](docs/adr/0006-shared-provider-contracts.md)
+- [Unified built-in provider protocol](docs/adr/0007-unified-panel-protocol.md)
 - [Configuration user guide](docs/configuration.md)
 - [Workspace decision](docs/adr/0001-shared-workspace-and-upstream-forks.md)
 - [Integration proposal and remaining phases](docs/canopa-integration-proposal.md)

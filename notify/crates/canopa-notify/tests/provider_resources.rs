@@ -76,9 +76,21 @@ fn accept(listener: &UnixListener) -> BufReader<UnixStream> {
 }
 
 fn provider(socket: &std::path::Path) -> (Process, mpsc::Receiver<std::io::Result<String>>) {
+    provider_for_protocol(socket, "canopa-v4")
+}
+fn provider_for_protocol(
+    socket: &std::path::Path,
+    protocol: &str,
+) -> (Process, mpsc::Receiver<std::io::Result<String>>) {
     let mut child = Process(
         support::canopa_notify_command()
-            .args(["panel-provider", "--socket", support::path_arg(socket)])
+            .args([
+                "panel-provider",
+                "--socket",
+                support::path_arg(socket),
+                "--protocol",
+                protocol,
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -385,6 +397,13 @@ fn panel_subscription_limit_reserves_ordinary_control_capacity() {
 
 #[tokio::test]
 async fn installed_provider_pages_large_history_without_losing_content() {
+    large_history("canopa-v4").await;
+}
+#[tokio::test]
+async fn installed_v5_provider_pages_large_history_without_losing_content() {
+    large_history("canopa-v5").await;
+}
+async fn large_history(protocol: &str) {
     let temp = tempfile::tempdir().unwrap();
     let database = temp.path().join("history.db");
     let socket = temp.path().join("control.sock");
@@ -413,7 +432,7 @@ async fn installed_provider_pages_large_history_without_losing_content() {
     }
     drop(seed);
     let _daemon = start_daemon(&socket, &database);
-    let (mut provider, output) = provider(&socket);
+    let (mut provider, output) = provider_for_protocol(&socket, protocol);
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..24 {
         let line = output
@@ -421,7 +440,17 @@ async fn installed_provider_pages_large_history_without_losing_content() {
             .unwrap()
             .unwrap();
         assert!(line.len() <= canopa_panel_protocol::MAX_FRAME_BYTES);
-        let ProviderResponse::ReplaceContent { content, .. } = serde_json::from_str(&line).unwrap();
+        let (content, revision) = if protocol == "canopa-v5" {
+            let response = canopa_panel_protocol::v5::Response::decode(line.as_bytes()).unwrap();
+            let canopa_panel_protocol::v5::Content::Rich(content) = response.content else {
+                panic!("rich content")
+            };
+            (content, Some(response.revision))
+        } else {
+            let ProviderResponse::ReplaceContent { content, .. } =
+                serde_json::from_str(&line).unwrap();
+            (content, None)
+        };
         assert!(
             content.error.is_none(),
             "large history needs navigable pages: {:?}",
@@ -499,12 +528,22 @@ async fn installed_provider_pages_large_history_without_losing_content() {
             action_key: next.key.clone(),
             value: next.value.clone(),
         };
-        writeln!(
-            provider.0.stdin.as_mut().unwrap(),
-            "{}",
-            serde_json::to_string(&event).unwrap()
-        )
-        .unwrap();
+        let bytes = match revision {
+            Some(revision) => canopa_panel_protocol::v5::HostMessage::event(
+                revision,
+                canopa_panel_protocol::v5::Interaction::Rich(event),
+            )
+            .encode()
+            .unwrap(),
+            None => (serde_json::to_string(&event).unwrap() + "\n").into_bytes(),
+        };
+        provider
+            .0
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(&bytes)
+            .unwrap();
     }
     assert_eq!(
         seen.len(),
@@ -764,4 +803,90 @@ async fn stalled_socket_writes_expire_but_healthy_idle_panels_keep_receiving_upd
         content.sections.is_empty(),
         "healthy idle panel lost its subscription"
     );
+}
+
+#[test]
+fn v5_provider_rejects_retired_actions_and_exits_on_close_or_stdin_eof() {
+    use canopa_panel_protocol::{v4, v5};
+    for explicit_close in [true, false] {
+        let temp = tempfile::tempdir().unwrap();
+        let socket = temp.path().join("control.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let (mut provider, output_rx) = provider_for_protocol(&socket, "canopa-v5");
+        let mut navigation = accept(&listener);
+        assert_eq!(frame(&mut navigation), "panel-session\n");
+        let mut content = PanelContent::new("First");
+        content.actions.push(v4::PanelAction {
+            key: "opaque-action".into(),
+            label: "Invoke".into(),
+            value: Some("same-domain-value".into()),
+        });
+        let send_content = |stream: &mut BufReader<UnixStream>, content| {
+            writeln!(
+                stream.get_mut(),
+                "{}",
+                serde_json::to_string(&ProviderResponse::replace_content(content)).unwrap()
+            )
+            .unwrap();
+        };
+        send_content(&mut navigation, content.clone());
+        let first = v5::Response::decode(output(&output_rx).as_bytes()).unwrap();
+        content.title = "Replacement".into();
+        send_content(&mut navigation, content);
+        let second = v5::Response::decode(output(&output_rx).as_bytes()).unwrap();
+        assert!(second.revision > first.revision);
+        let invoke = |revision| {
+            v5::HostMessage::event(
+                revision,
+                v5::Interaction::Rich(v4::InteractionEvent::Invoke {
+                    target: v4::InteractionTarget::Content,
+                    action_key: "opaque-action".into(),
+                    value: Some("same-domain-value".into()),
+                }),
+            )
+            .encode()
+            .unwrap()
+        };
+        let mut bytes = invoke(first.revision);
+        bytes.extend(invoke(second.revision));
+        provider
+            .0
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(&bytes)
+            .unwrap();
+        let mut accepted = accept(&listener);
+        assert!(frame(&mut accepted).starts_with("panel-interaction "));
+        accepted.get_mut().write_all(b"ok\n").unwrap();
+        if explicit_close {
+            provider
+                .0
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(&v5::HostMessage::close().encode().unwrap())
+                .unwrap();
+        } else {
+            drop(provider.0.stdin.take());
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            if let Some(status) = provider.0.try_wait().unwrap() {
+                assert!(status.success());
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "provider did not exit on close"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "only the current event reaches the daemon"
+        );
+    }
 }

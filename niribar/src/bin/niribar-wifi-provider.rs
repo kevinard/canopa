@@ -1,8 +1,9 @@
 use canopa_panel_protocol::v1::{
-    ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity, HostMessage,
-    PROTOCOL_VERSION, ProviderEvent, ProviderMessage, read_frame, write_frame,
+    ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity,
 };
+use canopa_panel_protocol::v5::Update;
 use niribar::wifi_provider::backends::choose_backend;
+use niribar::wifi_provider::transport::{Action, Transport};
 use niribar::wifi_provider::{WifiBackendErrorCategory, WifiPanelProvider};
 
 #[tokio::main]
@@ -14,29 +15,36 @@ async fn main() {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let mut stdin = tokio::io::stdin();
-    let mut stdout = tokio::io::stdout();
-    let HostMessage::Handshake(handshake) = read_frame::<_, HostMessage>(&mut stdin).await? else {
-        return Err("expected host handshake".into());
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    let transport = match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        [] | ["--protocol", "niribar-v1"] => Transport::V1,
+        ["--protocol", "canopa-v5"] => Transport::v5(),
+        _ => return Err("usage: niribar-wifi-provider [--protocol niribar-v1|canopa-v5]".into()),
     };
-    if handshake.protocol_version != PROTOCOL_VERSION {
-        return Err(format!(
-            "unsupported external panel protocol version {}",
-            handshake.protocol_version
-        )
-        .into());
-    }
+    let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut stdout = tokio::io::stdout();
+    transport.handshake(&mut stdin).await?;
 
     let Some(backend) = choose_backend().await else {
-        write_provider_message(
-            &mut stdout,
-            ProviderMessage::Handshake {
-                protocol_version: PROTOCOL_VERSION,
-                content: niribar::wifi_provider::no_control_document(),
-            },
-        )
-        .await?;
-        return drain_until_close(stdin).await;
+        transport
+            .write(
+                &mut stdout,
+                niribar::wifi_provider::no_control_document(),
+                true,
+                Update::Replace,
+            )
+            .await?;
+        loop {
+            let input = transport.read(&mut stdin).await.ok();
+            if matches!(transport.action(input), Action::Close) {
+                return Ok(());
+            }
+        }
     };
 
     let changes = backend.changes().await?;
@@ -52,40 +60,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(Err(err)) => backend_error_document("Wi-Fi unavailable", err.category()),
         Err(_) => backend_error_document("Wi-Fi unavailable", WifiBackendErrorCategory::NoControl),
     };
-    write_provider_message(
-        &mut stdout,
-        ProviderMessage::Handshake {
-            protocol_version: PROTOCOL_VERSION,
-            content: initial,
-        },
+    transport
+        .write(&mut stdout, initial, true, Update::Replace)
+        .await?;
+    let result = niribar::wifi_provider::session::run_with_transport(
+        provider, stdin, stdout, changes, transport,
     )
-    .await?;
-
-    let result = niribar::wifi_provider::session::run(provider, stdin, stdout, changes).await;
+    .await;
     cleanup.finish().await;
     result?;
     Ok(())
-}
-
-async fn write_provider_message<W>(
-    writer: &mut W,
-    message: ProviderMessage,
-) -> Result<(), canopa_panel_protocol::v1::ProtocolError>
-where
-    W: tokio::io::AsyncWrite + Unpin,
-{
-    write_frame(writer, &message).await
-}
-
-async fn drain_until_close(mut stdin: tokio::io::Stdin) -> Result<(), Box<dyn std::error::Error>> {
-    loop {
-        match read_frame::<_, HostMessage>(&mut stdin).await {
-            Ok(HostMessage::Event(ProviderEvent::Close)) => return Ok(()),
-            Ok(HostMessage::Event(_)) => {}
-            Ok(HostMessage::Handshake(_)) => return Err("unexpected repeated handshake".into()),
-            Err(_) => return Ok(()),
-        }
-    }
 }
 
 fn backend_error_document(

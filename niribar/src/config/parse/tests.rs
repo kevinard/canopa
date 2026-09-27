@@ -1242,3 +1242,20 @@ fn application_launch_is_argv_only_and_independent_of_command_timeout() {
         );
     }
 }
+
+#[test]
+fn v5_provider_selection_is_explicit_and_legacy_default_is_preserved() {
+    let input = r#"panel-providers {
+        provider "next" { protocol "canopa-v5"; command { argv "example" "--protocol" "canopa-v5"; }; }
+        provider "legacy" { command { argv "example"; }; }
+    }"#;
+    let config = parse(input).unwrap();
+    assert_eq!(
+        config.panel_providers[0].protocol,
+        crate::external_panel::ProviderProtocol::CanopaV5
+    );
+    assert_eq!(
+        config.panel_providers[1].protocol,
+        crate::external_panel::ProviderProtocol::NiribarV1
+    );
+}
