@@ -92,16 +92,13 @@ To update your local desktop installation whenever you choose, run:
 ./scripts/update.sh
 ```
 
-This rebuilds the current checkout (including uncommitted changes) and its local
-dependencies, installs both executables into `~/.local/bin`, and restarts
-`niribar.service` if it is running or failed. An intentionally stopped service
-stays stopped. Registry dependencies remain cached; rebuilding local packages
-prevents an older checkout's cached release from being installed.
-
-The service must already be configured to run `~/.local/bin/niribar`; this command
-preserves your service configuration. After a restart, it checks that the process
-survives startup and is running the installed executable, then prints its SHA-256.
-If compilation fails, the installed binaries stay unchanged.
+This updates Niribar, its Wi-Fi helper, Notify, and the `canopa` configuration tool
+together from the current checkout, including uncommitted changes. It validates
+configuration before stopping services, backs up binaries and notification state,
+and verifies startup. Intentionally stopped services stay stopped. Configuration
+and service definitions are preserved. See the [workspace update guide](../../README.md)
+for prerequisites, backups, recovery, and build-job options. The script does not
+fetch Git updates.
 
 ```sh
 cargo +1.95.0 fmt --all -- --check

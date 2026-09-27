@@ -68,6 +68,33 @@ notices. The companion user services use `~/.local/bin`; `canopa-session.target`
 both. See the session setup guide before enabling them. Packaging does not install or restart anything.
 Check the archive with `bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz`.
 
+For subsequent updates of an existing local companion installation, run:
+
+```sh
+./scripts/update.sh
+```
+
+This builds the current checkout, including uncommitted changes, and installs
+`niribar`, `niribar-wifi-provider`, `canopa-notify`, and `canopa` together. It does
+not fetch or pull Git commits. The updater requires Python 3, both companion user
+services, their standard `~/.local/bin` executable paths, and default configuration,
+control socket and state discovery in the same graphical-session environment.
+Custom service arguments or environment overrides selecting other paths require
+a manual update.
+
+The new binaries validate your configuration before either service is stopped.
+The updater preserves configuration and service definitions, backs up the previous
+binaries, shared config and stopped notification state under
+`$XDG_STATE_HOME/canopa-backups/` (default `~/.local/state/canopa-backups/`), and
+restarts running or failed services. Intentionally stopped services stay stopped. Startup checks include
+Notify's renderer status and the identity of each running executable. Failed
+startup restores the previous binaries and state; state produced by the failed
+update is retained in the backup. Keep these backups for database downgrades.
+
+Local packages are rebuilt to avoid stale artifacts from another checkout;
+registry dependencies remain cached. Compilation uses one job by default, or
+`CARGO_BUILD_JOBS` when set. Use `./scripts/update.sh --jobs 2` to override it.
+
 Start development with [CONTEXT-MAP.md](CONTEXT-MAP.md), the
 [workspace decision](docs/adr/0001-shared-workspace-and-upstream-forks.md),
 [consolidated layout](docs/adr/0009-consolidated-repository-layout.md), and

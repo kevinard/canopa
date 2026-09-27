@@ -80,6 +80,14 @@ control limits, import behavior, renderer failures, and smoke checks.
 
 ## Upgrade and remove
 
+For the standard local companion installation, run `./scripts/update.sh` from the
+workspace root to build and update Notify, Niribar, its Wi-Fi helper, and `canopa`
+together. It validates configuration, backs up stopped notification state, and
+checks startup with automatic rollback on failure. See the
+[workspace update guide](../../README.md) for prerequisites and options.
+
+For a manual upgrade:
+
 Stop the service before replacing its binary. Back up
 `$XDG_STATE_HOME/canopa-notify` (default `~/.local/state/canopa-notify`) while it is
 stopped, install the new build, then restart. Database migrations are forward only;
