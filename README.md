@@ -92,7 +92,9 @@ startup restores the previous binaries and state; state produced by the failed
 update is retained in the backup. Keep these backups for database downgrades.
 
 Local packages are rebuilt to avoid stale artifacts from another checkout;
-registry dependencies remain cached. Compilation uses one job by default, or
+package discovery stays offline and includes the shared vendor forks. Registry
+dependencies remain cached; Cargo downloads missing build dependencies as needed.
+Compilation uses one job by default, or
 `CARGO_BUILD_JOBS` when set. Use `./scripts/update.sh --jobs 2` to override it.
 
 Start development with [CONTEXT-MAP.md](CONTEXT-MAP.md), the

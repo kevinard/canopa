@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Exercise the updater with real Cargo builds and isolated user services."""
 
+import contextlib
 import fcntl
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -175,14 +180,18 @@ class UpdateTests(unittest.TestCase):
         root.mkdir(parents=True, exist_ok=True)
         (root / 'Cargo.toml').write_text(
             '[workspace]\nresolver = "2"\nmembers = ["crates/niribar", '
-            '"crates/canopa-notify", "crates/canopa-cli"]\n')
+            '"crates/canopa-notify", "crates/canopa-cli"]\n'
+            'exclude = ["vendor/accesskit_unix"]\n'
+            '[patch.crates-io]\naccesskit_unix = { path = "vendor/accesskit_unix" }\n')
         for name in LOCAL_PACKAGES:
             package = root / 'vendor' / name
             (package / 'src').mkdir(parents=True)
             (package / 'Cargo.toml').write_text(
                 f'[package]\nname = "{name}"\nversion = "0.1.0"\nedition = "2021"\n')
             (package / 'src/lib.rs').write_text(f'pub const VERSION: &str = "{version}";\n')
-        deps = '\n'.join(f'{name} = {{ path = "../../vendor/{name}" }}' for name in LOCAL_PACKAGES)
+        (root / 'vendor/provenance.json').write_text(json.dumps({'crates': {'accesskit_unix': {}}}))
+        deps = '\n'.join('accesskit_unix = "0.1.0"' if name == 'accesskit_unix' else
+                         f'{name} = {{ path = "../../vendor/{name}" }}' for name in LOCAL_PACKAGES)
         source = RUST_MAIN.replace('@VERSION@', version)
         for name, binary in [('niribar', 'niribar'), ('canopa-notify', 'canopa-notify'),
                              ('canopa-cli', 'canopa')]:
@@ -340,6 +349,48 @@ class UpdateTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('already running', result.stderr)
         self.assertEqual(self.state()['calls'], [])
+
+    def test_cleanup_discovery_does_not_request_registry_dependencies(self):
+        self.install_previous()
+        # Full metadata resolves/downloads even dependencies for other operating
+        # systems. Reject that query at the actual Cargo process boundary; allow
+        # local metadata, cleanup and compilation to use real Cargo normally.
+        cargo = self.root / 'commands/cargo'
+        cargo.write_text('''#!/usr/bin/env python3
+import os
+import sys
+if sys.argv[1] == 'metadata' and '--no-deps' not in sys.argv:
+    print('Downloading crates ...', file=sys.stderr)
+    sys.exit(42)
+os.execv(os.environ['CANOPA_TEST_REAL_CARGO'], ['cargo', *sys.argv[1:]])
+''')
+        cargo.chmod(0o755)
+        self.env['CANOPA_TEST_REAL_CARGO'] = shutil.which('cargo')
+        self.update()
+        self.assert_versions('current')
+
+    def test_timeout_reports_command_and_decoded_partial_output(self):
+        spec = importlib.util.spec_from_file_location('canopa_updater', self.repo / 'scripts/update.py')
+        updater = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(updater)
+        # subprocess.TimeoutExpired keeps partial stderr as bytes, even when
+        # text=True. Exercise that real behavior rather than inventing its shape.
+        with self.assertRaises(subprocess.TimeoutExpired) as raised:
+            updater.run(sys.executable, '-c',
+                        'import sys,time; sys.stderr.write("Downloading crates ...\\n"); '
+                        'sys.stderr.flush(); time.sleep(10)', timeout=0.2)
+        output = io.StringIO()
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+                mock.patch.object(sys, 'argv', ['update.sh']), \
+                mock.patch.object(updater, 'update', side_effect=raised.exception), \
+                contextlib.redirect_stderr(output):
+            self.assertEqual(updater.main(), 1)
+        diagnostic = output.getvalue()
+        self.assertIn('timed out', diagnostic)
+        self.assertIn('0.2', diagnostic)
+        self.assertIn(sys.executable, diagnostic)
+        self.assertIn('Downloading crates ...\n', diagnostic)
+        self.assertNotIn("b'", diagnostic)
 
 
 if __name__ == '__main__':

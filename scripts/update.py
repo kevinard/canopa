@@ -6,6 +6,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -44,11 +45,14 @@ def positive_jobs(value):
 
 
 def build(jobs):
-    metadata = json.loads(run("cargo", "metadata", "--locked", "--format-version=1").stdout)
+    # Full metadata downloads registry sources for other platforms too. Only
+    # workspace manifests and our managed forks are needed for local cleanup.
+    metadata = json.loads(run("cargo", "metadata", "--locked", "--no-deps", "--offline",
+                              "--format-version=1").stdout)
+    forks = json.loads((ROOT / "vendor/provenance.json").read_text())["crates"]
     # Invalidate all local packages: Cargo can reuse another checkout's
     # fingerprints in a shared target directory. Keep registry dependencies.
-    packages = sorted(package["name"] for package in metadata["packages"]
-                      if package["source"] is None)
+    packages = sorted({package["name"] for package in metadata["packages"]} | forks.keys())
     clean = ["cargo", "clean", "--locked", "--release", "--target-dir", "target"]
     for package in packages:
         clean.extend(["--package", package])
@@ -212,6 +216,16 @@ def main():
             except BlockingIOError:
                 raise RuntimeError("another Canopa update is already running") from None
             update(args.jobs)
+    except subprocess.TimeoutExpired as error:
+        command = shlex.join(str(arg) for arg in error.cmd)
+        print(f"Update failed: command timed out after {error.timeout:g} seconds: {command}",
+              file=sys.stderr)
+        detail = error.stderr
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        if detail:
+            print(detail.rstrip(), file=sys.stderr)
+        return 1
     except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as error:
         detail = getattr(error, "stderr", None) or str(error)
         print(f"Update failed: {detail}", file=sys.stderr)
