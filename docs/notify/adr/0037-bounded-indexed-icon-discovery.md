@@ -1,0 +1,15 @@
+# Bounded indexed icon discovery
+
+The shared workspace [asset decision](../../adr/0005-shared-assets.md)
+moves this lookup mechanism into `canopa-assets`, preserving the banner format,
+theme, scale and per-frame limits. The shell supplies its own format policy.
+
+Carry unresolved local paths and ordered icon names through Notification Banner projection. Perform discovery in the existing single admitted asset-preparation job, outside Notification Runtime mutation and widgets. Replace the permanent recursive filename index with a private indexed resolver: metadata is shared only within one prepared frame and reread on later frames, so theme and file edits need no daemon restart. Already delivered pixels remain immutable under ADR 0036.
+
+Use the [Icon Theme 0.13 directory and lookup rules](https://specifications.freedesktop.org/icon-theme/latest/): first index across ordered roots, declared directories, exact nominal size/scale before closest physical size, selected theme before recursive parents, then hicolor and unthemed fallback. Preserve declaration/root/extension order for ties. Follow the prose and directory-key definitions where the published pseudocode says `Scaled` instead of `Scalable` or has inconsistent threshold-distance arithmetic. PNG is the supported standard format; JPEG remains a local extension. SVG and the standard's legacy XPM format are not supported, so full icon-format conformance is not claimed.
+
+The installed `icons theme="hicolor" scale=1` configuration selects assets, not UI geometry. Scale is an integer from 1 through 8; automatic desktop-theme detection and compositor-scale changes remain separate. Configuration validation and commit follow the existing policy/sound workflow; a successful reload applies to subsequent banner updates without reclassifying existing notifications. Invalid settings leave the active configuration unchanged.
+
+Apply local safety limits: 32 roots, 32 distinct theme metadata records per frame, 256 KiB per index, 2 MiB total index bytes, 1,024 declared directories per index, 32 parents and 65,536 traversal/candidate checks per frame. These accommodate the installed hicolor index while bounding hostile metadata and misses. Stop icon lookup on unsafe metadata or exhaustion; do not silently choose lower-priority overrides. Do not scan arbitrary directories. Index reads use the shared nonblocking regular-descriptor reader; image reads/decoding retain ADR 0036 budgets. Cancellation, overload fallback and actual-worker admission ownership are shared with image preparation, not implemented as a second queue. Limits are logical work bounds, not hard filesystem deadlines.
+
+The [freedesktop-icons public interface](https://docs.rs/freedesktop-icons/0.4.0/freedesktop_icons/) was assessed for name/theme/size/scale lookup, but its public documentation does not establish the bounded metadata, per-frame lifetime and cooperative cancellation contract required here. Retain the private resolver for this tranche. This is an interface assessment, not a completed alternative-resolver fixture comparison; that W09 evidence and graphical acceptance remain open.

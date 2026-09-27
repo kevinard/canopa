@@ -1,10 +1,17 @@
 # Local issue tracker
 
-Track integration specs and tickets as Markdown files under root `.scratch/`.
-Existing application tickets remain under `niribar/.scratch/` and `notify/.scratch/`.
-Reference their paths explicitly; do not duplicate or renumber historical issues.
-The current integration slice is the Settings portal in phase 6 of
-`docs/canopa-integration-proposal.md`, scoped in `docs/adr/0008-settings-portal.md`.
-Previous slices are recorded in ADRs 0001–0007. Built-in providers share v5 and
-retain explicit v1/v4 compatibility. Interactive portal request presentation remains
-separate work for the first interface needing it.
+Track new specs and tickets as Markdown files under root `.scratch/`.
+Use one feature directory, `.scratch/<feature>/`, with `PRD.md` and
+`issues/<NN>-<slug>.md` as needed. Record triage as a `Status:` line using
+[the shared labels](triage-labels.md); append discussion under `## Comments`.
+
+Historical application tickets live under `.scratch/niribar/` and
+`.scratch/notify/`. Preserve their identifiers and reference their paths explicitly;
+do not duplicate or renumber them. Repository consolidation is scoped in
+`.scratch/repository-consolidation/PRD.md` and recorded in
+[ADR 0009](../adr/0009-consolidated-repository-layout.md).
+
+Integration decisions live in root `docs/adr/`; application ADR histories live in
+`docs/niribar/adr/` and `docs/notify/adr/`. Built-in providers share v5 with explicit
+v1/v4 compatibility. The Settings portal is implemented; interactive portal
+request presentation remains separate work for the first interface needing it.

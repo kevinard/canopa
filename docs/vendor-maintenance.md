@@ -59,9 +59,9 @@ remains outside the supported workspace.
 After building root debug binaries, run these fixtures sequentially:
 
 ```sh
-python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts /tmp/canopa-notifications-new
+python3 scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts /tmp/canopa-notifications-new
 python3 scripts/test-fork-desktop.py --niribar target/debug/niribar --artifacts /tmp/canopa-forks-new
-python3 niribar/scripts/verify-overlay-placement.py --binary target/debug/niribar --output /tmp/canopa-placement-new --edge top bottom left right --scale 1.25
+python3 scripts/verify-overlay-placement.py --binary target/debug/niribar --output /tmp/canopa-placement-new --edge top bottom left right --scale 1.25
 ```
 
 Each artifact directory must be new. The first and third fixtures use Niri; the

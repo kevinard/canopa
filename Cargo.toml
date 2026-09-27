@@ -10,14 +10,14 @@ members = [
     "crates/canopa-ui",
     "crates/canopa-notify-client",
     "crates/canopa-panel-protocol",
-    "notify/crates/canopa-notify",
-    "niribar",
+    "crates/canopa-notify",
+    "crates/niribar",
 ]
 exclude = [
     "vendor/accesskit_unix",
     "vendor/iced_layershell",
     "vendor/layershellev",
-    "niribar/src/modules/focused_window_rotation_prototype",
+    "experiments/focused-window-rotation",
 ]
 
 [workspace.package]

@@ -44,14 +44,14 @@ The existing code provides a substantial starting point:
 | Assets | Separate icon discovery and image preparation implementations have different formats, limits, and caching. | Share mechanisms only after preserving both callers' contracts. |
 | Operation | Separate unit files, install paths, release scripts, and companion setup instructions. | Product integration includes packaging and session behavior. |
 
-Evidence: [Niribar manifest](../niribar/Cargo.toml), [shared manifest](../Cargo.toml),
-[provider integration](../notify/docs/niribar-panel-provider.md),
-[Niribar configuration](../niribar/src/config.rs),
-[Notify configuration](../notify/crates/canopa-notify/src/configuration.rs),
-[shell palette](../niribar/src/theme.rs),
-[banner styles](../notify/crates/canopa-notify/src/presentation/renderer.rs), and the
-[Niribar](../niribar/docs/vendor-maintenance.md) and
-[Notify](../notify/docs/maintaining.md) maintenance records. Vendor identity above
+Evidence: [Niribar manifest](../crates/niribar/Cargo.toml), [shared manifest](../Cargo.toml),
+[provider integration](notify/niribar-panel-provider.md),
+[Niribar configuration](../crates/niribar/src/config.rs),
+[Notify configuration](../crates/canopa-notify/src/configuration.rs),
+[shell palette](../crates/niribar/src/theme.rs),
+[banner styles](../crates/canopa-notify/src/presentation/renderer.rs), and the
+[Niribar](niribar/vendor-maintenance.md) and
+[Notify](notify/maintaining.md) maintenance records. Vendor identity above
 was checked directly against local file contents; historical audit findings were
 not treated as evidence that a defect remains in the current source.
 
@@ -80,8 +80,8 @@ delivery decisions, DND, and notification actions. Niribar receives projections 
 issues commands; it does not read Notify's SQLite database or reconstruct its rules.
 
 Keep Notification Banners in Notify initially. This preserves delivery during shell
-restarts and follows [Notify ADR 0005](../notify/docs/adr/0005-daemon-owned-notification-banners.md)
-and [ADR 0018](../notify/docs/adr/0018-same-process-ui-for-version-one.md).
+restarts and follows [Notify ADR 0005](notify/adr/0005-daemon-owned-notification-banners.md)
+and [ADR 0018](notify/adr/0018-same-process-ui-for-version-one.md).
 The shared UI implementation can make banners and the Center consistent across
 processes. Moving banners into Niribar later would reopen those decisions and require
 a contract for display acknowledgements, timeout start, activation, renderer loss,
@@ -163,7 +163,7 @@ Niribar needs new reload work: reconcile Bar Surfaces, Module Instances, subscri
 and open interactions using its existing owners. Classify settings that require a
 restart explicitly. Fonts and other resource changes must not be advertised as live
 until their actual adapters support them. Notify's delivery-policy changes continue
-to affect future requests under [ADR 0027](../notify/docs/adr/0027-policy-changes-apply-to-future-notification-requests.md).
+to affect future requests under [ADR 0027](notify/adr/0027-policy-changes-apply-to-future-notification-requests.md).
 Changing appearance should have a separately specified repaint policy.
 
 Atomic replacement within one process does not establish an atomic update across
@@ -173,7 +173,7 @@ Do not introduce a settings daemon merely to load the same file. A future requir
 for durable, globally synchronized live settings would justify revisiting this.
 
 Keep source-aware diagnostics while preserving Notify's content-free logging rule
-in [ADR 0040](../notify/docs/adr/0040-safe-configuration-candidates.md).
+in [ADR 0040](notify/adr/0040-safe-configuration-candidates.md).
 Common errors can contain a diagnostic code, known schema field, location, and safe
 help text. Source excerpts should require an explicit local diagnostic mode; daemon
 logs and status should not reproduce configuration values. Preserve Notify's bounded
@@ -182,7 +182,7 @@ shared source limit must be documented and checked against existing shell config
 
 Keep runtime state separate from configuration. DND, history, and UI-managed permission
 rules stay in Notify's existing stores; UI actions do not rewrite hand-authored KDL.
-This preserves [ADR 0011](../notify/docs/adr/0011-ui-managed-rules-use-user-rule-store.md).
+This preserves [ADR 0011](notify/adr/0011-ui-managed-rules-use-user-rule-store.md).
 Leave state paths and database migration behavior unchanged during the initial
 configuration migration. They can be migrated later with backup and ownership rules.
 
@@ -201,7 +201,7 @@ interactive Panel accepts navigation. Validate the same fixture content in both
 renderers, including high DPI, long text, unavailable actions, and light/dark themes.
 
 Continue the declarative provider model in
-[Niribar ADR 0010](../niribar/docs/adr/0010-external-panel-providers-use-declarative-content.md).
+[Niribar ADR 0010](niribar/adr/0010-external-panel-providers-use-declarative-content.md).
 The host owns visual treatment; providers supply meaning and receive opaque events.
 Both existing contracts now live in the shared crate, with host state separated
 from wire models ([ADR 0006](adr/0006-shared-provider-contracts.md)). This completes
@@ -269,8 +269,9 @@ work one testable foundation. Steps 3–5 form the first user-facing integrated 
 Defer filesystem rearrangement, executable renaming, database relocation, protocol
 replacement, and UI redesign beyond that initial slice.
 
-A monorepo can initially retain `niribar/` and `notify/crates/` under a root manifest;
-moving application sources into an `apps/` tree is optional tidying later. Nested
+The initial import retained the application directories under a root manifest;
+the accepted consolidation now places both applications in `crates/`
+([ADR 0009](adr/0009-consolidated-repository-layout.md)). Nested
 workspace ownership and root-level patch selection must be resolved as part of the
 conversion. Central dependency declarations should preserve per-application features
 instead of enabling all GUI/audio features everywhere. Run Notify's dependency check
@@ -286,7 +287,7 @@ in documentation and desktop fixtures with workspace-relative inputs.
 Ship coordinated packages with separate user services and a common session target
 where useful. Document graphical-session environment setup once. Restarting the shell
 should not restart Notify or terminate applications launched from the shell; preserve
-[session-owned launching](../niribar/docs/adr/0012-session-owned-application-launches.md).
+[session-owned launching](niribar/adr/0012-session-owned-application-launches.md).
 A future `canopa` command can expose status, configuration validation/reload, and
 notification operations through existing interfaces. It need not supervise processes
 or become another mandatory daemon. Give diagnostics consistent component names and
@@ -303,8 +304,8 @@ vendor comparisons, and checking the cited portal documentation.
 
 The ADR changes should be explicit during implementation. Shared v4 workspace
 ownership supersedes the vendored-snapshot arrangement in
-[Niribar ADR 0011](../niribar/docs/adr/0011-explicit-canopa-panel-protocol-adapter.md).
+[Niribar ADR 0011](niribar/adr/0011-explicit-canopa-panel-protocol-adapter.md).
 The new configuration envelope and its compatibility rules extend
-[Notify ADR 0010](../notify/docs/adr/0010-kdl-configuration.md) and require a successor
+[Notify ADR 0010](notify/adr/0010-kdl-configuration.md) and require a successor
 to ADR 0040's flat application schema while preserving its validation guarantees.
 Banner ownership, separate state stores, and domain-free panel types remain in place.

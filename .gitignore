@@ -1,5 +1,11 @@
-/target/
+**/target/
 /dist/
 **/__pycache__/
 **/*.rs.bk
 /.worktrees/
+*.pdb
+**/mutants.out*/
+/.scratch/notify/freedesktop-completion-review/niribar-work/
+/.scratch/notify/freedesktop-completion-review/ACTIVE-IMPLEMENTATION.md
+/.scratch/notify/freedesktop-completion-review/NIRIBAR-CHANGED-FILES.txt
+/.scratch/notify/freedesktop-completion-review/NIRIBAR-COMPLETION.patch

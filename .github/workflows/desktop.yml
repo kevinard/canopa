@@ -15,19 +15,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check runner prerequisites
-        run: dbus-run-session -- python3 notify/scripts/check-desktop-runner.py
+        run: dbus-run-session -- python3 scripts/check-desktop-runner.py
       - name: Verify common protocol
-        run: bash notify/scripts/check-panel-protocol.sh
+        run: bash scripts/check-panel-protocol.sh
       - name: Build the workspace desktop binaries
         run: cargo build --locked --workspace --bins
       - name: Exercise dark appearance, native actions and Center
-        run: python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts desktop-dark --color-scheme dark
+        run: python3 scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts desktop-dark --color-scheme dark
       - name: Exercise light appearance at fractional scale
-        run: python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts desktop-light --color-scheme light --scale 1.25
+        run: python3 scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts desktop-light --color-scheme light --scale 1.25
       - name: Exercise shared fork popup and output lifetimes
         run: python3 scripts/test-fork-desktop.py --niribar target/debug/niribar --artifacts fork-artifacts
       - name: Verify panels at fractional scale on Niri
-        run: python3 niribar/scripts/verify-overlay-placement.py --binary target/debug/niribar --output placement-artifacts --edge top bottom left right --scale 1.25
+        run: python3 scripts/verify-overlay-placement.py --binary target/debug/niribar --output placement-artifacts --edge top bottom left right --scale 1.25
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -48,9 +48,9 @@ do not establish full screen-reader usability or native coverage of every bar mo
 Reproduce from the workspace root with GUI binaries already built:
 
 ```sh
-python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify \
+python3 scripts/test-desktop.py --notify target/debug/canopa-notify \
   --niribar target/debug/niribar --artifacts /tmp/canopa-dark --color-scheme dark
-python3 notify/scripts/test-desktop.py --notify target/debug/canopa-notify \
+python3 scripts/test-desktop.py --notify target/debug/canopa-notify \
   --niribar target/debug/niribar --artifacts /tmp/canopa-light \
   --color-scheme light --scale 1.25
 ```

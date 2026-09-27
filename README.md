@@ -31,13 +31,18 @@ Tests use private D-Bus sessions. Full transport tests additionally need
 The Settings frontend fixture also needs `xdg-desktop-portal` and `python3-gi`.
 The optional graphical acceptance workflow uses a dedicated runner with Niri, Sway,
 grim, Weston, wtype, Python GI/AT-SPI/Pillow, and software Mesa;
-see `notify/scripts/check-desktop-runner.py`.
+see `scripts/check-desktop-runner.py`.
 
 There is one lockfile, one set of dependency forks, and one panel protocol source.
+All supported packages live under `crates/`, including `crates/niribar/` and
+`crates/canopa-notify/`. Repository tooling is in `scripts/`, service units and
+release metadata are in `packaging/`, and application documentation is in
+`docs/niribar/` and `docs/notify/`. Run development commands from this root.
 Cargo unifies dependency features when building applications together: combined GUI
 builds include Niribar's theme-detection feature; Notify-only builds retain its
 disabled theme-detection default. Always select `-p canopa-notify` for core-only
-validation. The rotation prototype retains its independent experimental build.
+validation. The rotation prototype in `experiments/focused-window-rotation/`
+retains its independent experimental build.
 
 Both applications discover `$XDG_CONFIG_HOME/canopa/config.kdl` (with the usual
 `~/.config` fallback). Existing application files still work when that shared file
@@ -53,7 +58,7 @@ phases in the [integration proposal](docs/canopa-integration-proposal.md).
 The [Settings portal](docs/settings-portal.md) exposes shared appearance to
 applications, with explicit backend selection and its own SIGHUP reload.
 
-Follow the [shell guide](niribar/README.md) and [notification guide](notify/README.md)
+Follow the [shell guide](crates/niribar/README.md) and [notification guide](crates/canopa-notify/README.md)
 for feature options, using root `target/` paths. Runtime state paths are unchanged.
 
 Build a release with `cargo build --workspace --bins --locked --release`, then run
@@ -64,13 +69,16 @@ both. See the session setup guide before enabling them. Packaging does not insta
 Check the archive with `bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz`.
 
 Start development with [CONTEXT-MAP.md](CONTEXT-MAP.md), the
-[workspace decision](docs/adr/0001-shared-workspace-and-upstream-forks.md), and
+[workspace decision](docs/adr/0001-shared-workspace-and-upstream-forks.md),
+[consolidated layout](docs/adr/0009-consolidated-repository-layout.md), and
 [fork maintenance](docs/vendor-maintenance.md). Both original Git histories are
 preserved as parents of the import commit and through `legacy/niribar` and
 `legacy/notify` branches. [Source licenses](LICENSES.md) remain unchanged.
 
 See the [integration validation record](docs/integration-validation.md) for local
 test results, graphical fixture coverage and release-packaging evidence.
+The [repository layout validation](docs/repository-layout-validation.md) records
+checks of the consolidated crate, tooling and documentation paths.
 
 The [shared configuration validation record](docs/shared-configuration-validation.md)
 covers discovery, migration, namespace isolation, diagnostics, and reload behavior.

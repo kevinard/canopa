@@ -8,8 +8,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = [ROOT / 'packaging/systemd/canopa-session.target',
-           ROOT / 'niribar/contrib/systemd/niribar.service',
-           ROOT / 'notify/packaging/systemd/canopa-notify.service',
+           ROOT / 'packaging/systemd/niribar.service',
+           ROOT / 'packaging/systemd/canopa-notify.service',
            ROOT / 'packaging/systemd/xdg-desktop-portal-canopa.service']
 
 with tempfile.TemporaryDirectory(prefix='canopa-units-') as directory:

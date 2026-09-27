@@ -19,11 +19,11 @@ install -m644 packaging/portal/*.service "$dest/share/dbus-1/services/"
 install -m644 packaging/systemd/xdg-desktop-portal-canopa.service "$dest/share/systemd/user/"
 install -m644 docs/settings-portal.md "$dest/share/canopa/"
 install -m644 docs/notifications.md docs/configuration.md config/canopa.kdl README.md LICENSES.md "$dest/share/canopa/"
-install -m644 niribar/README.md niribar/LICENSE niribar/config/default.kdl "$dest/share/niribar/"
-install -m644 notify/README.md notify/LICENSE-MIT notify/LICENSE-APACHE \
-    notify/examples/config.kdl "$dest/share/canopa-notify/"
-install -m644 packaging/systemd/canopa-session.target niribar/contrib/systemd/niribar.service notify/packaging/systemd/canopa-notify.service "$dest/share/systemd/user/"
-install -m644 notify/packaging/canopa-notify.1 "$dest/share/man/man1/"
+install -m644 crates/niribar/README.md crates/niribar/LICENSE crates/niribar/config/default.kdl "$dest/share/niribar/"
+install -m644 crates/canopa-notify/README.md crates/canopa-notify/LICENSE-MIT crates/canopa-notify/LICENSE-APACHE \
+    crates/canopa-notify/examples/config.kdl "$dest/share/canopa-notify/"
+install -m644 packaging/systemd/canopa-session.target packaging/systemd/niribar.service packaging/systemd/canopa-notify.service "$dest/share/systemd/user/"
+install -m644 packaging/canopa-notify.1 "$dest/share/man/man1/"
 python3 scripts/dependency-attributions.py \
     --output "$dest/share/canopa/dependency-attributions.md" \
     --notices "$dest/share/licenses/dependencies"

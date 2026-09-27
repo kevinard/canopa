@@ -20,8 +20,8 @@ notifications {
 }
 ```
 
-See [the shared example](../config/canopa.kdl), [shell options](../niribar/README.md),
-and [notification options](../notify/README.md). Unknown root nodes and duplicate
+See [the shared example](../config/canopa.kdl), [shell options](../crates/niribar/README.md),
+and [notification options](../crates/canopa-notify/README.md). Unknown root nodes and duplicate
 namespaces are errors.
 
 `appearance` is shared by both applications, including when `shell` or `notifications`

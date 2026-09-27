@@ -50,8 +50,6 @@ def collect_notices(package, destination):
         path = base / package["license_file"]
         if path.resolve().is_relative_to(base.resolve()) and path.is_file():
             files.add(path)
-    if package["name"] == "canopa-notify":
-        files.update((ROOT / "notify").glob("LICENSE*"))
     target = destination / f"{package['name']}-{package['version']}"
     target.mkdir(parents=True, exist_ok=True)
     for path in sorted(files):

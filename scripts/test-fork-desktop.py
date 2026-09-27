@@ -19,7 +19,7 @@ from PIL import Image, ImageChops
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
-spec = importlib.util.spec_from_file_location("desktop", ROOT / "niribar/scripts/validate-desktop.py")
+spec = importlib.util.spec_from_file_location("desktop", ROOT / "scripts/validate-desktop.py")
 desktop = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(desktop)
 
@@ -85,7 +85,7 @@ def verify(args, session):
     config = runtime / "config/niribar/config.kdl"
     config.parent.mkdir(parents=True)
     config.write_text('bar "test" { output "all"; edge "top"; collapsed-width 44; modules { start "tray"; }; }\nmodules { module "tray" { type "tray"; }; }\n')
-    source = ROOT / "notify/scripts/desktop-fixture"
+    source = ROOT / "scripts/desktop-fixture"
     protocol = str(source / "wlr-virtual-pointer-unstable-v1.xml")
     session.run(["wayland-scanner", "client-header", protocol, str(runtime / "virtual-pointer.h")])
     session.run(["wayland-scanner", "private-code", protocol, str(runtime / "virtual-pointer.c")])
