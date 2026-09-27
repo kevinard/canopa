@@ -11,6 +11,8 @@ use iced::{Alignment, Element, Length, Pixels, Point, Rectangle, Size, Vector};
 use crate::app::Message;
 use crate::config::FormatMode;
 
+mod rotated_text;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum IconLabelLayout {
     Collapsed,
@@ -423,8 +425,15 @@ fn rotated_visual_segments_canvas<'a>(
     rotation: crate::config::ResolvedContentRotation,
 ) -> Element<'a, Message> {
     let (content_width, content_height) = visual_segments_canvas_size(&segments, fallback_size);
+    let text = rotated_text::Program::new(
+        &segments,
+        fallback_size,
+        fallback_color,
+        Size::new(content_width, content_height),
+        rotation,
+    );
 
-    canvas::Canvas::new(RotatedVisualSegments {
+    let icons = canvas::Canvas::new(RotatedVisualSegments {
         segments,
         fallback_size,
         fallback_color,
@@ -433,7 +442,13 @@ fn rotated_visual_segments_canvas<'a>(
         content_height,
     })
     .width(Length::Fixed(content_height))
-    .height(Length::Fixed(content_width))
+    .height(Length::Fixed(content_width));
+    iced::widget::stack![
+        icons,
+        iced::widget::shader::Shader::new(text)
+            .width(Length::Fill)
+            .height(Length::Fill)
+    ]
     .into()
 }
 
@@ -484,15 +499,21 @@ impl<Message> canvas::Program<Message> for RotatedVisualSegments {
             for segment in &self.segments {
                 let (segment_width, segment_height) =
                     visual_segment_canvas_metrics(segment, self.fallback_size);
-                draw_canvas_visual_segment(
-                    frame,
-                    segment,
-                    Point::new(x, origin.y + (self.content_height - segment_height) / 2.0),
-                    Size::new(segment_width, segment_height),
-                    self.fallback_size,
-                    self.fallback_color,
-                    text_alignment,
-                );
+                // WGPU text is rendered by the physical-pixel glyph layer.
+                // Keep canvas text as a fallback for the test-only tiny-skia renderer.
+                let is_image =
+                    matches!(segment, FormattedSegmentVisual::Image { path, .. } if path.exists());
+                if is_image || iced::advanced::renderer::Headless::name(renderer) != "wgpu" {
+                    draw_canvas_visual_segment(
+                        frame,
+                        segment,
+                        Point::new(x, origin.y + (self.content_height - segment_height) / 2.0),
+                        Size::new(segment_width, segment_height),
+                        self.fallback_size,
+                        self.fallback_color,
+                        text_alignment,
+                    );
+                }
                 x += segment_width + CANVAS_SEGMENT_SPACING;
             }
         });
@@ -560,6 +581,7 @@ fn draw_canvas_visual_segment(
                 color: style.color.unwrap_or(fallback_color),
                 size: Pixels(size),
                 font,
+                shaping: iced::advanced::text::Shaping::Advanced,
                 align_x: layout.align_x.into(),
                 align_y: layout.align_y,
                 ..Default::default()
@@ -643,37 +665,16 @@ fn visual_segment_canvas_metrics(
             ..
         } => {
             let size = visual_segment_size(*style, fallback_size);
-            let line_count = text.lines().count().max(1) as f32;
-            let width = text
-                .lines()
-                .map(|line| estimated_canvas_text_line_width(line, size))
-                .fold(size, f32::max)
-                .ceil();
-            (width, (line_count * size * 1.2).ceil())
+            let measured = rotated_text::measure(text, *style, size);
+            (
+                measured.width.ceil(),
+                measured.height.ceil().max(size * 1.2),
+            )
         }
     }
 }
 
 const CANVAS_SEGMENT_SPACING: f32 = 4.0;
-
-fn estimated_canvas_text_line_width(line: &str, size: f32) -> f32 {
-    let width_em = line
-        .chars()
-        .map(estimated_canvas_char_width_em)
-        .sum::<f32>();
-    (width_em * size).max(size)
-}
-
-fn estimated_canvas_char_width_em(ch: char) -> f32 {
-    match ch {
-        ' ' | '\t' => 0.35,
-        'i' | 'j' | 'l' | 'I' | '!' | '.' | ',' | ':' | ';' | '\'' | '`' | '|' => 0.35,
-        'm' | 'w' | 'M' | 'W' | '@' | '#' | '%' | '&' | '<' | '>' => 1.0,
-        _ if ch.is_ascii_alphanumeric() => 0.56,
-        _ if ch.is_ascii_punctuation() => 0.65,
-        _ => 1.0,
-    }
-}
 
 fn visual_segment_size(style: crate::config::ResolvedStyle, fallback_size: u32) -> f32 {
     style.size.unwrap_or(fallback_size as f32).max(1.0)
@@ -723,19 +724,40 @@ mod tests {
     }
 
     #[test]
-    fn rotated_canvas_metrics_reserve_segment_space() {
-        let segments = vec![super::FormattedSegmentVisual::Text {
-            text: "W<&".to_string(),
-            style: crate::config::ResolvedStyle {
+    fn rotated_canvas_metrics_do_not_force_extra_lines_in_styled_titles() {
+        use iced::advanced::text::{self, Paragraph};
+        for title in [
+            "AAAAAAAAAAAAAAAAAAAAAA",
+            "Bold focused-window title",
+            "Àgjpq — Résumé\nSecond line",
+        ] {
+            let style = crate::config::ResolvedStyle {
                 size: Some(16.0),
+                weight: Some(Weight::Bold),
                 ..Default::default()
-            },
-        }];
-
-        let (width, height) = super::visual_segments_canvas_size(&segments, 12);
-
-        assert!(width >= 48.0);
-        assert!(height >= 19.0);
+            };
+            let segments = vec![super::FormattedSegmentVisual::Text {
+                text: title.into(),
+                style,
+            }];
+            let (width, height) = super::visual_segments_canvas_size(&segments, 12);
+            let rendered = iced::advanced::graphics::text::Paragraph::with_text(text::Text {
+                content: title,
+                bounds: iced::Size::new(width, f32::INFINITY),
+                size: iced::Pixels(16.0),
+                line_height: text::LineHeight::Relative(1.2),
+                font: super::rotated_text::font(style),
+                align_x: text::Alignment::Left,
+                align_y: iced::alignment::Vertical::Top,
+                shaping: text::Shaping::Advanced,
+                wrapping: text::Wrapping::default(),
+            });
+            assert_eq!(
+                rendered.buffer().layout_runs().count(),
+                title.lines().count()
+            );
+            assert!(rendered.min_height() <= height);
+        }
     }
 
     #[test]

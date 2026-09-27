@@ -36,6 +36,36 @@ output geometry/scales, network daemon version, and audio daemon version.
    focus changes, long text, live content replacement, action invocation, and
    keyboard-only use. Record broader bar/menu coverage separately.
 
+## Focused-window rotation regression
+
+Build Niribar with `cargo build -p niribar --bin niribar`, then run:
+
+```sh
+python3 scripts/verify-content-rotation.py \
+  --binary target/debug/niribar \
+  --output /tmp/niribar-content-rotation \
+  --scale 1.0 1.25 1.5 2.0
+```
+
+This disposable Weston/Niri session requires Python Pillow, Python GI with GTK 3,
+and `dbus-daemon`. It checks real focused-window text and application icons on
+left/right bars against an unrotated top-bar control. Each scale renders two
+different titles, including accented characters, with two frames per title.
+The check requires grayscale glyph coverage and visible icons, and waits for
+title changes to appear on every bar. Without `--scale`, it checks 1 and 1.25.
+Screenshots and `result.json` remain in the output directory. This checks the
+software WGPU backend; it does not establish all font or hardware GPU behavior.
+
+On 2026-09-27, the original rotated outline rendering produced only foreground
+and background colors. Enabling renderer antialiasing increased this to five
+coverage levels, but letters remained uneven. Rasterizing with Iced's normal
+font engine at the physical output scale, then rotating pixels without filtering,
+passed all 48 samples above. Side-bar text had 236–250 coverage levels across the
+two titles and four scales. The per-widget raster is refreshed for content,
+style, scale, and size changes; placement is snapped to physical pixels. Unit
+tests also check exact glyph-pixel preservation through both quarter turns and
+cropping of constrained titles.
+
 ## Performance procedure
 
 Use the same release profile, configuration, compositor, output arrangement and
