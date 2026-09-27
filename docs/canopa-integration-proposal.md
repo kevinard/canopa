@@ -216,8 +216,10 @@ both real consumers and passes their integration fixtures. Preserve frame limits
 backpressure, stale-action rejection, revision checks, and process cleanup. Avoid
 protocol guessing and arbitrary provider-owned widgets.
 
-A future `xdg-desktop-portal-canopa` should be a backend for the existing frontend,
-implementing selected `org.freedesktop.impl.portal.*` interfaces. It needs D-Bus
+`xdg-desktop-portal-canopa` now implements Settings using shared appearance
+([ADR 0008](adr/0008-settings-portal.md)). It is an independent backend for the
+existing frontend; other interfaces remain future work. It implements selected
+`org.freedesktop.impl.portal.*` interfaces and provides D-Bus
 activation and portal metadata. The official architecture permits implementation
 of individual interfaces, with backend selection configured per interface, so the
 project can grow support incrementally.

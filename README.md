@@ -2,7 +2,7 @@
 
 Canopa is a desktop environment built around the Niri Wayland compositor. Its Rust
 workspace currently contains Niribar (the shell and Wi-Fi provider), Canopa Notify,
-the `canopa` configuration tool, and shared configuration, appearance, Iced controls
+the `canopa` configuration tool, a Settings portal backend, and shared configuration, appearance, Iced controls
 and panel protocol crates. Local icon lookup and bounded raster preparation are
 shared through `canopa-assets`; see the [asset contracts](docs/adr/0005-shared-assets.md).
 
@@ -14,7 +14,7 @@ cargo build --workspace --bins --locked
 ```
 
 Binaries are in root `target/debug/`: `niribar`, `niribar-wifi-provider`, and
-`canopa-notify`, plus `canopa`. Build one application with `cargo build --locked -p niribar` or
+`canopa-notify`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p niribar` or
 `cargo build --locked -p canopa-notify`. Notify's core build remains available with
 `cargo build --locked -p canopa-notify --no-default-features`.
 
@@ -28,6 +28,7 @@ python3 scripts/check-vendor.py --archives /path/to/verified-crate-archives
 
 Tests use private D-Bus sessions. Full transport tests additionally need
 `libglib2.0-bin`, `pipewire`, `pipewire-bin`, `pipewire-pulse`, and `pulseaudio-utils`.
+The Settings frontend fixture also needs `xdg-desktop-portal` and `python3-gi`.
 The optional graphical acceptance workflow uses a dedicated runner with Niri, Sway,
 grim, Weston, wtype, Python GI/AT-SPI/Pillow, and software Mesa;
 see `notify/scripts/check-desktop-runner.py`.
@@ -49,12 +50,14 @@ The default notification module opens the Center and controls DND without provid
 wiring. See [notifications and session setup](docs/notifications.md).
 See [the appearance decision](docs/adr/0003-shared-appearance.md) and the remaining
 phases in the [integration proposal](docs/canopa-integration-proposal.md).
+The [Settings portal](docs/settings-portal.md) exposes shared appearance to
+applications, with explicit backend selection and its own SIGHUP reload.
 
 Follow the [shell guide](niribar/README.md) and [notification guide](notify/README.md)
 for feature options, using root `target/` paths. Runtime state paths are unchanged.
 
 Build a release with `cargo build --workspace --bins --locked --release`, then run
-`bash scripts/package-release.sh target/release dist`. The archive contains all four
+`bash scripts/package-release.sh target/release dist`. The archive contains all five
 binaries, current example configurations, service units, manuals, and source license
 notices. The companion user services use `~/.local/bin`; `canopa-session.target` starts
 both. See the session setup guide before enabling them. Packaging does not install or restart anything.

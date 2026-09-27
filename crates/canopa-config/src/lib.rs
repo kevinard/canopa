@@ -5,6 +5,8 @@ use kdl::KdlDocument;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 mod appearance;
+mod shared;
+pub use shared::SharedConfiguration;
 
 pub const MAX_BYTES: usize = 1024 * 1024;
 
@@ -102,13 +104,25 @@ pub fn config_home_from(
 }
 
 pub fn discover_in(base: &Path, component: Component) -> Result<Request, Diagnostic> {
-    for (path, format) in [
-        (base.join("canopa/config.kdl"), Format::CanopaV1),
-        (
-            base.join(component.legacy_directory()).join("config.kdl"),
-            Format::Legacy,
-        ),
-    ] {
+    let common = discover_common_in(base)?;
+    if common != Request::Defaults {
+        return Ok(common);
+    }
+    discover_candidates([(
+        base.join(component.legacy_directory()).join("config.kdl"),
+        Format::Legacy,
+    )])
+}
+
+/// Shared-only consumers have no application legacy source to consult.
+pub fn discover_common_in(base: &Path) -> Result<Request, Diagnostic> {
+    discover_candidates([(base.join("canopa/config.kdl"), Format::CanopaV1)])
+}
+
+fn discover_candidates(
+    candidates: impl IntoIterator<Item = (PathBuf, Format)>,
+) -> Result<Request, Diagnostic> {
+    for (path, format) in candidates {
         // A dangling symlink is a present invalid source, never permission to fall back.
         match std::fs::symlink_metadata(&path) {
             Ok(_) => return Ok(Request::File { path, format }),

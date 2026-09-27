@@ -1,0 +1,11 @@
+[Unit]
+Description=Canopa Settings portal backend
+PartOf=graphical-session.target
+After=graphical-session-pre.target
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.impl.portal.desktop.canopa
+ExecStart=%h/.local/bin/xdg-desktop-portal-canopa
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure

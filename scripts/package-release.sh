@@ -9,9 +9,15 @@ trap 'rm -rf -- "$stage"' EXIT
 bundle=canopa-x86_64-unknown-linux-gnu
 dest="$stage/$bundle"
 mkdir -p "$dest/bin" "$dest/share/canopa" "$dest/share/niribar" \
-    "$dest/share/canopa-notify" "$dest/share/systemd/user" "$dest/share/man/man1"
+    "$dest/share/canopa-notify" "$dest/share/systemd/user" "$dest/share/man/man1" \
+    "$dest/share/dbus-1/services" "$dest/share/xdg-desktop-portal/portals"
 install -m755 "$build_dir/niribar" "$build_dir/niribar-wifi-provider" \
-    "$build_dir/canopa-notify" "$build_dir/canopa" "$dest/bin/"
+    "$build_dir/canopa-notify" "$build_dir/canopa" \
+    "$build_dir/xdg-desktop-portal-canopa" "$dest/bin/"
+install -m644 packaging/portal/*.portal "$dest/share/xdg-desktop-portal/portals/"
+install -m644 packaging/portal/*.service "$dest/share/dbus-1/services/"
+install -m644 packaging/systemd/xdg-desktop-portal-canopa.service "$dest/share/systemd/user/"
+install -m644 docs/settings-portal.md "$dest/share/canopa/"
 install -m644 docs/notifications.md docs/configuration.md config/canopa.kdl README.md LICENSES.md "$dest/share/canopa/"
 install -m644 niribar/README.md niribar/LICENSE niribar/config/default.kdl "$dest/share/niribar/"
 install -m644 notify/README.md notify/LICENSE-MIT notify/LICENSE-APACHE \

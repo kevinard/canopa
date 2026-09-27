@@ -105,3 +105,12 @@ Owner-only validators are `niribar --check-config` and
 Configuration migration does not move or change history, DND, UI-managed permission
 rules, or other runtime state. See [the architecture decision](adr/0002-shared-configuration.md)
 for ownership and reload guarantees.
+
+## Settings portal
+
+The optional Settings backend consumes only the common file's shared appearance;
+it does not consult application legacy files. Send SIGHUP (or use its systemd unit's
+reload command) after editing the file. Invalid candidates retain the previous
+values; unchanged effective values emit no portal signal. Discovery repeats on
+reload, while an explicit path remains selected. Niribar still requires a restart.
+See [Settings portal installation and selection](settings-portal.md).

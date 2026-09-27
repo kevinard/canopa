@@ -10,6 +10,10 @@ test -x "$bundle/bin/canopa"
 test -x "$bundle/bin/niribar"
 test -x "$bundle/bin/niribar-wifi-provider"
 test -x "$bundle/bin/canopa-notify"
+"$bundle/bin/xdg-desktop-portal-canopa" --help > /dev/null
+test -s "$bundle/share/xdg-desktop-portal/portals/canopa.portal"
+test -s "$bundle/share/dbus-1/services/org.freedesktop.impl.portal.desktop.canopa.service"
+test -s "$bundle/share/systemd/user/xdg-desktop-portal-canopa.service"
 test -s "$bundle/share/canopa/dependency-attributions.md"
 test -s "$bundle/share/canopa-notify/LICENSE-MIT"
 test -s "$bundle/share/systemd/user/canopa-notify.service"
@@ -54,5 +58,5 @@ message = json.loads(result.stdout)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'form'
 assert message['content']['body']['elements'][0]['title'] == 'Wi-Fi unavailable'
-print('Release bundle: all four binaries execute; v1 and v5 provider close pass.')
+print('Release bundle: all five binaries execute; v1 and v5 provider close pass.')
 PY

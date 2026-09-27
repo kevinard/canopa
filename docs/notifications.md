@@ -20,7 +20,7 @@ the built-in Center; it does not change the notification summary's source.
 
 ## Start the desktop companions
 
-Install the release archive's four `bin/` executables in `~/.local/bin`, its
+Install the release archive's `bin/` executables in `~/.local/bin`, its
 `share/systemd/user/` units in `~/.config/systemd/user`, and optionally copy
 `share/canopa/canopa.kdl` to `~/.config/canopa/config.kdl`. Shared and legacy files
 remain supported. If an old custom button is named `notifications`, replace it
@@ -29,6 +29,8 @@ button and its placements to `notification-launcher`: `notifications` is now a
 reserved built-in module name. Explicit provider declarations remain supported.
 The user units assume `~/.local/bin`; for another
 prefix, adjust both services' `ExecStart` values.
+The optional Settings portal has separate activation and backend-selection steps;
+see [the portal guide](settings-portal.md).
 
 Run these commands **inside the Niri session**. If the session launcher has not
 already imported its environment, first publish the current compositor endpoints

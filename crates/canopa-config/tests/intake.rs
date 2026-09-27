@@ -210,3 +210,51 @@ fn xdg_paths_require_absolute_nonempty_values() {
     );
     assert!(config_home_from(None, Some(OsStr::new("relative"))).is_err());
 }
+
+#[test]
+fn shared_only_intake_reuses_appearance_validation_without_legacy_or_feature_semantics() {
+    use canopa_config::{SharedConfiguration, discover_common_in};
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("niribar")).unwrap();
+    fs::write(
+        dir.path().join("niribar/config.kdl"),
+        "invalid private-value",
+    )
+    .unwrap();
+    assert_eq!(discover_common_in(dir.path()).unwrap(), Request::Defaults);
+    assert_eq!(
+        SharedConfiguration::load(&Request::Defaults)
+            .unwrap()
+            .appearance,
+        Default::default()
+    );
+    assert!(
+        SharedConfiguration::load(&Request::legacy(dir.path().join("niribar/config.kdl"))).is_err()
+    );
+    fs::create_dir(dir.path().join("canopa")).unwrap();
+    let path = dir.path().join("canopa/config.kdl");
+    let text = "schema-version 1\nappearance { color-scheme \"light\"; accent \"#123456\"; }\nshell { unknown \"private-value\"; }\nnotifications { unknown 1; }\n";
+    fs::write(&path, text).unwrap();
+    let request = discover_common_in(dir.path()).unwrap();
+    let shared = SharedConfiguration::load(&request).unwrap();
+    let shell = Document::load(&request, Component::Shell, "").unwrap();
+    assert_eq!(shared.appearance, shell.appearance());
+    assert_eq!(shared.source.fingerprint, shell.info().fingerprint);
+    assert!(!shared.source.defaults);
+    for text in [
+        "schema-version 1\nappearance { accent \"private-value\"; }",
+        "private-value {}",
+        "schema-version 1\nshell {",
+    ] {
+        fs::write(&path, text).unwrap();
+        let error = SharedConfiguration::load(&request).unwrap_err();
+        assert!(!format!("{error} {error:?}").contains("private-value"));
+    }
+    fs::remove_file(&path).unwrap();
+    symlink(dir.path().join("missing"), &path).unwrap();
+    assert_eq!(discover_common_in(dir.path()).unwrap(), request);
+    assert_eq!(
+        SharedConfiguration::load(&request).unwrap_err().code,
+        Code::Read
+    );
+}

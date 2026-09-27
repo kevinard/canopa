@@ -8,7 +8,7 @@ The combined repository preserves the original source licenses:
   Notify and Niribar attribution in `crates/canopa-panel-protocol/LICENSE`.
   The original v4 license texts are also retained in its crate directory.
 - Canopa local assets: MIT, with Notify and Niribar attribution in `crates/canopa-assets/LICENSE`.
-- Canopa configuration, appearance, UI, notification client, bounded file intake, and CLI: MIT OR Apache-2.0,
+- Canopa configuration, appearance, UI, notification client, bounded file intake, portal, and CLI: MIT OR Apache-2.0,
   with both texts in their crate directories.
 - Shared workspace tooling and integration documentation: MIT OR Apache-2.0,
   using the texts in `notify/`.

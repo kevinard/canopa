@@ -895,6 +895,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "canopa-portal"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "canopa-config",
+ "canopa-theme",
+ "clap",
+ "futures-util",
+ "tempfile",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "canopa-theme"
 version = "0.1.0"
 
