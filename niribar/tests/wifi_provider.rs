@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use niribar::external_panel::protocol::{ExternalPanelElement, ExternalPanelSeverity};
+use canopa_panel_protocol::v1::{ExternalPanelElement, ExternalPanelSeverity};
 use niribar::wifi_provider::{
     BackendCapabilities, BackendName, WifiBackendAvailability, WifiBackendError,
     WifiBackendErrorCategory, WifiConnectRequest, WifiControlBackend, WifiNetwork,
@@ -161,7 +161,7 @@ async fn iwd_provider_initial_content_reports_active_network_without_scanning() 
             },
             ExternalPanelElement::SelectableList {
                 id: "networks".into(),
-                entries: vec![niribar::external_panel::protocol::ExternalSelectableEntry {
+                entries: vec![canopa_panel_protocol::v1::ExternalSelectableEntry {
                     id: "iwd:/station/0/Home".into(),
                     label: "Home".into(),
                     description: Some("known secured 82%".into()),
@@ -170,7 +170,6 @@ async fn iwd_provider_initial_content_reports_active_network_without_scanning() 
                     status: Some("active".into()),
                 }],
                 allow_custom: true,
-                search_query: String::new(),
             },
         ]
     );
@@ -294,7 +293,7 @@ async fn known_wifi_row_activation_streams_connecting_then_active_content() {
 
     let documents = provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::SelectableListEntryActivated {
+            canopa_panel_protocol::v1::ProviderEvent::SelectableListEntryActivated {
                 element_id: "networks".into(),
                 entry_id: "ap:home".into(),
             },
@@ -361,7 +360,7 @@ async fn rejected_network_credential_keeps_prompt_and_clears_secret() {
     provider.refresh().await.unwrap();
     provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::SelectableListEntryActivated {
+            canopa_panel_protocol::v1::ProviderEvent::SelectableListEntryActivated {
                 element_id: "networks".into(),
                 entry_id: "ap:cafe".into(),
             },
@@ -371,7 +370,7 @@ async fn rejected_network_credential_keeps_prompt_and_clears_secret() {
 
     let documents = provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::TextInputSubmitted {
+            canopa_panel_protocol::v1::ProviderEvent::TextInputSubmitted {
                 element_id: "credential".into(),
                 value: secret.into(),
             },
@@ -429,7 +428,7 @@ async fn custom_list_value_starts_trimmed_hidden_network_prompt() {
 
     let documents = provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::SelectableListCustomValueSubmitted {
+            canopa_panel_protocol::v1::ProviderEvent::SelectableListCustomValueSubmitted {
                 element_id: "networks".into(),
                 value: "  Hidden Cafe  ".into(),
             },
@@ -491,7 +490,7 @@ async fn hidden_network_credential_submit_uses_hidden_connect_request() {
     provider.refresh().await.unwrap();
     provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::SelectableListCustomValueSubmitted {
+            canopa_panel_protocol::v1::ProviderEvent::SelectableListCustomValueSubmitted {
                 element_id: "networks".into(),
                 value: "Hidden Cafe".into(),
             },
@@ -501,7 +500,7 @@ async fn hidden_network_credential_submit_uses_hidden_connect_request() {
 
     let documents = provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::TextInputSubmitted {
+            canopa_panel_protocol::v1::ProviderEvent::TextInputSubmitted {
                 element_id: "credential".into(),
                 value: secret.into(),
             },
@@ -558,7 +557,7 @@ async fn unknown_enterprise_wifi_row_reports_unsupported_without_connecting() {
 
     let documents = provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::SelectableListEntryActivated {
+            canopa_panel_protocol::v1::ProviderEvent::SelectableListEntryActivated {
                 element_id: "networks".into(),
                 entry_id: "ap:enterprise".into(),
             },
@@ -606,7 +605,7 @@ async fn unknown_secured_wifi_row_activation_shows_secret_credential_prompt() {
 
     let documents = provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::SelectableListEntryActivated {
+            canopa_panel_protocol::v1::ProviderEvent::SelectableListEntryActivated {
                 element_id: "networks".into(),
                 entry_id: "ap:cafe".into(),
             },
@@ -675,7 +674,7 @@ async fn submitted_network_credential_connects_without_rendering_the_secret() {
     provider.refresh().await.unwrap();
     provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::SelectableListEntryActivated {
+            canopa_panel_protocol::v1::ProviderEvent::SelectableListEntryActivated {
                 element_id: "networks".into(),
                 entry_id: "ap:cafe".into(),
             },
@@ -685,7 +684,7 @@ async fn submitted_network_credential_connects_without_rendering_the_secret() {
 
     let documents = provider
         .handle_event(
-            niribar::external_panel::protocol::ProviderEvent::TextInputSubmitted {
+            canopa_panel_protocol::v1::ProviderEvent::TextInputSubmitted {
                 element_id: "credential".into(),
                 value: secret.into(),
             },
@@ -713,12 +712,11 @@ async fn submitted_network_credential_connects_without_rendering_the_secret() {
     assert!(active[0].active);
 }
 
-fn document_text(document: &niribar::external_panel::protocol::ExternalPanelDocument) -> String {
+fn document_text(document: &canopa_panel_protocol::v1::ExternalPanelDocument) -> String {
     document
         .elements
         .iter()
         .map(|element| match element {
-            ExternalPanelElement::Canopa { .. } => panic!("Wi-Fi must use framed-v1 content"),
             ExternalPanelElement::Text { text } => text.clone(),
             ExternalPanelElement::Button { label, .. } => label.clone(),
             ExternalPanelElement::SelectableList { entries, .. } => entries

@@ -13,7 +13,7 @@ canopa-theme.workspace = true
 canopa-ui.workspace = true
 accesskit.workspace = true
 accesskit_unix.workspace = true
-canopa-panel-protocol.workspace = true
+canopa-panel-protocol = { workspace = true, features = ["tokio"] }
 image = { workspace = true, features = ["gif", "webp"] }
 rustix.workspace = true
 iced_layershell = { workspace = true, features = ["linux-theme-detection"] }

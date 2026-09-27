@@ -1,8 +1,47 @@
 use crate::modules::ModuleId;
 
-pub use niribar::external_panel::protocol::{
-    ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity, ExternalSelectableEntry,
+pub use canopa_panel_protocol::v1::{
+    ExternalPanelElement, ExternalPanelSeverity, ExternalSelectableEntry,
 };
+use niribar::external_panel::canopa::CanopaSnapshot;
+
+/// Prepared host content is never serialized back onto either provider wire.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExternalPanelDocument {
+    Elements { elements: Vec<ExternalPanelElement> },
+    Canopa(Box<CanopaSnapshot>),
+}
+
+impl From<canopa_panel_protocol::v1::ExternalPanelDocument> for ExternalPanelDocument {
+    fn from(document: canopa_panel_protocol::v1::ExternalPanelDocument) -> Self {
+        Self::Elements {
+            elements: document.elements,
+        }
+    }
+}
+
+impl ExternalPanelDocument {
+    pub fn elements(&self) -> &[ExternalPanelElement] {
+        match self {
+            Self::Elements { elements } => elements,
+            Self::Canopa(_) => &[],
+        }
+    }
+
+    pub fn canopa(&self) -> Option<&CanopaSnapshot> {
+        match self {
+            Self::Canopa(snapshot) => Some(snapshot),
+            Self::Elements { .. } => None,
+        }
+    }
+
+    pub fn canopa_mut(&mut self) -> Option<&mut CanopaSnapshot> {
+        match self {
+            Self::Canopa(snapshot) => Some(snapshot),
+            Self::Elements { .. } => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PanelOrigin {
@@ -22,27 +61,37 @@ pub enum PanelContent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExternalPanelContent {
     pub provider_name: String,
-    pub elements: Vec<ExternalPanelElement>,
+    pub document: ExternalPanelDocument,
+    // Search is host state, not provider content. Never send it on the wire.
+    list_search: std::collections::HashMap<String, String>,
 }
 
 impl ExternalPanelContent {
     pub fn failure(provider_name: impl Into<String>, message: impl Into<String>) -> Self {
-        Self {
-            provider_name: provider_name.into(),
-            elements: vec![ExternalPanelElement::Status {
-                title: "Provider failed".into(),
-                message: message.into(),
-                severity: ExternalPanelSeverity::Error,
-            }],
-        }
+        Self::from_provider_document(
+            provider_name,
+            ExternalPanelDocument::Elements {
+                elements: vec![ExternalPanelElement::Status {
+                    title: "Provider failed".into(),
+                    message: message.into(),
+                    severity: ExternalPanelSeverity::Error,
+                }],
+            },
+        )
+    }
+
+    pub fn elements(&self) -> &[ExternalPanelElement] {
+        self.document.elements()
     }
 
     #[cfg(test)]
     pub fn failure_text(&self) -> String {
-        self.elements
+        if let Some(snapshot) = self.document.canopa() {
+            return snapshot.content.title.clone();
+        }
+        self.elements()
             .iter()
             .map(|element| match element {
-                ExternalPanelElement::Canopa { snapshot } => snapshot.content.title.as_str(),
                 ExternalPanelElement::Text { text } => text.as_str(),
                 ExternalPanelElement::Button { label, .. } => label.as_str(),
                 ExternalPanelElement::SelectableList { id, .. } => id.as_str(),
@@ -59,33 +108,41 @@ impl ExternalPanelContent {
     ) -> Self {
         Self {
             provider_name: provider_name.into(),
-            elements: document.elements,
+            document,
+            list_search: Default::default(),
         }
+    }
+
+    pub(crate) fn list_search(&self, list_id: &str) -> &str {
+        self.list_search
+            .get(list_id)
+            .map(String::as_str)
+            .unwrap_or("")
     }
 
     pub(crate) fn with_list_search(&self, list_id: &str, query: String) -> Self {
         let mut next = self.clone();
-        for element in &mut next.elements {
-            if let ExternalPanelElement::SelectableList {
-                id, search_query, ..
-            } = element
-                && id == list_id
-            {
-                *search_query = query.clone();
-            }
+        if next.elements().iter().any(|element| {
+            matches!(element,
+                ExternalPanelElement::SelectableList { id, .. } if id == list_id
+            )
+        }) {
+            next.list_search.insert(list_id.to_owned(), query);
         }
         next
     }
 
     pub(crate) fn with_text_input_value(&self, element_id: &str, value: String) -> Self {
         let mut next = self.clone();
-        for element in &mut next.elements {
-            if let ExternalPanelElement::TextInput {
-                id, value: current, ..
-            } = element
-                && id == element_id
-            {
-                *current = value.clone();
+        if let ExternalPanelDocument::Elements { elements } = &mut next.document {
+            for element in elements {
+                if let ExternalPanelElement::TextInput {
+                    id, value: current, ..
+                } = element
+                    && id == element_id
+                {
+                    *current = value.clone();
+                }
             }
         }
         next
@@ -151,7 +208,7 @@ mod tests {
 
     #[test]
     fn external_panel_document_rejects_empty_interactive_labels() {
-        let document = ExternalPanelDocument {
+        let document = canopa_panel_protocol::v1::ExternalPanelDocument {
             elements: vec![ExternalPanelElement::Button {
                 id: "scan".into(),
                 label: String::new(),

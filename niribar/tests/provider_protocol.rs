@@ -1,4 +1,4 @@
-use niribar::external_panel::protocol::{
+use canopa_panel_protocol::v1::{
     ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity, HostHandshake, HostMessage,
     PROTOCOL_VERSION, ProviderEvent, ProviderMessage, ProviderOrigin, decode_frame, encode_frame,
 };
@@ -54,7 +54,7 @@ async fn shipped_wifi_provider_binary_completes_handshake_with_shared_protocol()
     let mut stdin = child.stdin.take().unwrap();
     let mut stdout = child.stdout.take().unwrap();
 
-    niribar::external_panel::protocol::write_frame(
+    canopa_panel_protocol::v1::write_frame(
         &mut stdin,
         &HostMessage::Handshake(HostHandshake {
             protocol_version: PROTOCOL_VERSION,
@@ -72,7 +72,7 @@ async fn shipped_wifi_provider_binary_completes_handshake_with_shared_protocol()
 
     let message = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        niribar::external_panel::protocol::read_frame::<_, ProviderMessage>(&mut stdout),
+        canopa_panel_protocol::v1::read_frame::<_, ProviderMessage>(&mut stdout),
     )
     .await
     .expect("provider handshake should not wait for scan")
@@ -97,12 +97,9 @@ async fn shipped_wifi_provider_binary_completes_handshake_with_shared_protocol()
         other => panic!("expected provider handshake, got {other:?}"),
     }
 
-    niribar::external_panel::protocol::write_frame(
-        &mut stdin,
-        &HostMessage::Event(ProviderEvent::Close),
-    )
-    .await
-    .unwrap();
+    canopa_panel_protocol::v1::write_frame(&mut stdin, &HostMessage::Event(ProviderEvent::Close))
+        .await
+        .unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(2), child.wait())
         .await
         .expect("provider should exit after close")

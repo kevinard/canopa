@@ -203,6 +203,10 @@ renderers, including high DPI, long text, unavailable actions, and light/dark th
 Continue the declarative provider model in
 [Niribar ADR 0010](../niribar/docs/adr/0010-external-panel-providers-use-declarative-content.md).
 The host owns visual treatment; providers supply meaning and receive opaque events.
+Both existing contracts now live in the shared crate, with host state separated
+from wire models ([ADR 0006](adr/0006-shared-provider-contracts.md)). This completes
+source consolidation; wire convergence below remains separate work.
+
 Sharing the v4 source is an immediate deduplication. Replacing `niribar-v1` with v4
 is not: v1 has selectable lists and secret text inputs used by Wi-Fi, while v4 has
 rich notification content. Keep both adapters until a versioned successor covers

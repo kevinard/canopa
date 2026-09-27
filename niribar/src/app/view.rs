@@ -94,17 +94,12 @@ fn render_external_panel_model<'a>(
     content: &'a crate::surface::panel::ExternalPanelContent,
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
-    if let [crate::surface::panel::ExternalPanelElement::Canopa { snapshot }] =
-        content.elements.as_slice()
-    {
+    if let Some(snapshot) = content.document.canopa() {
         return super::canopa_panel::render(snapshot, &content.provider_name);
     }
     let mut body = column![].spacing(8).padding(8);
-    for element in &content.elements {
+    for element in content.elements() {
         let rendered: Element<'_, Message> = match element {
-            crate::surface::panel::ExternalPanelElement::Canopa { snapshot } => {
-                super::canopa_panel::render(snapshot, &content.provider_name)
-            }
             crate::surface::panel::ExternalPanelElement::Text { text: value } => {
                 text(value.clone()).into()
             }
@@ -122,13 +117,12 @@ fn render_external_panel_model<'a>(
                 id,
                 entries,
                 allow_custom,
-                search_query,
             } => render_external_selectable_list(
                 content.provider_name.as_str(),
                 id.as_str(),
                 entries,
                 *allow_custom,
-                search_query,
+                content.list_search(id),
             ),
             crate::surface::panel::ExternalPanelElement::TextInput {
                 id,

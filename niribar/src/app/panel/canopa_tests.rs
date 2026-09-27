@@ -24,9 +24,7 @@ async fn document(session: &mut CanopaSession) -> ExternalPanelDocument {
         .read_content(&mut tokio::io::BufReader::new(bytes.as_slice()))
         .await
         .unwrap();
-    ExternalPanelDocument {
-        elements: vec![ExternalPanelElement::Canopa { snapshot }],
-    }
+    ExternalPanelDocument::Canopa(Box::new(snapshot))
 }
 
 fn open(content: ExternalPanelDocument) -> (App, iced::window::Id) {
@@ -63,10 +61,7 @@ fn displayed_content(app: &App) -> &ExternalPanelContent {
 
 fn displayed(app: &App) -> &CanopaSnapshot {
     let content = displayed_content(app);
-    let ExternalPanelElement::Canopa { snapshot } = &content.elements[0] else {
-        panic!("expected Canopa content");
-    };
-    snapshot
+    content.document.canopa().expect("expected Canopa content")
 }
 
 #[tokio::test]
@@ -157,7 +152,7 @@ async fn provider_failure_remains_in_the_same_keyboard_dismissible_window() {
 
 #[test]
 fn v1_text_and_search_echo_keep_the_focused_window() {
-    let (mut app, window) = open(ExternalPanelDocument {
+    let (mut app, window) = open(ExternalPanelDocument::Elements {
         elements: vec![
             ExternalPanelElement::TextInput {
                 id: "entry".into(),
@@ -170,7 +165,6 @@ fn v1_text_and_search_echo_keep_the_focused_window() {
                 id: "list".into(),
                 entries: Vec::new(),
                 allow_custom: true,
-                search_query: String::new(),
             },
         ],
     });
@@ -190,16 +184,15 @@ fn v1_text_and_search_echo_keep_the_focused_window() {
             },
         ));
         assert_eq!(app.foreground.active_panel_window(), Some(window));
-        assert!(matches!(&displayed_content(&app).elements[0],
+        assert!(matches!(&displayed_content(&app).elements()[0],
             ExternalPanelElement::TextInput { value: actual, .. } if actual == value));
-        assert!(matches!(&displayed_content(&app).elements[1],
-            ExternalPanelElement::SelectableList { search_query, .. } if search_query == value));
+        assert_eq!(displayed_content(&app).list_search("list"), value);
     }
 }
 
 #[test]
 fn v1_background_updates_keep_the_existing_panel_window() {
-    let button = |id: &str| ExternalPanelDocument {
+    let button = |id: &str| ExternalPanelDocument::Elements {
         elements: vec![ExternalPanelElement::Button {
             id: id.into(),
             label: "Action".into(),
@@ -216,7 +209,7 @@ fn v1_background_updates_keep_the_existing_panel_window() {
             },
         ));
         assert_eq!(app.foreground.active_panel_window(), Some(window));
-        assert_eq!(displayed_content(&app).elements, content.elements);
+        assert_eq!(displayed_content(&app).elements(), content.elements());
     }
 }
 
@@ -265,7 +258,7 @@ async fn v1_replacement_cancels_an_old_button_press_without_recreating_the_windo
     let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
         .await
         .expect("software renderer");
-    let button = |id: &str| ExternalPanelDocument {
+    let button = |id: &str| ExternalPanelDocument::Elements {
         elements: vec![ExternalPanelElement::Button {
             id: id.into(),
             label: "Action".into(),
@@ -297,7 +290,7 @@ async fn v1_typing_survives_echo_and_background_updates_but_not_a_different_fiel
     let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
         .await
         .expect("software renderer");
-    let input = |id: &str, value: &str| ExternalPanelDocument {
+    let input = |id: &str, value: &str| ExternalPanelDocument::Elements {
         elements: vec![ExternalPanelElement::TextInput {
             id: id.into(),
             label: "Name".into(),

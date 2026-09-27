@@ -17,3 +17,12 @@ for name in ["niribar", "canopa-notify"]:
     assert len(dependencies) == 1 and pathlib.Path(dependencies[0]["path"]).resolve() == expected.resolve(), name
 print("Both applications use the single workspace panel protocol crate.")
 '
+
+# Inspect normal/build edges only: Tokio may be used by the codec test harness,
+# but a default provider dependency must not select a runtime or desktop stack.
+protocol_tree=$(cargo tree --locked -p canopa-panel-protocol --no-default-features --edges normal,build --prefix none --format '{p}')
+if printf '%s\n' "$protocol_tree" | rg '^(niribar|canopa-notify|tokio|iced|wayland|accesskit|wgpu|winit)([-_ ]|$)'; then
+    echo 'Default panel protocol unexpectedly depends on an application or runtime.' >&2
+    exit 1
+fi
+echo 'Default panel protocol is independent of applications, desktop and runtime.'

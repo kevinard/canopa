@@ -566,7 +566,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Center** item activation invokes the **Default Notification Action** when present and otherwise dismisses the notification.
 - Active **Notification Center** items expose an explicit activation control, distinct from sender-named actions, identifying whether it opens or dismisses the notification. Inactive history exposes no activation control.
 - **Notification Center** adapter-owned controls must not collide with sender-provided **Notification Action** keys.
-- The shared panel protocol contains generic Niribar panel infrastructure, not Notify-specific notification logic.
+- The shared panel protocol contains generic panel wire contracts, not Notify-specific notification logic. Notify uses its v4 contract and validated frame reader; v1 also lives there for Wi-Fi ([Canopa ADR 0006](../docs/adr/0006-shared-provider-contracts.md)).
 - Shared panel protocol styled text is generic inline presentation data, not raw freedesktop notification markup.
 - Shared panel protocol shape changes for generic styled text should advance the panel protocol version.
 - The first Niribar-hosted **Notification Center** does not require progress rendering.

@@ -31,7 +31,7 @@ async fn canopa_process_receives_typed_actions_and_streams_replacements() {
     .await
     .unwrap()
     .unwrap();
-    let protocol::ExternalPanelElement::Canopa { snapshot } = &session.content.elements[0] else {
+    let Some(snapshot) = session.content.canopa() else {
         panic!("expected Canopa content")
     };
     assert_eq!(snapshot.content.title, "Initial");
@@ -50,7 +50,7 @@ async fn canopa_process_receives_typed_actions_and_streams_replacements() {
     );
     sent.unwrap();
     let document = received.unwrap().unwrap();
-    let protocol::ExternalPanelElement::Canopa { snapshot } = &document.elements[0] else {
+    let Some(snapshot) = document.canopa() else {
         panic!("expected replacement")
     };
     assert_eq!(snapshot.content.title, "Updated");

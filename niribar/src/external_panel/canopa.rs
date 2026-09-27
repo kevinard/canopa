@@ -4,12 +4,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use canopa_panel_protocol::{
-    InteractionEvent, InteractionTarget, PanelAction, PanelContent, ProviderResponse,
-};
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use canopa_panel_protocol::{InteractionEvent, InteractionTarget, PanelAction, PanelContent};
+use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
 
-use super::protocol::{MAX_FRAME_BYTES, ProtocolError};
+use canopa_panel_protocol::ProtocolError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanopaSnapshot {
@@ -91,29 +89,10 @@ impl CanopaSession {
         &self,
         reader: &mut R,
     ) -> Result<CanopaSnapshot, ProtocolError> {
-        let mut bytes = Vec::new();
-        reader
-            .take((MAX_FRAME_BYTES + 1) as u64)
-            .read_until(b'\n', &mut bytes)
-            .await
-            .map_err(|error| ProtocolError::Io(error.to_string()))?;
-        if bytes.len() > MAX_FRAME_BYTES {
-            return Err(ProtocolError::FrameTooLarge);
-        }
-        if bytes.last() != Some(&b'\n') {
-            return Err(ProtocolError::FrameTooShort);
-        }
-        let ProviderResponse::ReplaceContent {
-            protocol_version,
-            content,
-        } = serde_json::from_slice(&bytes)
-            .map_err(|_| ProtocolError::Json("invalid Canopa provider message".into()))?;
-        if protocol_version != canopa_panel_protocol::PROTOCOL_VERSION {
-            return Err(ProtocolError::IncompatibleVersion(protocol_version.into()));
-        }
-        content
-            .validate()
-            .map_err(|_| ProtocolError::InvalidContent("invalid Canopa content".into()))?;
+        let content = canopa_panel_protocol::v4::Frame::read_async(reader)
+            .await?
+            .ok_or(ProtocolError::FrameTooShort)?
+            .into_content();
         let images = super::canopa_images::prepare(&content).await;
         let mut state = self.state.lock().unwrap();
         // Unique across sessions as well as replacements: late clicks from a closed panel stay stale.

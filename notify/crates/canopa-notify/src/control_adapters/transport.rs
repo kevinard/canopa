@@ -103,27 +103,7 @@ pub(crate) fn run_panel_provider(socket: &Path) -> anyhow::Result<()> {
 }
 
 fn read_panel_frame(reader: &mut impl BufRead) -> anyhow::Result<Option<Vec<u8>>> {
-    let mut frame = Vec::with_capacity(MAX_PANEL_FRAME_BYTES + 1);
-    reader
-        .take((MAX_PANEL_FRAME_BYTES + 1) as u64)
-        .read_until(b'\n', &mut frame)?;
-    if frame.is_empty() {
-        return Ok(None);
-    }
-    anyhow::ensure!(
-        frame.len() <= MAX_PANEL_FRAME_BYTES && frame.last() == Some(&b'\n'),
-        "invalid panel frame length"
-    );
-    let ProviderResponse::ReplaceContent {
-        protocol_version,
-        content,
-    } = serde_json::from_slice(&frame)?;
-    anyhow::ensure!(
-        protocol_version == canopa_panel_protocol::PROTOCOL_VERSION,
-        "incompatible panel protocol"
-    );
-    content.validate()?;
-    Ok(Some(frame))
+    Ok(canopa_panel_protocol::v4::Frame::read(reader)?.map(|frame| frame.into_bytes()))
 }
 
 fn spawn_panel_interaction_forwarder(

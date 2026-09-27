@@ -498,10 +498,7 @@ impl App {
             self.canopa_accessibility = None;
             return;
         };
-        let Some(snapshot) = content.elements.iter().find_map(|element| match element {
-            crate::surface::panel::ExternalPanelElement::Canopa { snapshot } => Some(snapshot),
-            _ => None,
-        }) else {
+        let Some(snapshot) = content.document.canopa() else {
             self.canopa_accessibility = None;
             return;
         };

@@ -141,12 +141,10 @@ impl ExternalPanelSessionRuntime {
         if active.provider_name != provider || !active.matches_panel(active_panel) {
             return Vec::new();
         }
-        for element in &mut active.content.elements {
-            if let crate::surface::panel::ExternalPanelElement::Canopa { snapshot } = element
-                && snapshot.focus_action(id)
-            {
-                return vec![active.update_content_effect()];
-            }
+        if let Some(snapshot) = active.content.document.canopa_mut()
+            && snapshot.focus_action(id)
+        {
+            return vec![active.update_content_effect()];
         }
         Vec::new()
     }
@@ -160,14 +158,7 @@ impl ExternalPanelSessionRuntime {
         if !active.matches_panel(active_panel) {
             return None;
         }
-        let snapshot = active
-            .content
-            .elements
-            .iter_mut()
-            .find_map(|element| match element {
-                crate::surface::panel::ExternalPanelElement::Canopa { snapshot } => Some(snapshot),
-                _ => None,
-            })?;
+        let snapshot = active.content.document.canopa_mut()?;
         snapshot.move_focus(forward);
         Some(vec![active.update_content_effect()])
     }
@@ -180,14 +171,7 @@ impl ExternalPanelSessionRuntime {
         if !active.matches_panel(active_panel) {
             return None;
         }
-        let snapshot = active
-            .content
-            .elements
-            .iter()
-            .find_map(|element| match element {
-                crate::surface::panel::ExternalPanelElement::Canopa { snapshot } => Some(snapshot),
-                _ => None,
-            })?;
+        let snapshot = active.content.document.canopa()?;
         Some(
             snapshot
                 .focused_action_id()
@@ -541,26 +525,25 @@ mod tests {
     use super::*;
 
     fn text_document(text: &str) -> crate::surface::panel::ExternalPanelDocument {
-        crate::surface::panel::ExternalPanelDocument {
+        crate::surface::panel::ExternalPanelDocument::Elements {
             elements: vec![crate::surface::panel::ExternalPanelElement::Text { text: text.into() }],
         }
     }
 
     fn selectable_document() -> crate::surface::panel::ExternalPanelDocument {
-        crate::surface::panel::ExternalPanelDocument {
+        crate::surface::panel::ExternalPanelDocument::Elements {
             elements: vec![
                 crate::surface::panel::ExternalPanelElement::SelectableList {
                     id: "networks".into(),
                     entries: Vec::new(),
                     allow_custom: true,
-                    search_query: String::new(),
                 },
             ],
         }
     }
 
     fn text_input_document() -> crate::surface::panel::ExternalPanelDocument {
-        crate::surface::panel::ExternalPanelDocument {
+        crate::surface::panel::ExternalPanelDocument::Elements {
             elements: vec![crate::surface::panel::ExternalPanelElement::TextInput {
                 id: "credential".into(),
                 label: "Password".into(),
@@ -630,7 +613,7 @@ mod tests {
                 assert_eq!(*effect_window, origin_window);
                 assert_eq!(content.provider_name, "wifi");
                 assert_eq!(
-                    content.elements,
+                    content.elements(),
                     vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "ready".into(),
                     }]
@@ -672,7 +655,7 @@ mod tests {
         match &current_effects[0] {
             ExternalPanelSessionEffect::UpdatePanelContent { content, .. } => {
                 assert_eq!(
-                    content.elements,
+                    content.elements(),
                     vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "updated".into(),
                     }]
@@ -722,14 +705,14 @@ mod tests {
 
         match &effects[0] {
             ExternalPanelSessionEffect::UpdatePanelContent { content, .. } => {
+                assert_eq!(content.list_search("networks"), "home");
                 assert_eq!(
-                    content.elements,
+                    content.elements(),
                     vec![
                         crate::surface::panel::ExternalPanelElement::SelectableList {
                             id: "networks".into(),
                             entries: Vec::new(),
                             allow_custom: true,
-                            search_query: "home".into(),
                         }
                     ]
                 );
@@ -756,7 +739,7 @@ mod tests {
         match &effects[0] {
             ExternalPanelSessionEffect::UpdatePanelContent { content, .. } => {
                 assert_eq!(
-                    content.elements,
+                    content.elements(),
                     vec![crate::surface::panel::ExternalPanelElement::TextInput {
                         id: "credential".into(),
                         label: "Password".into(),

@@ -232,14 +232,16 @@ impl ExternalPanelSessionHandle {
         }
         let mut stdout = self.stdout.lock().await;
         if let Some(canopa) = &self.canopa {
-            return Ok(canopa_document(canopa.read_content(&mut *stdout).await?));
+            return Ok(crate::surface::panel::ExternalPanelDocument::Canopa(
+                Box::new(canopa.read_content(&mut *stdout).await?),
+            ));
         }
         match protocol::read_provider_frame(&mut *stdout).await? {
             protocol::ProviderMessage::Content { content } => {
                 content
                     .validate()
                     .map_err(|err| protocol::ProtocolError::InvalidContent(err.to_string()))?;
-                Ok(content)
+                Ok(content.into())
             }
             _ => Err(protocol::ProtocolError::UnexpectedMessage),
         }
@@ -298,9 +300,13 @@ impl ExternalPanelProcess {
         let canopa = (transport == ProviderProtocol::CanopaV4)
             .then(niribar::external_panel::canopa::CanopaSession::default);
         let content = if let Some(canopa) = &canopa {
-            canopa_document(canopa.read_content(&mut stdout).await?)
+            crate::surface::panel::ExternalPanelDocument::Canopa(Box::new(
+                canopa.read_content(&mut stdout).await?,
+            ))
         } else {
-            protocol::perform_handshake(&mut stdout, &mut stdin, handshake).await?
+            protocol::perform_handshake(&mut stdout, &mut stdin, handshake)
+                .await?
+                .into()
         };
         let handle = ExternalPanelSessionHandle {
             session_id,
@@ -314,14 +320,6 @@ impl ExternalPanelProcess {
             stderr_tail,
         };
         Ok(ExternalPanelStartedSession { content, handle })
-    }
-}
-
-fn canopa_document(
-    snapshot: niribar::external_panel::canopa::CanopaSnapshot,
-) -> protocol::ExternalPanelDocument {
-    protocol::ExternalPanelDocument {
-        elements: vec![protocol::ExternalPanelElement::Canopa { snapshot }],
     }
 }
 
@@ -514,7 +512,7 @@ mod tests {
         let (host_stdin, _provider_reader) = tokio::io::duplex(4096);
         let (mut provider_writer, host_stdout) = tokio::io::duplex(4096);
         let handle = ExternalPanelSessionHandle::for_test("session-1", host_stdin, host_stdout);
-        let content = crate::surface::panel::ExternalPanelDocument {
+        let content = protocol::ExternalPanelDocument {
             elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                 text: "Scan complete".into(),
             }],
@@ -527,7 +525,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(handle.read_next_content().await.unwrap(), content);
+        assert_eq!(handle.read_next_content().await.unwrap(), content.into());
     }
 
     #[tokio::test]
@@ -536,7 +534,7 @@ mod tests {
         let (mut provider_writer, host_stdout) = tokio::io::duplex(4096);
         let handle = ExternalPanelSessionHandle::for_test("session-1", host_stdin, host_stdout);
         let frame = protocol::encode_frame(&protocol::ProviderMessage::Content {
-            content: crate::surface::panel::ExternalPanelDocument {
+            content: protocol::ExternalPanelDocument {
                 elements: vec![
                     crate::surface::panel::ExternalPanelElement::Button {
                         id: "dup".into(),

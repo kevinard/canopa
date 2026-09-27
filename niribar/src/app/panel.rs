@@ -1696,7 +1696,7 @@ mod tests {
                 provider_name: "wifi".into(),
                 anchor: None,
                 session: None,
-                content: crate::surface::panel::ExternalPanelDocument {
+                content: crate::surface::panel::ExternalPanelDocument::Elements {
                     elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "Wi-Fi ready".into(),
                     }],
@@ -1712,7 +1712,7 @@ mod tests {
             crate::surface::panel::PanelContent::ExternalProvider(content) => {
                 assert_eq!(content.provider_name, "wifi");
                 assert_eq!(
-                    content.elements,
+                    content.elements(),
                     vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "Wi-Fi ready".into(),
                     }]
@@ -1742,7 +1742,7 @@ mod tests {
                 provider_name: "wifi".into(),
                 anchor: None,
                 session: None,
-                content: crate::surface::panel::ExternalPanelDocument {
+                content: crate::surface::panel::ExternalPanelDocument::Elements {
                     elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "stale".into(),
                     }],
@@ -1768,7 +1768,7 @@ mod tests {
                 provider_name: "wifi".into(),
                 anchor: None,
                 session: None,
-                content: crate::surface::panel::ExternalPanelDocument {
+                content: crate::surface::panel::ExternalPanelDocument::Elements {
                     elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "initial".into(),
                     }],
@@ -1780,7 +1780,7 @@ mod tests {
             crate::app::messages::ExternalPanelEvent::ProviderContentReceived {
                 session_id: "stale-session".into(),
                 provider_name: "wifi".into(),
-                content: crate::surface::panel::ExternalPanelDocument {
+                content: crate::surface::panel::ExternalPanelDocument::Elements {
                     elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "stale".into(),
                     }],
@@ -1792,7 +1792,7 @@ mod tests {
         match &panel.content {
             crate::surface::panel::PanelContent::ExternalProvider(content) => {
                 assert_eq!(
-                    content.elements,
+                    content.elements(),
                     vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "initial".into(),
                     }]
@@ -1816,7 +1816,7 @@ mod tests {
                 provider_name: "wifi".into(),
                 anchor: None,
                 session: None,
-                content: crate::surface::panel::ExternalPanelDocument {
+                content: crate::surface::panel::ExternalPanelDocument::Elements {
                     elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "initial".into(),
                     }],
@@ -1854,7 +1854,7 @@ mod tests {
                 provider_name: "wifi".into(),
                 anchor: None,
                 session: None,
-                content: crate::surface::panel::ExternalPanelDocument {
+                content: crate::surface::panel::ExternalPanelDocument::Elements {
                     elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "initial".into(),
                     }],
@@ -1893,7 +1893,7 @@ mod tests {
         let (mut app, _task) = crate::app::App::boot(config, Vec::new());
         app.set_external_panel_response_for_test(
             "wifi",
-            Ok(crate::surface::panel::ExternalPanelDocument {
+            Ok(crate::surface::panel::ExternalPanelDocument::Elements {
                 elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                     text: "Wi-Fi ready".into(),
                 }],
@@ -1916,7 +1916,7 @@ mod tests {
             crate::surface::panel::PanelContent::ExternalProvider(content) => {
                 assert_eq!(content.provider_name, "wifi");
                 assert_eq!(
-                    content.elements,
+                    content.elements(),
                     vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "Wi-Fi ready".into(),
                     }]
@@ -1956,7 +1956,7 @@ mod tests {
             let id = crate::modules::ModuleId::new(module);
             app.set_external_panel_response_for_test(
                 provider,
-                Ok(crate::surface::panel::ExternalPanelDocument {
+                Ok(crate::surface::panel::ExternalPanelDocument::Elements {
                     elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "Ready".into(),
                     }],
@@ -2016,7 +2016,9 @@ mod tests {
                 provider_name: "wifi".into(),
                 anchor: None,
                 session: None,
-                content: crate::surface::panel::ExternalPanelDocument { elements: vec![] },
+                content: crate::surface::panel::ExternalPanelDocument::Elements {
+                    elements: vec![],
+                },
             },
         );
         assert!(app.foreground.active_panel_tree().is_none());
@@ -2029,7 +2031,7 @@ mod tests {
         app.set_external_panel_event_response_for_test(
             "wifi",
             "scan",
-            crate::surface::panel::ExternalPanelDocument {
+            crate::surface::panel::ExternalPanelDocument::Elements {
                 elements: vec![crate::surface::panel::ExternalPanelElement::Text {
                     text: "Scan complete".into(),
                 }],
@@ -2046,7 +2048,7 @@ mod tests {
                 provider_name: "wifi".into(),
                 anchor: None,
                 session: None,
-                content: crate::surface::panel::ExternalPanelDocument {
+                content: crate::surface::panel::ExternalPanelDocument::Elements {
                     elements: vec![crate::surface::panel::ExternalPanelElement::Button {
                         id: "scan".into(),
                         label: "Scan".into(),
@@ -2069,7 +2071,7 @@ mod tests {
         match &panel.content {
             crate::surface::panel::PanelContent::ExternalProvider(content) => {
                 assert_eq!(
-                    content.elements,
+                    content.elements(),
                     vec![crate::surface::panel::ExternalPanelElement::Text {
                         text: "Scan complete".into(),
                     }]

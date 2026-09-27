@@ -1,6 +1,6 @@
 //! A single in-flight operation, streamed progress, and responsive host input.
 use super::*;
-use crate::external_panel::protocol::{
+use canopa_panel_protocol::v1::{
     HostMessage, ProtocolError, ProviderMessage, read_frame, write_frame,
 };
 use tokio::{
@@ -198,7 +198,7 @@ mod tests {
             },
         ] {
             frames.extend(
-                crate::external_panel::protocol::encode_frame(&HostMessage::Event(event)).unwrap(),
+                canopa_panel_protocol::v1::encode_frame(&HostMessage::Event(event)).unwrap(),
             );
         }
         tokio::io::AsyncWriteExt::write_all(&mut host, &frames)

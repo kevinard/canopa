@@ -1,4 +1,4 @@
-use niribar::external_panel::protocol::{
+use canopa_panel_protocol::v1::{
     ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity, HostMessage,
     PROTOCOL_VERSION, ProviderEvent, ProviderMessage, read_frame, write_frame,
 };
@@ -70,7 +70,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 async fn write_provider_message<W>(
     writer: &mut W,
     message: ProviderMessage,
-) -> Result<(), niribar::external_panel::protocol::ProtocolError>
+) -> Result<(), canopa_panel_protocol::v1::ProtocolError>
 where
     W: tokio::io::AsyncWrite + Unpin,
 {

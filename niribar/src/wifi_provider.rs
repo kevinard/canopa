@@ -5,7 +5,7 @@ pub mod session;
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::external_panel::protocol::{
+use canopa_panel_protocol::v1::{
     ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity, ExternalSelectableEntry,
     ProviderEvent,
 };
@@ -476,7 +476,6 @@ where
                         .map(|network| self.render_entry(network))
                         .collect(),
                     allow_custom: true,
-                    search_query: String::new(),
                 },
             ],
         };
