@@ -257,6 +257,59 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual((self.backup() / 'notify-state/history.db').read_bytes(), b'original history')
         self.assertEqual(self.config.read_text(), 'schema-version 1\n')
 
+    def test_unchanged_update_reuses_compiled_packages(self):
+        self.update()
+        binaries = [self.repo / 'target/release' / name for name in PROGRAMS]
+        modified = [binary.stat().st_mtime_ns for binary in binaries]
+        result = self.update()
+        self.assertNotIn('Compiling ', result.stderr)
+        self.assertEqual([binary.stat().st_mtime_ns for binary in binaries], modified)
+        self.assert_versions('current')
+
+    def test_cached_update_rebuilds_changed_sources_and_vendor_forks(self):
+        self.update()
+        for source in [*self.repo.glob('crates/**/src/**/*.rs'),
+                       *self.repo.glob('vendor/*/src/*.rs')]:
+            source.write_text(source.read_text().replace('"current"', '"edited"'))
+        self.update()
+        self.assert_versions('edited')
+        result = self.update()
+        self.assertNotIn('Compiling ', result.stderr)
+
+    def test_shell_edit_reuses_unchanged_packages(self):
+        self.update()
+        source = self.repo / 'crates/niribar/src/main.rs'
+        source.write_text(source.read_text().replace('fn main() {', '''fn main() {
+    if std::env::args().any(|arg| arg == "--edited") {
+        println!("edited");
+        return;
+    }
+'''))
+        result = self.update()
+        self.assertIn('Compiling niribar ', result.stderr)
+        for package in (*LOCAL_PACKAGES, 'canopa-notify', 'canopa-cli'):
+            self.assertNotIn(f'Compiling {package} ', result.stderr)
+        edited = self.run_command([str(self.bin_dir / 'niribar'), '--edited'])
+        self.assertEqual(edited.stdout.strip(), 'edited')
+
+    def test_rebuilds_after_other_checkout_overwrites_warm_cache(self):
+        self.update()
+        self.install_previous()
+        self.assert_versions('old')
+        self.update()
+        self.assert_versions('current')
+        result = self.update()
+        self.assertNotIn('Compiling ', result.stderr)
+
+    def test_explicit_rebuild_invalidates_warm_cache(self):
+        self.update()
+        result = self.update(True, '--rebuild')
+        self.assertIn('Compiling niribar ', result.stderr)
+        self.assertIn('Compiling accesskit_unix ', result.stderr)
+        self.assert_versions('current')
+        result = self.update()
+        self.assertNotIn('Compiling ', result.stderr)
+
     def test_updates_and_restarts_both_services(self):
         for service in SERVICES:
             self.state(service, active='active')

@@ -91,9 +91,13 @@ Notify's renderer status and the identity of each running executable. Failed
 startup restores the previous binaries and state; state produced by the failed
 update is retained in the backup. Keep these backups for database downgrades.
 
-Local packages are rebuilt to avoid stale artifacts from another checkout;
-package discovery stays offline and includes the shared vendor forks. Registry
-dependencies remain cached; Cargo downloads missing build dependencies as needed.
+Successful updates reuse the release build cache, so unchanged packages are not
+recompiled. Local packages (including shared vendor forks) are rebuilt on the
+first update with this cache tracking, after a failed build, or when an outside
+build changes their Cargo cache records. This prevents stale artifacts from
+another checkout. Use `./scripts/update.sh --rebuild` to force that local rebuild.
+Package discovery stays offline. Registry dependencies remain cached; Cargo
+downloads missing build dependencies as needed.
 Compilation uses one job by default, or
 `CARGO_BUILD_JOBS` when set. Use `./scripts/update.sh --jobs 2` to override it.
 

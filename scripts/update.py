@@ -44,23 +44,51 @@ def positive_jobs(value):
     return number
 
 
-def build(jobs):
+def build_cache_state(packages):
+    # Observe Cargo's records without interpreting their contents. An outside
+    # build can replace local artifacts with another checkout's code, even when
+    # Cargo considers the sources here fresh. Such writes invalidate our record.
+    fingerprints = {}
+    directory = ROOT / "target/release/.fingerprint"
+    for package in directory.glob("*"):
+        if package.name.rpartition("-")[0] in packages and package.is_dir():
+            for path in package.iterdir():
+                if path.is_file():
+                    stat = path.stat()
+                    fingerprints[str(path.relative_to(directory))] = [
+                        stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
+    return {"version": 1, "checkout": str(ROOT), "packages": packages,
+            "fingerprints": fingerprints}
+
+
+def build(jobs, rebuild=False):
     # Full metadata downloads registry sources for other platforms too. Only
     # workspace manifests and our managed forks are needed for local cleanup.
     metadata = json.loads(run("cargo", "metadata", "--locked", "--no-deps", "--offline",
                               "--format-version=1").stdout)
     forks = json.loads((ROOT / "vendor/provenance.json").read_text())["crates"]
-    # Invalidate all local packages: Cargo can reuse another checkout's
-    # fingerprints in a shared target directory. Keep registry dependencies.
     packages = sorted({package["name"] for package in metadata["packages"]} | forks.keys())
-    clean = ["cargo", "clean", "--locked", "--release", "--target-dir", "target"]
-    for package in packages:
-        clean.extend(["--package", package])
-    subprocess.run(clean, cwd=ROOT, check=True)
+    cache = ROOT / "target/.canopa-update-cache.json"
+    try:
+        previous = json.loads(cache.read_text())
+    except (FileNotFoundError, ValueError):
+        previous = None
+    reuse = previous == build_cache_state(packages)
+    # Failed/interrupted builds must not leave a trusted record behind.
+    cache.unlink(missing_ok=True)
+    if rebuild or not reuse:
+        print("Refreshing local release build cache; keeping registry dependencies.", flush=True)
+        clean = ["cargo", "clean", "--locked", "--release", "--target-dir", "target"]
+        for package in packages:
+            clean.extend(["--package", package])
+        subprocess.run(clean, cwd=ROOT, check=True)
+    else:
+        print("Reusing local release build cache; Cargo will rebuild changed sources.", flush=True)
     subprocess.run(["cargo", "build", "--locked", "--release", "--bins",
                     "--package", "niribar", "--package", "canopa-notify",
                     "--package", "canopa-cli", "--jobs", str(jobs),
                     "--target-dir", "target"], cwd=ROOT, check=True)
+    cache.write_text(json.dumps(build_cache_state(packages)) + "\n")
 
 
 def copy_binary(source, destination):
@@ -111,7 +139,7 @@ def verify_services(bin_dir, restarted):
         print(f"{service} is running the installed executable (PID {pid}).", flush=True)
 
 
-def update(jobs):
+def update(jobs, rebuild=False):
     os.umask(0o077)
     states = {}
     for service in SERVICES:
@@ -122,7 +150,7 @@ def update(jobs):
             raise RuntimeError(f"{service} is {state}; retry when it has settled")
         states[service] = state
 
-    build(jobs)
+    build(jobs, rebuild)
     bin_dir = Path.home() / ".local/bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".canopa-update-", dir=bin_dir) as temporary:
@@ -205,6 +233,8 @@ def main():
     parser.add_argument("--jobs", type=positive_jobs,
                         default=os.environ.get("CARGO_BUILD_JOBS", "1"),
                         help="parallel Cargo jobs (default: CARGO_BUILD_JOBS or 1)")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="force rebuilding local packages, keeping registry dependencies cached")
     args = parser.parse_args()
     try:
         os.umask(0o077)
@@ -215,7 +245,7 @@ def main():
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise RuntimeError("another Canopa update is already running") from None
-            update(args.jobs)
+            update(args.jobs, args.rebuild)
     except subprocess.TimeoutExpired as error:
         command = shlex.join(str(arg) for arg in error.cmd)
         print(f"Update failed: command timed out after {error.timeout:g} seconds: {command}",
