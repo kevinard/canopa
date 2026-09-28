@@ -6,11 +6,23 @@ pub(crate) fn is_valid_icon_name(name: &str) -> bool {
     !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
 }
 
+#[cfg(test)]
+thread_local! {
+    static LOOKUPS_ON_THREAD: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn take_lookup_count() -> usize {
+    LOOKUPS_ON_THREAD.with(|count| count.replace(0))
+}
+
 /// Resolve a file path for a named icon by searching XDG icon theme directories.
 ///
 /// Uses bounded indexed hicolor lookup with SVG support, falling back to the
 /// historical size grid only when hicolor has no index. Results live until restart.
 pub(crate) fn resolve_icon_path(name: &str) -> Option<PathBuf> {
+    #[cfg(test)]
+    LOOKUPS_ON_THREAD.with(|count| count.set(count.get() + 1));
     static CACHE: OnceLock<Mutex<HashMap<String, Option<PathBuf>>>> = OnceLock::new();
 
     if !is_valid_icon_name(name) {

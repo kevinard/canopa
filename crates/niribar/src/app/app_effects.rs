@@ -256,13 +256,21 @@ impl App {
                 call_sni_scroll(self.shared.dbus.session.clone(), item, delta, orientation);
                 Vec::new()
             }
-            AppEffect::ScrollWidgetTo { target, y } => vec![iced::widget::operation::scroll_to(
-                target,
-                iced::widget::operation::AbsoluteOffset {
-                    x: None,
-                    y: Some(y),
-                },
-            )],
+            AppEffect::ScrollWidgetTo { target, y } => vec![
+                iced::widget::operation::scroll_to(
+                    target,
+                    iced::widget::operation::AbsoluteOffset {
+                        x: None,
+                        y: Some(y),
+                    },
+                )
+                // Widget operations do not schedule a frame. Queue an update
+                // after the offset changes so scrolling is presented without
+                // waiting for more input or the search caret's next blink.
+                .chain(Task::done(Message::Panel(
+                    super::messages::PanelEvent::MenuScrollApplied,
+                ))),
+            ],
         }
     }
 

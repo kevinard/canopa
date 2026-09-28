@@ -77,3 +77,5 @@ detection, shared icon-theme settings, asynchronous shell icon loading, global c
 invalidation, SVG rasterization, provider convergence and portals remain later work.
 This extends Notify ADRs 0036/0037 and Niribar ADR 0011 at the mechanism seam while
 preserving their application ownership.
+
+Panel Menu icon scheduling and SVG preparation now follow [Niribar ADR 0013](../niribar/adr/0013-prepare-panel-menu-icons-off-the-ui-thread.md); other shell consumers retain the policy above.

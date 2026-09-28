@@ -861,6 +861,10 @@ impl App {
         use super::messages::PanelEvent;
 
         match event {
+            PanelEvent::IconsLoaded(loaded) => {
+                self.panel_icons.complete(loaded);
+                Task::none()
+            }
             PanelEvent::InstalledAppsLoaded { generation, apps } => {
                 let effects =
                     self.foreground
@@ -910,6 +914,7 @@ impl App {
                 );
                 Task::batch(self.apply_foreground_effects(effects))
             }
+            PanelEvent::MenuScrollApplied => Task::none(),
             PanelEvent::FocusMoveNext => self.move_panel_focus(1),
             PanelEvent::FocusMovePrev => self.move_panel_focus(-1),
             PanelEvent::FocusIndex(index) => {
@@ -1319,6 +1324,8 @@ mod canopa_tests;
 
 #[cfg(test)]
 mod tests {
+    mod scroll_tests;
+
     use super::super::panel_menu_session::{
         PanelMenuEntryTarget as MenuEntryTarget, dmenu_entry_views, search_menu_entries,
     };

@@ -54,6 +54,7 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 kdl = "6.5.0"
 predicates = "3"
 roxmltree = "0.20"
+resvg = "0.45.1"
 rodio = "0.22.2"
 rustix = { version = "1.1", features = ["fs", "process", "rand"] }
 serde = { version = "1", features = ["derive"] }

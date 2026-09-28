@@ -744,6 +744,7 @@ _Avoid_: Unavailable module, runtime failure
 - A **Panel Menu** does not render **Panel Menu Entry Icons** unless icon rendering is explicitly enabled.
 - A **Panel Menu** applies icon rendering consistently across its menu levels and search results.
 - A **Panel Menu** that renders **Panel Menu Entry Icons** preserves row label alignment when an entry has no icon or its icon cannot be resolved.
+- **Panel Menu Entry Icons** are prepared off the UI thread; pending icons preserve the same alignment, and scrolling never waits for icon preparation ([ADR 0013](adr/0013-prepare-panel-menu-icons-off-the-ui-thread.md)).
 - Dynamic **Panel Menu Sources** may supply **Panel Menu Entry Icons** from their own entry metadata.
 - **Panel Menu Prompt** is menu metadata, not a selectable menu entry.
 - **Panel Menu Prompt** may appear as a search input placeholder, panel header, or both.

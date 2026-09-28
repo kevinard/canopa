@@ -33,6 +33,13 @@ The optional graphical acceptance workflow uses a dedicated runner with Niri, Sw
 grim, Weston, wtype, Python GI/AT-SPI/Pillow, and software Mesa;
 see `scripts/check-desktop-runner.py`.
 
+After building Niribar, `python3 scripts/verify-menu-scrolling.py --output
+/tmp/canopa-scroll-new` checks installed-apps drawer scrolling in a private
+desktop with PNG/SVG icons. It verifies keyboard scrolling without a blinking
+search cursor, touchpad travel from steady and bursty input, and long gestures
+across cached-row boundaries.
+Screenshots and results are saved in the new output directory.
+
 There is one lockfile, one set of dependency forks, and one panel protocol source.
 All supported packages live under `crates/`, including `crates/niribar/` and
 `crates/canopa-notify/`. Repository tooling is in `scripts/`, service units and

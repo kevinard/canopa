@@ -41,6 +41,7 @@ pub(super) struct PanelMenuRenderState {
     pub(super) focused_index: Option<usize>,
     pub(super) can_go_back: bool,
     pub(super) scroll_y: f32,
+    pub(super) viewport_height: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -607,6 +608,7 @@ impl PanelRuntime {
                 .map(|snapshot| snapshot.can_go_back)
                 .unwrap_or(false),
             scroll_y: self.menu_scroll_y,
+            viewport_height: self.menu_viewport_height,
         }
     }
 

@@ -23,6 +23,7 @@ mod navigation;
 mod niri;
 mod overlay_adapter;
 mod panel;
+mod panel_icons;
 mod panel_menu_session;
 mod panel_runtime;
 mod panel_search;
@@ -52,6 +53,7 @@ pub(crate) struct App {
     shared: shared::SharedContext,
     surfaces: surfaces::SurfaceManager,
     foreground: foreground::Foreground,
+    panel_icons: panel_icons::PanelIcons,
     modules: module_runtime::ModuleRuntime,
     data_sources: module_data_sources::ModuleDataSourceRuntime,
     niri: niri::AppNiriState,
@@ -258,6 +260,7 @@ impl App {
             shared: shared::SharedContext::new(),
             surfaces,
             foreground: foreground::Foreground::default(),
+            panel_icons: panel_icons::PanelIcons::default(),
             modules,
             data_sources,
             niri: niri::AppNiriState::new(),
@@ -413,6 +416,7 @@ impl App {
         if !cfg!(test) {
             self.sync_canopa_accessibility();
         }
+        let task = Task::batch([task, self.prepare_panel_icons()]);
         if visibility_changed {
             Task::batch(std::iter::once(task).chain(self.reconcile_module_visibility()))
         } else {

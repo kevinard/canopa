@@ -5,6 +5,19 @@ use crate::surface::placement::{Placement, Point, Size};
 
 pub(super) const MENU_ROW_EXTENT: f32 = 45.0;
 
+/// Shared by row rendering and background icon preparation.
+pub(super) fn menu_render_range(
+    count: usize,
+    scroll_y: f32,
+    viewport_height: f32,
+) -> std::ops::Range<usize> {
+    const BUFFER: usize = 8;
+    let first_visible = (scroll_y / MENU_ROW_EXTENT).floor().max(0.0) as usize;
+    let start = first_visible.saturating_sub(BUFFER).min(count);
+    let rows = 40.max((viewport_height / MENU_ROW_EXTENT).ceil() as usize + 2 * BUFFER);
+    start..(start + rows).min(count)
+}
+
 const DEFAULT_PANEL_FALLBACK_WIDTH: u32 = 360;
 const DEFAULT_PANEL_FALLBACK_HEIGHT: u32 = 600;
 const PANEL_OUTER_PADDING: u32 = 16;
@@ -335,6 +348,7 @@ mod tests {
             focused_index: None,
             can_go_back: false,
             scroll_y: 0.0,
+            viewport_height: 0.0,
         }
     }
 
@@ -610,6 +624,7 @@ mod tests {
             focused_index: None,
             can_go_back: false,
             scroll_y: 0.0,
+            viewport_height: 0.0,
         };
 
         let preferred = panel_menu_preferred_size(&menu);

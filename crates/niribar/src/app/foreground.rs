@@ -93,6 +93,7 @@ pub(super) struct PanelMenuRenderState {
     pub(super) focused_index: Option<usize>,
     pub(super) can_go_back: bool,
     pub(super) scroll_y: f32,
+    pub(super) viewport_height: f32,
 }
 
 impl From<super::panel_runtime::PanelMenuRenderState> for PanelMenuRenderState {
@@ -105,6 +106,7 @@ impl From<super::panel_runtime::PanelMenuRenderState> for PanelMenuRenderState {
             focused_index: value.focused_index,
             can_go_back: value.can_go_back,
             scroll_y: value.scroll_y,
+            viewport_height: value.viewport_height,
         }
     }
 }

@@ -249,6 +249,7 @@ impl MenuEvent {
 
 #[derive(Debug, Clone)]
 pub enum PanelEvent {
+    IconsLoaded(super::panel_icons::Loaded),
     InstalledAppsLoaded {
         generation: u64,
         apps: Vec<crate::desktop_apps::DesktopApplication>,
@@ -277,6 +278,7 @@ pub enum PanelEvent {
         y: f32,
         viewport_height: f32,
     },
+    MenuScrollApplied,
     FocusMoveNext,
     FocusMovePrev,
     FocusIndex(usize),
@@ -291,6 +293,7 @@ pub enum PanelEvent {
 impl PanelEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
+            PanelEvent::IconsLoaded(_) => "Panel::IconsLoaded",
             PanelEvent::InstalledAppsLoaded { .. } => "Panel::InstalledAppsLoaded",
             PanelEvent::Open { .. } => "Panel::Open",
             PanelEvent::Close => "Panel::Close",
@@ -298,6 +301,7 @@ impl PanelEvent {
             PanelEvent::OpenProvider { .. } => "Panel::OpenProvider",
             PanelEvent::SearchChanged(_) => "Panel::SearchChanged",
             PanelEvent::MenuScrolled { .. } => "Panel::MenuScrolled",
+            PanelEvent::MenuScrollApplied => "Panel::MenuScrollApplied",
             PanelEvent::FocusMoveNext => "Panel::FocusMoveNext",
             PanelEvent::FocusMovePrev => "Panel::FocusMovePrev",
             PanelEvent::FocusIndex(_) => "Panel::FocusIndex",

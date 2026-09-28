@@ -42,6 +42,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
     pub(super) external_content: Option<&'a crate::surface::panel::ExternalPanelContent>,
     pub(super) menu_entries: std::sync::Arc<[super::panel_menu_session::PanelMenuEntry]>,
+    pub(super) icons: &'a super::panel_icons::PanelIcons,
     pub(super) show_icons: bool,
     pub(super) menu_prompt: Option<String>,
     pub(super) search_query: String,
@@ -49,6 +50,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) can_go_back: bool,
     pub(super) menu_scroll_id: iced::widget::Id,
     pub(super) menu_scroll_y: f32,
+    pub(super) menu_viewport_height: f32,
     pub(super) bar_style: &'a crate::config::Style,
 }
 
@@ -165,6 +167,7 @@ impl App {
                 _ => None,
             },
             menu_entries: menu.entries,
+            icons: &self.panel_icons,
             show_icons: menu.show_icons,
             menu_prompt: menu.prompt,
             search_query: menu.search_query,
@@ -172,6 +175,7 @@ impl App {
             can_go_back: menu.can_go_back,
             menu_scroll_id: super::panel::panel_menu_scroll_id(window),
             menu_scroll_y: menu.scroll_y,
+            menu_viewport_height: menu.viewport_height,
             bar_style: &bar.style,
         })
     }

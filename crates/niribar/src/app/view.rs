@@ -2,9 +2,6 @@ use iced::widget::{
     Space, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
 use iced::{Element, Length};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
 
 use super::render::{BarRenderModel, PanelRenderModel, PopupRenderModel};
 use super::{App, Message};
@@ -41,7 +38,7 @@ impl App {
         }
 
         if let Some(model) = self.panel_render_model(window) {
-            return render_panel_model(model);
+            return crate::surface::scroll_speed::scroll_speed(render_panel_model(model));
         }
 
         render_bar_model(self.bar_render_model(window), window)
@@ -432,8 +429,7 @@ fn render_panel_menu_model<'a>(
     model: PanelRenderModel<'a>,
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
-    const MENU_RENDERED_ROWS: usize = 40;
-    const MENU_ROW_BUFFER: usize = 8;
+    const MENU_ROW_GAP: f32 = 8.0;
     let drawer = model.drawer_title.is_some();
 
     let placeholder = model.menu_prompt.as_deref().unwrap_or("Search");
@@ -454,18 +450,24 @@ fn render_panel_menu_model<'a>(
     let header_spacing = if model.can_go_back { 8 } else { 0 };
     let header: Element<'_, Message> = row![search, back_slot].spacing(header_spacing).into();
 
-    let mut list = column![].spacing(8).padding(8);
+    let mut list = column![].spacing(MENU_ROW_GAP).padding(8);
     let entry_count = model.menu_entries.len();
-    let first_visible = (model.menu_scroll_y / super::panel::MENU_ROW_EXTENT)
-        .floor()
-        .max(0.0) as usize;
-    let start = first_visible.saturating_sub(MENU_ROW_BUFFER);
-    let end = (start + MENU_RENDERED_ROWS).min(entry_count);
+    let range = super::panel_sizing::menu_render_range(
+        entry_count,
+        model.menu_scroll_y,
+        model.menu_viewport_height,
+    );
+    let (start, end) = (range.start, range.end);
     let top_spacer = start as f32 * super::panel::MENU_ROW_EXTENT;
     let bottom_spacer = entry_count.saturating_sub(end) as f32 * super::panel::MENU_ROW_EXTENT;
 
     if top_spacer > 0.0 {
-        list = list.push(Space::new().width(Length::Fill).height(top_spacer));
+        // The column supplies the gap between a spacer and its adjacent row.
+        list = list.push(
+            Space::new()
+                .width(Length::Fill)
+                .height(top_spacer - MENU_ROW_GAP),
+        );
     }
 
     for (index, entry) in model
@@ -476,17 +478,31 @@ fn render_panel_menu_model<'a>(
         .take(end.saturating_sub(start))
     {
         let focused = model.focused_index == Some(index);
-        let mut row_content = row![].spacing(8).width(Length::Fill);
+        let mut row_content = row![]
+            .spacing(8)
+            .width(Length::Fill)
+            .align_y(iced::Alignment::Center);
         if model.show_icons {
-            row_content = row_content.push(panel_menu_icon_element(entry.icon.as_deref()));
+            row_content = row_content.push(panel_menu_icon_element(
+                entry.icon.as_deref().and_then(|name| model.icons.get(name)),
+            ));
         }
-        row_content = row_content.push(text(entry.label.clone()).width(Length::Fill));
+        row_content = row_content.push(
+            text(entry.label.clone())
+                .width(Length::Fill)
+                .wrapping(iced::widget::text::Wrapping::None),
+        );
         if entry.is_submenu {
             row_content = row_content.push(text(">"));
         }
         let row = container(row_content)
             .padding([8, 10])
             .width(Length::Fill)
+            // Rendering, virtual spacers and keyboard reveal must use one pitch,
+            // even for long labels or a different font's line metrics.
+            .height(super::panel::MENU_ROW_EXTENT - MENU_ROW_GAP)
+            .align_y(iced::Alignment::Center)
+            .clip(true)
             .style(move |_| iced::widget::container::Style {
                 background: if focused {
                     Some(iced::Background::Color(crate::theme::palette().surface))
@@ -512,19 +528,20 @@ fn render_panel_menu_model<'a>(
                 },
                 ..Default::default()
             });
-        list = list.push(
-            mouse_area(row)
-                .on_enter(Message::Panel(super::messages::PanelEvent::FocusIndex(
-                    index,
-                )))
-                .on_press(Message::Panel(super::messages::PanelEvent::ActivateIndex(
-                    index,
-                ))),
-        );
+        list = list.push(crate::surface::pointer_focus::pointer_focus(
+            mouse_area(row).on_press(Message::Panel(super::messages::PanelEvent::ActivateIndex(
+                index,
+            ))),
+            Message::Panel(super::messages::PanelEvent::FocusIndex(index)),
+        ));
     }
 
     if bottom_spacer > 0.0 {
-        list = list.push(Space::new().width(Length::Fill).height(bottom_spacer));
+        list = list.push(
+            Space::new()
+                .width(Length::Fill)
+                .height(bottom_spacer - MENU_ROW_GAP),
+        );
     }
 
     let menu_scroll = scrollable(list)
@@ -550,61 +567,16 @@ fn render_panel_menu_model<'a>(
     )
 }
 
-fn panel_menu_icon_element<'a>(icon: Option<&str>) -> Element<'a, Message> {
-    const ICON_SIZE: u16 = 18;
-
-    let Some(handle) = icon.and_then(cached_panel_menu_icon_handle) else {
-        return Space::new()
-            .width(ICON_SIZE as u32)
-            .height(ICON_SIZE as u32)
-            .into();
-    };
-
+fn panel_menu_icon_element<'a>(
+    handle: Option<&iced::widget::image::Handle>,
+) -> Element<'a, Message> {
+    const ICON_SIZE: u32 = 18;
     match handle {
-        PanelMenuIconHandle::Svg(handle) => iced::widget::svg(handle)
-            .width(ICON_SIZE as u32)
-            .height(ICON_SIZE as u32)
+        Some(handle) => iced::widget::image(handle.clone())
+            .width(ICON_SIZE)
+            .height(ICON_SIZE)
             .into(),
-        PanelMenuIconHandle::Image(handle) => iced::widget::image(handle)
-            .width(ICON_SIZE as u32)
-            .height(ICON_SIZE as u32)
-            .into(),
-    }
-}
-
-#[derive(Clone)]
-enum PanelMenuIconHandle {
-    Svg(iced::widget::svg::Handle),
-    Image(iced::widget::image::Handle),
-}
-
-fn cached_panel_menu_icon_handle(icon: &str) -> Option<PanelMenuIconHandle> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Option<PanelMenuIconHandle>>>> = OnceLock::new();
-
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(handle) = cache
-        .lock()
-        .expect("panel menu icon cache poisoned")
-        .get(icon)
-        .cloned()
-    {
-        return handle;
-    }
-
-    let handle = crate::icon_theme::resolve_icon_path(icon).map(panel_menu_icon_handle_from_path);
-    cache
-        .lock()
-        .expect("panel menu icon cache poisoned")
-        .insert(icon.to_string(), handle.clone());
-    handle
-}
-
-fn panel_menu_icon_handle_from_path(path: PathBuf) -> PanelMenuIconHandle {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    if ext == "svg" {
-        PanelMenuIconHandle::Svg(iced::widget::svg::Handle::from_path(path))
-    } else {
-        PanelMenuIconHandle::Image(iced::widget::image::Handle::from_path(path))
+        None => Space::new().width(ICON_SIZE).height(ICON_SIZE).into(),
     }
 }
 
