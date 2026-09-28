@@ -9,3 +9,5 @@
 /.scratch/notify/freedesktop-completion-review/ACTIVE-IMPLEMENTATION.md
 /.scratch/notify/freedesktop-completion-review/NIRIBAR-CHANGED-FILES.txt
 /.scratch/notify/freedesktop-completion-review/NIRIBAR-COMPLETION.patch
+# Original UI alternatives are archived on prototype/niribar-vertical-ui.
+/.scratch/niribar/vertical-ui-prototype/

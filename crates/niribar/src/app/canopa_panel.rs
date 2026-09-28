@@ -16,7 +16,11 @@ mod reading;
 #[cfg(test)]
 mod tests;
 
-pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Element<'a, Message> {
+pub(super) fn render<'a>(
+    snapshot: &'a CanopaSnapshot,
+    provider: &'a str,
+    drawer: bool,
+) -> Element<'a, Message> {
     let reading_id = iced::widget::Id::from(format!("canopa-reading/{provider}"));
     let mut panel = column![].spacing(10);
     if let Some(error) = &snapshot.content.error {
@@ -215,7 +219,12 @@ pub(super) fn render<'a>(snapshot: &'a CanopaSnapshot, provider: &'a str) -> Ele
             group,
         ));
     }
-    let mut header = column![text(snapshot.content.title.clone()).size(20)].spacing(6);
+    let title: Element<'a, Message> = if drawer {
+        crate::surface::panel::drawer_header(snapshot.content.title.clone())
+    } else {
+        text(snapshot.content.title.clone()).size(20).into()
+    };
+    let mut header = column![title].spacing(6);
     if let (Some(id), Some(label)) = (snapshot.focused_action_id(), snapshot.focused_label()) {
         header = header.push(action_widget::preview(id, label, provider));
     } else {

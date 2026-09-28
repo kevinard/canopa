@@ -14,7 +14,7 @@ fn pointer_event(
     cursor: iced::Point,
     event: iced::mouse::Event,
 ) -> Vec<Message> {
-    let mut view = render(snapshot, "notifications");
+    let mut view = render(snapshot, "notifications", false);
     tree.diff(view.as_widget());
     let node = view.as_widget_mut().layout(
         tree,
@@ -50,7 +50,7 @@ async fn replacement_during_a_pointer_press_never_activates_the_new_action() {
         let cursor = if selected {
             iced::Point::new(40.0, 55.0)
         } else {
-            let mut view = render(&old, "notifications");
+            let mut view = render(&old, "notifications", false);
             tree.diff(view.as_widget());
             let node = view.as_widget_mut().layout(
                 &mut tree,
@@ -157,6 +157,60 @@ async fn long_title_snapshot() -> CanopaSnapshot {
         .unwrap()
 }
 
+#[tokio::test]
+async fn drawer_provider_header_keeps_one_title_and_closes_through_foreground() {
+    let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
+        .await
+        .expect("software renderer");
+    let snapshot = long_title_snapshot().await;
+    let viewport = Rectangle::with_size(Size::new(360.0, 800.0));
+    let mut view = render(&snapshot, "notifications", true);
+    let mut tree = Tree::new(view.as_widget());
+    let node = view.as_widget_mut().layout(
+        &mut tree,
+        &renderer,
+        &layout::Limits::new(Size::ZERO, viewport.size()),
+    );
+    let mut labels = TextBounds::default();
+    view.as_widget_mut()
+        .operate(&mut tree, Layout::new(&node), &renderer, &mut labels);
+    assert_eq!(
+        labels
+            .0
+            .iter()
+            .filter(|(label, _)| label == "Notifications")
+            .count(),
+        1
+    );
+    let close = labels
+        .0
+        .iter()
+        .find(|(label, _)| label == "Close")
+        .unwrap()
+        .1;
+    assert!(viewport.contains(close.center()));
+    let mut messages = Vec::new();
+    for event in [
+        iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left),
+        iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left),
+    ] {
+        view.as_widget_mut().update(
+            &mut tree,
+            &iced::Event::Mouse(event),
+            Layout::new(&node),
+            iced::mouse::Cursor::Available(close.center()),
+            &renderer,
+            &mut iced::advanced::clipboard::Null,
+            &mut iced::advanced::Shell::new(&mut messages),
+            &viewport,
+        );
+    }
+    assert!(matches!(
+        messages.as_slice(),
+        [Message::Panel(super::super::messages::PanelEvent::Close)]
+    ));
+}
+
 #[derive(Default)]
 struct ScrollBounds(Vec<(Rectangle, iced::Vector)>);
 
@@ -188,7 +242,7 @@ async fn selected_preview_scrolls_without_activation_and_resets_for_next_action(
     let cursor = iced::Point::new(40.0, 55.0);
     let mut tree = Tree::empty();
     {
-        let mut view = render(&snapshot, "notifications");
+        let mut view = render(&snapshot, "notifications", false);
         tree.diff(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,
@@ -224,7 +278,7 @@ async fn selected_preview_scrolls_without_activation_and_resets_for_next_action(
         );
     }
     snapshot.move_focus(false);
-    let mut view = render(&snapshot, "notifications");
+    let mut view = render(&snapshot, "notifications", false);
     tree.diff(view.as_widget());
     let node = view.as_widget_mut().layout(
         &mut tree,
@@ -272,7 +326,7 @@ async fn long_keyboard_selection_leaves_panel_content_visible() {
         .expect("software renderer");
     let mut snapshot = long_title_snapshot().await;
     snapshot.move_focus(false);
-    let mut view = render(&snapshot, "notifications");
+    let mut view = render(&snapshot, "notifications", false);
     let mut tree = Tree::new(view.as_widget());
     let viewport = Rectangle::with_size(Size::new(360.0, 180.0));
     let node = view.as_widget_mut().layout(
@@ -311,7 +365,7 @@ async fn keyboard_reading_scrolls_content_without_changing_or_invoking_selection
     snapshot.move_focus(false);
     let selected = snapshot.focused_action_id().unwrap().to_owned();
     let viewport = Rectangle::with_size(Size::new(360.0, 180.0));
-    let mut view = render(&snapshot, "notifications");
+    let mut view = render(&snapshot, "notifications", false);
     let mut tree = Tree::new(view.as_widget());
     let node = view.as_widget_mut().layout(
         &mut tree,
@@ -405,7 +459,7 @@ async fn canopa_body_links_support_selection_clicks_and_replacement_guards() {
     let viewport = Rectangle::with_size(Size::new(360.0, 600.0));
     let mut tree = Tree::empty();
     let point = {
-        let mut view = render(&old, "notifications");
+        let mut view = render(&old, "notifications", false);
         tree.diff(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,

@@ -91,12 +91,20 @@ impl Default for PanelAnimationConfig {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PanelConfig {
+    pub presentation: PanelPresentation,
     pub width: Option<u32>,
     pub max_width: Option<u32>,
     pub height: Option<u32>,
     pub max_height: Option<u32>,
     pub modules: PanelModules,
     pub animation: PanelAnimationConfig,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PanelPresentation {
+    #[default]
+    Auto,
+    Drawer,
 }
 
 /// Bar-level configuration: placement edge, size, layer, modules, and panel behavior.
@@ -141,6 +149,11 @@ impl Default for BarConfig {
 }
 
 impl BarConfig {
+    /// A drawer is a vertical-bar presentation; horizontal bars keep automatic sizing.
+    pub fn uses_drawer(&self) -> bool {
+        self.panel.presentation == PanelPresentation::Drawer && !self.edge.is_horizontal()
+    }
+
     pub fn matches_output(&self, output_name: &str) -> bool {
         self.output_target.matches(output_name)
     }

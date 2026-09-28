@@ -126,7 +126,7 @@ registry=$!
         .await
         .unwrap();
     let bounds = {
-        let mut view = crate::app::canopa_panel::render(&snapshot, "notifications");
+        let mut view = crate::app::canopa_panel::render(&snapshot, "notifications", false);
         let mut widgets = Tree::new(view.as_widget());
         let layout = view.as_widget_mut().layout(
             &mut widgets,

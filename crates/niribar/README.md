@@ -36,6 +36,39 @@ examples in [config/default.kdl](config/default.kdl), [docs](../../docs/niribar/
 The adjacent shared `appearance` block controls the dark/light palette and accent
 for the shell, Notification Center, and Notify banners.
 
+### Vertical side drawer
+
+The shipped left bar opens panels in a full-height, 360-logical-pixel side drawer.
+Clicking another module replaces its contents in the same position; clicking the
+same module again, pressing Escape, or using Close dismisses it. The drawer overlays
+the desktop without resizing tiled windows. Each panel shows its own content;
+the bar icons remain the navigation.
+
+To enable this in an existing bar, add `presentation "drawer"` to its `panel` block.
+Remove any existing `height` or `max-height` to let the drawer fill the screen's
+usable height; for example, an old `height 720` keeps the drawer at 720 logical pixels.
+
+```kdl
+panel {
+    presentation "drawer"
+    // width 400       // optional consistent drawer width
+    // max-height 800  // optional cap; the drawer stays at the top
+    // Keep your existing start / center / end module lists here.
+}
+```
+
+Explicit `width`/`height` and `max-width`/`max-height` still apply. On top/bottom
+bars, the drawer preference uses the existing automatic layout. Omitted
+`presentation`, or `presentation "auto"`, keeps the previous content-aware panel
+sizing. Tooltips and tray context menus remain small popups. Restart Niribar after
+editing configuration.
+
+For an existing module with no click action, add `actions { click { open-panel; } }`
+inside that module to open its details. The shipped clock, sound, battery and
+focused-window modules include this binding. Network and notifications retain
+their provider actions; workspace switching and custom action bindings still work
+as configured.
+
 Use `launch "kitty"` or `launch "firefox" "https://example.org"` in menu items
 and module actions to open applications. Arguments are literal strings. Launches
 belong to the desktop session and survive bar restarts. Existing `command`

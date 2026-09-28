@@ -202,6 +202,29 @@ pub fn panel_module_frame<'a>(
         .into()
 }
 
+/// The same host-owned heading and dismiss control for all drawer content.
+pub fn drawer_header<'a>(title: String) -> iced::Element<'a, crate::app::Message> {
+    use iced::widget::{row, text};
+
+    row![
+        text(title)
+            .size(canopa_ui::metrics::TITLE)
+            .width(iced::Length::Fill),
+        canopa_ui::action(
+            text("Close").size(canopa_ui::metrics::LABEL),
+            Some(crate::app::Message::Panel(
+                crate::app::messages::PanelEvent::Close
+            )),
+            canopa_ui::Action::Quiet,
+            false,
+        )
+        .height(32),
+    ]
+    .spacing(canopa_ui::metrics::GAP)
+    .align_y(iced::Alignment::Center)
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

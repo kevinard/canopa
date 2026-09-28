@@ -36,6 +36,7 @@ pub(super) struct BarRenderModel<'a> {
 }
 
 pub(super) struct PanelRenderModel<'a> {
+    pub(super) drawer_title: Option<String>,
     pub(super) tree: &'a crate::surface::panel::PanelTree,
     pub(super) search_input_id: iced::widget::Id,
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
@@ -99,7 +100,19 @@ impl App {
                         state_override: Some(state.clone()),
                     },
                 )?;
-                let element = crate::surface::panel::panel_module_frame(module_view, entry.focused);
+                let element = if bar.uses_drawer()
+                    && matches!(
+                        tree.content,
+                        crate::surface::panel::PanelContent::ModulePanel(_)
+                    ) {
+                    // A single module is the drawer body, not a card inside a card.
+                    container(module_view)
+                        .padding(16)
+                        .width(iced::Length::Fill)
+                        .into()
+                } else {
+                    crate::surface::panel::panel_module_frame(module_view, entry.focused)
+                };
 
                 Some(ModuleRenderEntry {
                     id,
@@ -116,7 +129,34 @@ impl App {
 
         let menu = panel.menu;
 
+        let drawer_title = bar.uses_drawer().then(|| {
+            use crate::surface::panel::PanelContent;
+            match &tree.content {
+                PanelContent::BarPanel => "Overview".to_owned(),
+                PanelContent::ModulePanel(id) => match self.modules.kind_for(id) {
+                    Some(ModuleKind::Clock) => "Calendar".to_owned(),
+                    Some(ModuleKind::Volume) => "Sound".to_owned(),
+                    Some(ModuleKind::Network) => "Network".to_owned(),
+                    Some(ModuleKind::Notifications) => "Notifications".to_owned(),
+                    Some(ModuleKind::Battery) => "Battery".to_owned(),
+                    Some(ModuleKind::Workspaces | ModuleKind::WorkspaceItem) => {
+                        "Workspaces".to_owned()
+                    }
+                    Some(ModuleKind::FocusedWindow) => "Focused window".to_owned(),
+                    _ => self.modules.configured_module_name_for_instance(id),
+                },
+                PanelContent::Menu(name) => name.clone(),
+                PanelContent::DmenuRequest => "Choose an item".to_owned(),
+                PanelContent::ExternalProvider(content) => content
+                    .document
+                    .canopa()
+                    .map(|snapshot| snapshot.content.title.clone())
+                    .unwrap_or_else(|| content.provider_name.clone()),
+            }
+        });
+
         Some(PanelRenderModel {
+            drawer_title,
             tree,
             search_input_id: super::panel::panel_search_input_id(window),
             entries,

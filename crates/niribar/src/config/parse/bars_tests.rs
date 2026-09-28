@@ -378,6 +378,55 @@ bar "main" {
         assert_eq!(config.bars[0].panel.height, None);
         assert_eq!(config.bars[0].panel.max_width, None);
         assert_eq!(config.bars[0].panel.max_height, None);
+        assert!(!config.bars[0].uses_drawer());
+    }
+
+    #[test]
+    fn drawer_presentation_applies_only_to_vertical_bars() {
+        for edge in ["left", "right", "top", "bottom"] {
+            let config = parse(&format!(
+                "bar \"main\" {{ edge \"{edge}\"; panel {{ presentation \"drawer\"; }} }}"
+            ))
+            .unwrap();
+            assert_eq!(
+                config.bars[0].uses_drawer(),
+                matches!(edge, "left" | "right")
+            );
+        }
+        let config = parse("bar \"main\" { panel { presentation \"auto\"; } }").unwrap();
+        assert!(!config.bars[0].uses_drawer());
+    }
+
+    #[test]
+    fn bundled_vertical_bar_opens_module_details_in_its_drawer() {
+        let config = parse(crate::config::defaults::DEFAULT_CONFIG).unwrap();
+        assert!(config.bars[0].uses_drawer());
+        for name in ["clock", "volume", "battery", "focused-window"] {
+            let module = config
+                .modules
+                .iter()
+                .find(|module| module.name == name)
+                .unwrap();
+            assert_eq!(
+                module
+                    .actions
+                    .action_for(&crate::config::ActionTrigger::Click),
+                Some(&crate::config::PanelAction::OpenPanel),
+                "{name} must open its detail content when clicked",
+            );
+        }
+    }
+
+    #[test]
+    fn panel_presentation_rejects_invalid_or_duplicate_values() {
+        for fields in [
+            "presentation \"floating\";",
+            "presentation 1;",
+            "presentation \"drawer\"; presentation \"auto\";",
+        ] {
+            let error = parse(&format!("bar \"main\" {{ panel {{ {fields} }} }}")).unwrap_err();
+            assert!(error.to_string().contains("presentation"), "{error}");
+        }
     }
 
     #[test]

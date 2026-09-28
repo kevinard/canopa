@@ -90,6 +90,9 @@ bar "main" {
 
     // Default panel content for this bar.
     panel {
+        // A consistent full-height drawer for all panels on left/right bars.
+        // Use "auto" for content-sized module panels. Horizontal bars use auto sizing.
+        presentation "drawer"
         start "workspaces"
         center "focused-window"
         end "notifications" "volume" "network" "battery" "clock"
@@ -170,6 +173,7 @@ modules {
 
     // focused-window: shows the title of the focused window on this output.
     module "focused-window" {
+        actions { click { open-panel; } }
         // Optional display templates. Placeholders: {icon}, {value}, {title}, {app-id}.
         format "{icon}" "{title}"
         content-rotation "auto"
@@ -196,6 +200,7 @@ modules {
 
     // volume: audio output level indicator. Scroll on the module to adjust volume.
     module "volume" {
+        actions { click { open-panel; } }
         // Volume adjustment per scroll event, as a percentage. Range: 1–100. Default: 5.
         step 5
         //
@@ -280,6 +285,7 @@ modules {
 
     // battery: charge level and charging/discharging state.
     module "battery" {
+        actions { click { open-panel; } }
         // Percentage at or below which the critical badge and alert color appear.
         // Range: 0–100. Default: 15.
         critical-threshold 15
@@ -333,6 +339,7 @@ modules {
 
     // clock: current time and date display.
     module "clock" {
+        actions { click { open-panel; } }
         // Time format string using chrono strftime syntax.
         // Default: "%H:%M" (24-hour, e.g. "14:30"). Use "%I:%M %p" for 12-hour.
         time-format "%H:%M"

@@ -98,7 +98,15 @@ pub(super) fn panel_physical_plan<F>(mut input: PanelSizingInput<'_, F>) -> Pane
 where
     F: FnMut(&ModuleId) -> Option<PanelPreferredSize>,
 {
-    let hint = panel_content_size_hint(&mut input);
+    let hint = if input.bar.uses_drawer() {
+        PanelContentSizeHint {
+            preferred_width: Some(DEFAULT_PANEL_FALLBACK_WIDTH),
+            fill_edge_span: true,
+            ..Default::default()
+        }
+    } else {
+        panel_content_size_hint(&mut input)
+    };
     let fill_width = hint.fill_edge_span && input.bar.edge.is_horizontal();
     let fill_height = hint.fill_edge_span && !input.bar.edge.is_horizontal();
     let width = resolve_panel_dimension(
@@ -119,7 +127,13 @@ where
     );
     let placement = crate::surface::placement::centered_position(
         &input.bar.edge,
-        input.tree.anchor,
+        // Even a height-capped drawer stays at the start of the usable edge.
+        // Switching modules must not move it to the new module's position.
+        if input.bar.uses_drawer() {
+            None
+        } else {
+            input.tree.anchor
+        },
         Size {
             width: width.value(),
             height: height.value(),
@@ -420,6 +434,110 @@ mod tests {
 
         assert_eq!(plan.width, PlannedDimension::Exact(336));
         assert_eq!(plan.height, PlannedDimension::Exact(292));
+    }
+
+    #[test]
+    fn drawer_has_stable_geometry_across_modules_menus_and_provider_content() {
+        use crate::config::PanelPresentation;
+        use crate::surface::panel::ExternalPanelContent;
+
+        for edge in [Edge::Left, Edge::Right] {
+            let mut bar = BarConfig {
+                edge,
+                ..BarConfig::default()
+            };
+            bar.panel.presentation = PanelPresentation::Drawer;
+            for content in [
+                PanelContent::ModulePanel(ModuleId::new("clock")),
+                PanelContent::ModulePanel(ModuleId::new("volume")),
+                PanelContent::Menu("main".into()),
+                PanelContent::DmenuRequest,
+                PanelContent::BarPanel,
+                PanelContent::ExternalProvider(ExternalPanelContent::failure("wifi", "Offline")),
+            ] {
+                let mut tree = tree(content, (1920, 1080));
+                for y in [10.0, 980.0] {
+                    tree.anchor = Some(iced::Rectangle {
+                        x: 0.0,
+                        y,
+                        width: 48.0,
+                        height: 30.0,
+                    });
+                    let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| {
+                        Some(PanelPreferredSize {
+                            width: 800,
+                            height: 120,
+                        })
+                    });
+                    assert_eq!(plan.layer_size(), (360, 0));
+                    assert_eq!(plan.height, PlannedDimension::Fill { span: 1080 });
+                    assert_eq!(plan.placement.position.y, 0);
+                    assert_eq!(
+                        plan.placement.position.x,
+                        if matches!(bar.edge, Edge::Left) {
+                            48
+                        } else {
+                            1512
+                        }
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn capped_drawer_stays_at_usable_edge_start_and_respects_dimensions() {
+        let mut bar = BarConfig::default();
+        bar.panel.presentation = crate::config::PanelPresentation::Drawer;
+        bar.panel.max_width = Some(320);
+        bar.panel.max_height = Some(500);
+        let mut tree = tree(
+            PanelContent::ModulePanel(ModuleId::new("clock")),
+            (1920, 1000),
+        );
+        tree.anchor = Some(iced::Rectangle {
+            x: 0.0,
+            y: 900.0,
+            width: 48.0,
+            height: 30.0,
+        });
+        let plan = panel_physical_plan(PanelSizingInput {
+            bar: &bar,
+            tree: &tree,
+            surface_origin: Point { x: 0, y: 40 },
+            panel_module_layout: &[],
+            menu: empty_menu(),
+            module_detail_preferred_size: |_| None,
+        });
+        assert_eq!(plan.layer_size(), (320, 500));
+        assert_eq!(plan.placement.position.y, 40);
+        bar.panel.width = Some(300);
+        bar.panel.height = Some(400);
+        let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
+        assert_eq!(plan.layer_size(), (300, 400));
+        assert_eq!(plan.placement.position.y, 0);
+    }
+
+    #[test]
+    fn drawer_preference_keeps_horizontal_module_panels_content_sized() {
+        for edge in [Edge::Top, Edge::Bottom] {
+            let mut bar = BarConfig {
+                edge,
+                ..BarConfig::default()
+            };
+            bar.panel.presentation = crate::config::PanelPresentation::Drawer;
+            let tree = tree(
+                PanelContent::ModulePanel(ModuleId::new("clock")),
+                (1920, 1080),
+            );
+            let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| {
+                Some(PanelPreferredSize {
+                    width: 300,
+                    height: 260,
+                })
+            });
+            assert_eq!(plan.layer_size(), (336, 292));
+        }
     }
 
     #[test]

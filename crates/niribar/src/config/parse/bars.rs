@@ -2,7 +2,7 @@ use ::kdl::{KdlDocument, KdlNode};
 
 use super::super::{
     BarConfig, BarLayer, BarModules, Edge, OutputTarget, PanelAnimationConfig, PanelConfig,
-    PanelModules,
+    PanelModules, PanelPresentation,
 };
 use super::actions;
 use super::error::ParseCtx;
@@ -201,6 +201,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
     ctx.validate_child_schema(
         panel_children,
         &[
+            "presentation",
             "width",
             "max-width",
             "height",
@@ -211,6 +212,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
             "animation",
         ],
         &[
+            "presentation",
             "width",
             "max-width",
             "height",
@@ -223,6 +225,14 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
     )?;
 
     let defaults = PanelConfig::default();
+    let presentation = fields::field(panel_children, ctx, "presentation")
+        .optional()
+        .one_of("auto, drawer", |value| match value {
+            "auto" => Some(PanelPresentation::Auto),
+            "drawer" => Some(PanelPresentation::Drawer),
+            _ => None,
+        })
+        .unwrap_or(defaults.presentation)?;
     let width = fields::field(panel_children, ctx, "width")
         .optional()
         .help("expected a width in logical pixels, e.g. 360")
@@ -257,6 +267,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
     };
 
     Ok(PanelConfig {
+        presentation,
         width,
         max_width,
         height,

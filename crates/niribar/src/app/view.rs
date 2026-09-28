@@ -65,7 +65,7 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
         return render_panel_menu_model(model, text_color);
     }
     if let Some(content) = model.external_content {
-        return render_external_panel_model(content, text_color);
+        return render_external_panel_model(content, text_color, model.drawer_title);
     }
 
     let entries: Vec<Element<'_, Message>> = model
@@ -74,7 +74,32 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
         .map(|entry| entry.element)
         .collect();
 
-    container(scrollable(column(entries).spacing(8).padding(8)))
+    panel_frame(
+        scrollable(column(entries).spacing(8).padding(8))
+            .height(Length::Fill)
+            .into(),
+        text_color,
+        model.drawer_title,
+    )
+}
+
+fn panel_frame<'a>(
+    content: Element<'a, Message>,
+    text_color: Option<iced::Color>,
+    drawer_title: Option<String>,
+) -> Element<'a, Message> {
+    let content = if let Some(title) = drawer_title {
+        column![
+            container(crate::surface::panel::drawer_header(title)).padding([12, 16]),
+            iced::widget::rule::horizontal(1),
+            content,
+        ]
+        .height(Length::Fill)
+        .into()
+    } else {
+        content
+    };
+    container(content)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
@@ -93,9 +118,14 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
 fn render_external_panel_model<'a>(
     content: &'a crate::surface::panel::ExternalPanelContent,
     text_color: Option<iced::Color>,
+    drawer_title: Option<String>,
 ) -> Element<'a, Message> {
     if let Some(snapshot) = content.document.canopa() {
-        return super::canopa_panel::render(snapshot, &content.provider_name);
+        return super::canopa_panel::render(
+            snapshot,
+            &content.provider_name,
+            drawer_title.is_some(),
+        );
     }
     let mut body = column![].spacing(8).padding(8);
     for element in content.elements() {
@@ -192,20 +222,11 @@ fn render_external_panel_model<'a>(
         body = body.push(rendered);
     }
 
-    container(scrollable(body))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::palette().background)),
-            text_color,
-            border: iced::Border {
-                color: crate::theme::palette().border,
-                width: 1.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .into()
+    panel_frame(
+        scrollable(body).height(Length::Fill).into(),
+        text_color,
+        drawer_title,
+    )
 }
 
 fn render_external_text_input<'a>(
@@ -413,6 +434,7 @@ fn render_panel_menu_model<'a>(
 ) -> Element<'a, Message> {
     const MENU_RENDERED_ROWS: usize = 40;
     const MENU_ROW_BUFFER: usize = 8;
+    let drawer = model.drawer_title.is_some();
 
     let placeholder = model.menu_prompt.as_deref().unwrap_or("Search");
     let search = text_input(placeholder, &model.search_query)
@@ -468,17 +490,25 @@ fn render_panel_menu_model<'a>(
             .style(move |_| iced::widget::container::Style {
                 background: if focused {
                     Some(iced::Background::Color(crate::theme::palette().surface))
+                } else if drawer {
+                    None
                 } else {
                     Some(iced::Background::Color(crate::theme::palette().raised))
                 },
                 border: iced::Border {
                     color: if focused {
                         crate::theme::palette().accent
+                    } else if drawer {
+                        iced::Color::TRANSPARENT
                     } else {
                         crate::theme::palette().border
                     },
                     width: 1.0,
-                    radius: iced::border::Radius::from(4.0),
+                    radius: iced::border::Radius::from(if drawer {
+                        canopa_ui::metrics::CONTROL_RADIUS
+                    } else {
+                        4.0
+                    }),
                 },
                 ..Default::default()
             });
@@ -506,20 +536,18 @@ fn render_panel_menu_model<'a>(
             })
         });
 
-    container(column![header, menu_scroll])
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::palette().background)),
-            text_color,
-            border: iced::Border {
-                color: crate::theme::palette().border,
-                width: 1.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .into()
+    let header = if model.drawer_title.is_some() {
+        container(header).padding([8, 12]).into()
+    } else {
+        header
+    };
+    panel_frame(
+        column![header, menu_scroll.height(Length::Fill)]
+            .height(Length::Fill)
+            .into(),
+        text_color,
+        model.drawer_title,
+    )
 }
 
 fn panel_menu_icon_element<'a>(icon: Option<&str>) -> Element<'a, Message> {
