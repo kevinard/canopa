@@ -463,6 +463,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - First-version **Notification Banner** keyboard interaction is minimal.
 - **Notification Banners** do not steal keyboard focus.
 - **Notification Sounds** are one-shot presentation behavior for shown notifications and are not retained in **Notification History**.
+- The sound output stream is released while idle; sound capability remains available and the next admitted sound reopens it (ADR 0051).
 - Hiding notification body content for privacy-sensitive display states belongs to **Compositor Privacy Mode**, not Notify.
 - Notify supports **Wayland Sessions** only.
 - The first version supports one **Graphical User Session** per user.

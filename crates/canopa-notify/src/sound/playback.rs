@@ -6,7 +6,7 @@ use rodio::Source;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use super::theme::SoundThemeResolver;
@@ -14,6 +14,8 @@ const MAX_SOUND_JOBS: usize = 4;
 const MAX_SOUND_FILE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_DECODED_SOUND_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SOUND_SECONDS: usize = 10;
+// Source exhaustion means the last PCM was handed to the device, not yet heard.
+const OUTPUT_DRAIN_DELAY: Duration = Duration::from_millis(250);
 
 #[derive(Clone)]
 pub struct RodioSoundPresenter {
@@ -47,6 +49,7 @@ impl RodioSoundPresenter {
                     ..settings.clone()
                 },
                 backend: None,
+                available: false,
                 resolver,
                 jobs: Arc::new(AtomicUsize::new(0)),
                 cancelled: Arc::new(AtomicBool::new(false)),
@@ -66,38 +69,33 @@ impl SoundPresenter for RodioSoundPresenter {
         if state.settings != settings {
             state.cancel_playback();
         }
-        let was_enabled = state.settings.enabled;
-        let enabled_changed = was_enabled != settings.enabled;
         state.settings = settings;
 
         if !state.settings.enabled {
             state.backend = None;
+            state.available = false;
             return Ok(());
         }
 
-        if state.backend.is_none() {
+        if !state.available {
+            // Probe capability without keeping an empty mixer driving the device.
             match (self.open_backend)() {
-                Ok(backend) => state.backend = Some(backend),
+                Ok(_) => state.available = true,
                 Err(_) => {
                     eprintln!("level=warn component=sound event=backend_unavailable");
                 }
             }
-        } else if enabled_changed {
-            eprintln!("level=info component=sound event=backend_enabled");
         }
 
         Ok(())
     }
 
     fn play_notification_sound(&self, playback: NotificationSoundPlayback) -> anyhow::Result<()> {
-        let (settings, resolver, mixer, job) = {
+        let (settings, resolver, job) = {
             let state = self.state.lock().unwrap();
-            if !state.settings.enabled {
+            if !state.settings.enabled || !state.available {
                 return Ok(());
             }
-            let Some(backend) = &state.backend else {
-                return Ok(());
-            };
             state
                 .jobs
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |jobs| {
@@ -108,21 +106,23 @@ impl SoundPresenter for RodioSoundPresenter {
                 jobs: state.jobs.clone(),
                 cancelled: state.cancelled.clone(),
             });
-            (
-                state.settings.clone(),
-                state.resolver.clone(),
-                backend.mixer.clone(),
-                job,
-            )
+            (state.settings.clone(), state.resolver.clone(), job)
         };
 
-        std::thread::Builder::new()
+        let presenter = self.clone();
+        let worker = std::thread::Builder::new()
             .name("canopa-notify-sound".to_string())
             .spawn(move || {
-                if let Err(error) = play_with_rodio(playback, settings, resolver, mixer, &job) {
+                if let Err(error) = presenter.play_job(playback, settings, resolver, &job) {
                     eprintln!("level=warn component=sound event=playback_failed error={error:#}");
                 }
-            })?;
+                drop(job);
+                presenter.release_idle_backend();
+            });
+        if let Err(error) = worker {
+            self.release_idle_backend();
+            return Err(error.into());
+        }
         Ok(())
     }
 
@@ -130,17 +130,69 @@ impl SoundPresenter for RodioSoundPresenter {
         let mut state = self.state.lock().unwrap();
         state.cancel_playback();
         state.backend = None;
+        state.available = false;
     }
 
     fn supports_sound(&self) -> bool {
         let state = self.state.lock().unwrap();
-        state.settings.enabled && state.backend.is_some()
+        state.settings.enabled && state.available
+    }
+}
+
+impl RodioSoundPresenter {
+    fn play_job(
+        &self,
+        playback: NotificationSoundPlayback,
+        settings: NotificationSoundSettings,
+        resolver: SoundThemeResolver,
+        job: &Arc<SoundJob>,
+    ) -> anyhow::Result<()> {
+        let (mixer, drain_device) = {
+            let mut state = self.state.lock().unwrap();
+            if job.is_cancelled() {
+                return Ok(());
+            }
+            if state.backend.is_none() {
+                match (self.open_backend)() {
+                    Ok(backend) => {
+                        state.backend = Some(backend);
+                        state.available = true;
+                    }
+                    Err(_) => {
+                        state.available = false;
+                        eprintln!("level=warn component=sound event=backend_unavailable");
+                        return Ok(());
+                    }
+                }
+            }
+            let backend = state.backend.as_ref().unwrap();
+            (backend.mixer.clone(), backend._sink.is_some())
+        };
+        let (finished, completion) = mpsc::channel();
+        let result = play_with_rodio(playback, settings, resolver, mixer, job, finished);
+        // The last sender is owned by the queued source. Wait off the audio
+        // callback, which must never close/join its own device stream.
+        let _ = completion.recv();
+        if drain_device && !job.is_cancelled() {
+            std::thread::sleep(OUTPUT_DRAIN_DELAY);
+        }
+        result
+    }
+
+    fn release_idle_backend(&self) {
+        let mut state = self.state.lock().unwrap();
+        // Serialize retirement with admission so a concurrent request cannot
+        // have its stream closed by the previous sound's completion.
+        if state.jobs.load(Ordering::Acquire) == 0 {
+            state.backend = None;
+        }
     }
 }
 
 struct RodioSoundState {
     settings: NotificationSoundSettings,
     backend: Option<RodioBackend>,
+    available: bool,
     resolver: SoundThemeResolver,
     jobs: Arc<AtomicUsize>,
     cancelled: Arc<AtomicBool>,
@@ -175,6 +227,8 @@ impl SoundJob {
 struct AdmittedSound {
     source: rodio::buffer::SamplesBuffer,
     job: Arc<SoundJob>,
+    // Drop after the source and its reservation, waking the owning worker.
+    _finished: mpsc::Sender<()>,
 }
 
 impl Iterator for AdmittedSound {
@@ -227,6 +281,7 @@ fn play_with_rodio(
     resolver: SoundThemeResolver,
     mixer: rodio::mixer::Mixer,
     job: &Arc<SoundJob>,
+    finished: mpsc::Sender<()>,
 ) -> anyhow::Result<()> {
     if job.is_cancelled() {
         return Ok(());
@@ -236,21 +291,21 @@ fn play_with_rodio(
 
     match requested {
         Some(NotificationSound::File(path)) => {
-            if try_add_file_to_mixer(path, &mixer, job).is_ok() {
+            if try_add_file_to_mixer(path, &mixer, job, &finished).is_ok() {
                 return Ok(());
             }
             eprintln!(
                 "level=warn component=sound event=requested_sound_failed notification_id={} kind=file",
                 playback.notification_id
             );
-            play_default_sound(&resolver, &settings, &mixer, job)?;
+            play_default_sound(&resolver, &settings, &mixer, job, &finished)?;
         }
         Some(NotificationSound::Name(name)) => {
             let Ok(resolved) = resolver.resolve(&settings.theme, name, &job.cancelled) else {
                 return Ok(());
             };
             if let Some(path) = resolved {
-                if try_add_file_to_mixer(&path, &mixer, job).is_ok() {
+                if try_add_file_to_mixer(&path, &mixer, job, &finished).is_ok() {
                     return Ok(());
                 }
                 eprintln!(
@@ -264,10 +319,10 @@ fn play_with_rodio(
                 );
             }
             if name != default_name {
-                play_default_sound(&resolver, &settings, &mixer, job)?;
+                play_default_sound(&resolver, &settings, &mixer, job, &finished)?;
             }
         }
-        None => play_default_sound(&resolver, &settings, &mixer, job)?,
+        None => play_default_sound(&resolver, &settings, &mixer, job, &finished)?,
     }
 
     Ok(())
@@ -278,6 +333,7 @@ fn play_default_sound(
     settings: &NotificationSoundSettings,
     mixer: &rodio::mixer::Mixer,
     job: &Arc<SoundJob>,
+    finished: &mpsc::Sender<()>,
 ) -> anyhow::Result<()> {
     if job.is_cancelled() {
         return Ok(());
@@ -291,7 +347,7 @@ fn play_default_sound(
         return Ok(());
     };
 
-    if try_add_file_to_mixer(&path, mixer, job).is_err() {
+    if try_add_file_to_mixer(&path, mixer, job, finished).is_err() {
         eprintln!("level=warn component=sound event=default_sound_failed");
     }
     Ok(())
@@ -301,6 +357,7 @@ fn try_add_file_to_mixer(
     path: impl AsRef<Path>,
     mixer: &rodio::mixer::Mixer,
     job: &Arc<SoundJob>,
+    finished: &mpsc::Sender<()>,
 ) -> anyhow::Result<()> {
     if job.is_cancelled() {
         return Ok(());
@@ -340,6 +397,7 @@ fn try_add_file_to_mixer(
     mixer.add(AdmittedSound {
         source,
         job: job.clone(),
+        _finished: finished.clone(),
     });
     Ok(())
 }

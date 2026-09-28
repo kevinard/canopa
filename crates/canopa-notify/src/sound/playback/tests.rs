@@ -84,6 +84,70 @@ fn wait_until(mut condition: impl FnMut() -> bool) {
 mod theme;
 
 #[test]
+fn idle_sound_presenter_releases_the_output_and_can_play_again() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sound.wav");
+    wave_file(&path, 8);
+    let (presenter, mut output) = offline_presenter();
+
+    assert!(presenter.supports_sound());
+    assert!(
+        presenter.state.lock().unwrap().backend.is_none(),
+        "startup retained an idle audio stream"
+    );
+    for _ in 0..3 {
+        presenter
+            .play_notification_sound(file_playback(&path))
+            .unwrap();
+        wait_until(|| output.next().is_some());
+        assert!(presenter.state.lock().unwrap().backend.is_some());
+        assert_eq!(1 + output.by_ref().count(), 8);
+        wait_until(|| presenter.state.lock().unwrap().backend.is_none());
+        assert!(presenter.supports_sound(), "idle is not unavailable");
+    }
+}
+
+#[test]
+fn failed_sound_releases_the_output() {
+    let (presenter, _output) = offline_presenter();
+    presenter
+        .play_notification_sound(file_playback(Path::new("/missing.wav")))
+        .unwrap();
+    wait_until(|| presenter.state.lock().unwrap().jobs.load(Ordering::Acquire) == 0);
+    wait_until(|| presenter.state.lock().unwrap().backend.is_none());
+}
+
+#[test]
+fn overlapping_sounds_keep_the_output_until_the_last_sound_finishes() {
+    let temp = tempfile::tempdir().unwrap();
+    let short = temp.path().join("short.wav");
+    let long = temp.path().join("long.wav");
+    wave_file(&short, 8);
+    wave_file(&long, 80_000);
+    let (presenter, mut output) = offline_presenter();
+    presenter
+        .play_notification_sound(file_playback(&long))
+        .unwrap();
+    // Establish the long voice before admitting the short one. Otherwise the
+    // short file can finish while the long file is still being decoded.
+    wait_until(|| output.next() == Some(0.25));
+    presenter
+        .play_notification_sound(file_playback(&short))
+        .unwrap();
+    wait_until(|| output.next() == Some(0.5));
+    for _ in 0..8 {
+        assert!(output.next().is_some());
+    }
+    wait_until(|| presenter.state.lock().unwrap().jobs.load(Ordering::Acquire) == 1);
+    assert!(presenter.state.lock().unwrap().backend.is_some());
+    assert!(
+        output.by_ref().count() > 0,
+        "retirement cut off the other sound"
+    );
+    wait_until(|| presenter.state.lock().unwrap().backend.is_none());
+}
+
+#[test]
 fn sound_presentation_admits_at_most_four_jobs_including_unconsumed_audio() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sound.wav");
@@ -365,6 +429,46 @@ fn backend_unavailability_is_degraded_support_and_can_be_retried() {
         .apply_sound_settings(NotificationSoundSettings::default())
         .unwrap();
     assert!(presenter.supports_sound());
+}
+
+#[test]
+fn output_lost_while_idle_degrades_support_and_can_be_retried() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sound.wav");
+    wave_file(&path, 8);
+    let attempts = AtomicUsize::new(0);
+    let (mixer, mut output) = rodio::mixer::mixer(1.try_into().unwrap(), 8_000.try_into().unwrap());
+    let presenter = RodioSoundPresenter::with_backend_opener(
+        NotificationSoundSettings::default(),
+        SoundThemeResolver::new(Vec::new(), "C"),
+        Arc::new(move || {
+            if attempts.fetch_add(1, Ordering::Relaxed) == 1 {
+                anyhow::bail!("output disappeared after the startup probe");
+            }
+            Ok(RodioBackend {
+                _sink: None,
+                mixer: mixer.clone(),
+            })
+        }),
+    );
+    assert!(presenter.supports_sound());
+    presenter
+        .play_notification_sound(file_playback(&path))
+        .unwrap();
+    wait_until(|| presenter.state.lock().unwrap().jobs.load(Ordering::Acquire) == 0);
+    assert!(!presenter.supports_sound());
+    assert!(presenter.state.lock().unwrap().backend.is_none());
+
+    presenter
+        .apply_sound_settings(NotificationSoundSettings::default())
+        .unwrap();
+    assert!(presenter.supports_sound());
+    presenter
+        .play_notification_sound(file_playback(&path))
+        .unwrap();
+    wait_until(|| output.next().is_some());
+    assert_eq!(1 + output.by_ref().count(), 8);
+    wait_until(|| presenter.state.lock().unwrap().backend.is_none());
 }
 
 #[tokio::test]
