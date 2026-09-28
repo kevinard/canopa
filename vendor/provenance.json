@@ -7,7 +7,7 @@
       "archive_sha256": "51b59e8af02bf4c51db2ee5d130293e6e1e5ac4ae9f74a1e57990a19221aa0d5",
       "upstream_commit": "5e39311c8c5e652bd493a8f78e68e62b8929d9cf",
       "patch": "vendor/patches/iced_layershell.patch",
-      "patch_sha256": "2668f935da4dd1b3132b759bdafdfde60345c634a5a1c2f61e604058bea55216",
+      "patch_sha256": "18365d41f23ca78501ef247b777dcfda2104007e750941b44db94bcb9146527e",
       "files": {
         "Cargo.lock": {
           "upstream": "38f7f0ba4d38a3b3c02ef4669ace1f5dfed6e81129b6f9a5d472ff8ec5a6a493",
@@ -87,7 +87,7 @@
         },
         "src/multi_window.rs": {
           "upstream": "4c686e0474d13c9baca27e15e6ce949b934c7e1243093ebfeeb7649176edc2a3",
-          "local": "76e40703ad7ec7acd05fcf264bad29be4f35bb93241366710947837648012c90"
+          "local": "9b7c87802de004e8c971978ae398d52450c0532892bc5d9c89a0df8ca5403416"
         },
         "src/multi_window/state.rs": {
           "upstream": "9c55f882d39dcf8458998ab7ff36671faa7839a12f3ab61cf0e82984853ecfb2",

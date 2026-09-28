@@ -30,6 +30,7 @@ Retained behavior:
 | Named Wayland output snapshots | The shell plans Bar Surfaces from output names even before a window exists; upstream does not expose this snapshot to application messages. | Shell eligible-output/surface reconciliation tests and compositor output checks. |
 | Activation token context | Banner actions need the originating surface and recent input serial on the existing connection. | Notification activation tests and isolated desktop action checks. |
 | Retired-window cleanup | Compositor output loss may remove a backend unit before Closed is delivered; completed closes must not stay in the adapter retry queue. | The retained vendor adapter regression plus notification surface lifecycle tests. |
+| Renderer redraw and relayout notifications | Asynchronous image completion must refresh idle surfaces; otherwise focused-window titles update while application icons remain blank until an unrelated event. | `scripts/verify-focused-window-icons.py` checks fresh PNG/SVG icons and cached switches on rotated and horizontal bars with a controlled, otherwise idle IPC stream. |
 | AT-SPI cache signal wrapping | AddAccessible and RemoveAccessible require one structure argument; upstream 0.24.0 still sends unwrapped structures. | Actual native bus signature/accessibility tests in both applications. |
 
 Removed local patches:
@@ -62,11 +63,12 @@ After building root debug binaries, run these fixtures sequentially:
 python3 scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts /tmp/canopa-notifications-new
 python3 scripts/test-fork-desktop.py --niribar target/debug/niribar --artifacts /tmp/canopa-forks-new
 python3 scripts/verify-overlay-placement.py --binary target/debug/niribar --output /tmp/canopa-placement-new --edge top bottom left right --scale 1.25
+python3 scripts/verify-focused-window-icons.py --binary target/debug/niribar --output /tmp/canopa-focused-icons-new
 ```
 
-Each artifact directory must be new. The first and third fixtures use Niri; the
-second uses disposable Sway outputs to remove and restore every output without
-terminating the compositor. It checks actual rendered frames and Wayland popup
+Each artifact directory must be new. The first, third and fourth fixtures use
+Niri; the second uses disposable Sway outputs to remove and restore every output
+without terminating the compositor. It checks actual rendered frames and Wayland popup
 grabs/dismissal. These are local adapter checks; Orca and physical monitor/device
 acceptance remain separate procedures.
 
