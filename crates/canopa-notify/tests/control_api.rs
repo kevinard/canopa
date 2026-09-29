@@ -420,13 +420,14 @@ async fn resident_actions_acknowledge_and_replacement_restores_attention() {
 }
 
 #[tokio::test]
-async fn center_batches_merge_retained_and_transient_content_without_duplicates() {
+async fn center_batches_merge_retained_and_transient_content_in_date_order() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
         .await
         .unwrap();
     let control = NotifyControl::new(daemon.clone());
     let mut expected = std::collections::BTreeSet::new();
+    let mut chronological = Vec::new();
     for index in 0..19 {
         let receipt = daemon
             .receive_notification(NotificationInput {
@@ -439,9 +440,20 @@ async fn center_batches_merge_retained_and_transient_content_without_duplicates(
             .await
             .unwrap();
         expected.insert(receipt.notification_id);
+        chronological.push(receipt.notification_id);
+        if index % 4 == 1 {
+            daemon
+                .dismiss_notification(receipt.notification_id)
+                .await
+                .unwrap();
+        }
+        // Runtime IDs count down; give each receipt a distinct millisecond so
+        // this fixture checks dates independently of the stable ID tie-breaker.
+        tokio::time::sleep(Duration::from_millis(2)).await;
     }
     let mut after = None;
     let mut seen = std::collections::BTreeSet::new();
+    chronological.reverse();
     for _ in 0..10 {
         let ControlReply::NotificationCenterBatch(batch) = control
             .execute(ControlCommand::NotificationCenterBatch { after, limit: 3 })
@@ -457,6 +469,20 @@ async fn center_batches_merge_retained_and_transient_content_without_duplicates(
             .flat_map(|group| group.items)
             .collect();
         assert!(items.len() <= 3);
+        let expected_batch: std::collections::BTreeSet<_> = chronological
+            .iter()
+            .skip(seen.len())
+            .take(3)
+            .copied()
+            .collect();
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.notification_id)
+                .collect::<std::collections::BTreeSet<_>>(),
+            expected_batch,
+            "batch boundaries follow date, regardless of app or attention"
+        );
         for item in items {
             assert!(seen.insert(item.notification_id));
         }

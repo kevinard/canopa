@@ -4,6 +4,119 @@ use canopa_panel_protocol::{ProtocolError, v1, v4};
 const V4: &[u8] = b"{\"type\":\"replace_content\",\"protocol_version\":4,\"content\":{\"title\":\"Ready\",\"sections\":[],\"actions\":[],\"error\":null}}\n";
 
 #[test]
+fn optional_section_icons_preserve_legacy_sections_and_validate_in_v5() {
+    let legacy = serde_json::json!({"id":"mail", "title":"Mail", "items":[], "controls":[]});
+    let section: v4::PanelSection = serde_json::from_value(legacy.clone()).unwrap();
+    assert!(section.icon.is_none());
+    assert_eq!(serde_json::to_value(section).unwrap(), legacy);
+    let mut with_icon = legacy;
+    with_icon["icon"] =
+        serde_json::json!({"kind":"theme", "names":["mail"], "theme":"hicolor", "scale":1});
+    #[derive(serde::Deserialize)]
+    struct LegacySection {
+        id: String,
+        title: String,
+        items: Vec<v4::PanelItem>,
+        controls: Vec<v4::PanelControl>,
+    }
+    let old: LegacySection = serde_json::from_value(with_icon.clone()).unwrap();
+    assert_eq!(
+        (
+            old.id.as_str(),
+            old.title.as_str(),
+            old.items.len(),
+            old.controls.len()
+        ),
+        ("mail", "Mail", 0, 0)
+    );
+    let mut content = v4::PanelContent::new("Settings");
+    content
+        .sections
+        .push(serde_json::from_value(with_icon).unwrap());
+    let mut session = canopa_panel_protocol::v5::Session::default();
+    session
+        .replace(
+            canopa_panel_protocol::v5::Content::Rich(content.clone()),
+            canopa_panel_protocol::v5::Update::Replace,
+        )
+        .unwrap();
+    content.sections[0].icon = Some(v4::PanelIcon::LocalPath {
+        path: "relative.png".into(),
+    });
+    assert!(content.validate().is_err());
+}
+
+#[test]
+fn optional_item_attribution_preserves_legacy_content_and_v5_interactions() {
+    let legacy = serde_json::json!({"id":"message", "title":"Hello", "body":"Body",
+        "styled_body":null, "rich_body":null, "metadata":[], "actions":[]});
+    let item: v4::PanelItem = serde_json::from_value(legacy.clone()).unwrap();
+    assert!(item.attribution.is_none());
+    assert_eq!(serde_json::to_value(item).unwrap(), legacy);
+    let mut with_source = legacy.clone();
+    with_source["attribution"] = serde_json::json!({"label":"Mail", "icon":{
+        "kind":"theme", "names":["org.example.Mail.desktop", "org.example.Mail"],
+        "theme":"hicolor", "scale":2}});
+    // The published item decoder ignores unknown fields. Existing readers keep
+    // the original content, and new readers accept items without attribution.
+    #[derive(serde::Deserialize)]
+    struct LegacyItem {
+        id: String,
+        title: String,
+        body: Option<String>,
+        actions: Vec<v4::PanelAction>,
+    }
+    let old: LegacyItem = serde_json::from_value(with_source.clone()).unwrap();
+    assert_eq!(
+        (
+            old.id.as_str(),
+            old.title.as_str(),
+            old.body.as_deref(),
+            old.actions.len()
+        ),
+        ("message", "Hello", Some("Body"), 0)
+    );
+    let mut content = v4::PanelContent::new("Messages");
+    content.sections.push(v4::PanelSection {
+        id: "mail".into(),
+        title: "Mail".into(),
+        icon: None,
+        controls: vec![],
+        items: vec![serde_json::from_value(with_source).unwrap()],
+    });
+    let mut session = canopa_panel_protocol::v5::Session::default();
+    let response = session
+        .replace(
+            canopa_panel_protocol::v5::Content::Rich(content.clone()),
+            canopa_panel_protocol::v5::Update::Replace,
+        )
+        .unwrap();
+    assert!(response.content.validate().is_ok());
+    for icon in [
+        v4::PanelIcon::LocalPath {
+            path: "https://example.org/icon.png".into(),
+        },
+        v4::PanelIcon::Theme {
+            names: vec!["../escape".into()],
+            theme: "hicolor".into(),
+            scale: 1,
+        },
+        v4::PanelIcon::Theme {
+            names: vec!["mail".into(); 3],
+            theme: "hicolor".into(),
+            scale: 1,
+        },
+    ] {
+        content.sections[0].items[0]
+            .attribution
+            .as_mut()
+            .unwrap()
+            .icon = Some(icon);
+        assert!(content.validate().is_err());
+    }
+}
+
+#[test]
 fn v1_frames_keep_the_existing_header_and_field_names() {
     let payload = br#"{"type":"event","payload":{"type":"text-input-submitted","element_id":"credential","value":"fixture-only"}}"#;
     let mut fixture = b"NIRIBAR_EXTERNAL_PANEL_JSON_V1\n".to_vec();

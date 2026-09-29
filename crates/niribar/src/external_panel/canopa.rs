@@ -14,6 +14,7 @@ pub struct CanopaSnapshot {
     pub content: PanelContent,
     generation: u64,
     images: HashMap<String, iced::widget::image::Handle>,
+    icons: HashMap<canopa_panel_protocol::PanelIcon, iced::widget::image::Handle>,
     affordances: Vec<(String, String)>,
     focused: Option<usize>,
 }
@@ -61,6 +62,12 @@ impl CanopaSnapshot {
     pub fn image(&self, path: &str) -> Option<&iced::widget::image::Handle> {
         self.images.get(path)
     }
+    pub fn icon(
+        &self,
+        icon: &canopa_panel_protocol::PanelIcon,
+    ) -> Option<&iced::widget::image::Handle> {
+        self.icons.get(icon)
+    }
     pub fn action_id(&self, target: InteractionTarget, action: &PanelAction) -> String {
         serde_json::to_string(&(
             self.generation,
@@ -100,7 +107,7 @@ impl CanopaSession {
         content
             .validate()
             .map_err(|_| ProtocolError::InvalidContent("invalid Canopa content".into()))?;
-        let images = super::canopa_images::prepare(&content).await;
+        let assets = super::canopa_images::prepare(&content).await;
         let mut state = self.state.lock().unwrap();
         // Unique across sessions as well as replacements: late clicks from a closed panel stay stale.
         static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
@@ -112,7 +119,8 @@ impl CanopaSession {
         let mut snapshot = CanopaSnapshot {
             content,
             generation,
-            images,
+            images: assets.images,
+            icons: assets.icons,
             affordances: Vec::new(),
             focused: None,
         };
@@ -158,7 +166,14 @@ impl CanopaSession {
                             },
                             action,
                         ),
-                        format!("{} · {} · {}", action.label, section.title, item.title),
+                        format!(
+                            "{} · {} · {}",
+                            action.label,
+                            item.attribution
+                                .as_ref()
+                                .map_or(section.title.as_str(), |source| source.label.as_str()),
+                            item.title
+                        ),
                     ));
                 }
             }

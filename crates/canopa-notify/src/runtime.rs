@@ -838,13 +838,14 @@ impl NotificationRuntime {
         threads.extend(self.lifecycle.transient_threads());
         // Match retained ordering and keep runtime-only HashMap iteration out of the UI.
         threads.sort_by_key(|thread| {
-            std::cmp::Reverse((thread.requires_attention, thread.created_at, thread.id))
+            std::cmp::Reverse(crate::NotificationCenterCursor::for_thread(thread))
         });
         let user_rules = self.user_rules().await?;
         Ok(projection_from_threads(
             threads,
             &user_rules,
             self.center_instance,
+            self.presentation.icon_settings(),
         ))
     }
 
@@ -873,7 +874,12 @@ impl NotificationRuntime {
         let rules = self.user_rules().await?;
         Ok(crate::NotificationCenterBatch {
             last,
-            projection: projection_from_threads(threads, &rules, self.center_instance),
+            projection: projection_from_threads(
+                threads,
+                &rules,
+                self.center_instance,
+                self.presentation.icon_settings(),
+            ),
         })
     }
 
@@ -1219,6 +1225,7 @@ fn projection_from_threads(
     threads: Vec<NotificationThread>,
     user_rules: &[UserRule],
     instance: [u8; 16],
+    icon_settings: crate::BannerIconSettings,
 ) -> NotificationCenterProjection {
     let mut grouped: BTreeMap<String, Vec<NotificationCenterItem>> = BTreeMap::new();
     let app_permissions: HashMap<_, _> = user_rules
@@ -1268,6 +1275,8 @@ fn projection_from_threads(
             .entry(notification.app_identity.clone())
             .or_default()
             .push(NotificationCenterItem {
+                app_name: notification.app_name,
+                app_icon: notification.app_icon,
                 requires_attention: thread.requires_attention,
                 notification_id: thread.id,
                 target: NotificationCenterTarget {
@@ -1291,6 +1300,7 @@ fn projection_from_threads(
     }
 
     NotificationCenterProjection {
+        icon_settings,
         groups: grouped
             .into_iter()
             .map(|(app_identity, items)| NotificationCenterGroup {

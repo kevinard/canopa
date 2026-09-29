@@ -179,7 +179,7 @@ impl BannerPresentation {
 }
 
 /// Static icon selection. Scale selects a source asset; it does not scale the UI.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BannerIconSettings {
     pub theme: String,
     pub scale: u16,
@@ -550,7 +550,8 @@ fn banner_app_icon_visual(
     }
 }
 
-fn app_identity_icon_name_candidates(app_identity: &str) -> Vec<String> {
+/// Ordered source-icon fallback shared by banners and the Notification Center.
+pub fn app_identity_icon_name_candidates(app_identity: &str) -> Vec<String> {
     let app_identity = app_identity.trim();
     if !valid_icon_name(app_identity) {
         return Vec::new();

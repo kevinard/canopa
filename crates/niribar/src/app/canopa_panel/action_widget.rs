@@ -74,6 +74,6 @@ fn action<'a>(
         },
         focused,
     )
-    .width(Length::Fill);
+    .width(if link { Length::Fill } else { Length::Shrink });
     crate::surface::identity::identify(id, content)
 }

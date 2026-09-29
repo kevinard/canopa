@@ -47,6 +47,11 @@ def run(args):
     def command(*argv):
         return subprocess.check_output(argv, env=env, text=True).strip()
     def find(name, obj=None, depth=0):
+        if depth == 0:
+            # Deliver native tree updates before inspecting cached AT-SPI nodes.
+            context = GLib.MainContext.default()
+            while context.pending():
+                context.iteration(False)
         if obj is None:
             obj = Atspi.get_desktop(0)
         if depth > 12:
@@ -165,7 +170,45 @@ def run(args):
             ['grim', '-o', 'HEADLESS-1', str(root / 'after-click.png')], env={**env, 'WAYLAND_DISPLAY': str(outer)})
         clear = eventually(lambda: find('Clear active notifications'), 'real Niribar Center')
         center = clear.get_application()
+        output_height = json.loads(command('niri', 'msg', '--json', 'outputs'))[output]['logical']['height']
+        def center_geometry(title, application):
+            node = find(title, application)
+            if node is None:
+                return False
+            rect = node.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
+            return rect.width == 480 and rect.height == output_height - 44
+        eventually(lambda: center_geometry('Notifications', center), 'wide, full-height Center')
+        assert find('Delivery', center) is None, 'delivery rules crowd the reading view'
+        settings = eventually(lambda: find('Settings', center), 'Center settings navigation')
+        assert settings.get_action_iface().do_action(0), 'settings navigation rejected'
+        eventually(lambda: find('Delivery', center), 'delivery settings view')
+        eventually(lambda: find('Delete notification history', center), 'history management')
+        eventually(lambda: center_geometry('Notification settings', center), 'stable settings geometry')
+        # Native state can precede the compositor's next submitted frame.
+        time.sleep(.25)
+        subprocess.check_call(
+            ['grim', '-o', 'HEADLESS-1', str(root / 'center-settings.png')],
+            env={**env, 'WAYLAND_DISPLAY': str(outer)})
+        settings_frame = Image.open(root / 'center-settings.png').convert('RGB')
+        settings_crop = settings_frame.crop((0, 80, settings_frame.width // 2, settings_frame.height))
+        assert sum(count for count, rgb in settings_crop.getcolors(settings_crop.width * settings_crop.height)
+                   if rgb == icon_color) > 100, 'Settings must identify the app with its source icon'
+        back = eventually(lambda: find('Back to notifications', center), 'back to reading')
+        assert back.get_action_iface().do_action(0), 'return from settings rejected'
+        eventually(lambda: find('Desktop acceptance', center), 'notification content after settings')
+        time.sleep(.25)
+        subprocess.check_call(
+            ['grim', '-o', 'HEADLESS-1', str(root / 'center-reading.png')],
+            env={**env, 'WAYLAND_DISPLAY': str(outer)})
+        center_frame = Image.open(root / 'center-reading.png').convert('RGB')
+        center_crop = center_frame.crop((0, 80, center_frame.width // 2, center_frame.height))
+        assert sum(count for count, rgb in center_crop.getcolors(center_crop.width * center_crop.height)
+                   if rgb == icon_color) > 100, 'Center must show the sender icon, separately from body images'
+        card = eventually(lambda: find('Desktop acceptance', center), 'Center card source')
+        assert find('Desktop fixture', card) is not None, 'card must retain an accessible source label'
         eventually(lambda: find('Image alternative', center), 'Center image fallback')
+        assert find('Status: Read', center) is None, 'acknowledged cards must not show status text'
+        assert find('Unread', center) is None, 'acknowledged cards must not show an attention dot'
         # The decoded image can push the last action below the native viewport at
         # fractional scale. Offscreen actions appear in AT-SPI after scrolling.
         center_action_scrolled = find('Fourth action', center) is None
@@ -267,6 +310,8 @@ def run(args):
         clear = eventually(lambda: find('Clear active notifications'), 'Center after independent restarts')
         eventually(lambda: find('Retained across restarts', clear.get_application()), 'retained Center item')
         eventually(lambda: find('Received without shell', clear.get_application()), 'notification received without shell')
+        eventually(lambda: find('Unread', clear.get_application()), 'accessible attention indicator')
+        time.sleep(.25)
         def recovered_frame():
             subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'recovered.png')],
                                   env={**env, 'WAYLAND_DISPLAY': str(outer)})
@@ -275,6 +320,31 @@ def run(args):
             return sum(count for count, rgb in center_area.getcolors(center_area.width * center_area.height)
                        if rgb == changed) > 3000
         eventually(recovered_frame, 'recovered Center pixels beyond the bar')
+        retained_frame = Image.open(root / 'recovered.png').convert('RGB')
+        retained_crop = retained_frame.crop((0, 80, retained_frame.width // 2, retained_frame.height))
+        assert sum(count for count, rgb in retained_crop.getcolors(retained_crop.width * retained_crop.height)
+                   if rgb == icon_color) > 100, 'retained source icon was lost after daemon restart'
+        # Exercise a genuinely overflowing list at the automatic full height.
+        for index in range(8):
+            call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
+                 'org.freedesktop.Notifications', 'Notify', GLib.Variant('(susssasa{sv}i)',
+                 ('Mail fixture' if index % 2 else 'Chat fixture', 0, '', f'Overflow notification {index + 1}',
+                  'A longer message should wrap inside its card, leaving the right edge clear. ' * 3,
+                  [], {}, 0)), '(u)')
+        newest = eventually(lambda: find('Overflow notification 8'), 'overflowing Center list')
+        center = newest.get_application()
+        eventually(lambda: center_geometry('Notifications', center), 'stable overflow geometry')
+        command('wtype', '-k', 'Home')
+        time.sleep(.25)
+        first = eventually(lambda: find('Overflow notification 8', center), 'newest card at top')
+        second = eventually(lambda: find('Overflow notification 7', center), 'next card from another app')
+        assert first.get_parent() == second.get_parent(), 'apps must share one reading list'
+        assert first.get_index_in_parent() < second.get_index_in_parent(), \
+            'native reading order must remain newest first across apps'
+        subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'center-overflow.png')],
+                              env={**env, 'WAYLAND_DISPLAY': str(outer)})
+        command('wtype', '-k', 'End')
+        eventually(lambda: find('Desktop acceptance', center), 'last card after scrolling')
         command('wtype', '-k', 'Escape')
         # Rich dmenu entries use the shell's icon lookup and its SVG renderer.
         menu = start('svg-menu', [str(args.niribar), '--dmenu', '--json', '--no-custom'],
@@ -291,6 +361,10 @@ def run(args):
         menu.wait(timeout=10)
         (root / 'result.json').write_text(json.dumps({'passed': True, 'sender_actions': seen,
             'built_in_notifications': True, 'dnd_control': True,
+            'center_settings_navigation': True, 'center_reading_hierarchy': True,
+            'center_full_height': True, 'center_width': 480, 'center_overflow': True,
+            'center_source_icon': True, 'center_source_accessibility': True,
+            'center_settings_icon': True, 'center_chronological_order': True,
             'shell_restart': True, 'daemon_restart': True, 'retained_attention': 2,
 
             'color_scheme': args.color_scheme, 'scale': args.scale, 'keyboard_focus': focus,
@@ -372,7 +446,7 @@ if __name__ == '__main__':
         (root / 'config' / 'canopa').mkdir()
         # Exercise built-in module, provider, actions and default socket discovery.
         # Custom placement keeps pointer coordinates deterministic across scales.
-        shell = '''bar "test" { panel { height 720; }; edge "top"; collapsed-width 44; modules { start "notifications"; }; }
+        shell = '''bar "test" { edge "top"; collapsed-width 44; modules { start "notifications"; }; }
 modules { module "notifications"; }
 '''
         (root / 'config' / 'canopa' / 'config.kdl').write_text(

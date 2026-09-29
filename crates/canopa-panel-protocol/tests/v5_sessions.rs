@@ -171,6 +171,7 @@ fn rich_membership_checks_section_options_and_item_actions_including_links() {
         value: Some("domain-token".into()),
     };
     content.sections.push(v4::PanelSection {
+        icon: None,
         id: "mail".into(),
         title: "Mail".into(),
         controls: vec![v4::PanelControl {
@@ -183,6 +184,7 @@ fn rich_membership_checks_section_options_and_item_actions_including_links() {
             }],
         }],
         items: vec![v4::PanelItem {
+            attribution: None,
             id: "message".into(),
             title: "Message".into(),
             body: None,

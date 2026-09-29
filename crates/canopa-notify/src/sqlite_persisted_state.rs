@@ -15,7 +15,7 @@ use std::path::PathBuf;
 #[cfg(test)]
 use std::str::FromStr;
 
-const CURRENT_SCHEMA_VERSION: i64 = 2;
+const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 #[derive(Clone)]
 pub(crate) struct SqlitePersistedState {
@@ -466,6 +466,11 @@ impl SqlitePersistedState {
                 .execute(&mut *transaction)
                 .await?;
         }
+        if version < 3 {
+            sqlx::raw_sql(include_str!("../migrations/0003-chronological-center.sql"))
+                .execute(&mut *transaction)
+                .await?;
+        }
         transaction.commit().await?;
 
         Ok(Self {
@@ -685,12 +690,15 @@ impl SqlitePersistedState {
         after: Option<crate::NotificationCenterCursor>,
         limit: u8,
     ) -> anyhow::Result<Vec<NotificationThread>> {
-        let sql = notification_thread_select_sql(
-            "WHERE ?1 IS NULL OR (requires_attention, created_at, id) < (?1, ?2, ?3)
-             ORDER BY requires_attention DESC, created_at DESC, id DESC LIMIT ?4",
-        );
+        let predicate = if after.is_some() {
+            "WHERE (created_at, id) < (?1, ?2)"
+        } else {
+            ""
+        };
+        let sql = notification_thread_select_sql(&format!(
+            "{predicate} ORDER BY created_at DESC, id DESC LIMIT ?3"
+        ));
         sqlx::query(&sql)
-            .bind(after.map(|cursor| i64::from(cursor.requires_attention)))
             .bind(after.map(|cursor| cursor.created_at))
             .bind(after.map(|cursor| cursor.id.get()))
             .bind(i64::from(limit))

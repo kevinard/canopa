@@ -1,10 +1,12 @@
 use super::canopa_semantics::{
-    Body, Key as SemanticKey, Node as SemanticNode, body as selected_body,
+    Body, Key as SemanticKey, Node as SemanticNode, body as selected_body, metadata_label,
 };
 // Host-owned layout for Canopa's declarative model. No notification-domain keys here.
-use canopa_panel_protocol::{InteractionTarget, PanelAction, RichBodySegment, StyledTextRun};
+use canopa_panel_protocol::{
+    InteractionTarget, PanelAction, PanelIcon, RichBodySegment, StyledTextRun,
+};
 use canopa_ui::metrics;
-use iced::widget::{column, container, rich_text, scrollable, span, text};
+use iced::widget::{Space, column, container, rich_text, row, scrollable, span, text, tooltip};
 use iced::{Element, Length, Theme};
 use niribar::external_panel::canopa::CanopaSnapshot;
 
@@ -22,7 +24,7 @@ pub(super) fn render<'a>(
     drawer: bool,
 ) -> Element<'a, Message> {
     let reading_id = iced::widget::Id::from(format!("canopa-reading/{provider}"));
-    let mut panel = column![].spacing(10);
+    let mut panel = column![].spacing(20);
     if let Some(error) = &snapshot.content.error {
         panel = panel.push(semantic(
             snapshot,
@@ -31,18 +33,38 @@ pub(super) fn render<'a>(
             text(error.clone()).color(crate::theme::palette().danger),
         ));
     }
-    for action in &snapshot.content.actions {
-        panel = panel.push(action_button(
+    if !snapshot.content.actions.is_empty() {
+        panel = panel.push(action_row(
             snapshot,
             provider,
             InteractionTarget::Content,
-            action,
+            &snapshot.content.actions,
         ));
     }
     for section in &snapshot.content.sections {
-        let mut group = column![text(section.title.clone()).size(17)].spacing(metrics::GAP);
+        let identifies_each_item = !section.items.is_empty()
+            && section.items.iter().all(|item| {
+                item.attribution
+                    .as_ref()
+                    .is_some_and(|source| source.label == section.title)
+            });
+        let mut group = column![].spacing(10);
+        if !section.title.is_empty() && (!identifies_each_item || !section.controls.is_empty()) {
+            let label = text(section.title.clone())
+                .size(metrics::LABEL)
+                .style(canopa_ui::muted);
+            group = group.push(if let Some(icon) = &section.icon {
+                Element::from(
+                    row![source_icon(snapshot, Some(icon), &section.title), label]
+                        .spacing(10)
+                        .align_y(iced::Alignment::Center),
+                )
+            } else {
+                label.into()
+            });
+        }
         for control in &section.controls {
-            let mut options = column![text(control.label.clone())].spacing(metrics::GAP);
+            let mut options = row![].spacing(metrics::GAP);
             for option in &control.options {
                 let action = PanelAction {
                     key: control.key.clone(),
@@ -70,11 +92,57 @@ pub(super) fn render<'a>(
                 snapshot,
                 provider,
                 &SemanticNode::Control(section.id.clone(), control.key.clone()),
-                options,
+                column![
+                    text(control.label.clone()).size(metrics::BODY),
+                    options.wrap()
+                ]
+                .spacing(metrics::GAP),
             ));
         }
         for item in &section.items {
-            let mut card = column![text(item.title.clone()).size(metrics::TITLE)].spacing(6);
+            let mut heading = row![
+                text(item.title.clone())
+                    .size(metrics::TITLE)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Semibold,
+                        ..iced::Font::DEFAULT
+                    })
+                    .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
+                    .width(Length::Fill)
+            ]
+            .spacing(metrics::GAP)
+            .align_y(iced::Alignment::Center);
+            for (index, metadata) in item.metadata.iter().enumerate() {
+                if metadata.value.is_empty() {
+                    let marker = container(container(Space::new().width(7).height(7)).style(
+                        |theme: &Theme| container::Style {
+                            background: canopa_ui::link(theme).color.map(Into::into),
+                            border: iced::Border {
+                                radius: 4.into(),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                    ))
+                    .padding(4)
+                    .id(super::canopa_accessibility_bounds::widget_id(
+                        &semantic_key(
+                            snapshot,
+                            provider,
+                            &SemanticNode::Metadata(item.id.clone(), index),
+                        ),
+                    ));
+                    heading = heading.push(
+                        tooltip(
+                            marker,
+                            text(metadata_label(metadata)),
+                            tooltip::Position::Bottom,
+                        )
+                        .style(canopa_ui::surface),
+                    );
+                }
+            }
+            let mut card = column![heading].spacing(10);
             match selected_body(item) {
                 Body::Rich(body) => {
                     let mut runs = Vec::new();
@@ -183,23 +251,45 @@ pub(super) fn render<'a>(
                 Body::None => {}
             }
             for (index, metadata) in item.metadata.iter().enumerate() {
+                if metadata.value.is_empty() {
+                    continue;
+                }
                 card = card.push(semantic(
                     snapshot,
                     provider,
                     &SemanticNode::Metadata(item.id.clone(), index),
-                    text(format!("{}: {}", metadata.label, metadata.value))
+                    text(metadata_label(metadata))
                         .size(metrics::LABEL)
                         .style(canopa_ui::muted),
                 ));
             }
-            for action in &item.actions {
-                card = card.push(action_button(
+            let mut card = if let Some(source) = &item.attribution {
+                card = card.push(semantic(
+                    snapshot,
+                    provider,
+                    &SemanticNode::Attribution(item.id.clone()),
+                    text(source.label.clone())
+                        .size(metrics::LABEL)
+                        .style(canopa_ui::muted),
+                ));
+                let icon = source_icon(snapshot, source.icon.as_ref(), &source.label);
+                column![
+                    row![icon, card.width(Length::Fill)]
+                        .spacing(10)
+                        .align_y(iced::Alignment::Start)
+                ]
+                .spacing(metrics::GAP)
+            } else {
+                card
+            };
+            if !item.actions.is_empty() {
+                card = card.push(action_row(
                     snapshot,
                     provider,
                     InteractionTarget::Item {
                         id: item.id.clone(),
                     },
-                    action,
+                    &item.actions,
                 ));
             }
             group = group.push(
@@ -207,7 +297,7 @@ pub(super) fn render<'a>(
                     .id(super::canopa_accessibility_bounds::widget_id(
                         &semantic_key(snapshot, provider, &SemanticNode::Item(item.id.clone())),
                     ))
-                    .padding(metrics::PADDING)
+                    .padding(14)
                     .width(Length::Fill)
                     .style(canopa_ui::surface),
             );
@@ -223,11 +313,6 @@ pub(super) fn render<'a>(
     let mut header = column![title].spacing(6);
     if let (Some(id), Some(label)) = (snapshot.focused_action_id(), snapshot.focused_label()) {
         header = header.push(action_widget::preview(id, label, provider));
-    } else {
-        header = header.push(
-            text("Tab / arrows: select · Enter: activate · PgUp/PgDn: read · Esc: close")
-                .size(metrics::LABEL),
-        );
     }
     reading::wrap(
         container(
@@ -235,6 +320,7 @@ pub(super) fn render<'a>(
                 header,
                 scrollable(panel.width(Length::Fill))
                     .id(reading_id.clone())
+                    .spacing(6)
                     .height(Length::Fill)
             ]
             .spacing(10),
@@ -254,6 +340,51 @@ pub(super) fn render<'a>(
     )
 }
 
+fn source_icon<'a>(
+    snapshot: &CanopaSnapshot,
+    icon: Option<&PanelIcon>,
+    label: &str,
+) -> Element<'a, Message> {
+    icon.and_then(|icon| snapshot.icon(icon))
+        .map(|handle| {
+            iced::widget::image(handle.clone())
+                .width(34)
+                .height(34)
+                .content_fit(iced::ContentFit::Contain)
+                .into()
+        })
+        .unwrap_or_else(|| {
+            container(
+                text(
+                    label
+                        .trim()
+                        .chars()
+                        .next()
+                        .map(|c| c.to_ascii_uppercase().to_string())
+                        .unwrap_or_else(|| "?".into()),
+                )
+                .size(metrics::TITLE),
+            )
+            .center(34)
+            .style(canopa_ui::surface)
+            .into()
+        })
+}
+
+fn action_row<'a>(
+    snapshot: &CanopaSnapshot,
+    provider: &str,
+    target: InteractionTarget,
+    actions: &[PanelAction],
+) -> Element<'a, Message> {
+    row(actions
+        .iter()
+        .map(|action| action_button(snapshot, provider, target.clone(), action)))
+    .spacing(metrics::GAP)
+    .wrap()
+    .into()
+}
+
 fn action_button<'a>(
     snapshot: &CanopaSnapshot,
     provider: &str,
@@ -261,17 +392,16 @@ fn action_button<'a>(
     action: &PanelAction,
 ) -> Element<'a, Message> {
     let id = snapshot.action_id(target, action);
-    semantic(
-        snapshot,
+    container(action_widget::render(
+        id.clone(),
+        &action.label,
         provider,
-        &SemanticNode::Action(id.clone()),
-        action_widget::render(
-            id.clone(),
-            &action.label,
-            provider,
-            snapshot.focused_action_id() == Some(id.as_str()),
-        ),
-    )
+        snapshot.focused_action_id() == Some(id.as_str()),
+    ))
+    .id(super::canopa_accessibility_bounds::widget_id(
+        &semantic_key(snapshot, provider, &SemanticNode::Action(id)),
+    ))
+    .into()
 }
 
 fn styled<'a>(runs: Vec<StyledTextRun>) -> Element<'a, Message> {

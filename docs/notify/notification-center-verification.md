@@ -24,6 +24,25 @@ on-demand surface keyboard focus when another application retains focus.
   long history, First/Previous/Next navigation reaches every notification. Open two
   provider sessions and confirm their pages are independent. Empty app names must
   not create invalid pages, and category controls cover every included category.
+- The reading view starts with messages and compact wrapping actions. Cards have
+  a leading app icon and muted source label like banners. Check explicit icons,
+  theme/identity fallback and missing-icon initials, including retained cards after
+  daemon restart. Settings must show the same app icons beside the app names.
+  Interleave notifications from multiple apps and attention states: reading order
+  must stay newest first across page boundaries and Settings/Back navigation.
+  The icon must remain separate from body images and the source
+  must be exposed to native accessibility. Cards have
+  no retention, delivery, or lifecycle text. Pending attention has a small dot with
+  an `Unread` tooltip and native accessible name; acknowledging removes it.
+  Delivery controls and history deletion appear under Settings; Back returns to the same
+  notification page. Verify Settings/Back with native accessibility and keyboard
+  activation, including narrow panels and updates while Settings is open. The
+  private desktop fixture captures `center-reading.png` and `center-settings.png`.
+- Automatic Center sizing uses 480 logical pixels of width and the usable screen
+  height. Loading, reading and Settings must keep the same geometry. Fill the
+  list, verify the cards' right borders remain clear of the scrollbar, then use
+  End to reach the last card. The fixture captures `center-overflow.png`; layout
+  tests cover scrollbar clearance at narrow widths and sizing on every bar edge.
 - Replace while an action is selected/pressed, close/reopen, and restart the daemon.
   Old node/session/revision controls must not activate newer content. Keep one panel
   window during navigation and refresh.

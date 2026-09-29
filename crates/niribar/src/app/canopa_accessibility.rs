@@ -188,6 +188,11 @@ impl PanelAccessibility {
             }
             for item in &section.items {
                 let mut item_children = Vec::new();
+                if let Some(source) = &item.attribution {
+                    item_children.push(
+                        builder.label(&SemanticNode::Attribution(item.id.clone()), &source.label),
+                    );
+                }
                 match selected_body(item) {
                     Body::Rich(body) => {
                         let mut pending = String::new();
@@ -259,7 +264,7 @@ impl PanelAccessibility {
                 for (index, metadata) in item.metadata.iter().enumerate() {
                     item_children.push(builder.label(
                         &SemanticNode::Metadata(item.id.clone(), index),
-                        &format!("{}: {}", metadata.label, metadata.value),
+                        &super::canopa_semantics::metadata_label(metadata),
                     ));
                 }
                 for action in &item.actions {

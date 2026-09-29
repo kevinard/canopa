@@ -83,6 +83,77 @@ async fn retained_count_budget_preserves_pending_content_and_exempts_transient_n
 }
 
 #[tokio::test]
+async fn chronological_center_migration_preserves_history_and_sorts_by_date_before_id() {
+    use canopa_notify::{ControlCommand, ControlReply, NotifyControl};
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let seed = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    let newer = seed
+        .receive_notification(notification("Mail", "Newer read message"))
+        .await
+        .unwrap();
+    seed.dismiss_notification(newer.notification_id)
+        .await
+        .unwrap();
+    let older = seed
+        .receive_notification(notification("Mail", "Older unread message"))
+        .await
+        .unwrap();
+    seed.expire_notification(older.notification_id)
+        .await
+        .unwrap();
+    let before = seed.snapshot().await.unwrap();
+    drop(seed);
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&database))
+        .await
+        .unwrap();
+    // Model a v2 database and a clock adjustment: the lower ID has the later date.
+    sqlx::raw_sql("DROP INDEX notification_threads_center; CREATE INDEX notification_threads_center ON notification_threads(requires_attention DESC, created_at DESC, id DESC); PRAGMA user_version = 2;")
+        .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE notification_threads SET created_at = (SELECT MAX(created_at) + 120 FROM notification_threads) WHERE id = ?1")
+        .bind(newer.notification_id.get())
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    let daemon = Daemon::open(DaemonOptions::headless(database))
+        .await
+        .unwrap();
+    let after = daemon.snapshot().await.unwrap();
+    assert_eq!(after.history.len(), before.history.len());
+    for thread in &after.history {
+        let original = before
+            .history
+            .iter()
+            .find(|item| item.id == thread.id)
+            .unwrap();
+        assert_eq!(thread.accepted_notification, original.accepted_notification);
+        assert_eq!(thread.requires_attention, original.requires_attention);
+        assert_eq!(thread.status, original.status);
+    }
+    let control = NotifyControl::new(daemon);
+    let mut cursor = None;
+    for id in [newer.notification_id, older.notification_id] {
+        let ControlReply::NotificationCenterBatch(batch) = control
+            .execute(ControlCommand::NotificationCenterBatch {
+                after: cursor,
+                limit: 1,
+            })
+            .await
+            .unwrap()
+        else {
+            panic!("Center batch")
+        };
+        assert_eq!(batch.projection.groups[0].items[0].notification_id, id);
+        cursor = batch.last;
+    }
+}
+
+#[tokio::test]
 async fn migration_preserves_archive_and_recovers_only_old_active_attention() {
     let temp = tempfile::tempdir().unwrap();
     let database = temp.path().join("history.db");

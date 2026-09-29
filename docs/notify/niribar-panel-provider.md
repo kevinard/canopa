@@ -34,9 +34,14 @@ Use `click { open-provider "notifications"; }` in a module's `actions` block. If
 
 The matching v4 host renders grouped items, controls, metadata, all actions, styled text, bounded local images, and blue underlined links. Keyboard selection uses arrows/Tab, Enter activates the selection, Page Up/Down and Home/End scroll the content, and Escape closes the panel. The selected item/control context stays visible above the scroller. Late actions from older snapshots or sessions are ignored. Native AT-SPI exposes content, images, controls, link roles, geometry, selection and revision-bound activation. Automated native-interface tests and [actual graphical/Orca acceptance](notification-desktop-acceptance.md) cover the supported host.
 
-Live transient notifications appear in their application group with `Retention: Runtime only`, including notifications hidden by banner overflow or DND. All named actions remain reachable. Active items advertise `Open notification` for default activation, plus explicit dismissal; without a default action the item activation control dismisses it. Transient content is never archived and disappears after closure, dismissal, expiry or restart. Opening the Center does not start banner timeouts.
+The streamed Center opens on messages, with delivery rules and history deletion
+under **Settings**. Settings applies to apps and categories on the current page;
+**Back to notifications** preserves that page. Both views keep pagination controls
+when needed. Delivery choices read **Show banners**, **Save quietly**, and **Block**.
 
-Retained content is marked `Requires attention` until acknowledgement, user removal or sender recall. Ordinary expiry and archive pruning do not remove it. Expired/stale pending items offer `Mark as read`, and archived items are marked `Archive`. Sender actions disappear when their lifecycle ends; content links remain available while the retained row exists. See [ADR 0049](adr/0049-retained-attention-and-sender-lifecycle.md).
+Live transient notifications appear in date order alongside retained messages without a retention label, including notifications hidden by banner overflow or DND. All named actions remain reachable. Active items advertise `Open notification` for default activation, plus explicit dismissal; without a default action the item activation control dismisses it. Transient content is never archived and disappears after closure, dismissal, expiry or restart. Opening the Center does not start banner timeouts.
+
+Retained content has a small attention dot until acknowledgement, user removal or sender recall. Its tooltip and accessible name are `Unread`. Ordinary expiry and archive pruning do not remove it. Expired/stale pending items offer `Mark as read`, and acknowledged items have no attention dot. Cards omit retention, lifecycle status, and delivery outcome labels. Sender actions disappear when their lifecycle ends; content links remain available while the retained row exists. See [ADR 0049](adr/0049-retained-attention-and-sender-lifecycle.md).
 
 Upgrade Notify and Niribar together and change the configured transport to `canopa-v4`. Version 3 hosts cannot interpret the new rich-body link variant. The generic link carries its label/style and an opaque provider action; the validated URI is presentation metadata for AT-SPI Hyperlink; Notify alone resolves and opens the command target. Unsupported targets are readable text. Opening a link is independent of sender actions and acknowledgement. The desktop OpenURI portal is required for opening; status reports unavailable/failed requests without exposing URLs.
 
@@ -48,6 +53,16 @@ to verify that workspace relationship. No source snapshot synchronization is nee
 
 ## Stream limits and recovery
 
+The reading view is one list ordered by creation date descending, with internal ID
+as the tie-breaker. App identity and attention state never reorder it. Settings
+keeps app-grouped controls and shows the same app icons beside their names.
+
+Cards carry generic source attribution: the app name and its explicit icon, or
+the same app-identity icon candidates used by banners. Niribar uses Notify's
+configured theme/scale for PNG/JPEG lookup, falls back to an initial badge and
+retains the source label for accessibility. Body images remain separate. See
+[the compatible protocol extension](../adr/0010-rich-item-source-attribution.md).
+
 Frames include their terminating newline and may not exceed 1 MiB. The installed provider paginates Notification Center content with `First page`, `Previous page` and `Next page` controls. It preserves complete bodies and every action; large action lists can continue on another page. The canonical `rich_body` carries text, images and links, so redundant plain/styled fallback fields are omitted from paginated frames. Navigation belongs to each open panel and rejects stale generations. New content above the current position is reachable with `First page`.
 
 Page construction reads bounded keyset batches and retains one frame plus a candidate row. Each view keeps at most 128 recent previous positions; `First page` remains available beyond that trail. An old stored row that cannot fit even by itself yields an explicit display error; it is never deleted to fit a frame.
@@ -58,4 +73,4 @@ Provider input permits 65,518 bytes per newline-terminated interaction, leaving 
 
 `body-images` is advertised after the paired renderer checks. `body-hyperlinks` is advertised when the runtime OpenURI opener is available. The [release record](notification-release-verification.md) links the tests and actual desktop evidence behind those claims.
 
-For a comfortable reading area, set `panel { height 720; }` on the Niribar bar hosting Notifications. The host clamps this preference to the available output; its generic provider default is only 180 logical pixels. Page Up/Page Down still scroll the content in either configuration.
+For a taller reading area, set `panel { height 720; }` on the Niribar bar hosting Notifications. The host bounds this preference by the available output and configured limits; automatic provider popovers prefer 600 logical pixels. Page Up/Page Down scroll the content in either configuration.

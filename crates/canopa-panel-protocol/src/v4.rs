@@ -73,6 +73,9 @@ impl PanelContent {
             if section.id.is_empty() || !section_ids.insert(&section.id) {
                 return Err(InvalidPanelContent);
             }
+            if let Some(icon) = &section.icon {
+                icon.validate()?;
+            }
             let mut controls = HashSet::new();
             for control in &section.controls {
                 if control.key.is_empty()
@@ -92,6 +95,14 @@ impl PanelContent {
             for item in &section.items {
                 if item.id.is_empty() || !item_ids.insert(&item.id) {
                     return Err(InvalidPanelContent);
+                }
+                if let Some(attribution) = &item.attribution {
+                    if attribution.label.trim().is_empty() {
+                        return Err(InvalidPanelContent);
+                    }
+                    if let Some(icon) = &attribution.icon {
+                        icon.validate()?;
+                    }
                 }
                 for segment in item.rich_body.iter().flat_map(|body| &body.segments) {
                     if let RichBodySegment::Link { uri, .. } = segment
@@ -143,6 +154,9 @@ impl PanelContent {
 pub struct PanelSection {
     pub id: String,
     pub title: String,
+    /// Decorative icon beside the section title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<PanelIcon>,
     pub items: Vec<PanelItem>,
     pub controls: Vec<PanelControl>,
 }
@@ -151,11 +165,70 @@ pub struct PanelSection {
 pub struct PanelItem {
     pub id: String,
     pub title: String,
+    /// Optional source identity, separate from the message body and its images.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<PanelAttribution>,
     pub body: Option<String>,
     pub styled_body: Option<StyledText>,
     pub rich_body: Option<RichBody>,
     pub metadata: Vec<PanelMetadata>,
     pub actions: Vec<PanelAction>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PanelAttribution {
+    /// Also identifies the source when its icon cannot be loaded.
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<PanelIcon>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum PanelIcon {
+    LocalPath {
+        path: String,
+    },
+    Theme {
+        names: Vec<String>,
+        theme: String,
+        scale: u16,
+    },
+}
+
+impl PanelIcon {
+    pub fn validate(&self) -> Result<(), InvalidPanelContent> {
+        let valid_name = |value: &str| {
+            !value.is_empty()
+                && value.len() <= 255
+                && !matches!(value, "." | "..")
+                && !value
+                    .chars()
+                    .any(|c| c.is_control() || matches!(c, '/' | '\\'))
+        };
+        let valid = match self {
+            Self::LocalPath { path } => {
+                path.starts_with('/') && path.len() <= 4096 && !path.contains('\0')
+            }
+            Self::Theme {
+                names,
+                theme,
+                scale,
+            } => {
+                (1..=2).contains(&names.len())
+                    && names.iter().all(|name| valid_name(name))
+                    && valid_name(theme)
+                    && theme.is_ascii()
+                    && !theme.bytes().any(|c| c.is_ascii_whitespace() || c == b',')
+                    && (1..=8).contains(scale)
+            }
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(InvalidPanelContent)
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -248,6 +321,8 @@ pub struct StyledTextStyle {
 pub struct PanelMetadata {
     pub key: String,
     pub label: String,
+    /// Empty for a presence indicator: hosts may show a marker and expose `label`
+    /// through a tooltip and accessibility. Nonempty values remain labeled text.
     pub value: String,
 }
 
@@ -360,6 +435,7 @@ mod tests {
     fn panel_items_can_carry_generic_styled_text() {
         let item = PanelItem {
             id: "1".to_string(),
+            attribution: None,
             title: "Inbox".to_string(),
             body: Some("One unread".to_string()),
             styled_body: Some(StyledText {
@@ -385,6 +461,7 @@ mod tests {
     fn panel_items_can_carry_ordered_rich_body_content() {
         let item = PanelItem {
             id: "1".to_string(),
+            attribution: None,
             title: "Report".to_string(),
             body: Some("Open chart".to_string()),
             styled_body: None,

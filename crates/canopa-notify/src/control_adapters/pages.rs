@@ -18,6 +18,8 @@ enum Direction {
     First,
     Previous,
     Next,
+    Settings,
+    Notifications,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -27,12 +29,19 @@ struct Navigation {
     direction: Direction,
 }
 
+struct Page {
+    content: PanelContent,
+    next: Option<Position>,
+    order: std::collections::BTreeMap<String, NotificationCenterCursor>,
+}
+
 #[derive(Default)]
 pub(super) struct Session {
     generation: u64,
     current: Position,
     previous: std::collections::VecDeque<Position>,
     next: Option<Position>,
+    settings: bool,
 }
 
 impl Session {
@@ -55,6 +64,8 @@ impl Session {
             return false;
         }
         match navigation.direction {
+            Direction::Settings => self.settings = true,
+            Direction::Notifications => self.settings = false,
             Direction::First => {
                 self.current = Position::default();
                 self.previous.clear();
@@ -93,13 +104,25 @@ impl Session {
             .generation
             .checked_add(1)
             .ok_or_else(|| anyhow::anyhow!("panel generation exhausted"))?;
-        let (mut content, mut next) = page(control, self.current).await?;
-        if content.sections.is_empty() && self.current.after.is_some() {
+        let mut page = page(control, self.current).await?;
+        if page.content.sections.is_empty() && self.current.after.is_some() {
             self.current = Position::default();
             self.previous.clear();
-            (content, next) = page(control, self.current).await?;
+            page = self::page(control, self.current).await?;
         }
-        self.next = next;
+        self.next = page.next;
+        let mut content = present(page, self.settings);
+        content.actions.insert(
+            0,
+            navigation(
+                self.generation,
+                if self.settings {
+                    Direction::Notifications
+                } else {
+                    Direction::Settings
+                },
+            ),
+        );
         if self.current.after.is_some() || self.current.action_offset > 0 {
             content
                 .actions
@@ -121,6 +144,67 @@ impl Session {
     }
 }
 
+// Keep the bounded page and its position intact when switching views. Delivery
+// rules belong to the applications/categories on that page, including categories
+// collected across multiple rows. Only presentation changes here.
+fn present(page: Page, settings: bool) -> PanelContent {
+    let Page {
+        mut content, order, ..
+    } = page;
+    content.title = if settings {
+        "Notification settings"
+    } else {
+        "Notifications"
+    }
+    .into();
+    content.actions.retain(|action| {
+        action.key
+            == if settings {
+                PANEL_DELETE_HISTORY_KEY
+            } else {
+                PANEL_CLEAR_ACTIVE_KEY
+            }
+    });
+    for section in &mut content.sections {
+        if settings {
+            section.items.clear();
+            for control in &mut section.controls {
+                if control.key == PANEL_APP_PERMISSION_KEY {
+                    control.label = "Delivery".into();
+                }
+                for option in &mut control.options {
+                    option.label = match option.value.as_str() {
+                        "allow" => "Show banners",
+                        "silence" => "Save quietly",
+                        "drop" => "Block",
+                        _ => continue,
+                    }
+                    .into();
+                }
+            }
+        }
+    }
+    if settings {
+        content
+            .sections
+            .retain(|section| !section.controls.is_empty());
+    } else if !content.sections.is_empty() {
+        let mut items: Vec<_> = std::mem::take(&mut content.sections)
+            .into_iter()
+            .flat_map(|section| section.items)
+            .collect();
+        items.sort_by_key(|item| std::cmp::Reverse(order[&item.id]));
+        content.sections.push(PanelSection {
+            id: "notifications".into(),
+            title: String::new(),
+            icon: None,
+            items,
+            controls: Vec::new(),
+        });
+    }
+    content
+}
+
 fn navigation(generation: u64, direction: Direction) -> PanelAction {
     PanelAction {
         key: PAGE_KEY.into(),
@@ -128,6 +212,8 @@ fn navigation(generation: u64, direction: Direction) -> PanelAction {
             Direction::First => "First page",
             Direction::Next => "Next page",
             Direction::Previous => "Previous page",
+            Direction::Settings => "Settings",
+            Direction::Notifications => "Back to notifications",
         }
         .into(),
         value: Some(
@@ -140,12 +226,9 @@ fn navigation(generation: u64, direction: Direction) -> PanelAction {
     }
 }
 
-async fn page(
-    control: &NotifyControl,
-    mut position: Position,
-) -> anyhow::Result<(PanelContent, Option<Position>)> {
-    let mut content =
-        panel_content_from_projection(NotificationCenterProjection { groups: Vec::new() });
+async fn page(control: &NotifyControl, mut position: Position) -> anyhow::Result<Page> {
+    let mut content = panel_content_from_projection(NotificationCenterProjection::default());
+    let mut order = std::collections::BTreeMap::new();
     loop {
         let ControlReply::NotificationCenterBatch(batch) = control
             .execute(ControlCommand::NotificationCenterBatch {
@@ -157,7 +240,11 @@ async fn page(
             unreachable!("Center batch reply");
         };
         let Some(last) = batch.last else {
-            return Ok((content, None));
+            return Ok(Page {
+                content,
+                next: None,
+                order,
+            });
         };
         let mut projected = panel_content_from_projection(batch.projection);
         let mut section = projected
@@ -165,6 +252,7 @@ async fn page(
             .pop()
             .expect("one Center row has a section");
         let mut item = section.items.pop().expect("one Center row has an item");
+        order.insert(item.id.clone(), last);
         // V3's rich body is complete. Avoid serializing its plain/styled fallback
         // twice more; both supported renderers consume the ordered rich body.
         if item.rich_body.is_some() {
@@ -202,15 +290,20 @@ async fn page(
                 content.sections.pop();
             }
             if content.sections.is_empty() {
-                return Ok((
-                    PanelContent::error(
+                return Ok(Page {
+                    content: PanelContent::error(
                         "Canopa Notify",
                         "One stored notification exceeds the display budget.",
                     ),
-                    None,
-                ));
+                    next: None,
+                    order,
+                });
             }
-            return Ok((content, Some(position)));
+            return Ok(Page {
+                content,
+                next: Some(position),
+                order,
+            });
         }
         for (included, action) in actions.iter().skip(offset).enumerate() {
             content.sections[index]
@@ -235,23 +328,29 @@ async fn page(
                         content.sections.pop();
                     }
                     if content.sections.is_empty() {
-                        return Ok((
-                            PanelContent::error(
+                        return Ok(Page {
+                            content: PanelContent::error(
                                 "Canopa Notify",
                                 "One stored notification action exceeds the display budget.",
                             ),
-                            None,
-                        ));
+                            next: None,
+                            order,
+                        });
                     }
-                    return Ok((content, Some(position)));
+                    return Ok(Page {
+                        content,
+                        next: Some(position),
+                        order,
+                    });
                 }
-                return Ok((
+                return Ok(Page {
                     content,
-                    Some(Position {
+                    next: Some(Position {
                         after: position.after,
                         action_offset: offset + included,
                     }),
-                ));
+                    order,
+                });
             }
         }
         position = Position {

@@ -404,6 +404,15 @@ async fn installed_v5_provider_pages_large_history_without_losing_content() {
     large_history("canopa-v5").await;
 }
 async fn large_history(protocol: &str) {
+    fn app(index: usize) -> &'static str {
+        if index == 23 || index == 7 {
+            ""
+        } else if index.is_multiple_of(3) {
+            "Chat"
+        } else {
+            "Mail"
+        }
+    }
     let temp = tempfile::tempdir().unwrap();
     let database = temp.path().join("history.db");
     let socket = temp.path().join("control.sock");
@@ -411,15 +420,8 @@ async fn large_history(protocol: &str) {
         .await
         .unwrap();
     for index in 0..24 {
-        let mut input = notification_with_body(
-            if index == 23 || index == 7 {
-                ""
-            } else {
-                "Mail"
-            },
-            format!("Message {index}"),
-            "x".repeat(60_000),
-        );
+        let mut input =
+            notification_with_body(app(index), format!("Message {index}"), "x".repeat(60_000));
         input.category = Some(
             if index % 2 == 0 {
                 "email.arrived"
@@ -428,13 +430,19 @@ async fn large_history(protocol: &str) {
             }
             .into(),
         );
-        seed.receive_notification(input).await.unwrap();
+        input.app_icon =
+            canopa_notify::NotificationVisualReference::icon_name(format!("{}-icon", app(index)));
+        let receipt = seed.receive_notification(input).await.unwrap();
+        if index % 4 == 1 {
+            seed.dismiss_notification(receipt.notification_id)
+                .await
+                .unwrap();
+        }
     }
     drop(seed);
     let _daemon = start_daemon(&socket, &database);
     let (mut provider, output) = provider_for_protocol(&socket, protocol);
-    let mut seen = std::collections::BTreeSet::new();
-    for _ in 0..24 {
+    let read = || {
         let line = output
             .recv_timeout(Duration::from_secs(10))
             .unwrap()
@@ -457,76 +465,18 @@ async fn large_history(protocol: &str) {
             content.error
         );
         content.validate().unwrap();
-        for section in &content.sections {
-            assert!(!section.id.is_empty());
-            if section.title == "Unknown application" {
-                assert!(
-                    section.controls.is_empty(),
-                    "an absent app identity cannot own a persistent rule"
-                );
-                continue;
-            }
-            let categories: std::collections::BTreeSet<_> = section
-                .items
-                .iter()
-                .map(|item| {
-                    let index: usize = item
-                        .title
-                        .strip_prefix("Message ")
-                        .unwrap()
-                        .parse()
-                        .unwrap();
-                    if index.is_multiple_of(2) {
-                        "email.arrived"
-                    } else {
-                        "email.error"
-                    }
-                })
-                .collect();
-            assert_eq!(
-                section.controls.len(),
-                categories.len() + 1,
-                "category controls must be deduplicated and page-local"
-            );
-            for category in categories {
-                assert!(
-                    section
-                        .controls
-                        .iter()
-                        .any(|control| control.key.ends_with(category)),
-                    "missing category permission for {category}"
-                );
-            }
-        }
-        for item in content.sections.iter().flat_map(|section| &section.items) {
-            assert!(
-                seen.insert(item.title.clone()),
-                "a stable notification appeared on two pages"
-            );
-            let body = item.rich_body.as_ref().unwrap();
-            assert_eq!(
-                body.segments
-                    .iter()
-                    .filter_map(|segment| match segment {
-                        canopa_panel_protocol::RichBodySegment::Text { text, .. } =>
-                            Some(text.len()),
-                        _ => None,
-                    })
-                    .sum::<usize>(),
-                60_000
-            );
-        }
-        let Some(next) = content
+        (content, revision)
+    };
+    let mut send = |content: &PanelContent, revision, label: &str| {
+        let action = content
             .actions
             .iter()
-            .find(|action| action.label == "Next page")
-        else {
-            break;
-        };
+            .find(|action| action.label == label)
+            .unwrap();
         let event = canopa_panel_protocol::InteractionEvent::Invoke {
             target: canopa_panel_protocol::InteractionTarget::Content,
-            action_key: next.key.clone(),
-            value: next.value.clone(),
+            action_key: action.key.clone(),
+            value: action.value.clone(),
         };
         let bytes = match revision {
             Some(revision) => canopa_panel_protocol::v5::HostMessage::event(
@@ -544,6 +494,130 @@ async fn large_history(protocol: &str) {
             .unwrap()
             .write_all(&bytes)
             .unwrap();
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..24 {
+        let (content, revision) = read();
+        assert_eq!(content.title, "Notifications");
+        assert!(
+            content
+                .sections
+                .iter()
+                .all(|section| section.controls.is_empty())
+        );
+        assert!(
+            !content
+                .actions
+                .iter()
+                .any(|action| action.key == "canopa-notify:delete-history")
+        );
+        send(&content, revision, "Settings");
+        let (settings, revision) = read();
+        assert_eq!(settings.title, "Notification settings");
+        assert!(
+            settings
+                .sections
+                .iter()
+                .all(|section| section.items.is_empty())
+        );
+        assert!(
+            settings
+                .actions
+                .iter()
+                .any(|action| action.key == "canopa-notify:delete-history")
+        );
+        assert_eq!(
+            content.sections.len(),
+            1,
+            "reading order must not be split by app"
+        );
+        assert!(
+            !settings.sections.iter().any(|section| section.id == "app/"),
+            "an absent app identity cannot own a persistent rule"
+        );
+        let mut categories_by_app =
+            std::collections::BTreeMap::<_, std::collections::BTreeSet<_>>::new();
+        for item in &content.sections[0].items {
+            let index: usize = item
+                .title
+                .strip_prefix("Message ")
+                .unwrap()
+                .parse()
+                .unwrap();
+            if !app(index).is_empty() {
+                categories_by_app.entry(app(index)).or_default().insert(
+                    if index.is_multiple_of(2) {
+                        "email.arrived"
+                    } else {
+                        "email.error"
+                    },
+                );
+            }
+        }
+        assert_eq!(settings.sections.len(), categories_by_app.len());
+        for (app, categories) in categories_by_app {
+            let section = settings
+                .sections
+                .iter()
+                .find(|section| section.id == format!("app/{app}"))
+                .unwrap();
+            assert_eq!(section.title, app);
+            assert!(
+                matches!(&section.icon, Some(canopa_panel_protocol::PanelIcon::Theme { names, .. }) if names == &[format!("{app}-icon")])
+            );
+            assert_eq!(
+                section.controls.len(),
+                categories.len() + 1,
+                "category controls must be deduplicated and page-local"
+            );
+            for category in categories {
+                assert!(
+                    section
+                        .controls
+                        .iter()
+                        .any(|control| control.key.ends_with(category)),
+                    "missing category permission for {category}"
+                );
+            }
+        }
+        send(&settings, revision, "Back to notifications");
+        let (returned, revision) = read();
+        assert_eq!(
+            returned.sections, content.sections,
+            "settings must preserve the reading position"
+        );
+        let content = returned;
+        for item in content.sections.iter().flat_map(|section| &section.items) {
+            assert_eq!(
+                item.title,
+                format!("Message {}", 23 - seen.len()),
+                "newest-first order must survive interleaved apps, attention states and page boundaries"
+            );
+            assert!(
+                seen.insert(item.title.clone()),
+                "a stable notification appeared on two pages"
+            );
+            let body = item.rich_body.as_ref().unwrap();
+            assert_eq!(
+                body.segments
+                    .iter()
+                    .filter_map(|segment| match segment {
+                        canopa_panel_protocol::RichBodySegment::Text { text, .. } =>
+                            Some(text.len()),
+                        _ => None,
+                    })
+                    .sum::<usize>(),
+                60_000
+            );
+        }
+        if !content
+            .actions
+            .iter()
+            .any(|action| action.label == "Next page")
+        {
+            break;
+        }
+        send(&content, revision, "Next page");
     }
     assert_eq!(
         seen.len(),
@@ -608,6 +682,15 @@ async fn paginated_views_navigate_independently_and_reject_stale_navigation() {
     };
     let first = read(&mut a);
     let independent_first = read(&mut b);
+    assert_eq!(titles(&first), titles(&independent_first));
+    send(&mut a, &first, "Settings");
+    let settings = read(&mut a);
+    assert_eq!(settings.title, "Notification settings");
+    assert!(titles(&settings).is_empty());
+    // An obsolete view change cannot consume the current Back event.
+    send(&mut a, &first, "Settings");
+    send(&mut a, &settings, "Back to notifications");
+    let first = read(&mut a);
     assert_eq!(titles(&first), titles(&independent_first));
     send(&mut a, &first, "Next page");
     let second = read(&mut a);

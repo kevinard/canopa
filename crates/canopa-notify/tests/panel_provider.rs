@@ -26,7 +26,7 @@ fn panel_provider_returns_provider_visible_error_when_daemon_is_unavailable() {
 }
 
 #[tokio::test]
-async fn panel_provider_renders_grouped_notification_history_from_daemon_snapshot() {
+async fn panel_provider_renders_notification_history_from_daemon_snapshot() {
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("control.sock");
     let database = temp.path().join("history.db");
@@ -34,13 +34,9 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
     let seed = Daemon::open(DaemonOptions::headless(database.clone()))
         .await
         .unwrap();
-    seed.receive_notification(notification_with_body(
-        "Mail",
-        "Inbox",
-        "<b>One</b> unread message",
-    ))
-    .await
-    .unwrap();
+    let mut message = notification_with_body("Mail", "Inbox", "<b>One</b> unread message");
+    message.app_icon = canopa_notify::NotificationVisualReference::icon_name("mail-unread");
+    seed.receive_notification(message).await.unwrap();
     drop(seed);
 
     let mut daemon = support::spawn_canopa_notify([
@@ -68,8 +64,22 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
     assert_eq!(protocol_version, 4);
 
     assert_eq!(content.sections.len(), 1);
-    assert_eq!(content.sections[0].id, "app/Mail");
+    assert_eq!(content.sections[0].id, "notifications");
     assert_eq!(content.sections[0].items[0].title, "Inbox");
+    let source = content.sections[0].items[0].attribution.as_ref().unwrap();
+    assert_eq!(source.label, "Mail");
+    assert!(
+        matches!(&source.icon, Some(canopa_panel_protocol::PanelIcon::Theme { names, theme, scale })
+        if names == &["mail-unread"] && theme == "hicolor" && *scale == 1)
+    );
+    let metadata = &content.sections[0].items[0].metadata;
+    assert_eq!(
+        metadata.len(),
+        1,
+        "cards carry only the attention indicator"
+    );
+    assert_eq!(metadata[0].label, "Unread");
+    assert!(metadata[0].value.is_empty());
     let body = content.sections[0].items[0].rich_body.as_ref().unwrap();
     assert!(
         matches!(&body.segments[0], RichBodySegment::Text { text, style } if text == "One" && style.bold)
@@ -84,9 +94,12 @@ async fn panel_provider_renders_grouped_notification_history_from_daemon_snapsho
             .collect::<String>(),
         "One unread message"
     );
-    assert_eq!(
-        content.sections[0].controls[0].key,
-        "canopa-notify:app-permission"
+    assert!(content.sections[0].controls.is_empty());
+    assert!(
+        content
+            .actions
+            .iter()
+            .any(|action| action.label == "Settings")
     );
     assert!(line.contains("\"protocol_version\":4"));
 

@@ -9,6 +9,25 @@ the count or opening the Center does not acknowledge notifications.
 - `DND` means banners and sound are silenced according to notification policy.
 - `?` and an unavailable tooltip mean Notify cannot be reached; the shell retries.
 
+The Center opens on a single list of messages, newest first by notification date.
+Cards use the banner layout:
+an app icon on the left, message content beside it, a quiet app name, and actions
+below. Missing icons use the app's initial. A small dot beside a message
+means it still requires attention; hovering it or using a screen reader identifies
+it as **Unread**. Acknowledged and transient notifications have no status label.
+Opening the Center does not acknowledge notifications.
+Use **Settings** for delivery rules for the apps and categories on the current
+page. Each app is identified by its icon and name. Choose **Show banners**, **Save quietly**, or **Block** future notifications.
+**Back to notifications** returns to the same page. **Clear active notifications**
+dismisses live notifications; **Delete notification history**, in Settings,
+removes inactive history. With a large history, page navigation is available in
+both views.
+
+The Center defaults to 480 logical pixels wide and fills the usable screen height,
+with space reserved beside scrolling cards for the scrollbar. Reading and Settings
+keep the same size. Explicit `panel` width/height values and maximums still apply;
+omit those values to use automatic sizing.
+
 Custom shell layouts can place `"notifications"` in a bar or panel zone. An optional
 `module "notifications"` declaration accepts `format`, `expanded-format`,
 `horizontal-format`, `tooltip`, and ordinary `actions`. Format values are `{icon}`,

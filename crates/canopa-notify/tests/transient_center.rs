@@ -258,9 +258,8 @@ async fn provider_marks_transient_items_and_routes_every_action_to_the_live_send
     assert_eq!(content.sections.len(), 1);
     let item = &content.sections[0].items[0];
     assert!(
-        item.metadata
-            .iter()
-            .any(|entry| entry.key == "retention" && entry.value == "Runtime only")
+        item.metadata.is_empty(),
+        "transient retention is not card content"
     );
     let body = item.rich_body.as_ref().unwrap();
     assert!(
@@ -552,13 +551,14 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
         let dismissal = &item.actions[0];
         assert_eq!(dismissal.key, "canopa-notify:activate-item");
         assert_eq!(dismissal.label, "Dismiss notification");
-        assert!(item.metadata.iter().any(|entry| entry.key == "retention"
-            && entry.value
-                == if transient {
-                    "Runtime only"
-                } else {
-                    "Requires attention"
-                }));
+        assert_eq!(item.metadata.len(), usize::from(!transient));
+        if !transient {
+            assert_eq!(item.metadata[0].label, "Unread");
+            assert!(
+                item.metadata[0].value.is_empty(),
+                "attention is an indicator, not a status line"
+            );
+        }
         provider
             .invoke(&item.id, &dismissal.key, dismissal.value.clone())
             .await;
@@ -578,10 +578,8 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
             assert_eq!(historical.id, item.id);
             assert!(historical.actions.is_empty());
             assert!(
-                historical
-                    .metadata
-                    .iter()
-                    .any(|entry| entry.key == "status" && entry.value == "dismissed")
+                historical.metadata.is_empty(),
+                "acknowledged cards need no state label"
             );
         }
     }

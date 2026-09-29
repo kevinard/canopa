@@ -17,6 +17,9 @@ v1/v4 semantic primitives rather than copying them into another schema. Neither
 mode carries executable commands, toolkit widgets or host focus/search/image state.
 Mixing form fields into rich sections is deferred until an actual consumer needs it.
 
+[ADR 0010](0010-rich-item-source-attribution.md) adds optional source attribution
+to rich items while preserving existing item decoding and interaction behavior.
+
 Every response has `protocol_version: 5`, a nonzero `revision`, and `content`.
 Responses fit in 1 MiB including the newline. Host events carry the same version,
 the captured revision, and a typed `interaction`; close carries just the version.

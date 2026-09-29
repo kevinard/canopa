@@ -1,5 +1,13 @@
 //! Shared body selection and unambiguous native/widget identity.
-use canopa_panel_protocol::{PanelItem, RichBody, StyledText};
+use canopa_panel_protocol::{PanelItem, PanelMetadata, RichBody, StyledText};
+
+pub(super) fn metadata_label(metadata: &PanelMetadata) -> String {
+    if metadata.value.is_empty() {
+        metadata.label.clone()
+    } else {
+        format!("{}: {}", metadata.label, metadata.value)
+    }
+}
 
 pub(super) enum Body<'a> {
     Rich(&'a RichBody),
@@ -26,6 +34,7 @@ pub enum Node {
     Error,
     Section(String),
     Item(String),
+    Attribution(String),
     Control(String, String),
     Body(String, Option<usize>),
     Metadata(String, usize),

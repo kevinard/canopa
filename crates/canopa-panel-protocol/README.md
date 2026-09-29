@@ -21,6 +21,14 @@ remain available alongside the explicitly selected v5 successor; hosts never gue
 a protocol. All v4 provider responses carry version 4; v1 establishes version 1 in
 its handshake. Existing wire field names and limits are unchanged.
 
+Rich items may include optional `attribution` with a source label and local/theme
+icon reference. Older readers ignore this field; omission preserves the original
+item wire shape. Rust constructors without source identity use `attribution: None`.
+Sections may include an optional `icon` of the same type beside their title;
+omission preserves their wire shape too. Rust constructors use `icon: None`
+when unused.
+See [ADR 0010](../../docs/adr/0010-rich-item-source-attribution.md).
+
 `v4::Frame` validates the complete replacement, including content identifiers and
 actions. v1 callers validate `ExternalPanelDocument` before displaying replacements;
 `perform_handshake` also validates the initial document. Read errors terminate the

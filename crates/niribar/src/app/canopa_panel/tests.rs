@@ -132,6 +132,155 @@ impl Operation for TextBounds {
     }
 }
 
+#[tokio::test]
+async fn scrolling_cards_leave_room_for_the_scrollbar() {
+    struct CardBounds {
+        id: iced::widget::Id,
+        card: Option<Rectangle>,
+        scroll: Option<(Rectangle, Rectangle)>,
+    }
+    impl Operation for CardBounds {
+        fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation)) {
+            operate(self);
+        }
+
+        fn container(&mut self, id: Option<&iced::widget::Id>, bounds: Rectangle) {
+            if id == Some(&self.id) {
+                self.card = Some(bounds);
+            }
+        }
+
+        fn scrollable(
+            &mut self,
+            _: Option<&iced::widget::Id>,
+            bounds: Rectangle,
+            content: Rectangle,
+            _: iced::Vector,
+            _: &mut dyn iced::advanced::widget::operation::Scrollable,
+        ) {
+            self.scroll = Some((bounds, content));
+        }
+    }
+    let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
+        .await
+        .expect("software renderer");
+    let snapshot = long_title_snapshot().await;
+    for width in [220.0, 360.0, 480.0] {
+        let mut view = render(&snapshot, "notifications", false);
+        let mut tree = Tree::new(view.as_widget());
+        let node = view.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &layout::Limits::new(Size::ZERO, Size::new(width, 180.0)),
+        );
+        let mut bounds = CardBounds {
+            id: super::super::canopa_accessibility_bounds::widget_id(&semantic_key(
+                &snapshot,
+                "notifications",
+                &SemanticNode::Item("message".into()),
+            )),
+            card: None,
+            scroll: None,
+        };
+        view.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut bounds);
+        let card = bounds.card.expect("notification card");
+        let (viewport, content) = bounds.scroll.expect("reading viewport");
+        assert!(content.height > viewport.height, "fixture must scroll");
+        // Default Iced scrollbar is 10 px wide; keep another 6 px clear.
+        assert!(
+            card.x + card.width <= viewport.x + viewport.width - 16.0,
+            "card overlaps the scrollbar at width {width}: {card:?}, viewport {viewport:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
+    let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
+        .await
+        .expect("software renderer");
+    let long_label = "Open the complete conversation in the application and show all replies";
+    let content = serde_json::json!({
+        "type": "replace_content", "protocol_version": 4,
+        "content": {
+            "title": "Notifications", "actions": [], "error": null,
+            "sections": [{"id": "mail", "title": "Mail", "controls": [],
+                "items": [{"id": "message", "title": "New message", "body": "Hello",
+                    "attribution": {"label":"Mail", "icon":{"kind":"local_path", "path":"/missing-source.png"}},
+                    "metadata": [{"key": "flag", "label": "Unread", "value": ""}], "actions": [
+                        {"key": "reply", "label": "Reply"},
+                        {"key": "dismiss", "label": "Dismiss"},
+                        {"key": "open", "label": long_label}
+                    ]
+                }]
+            }]
+        }
+    });
+    let bytes = (serde_json::to_string(&content).unwrap() + "\n").into_bytes();
+    let snapshot = CanopaSession::default()
+        .read_content(&mut tokio::io::BufReader::new(bytes.as_slice()))
+        .await
+        .unwrap();
+    for width in [220.0, 360.0] {
+        let viewport = Rectangle::with_size(Size::new(width, 600.0));
+        let mut view = render(&snapshot, "notifications", false);
+        let mut tree = Tree::new(view.as_widget());
+        let node = view.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &layout::Limits::new(Size::ZERO, viewport.size()),
+        );
+        let mut labels = TextBounds::default();
+        view.as_widget_mut()
+            .operate(&mut tree, Layout::new(&node), &renderer, &mut labels);
+        let bounds = |label| labels.0.iter().find(|(text, _)| text == label).unwrap().1;
+        assert_eq!(
+            labels.0.iter().filter(|(label, _)| label == "Mail").count(),
+            1,
+            "source label must replace the duplicate group heading"
+        );
+        assert!(
+            bounds("New message").x >= bounds("M").x + 20.0,
+            "the fallback badge belongs beside the content"
+        );
+        assert_eq!(bounds("Mail").x, bounds("Hello").x);
+        assert!(bounds("Mail").y > bounds("Hello").y);
+        assert!(
+            labels.0.iter().all(|(label, _)| !label.contains("Unread")),
+            "presence indicators must not add a visible metadata line"
+        );
+        let key = semantic_key(
+            &snapshot,
+            "notifications",
+            &SemanticNode::Metadata("message".into(), 0),
+        );
+        let mut measure = crate::app::canopa_accessibility_bounds::Measure::new(
+            std::iter::once(key.clone()),
+            Default::default(),
+        );
+        view.as_widget_mut().operate(
+            &mut tree,
+            Layout::new(&node),
+            &renderer,
+            &mut iced::advanced::widget::operation::black_box(&mut measure),
+        );
+        let marker = measure.bounds[&key];
+        assert!(marker.width > 0.0 && marker.width <= 20.0 && marker.height <= 20.0);
+        assert!(marker.y < bounds("Hello").y && viewport.contains(marker.center()));
+        let reply = bounds("Reply");
+        let dismiss = bounds("Dismiss");
+        let long = bounds(long_label);
+        assert_eq!(reply.y, dismiss.y, "short actions should share one row");
+        assert!(dismiss.x > reply.x);
+        assert!(long.y > reply.y && long.height > reply.height);
+        for area in [reply, dismiss, long] {
+            assert!(viewport.contains(area.position()));
+            assert!(viewport.contains(iced::Point::new(area.x + area.width, area.y + area.height)));
+        }
+    }
+}
+
 async fn long_title_snapshot() -> CanopaSnapshot {
     let content = serde_json::json!({
         "type": "replace_content", "protocol_version": 4,
@@ -140,6 +289,7 @@ async fn long_title_snapshot() -> CanopaSnapshot {
             "actions": [{"key": "refresh", "label": "Refresh", "value": null}],
             "sections": [{"id": "mail", "title": "Mail", "controls": [],
                 "items": [{"id": "message", "title": "Long contextual title ".repeat(50),
+                    "attribution": {"label":"Mail"},
                     "body": "The notification body", "metadata": [],
                     "actions": [
                         {"key": "open", "label": "Open notification", "value": "revision-bound"},

@@ -250,17 +250,18 @@ pub struct ControlStatus {
     pub timeout_records: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationCenterProjection {
     pub groups: Vec<NotificationCenterGroup>,
+    #[serde(default)]
+    pub icon_settings: crate::BannerIconSettings,
 }
 
-/// Exclusive keyset position in the retained/runtime Center ordering. It carries
+/// Exclusive keyset position in newest-first creation order, with ID as tie-breaker. It carries
 /// no notification content and does not authorize interactions with an item.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(deny_unknown_fields)]
 pub struct NotificationCenterCursor {
-    pub(crate) requires_attention: bool,
     pub(crate) created_at: i64,
     pub(crate) id: InternalNotificationId,
 }
@@ -268,7 +269,6 @@ pub struct NotificationCenterCursor {
 impl NotificationCenterCursor {
     pub(crate) fn for_thread(thread: &NotificationThread) -> Self {
         Self {
-            requires_attention: thread.requires_attention,
             created_at: thread.created_at,
             id: thread.id,
         }
@@ -298,6 +298,10 @@ pub struct CategoryPermissionControl {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationCenterItem {
+    #[serde(default)]
+    pub app_name: String,
+    #[serde(default)]
+    pub app_icon: Option<crate::NotificationVisualReference>,
     #[serde(default)]
     pub requires_attention: bool,
     pub notification_id: InternalNotificationId,

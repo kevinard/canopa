@@ -662,7 +662,7 @@ _Avoid_: Unavailable module, runtime failure
 - A **Panel** renders as an overlay and does not reserve exclusive output space.
 - A **Panel** opens beside the **Edge** of its originating **Bar Surface**.
 - A module-originated **Panel** with automatic presentation aligns to the originating **Module** when its bounds are available and falls back to the **Bar Surface** otherwise.
-- A **Bar** may select drawer presentation for its **Panels**. On a vertical **Bar**, every content kind uses a consistent width and fills the usable vertical edge unless configured dimensions or caps override it. A capped drawer stays at the start of the usable edge, independently of its **Panel Origin**. Horizontal **Bars** retain automatic presentation.
+- A **Bar** may select drawer presentation for its **Panels**. On a vertical **Bar**, ordinary content uses a consistent width and fills the usable vertical edge unless configured dimensions or caps override it. The Notification Center prefers a wider reading area. A capped drawer stays at the start of the usable edge, independently of its **Panel Origin**. Horizontal **Bars** retain automatic presentation.
 - A drawer shows the active **Panel** content, with a title and an explicit close control. **Modules** on the **Bar Surface** select content; a drawer does not add a second section-navigation model.
 - Drawer and automatic **Panel** presentation share title/close chrome, body spacing, menu rows and focus treatment. Content-preferred sizes include the common chrome; explicit dimensions and caps remain authoritative.
 - **Foreground** may retain one inert outgoing **Panel** presentation for a bounded exit animation after logical interaction ends. It cannot receive input, provider updates or accessibility actions. Replacement or origin removal discards it, and its completion cannot clear a newer **Panel**.
@@ -672,7 +672,7 @@ _Avoid_: Unavailable module, runtime failure
 - A **Panel** may remain open when focus moves from the originating **Bar Surface** into the **Panel**.
 - Escape closes a **Panel** unless the active **Panel** content has a more specific first-Escape behavior.
 - Omitting an exact configured **Panel** dimension lets **Panel Sizing** choose that dimension from content, **Edge Span** fill behavior, or fallback defaults.
-- Automatic **Panel Sizing** keeps **Module Detail Content** compact with content-preferred sizes. Provider popovers prefer a stable 600-logical-pixel height for lists and forms, bounded by a known vertical bar span and configured height limits.
+- Automatic **Panel Sizing** keeps **Module Detail Content** compact with content-preferred sizes. Provider popovers prefer a stable 600-logical-pixel height for lists and forms, bounded by a known vertical bar span and configured height limits. The `notifications` provider instead prefers 480 logical pixels of width and fills the usable screen height on every edge. Its loading, reading and settings views share the same geometry; explicit dimensions and caps still apply.
 - **Panel Sizing** uses **Edge Span** fill sizing for **Panel Menu** content and a **Bar**'s configured panel module layout.
 - **Panel Sizing** treats explicit configured dimensions as overrides and configured maximum dimensions as caps.
 - **Panel Sizing** produces a **Panel Physical Plan** before the application adapter opens the physical **Panel** overlay window.
@@ -700,6 +700,7 @@ _Avoid_: Unavailable module, runtime failure
 - **External Panel Content** cannot ask Niribar to run arbitrary **Configured Commands**.
 - User interactions with **External Panel Content** are sent to the **External Panel Provider** as typed events addressed by **External Panel Element IDs**.
 - Niribar does not interpret **External Panel Element IDs** as domain meaning.
+- Rich **External Panel Content** may attribute an item to a source label and local/theme icon, and decorate section titles with the same icon type. The host prepares bounded icon assets off the UI thread, renders a decorative icon or initial badge, and exposes the label to native accessibility. Duplicate section headings may be omitted when all items already name that source ([Canopa ADR 0010](../adr/0010-rich-item-source-attribution.md)).
 - **External Panel Content** may include **External Selectable Lists**.
 - Niribar owns **Selectable Search** state and matching for **External Selectable Lists** unless a later provider-filtered list mode is introduced.
 - The first **External Panel Content** model supports only a small set of primitives needed for list selection, text entry, status, and simple actions.

@@ -20,6 +20,7 @@ pub(super) fn menu_render_range(
 
 const DEFAULT_PANEL_FALLBACK_WIDTH: u32 = 360;
 const DEFAULT_PANEL_FALLBACK_HEIGHT: u32 = 600;
+const NOTIFICATION_CENTER_WIDTH: u32 = 480;
 const PANEL_OUTER_PADDING: u32 = 2 * canopa_ui::panel::PADDING as u32;
 const PANEL_MODULE_FRAME_H_PADDING: u32 = 20;
 const PANEL_MODULE_FRAME_V_PADDING: u32 = 16;
@@ -107,13 +108,26 @@ struct PanelContentSizeHint {
     preferred_width: Option<u32>,
     preferred_height: Option<u32>,
     fill_edge_span: bool,
+    fill_height: bool,
 }
 
 pub(super) fn panel_physical_plan<F>(mut input: PanelSizingInput<'_, F>) -> PanelPhysicalPlan
 where
     F: FnMut(&ModuleId) -> Option<PanelPreferredSize>,
 {
-    let hint = if input.bar.uses_drawer() {
+    let is_notification_center = matches!(
+        &input.tree.content,
+        PanelContent::ExternalProvider(provider) if provider.provider_name == "notifications"
+    );
+    // The Center is a reading surface even while loading or showing settings.
+    // Its geometry must not depend on the current provider document.
+    let hint = if is_notification_center {
+        PanelContentSizeHint {
+            preferred_width: Some(NOTIFICATION_CENTER_WIDTH),
+            fill_height: true,
+            ..Default::default()
+        }
+    } else if input.bar.uses_drawer() {
         PanelContentSizeHint {
             preferred_width: Some(DEFAULT_PANEL_FALLBACK_WIDTH),
             fill_edge_span: true,
@@ -123,7 +137,7 @@ where
         panel_content_size_hint(&mut input)
     };
     let fill_width = hint.fill_edge_span && input.bar.edge.is_horizontal();
-    let fill_height = hint.fill_edge_span && !input.bar.edge.is_horizontal();
+    let fill_height = hint.fill_height || (hint.fill_edge_span && !input.bar.edge.is_horizontal());
     let width = resolve_panel_dimension(
         input.bar.panel.width,
         input.bar.panel.max_width,
@@ -138,13 +152,19 @@ where
         hint.preferred_height,
         DEFAULT_PANEL_FALLBACK_HEIGHT,
         fill_height,
-        input.tree.screen_size.1,
+        // A horizontal bar reports its thickness, not the output height. Let
+        // layer-shell fill the usable area, or use an explicit configured cap.
+        if input.bar.edge.is_horizontal() {
+            0
+        } else {
+            input.tree.screen_size.1
+        },
     );
     let placement = crate::surface::placement::centered_position(
         &input.bar.edge,
         // Even a height-capped drawer stays at the start of the usable edge.
         // Switching modules must not move it to the new module's position.
-        if input.bar.uses_drawer() {
+        if input.bar.uses_drawer() || (hint.fill_height && !input.bar.edge.is_horizontal()) {
             None
         } else {
             input.tree.anchor
@@ -195,6 +215,7 @@ where
                 preferred_width: Some(preferred.width),
                 preferred_height: Some(preferred.height),
                 fill_edge_span: true,
+                ..Default::default()
             }
         }
         PanelContent::ExternalProvider(_) => PanelContentSizeHint {
@@ -211,14 +232,14 @@ where
                     DEFAULT_PANEL_FALLBACK_HEIGHT
                 },
             ),
-            fill_edge_span: false,
+            ..Default::default()
         },
         PanelContent::ModulePanel(id) => (input.module_detail_preferred_size)(id)
             .map(panel_module_window_size)
             .map(|preferred| PanelContentSizeHint {
                 preferred_width: Some(preferred.width),
                 preferred_height: Some(preferred.height),
-                fill_edge_span: false,
+                ..Default::default()
             })
             .unwrap_or_default(),
         PanelContent::BarPanel => bar_panel_preferred_size(
@@ -229,6 +250,7 @@ where
             preferred_width: Some(preferred.width),
             preferred_height: Some(preferred.height),
             fill_edge_span: true,
+            ..Default::default()
         })
         .unwrap_or(PanelContentSizeHint {
             fill_edge_span: true,
@@ -486,7 +508,7 @@ mod tests {
                 edge,
                 ..BarConfig::default()
             };
-            for provider in ["wifi", "notifications"] {
+            for provider in ["wifi", "custom"] {
                 let tree = tree(
                     PanelContent::ExternalProvider(ExternalPanelContent::failure(
                         provider, "Loading",
@@ -495,6 +517,57 @@ mod tests {
                 );
                 let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
                 assert_eq!(plan.layer_size(), (360, 600));
+            }
+        }
+    }
+
+    #[test]
+    fn notification_center_is_wider_and_fills_height_on_every_edge() {
+        use crate::surface::panel::ExternalPanelContent;
+        for edge in [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom] {
+            for presentation in [
+                crate::config::PanelPresentation::Auto,
+                crate::config::PanelPresentation::Drawer,
+            ] {
+                let mut bar = BarConfig {
+                    edge: edge.clone(),
+                    ..BarConfig::default()
+                };
+                bar.panel.presentation = presentation;
+                let screen_size = if edge.is_horizontal() {
+                    (1920, 48)
+                } else {
+                    (48, 1080)
+                };
+                let mut tree = tree(
+                    PanelContent::ExternalProvider(ExternalPanelContent::failure(
+                        "notifications",
+                        "Loading",
+                    )),
+                    screen_size,
+                );
+                tree.anchor = Some(iced::Rectangle::new(
+                    iced::Point::new(900.0, 980.0),
+                    iced::Size::new(48.0, 30.0),
+                ));
+                let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
+                assert_eq!(plan.layer_size(), (480, 0));
+                if !edge.is_horizontal() {
+                    assert_eq!(plan.placement.position.y, 0);
+                }
+                // A top/bottom bar's thickness is not the available height.
+                bar.panel.max_width = Some(420);
+                bar.panel.max_height = Some(500);
+                assert_eq!(
+                    plan_with(&bar, &tree, &[], empty_menu(), |_| None).layer_size(),
+                    (420, 500)
+                );
+                bar.panel.width = Some(400);
+                bar.panel.height = Some(450);
+                assert_eq!(
+                    plan_with(&bar, &tree, &[], empty_menu(), |_| None).layer_size(),
+                    (400, 450)
+                );
             }
         }
     }

@@ -194,6 +194,8 @@ registry=$!
         &SemanticNode::Action(link_id.clone()),
     )];
     bridge.set_bounds(bounds);
+    named(&connection, "Unread").await;
+    named(&connection, "Mail source").await;
     named(&connection, "Before image").await;
     named(&connection, "After image").await;
     named(&connection, "Chart alternative").await;
@@ -397,13 +399,14 @@ async fn content(session: &mut CanopaSession, fourth: &str) -> CanopaSnapshot {
         "content": { "title": "Notifications", "error": null, "actions": [],
             "sections": [{ "id": "mail", "title": "Mail", "controls": [],
                 "items": [{ "id": "message", "title": "New message", "body": "Before image Chart alternative After image",
+                    "attribution": {"label":"Mail source"},
                     "rich_body": {"segments": [
                         {"kind": "text", "text": "Before image", "style": {"bold": false, "italic": false, "underline": false}},
                         {"kind": "image", "image": {"source": {"kind": "local_path", "path": "/missing-chart.png"}, "alt": "Chart alternative"}},
                         {"kind": "text", "text": "After image", "style": {"bold": false, "italic": false, "underline": false}},
                         {"kind":"link", "uri":"https://example.org/page", "action":{"key":"body-link", "label":"Read online", "value":"link-revision"}, "style":{"bold":true,"italic":false,"underline":false}}
                     ]},
-                    "metadata": [], "actions": [
+                    "metadata": [{"key": "flag", "label": "Unread", "value": ""}], "actions": [
                         {"key": "first", "label": "First action", "value": null},
                         {"key": "second", "label": "Second action", "value": null},
                         {"key": "third", "label": "Third action", "value": null},

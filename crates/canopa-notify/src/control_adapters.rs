@@ -6,8 +6,8 @@ use canopa_notify::{
     NotifyControl, normalize_notification_category,
 };
 use canopa_panel_protocol::{
-    InteractionEvent, InteractionTarget, PanelAction, PanelContent, PanelControl,
-    PanelControlOption, PanelItem, PanelMetadata, PanelSection, RichBody, RichBodyImage,
+    InteractionEvent, InteractionTarget, PanelAction, PanelAttribution, PanelContent, PanelControl,
+    PanelControlOption, PanelIcon, PanelItem, PanelMetadata, PanelSection, RichBody, RichBodyImage,
     RichBodyImageSource, RichBodySegment, StyledText, StyledTextRun, StyledTextStyle,
 };
 mod pages;
@@ -365,109 +365,120 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
         sections: projection
             .groups
             .into_iter()
-            .map(|group| PanelSection {
-                id: format!("app/{}", group.app_identity),
-                title: if group.app_identity.is_empty() {
-                    "Unknown application".into()
-                } else {
-                    group.app_identity.clone()
-                },
-                items: group
+            .map(|group| {
+                let label = group
                     .items
-                    .into_iter()
-                    .map(|item| PanelItem {
-                        id: item.notification_id.to_string(),
-                        title: item.summary,
-                        body: (!item.body.is_empty()).then_some(item.body),
-                        styled_body: styled_text_from_body_content(item.body_content.clone()),
-                        rich_body: rich_body_from_body_content(
-                            item.body_content,
-                            item.target.clone(),
-                        ),
-                        metadata: vec![
-                            PanelMetadata {
-                                key: "retention".to_string(),
-                                label: "Retention".to_string(),
-                                value: if item.transient {
-                                    "Runtime only"
-                                } else if item.requires_attention {
-                                    "Requires attention"
-                                } else {
-                                    "Archive"
-                                }
-                                .to_string(),
-                            },
-                            PanelMetadata {
-                                key: "status".to_string(),
-                                label: "Status".to_string(),
-                                value: item.status.as_str().to_string(),
-                            },
-                            PanelMetadata {
-                                key: "delivery_outcome".to_string(),
-                                label: "Delivery outcome".to_string(),
-                                value: item.delivery_outcome.as_str().to_string(),
-                            },
-                        ],
-                        actions: item
-                            .actions
-                            .into_iter()
-                            .map(|action| {
-                                panel_center_action(
-                                    item.target.clone(),
-                                    NotificationCenterAction::InvokeAction {
-                                        action_key: action.key,
-                                    },
-                                    action.label,
-                                )
-                            })
-                            .chain(
-                                (item.status == canopa_notify::NotificationStatus::Active).then(
-                                    || {
-                                        panel_center_action(
-                                            item.target.clone(),
-                                            NotificationCenterAction::Activate,
-                                            if item.has_default_action {
-                                                "Open notification"
-                                            } else {
-                                                "Dismiss notification"
-                                            }
-                                            .to_string(),
-                                        )
-                                    },
-                                ),
-                            )
-                            .chain(
-                                ((item.requires_attention
-                                    && item.status != canopa_notify::NotificationStatus::Active)
-                                    || (item.status == canopa_notify::NotificationStatus::Active
-                                        && item.has_default_action))
-                                    .then(|| {
-                                        panel_center_action(
-                                            item.target.clone(),
-                                            NotificationCenterAction::Acknowledge,
-                                            if item.status
-                                                == canopa_notify::NotificationStatus::Active
-                                            {
-                                                "Dismiss notification"
-                                            } else {
-                                                "Mark as read"
-                                            }
-                                            .to_string(),
-                                        )
-                                    }),
-                            )
-                            .collect(),
+                    .first()
+                    .map(|item| item.app_name.trim())
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or(if group.app_identity.is_empty() {
+                        "Unknown application"
+                    } else {
+                        &group.app_identity
                     })
-                    .collect(),
-                controls: if group.app_identity.is_empty() {
-                    Vec::new()
-                } else {
-                    std::iter::once(app_permission_control(group.permission))
-                        .chain(group.category_permissions.into_iter().map(|control| {
-                            category_permission_control(control.category, control.permission)
-                        }))
-                        .collect()
-                },
+                    .to_owned();
+                PanelSection {
+                    id: format!("app/{}", group.app_identity),
+                    title: label.clone(),
+                    icon: panel_app_icon(
+                        group.items.first().and_then(|item| item.app_icon.as_ref()),
+                        &group.app_identity,
+                        &projection.icon_settings,
+                    ),
+                    items: group
+                        .items
+                        .into_iter()
+                        .map(|item| PanelItem {
+                            id: item.notification_id.to_string(),
+                            attribution: Some(PanelAttribution {
+                                label: if item.app_name.trim().is_empty() {
+                                    label.clone()
+                                } else {
+                                    item.app_name.clone()
+                                },
+                                icon: panel_app_icon(
+                                    item.app_icon.as_ref(),
+                                    &group.app_identity,
+                                    &projection.icon_settings,
+                                ),
+                            }),
+                            title: item.summary,
+                            body: (!item.body.is_empty()).then_some(item.body),
+                            styled_body: styled_text_from_body_content(item.body_content.clone()),
+                            rich_body: rich_body_from_body_content(
+                                item.body_content,
+                                item.target.clone(),
+                            ),
+                            metadata: (item.requires_attention && !item.transient)
+                                .then(|| PanelMetadata {
+                                    key: "attention".into(),
+                                    label: "Unread".into(),
+                                    value: String::new(),
+                                })
+                                .into_iter()
+                                .collect(),
+                            actions: item
+                                .actions
+                                .into_iter()
+                                .map(|action| {
+                                    panel_center_action(
+                                        item.target.clone(),
+                                        NotificationCenterAction::InvokeAction {
+                                            action_key: action.key,
+                                        },
+                                        action.label,
+                                    )
+                                })
+                                .chain(
+                                    (item.status == canopa_notify::NotificationStatus::Active)
+                                        .then(|| {
+                                            panel_center_action(
+                                                item.target.clone(),
+                                                NotificationCenterAction::Activate,
+                                                if item.has_default_action {
+                                                    "Open notification"
+                                                } else {
+                                                    "Dismiss notification"
+                                                }
+                                                .to_string(),
+                                            )
+                                        }),
+                                )
+                                .chain(
+                                    ((item.requires_attention
+                                        && item.status
+                                            != canopa_notify::NotificationStatus::Active)
+                                        || (item.status
+                                            == canopa_notify::NotificationStatus::Active
+                                            && item.has_default_action))
+                                        .then(|| {
+                                            panel_center_action(
+                                                item.target.clone(),
+                                                NotificationCenterAction::Acknowledge,
+                                                if item.status
+                                                    == canopa_notify::NotificationStatus::Active
+                                                {
+                                                    "Dismiss notification"
+                                                } else {
+                                                    "Mark as read"
+                                                }
+                                                .to_string(),
+                                            )
+                                        }),
+                                )
+                                .collect(),
+                        })
+                        .collect(),
+                    controls: if group.app_identity.is_empty() {
+                        Vec::new()
+                    } else {
+                        std::iter::once(app_permission_control(group.permission))
+                            .chain(group.category_permissions.into_iter().map(|control| {
+                                category_permission_control(control.category, control.permission)
+                            }))
+                            .collect()
+                    },
+                }
             })
             .collect(),
         actions: vec![
@@ -476,6 +487,28 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
         ],
         error: None,
     }
+}
+
+fn panel_app_icon(
+    reference: Option<&canopa_notify::NotificationVisualReference>,
+    identity: &str,
+    settings: &canopa_notify::BannerIconSettings,
+) -> Option<PanelIcon> {
+    use canopa_notify::NotificationVisualReference;
+    let icon = match reference {
+        Some(NotificationVisualReference::LocalPath(path)) => {
+            PanelIcon::LocalPath { path: path.clone() }
+        }
+        reference => PanelIcon::Theme {
+            names: match reference {
+                Some(NotificationVisualReference::IconName(name)) => vec![name.clone()],
+                _ => canopa_notify::app_identity_icon_name_candidates(identity),
+            },
+            theme: settings.theme.clone(),
+            scale: settings.scale,
+        },
+    };
+    icon.validate().is_ok().then_some(icon)
 }
 
 fn panel_center_action(
@@ -779,6 +812,7 @@ mod tests {
     #[test]
     fn panel_content_uses_provider_owned_keys_for_controls_and_sender_actions() {
         let content = panel_content_from_projection(canopa_notify::NotificationCenterProjection {
+            icon_settings: Default::default(),
             groups: vec![canopa_notify::NotificationCenterGroup {
                 app_identity: "Mail".to_string(),
                 permission: AppPermissionControl::Allow,
@@ -787,6 +821,8 @@ mod tests {
                     permission: AppPermissionControl::Silence,
                 }],
                 items: vec![canopa_notify::NotificationCenterItem {
+                    app_name: "Mail".into(),
+                    app_icon: None,
                     requires_attention: false,
                     notification_id: InternalNotificationId::new(42).unwrap(),
                     target: center_target_fixture(),
