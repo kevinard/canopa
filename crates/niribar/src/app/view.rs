@@ -755,14 +755,18 @@ fn render_bar_model<'a>(
     };
 
     let bar_with_bg = iced::widget::container(bar_content)
-        .width(Length::Fill)
+        .width(if model.drawer_width > 0 {
+            Length::from(content_size + 1)
+        } else {
+            Length::Fill
+        })
         .height(Length::Fill)
         .style(|_| iced::widget::container::Style {
             background: Some(iced::Background::Color(crate::theme::palette().background)),
             ..Default::default()
         });
 
-    mouse_area(bar_with_bg)
+    let bar = mouse_area(bar_with_bg)
         .on_press(Message::Surface(super::messages::SurfaceEvent::BarClick(
             window,
         )))
@@ -774,8 +778,20 @@ fn render_bar_model<'a>(
         ))
         .on_exit(Message::Surface(
             super::messages::SurfaceEvent::BarHoverExit(window),
-        ))
-        .into()
+        ));
+    if model.drawer_width > 0 {
+        container(bar)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(if matches!(model.edge, Edge::Left) {
+                iced::alignment::Horizontal::Right
+            } else {
+                iced::alignment::Horizontal::Left
+            })
+            .into()
+    } else {
+        bar.into()
+    }
 }
 
 #[cfg(test)]

@@ -92,6 +92,7 @@ impl Default for PanelAnimationConfig {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PanelConfig {
     pub presentation: PanelPresentation,
+    pub drawer_mode: DrawerMode,
     pub width: Option<u32>,
     pub max_width: Option<u32>,
     pub height: Option<u32>,
@@ -105,6 +106,13 @@ pub enum PanelPresentation {
     #[default]
     Auto,
     Drawer,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DrawerMode {
+    #[default]
+    Overlay,
+    PushBar,
 }
 
 /// Bar-level configuration: placement edge, size, layer, modules, and panel behavior.
@@ -152,6 +160,10 @@ impl BarConfig {
     /// A drawer is a vertical-bar presentation; horizontal bars keep automatic sizing.
     pub fn uses_drawer(&self) -> bool {
         self.panel.presentation == PanelPresentation::Drawer && !self.edge.is_horizontal()
+    }
+
+    pub fn drawer_pushes_bar(&self) -> bool {
+        self.uses_drawer() && self.panel.drawer_mode == DrawerMode::PushBar
     }
 
     pub fn matches_output(&self, output_name: &str) -> bool {

@@ -320,6 +320,12 @@ _Avoid_: Active module when referring specifically to panel source
 The content-aware policy that determines how much output space a **Panel** occupies while respecting its **Panel Origin** and content kind.
 _Avoid_: Popup size, fixed panel size
 
+**Drawer Mode**:
+The relative placement of a vertical drawer and its originating **Bar Surface**.
+`overlay` keeps the bar at the edge and opens the drawer beside it; `push-bar`
+places the drawer on the edge side and moves the visible bar inward. Both retain
+the bar's original exclusive zone, so application windows do not resize.
+
 **Panel Physical Plan**:
 A runtime description of the desired physical overlay placement and size for a **Panel** produced by **Panel Sizing** before the application adapter converts it into layer-shell settings.
 _Avoid_: Panel window settings, layer-shell settings

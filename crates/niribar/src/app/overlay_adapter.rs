@@ -157,6 +157,7 @@ impl super::App {
                 }
             }
         }
+        tasks.extend(self.restore_inactive_drawer_bars());
         tasks
     }
 }

@@ -398,6 +398,37 @@ bar "main" {
     }
 
     #[test]
+    fn drawer_mode_defaults_to_overlay_and_pushes_only_vertical_drawers() {
+        for edge in ["left", "right", "top", "bottom"] {
+            for presentation in ["auto", "drawer"] {
+                for mode in ["", "drawer-mode \"overlay\";", "drawer-mode \"push-bar\";"] {
+                    let config = parse(&format!(
+                        "bar \"main\" {{ edge \"{edge}\"; panel {{ presentation \"{presentation}\"; {mode} }} }}"
+                    )).unwrap();
+                    assert_eq!(
+                        config.bars[0].drawer_pushes_bar(),
+                        matches!(edge, "left" | "right")
+                            && presentation == "drawer"
+                            && mode.contains("push-bar")
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn drawer_mode_rejects_invalid_or_duplicate_values() {
+        for fields in [
+            "drawer-mode \"slide\";",
+            "drawer-mode 1;",
+            "drawer-mode \"push-bar\"; drawer-mode \"overlay\";",
+        ] {
+            let error = parse(&format!("bar \"main\" {{ panel {{ {fields} }} }}")).unwrap_err();
+            assert!(error.to_string().contains("drawer-mode"), "{error}");
+        }
+    }
+
+    #[test]
     fn bundled_vertical_bar_opens_module_details_in_its_drawer() {
         let config = parse(crate::config::defaults::DEFAULT_CONFIG).unwrap();
         assert!(config.bars[0].uses_drawer());

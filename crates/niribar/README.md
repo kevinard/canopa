@@ -51,6 +51,7 @@ usable height; for example, an old `height 720` keeps the drawer at 720 logical 
 ```kdl
 panel {
     presentation "drawer"
+    // drawer-mode "push-bar" // drawer at the edge, bar on its inner side
     // width 400       // optional consistent drawer width
     // max-height 800  // optional cap; the drawer stays at the top
     // Keep your existing start / center / end module lists here.
@@ -62,6 +63,13 @@ bars, the drawer preference uses the existing automatic layout. Omitted
 `presentation`, or `presentation "auto"`, keeps the previous content-aware panel
 sizing. Tooltips and tray context menus remain small popups. Restart Niribar after
 editing configuration.
+
+`drawer-mode "overlay"` (the default) keeps the bar at the screen edge and opens
+the drawer beside it. `drawer-mode "push-bar"` opens the drawer at the bar's edge
+and moves the bar inward: on the left, the drawer is on the left and the bar on
+its right; on the right, this is mirrored. Closing the drawer returns the bar to
+the edge. Both modes overlay application windows without resizing them.
+`drawer-mode` applies only to left/right bars with `presentation "drawer"`.
 
 For an existing module with no click action, add `actions { click { open-panel; } }`
 inside that module to open its details. The shipped clock, sound, battery and

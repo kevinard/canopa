@@ -476,7 +476,7 @@ impl App {
                 height,
             } => {
                 self.surfaces.surface_mut(window).screen_size = (width, height);
-                Task::none()
+                self.drawer_bar_input_region(window)
             }
             SurfaceInputEffect::PanelWindowClosed(window) => {
                 if self.panel_window_is_external_provider(window) {

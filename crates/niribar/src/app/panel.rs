@@ -49,16 +49,23 @@ fn panel_content_label(content: &crate::surface::panel::PanelContent) -> &'stati
 
 fn panel_window_settings(plan: PanelPhysicalPlan) -> NewLayerShellSettings {
     let anchor = panel_layer_anchor(&plan.edge, plan.width.fills(), plan.height.fills());
-    let margin = panel_layer_margin(
+    let mut margin = panel_layer_margin(
         &plan.edge,
         plan.placement.layer_margin(&plan.edge),
         plan.width,
         plan.height,
     );
+    match plan.edge {
+        crate::config::Edge::Left => margin.3 += plan.edge_offset,
+        crate::config::Edge::Right => margin.1 += plan.edge_offset,
+        crate::config::Edge::Top => margin.0 += plan.edge_offset,
+        crate::config::Edge::Bottom => margin.2 += plan.edge_offset,
+    }
 
     NewLayerShellSettings {
         anchor,
-        // Ask the compositor to keep the panel outside all reserved bar space.
+        // Respect other reserved bars. Push-bar drawers overlap their own
+        // bar's original reservation through the edge margin above.
         exclusive_zone: Some(0),
         size: Some(plan.layer_size()),
         margin: Some(margin),
@@ -1121,7 +1128,13 @@ impl App {
                 self.module_detail_preferred_content_size(id, bar, &origin_surface)
             },
         });
+        let drawer_width = if bar.drawer_pushes_bar() {
+            plan.width.value()
+        } else {
+            0
+        };
         let settings = panel_window_settings(plan);
+        let resize_bar = self.set_drawer_bar_width(tree.origin_window, drawer_width);
         let (panel_window, open_task) = Message::layershell_open(settings);
         self.surface_mut(tree.origin_window).tooltip_pending = None;
         tracing::debug!(
@@ -1135,7 +1148,7 @@ impl App {
             "opening panel window"
         );
 
-        let mut tasks = Vec::new();
+        let mut tasks = vec![resize_bar];
         self.foreground
             .handle(super::foreground::ForegroundIntent::PanelWindowOpened {
                 window: panel_window,
@@ -1373,6 +1386,7 @@ mod tests {
     ) -> PanelPhysicalPlan {
         PanelPhysicalPlan {
             edge,
+            edge_offset: 0,
             width,
             height,
             placement: super::super::panel_sizing::PanelPlacement {

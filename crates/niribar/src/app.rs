@@ -5,6 +5,7 @@ mod canopa_accessibility;
 mod canopa_accessibility_bounds;
 mod canopa_panel;
 mod canopa_semantics;
+mod drawer;
 mod dynamic_modules;
 pub(crate) mod eligible_outputs;
 mod external_panel_session;

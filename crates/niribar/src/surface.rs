@@ -39,6 +39,9 @@ pub struct SurfaceState {
     /// Logical size (width, height) of this surface as last reported by the compositor.
     /// Used to clamp tray menu popup positions near screen edges.
     pub screen_size: (u32, u32),
+    /// Space before the visible bar while an edge-side drawer is open.
+    /// The surface grows, but its exclusive zone remains the collapsed width.
+    pub drawer_width: u32,
 }
 
 impl SurfaceState {
@@ -52,6 +55,7 @@ impl SurfaceState {
             tooltip_pending: None,
             last_pointer_position: (0, 0),
             screen_size: (0, 0),
+            drawer_width: 0,
         }
     }
 }

@@ -28,6 +28,7 @@ pub(super) struct ModuleRenderEntry<'a> {
 
 pub(super) struct BarRenderModel<'a> {
     pub(super) edge: Edge,
+    pub(super) drawer_width: u32,
     pub(super) content_size: u32,
     pub(super) is_horizontal: bool,
     pub(super) start: Vec<ModuleRenderEntry<'a>>,
@@ -281,6 +282,7 @@ impl App {
 
         BarRenderModel {
             edge: bar.edge.clone(),
+            drawer_width: surface.drawer_width,
             content_size,
             is_horizontal,
             start,

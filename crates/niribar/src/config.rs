@@ -9,8 +9,8 @@ pub mod tooltip_defaults;
 mod validate;
 
 pub use bar::{
-    BarConfig, BarLayer, BarModules, Edge, OutputTarget, PanelAnimationConfig, PanelConfig,
-    PanelModules, PanelPresentation,
+    BarConfig, BarLayer, BarModules, DrawerMode, Edge, OutputTarget, PanelAnimationConfig,
+    PanelConfig, PanelModules, PanelPresentation,
 };
 pub(crate) use error::{
     ConfigDiagnostic, ConfigDiagnosticKind, ConfigError, ConfigResult, ConfigSource,

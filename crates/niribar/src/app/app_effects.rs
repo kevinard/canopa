@@ -305,7 +305,18 @@ impl App {
         target_module: crate::modules::ModuleId,
         tree: crate::surface::tooltip_popup::TooltipTree,
     ) -> Vec<Task<Message>> {
-        let settings = super::surfaces::tooltip_popup_window_settings(&tree);
+        let mut settings = super::surfaces::tooltip_popup_window_settings(&tree);
+        let offset = self
+            .surface(target_window)
+            .map_or(0, |surface| surface.drawer_width);
+        let offset = i32::try_from(offset).unwrap_or(i32::MAX);
+        if let Some(margin) = &mut settings.margin {
+            match tree.bar_edge {
+                crate::config::Edge::Left => margin.3 += offset,
+                crate::config::Edge::Right => margin.1 += offset,
+                _ => {}
+            }
+        }
         let (popup_wid, open_task) = Message::layershell_open(settings);
         let effects = self
             .surfaces

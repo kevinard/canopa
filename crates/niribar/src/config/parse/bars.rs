@@ -1,8 +1,8 @@
 use ::kdl::{KdlDocument, KdlNode};
 
 use super::super::{
-    BarConfig, BarLayer, BarModules, Edge, OutputTarget, PanelAnimationConfig, PanelConfig,
-    PanelModules, PanelPresentation,
+    BarConfig, BarLayer, BarModules, DrawerMode, Edge, OutputTarget, PanelAnimationConfig,
+    PanelConfig, PanelModules, PanelPresentation,
 };
 use super::actions;
 use super::error::ParseCtx;
@@ -202,6 +202,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
         panel_children,
         &[
             "presentation",
+            "drawer-mode",
             "width",
             "max-width",
             "height",
@@ -213,6 +214,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
         ],
         &[
             "presentation",
+            "drawer-mode",
             "width",
             "max-width",
             "height",
@@ -233,6 +235,14 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
             _ => None,
         })
         .unwrap_or(defaults.presentation)?;
+    let drawer_mode = fields::field(panel_children, ctx, "drawer-mode")
+        .optional()
+        .one_of("overlay, push-bar", |value| match value {
+            "overlay" => Some(DrawerMode::Overlay),
+            "push-bar" => Some(DrawerMode::PushBar),
+            _ => None,
+        })
+        .unwrap_or(defaults.drawer_mode)?;
     let width = fields::field(panel_children, ctx, "width")
         .optional()
         .help("expected a width in logical pixels, e.g. 360")
@@ -268,6 +278,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
 
     Ok(PanelConfig {
         presentation,
+        drawer_mode,
         width,
         max_width,
         height,

@@ -51,6 +51,8 @@ pub(super) struct PanelPhysicalPlan {
     pub(super) height: PlannedDimension,
     pub(super) placement: PanelPlacement,
     pub(super) output_name: Option<String>,
+    /// Offset from the compositor's usable edge, including reserved bar space.
+    pub(super) edge_offset: i32,
 }
 
 impl PanelPhysicalPlan {
@@ -162,6 +164,11 @@ where
 
     PanelPhysicalPlan {
         edge: input.bar.edge.clone(),
+        edge_offset: if input.bar.drawer_pushes_bar() {
+            -i32::try_from(input.bar.collapsed_width).unwrap_or(i32::MAX)
+        } else {
+            0
+        },
         width,
         height,
         placement: PanelPlacement {

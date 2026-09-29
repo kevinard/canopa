@@ -93,6 +93,9 @@ bar "main" {
         // A consistent full-height drawer for all panels on left/right bars.
         // Use "auto" for content-sized module panels. Horizontal bars use auto sizing.
         presentation "drawer"
+        // "push-bar" puts the drawer at the edge and moves the bar inward.
+        // Both modes overlay windows without resizing them.
+        drawer-mode "overlay"
         start "workspaces"
         center "focused-window"
         end "notifications" "volume" "network" "battery" "clock"
