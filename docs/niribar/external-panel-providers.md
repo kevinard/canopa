@@ -14,6 +14,15 @@ behavioral baseline. Built-ins now select `canopa-v5`, described under Transport
 explicit legacy declarations remain supported. Earlier experimental
 request/response-only behavior is not a separate compatibility target.
 
+## Popover size
+
+Provider popovers default to 360 × 600 logical pixels, giving network lists and
+notification content a useful reading area. Side popovers use the available bar
+height when it is smaller. Explicit `panel.height` and `panel.max-height` settings
+still control the size. Content updates keep the same viewport, including the
+transition from loading or empty content to a populated list. Drawers retain their
+existing edge-filling sizing.
+
 ## Configuration
 
 Declare globally named **Configured Panel Providers** with the same command grammar used elsewhere:

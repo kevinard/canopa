@@ -219,11 +219,7 @@ pub(super) fn render<'a>(
             group,
         ));
     }
-    let title: Element<'a, Message> = if drawer {
-        crate::surface::panel::drawer_header(snapshot.content.title.clone())
-    } else {
-        text(snapshot.content.title.clone()).size(20).into()
-    };
+    let title = crate::surface::panel::panel_header(snapshot.content.title.clone());
     let mut header = column![title].spacing(6);
     if let (Some(id), Some(label)) = (snapshot.focused_action_id(), snapshot.focused_label()) {
         header = header.push(action_widget::preview(id, label, provider));
@@ -246,14 +242,13 @@ pub(super) fn render<'a>(
         .id(super::canopa_accessibility_bounds::widget_id(
             &semantic_key(snapshot, provider, &SemanticNode::Root),
         ))
-        .padding(metrics::PADDING)
+        .padding(iced::Padding {
+            top: canopa_ui::panel::HEADER_PADDING[0] as f32,
+            ..iced::Padding::from(canopa_ui::panel::PADDING)
+        })
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(|_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::palette().background)),
-            text_color: Some(crate::theme::palette().text),
-            ..Default::default()
-        })
+        .style(move |theme| canopa_ui::panel::surface(theme, drawer))
         .into(),
         reading_id,
     )

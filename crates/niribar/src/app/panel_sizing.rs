@@ -20,13 +20,13 @@ pub(super) fn menu_render_range(
 
 const DEFAULT_PANEL_FALLBACK_WIDTH: u32 = 360;
 const DEFAULT_PANEL_FALLBACK_HEIGHT: u32 = 600;
-const PANEL_OUTER_PADDING: u32 = 16;
+const PANEL_OUTER_PADDING: u32 = 2 * canopa_ui::panel::PADDING as u32;
 const PANEL_MODULE_FRAME_H_PADDING: u32 = 20;
 const PANEL_MODULE_FRAME_V_PADDING: u32 = 16;
 const PANEL_ENTRY_SPACING: u32 = 8;
 const PANEL_MENU_MIN_WIDTH: u32 = 240;
 const PANEL_MENU_SEARCH_HEIGHT: u32 = 38;
-const PANEL_MENU_LIST_PADDING: u32 = 16;
+const PANEL_MENU_LIST_PADDING: u32 = 2 * canopa_ui::panel::PADDING as u32;
 const PANEL_MENU_ROW_H_PADDING: u32 = 20;
 const PANEL_MENU_CHAR_WIDTH: u32 = 8;
 const PANEL_MENU_ICON_SLOT: u32 = 26;
@@ -199,7 +199,18 @@ where
         }
         PanelContent::ExternalProvider(_) => PanelContentSizeHint {
             preferred_width: Some(DEFAULT_PANEL_FALLBACK_WIDTH),
-            preferred_height: Some(180),
+            // Providers host lists and forms that need a useful reading area even
+            // when their first document is only a loading or empty state. Keep the
+            // viewport stable as content arrives. A vertical bar's configured
+            // surface height gives us its available edge span; a horizontal bar's
+            // height is only its thickness, not the output height.
+            preferred_height: Some(
+                if !input.bar.edge.is_horizontal() && input.tree.screen_size.1 > 0 {
+                    DEFAULT_PANEL_FALLBACK_HEIGHT.min(input.tree.screen_size.1)
+                } else {
+                    DEFAULT_PANEL_FALLBACK_HEIGHT
+                },
+            ),
             fill_edge_span: false,
         },
         PanelContent::ModulePanel(id) => (input.module_detail_preferred_size)(id)
@@ -259,8 +270,10 @@ fn panel_module_entry_size(content: PanelPreferredSize) -> PanelPreferredSize {
 }
 
 fn panel_module_window_size(content: PanelPreferredSize) -> PanelPreferredSize {
-    panel_module_list_window_size(&[panel_module_entry_size(content)])
-        .expect("single module detail produces one panel entry")
+    PanelPreferredSize {
+        width: content.width + PANEL_OUTER_PADDING,
+        height: content.height + PANEL_OUTER_PADDING + canopa_ui::panel::HEADER_HEIGHT,
+    }
 }
 
 fn bar_panel_preferred_size(
@@ -283,7 +296,8 @@ fn panel_module_list_window_size(entries: &[PanelPreferredSize]) -> Option<Panel
     let width = entries.iter().map(|entry| entry.width).max().unwrap_or(0) + PANEL_OUTER_PADDING;
     let height = entries.iter().map(|entry| entry.height).sum::<u32>()
         + PANEL_ENTRY_SPACING * entries.len().saturating_sub(1) as u32
-        + PANEL_OUTER_PADDING;
+        + PANEL_OUTER_PADDING
+        + canopa_ui::panel::HEADER_HEIGHT;
 
     Some(PanelPreferredSize { width, height })
 }
@@ -315,8 +329,10 @@ fn panel_menu_preferred_size(menu: &super::foreground::PanelMenuRenderState) -> 
         prompt_chars * PANEL_MENU_CHAR_WIDTH + PANEL_MENU_ROW_H_PADDING + PANEL_MENU_LIST_PADDING;
     let width = row_width.max(search_width).max(PANEL_MENU_MIN_WIDTH);
     let row_extent = MENU_ROW_EXTENT.ceil() as u32;
-    let height =
-        PANEL_MENU_SEARCH_HEIGHT + PANEL_MENU_LIST_PADDING + row_extent * menu.entries.len() as u32;
+    let height = canopa_ui::panel::HEADER_HEIGHT
+        + PANEL_MENU_SEARCH_HEIGHT
+        + PANEL_MENU_LIST_PADDING
+        + row_extent * menu.entries.len() as u32;
 
     PanelPreferredSize { width, height }
 }
@@ -390,8 +406,8 @@ mod tests {
         let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
 
         assert_eq!(plan.width, PlannedDimension::Fill { span: 1920 });
-        assert_eq!(plan.height, PlannedDimension::Exact(38 + 16));
-        assert_eq!(plan.layer_size(), (0, 54));
+        assert_eq!(plan.height, PlannedDimension::Exact(56 + 38 + 32));
+        assert_eq!(plan.layer_size(), (0, 126));
     }
 
     #[test]
@@ -421,8 +437,8 @@ mod tests {
         let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
 
         assert_eq!(plan.width, PlannedDimension::Exact(500));
-        assert_eq!(plan.height, PlannedDimension::Exact(54));
-        assert_eq!(plan.layer_size(), (500, 54));
+        assert_eq!(plan.height, PlannedDimension::Exact(126));
+        assert_eq!(plan.layer_size(), (500, 126));
     }
 
     #[test]
@@ -437,11 +453,11 @@ mod tests {
         let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
 
         assert_eq!(plan.width, PlannedDimension::Exact(800));
-        assert_eq!(plan.layer_size(), (800, 54));
+        assert_eq!(plan.layer_size(), (800, 126));
     }
 
     #[test]
-    fn module_panel_uses_module_preferred_size_with_frame() {
+    fn module_panel_uses_module_preferred_size_with_shared_chrome() {
         let bar = BarConfig::default();
         let id = ModuleId::new("clock");
         let tree = tree(PanelContent::ModulePanel(id.clone()), (1920, 48));
@@ -453,8 +469,68 @@ mod tests {
             })
         });
 
-        assert_eq!(plan.width, PlannedDimension::Exact(336));
-        assert_eq!(plan.height, PlannedDimension::Exact(292));
+        assert_eq!(plan.width, PlannedDimension::Exact(332));
+        assert_eq!(plan.height, PlannedDimension::Exact(348));
+    }
+
+    #[test]
+    fn provider_popovers_have_room_for_lists_and_forms_on_every_edge() {
+        use crate::surface::panel::ExternalPanelContent;
+        for edge in [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom] {
+            let screen_size = if edge.is_horizontal() {
+                (1920, 48)
+            } else {
+                (48, 1080)
+            };
+            let bar = BarConfig {
+                edge,
+                ..BarConfig::default()
+            };
+            for provider in ["wifi", "notifications"] {
+                let tree = tree(
+                    PanelContent::ExternalProvider(ExternalPanelContent::failure(
+                        provider, "Loading",
+                    )),
+                    screen_size,
+                );
+                let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
+                assert_eq!(plan.layer_size(), (360, 600));
+            }
+        }
+    }
+
+    #[test]
+    fn provider_popover_height_respects_short_side_outputs_and_configured_limits() {
+        use crate::surface::panel::ExternalPanelContent;
+        let mut bar = BarConfig::default();
+        let mut tree = tree(
+            PanelContent::ExternalProvider(ExternalPanelContent::failure("wifi", "Loading")),
+            (48, 480),
+        );
+        tree.anchor = Some(iced::Rectangle::new(
+            iced::Point::new(0.0, 440.0),
+            iced::Size::new(48.0, 30.0),
+        ));
+        let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
+        assert_eq!(plan.layer_size(), (360, 480));
+        assert_eq!(plan.placement.position.y, 0);
+        bar.panel.max_height = Some(400);
+        assert_eq!(
+            plan_with(&bar, &tree, &[], empty_menu(), |_| None).layer_size(),
+            (360, 400)
+        );
+        bar.panel.height = Some(300);
+        assert_eq!(
+            plan_with(&bar, &tree, &[], empty_menu(), |_| None).layer_size(),
+            (360, 300)
+        );
+        bar.panel.height = None;
+        bar.panel.max_height = None;
+        tree.screen_size = (0, 0);
+        assert_eq!(
+            plan_with(&bar, &tree, &[], empty_menu(), |_| None).layer_size(),
+            (360, 600)
+        );
     }
 
     #[test]
@@ -557,7 +633,7 @@ mod tests {
                     height: 260,
                 })
             });
-            assert_eq!(plan.layer_size(), (336, 292));
+            assert_eq!(plan.layer_size(), (332, 348));
         }
     }
 
@@ -602,7 +678,7 @@ mod tests {
         assert_eq!(plan.width, PlannedDimension::Fill { span: 1920 });
         assert_eq!(
             plan.height,
-            PlannedDimension::Exact(20 + 16 + 30 + 16 + 8 + 16)
+            PlannedDimension::Exact(20 + 16 + 30 + 16 + 8 + 32 + 56)
         );
     }
 
@@ -637,6 +713,6 @@ mod tests {
         let preferred = panel_menu_preferred_size(&menu);
 
         assert_eq!(preferred.width, 240);
-        assert_eq!(preferred.height, 38 + 16 + 45 * 2);
+        assert_eq!(preferred.height, 56 + 38 + 32 + 45 * 2);
     }
 }

@@ -48,7 +48,7 @@ async fn replacement_during_a_pointer_press_never_activates_the_new_action() {
         let viewport = Rectangle::with_size(Size::new(360.0, 180.0));
         let mut tree = Tree::empty();
         let cursor = if selected {
-            iced::Point::new(40.0, 55.0)
+            iced::Point::new(40.0, 80.0)
         } else {
             let mut view = render(&old, "notifications", false);
             tree.diff(view.as_widget());
@@ -239,7 +239,7 @@ async fn selected_preview_scrolls_without_activation_and_resets_for_next_action(
     let mut snapshot = long_title_snapshot().await;
     snapshot.move_focus(false);
     let viewport = Rectangle::with_size(Size::new(360.0, 180.0));
-    let cursor = iced::Point::new(40.0, 55.0);
+    let cursor = iced::Point::new(40.0, 80.0);
     let mut tree = Tree::empty();
     {
         let mut view = render(&snapshot, "notifications", false);

@@ -357,7 +357,7 @@ fn parse_panel_animation(
         .optional()
         .help("expected a duration in milliseconds, e.g. 180")
         .integer_message(
-            "expected a positive integer. Expected: a duration in milliseconds, e.g. 180",
+            "expected a non-negative duration in milliseconds, e.g. 180 (0 disables opening motion)",
         )
         .u32()
         .map(|value| value as f32)
@@ -366,7 +366,7 @@ fn parse_panel_animation(
         .optional()
         .help("expected a duration in milliseconds, e.g. 120")
         .integer_message(
-            "expected a positive integer. Expected: a duration in milliseconds, e.g. 120",
+            "expected a non-negative duration in milliseconds, e.g. 120 (0 disables closing motion)",
         )
         .u32()
         .map(|value| value as f32)

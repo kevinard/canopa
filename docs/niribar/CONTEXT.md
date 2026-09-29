@@ -664,12 +664,15 @@ _Avoid_: Unavailable module, runtime failure
 - A module-originated **Panel** with automatic presentation aligns to the originating **Module** when its bounds are available and falls back to the **Bar Surface** otherwise.
 - A **Bar** may select drawer presentation for its **Panels**. On a vertical **Bar**, every content kind uses a consistent width and fills the usable vertical edge unless configured dimensions or caps override it. A capped drawer stays at the start of the usable edge, independently of its **Panel Origin**. Horizontal **Bars** retain automatic presentation.
 - A drawer shows the active **Panel** content, with a title and an explicit close control. **Modules** on the **Bar Surface** select content; a drawer does not add a second section-navigation model.
+- Drawer and automatic **Panel** presentation share title/close chrome, body spacing, menu rows and focus treatment. Content-preferred sizes include the common chrome; explicit dimensions and caps remain authoritative.
+- **Foreground** may retain one inert outgoing **Panel** presentation for a bounded exit animation after logical interaction ends. It cannot receive input, provider updates or accessibility actions. Replacement or origin removal discards it, and its completion cannot clear a newer **Panel**.
+- Per-**Bar** opening and closing durations control directional slide/fade presentation. Zero disables the corresponding transition. Transition frames never change exclusive space or surface placement; idle **Panels** request no animation frames. See [ADR 0014](adr/0014-share-panel-chrome-and-bound-transition-lifetime.md) for capture limits and transition lifetime.
 - The **Panel Origin** remains visually marked while the **Panel** is open.
 - A **Panel** closes when Escape or an explicit close action closes it, or when its originating **Bar Surface** disappears.
 - A **Panel** may remain open when focus moves from the originating **Bar Surface** into the **Panel**.
 - Escape closes a **Panel** unless the active **Panel** content has a more specific first-Escape behavior.
 - Omitting an exact configured **Panel** dimension lets **Panel Sizing** choose that dimension from content, **Edge Span** fill behavior, or fallback defaults.
-- Automatic **Panel Sizing** keeps **Module Detail Content** compact with content-preferred sizes.
+- Automatic **Panel Sizing** keeps **Module Detail Content** compact with content-preferred sizes. Provider popovers prefer a stable 600-logical-pixel height for lists and forms, bounded by a known vertical bar span and configured height limits.
 - **Panel Sizing** uses **Edge Span** fill sizing for **Panel Menu** content and a **Bar**'s configured panel module layout.
 - **Panel Sizing** treats explicit configured dimensions as overrides and configured maximum dimensions as caps.
 - **Panel Sizing** produces a **Panel Physical Plan** before the application adapter opens the physical **Panel** overlay window.

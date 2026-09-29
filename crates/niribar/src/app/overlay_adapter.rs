@@ -89,6 +89,33 @@ impl super::App {
             }
 
             match effect {
+                super::foreground::ForegroundEffect::RetirePanelWindow { window, duration } => {
+                    tasks.push(iced::Task::done(super::Message::SetInputRegion {
+                        id: window,
+                        callback: iced_layershell::actions::ActionCallback::new(|region| {
+                            region.subtract(0, 0, i32::MAX, i32::MAX)
+                        }),
+                    }));
+                    tasks.push(iced::Task::done(
+                        super::Message::KeyboardInteractivityChange {
+                            id: window,
+                            keyboard_interactivity:
+                                iced_layershell::reexport::KeyboardInteractivity::None,
+                        },
+                    ));
+                    // A hidden or removed output need not produce another frame.
+                    tasks.push(iced::Task::perform(
+                        async move {
+                            tokio::time::sleep(duration).await;
+                        },
+                        move |_| {
+                            super::Message::Panel(super::messages::PanelEvent::MotionFinished {
+                                window,
+                                closing: true,
+                            })
+                        },
+                    ));
+                }
                 super::foreground::ForegroundEffect::CloseTooltipsForSurface(window) => {
                     let effects = self.surfaces.close_tooltip_for_surface(window);
                     tasks.extend(self.apply_registry_effects(effects));

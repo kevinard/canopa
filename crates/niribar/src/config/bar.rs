@@ -84,7 +84,7 @@ impl Default for PanelAnimationConfig {
     fn default() -> Self {
         Self {
             open_ms: 180.0,
-            close_ms: 120.0,
+            close_ms: 160.0,
         }
     }
 }

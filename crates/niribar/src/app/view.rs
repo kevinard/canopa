@@ -38,7 +38,11 @@ impl App {
         }
 
         if let Some(model) = self.panel_render_model(window) {
-            return crate::surface::scroll_speed::scroll_speed(render_panel_model(model));
+            return crate::surface::panel_motion::wrap(
+                crate::surface::scroll_speed::scroll_speed(render_panel_model(model)),
+                window,
+                self.foreground.panel_presentation(window),
+            );
         }
 
         render_bar_model(self.bar_render_model(window), window)
@@ -62,7 +66,7 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
         return render_panel_menu_model(model, text_color);
     }
     if let Some(content) = model.external_content {
-        return render_external_panel_model(content, text_color, model.drawer_title);
+        return render_external_panel_model(content, text_color, model.title, model.drawer);
     }
 
     let entries: Vec<Element<'_, Message>> = model
@@ -72,42 +76,37 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
         .collect();
 
     panel_frame(
-        scrollable(column(entries).spacing(8).padding(8))
-            .height(Length::Fill)
-            .into(),
+        scrollable(
+            column(entries)
+                .spacing(canopa_ui::metrics::GAP)
+                .padding(canopa_ui::panel::PADDING),
+        )
+        .height(Length::Fill)
+        .into(),
         text_color,
-        model.drawer_title,
+        model.title,
+        model.drawer,
     )
 }
 
 fn panel_frame<'a>(
     content: Element<'a, Message>,
     text_color: Option<iced::Color>,
-    drawer_title: Option<String>,
+    title: String,
+    drawer: bool,
 ) -> Element<'a, Message> {
-    let content = if let Some(title) = drawer_title {
-        column![
-            container(crate::surface::panel::drawer_header(title)).padding([12, 16]),
-            iced::widget::rule::horizontal(1),
-            content,
-        ]
-        .height(Length::Fill)
-        .into()
-    } else {
-        content
-    };
+    let content = column![
+        container(crate::surface::panel::panel_header(title))
+            .padding(canopa_ui::panel::HEADER_PADDING),
+        content,
+    ]
+    .height(Length::Fill);
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::palette().background)),
-            text_color,
-            border: iced::Border {
-                color: crate::theme::palette().border,
-                width: 1.0,
-                ..Default::default()
-            },
-            ..Default::default()
+        .style(move |theme| iced::widget::container::Style {
+            text_color: text_color.or(Some(canopa_ui::colors(theme).text)),
+            ..canopa_ui::panel::surface(theme, drawer)
         })
         .into()
 }
@@ -115,16 +114,15 @@ fn panel_frame<'a>(
 fn render_external_panel_model<'a>(
     content: &'a crate::surface::panel::ExternalPanelContent,
     text_color: Option<iced::Color>,
-    drawer_title: Option<String>,
+    title: String,
+    drawer: bool,
 ) -> Element<'a, Message> {
     if let Some(snapshot) = content.document.canopa() {
-        return super::canopa_panel::render(
-            snapshot,
-            &content.provider_name,
-            drawer_title.is_some(),
-        );
+        return super::canopa_panel::render(snapshot, &content.provider_name, drawer);
     }
-    let mut body = column![].spacing(8).padding(8);
+    let mut body = column![]
+        .spacing(canopa_ui::metrics::GAP)
+        .padding(canopa_ui::panel::PADDING);
     for element in content.elements() {
         let rendered: Element<'_, Message> = match element {
             crate::surface::panel::ExternalPanelElement::Text { text: value } => {
@@ -222,7 +220,8 @@ fn render_external_panel_model<'a>(
     panel_frame(
         scrollable(body).height(Length::Fill).into(),
         text_color,
-        drawer_title,
+        title,
+        drawer,
     )
 }
 
@@ -429,8 +428,7 @@ fn render_panel_menu_model<'a>(
     model: PanelRenderModel<'a>,
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
-    const MENU_ROW_GAP: f32 = 8.0;
-    let drawer = model.drawer_title.is_some();
+    const MENU_ROW_GAP: f32 = canopa_ui::panel::ROW_GAP;
 
     let placeholder = model.menu_prompt.as_deref().unwrap_or("Search");
     let search = text_input(placeholder, &model.search_query)
@@ -450,7 +448,9 @@ fn render_panel_menu_model<'a>(
     let header_spacing = if model.can_go_back { 8 } else { 0 };
     let header: Element<'_, Message> = row![search, back_slot].spacing(header_spacing).into();
 
-    let mut list = column![].spacing(MENU_ROW_GAP).padding(8);
+    let mut list = column![]
+        .spacing(MENU_ROW_GAP)
+        .padding([8, canopa_ui::panel::PADDING]);
     let entry_count = model.menu_entries.len();
     let range = super::panel_sizing::menu_render_range(
         entry_count,
@@ -489,6 +489,7 @@ fn render_panel_menu_model<'a>(
         }
         row_content = row_content.push(
             text(entry.label.clone())
+                .size(canopa_ui::metrics::BODY)
                 .width(Length::Fill)
                 .wrapping(iced::widget::text::Wrapping::None),
         );
@@ -503,31 +504,7 @@ fn render_panel_menu_model<'a>(
             .height(super::panel::MENU_ROW_EXTENT - MENU_ROW_GAP)
             .align_y(iced::Alignment::Center)
             .clip(true)
-            .style(move |_| iced::widget::container::Style {
-                background: if focused {
-                    Some(iced::Background::Color(crate::theme::palette().surface))
-                } else if drawer {
-                    None
-                } else {
-                    Some(iced::Background::Color(crate::theme::palette().raised))
-                },
-                border: iced::Border {
-                    color: if focused {
-                        crate::theme::palette().accent
-                    } else if drawer {
-                        iced::Color::TRANSPARENT
-                    } else {
-                        crate::theme::palette().border
-                    },
-                    width: 1.0,
-                    radius: iced::border::Radius::from(if drawer {
-                        canopa_ui::metrics::CONTROL_RADIUS
-                    } else {
-                        4.0
-                    }),
-                },
-                ..Default::default()
-            });
+            .style(move |theme| canopa_ui::panel::row(theme, focused));
         list = list.push(crate::surface::pointer_focus::pointer_focus(
             mouse_area(row).on_press(Message::Panel(super::messages::PanelEvent::ActivateIndex(
                 index,
@@ -553,17 +530,14 @@ fn render_panel_menu_model<'a>(
             })
         });
 
-    let header = if model.drawer_title.is_some() {
-        container(header).padding([8, 12]).into()
-    } else {
-        header
-    };
+    let header = container(header).padding([0, canopa_ui::panel::PADDING]);
     panel_frame(
         column![header, menu_scroll.height(Length::Fill)]
             .height(Length::Fill)
             .into(),
         text_color,
-        model.drawer_title,
+        model.title,
+        model.drawer,
     )
 }
 

@@ -249,6 +249,15 @@ impl MenuEvent {
 
 #[derive(Debug, Clone)]
 pub enum PanelEvent {
+    MotionReady(iced::window::Id),
+    MotionScale {
+        window: iced::window::Id,
+        scale: f32,
+    },
+    MotionFinished {
+        window: iced::window::Id,
+        closing: bool,
+    },
     IconsLoaded(super::panel_icons::Loaded),
     InstalledAppsLoaded {
         generation: u64,
@@ -293,6 +302,9 @@ pub enum PanelEvent {
 impl PanelEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
+            PanelEvent::MotionReady(_) => "Panel::MotionReady",
+            PanelEvent::MotionScale { .. } => "Panel::MotionScale",
+            PanelEvent::MotionFinished { .. } => "Panel::MotionFinished",
             PanelEvent::IconsLoaded(_) => "Panel::IconsLoaded",
             PanelEvent::InstalledAppsLoaded { .. } => "Panel::InstalledAppsLoaded",
             PanelEvent::Open { .. } => "Panel::Open",

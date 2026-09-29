@@ -37,7 +37,8 @@ pub(super) struct BarRenderModel<'a> {
 }
 
 pub(super) struct PanelRenderModel<'a> {
-    pub(super) drawer_title: Option<String>,
+    pub(super) title: String,
+    pub(super) drawer: bool,
     pub(super) tree: &'a crate::surface::panel::PanelTree,
     pub(super) search_input_id: iced::widget::Id,
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
@@ -99,20 +100,16 @@ impl App {
                     super::module_runtime::ModuleDetailRenderRequest {
                         id: id.clone(),
                         style: &bar.style,
-                        session: self.foreground.active_panel_module_detail_session(&id),
+                        session: self.foreground.panel_detail_for_render(window, &id),
                         state_override: Some(state.clone()),
                     },
                 )?;
-                let element = if bar.uses_drawer()
-                    && matches!(
-                        tree.content,
-                        crate::surface::panel::PanelContent::ModulePanel(_)
-                    ) {
-                    // A single module is the drawer body, not a card inside a card.
-                    container(module_view)
-                        .padding(16)
-                        .width(iced::Length::Fill)
-                        .into()
+                let element = if matches!(
+                    tree.content,
+                    crate::surface::panel::PanelContent::ModulePanel(_)
+                ) {
+                    // Single-module content uses the same body in both presentations.
+                    container(module_view).width(iced::Length::Fill).into()
                 } else {
                     crate::surface::panel::panel_module_frame(module_view, entry.focused)
                 };
@@ -132,7 +129,7 @@ impl App {
 
         let menu = panel.menu;
 
-        let drawer_title = bar.uses_drawer().then(|| {
+        let title = {
             use crate::surface::panel::PanelContent;
             match &tree.content {
                 PanelContent::BarPanel => "Overview".to_owned(),
@@ -156,10 +153,11 @@ impl App {
                     .map(|snapshot| snapshot.content.title.clone())
                     .unwrap_or_else(|| content.provider_name.clone()),
             }
-        });
+        };
 
         Some(PanelRenderModel {
-            drawer_title,
+            title,
+            drawer: bar.uses_drawer(),
             tree,
             search_input_id: super::panel::panel_search_input_id(window),
             entries,

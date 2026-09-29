@@ -868,6 +868,16 @@ impl App {
         use super::messages::PanelEvent;
 
         match event {
+            PanelEvent::MotionReady(window) => iced::window::scale_factor(window)
+                .map(move |scale| Message::Panel(PanelEvent::MotionScale { window, scale })),
+            PanelEvent::MotionScale { window, scale } => {
+                self.foreground.panel_motion_ready(window, scale);
+                Task::none()
+            }
+            PanelEvent::MotionFinished { window, closing } => {
+                let effects = self.foreground.finish_panel_motion(window, closing);
+                Task::batch(self.apply_foreground_effects(effects))
+            }
             PanelEvent::IconsLoaded(loaded) => {
                 self.panel_icons.complete(loaded);
                 Task::none()
@@ -1133,6 +1143,8 @@ impl App {
         } else {
             0
         };
+        let edge = bar.edge.clone();
+        let animation = bar.panel.animation.clone();
         let settings = panel_window_settings(plan);
         let resize_bar = self.set_drawer_bar_width(tree.origin_window, drawer_width);
         let (panel_window, open_task) = Message::layershell_open(settings);
@@ -1153,6 +1165,8 @@ impl App {
             .handle(super::foreground::ForegroundIntent::PanelWindowOpened {
                 window: panel_window,
             });
+        self.foreground
+            .configure_panel_motion(panel_window, &edge, animation);
 
         let open_sequence = open_task.chain(iced::window::gain_focus(panel_window));
         tasks.push(open_sequence);
@@ -2401,9 +2415,9 @@ mod tests {
             },
         });
 
-        assert_eq!(plan.width, PlannedDimension::Exact(336));
-        assert_eq!(plan.height, PlannedDimension::Exact(292));
-        assert_eq!(panel_window_settings(plan).size, Some((336, 292)));
+        assert_eq!(plan.width, PlannedDimension::Exact(332));
+        assert_eq!(plan.height, PlannedDimension::Exact(348));
+        assert_eq!(panel_window_settings(plan).size, Some((332, 348)));
     }
 
     #[test]

@@ -213,6 +213,37 @@ fn v1_background_updates_keep_the_existing_panel_window() {
     }
 }
 
+#[test]
+fn provider_replacement_during_entry_reveals_new_controls_in_the_same_window() {
+    use crate::surface::panel_motion::Presentation;
+    let document = |id: &str| ExternalPanelDocument::Elements {
+        elements: vec![ExternalPanelElement::Button {
+            id: id.into(),
+            label: id.into(),
+        }],
+    };
+    let (mut app, window) = open(document("old"));
+    app.foreground.configure_panel_motion(
+        window,
+        &crate::config::Edge::Left,
+        crate::config::PanelAnimationConfig::default(),
+    );
+    app.foreground.panel_motion_ready(window, 1.0);
+    assert!(matches!(
+        app.foreground.panel_presentation(window),
+        Presentation::Animated(_)
+    ));
+    provider_update(&mut app, document("new"));
+    assert_eq!(app.foreground.active_panel_window(), Some(window));
+    assert_eq!(
+        app.foreground.panel_presentation(window),
+        Presentation::Still
+    );
+    assert!(
+        matches!(&displayed_content(&app).elements()[0], ExternalPanelElement::Button { id, .. } if id == "new")
+    );
+}
+
 fn widget_event(
     app: &App,
     window: iced::window::Id,
@@ -233,7 +264,7 @@ fn widget_event(
         state,
         &event,
         iced::advanced::Layout::new(&node),
-        iced::mouse::Cursor::Available(iced::Point::new(20.0, 20.0)),
+        iced::mouse::Cursor::Available(iced::Point::new(30.0, 85.0)),
         renderer,
         &mut iced::advanced::clipboard::Null,
         &mut iced::advanced::Shell::new(&mut messages),

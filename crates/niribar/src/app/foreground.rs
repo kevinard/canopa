@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+mod motion;
 
 pub(super) struct PanelOpenContext<'a> {
     menus: &'a [crate::config::MenuConfig],
@@ -224,6 +225,10 @@ pub(super) enum ForegroundEffect {
         tree: crate::surface::panel::PanelTree,
     },
     RemoveWindow(iced::window::Id),
+    RetirePanelWindow {
+        window: iced::window::Id,
+        duration: std::time::Duration,
+    },
     SuspendBarKeyboardInteractivity,
     RestoreBarKeyboardInteractivity,
     CloseTooltipsForSurface(iced::window::Id),
@@ -260,6 +265,16 @@ impl PartialEq for ForegroundEffect {
         match (self, other) {
             (OpenPanelWindow { tree: left }, OpenPanelWindow { tree: right }) => left == right,
             (RemoveWindow(left), RemoveWindow(right)) => left == right,
+            (
+                RetirePanelWindow {
+                    window: left,
+                    duration: ld,
+                },
+                RetirePanelWindow {
+                    window: right,
+                    duration: rd,
+                },
+            ) => left == right && ld == rd,
             (SuspendBarKeyboardInteractivity, SuspendBarKeyboardInteractivity) => true,
             (RestoreBarKeyboardInteractivity, RestoreBarKeyboardInteractivity) => true,
             (CloseTooltipsForSurface(left), CloseTooltipsForSurface(right)) => left == right,
@@ -321,6 +336,8 @@ impl PartialEq for ForegroundEffect {
 pub(super) struct Foreground {
     active: Option<ForegroundOverlay>,
     panel: super::panel_runtime::PanelRuntime,
+    motion: Option<motion::PanelMotion>,
+    retiring: Option<motion::RetiringPanel>,
     closing_panel_windows: HashSet<iced::window::Id>,
     closing_menu_windows: HashMap<iced::window::Id, MenuPopupMeta>,
     pending_menu: Option<MenuForegroundRequest>,
@@ -701,11 +718,32 @@ impl Foreground {
         &self,
         window: iced::window::Id,
     ) -> Option<PanelRenderSnapshot<'_>> {
+        if let Some(retiring) = &self.retiring
+            && retiring.window == window
+        {
+            return Some(PanelRenderSnapshot {
+                tree: &retiring.tree,
+                menu: retiring.runtime.panel_menu_render_state().into(),
+            });
+        }
         let tree = self.panel_tree_for_window(window)?;
         Some(PanelRenderSnapshot {
             tree,
             menu: self.panel.panel_menu_render_state().into(),
         })
+    }
+
+    pub(super) fn panel_detail_for_render(
+        &self,
+        window: iced::window::Id,
+        id: &crate::modules::ModuleId,
+    ) -> Option<&crate::modules::ModuleDetailSession> {
+        if let Some(retiring) = &self.retiring
+            && retiring.window == window
+        {
+            return retiring.runtime.module_detail_session_for(id);
+        }
+        self.active_panel_module_detail_session(id)
     }
 
     pub(super) fn active_panel_module_detail_session(
@@ -839,6 +877,16 @@ impl Foreground {
         tree.content = PanelContent::ExternalProvider(content.clone());
         self.panel
             .handle(super::panel_runtime::PanelRuntimeIntent::UpdateExternalContent(content));
+        // A captured entry frame cannot represent newly arranged provider controls.
+        // Keep their window/focus, but reveal the live document before accepting input.
+        if let Some(window) = self.active_panel_window()
+            && matches!(
+                self.panel_presentation(window),
+                crate::surface::panel_motion::Presentation::Animated(_)
+            )
+        {
+            self.finish_panel_motion(window, false);
+        }
     }
 
     fn prepare_panel(
@@ -914,14 +962,18 @@ impl Foreground {
 
     fn open_menu(&mut self, request: MenuForegroundRequest) -> Vec<ForegroundEffect> {
         self.pending_apps = None;
-        let mut effects = vec![ForegroundEffect::CloseAllTooltips];
+        self.motion = None;
+        let mut effects = self.remove_retiring_panel();
+        effects.push(ForegroundEffect::CloseAllTooltips);
         effects.extend(self.close_for_menu_open(request));
         effects
     }
 
     fn close_for_replacement(&mut self) -> Vec<ForegroundEffect> {
+        self.motion = None;
+        let mut effects = self.remove_retiring_panel();
         let active = self.active.take();
-        match active {
+        effects.extend(match active {
             Some(ForegroundOverlay::Panel {
                 window: Some(window),
                 ..
@@ -934,7 +986,8 @@ impl Foreground {
                 self.closing_menu_windows.insert(window, meta.clone());
                 vec![ForegroundEffect::CloseMenu { window, meta }]
             }
-        }
+        });
+        effects
     }
 
     fn close_for_menu_open(&mut self, request: MenuForegroundRequest) -> Vec<ForegroundEffect> {
@@ -978,9 +1031,13 @@ impl Foreground {
         let mut effects = match active {
             Some(ForegroundOverlay::Panel {
                 window: Some(window),
-                ..
+                tree,
             }) => {
                 self.closing_panel_windows.insert(window);
+                if let Some(mut effects) = self.retire_panel(window, tree) {
+                    effects.push(ForegroundEffect::RestoreBarKeyboardInteractivity);
+                    return effects;
+                }
                 vec![ForegroundEffect::RemoveWindow(window)]
             }
             Some(ForegroundOverlay::Panel { window: None, .. }) => Vec::new(),
@@ -1092,6 +1149,16 @@ impl Foreground {
     }
 
     fn panel_window_closed(&mut self, window: iced::window::Id) -> Vec<ForegroundEffect> {
+        if self
+            .retiring
+            .as_ref()
+            .is_some_and(|panel| panel.window == window)
+        {
+            self.retiring = None;
+        }
+        if self.active_panel_window() == Some(window) {
+            self.motion = None;
+        }
         if self.closing_panel_windows.remove(&window) {
             return Vec::new();
         }
@@ -1215,6 +1282,15 @@ impl Foreground {
         identity: super::surfaces::BarSurfaceIdentity,
         window: iced::window::Id,
     ) -> Vec<ForegroundEffect> {
+        let mut retired_effects = if self
+            .retiring
+            .as_ref()
+            .is_some_and(|panel| panel.tree.origin_window == window)
+        {
+            self.remove_retiring_panel()
+        } else {
+            Vec::new()
+        };
         if self
             .pending_menu
             .as_ref()
@@ -1224,14 +1300,15 @@ impl Foreground {
         }
 
         let Some(active) = self.active.take() else {
-            return Vec::new();
+            return retired_effects;
         };
 
-        match active {
+        retired_effects.extend(match active {
             ForegroundOverlay::Panel {
                 window: panel_window,
                 tree,
             } if tree.origin_window == window => {
+                self.motion = None;
                 let mut effects = match panel_window {
                     Some(panel_window) => {
                         self.closing_panel_windows.insert(panel_window);
@@ -1258,7 +1335,8 @@ impl Foreground {
                 self.active = Some(other);
                 Vec::new()
             }
-        }
+        });
+        retired_effects
     }
 
     fn active_panel_matches(&self, request: &PanelForegroundRequest) -> bool {

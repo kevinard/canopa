@@ -439,22 +439,28 @@ impl PanelRuntime {
         if !effects.is_empty() {
             effects.push(PanelRuntimeEffect::RequestPanelClose);
         }
-        self.clear();
+        // Foreground applies the close synchronously. Keep the last presentation
+        // available for its inert exit frame; the responder is already consumed.
         effects
     }
 
     fn clear_with_cancelled_dmenu_response(&mut self) -> Vec<PanelRuntimeEffect> {
-        let effects = self
-            .dmenu_responder
+        let effects = self.finish_interaction();
+        self.clear();
+        effects
+    }
+
+    /// Retain only presentation data; IPC interaction completes at logical close.
+    pub(super) fn finish_interaction(&mut self) -> Vec<PanelRuntimeEffect> {
+        self.search_focus_pending = false;
+        self.dmenu_responder
             .take()
             .map(|responder| PanelRuntimeEffect::SendDmenuResponse {
                 responder,
                 response: crate::ipc::protocol::IpcResponse::Cancelled,
             })
             .into_iter()
-            .collect();
-        self.clear();
-        effects
+            .collect()
     }
 
     fn open_session(&mut self, source: SelectableMenuSource) {

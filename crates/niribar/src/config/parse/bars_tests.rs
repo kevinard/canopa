@@ -334,7 +334,7 @@ bar "main" {
         start "workspaces"
         center "focused-window"
         end "network" "volume" "battery" "clock"
-        animation { open-ms 180 close-ms 120 }
+        animation { open-ms 200; close-ms 120; }
     }
 }
 "#;
@@ -357,7 +357,7 @@ bar "main" {
             bar.panel.modules.end,
             vec!["network", "volume", "battery", "clock"]
         );
-        assert_eq!(bar.panel.animation.open_ms, 180.0);
+        assert_eq!(bar.panel.animation.open_ms, 200.0);
         assert_eq!(bar.panel.animation.close_ms, 120.0);
     }
 
@@ -378,7 +378,21 @@ bar "main" {
         assert_eq!(config.bars[0].panel.height, None);
         assert_eq!(config.bars[0].panel.max_width, None);
         assert_eq!(config.bars[0].panel.max_height, None);
+        assert_eq!(config.bars[0].panel.animation.open_ms, 180.0);
+        assert_eq!(config.bars[0].panel.animation.close_ms, 160.0);
         assert!(!config.bars[0].uses_drawer());
+    }
+
+    #[test]
+    fn zero_panel_durations_disable_motion_without_changing_presentation() {
+        for presentation in ["auto", "drawer"] {
+            let config = parse(&format!(
+                "bar \"main\" {{ panel {{ presentation \"{presentation}\"; animation {{ open-ms 0; close-ms 0; }} }} }}"
+            )).unwrap();
+            assert_eq!(config.bars[0].panel.animation.open_ms, 0.0);
+            assert_eq!(config.bars[0].panel.animation.close_ms, 0.0);
+            assert_eq!(config.bars[0].uses_drawer(), presentation == "drawer");
+        }
     }
 
     #[test]

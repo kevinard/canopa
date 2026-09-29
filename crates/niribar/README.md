@@ -36,6 +36,30 @@ examples in [config/default.kdl](config/default.kdl), [docs](../../docs/niribar/
 The adjacent shared `appearance` block controls the dark/light palette and accent
 for the shell, Notification Center, and Notify banners.
 
+### Panel appearance and motion
+
+Drawers and automatic popovers share headings, close controls, menu rows, spacing,
+and focus treatment. Their sizing and anchoring continue to follow the selected
+presentation. Panels slide 8 logical pixels from their originating edge and fade
+in or out, without changing the desktop's reserved space on each frame. Opening
+decelerates into place; closing eases gently to transparent before removal.
+
+The existing per-bar animation settings now control these transitions:
+
+```kdl
+panel {
+    animation {
+        open-ms 180
+        close-ms 160
+    }
+}
+```
+
+Set both durations to `0` for reduced motion. Either duration can be disabled
+independently. Motion is configured per bar; the shared `appearance` block does not
+currently read a desktop motion preference. Restart Niribar after changing settings.
+Closing ends interaction immediately; the remaining exit image cannot receive input.
+
 ### Vertical side drawer
 
 The shipped left bar opens panels in a full-height, 360-logical-pixel side drawer.

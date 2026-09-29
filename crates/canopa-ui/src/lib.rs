@@ -1,4 +1,5 @@
 //! Shared Iced visual treatment. Callers retain events, focus, identity and accessibility trees.
+pub mod panel;
 pub use canopa_theme::metrics;
 use canopa_theme::{Appearance, ColorScheme, Rgb};
 use iced::{

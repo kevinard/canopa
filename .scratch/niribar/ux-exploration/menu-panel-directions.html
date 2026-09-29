@@ -1,0 +1,267 @@
+<!-- One shared panel design in drawer and popover presentations. Sample data only. -->
+<style>
+#niribar-ux .nb-stage {
+  --nb-bg: light-dark(#eff1f5, #1e1e2e);
+  --nb-surface: light-dark(#e6e9ef, #262637);
+  --nb-raised: light-dark(#dce0e8, #313244);
+  --nb-text: light-dark(#303346, #cdd6f4);
+  --nb-muted: light-dark(#61677f, #a6adc8);
+  --nb-line: light-dark(#c2c6d3, #45475a);
+  --nb-accent: light-dark(#305cb5, #89b4fa);
+  --nb-select: light-dark(#d9e4f9, #303e59);
+  --nb-desktop: light-dark(#d8dfdd, #161d23);
+  --nb-shadow: light-dark(#18223125, #00000040);
+  --nb-row-pad: 11px;
+  position: relative; height: 536px; overflow: hidden; border-radius: 12px;
+  background: radial-gradient(ellipse at 95% 90%, light-dark(#c0d2cd,#26393b), transparent 70%), var(--nb-desktop);
+  color: var(--nb-text); font: 14px/1.4 system-ui, sans-serif;
+}
+#niribar-ux .nb-stage * { box-sizing: border-box; }
+#niribar-ux .nb-stage button, #niribar-ux .nb-stage input { font: inherit; color: inherit; }
+#niribar-ux .nb-stage button { border: 0; }
+#niribar-ux .nb-rail {
+  position: absolute; inset: 0 auto 0 0; width: 52px; z-index: 3;
+  background: var(--nb-bg); border-right: 1px solid var(--nb-line);
+  display: flex; flex-direction: column; align-items: center; padding: 10px 4px; gap: 9px;
+}
+#niribar-ux .nb-rail button {
+  position: relative; display: grid; place-items: center; width: 42px; min-height: 40px;
+  background: transparent; border-radius: 8px; transition: background 100ms ease;
+}
+#niribar-ux .nb-rail button:hover, #niribar-ux .nb-icon-button:hover { background: var(--nb-raised); }
+#niribar-ux .nb-rail button[aria-expanded="true"] { background: var(--nb-select); color: var(--nb-accent); }
+#niribar-ux .nb-rail button[aria-expanded="true"]::before { content: ''; position: absolute; left: -4px; width: 3px; height: 18px; border-radius: 0 3px 3px 0; background: var(--nb-accent); }
+#niribar-ux .nb-workspace { width: 30px; height: 23px; border-radius: 5px; background: var(--nb-select); color: var(--nb-accent); display: grid; place-items: center; font-size: 12px; }
+#niribar-ux .nb-rail-space { flex: 1; }
+#niribar-ux .nb-clock { color: var(--nb-muted); font-size: 11px; font-variant-numeric: tabular-nums; padding-top: 4px; }
+#niribar-ux .nb-panel {
+  position: absolute; z-index: 2; left: 52px; top: 0; bottom: 0; width: min(330px, calc(100% - 52px));
+  display: flex; flex-direction: column; background: var(--nb-bg); border-right: 1px solid var(--nb-line);
+  box-shadow: 14px 0 32px var(--nb-shadow); transform-origin: left center;
+}
+#niribar-ux .nb-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 20px 20px 14px; }
+#niribar-ux .nb-heading { font-size: 17px; font-weight: 600; margin: 0; }
+#niribar-ux .nb-subtitle { color: var(--nb-muted); font-size: 12px; margin-top: 2px; }
+#niribar-ux .nb-icon-button { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; background: transparent; border-radius: 7px; color: var(--nb-muted); }
+#niribar-ux .nb-content { padding: 0 14px 18px; flex: 1; min-height: 0; }
+#niribar-ux .nb-search { display: flex; gap: 8px; align-items: center; background: var(--nb-surface); border: 1px solid var(--nb-line); border-radius: 8px; padding: 9px 10px; margin: 0 4px 14px; }
+#niribar-ux .nb-search input { min-width: 0; width: 100%; padding: 0; border: 0; background: transparent; }
+#niribar-ux .nb-search input::placeholder { color: var(--nb-muted); }
+#niribar-ux .nb-search svg { color: var(--nb-muted); flex-shrink: 0; }
+#niribar-ux .nb-label { color: var(--nb-muted); font-size: 11px; letter-spacing: .09em; text-transform: uppercase; margin: 16px 10px 7px; }
+#niribar-ux .nb-list { display: flex; flex-direction: column; gap: 3px; }
+#niribar-ux .nb-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: var(--nb-row-pad) 10px; text-align: left; border-radius: 8px; background: transparent; transition: background 90ms ease; }
+#niribar-ux .nb-row:hover { background: var(--nb-surface); }
+#niribar-ux .nb-row[aria-pressed="true"] { background: var(--nb-select); }
+#niribar-ux .nb-row .nb-copy { flex: 1; min-width: 0; }
+#niribar-ux .nb-row .nb-name { display: block; overflow-wrap: anywhere; }
+#niribar-ux .nb-row .nb-detail { display: block; color: var(--nb-muted); font-size: 12px; margin-top: 2px; }
+#niribar-ux .nb-row > svg { flex-shrink: 0; color: var(--nb-muted); }
+#niribar-ux .nb-row[aria-pressed="true"] > svg { color: var(--nb-accent); }
+#niribar-ux .nb-row .nb-tail { width: 16px; color: var(--nb-accent); }
+#niribar-ux .nb-footer { border-top: 1px solid var(--nb-line); padding: 12px 20px; display: flex; gap: 16px; font-size: 11px; color: var(--nb-muted); }
+#niribar-ux .nb-footer kbd { font: inherit; color: var(--nb-text); }
+#niribar-ux .nb-volume { padding: 12px 10px 8px; }
+#niribar-ux .nb-volume-label { display: flex; justify-content: space-between; margin-bottom: 12px; }
+#niribar-ux .nb-volume input { width: 100%; accent-color: var(--nb-accent); }
+#niribar-ux .nb-notice { position: absolute; bottom: 20px; left: 405px; right: 20px; max-width: 260px; border: 1px solid var(--nb-line); background: var(--nb-bg); border-radius: 10px; padding: 12px 16px; font-size: 12px; z-index: 4; }
+#niribar-ux .nb-empty { margin: 25px 10px; color: var(--nb-muted); }
+/* Presentation changes geometry only. Header, content, controls and states are shared. */
+#niribar-ux .nb-stage[data-design="popover"] .nb-panel { left: 62px; top: 45px; bottom: auto; width: min(330px, calc(100% - 74px)); border: 1px solid var(--nb-line); border-radius: 12px; box-shadow: 0 12px 28px var(--nb-shadow); }
+#niribar-ux .nb-stage[data-design="popover"][data-section="network"] .nb-panel { top: auto; bottom: 52px; }
+#niribar-ux .nb-stage[data-design="popover"][data-section="sound"] .nb-panel { top: auto; bottom: 99px; }
+#niribar-ux .nb-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 450px) {
+  #niribar-ux .nb-stage { height: 560px; }
+  #niribar-ux .nb-header { padding-left: 16px; padding-right: 12px; }
+  #niribar-ux .nb-heading { font-size: 16px; }
+  #niribar-ux .nb-row { gap: 8px; }
+  #niribar-ux .nb-notice { left: 65px; right: 14px; bottom: 18px; }
+}
+@media (pointer: coarse) { #niribar-ux .nb-icon-button { min-height: 44px; min-width: 44px; } #niribar-ux .nb-rail button { min-height: 44px; } #niribar-ux .nb-search input { font-size: 16px; } }
+@media (prefers-reduced-motion: reduce) { #niribar-ux .nb-stage * { transition: none !important; } }
+</style>
+<div id="niribar-ux">
+  <div class="viz-carousel" aria-label="One Niribar design, two presentations">
+    <section data-variant="Drawer" aria-label="Drawer presentation"><div class="nb-stage" data-design="drawer" aria-label="Shared panel design as a drawer"></div></section>
+    <section data-variant="Popover" aria-label="Popover presentation" hidden><div class="nb-stage" data-design="popover" aria-label="Shared panel design as a popover"></div></section>
+  </div>
+</div>
+<script>
+(() => {
+  const root = document.getElementById('niribar-ux');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const titles = { apps: 'Applications', network: 'Wi-Fi', sound: 'Sound' };
+  const icons = { apps: 'grid-2x2', network: 'wifi', sound: 'volume-2' };
+  const apps = [
+    ['Terminal', 'Kitty', 'square-terminal'], ['Browser', 'Firefox', 'globe'],
+    ['Files', 'File manager', 'folder'], ['Editor', 'Text editor', 'file-code-2']
+  ];
+  const stored = window.openai?.widgetState?.privateContent;
+  const saved = stored?.version === 3 ? stored : {};
+  const options = { openMs: 180, closeMs: 160, travel: 8, reducedMotion: false };
+  function restoreOptions(next) {
+    for (const key of ['openMs','closeMs','travel']) if (Number.isFinite(next?.[key])) options[key] = next[key];
+    options.reducedMotion = next?.reducedMotion === true;
+  }
+  restoreOptions(saved.options);
+  const models = [];
+  const icon = name => `<i data-lucide="${name}" aria-hidden="true"></i>`;
+  const refreshIcons = () => globalThis.lucide?.createIcons({ attrs: { width: 18, height: 18 } });
+  function snapshot(m) {
+    return { section: m.section, open: m.open, query: m.query, volume: m.volume, selectedNetwork: m.selectedNetwork, selectedOutput: m.selectedOutput };
+  }
+  function save(source) {
+    const content = snapshot(source || models[0]);
+    // Keep the comparison on the same content without moving the user's focus.
+    if (source) models.forEach(peer => { if (peer !== source) peer.restore(content); });
+    const privateContent = { version: 3, options: { ...options }, content };
+    window.openai?.setWidgetState({ modelContent: { exploration: 'One Niribar panel design in drawer and popover forms', motion: { ...options } }, privateContent })?.catch(() => {});
+  }
+  root.querySelectorAll('.nb-stage').forEach((stage, index) => {
+    const design = stage.dataset.design;
+    const m = { stage, design, section: 'apps', open: true, volume: 64, selectedNetwork: 'Studio', selectedOutput: 'Speakers', animation: null, contentAnimation: null, query: '' };
+    models.push(m);
+    stage.innerHTML = `<aside class="nb-rail" aria-label="Niribar"><span class="nb-workspace" aria-label="Workspace 1">1</span><button type="button" class="cursor-interaction" data-section="apps" aria-label="Applications" aria-expanded="false">${icon(icons.apps)}</button><div class="nb-rail-space"></div><button type="button" class="cursor-interaction" data-section="sound" aria-label="Sound" aria-expanded="false">${icon(icons.sound)}</button><button type="button" class="cursor-interaction" data-section="network" aria-label="Wi-Fi" aria-expanded="false">${icon(icons.network)}</button><span class="nb-clock">13:35</span></aside><div class="nb-panel" role="region" aria-labelledby="nb-title-${index}"><header class="nb-header"><div><h2 class="nb-heading" id="nb-title-${index}"></h2><div class="nb-subtitle"></div></div><button type="button" class="nb-icon-button cursor-interaction" data-close aria-label="Close panel">${icon('x')}</button></header><div class="nb-content"></div><footer class="nb-footer"><span><kbd>↑ ↓</kbd> Navigate</span><span><kbd>Esc</kbd> Close</span></footer></div><div class="nb-notice" role="status" hidden></div><span class="nb-live" aria-live="polite"></span>`;
+    const panel = stage.querySelector('.nb-panel');
+    const content = stage.querySelector('.nb-content');
+    const live = stage.querySelector('.nb-live');
+    const railButton = () => stage.querySelector(`.nb-rail [data-section="${m.section}"]`);
+    function announce(message) { live.textContent = message; }
+    function syncRail() { stage.querySelectorAll('.nb-rail button').forEach(b => b.setAttribute('aria-expanded', String(m.open && b.dataset.section === m.section))); }
+    function row(name, detail, symbol, action, selected = false, tail = 'arrow-up-right') {
+      return `<button type="button" class="nb-row cursor-interaction" data-action="${action}" data-name="${name}" ${action === 'network' || action === 'output' ? `aria-pressed="${selected}"` : ''}>${icon(symbol)}<span class="nb-copy"><span class="nb-name">${name}</span><span class="nb-detail">${detail}</span></span><span class="nb-tail">${selected ? icon('check') : tail ? icon(tail) : ''}</span></button>`;
+    }
+    function renderApps() {
+      const list = content.querySelector('.nb-app-list');
+      const filtered = apps.filter(a => a.join(' ').toLowerCase().includes(m.query.toLowerCase()));
+      list.innerHTML = filtered.map(a => row(a[0], a[1], a[2], 'launch')).join('');
+      content.querySelector('.nb-empty').hidden = filtered.length > 0;
+      refreshIcons();
+    }
+    function renderContent() {
+      stage.dataset.section = m.section;
+      stage.querySelector('.nb-heading').textContent = titles[m.section];
+      stage.querySelector('.nb-subtitle').textContent = m.section === 'network' ? `Connected to ${m.selectedNetwork}` : m.section === 'sound' ? 'Output device and volume' : 'Find and open an app';
+      if (m.section === 'apps') {
+        content.innerHTML = `<label class="nb-search">${icon('search')}<input type="search" aria-label="Search applications" placeholder="Search applications…"></label><div class="nb-list nb-app-list"></div><div class="nb-empty" hidden>No matching applications</div>`;
+        content.querySelector('input').value = m.query;
+        content.querySelector('input').addEventListener('input', event => { m.query = event.target.value; renderApps(); save(m); });
+        renderApps();
+      } else if (m.section === 'network') {
+        const networks = ['Studio','Guest network','Home office'];
+        content.innerHTML = `<div class="nb-label">Connected</div><div class="nb-list">${row(m.selectedNetwork, 'Secure · strong signal', 'wifi', 'network', true)}</div><div class="nb-label">Available networks</div><div class="nb-list">${networks.filter(n => n !== m.selectedNetwork).map(n => row(n, 'Secured network', 'wifi', 'network', false, 'lock-keyhole')).join('')}</div>`;
+      } else {
+        content.innerHTML = `<div class="nb-volume"><label class="nb-volume-label" for="nb-volume-${index}"><span>Volume</span><output>${m.volume}%</output></label><input id="nb-volume-${index}" type="range" aria-label="Volume" min="0" max="100" value="${m.volume}"></div><div class="nb-label">Output</div><div class="nb-list">${row('Speakers', 'Built-in audio', 'speaker', 'output', m.selectedOutput === 'Speakers', '')}${row('Headphones', 'USB audio', 'headphones', 'output', m.selectedOutput === 'Headphones', '')}</div>`;
+        content.querySelector('input').addEventListener('input', event => { m.volume = Number(event.target.value); content.querySelector('output').textContent = `${m.volume}%`; });
+        content.querySelector('input').addEventListener('change', () => save(m));
+      }
+      refreshIcons();
+    }
+    function hiddenTransform() { return `translateX(-${options.travel}px)`; }
+    function motionAllowed() { return !(reduce.matches || options.reducedMotion); }
+    function setOpen(open, animate = true, focus = true) {
+      const current = { opacity: getComputedStyle(panel).opacity, transform: getComputedStyle(panel).transform };
+      m.animation?.cancel(); m.animation = null;
+      m.open = open;
+      panel.inert = !open;
+      panel.setAttribute('aria-hidden', String(!open));
+      panel.style.visibility = 'visible';
+      const target = { opacity: open ? '1' : '0', transform: open ? 'translateX(0px)' : hiddenTransform() };
+      panel.style.opacity = target.opacity;
+      panel.style.transform = target.transform;
+      syncRail();
+      if (animate && motionAllowed()) {
+        const animation = panel.animate([current, target], { duration: open ? options.openMs : options.closeMs, easing: open ? 'cubic-bezier(.333333,1,.666667,1)' : 'cubic-bezier(.333333,0,.666667,1)' });
+        m.animation = animation;
+        animation.onfinish = () => { if (m.animation === animation) { m.animation = null; if (!m.open) panel.style.visibility = 'hidden'; } };
+      } else if (!open) panel.style.visibility = 'hidden';
+      if (focus) {
+        if (open) (content.querySelector('input') || content.querySelector('button') || panel.querySelector('button')).focus({ preventScroll: true });
+        else railButton().focus({ preventScroll: true });
+        announce(`${titles[m.section]} ${open ? 'opened' : 'closed'}`);
+      }
+    }
+    stage.querySelectorAll('.nb-rail button').forEach(button => button.addEventListener('click', () => {
+      const next = button.dataset.section;
+      const same = next === m.section;
+      const wasOpen = m.open;
+      m.section = next; m.query = ''; stage.querySelector('.nb-notice').hidden = true;
+      if (same) { if (!wasOpen) renderContent(); setOpen(!wasOpen); }
+      else {
+        renderContent(); setOpen(true, !wasOpen);
+        m.contentAnimation?.cancel();
+        if (wasOpen && motionAllowed()) m.contentAnimation = content.animate([{ opacity: .35, transform: 'translateY(3px)' }, { opacity: 1, transform: 'translateY(0px)' }], { duration: 120, easing: 'ease-out' });
+      }
+      save(m);
+    }));
+    stage.querySelector('[data-close]').addEventListener('click', () => { setOpen(false); save(m); });
+    stage.addEventListener('click', event => { if (event.target === stage && m.open) { setOpen(false); save(m); } });
+    content.addEventListener('click', event => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) return;
+      if (button.dataset.action === 'launch') {
+        setOpen(false);
+        const notice = stage.querySelector('.nb-notice');
+        notice.textContent = `Preview: ${button.dataset.name} selected`;
+        notice.hidden = false;
+      } else if (button.dataset.action === 'network') {
+        m.selectedNetwork = button.dataset.name; renderContent();
+        content.querySelector('button[aria-pressed="true"]').focus({ preventScroll: true });
+        announce(`Preview connection: ${m.selectedNetwork}`);
+      } else { m.selectedOutput = button.dataset.name; renderContent(); content.querySelector('button[aria-pressed="true"]').focus({ preventScroll: true }); announce(`${m.selectedOutput} selected`); }
+      save(m);
+    });
+    stage.addEventListener('keydown', event => {
+      if (!m.open) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (m.section === 'apps' && m.query) { m.query = ''; renderContent(); content.querySelector('input').focus(); }
+        else setOpen(false);
+        save(m);
+      } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && event.target.type !== 'range') {
+        const rows = [...content.querySelectorAll('.nb-row')];
+        if (!rows.length) return;
+        event.preventDefault();
+        const at = rows.indexOf(document.activeElement);
+        const next = at < 0 ? (event.key === 'ArrowDown' ? 0 : rows.length - 1) : (at + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length;
+        rows[next].focus({ preventScroll: true });
+      } else if (event.key === 'Enter' && event.target.type === 'search') { content.querySelector('.nb-row')?.click(); }
+    });
+    m.restore = priorState => {
+      if (!priorState) return;
+      const next = {
+        section: titles[priorState.section] ? priorState.section : 'apps',
+        open: priorState.open !== false,
+        query: typeof priorState.query === 'string' ? priorState.query : '',
+        volume: Number.isFinite(priorState.volume) ? Math.max(0, Math.min(100, priorState.volume)) : 64,
+        selectedNetwork: ['Studio', 'Guest network', 'Home office'].includes(priorState.selectedNetwork) ? priorState.selectedNetwork : 'Studio',
+        selectedOutput: priorState.selectedOutput === 'Headphones' ? 'Headphones' : 'Speakers'
+      };
+      if (JSON.stringify(snapshot(m)) === JSON.stringify(next)) return;
+      Object.assign(m, next);
+      renderContent(); setOpen(m.open, false, false);
+    };
+    m.settle = () => { m.contentAnimation?.cancel(); setOpen(m.open, false, false); };
+    renderContent(); setOpen(m.open, false, false);
+    m.restore(saved.content);
+  });
+  if (globalThis.Tweak) {
+    root.setAttribute('aria-label', 'Shared drawer and popover motion');
+    const tweak = new Tweak({ container: root, onChange: () => { if (reduce.matches || options.reducedMotion) models.forEach(m => m.settle()); save(); } });
+    tweak.addSlider(options, 'openMs', { label: 'Opening duration', min: 80, max: 320, step: 10, unit: 'ms' });
+    tweak.addSlider(options, 'closeMs', { label: 'Closing duration', min: 60, max: 220, step: 10, unit: 'ms' });
+    tweak.addSlider(options, 'travel', { label: 'Slide distance', min: 0, max: 40, step: 2, unit: 'px' });
+    tweak.addToggle(options, 'reducedMotion', { label: 'Reduced motion' });
+  }
+  reduce.addEventListener('change', () => { if (reduce.matches) models.forEach(m => m.settle()); });
+  window.addEventListener('openai:set_globals', event => {
+    const next = event.detail?.globals?.widgetState?.privateContent;
+    if (next?.version === 3) {
+      restoreOptions(next.options);
+      models.forEach(m => m.restore(next.content));
+      if (reduce.matches || options.reducedMotion) models.forEach(m => m.settle());
+    }
+  });
+})();
+</script>

@@ -4,6 +4,7 @@ pub mod input;
 pub mod layout;
 pub mod menu_popup;
 pub mod panel;
+pub mod panel_motion;
 pub mod placement;
 pub mod pointer_focus;
 pub mod scroll_speed;
