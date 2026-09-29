@@ -2,6 +2,41 @@ use super::app_effects::{AppEffect, app_effects_for_foreground};
 use super::surfaces::RegistryEffect;
 
 impl super::App {
+    pub(super) fn sync_dismissal_surfaces(&mut self) -> iced::Task<super::Message> {
+        use iced_layershell::reexport::{
+            Anchor, KeyboardInteractivity, Layer, NewLayerShellSettings, OutputOption,
+        };
+        let changes = self.foreground.reconcile_dismissal_surfaces();
+        let mut tasks = self.apply_app_effects(
+            changes
+                .remove
+                .into_iter()
+                .map(AppEffect::RemoveWindow)
+                .collect(),
+        );
+        for (window, output) in changes.open {
+            // Top sits above applications but below the Panel's Overlay layer.
+            // A negative exclusive zone includes reserved bar space and never
+            // changes application geometry. No keyboard focus is taken.
+            tasks.push(iced::Task::done(super::Message::NewLayerShell {
+                id: window,
+                settings: NewLayerShellSettings {
+                    anchor: Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right,
+                    size: Some((0, 0)),
+                    exclusive_zone: Some(-1),
+                    layer: Layer::Top,
+                    keyboard_interactivity: KeyboardInteractivity::None,
+                    output_option: output
+                        .map(OutputOption::OutputName)
+                        .unwrap_or(OutputOption::Active),
+                    namespace: Some("niribar-dismissal".into()),
+                    ..Default::default()
+                },
+            }));
+        }
+        iced::Task::batch(tasks)
+    }
+
     #[cfg(test)]
     pub(super) fn register_panel_popup(
         &mut self,

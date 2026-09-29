@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum WindowRole {
+    Dismissal,
     BarSurface,
     ClosingPanel,
     Menu,
@@ -10,6 +11,7 @@ pub(super) enum WindowRole {
 
 #[derive(Debug, Clone)]
 pub(super) enum SurfaceInputEffect {
+    ClosePanel,
     BarActionKey {
         window: iced::window::Id,
         modifiers: iced::keyboard::Modifiers,
@@ -91,6 +93,10 @@ pub(super) fn route_surface_input(
     }
 
     match role {
+        WindowRole::Dismissal => match event {
+            super::messages::SurfaceEvent::PointerPressed(_) => SurfaceInputEffect::ClosePanel,
+            _ => SurfaceInputEffect::Ignore,
+        },
         WindowRole::BarSurface => route_bar_input(event),
         WindowRole::ClosingPanel => route_closing_panel_input(event),
         WindowRole::Menu => route_menu_input(event),
@@ -256,7 +262,8 @@ pub(super) fn target_window(event: &super::messages::SurfaceEvent) -> Option<ice
     use super::messages::SurfaceEvent;
 
     match event {
-        SurfaceEvent::BarClick(window)
+        SurfaceEvent::PointerPressed(window)
+        | SurfaceEvent::BarClick(window)
         | SurfaceEvent::BarRightClick(window)
         | SurfaceEvent::BarHoverEnter(window)
         | SurfaceEvent::BarHoverExit(window)
@@ -395,7 +402,8 @@ impl PartialEq for SurfaceInputEffect {
                     height: rheight,
                 },
             ) => lw == rw && lwidth == rwidth && lheight == rheight,
-            (CloseMenu, CloseMenu)
+            (ClosePanel, ClosePanel)
+            | (CloseMenu, CloseMenu)
             | (Ignore, Ignore)
             | (PanelBack, PanelBack)
             | (PanelEscape, PanelEscape)
@@ -415,6 +423,27 @@ mod tests {
 
     fn wid() -> iced::window::Id {
         iced::window::Id::unique()
+    }
+
+    #[test]
+    fn pointer_dismisses_only_from_a_dismissal_surface() {
+        let event = super::super::messages::SurfaceEvent::PointerPressed(wid());
+        assert_eq!(
+            route_surface_input(WindowRole::Dismissal, &event),
+            SurfaceInputEffect::ClosePanel
+        );
+        for role in [
+            WindowRole::Panel,
+            WindowRole::ClosingPanel,
+            WindowRole::BarSurface,
+            WindowRole::Menu,
+            WindowRole::Unknown,
+        ] {
+            assert_eq!(
+                route_surface_input(role, &event),
+                SurfaceInputEffect::Ignore
+            );
+        }
     }
 
     #[test]

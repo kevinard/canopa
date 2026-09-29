@@ -7,8 +7,11 @@ desktop. Both presentations, every edge, disabled motion and rapid reopen are
 covered. --scale also exercises physical capture size on scaled outputs.
 --default-timings samples normal-speed entry and exit; compositor screenshots may
 skip intermediate frames at that speed, so slowed cases assert their presence.
+--close-flash-only samples untouched desktop pixels during repeated closes; the
+headless App view regression also checks the exact frame before physical removal.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import io
 import json
@@ -27,7 +30,7 @@ desktop = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(desktop)
 
 
-def verify(binary, output, session, scale, only, default_timings=False):
+def verify(binary, output, session, scale, only, default_timings=False, close_flash_only=False):
     runtime = session.runtime
     bus = runtime / "bus.conf"
     bus.write_text(f'<busconfig><type>session</type><listen>unix:tmpdir={runtime}</listen>'
@@ -105,6 +108,40 @@ modules {{ module "button" {{ label "Panel motion"; icon "B"; actions {{ click {
             return frame.getpixel(point) == (30, 30, 46)
         session.wait_for(bar_ready, "first bar frame")
         closed = capture(f"{case}-closed")
+        if close_flash_only:
+            # Sample the desktop while closure is in flight. Capturing only after
+            # a blocking input command returns can miss a single painted frame.
+            point = {"left": (closed.width - 80, closed.height // 2),
+                     "right": (80, closed.height // 2),
+                     "top": (closed.width // 2, closed.height - 80),
+                     "bottom": (closed.width // 2, 80)}[edge]
+            region = (point[0] - 16, point[1] - 16, point[0] + 16, point[1] + 16)
+            background = closed.crop(region)
+            sampled = 0
+            with ThreadPoolExecutor(max_workers=1) as worker:
+                for attempt in range(8):
+                    session.run([str(binary), "--toggle-panel"])
+                    session.wait_for_layers(2)
+                    time.sleep(1.2 if duration and not default_timings else .3)
+
+                    def close():
+                        time.sleep(.1)
+                        session.run(["wtype", "-k", "Escape"])
+
+                    closing = worker.submit(close)
+                    started = time.monotonic()
+                    while time.monotonic() - started < .65:
+                        frame = capture(f"{case}-close-{attempt}-{sampled}")
+                        sampled += 1
+                        assert not ImageChops.difference(background, frame.crop(region)).getbbox(), (
+                            f"{case}: desktop flashed outside panel during close, frame {sampled - 1}")
+                    closing.result()
+                    session.wait_for_layers(1)
+            results.append({"case": case, "close_attempts": 8, "background_frames_checked": sampled})
+            session.retire(process)
+            session.wait_for_layers(0)
+            print(f"PASS: {case} no close flash across {sampled} frames", flush=True)
+            continue
         session.run([str(binary), "--toggle-panel"])
         session.wait_for_layers(2)
         entry_frames = []
@@ -194,6 +231,8 @@ def main():
     parser.add_argument("--case", help="Run one named case, such as left-auto-1000")
     parser.add_argument("--default-timings", action="store_true",
                         help="Sample configured defaults instead of slowed transitions")
+    parser.add_argument("--close-flash-only", action="store_true",
+                        help="Repeatedly close panels while checking untouched desktop pixels")
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -201,7 +240,7 @@ def main():
         session = desktop.Session(Path(directory), output)
         try:
             verify(args.binary.resolve(), output, session, args.scale, args.case,
-                   args.default_timings)
+                   args.default_timings, args.close_flash_only)
         finally:
             session.close()
 

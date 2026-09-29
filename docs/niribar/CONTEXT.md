@@ -640,6 +640,9 @@ _Avoid_: Unavailable module, runtime failure
 - **Menus** and **Tooltips** do not inherit the **Layer** of their **Bar Surface**.
 - Niribar has at most one **Foreground** at a time.
 - Opening a **Panel** or **Menu** replaces the current **Foreground**.
+- The first click outside a **Panel** or **Menu** dismisses it without activating
+  the underlying application or **Bar**. **Foreground** owns the **Panel**'s
+  transparent dismissal surfaces; see [ADR 0015](adr/0015-dismiss-foreground-on-outside-click.md).
 - Opening a **Panel** closes any open **Menu**.
 - Opening a **Menu** closes any open **Panel**.
 - Every request that opens, toggles, or closes a **Panel** or **Menu** goes through **Foreground**.

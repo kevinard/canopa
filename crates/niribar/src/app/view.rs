@@ -14,7 +14,11 @@ impl App {
             perf.record_view(window);
         }
 
-        // Popup window -- full-screen transparent overlay; menu widget positioned inside.
+        if self.foreground.is_dismissal_window(window) {
+            return Space::new().width(Length::Fill).height(Length::Fill).into();
+        }
+
+        // Tray menus use compositor-managed popup grabs for outside dismissal.
         if let Some(model) = self.popup_render_model(window) {
             if let Some(session) = self
                 .foreground
@@ -45,7 +49,31 @@ impl App {
             );
         }
 
-        render_bar_model(self.bar_render_model(window), window)
+        // Logical close precedes the asynchronous Wayland window removal. A
+        // final redraw of an unregistered overlay must stay transparent; the
+        // bar fallback would otherwise paint its entire former window.
+        if self.surfaces.surface(window).is_none() {
+            return Space::new().width(Length::Fill).height(Length::Fill).into();
+        }
+
+        let bar = render_bar_model(self.bar_render_model(window), window);
+        if let Some(panel) = self.foreground.active_panel_window() {
+            // Bars configured on the Overlay layer sit above the dismissal
+            // surface. Consume their click before a module can activate.
+            let dismiss = Message::Panel(super::messages::PanelEvent::Dismiss(panel));
+            iced::widget::stack![
+                bar,
+                iced::widget::opaque(
+                    mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                        .on_press(dismiss.clone())
+                        .on_right_press(dismiss.clone())
+                        .on_middle_press(dismiss)
+                )
+            ]
+            .into()
+        } else {
+            bar
+        }
     }
 
     pub(crate) fn style(&self, _theme: &iced::Theme) -> iced::theme::Style {
@@ -568,18 +596,14 @@ fn render_popup_model<'a>(
 ) -> Element<'a, Message> {
     use crate::surface::menu_popup::view_menu_popup;
 
-    let menu = view_menu_popup(
+    view_menu_popup(
         model.tree,
         model.service,
         model.menu_path,
         window,
         hovered_item,
         focused_item,
-    );
-
-    iced::widget::mouse_area(menu)
-        .on_press(Message::Menu(super::messages::MenuEvent::Closed))
-        .into()
+    )
 }
 
 fn render_searchable_sni_popup_model<'a>(
@@ -660,9 +684,7 @@ fn render_searchable_sni_popup_model<'a>(
         window,
     )));
 
-    mouse_area(menu)
-        .on_press(Message::Menu(super::messages::MenuEvent::Closed))
-        .into()
+    menu.into()
 }
 
 fn render_bar_model<'a>(
@@ -773,6 +795,77 @@ mod tests {
     use super::App;
     use crate::config::{Config, MenuConfig, MenuSourceConfig, MenuSourceKind};
     use crate::surface::menu_popup::{MenuItem, MenuTree};
+
+    #[tokio::test]
+    async fn dismissal_window_stays_transparent_until_physically_removed() {
+        use crate::app::{
+            Message,
+            messages::{PanelEvent, SurfaceEvent},
+        };
+        use iced::advanced::{
+            Layout, layout,
+            renderer::{Headless, Renderer as _},
+            widget::Tree,
+        };
+        use iced::{Color, Rectangle, Size, mouse};
+
+        let mut renderer =
+            iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
+                .await
+                .expect("software renderer");
+        let (mut app, _) = App::boot(Config::default(), vec![]);
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
+        let _ = app.update(Message::Panel(PanelEvent::Open {
+            origin_window: origin,
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::BarPanel,
+            anchor: None,
+        }));
+        let backdrop = app.foreground.role_snapshot().roles_for_test_dismissal();
+        let mut tree = Tree::empty();
+        let viewport = Rectangle::with_size(Size::new(1280.0, 800.0));
+        for (window, closing, transparent) in [
+            (origin, false, false),
+            (backdrop, false, true),
+            (backdrop, true, true),
+        ] {
+            if closing {
+                // Physical removal is an asynchronous task. Iced can redraw the
+                // same window after App has already processed the close event.
+                let _ = app.update(Message::Surface(SurfaceEvent::PointerPressed(backdrop)));
+            }
+            let mut view = app.view(window);
+            tree.diff(view.as_widget());
+            let node = view.as_widget_mut().layout(
+                &mut tree,
+                &renderer,
+                &layout::Limits::new(Size::ZERO, viewport.size()),
+            );
+            renderer.reset(viewport);
+            view.as_widget().draw(
+                &tree,
+                &mut renderer,
+                &iced::Theme::Dark,
+                &iced::advanced::renderer::Style {
+                    text_color: Color::WHITE,
+                },
+                Layout::new(&node),
+                mouse::Cursor::Unavailable,
+                &viewport,
+            );
+            let rgba = renderer.screenshot(Size::new(1280, 800), 1.0, Color::TRANSPARENT);
+            let painted = rgba.chunks_exact(4).filter(|pixel| pixel[3] != 0).count();
+            if transparent {
+                assert_eq!(
+                    painted, 0,
+                    "closing={closing}: dismissal window painted {painted} screen pixels"
+                );
+            } else {
+                assert!(painted > 0, "registered bar must still render");
+            }
+        }
+    }
 
     #[test]
     fn default_surface_view_renders_without_panic() {

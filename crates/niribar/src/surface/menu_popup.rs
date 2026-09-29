@@ -30,7 +30,7 @@ pub struct MenuItem {
 /// Returns an Iced `Element` that renders a vertical list of menu items.
 /// Separators become thin horizontal rules. Disabled items are dimmed.
 /// The hovered enabled item is highlighted with a `SURFACE0` background.
-/// The caller must wrap this in a mouse_area for outside-click dismissal.
+/// The host's Wayland popup grab handles outside-click dismissal.
 pub fn view_menu_popup<'a>(
     tree: &'a MenuTree,
     service: &'a str,

@@ -84,7 +84,7 @@ def verify(args, session):
         lambda: [p for p in runtime.glob("wayland-*") if p.is_socket()], "Wayland")[0])
     config = runtime / "config/niribar/config.kdl"
     config.parent.mkdir(parents=True)
-    config.write_text('bar "test" { output "all"; edge "top"; collapsed-width 44; modules { start "tray"; }; }\nmodules { module "tray" { type "tray"; }; }\n')
+    config.write_text('bar "test" { output "HEADLESS-1"; edge "top"; collapsed-width 44; modules { start "tray"; }; }\nmodules { module "tray" { type "tray"; }; }\n')
     source = ROOT / "scripts/desktop-fixture"
     protocol = str(source / "wlr-virtual-pointer-unstable-v1.xml")
     session.run(["wayland-scanner", "client-header", protocol, str(runtime / "virtual-pointer.h")])
@@ -140,9 +140,27 @@ def verify(args, session):
         frame = Image.open(output / "restored.png").convert("RGB")
         return frame.getpixel((800, 50)) == (30, 30, 46) and frame.getpixel((800, 60)) != (30, 30, 46)
     session.wait_for(restored_bar_visible, "rendered replacement bar at scale 1.25")
+    # Outside dismissal also covers an output with no bar, including one
+    # connected while the panel is already open.
+    before_panel = len(trace())
+    session.run([str(args.niribar), "--toggle-panel"])
+    dismissal_ids = lambda: re.findall(
+        r'get_layer_surface\(new id zwlr_layer_surface_v1[@#](\d+),[^\n]*"niribar-dismissal"',
+        trace()[before_panel:])
+    session.wait_for(lambda: len(dismissal_ids()) == 1, "first dismissal surface")
+    session.run(["swaymsg", "create_output"])
+    session.run(["swaymsg", "output", "HEADLESS-2", "mode", "1600x1000", "pos", "1280", "0"])
+    session.wait_for(lambda: len(dismissal_ids()) == 2, "dismissal surface on new output without a bar")
+    session.run(["swaymsg", "input", "type:pointer", "map_to_output", "HEADLESS-2"])
+    time.sleep(.5)
+    session.run([pointer, "1400", "500"])
+    session.wait_for(lambda: all(re.search(rf'zwlr_layer_surface_v1[@#]{identifier}\.destroy\(',
+                                         trace()[before_panel:]) for identifier in dismissal_ids()),
+                     "outside dismissal on second output")
     desktop.write_json(output / "result.json", {"passed": True, "sway": session.run(["sway", "--version"]).strip(),
         "checks": ["tray popup grab", "outside-click dismissal", "fractional scale 1.25",
-                   "all-output removal and restoration without shell restart"]})
+                   "all-output removal and restoration without shell restart",
+                   "outside dismissal on an output added without a bar"]})
     print(f"Shared fork desktop checks passed: {output}")
 
 

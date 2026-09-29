@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+mod dismissal;
 mod motion;
 
 pub(super) struct PanelOpenContext<'a> {
@@ -77,6 +78,16 @@ pub(super) struct ForegroundRoleSnapshot {
 }
 
 impl ForegroundRoleSnapshot {
+    #[cfg(test)]
+    pub(super) fn roles_for_test_dismissal(&self) -> iced::window::Id {
+        *self
+            .roles
+            .iter()
+            .find(|(_, role)| **role == super::surface_input_router::WindowRole::Dismissal)
+            .unwrap()
+            .0
+    }
+
     pub(super) fn role_for(
         &self,
         window: Option<iced::window::Id>,
@@ -334,6 +345,7 @@ impl PartialEq for ForegroundEffect {
 
 #[derive(Default)]
 pub(super) struct Foreground {
+    dismissal: dismissal::DismissalSurfaces,
     active: Option<ForegroundOverlay>,
     panel: super::panel_runtime::PanelRuntime,
     motion: Option<motion::PanelMotion>,
@@ -833,6 +845,10 @@ impl Foreground {
 
     pub(super) fn role_snapshot(&self) -> ForegroundRoleSnapshot {
         let mut roles = HashMap::new();
+
+        for window in self.dismissal.windows() {
+            roles.insert(window, super::surface_input_router::WindowRole::Dismissal);
+        }
 
         if let Some(window) = self.active_panel_window() {
             roles.insert(window, super::surface_input_router::WindowRole::Panel);

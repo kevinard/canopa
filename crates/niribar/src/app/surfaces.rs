@@ -450,6 +450,7 @@ impl App {
         use super::surface_input_router::SurfaceInputEffect;
 
         match effect {
+            SurfaceInputEffect::ClosePanel => Task::batch(self.close_active_panel()),
             SurfaceInputEffect::TrackCursor { window, position } => {
                 let has_tray = self.modules.has_kind(ModuleKind::Tray)
                     || self.modules.has_kind(ModuleKind::TrayIcon);
@@ -590,6 +591,7 @@ impl App {
 
     /// Reconciles live **Bar Surfaces** from a Wayland Output Snapshot.
     pub(super) fn handle_wayland_output_snapshot(&mut self, outputs: Vec<String>) -> Task<Message> {
+        self.foreground.remember_dismissal_outputs(outputs.clone());
         Task::batch(self.reconcile_bar_surfaces_from_observed_outputs(Some(outputs)))
     }
 

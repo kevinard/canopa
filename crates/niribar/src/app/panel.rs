@@ -918,6 +918,13 @@ impl App {
                 provider_name,
                 anchor,
             } => self.open_provider_panel(origin_window, origin, provider_name, anchor),
+            PanelEvent::Dismiss(window) => {
+                if self.foreground.active_panel_window() == Some(window) {
+                    Task::batch(self.close_active_panel())
+                } else {
+                    Task::none()
+                }
+            }
             PanelEvent::Close => Task::batch(self.close_active_panel()),
             PanelEvent::SearchChanged(query) => {
                 let effects = self.foreground.handle(
@@ -2240,6 +2247,34 @@ mod tests {
             usize::from(app.foreground.active_panel_window().is_some()),
             0
         );
+    }
+
+    #[test]
+    fn outside_dismissal_closes_current_panel_and_ignores_replaced_windows() {
+        use crate::app::messages::{PanelEvent, SurfaceEvent};
+        let (mut app, _) = App::boot(crate::config::Config::default(), vec![]);
+        let origin = iced::window::Id::unique();
+        app.surface_mut(origin);
+        let open = Message::Panel(PanelEvent::Open {
+            origin_window: origin,
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::BarPanel,
+            anchor: None,
+        });
+        let _ = app.update(open.clone());
+        let old_panel = app.foreground.active_panel_window().unwrap();
+        let old_backdrop = app.foreground.role_snapshot().roles_for_test_dismissal();
+        let _ = app.update(open);
+        let current = app.foreground.active_panel_window().unwrap();
+        let _ = app.update(Message::Panel(PanelEvent::Dismiss(old_panel)));
+        let _ = app.update(Message::Surface(SurfaceEvent::PointerPressed(old_backdrop)));
+        assert_eq!(app.foreground.active_panel_window(), Some(current));
+        let current_backdrop = app.foreground.role_snapshot().roles_for_test_dismissal();
+        let _ = app.update(Message::Surface(SurfaceEvent::PointerPressed(
+            current_backdrop,
+        )));
+        assert_eq!(app.foreground.active_panel_window(), None);
+        assert!(!app.foreground.is_dismissal_window(current_backdrop));
     }
 
     #[test]

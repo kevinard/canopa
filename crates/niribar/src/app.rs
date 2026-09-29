@@ -417,7 +417,11 @@ impl App {
         if !cfg!(test) {
             self.sync_canopa_accessibility();
         }
-        let task = Task::batch([task, self.prepare_panel_icons()]);
+        let task = Task::batch([
+            task,
+            self.prepare_panel_icons(),
+            self.sync_dismissal_surfaces(),
+        ]);
         if visibility_changed {
             Task::batch(std::iter::once(task).chain(self.reconcile_module_visibility()))
         } else {

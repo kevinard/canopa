@@ -58,6 +58,10 @@ fn keyboard_handler(
     window: iced::window::Id,
 ) -> Option<Message> {
     match event {
+        Event::Mouse(iced::mouse::Event::ButtonPressed(_))
+        | Event::Touch(iced::touch::Event::FingerPressed { .. }) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::PointerPressed(window),
+        )),
         Event::Window(window::Event::Focused) => Some(Message::Surface(
             crate::app::messages::SurfaceEvent::BarFocusGained(window),
         )),

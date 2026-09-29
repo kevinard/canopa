@@ -127,6 +127,7 @@ impl ExternalPanelEvent {
 
 #[derive(Debug, Clone)]
 pub enum SurfaceEvent {
+    PointerPressed(iced::window::Id),
     BarClick(iced::window::Id),
     BarRightClick(iced::window::Id),
     Tick,
@@ -170,6 +171,7 @@ pub enum SurfaceEvent {
 impl SurfaceEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
+            SurfaceEvent::PointerPressed(_) => "Surface::PointerPressed",
             SurfaceEvent::BarClick(_) => "Surface::BarClick",
             SurfaceEvent::BarRightClick(_) => "Surface::BarRightClick",
             SurfaceEvent::Tick => "Surface::Tick",
@@ -249,6 +251,7 @@ impl MenuEvent {
 
 #[derive(Debug, Clone)]
 pub enum PanelEvent {
+    Dismiss(iced::window::Id),
     MotionReady(iced::window::Id),
     MotionScale {
         window: iced::window::Id,
@@ -308,6 +311,7 @@ impl PanelEvent {
             PanelEvent::IconsLoaded(_) => "Panel::IconsLoaded",
             PanelEvent::InstalledAppsLoaded { .. } => "Panel::InstalledAppsLoaded",
             PanelEvent::Open { .. } => "Panel::Open",
+            PanelEvent::Dismiss(_) => "Panel::Dismiss",
             PanelEvent::Close => "Panel::Close",
             PanelEvent::Toggle { .. } => "Panel::Toggle",
             PanelEvent::OpenProvider { .. } => "Panel::OpenProvider",
