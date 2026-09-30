@@ -20,6 +20,10 @@ pub enum IpcEvent {
         name: String,
         responder: IpcResponder,
     },
+    ToggleMenu {
+        name: String,
+        responder: IpcResponder,
+    },
     DmenuSelection {
         request: crate::ipc::protocol::DmenuRequest,
         responder: IpcResponder,
@@ -30,6 +34,7 @@ impl IpcEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
             IpcEvent::OpenMenu { .. } => "Ipc::OpenMenu",
+            IpcEvent::ToggleMenu { .. } => "Ipc::ToggleMenu",
             IpcEvent::DmenuSelection { .. } => "Ipc::DmenuSelection",
         }
     }

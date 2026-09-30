@@ -1280,6 +1280,21 @@ impl App {
         self.surfaces.keys().copied().next()
     }
 
+    pub(super) fn handle_toggle_menu_request(
+        &mut self,
+        name: String,
+        responder: super::messages::IpcResponder,
+    ) -> Task<Message> {
+        if let Some(effects) = self.foreground.close_panel_menu_if_open(&name) {
+            super::app_effects::send_ipc_response(
+                responder,
+                crate::ipc::protocol::IpcResponse::Accepted,
+            );
+            return Task::batch(self.apply_foreground_effects(effects));
+        }
+        self.handle_open_menu_request(name, responder)
+    }
+
     pub(super) fn handle_open_menu_request(
         &mut self,
         name: String,

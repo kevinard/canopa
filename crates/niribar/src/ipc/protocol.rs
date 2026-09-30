@@ -41,6 +41,7 @@ impl std::error::Error for ProtocolError {}
 pub enum IpcRequest {
     DmenuSelection(DmenuRequest),
     OpenMenu { name: String },
+    ToggleMenu { name: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

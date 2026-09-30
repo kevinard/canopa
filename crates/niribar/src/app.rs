@@ -215,6 +215,9 @@ impl App {
             messages::IpcEvent::OpenMenu { name, responder } => {
                 self.handle_open_menu_request(name, responder)
             }
+            messages::IpcEvent::ToggleMenu { name, responder } => {
+                self.handle_toggle_menu_request(name, responder)
+            }
             messages::IpcEvent::DmenuSelection { request, responder } => {
                 self.handle_dmenu_selection_request(request, responder)
             }

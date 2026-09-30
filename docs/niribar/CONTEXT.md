@@ -387,6 +387,11 @@ An IPC request to open a named **Panel Menu** from the running configuration,
 without direct **Bar Surface** interaction context.
 _Avoid_: Global Panel Toggle, Dmenu Selection Request
 
+**Global Panel Menu Toggle**:
+An IPC request to close a named **Panel Menu** if it is open, cancel its pending
+opening, or otherwise perform a **Global Panel Menu Open**.
+_Avoid_: Global Panel Toggle
+
 **Panel Menu Entry Icon**:
 An optional XDG icon-theme name attached to a **Panel Menu** entry.
 _Avoid_: Installed app icon when referring to the general menu entry capability
@@ -865,6 +870,7 @@ _Avoid_: Unavailable module, runtime failure
 - A **Global Panel Menu Open** uses one **Bar Surface** on the focused **Output**, with the same deterministic fallback as **Global Panel Toggle** when that output has no bar or focus is unknown.
 - A **Global Panel Menu Open** uses exact, case-sensitive menu names, replaces **Foreground** through the normal **Panel** opening path, and opens rather than toggles on repeated requests.
 - A **Global Panel Menu Open** acknowledges acceptance without waiting for selection. Unknown menu names and missing **Bar Surfaces** reject the request without replacing **Foreground**.
+- A **Global Panel Menu Toggle** matches the exact menu name regardless of its **Bar Surface** or **Module** origin. Cancelling a pending opening leaves a different active **Panel Menu** intact and ignores late application-discovery results.
 - A missing **Compositor Integration** makes only the dependent **Modules** unavailable; it does not prevent **Bar Surface** creation.
 - Compositor-backed **Modules** use generic names for portable user-facing concepts and compositor-specific names only for non-portable concepts.
 - Workspace-capable **Modules** render **Workspaces** relevant to the **Bar Surface**'s **Output** by default.

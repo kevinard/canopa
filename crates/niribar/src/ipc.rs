@@ -249,6 +249,9 @@ fn ipc_message_for_request(
         protocol::IpcRequest::OpenMenu { name } => {
             Message::Ipc(crate::app::messages::IpcEvent::OpenMenu { name, responder })
         }
+        protocol::IpcRequest::ToggleMenu { name } => {
+            Message::Ipc(crate::app::messages::IpcEvent::ToggleMenu { name, responder })
+        }
         protocol::IpcRequest::DmenuSelection(request) => {
             Message::Ipc(crate::app::messages::IpcEvent::DmenuSelection { request, responder })
         }
@@ -364,6 +367,19 @@ mod tests {
         assert!(matches!(
             decoded,
             Message::Ipc(crate::app::messages::IpcEvent::DmenuSelection { .. })
+        ));
+    }
+
+    #[test]
+    fn framed_toggle_menu_request_decodes_to_ipc_message() {
+        let frame = protocol::encode_frame(&protocol::IpcRequest::ToggleMenu {
+            name: "Tools ☰".into(),
+        })
+        .unwrap();
+        assert!(matches!(
+            ipc_message_for_bytes(&frame),
+            Some(Message::Ipc(crate::app::messages::IpcEvent::ToggleMenu { name, .. }))
+                if name == "Tools ☰"
         ));
     }
 

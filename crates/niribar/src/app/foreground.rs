@@ -381,6 +381,24 @@ impl Foreground {
         })
     }
 
+    /// Global menu commands match the menu name, independent of its bar or module origin.
+    pub(super) fn close_panel_menu_if_open(&mut self, name: &str) -> Option<Vec<ForegroundEffect>> {
+        if self.active_panel_tree().is_some_and(|tree| {
+            matches!(&tree.content, crate::surface::panel::PanelContent::Menu(active) if active == name)
+        }) {
+            return Some(self.close_panel());
+        }
+        if self
+            .pending_apps
+            .as_ref()
+            .is_some_and(|pending| pending.menu_name == name)
+        {
+            self.pending_apps = None;
+            return Some(Vec::new());
+        }
+        None
+    }
+
     pub(super) fn handle(&mut self, intent: ForegroundIntent<'_>) -> Vec<ForegroundEffect> {
         if let ForegroundIntent::TogglePanel { request, .. } = &intent
             && self
@@ -1431,6 +1449,51 @@ mod tests {
             anchor: (0, 0),
             screen_size: (1920, 1080),
         }
+    }
+
+    #[test]
+    fn toggle_menu_cancels_pending_discovery_and_preserves_a_different_menu() {
+        use crate::surface::panel::PanelContent;
+        let menus = vec![crate::config::MenuConfig {
+            name: "apps".into(),
+            prompt: None,
+            show_icons: true,
+            source: Some(crate::config::MenuSourceConfig {
+                kind: crate::config::MenuSourceKind::InstalledApps,
+            }),
+            items: Vec::new(),
+        }];
+        let mut foreground = Foreground::default();
+        let main = panel_request(wid(), PanelContent::Menu("main".into()));
+        open_panel(&mut foreground, main.clone());
+        let apps = panel_request(wid(), PanelContent::Menu("apps".into()));
+        let open_apps = |foreground: &mut Foreground| {
+            foreground.handle(ForegroundIntent::OpenPanel {
+                request: apps.clone(),
+                context: PanelOpenContext::new(&menus, HashMap::new()),
+            });
+            foreground.apps_generation()
+        };
+
+        let cancelled = open_apps(&mut foreground);
+        assert_eq!(foreground.close_panel_menu_if_open("apps"), Some(vec![]));
+        assert!(
+            foreground
+                .installed_apps_loaded(cancelled, vec![], &menus)
+                .is_empty()
+        );
+        assert_eq!(foreground.active_panel_tree(), Some(&main.tree()));
+
+        let current = open_apps(&mut foreground);
+        assert!(foreground.close_panel_menu_if_open("missing").is_none());
+        assert!(
+            !foreground
+                .installed_apps_loaded(current, vec![], &menus)
+                .is_empty()
+        );
+        assert_eq!(foreground.active_panel_tree(), Some(&apps.tree()));
+        assert!(foreground.close_panel_menu_if_open("apps").is_some());
+        assert!(!foreground.has_active_panel());
     }
 
     #[test]

@@ -5,6 +5,7 @@ pub enum Command {
     PrintVersion,
     IpcCommand(String),
     OpenMenu(String),
+    ToggleMenu(String),
     Dmenu(DmenuOptions),
     UsageError(String),
 }
@@ -66,18 +67,24 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            arg if arg == "--open-menu" || arg.starts_with("--open-menu=") => {
+            arg if matches!(arg.split('=').next(), Some("--open-menu" | "--toggle-menu")) => {
                 if special_mode.is_some() {
                     return Command::UsageError("choose one command mode".into());
                 }
-                let inline_name = arg.strip_prefix("--open-menu=");
+                let (flag, inline_name) = arg
+                    .split_once('=')
+                    .map_or((arg, None), |(flag, name)| (flag, Some(name)));
                 let Some(name) = inline_name.map(str::to_owned).or_else(|| args.next()) else {
-                    return Command::UsageError("--open-menu requires a menu name".into());
+                    return Command::UsageError(format!("{flag} requires a menu name"));
                 };
                 if name.is_empty() || (inline_name.is_none() && name.starts_with('-')) {
-                    return Command::UsageError("--open-menu requires a menu name".into());
+                    return Command::UsageError(format!("{flag} requires a menu name"));
                 }
-                special_mode = Some(Command::OpenMenu(name));
+                special_mode = Some(if flag == "--toggle-menu" {
+                    Command::ToggleMenu(name)
+                } else {
+                    Command::OpenMenu(name)
+                });
             }
             "--version" | "-V" | "--toggle-panel" => {
                 if special_mode.is_some() {
@@ -159,10 +166,10 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
         }
     }
     if let Some(command) = special_mode {
-        if matches!(command, Command::OpenMenu(_)) {
+        if matches!(command, Command::OpenMenu(_) | Command::ToggleMenu(_)) {
             if dmenu_option {
                 return Command::UsageError(
-                    "--open-menu cannot be combined with dmenu options".into(),
+                    "menu commands cannot be combined with dmenu options".into(),
                 );
             }
             if let Some(arg) = unknown_argument {

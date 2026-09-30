@@ -13,6 +13,72 @@ fn open_menu(app: &mut App, name: &str) -> IpcResponse {
         .expect("open-menu responds without waiting for menu selection")
 }
 
+fn toggle_menu(app: &mut App, name: &str) -> IpcResponse {
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    let _ = app.update(Message::Ipc(IpcEvent::ToggleMenu {
+        name: name.into(),
+        responder: ipc_responder(tx),
+    }));
+    rx.try_recv().expect("toggle-menu responds immediately")
+}
+
+#[test]
+fn toggle_menu_opens_closes_and_switches_named_menus() {
+    let mut config = config_with_menu(menu_with_two_entries());
+    let mut custom = menu_with_apps_browser();
+    custom.name = "Tools ☰".into();
+    config.menus.push(custom);
+    let (mut app, _) = App::boot(config, vec![]);
+    app.surface_mut(iced::window::Id::unique());
+
+    assert_eq!(toggle_menu(&mut app, "main"), IpcResponse::Accepted);
+    assert_eq!(active_menu_entries(&app)[0].label, "Terminal");
+    assert_eq!(toggle_menu(&mut app, "main"), IpcResponse::Accepted);
+    assert!(!app.foreground.has_active_panel());
+    assert_eq!(toggle_menu(&mut app, "main"), IpcResponse::Accepted);
+    assert_eq!(toggle_menu(&mut app, "Tools ☰"), IpcResponse::Accepted);
+    assert_eq!(
+        app.foreground.active_panel_tree().unwrap().content,
+        PanelContent::Menu("Tools ☰".into())
+    );
+    let panel = app.foreground.active_panel_window();
+    assert!(matches!(
+        toggle_menu(&mut app, "missing"),
+        IpcResponse::Rejected { .. }
+    ));
+    assert_eq!(app.foreground.active_panel_window(), panel);
+}
+
+#[test]
+fn toggle_menu_closes_a_menu_opened_from_a_module_on_another_output() {
+    let mut app = app_with_installed_apps_menu(vec![installed_app("Alpha", "alpha.desktop")]);
+    let first = iced::window::Id::unique();
+    app.surface_mut(first).output_name = "DP-1".into();
+    let other = iced::window::Id::unique();
+    app.surface_mut(other).output_name = "DP-2".into();
+    let _ = app.update(Message::Panel(crate::app::messages::PanelEvent::Open {
+        origin_window: other,
+        origin: crate::surface::panel::PanelOrigin::Module(crate::modules::ModuleId::new(
+            "launcher",
+        )),
+        content: PanelContent::Menu("apps".into()),
+        anchor: None,
+    }));
+    assert_eq!(
+        app.foreground.active_panel_tree().unwrap().origin_window,
+        other
+    );
+
+    assert_eq!(toggle_menu(&mut app, "apps"), IpcResponse::Accepted);
+    assert!(!app.foreground.has_active_panel());
+    assert_eq!(toggle_menu(&mut app, "apps"), IpcResponse::Accepted);
+    assert_eq!(
+        app.foreground.active_panel_tree().unwrap().origin_window,
+        first
+    );
+    assert_eq!(active_menu_entries(&app)[0].label, "Alpha");
+}
+
 #[test]
 fn open_menu_opens_named_menus_and_repeated_requests_keep_a_panel_open() {
     let mut custom = menu_with_two_entries();
@@ -59,6 +125,10 @@ fn open_menu_rejects_without_a_bar_surface() {
         IpcResponse::Rejected { reason } if reason.contains("no bar surface")
     ));
     assert!(!app.foreground.has_active_panel());
+    assert!(matches!(
+        toggle_menu(&mut app, "main"),
+        IpcResponse::Rejected { .. }
+    ));
 }
 
 #[test]
