@@ -16,6 +16,10 @@ pub fn ipc_responder(
 
 #[derive(Debug, Clone)]
 pub enum IpcEvent {
+    OpenMenu {
+        name: String,
+        responder: IpcResponder,
+    },
     DmenuSelection {
         request: crate::ipc::protocol::DmenuRequest,
         responder: IpcResponder,
@@ -25,6 +29,7 @@ pub enum IpcEvent {
 impl IpcEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
+            IpcEvent::OpenMenu { .. } => "Ipc::OpenMenu",
             IpcEvent::DmenuSelection { .. } => "Ipc::DmenuSelection",
         }
     }

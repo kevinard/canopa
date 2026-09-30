@@ -1279,6 +1279,36 @@ impl App {
     fn default_panel_origin_window(&self) -> Option<iced::window::Id> {
         self.surfaces.keys().copied().next()
     }
+
+    pub(super) fn handle_open_menu_request(
+        &mut self,
+        name: String,
+        responder: super::messages::IpcResponder,
+    ) -> Task<Message> {
+        use crate::ipc::protocol::IpcResponse;
+
+        let origin = if !self.config.menus.iter().any(|menu| menu.name == name) {
+            Err(format!("unknown menu {name:?}"))
+        } else {
+            self.surfaces
+                .select_global_panel_surface(self.niri.state().focused_output())
+                .ok_or_else(|| "no bar surface is available".to_string())
+        };
+        let (task, response) = match origin {
+            Ok(origin_window) => (
+                self.handle_panel_event(super::messages::PanelEvent::Open {
+                    origin_window,
+                    origin: crate::surface::panel::PanelOrigin::Bar,
+                    content: crate::surface::panel::PanelContent::Menu(name),
+                    anchor: None,
+                }),
+                IpcResponse::Accepted,
+            ),
+            Err(reason) => (Task::none(), IpcResponse::Rejected { reason }),
+        };
+        super::app_effects::send_ipc_response(responder, response);
+        task
+    }
 }
 
 fn content_for_origin(
@@ -1358,6 +1388,7 @@ mod canopa_tests;
 
 #[cfg(test)]
 mod tests {
+    mod ipc_tests;
     mod scroll_tests;
 
     use super::super::panel_menu_session::{

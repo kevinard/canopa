@@ -212,6 +212,9 @@ impl From<iced_layershell::WaylandOutputSnapshot> for Message {
 impl App {
     pub(super) fn handle_ipc_event(&mut self, event: messages::IpcEvent) -> Task<Message> {
         match event {
+            messages::IpcEvent::OpenMenu { name, responder } => {
+                self.handle_open_menu_request(name, responder)
+            }
             messages::IpcEvent::DmenuSelection { request, responder } => {
                 self.handle_dmenu_selection_request(request, responder)
             }

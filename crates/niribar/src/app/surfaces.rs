@@ -260,7 +260,7 @@ impl SurfaceManager {
         effects
     }
 
-    pub(super) fn select_global_panel_toggle_surface(
+    pub(super) fn select_global_panel_surface(
         &self,
         focused_output: Option<&str>,
     ) -> Option<iced::window::Id> {
@@ -575,10 +575,7 @@ impl App {
         }
 
         let focused_output = self.niri.state().focused_output();
-        let Some(window) = self
-            .surfaces
-            .select_global_panel_toggle_surface(focused_output)
-        else {
+        let Some(window) = self.surfaces.select_global_panel_surface(focused_output) else {
             return Task::none();
         };
         self.handle_panel_event(super::messages::PanelEvent::Open {
@@ -1208,11 +1205,11 @@ mod tests {
         );
 
         assert_eq!(
-            registry.select_global_panel_toggle_surface(Some("eDP-1")),
+            registry.select_global_panel_surface(Some("eDP-1")),
             Some(focused_main)
         );
         assert_eq!(
-            registry.select_global_panel_toggle_surface(Some("missing")),
+            registry.select_global_panel_surface(Some("missing")),
             Some(first)
         );
     }

@@ -285,7 +285,7 @@ impl PanelRuntime {
         >,
         menu_source: Option<super::panel_menu_session::PanelMenuSource>,
     ) -> Vec<PanelRuntimeEffect> {
-        let mut effects = Vec::new();
+        let mut effects = self.finish_interaction();
 
         self.session = None;
         if let Some(source) = menu_source {
@@ -415,12 +415,13 @@ impl PanelRuntime {
             }];
         };
 
-        self.dmenu_responder = Some(responder);
-        self.open_panel_after_source_ready(
+        let effects = self.open_panel_after_source_ready(
             panel_request,
             HashMap::new(),
             Some(SelectableMenuSource::Dmenu(request)),
-        )
+        );
+        self.dmenu_responder = Some(responder);
+        effects
     }
 
     fn complete_dmenu(

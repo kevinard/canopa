@@ -165,14 +165,14 @@ async fn serve_client(
     let bytes = tokio::time::timeout(std::time::Duration::from_secs(2), read_request(&mut socket))
         .await??;
     if bytes.starts_with(protocol::FRAMED_MAGIC.as_bytes()) {
-        let protocol::IpcRequest::DmenuSelection(request) = protocol::decode_frame_payload(&bytes)?;
-        protocol::validate_dmenu_request(&request)?;
+        let request = protocol::decode_frame_payload(&bytes)?;
+        if let protocol::IpcRequest::DmenuSelection(request) = &request {
+            protocol::validate_dmenu_request(request)?;
+        }
         let (responder, response_rx) = tokio::sync::oneshot::channel();
-        tx.send(Message::Ipc(
-            crate::app::messages::IpcEvent::DmenuSelection {
-                request,
-                responder: crate::app::messages::ipc_responder(responder),
-            },
+        tx.send(ipc_message_for_request(
+            request,
+            crate::app::messages::ipc_responder(responder),
         ))
         .await?;
         // No selection deadline: the UI owns the user's interactive wait.
@@ -231,20 +231,26 @@ pub(crate) fn decode_response_frame(frame: &[u8]) -> anyhow::Result<protocol::Ip
 fn ipc_message_for_bytes(bytes: &[u8]) -> Option<Message> {
     if bytes.starts_with(protocol::FRAMED_MAGIC.as_bytes()) {
         let request = protocol::decode_frame_payload(bytes).ok()?;
-        return Some(ipc_message_for_request(request));
+        let (responder, _rx) = tokio::sync::oneshot::channel();
+        return Some(ipc_message_for_request(
+            request,
+            crate::app::messages::ipc_responder(responder),
+        ));
     }
     let line = std::str::from_utf8(bytes).ok()?;
     ipc_message_for_line(line)
 }
 
-fn ipc_message_for_request(request: protocol::IpcRequest) -> Message {
+fn ipc_message_for_request(
+    request: protocol::IpcRequest,
+    responder: crate::app::messages::IpcResponder,
+) -> Message {
     match request {
+        protocol::IpcRequest::OpenMenu { name } => {
+            Message::Ipc(crate::app::messages::IpcEvent::OpenMenu { name, responder })
+        }
         protocol::IpcRequest::DmenuSelection(request) => {
-            let (responder, _rx) = tokio::sync::oneshot::channel();
-            Message::Ipc(crate::app::messages::IpcEvent::DmenuSelection {
-                request,
-                responder: crate::app::messages::ipc_responder(responder),
-            })
+            Message::Ipc(crate::app::messages::IpcEvent::DmenuSelection { request, responder })
         }
     }
 }
@@ -369,6 +375,50 @@ mod tests {
             Message::Surface(crate::app::messages::SurfaceEvent::TogglePanel)
         ));
     }
+    #[tokio::test]
+    async fn open_menu_request_returns_an_acknowledgement_over_the_socket() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (mut client, server) = tokio::net::UnixStream::pair().unwrap();
+        let (tx, mut rx) = mpsc::channel(1);
+        let task = tokio::spawn(serve_client(server, tx));
+        client
+            .write_all(
+                &protocol::encode_frame(&protocol::IpcRequest::OpenMenu {
+                    name: "My menu\n☰".into(),
+                })
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        client.shutdown().await.unwrap();
+        let Message::Ipc(crate::app::messages::IpcEvent::OpenMenu { name, responder }) =
+            rx.recv().await.unwrap()
+        else {
+            panic!("expected open-menu request")
+        };
+        assert_eq!(name, "My menu\n☰");
+        responder
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .send(protocol::IpcResponse::Accepted)
+            .unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            client.read_to_end(&mut response),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            decode_response_frame(&response).unwrap(),
+            protocol::IpcResponse::Accepted
+        );
+        task.await.unwrap().unwrap();
+    }
+
     #[tokio::test]
     async fn pending_selection_does_not_block_other_clients() {
         use tokio::io::AsyncWriteExt;

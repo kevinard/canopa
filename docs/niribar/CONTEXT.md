@@ -382,6 +382,11 @@ _Avoid_: Toggle all, expansion toggle
 An app-owned, named launcher/menu list rendered inside a **Panel**.
 _Avoid_: Menu when referring to SNI or other module-owned context menus
 
+**Global Panel Menu Open**:
+An IPC request to open a named **Panel Menu** from the running configuration,
+without direct **Bar Surface** interaction context.
+_Avoid_: Global Panel Toggle, Dmenu Selection Request
+
 **Panel Menu Entry Icon**:
 An optional XDG icon-theme name attached to a **Panel Menu** entry.
 _Avoid_: Installed app icon when referring to the general menu entry capability
@@ -857,6 +862,9 @@ _Avoid_: Unavailable module, runtime failure
 - A **Bar Surface** with no visible actionable or inspectable targets has no **Keyboard Focus** target.
 - A **Global Panel Toggle** closes the currently open **Panel**, or opens the default **Panel** for the focused **Output** when no **Panel** is open.
 - If no focused **Output** is known, a **Global Panel Toggle** opens one deterministic **Bar Surface** default **Panel**, not one **Panel** per **Bar Surface**.
+- A **Global Panel Menu Open** uses one **Bar Surface** on the focused **Output**, with the same deterministic fallback as **Global Panel Toggle** when that output has no bar or focus is unknown.
+- A **Global Panel Menu Open** uses exact, case-sensitive menu names, replaces **Foreground** through the normal **Panel** opening path, and opens rather than toggles on repeated requests.
+- A **Global Panel Menu Open** acknowledges acceptance without waiting for selection. Unknown menu names and missing **Bar Surfaces** reject the request without replacing **Foreground**.
 - A missing **Compositor Integration** makes only the dependent **Modules** unavailable; it does not prevent **Bar Surface** creation.
 - Compositor-backed **Modules** use generic names for portable user-facing concepts and compositor-specific names only for non-portable concepts.
 - Workspace-capable **Modules** render **Workspaces** relevant to the **Bar Surface**'s **Output** by default.

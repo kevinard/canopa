@@ -364,7 +364,7 @@ impl App {
     }
 }
 
-fn send_ipc_response(
+pub(super) fn send_ipc_response(
     responder: super::messages::IpcResponder,
     response: crate::ipc::protocol::IpcResponse,
 ) {

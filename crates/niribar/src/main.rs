@@ -28,6 +28,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::CheckConfig(_) => "check-config",
         cli::Command::PrintVersion => "version",
         cli::Command::IpcCommand(_) => "ipc",
+        cli::Command::OpenMenu(_) => "open-menu",
         cli::Command::Dmenu(_) => "dmenu",
         cli::Command::UsageError(_) => "usage-error",
     }
@@ -41,6 +42,7 @@ fn main() {
     match command {
         cli::Command::PrintVersion => println!("{}", env!("CARGO_PKG_VERSION")),
         cli::Command::IpcCommand(cmd) => send_ipc_command(&cmd),
+        cli::Command::OpenMenu(name) => std::process::exit(run_open_menu_cli(name)),
         cli::Command::Dmenu(options) => std::process::exit(run_dmenu_cli(options)),
         cli::Command::UsageError(message) => {
             eprintln!("niribar: {message}");
@@ -111,7 +113,9 @@ fn exit_code_for_dmenu_response(response: &ipc::protocol::IpcResponse) -> i32 {
     match response {
         ipc::protocol::IpcResponse::Selected { .. } => 0,
         ipc::protocol::IpcResponse::Cancelled => 1,
-        ipc::protocol::IpcResponse::Rejected { .. } => DMENU_REQUEST_FAILURE_EXIT,
+        ipc::protocol::IpcResponse::Rejected { .. } | ipc::protocol::IpcResponse::Accepted => {
+            DMENU_REQUEST_FAILURE_EXIT
+        }
     }
 }
 
@@ -160,13 +164,14 @@ fn run_dmenu_cli(options: cli::DmenuOptions) -> i32 {
         return DMENU_USAGE_EXIT;
     }
 
-    let response = match send_dmenu_request(&request) {
-        Ok(response) => response,
-        Err(err) => {
-            eprintln!("niribar: dmenu request failed: {err}");
-            return DMENU_REQUEST_FAILURE_EXIT;
-        }
-    };
+    let response =
+        match send_framed_request(&ipc::protocol::IpcRequest::DmenuSelection(request), None) {
+            Ok(response) => response,
+            Err(err) => {
+                eprintln!("niribar: dmenu request failed: {err}");
+                return DMENU_REQUEST_FAILURE_EXIT;
+            }
+        };
 
     if let ipc::protocol::IpcResponse::Selected { value } = &response {
         println!("{value}");
@@ -178,16 +183,41 @@ fn run_dmenu_cli(options: cli::DmenuOptions) -> i32 {
     exit_code_for_dmenu_response(&response)
 }
 
-fn send_dmenu_request(
-    request: &ipc::protocol::DmenuRequest,
+fn run_open_menu_cli(name: String) -> i32 {
+    use ipc::protocol::{IpcRequest, IpcResponse};
+
+    match send_framed_request(
+        &IpcRequest::OpenMenu { name },
+        Some(std::time::Duration::from_secs(2)),
+    ) {
+        Ok(IpcResponse::Accepted) => 0,
+        Ok(IpcResponse::Rejected { reason }) => {
+            eprintln!("niribar: open-menu request rejected: {reason}");
+            1
+        }
+        Ok(_) => {
+            eprintln!("niribar: unexpected open-menu response");
+            1
+        }
+        Err(error) => {
+            eprintln!("niribar: open-menu request failed: {error}");
+            1
+        }
+    }
+}
+
+fn send_framed_request(
+    request: &ipc::protocol::IpcRequest,
+    response_timeout: Option<std::time::Duration>,
 ) -> anyhow::Result<ipc::protocol::IpcResponse> {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
 
     let path = ipc::socket_path()?;
     let mut stream = UnixStream::connect(&path)?;
-    let frame =
-        ipc::protocol::encode_frame(&ipc::protocol::IpcRequest::DmenuSelection(request.clone()))?;
+    stream.set_write_timeout(Some(std::time::Duration::from_secs(2)))?;
+    stream.set_read_timeout(response_timeout)?;
+    let frame = ipc::protocol::encode_frame(request)?;
     stream.write_all(&frame)?;
     stream.shutdown(std::net::Shutdown::Write)?;
 

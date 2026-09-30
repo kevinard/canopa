@@ -4,6 +4,7 @@ pub enum Command {
     CheckConfig(ConfigOptions),
     PrintVersion,
     IpcCommand(String),
+    OpenMenu(String),
     Dmenu(DmenuOptions),
     UsageError(String),
 }
@@ -60,9 +61,24 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
     let mut explicit_source = false;
     let mut dmenu_options = DmenuOptions::default();
     let mut custom_delimiter = false;
+    let mut dmenu_option = false;
+    let mut unknown_argument = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            arg if arg == "--open-menu" || arg.starts_with("--open-menu=") => {
+                if special_mode.is_some() {
+                    return Command::UsageError("choose one command mode".into());
+                }
+                let inline_name = arg.strip_prefix("--open-menu=");
+                let Some(name) = inline_name.map(str::to_owned).or_else(|| args.next()) else {
+                    return Command::UsageError("--open-menu requires a menu name".into());
+                };
+                if name.is_empty() || (inline_name.is_none() && name.starts_with('-')) {
+                    return Command::UsageError("--open-menu requires a menu name".into());
+                }
+                special_mode = Some(Command::OpenMenu(name));
+            }
             "--version" | "-V" | "--toggle-panel" => {
                 if special_mode.is_some() {
                     return Command::UsageError("choose one command mode".into());
@@ -95,12 +111,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
             }
             "--dmenu" => dmenu = true,
             "-p" | "--prompt" => {
+                dmenu_option = true;
                 let Some(value) = args.next() else {
                     return Command::UsageError(format!("{arg} requires a value"));
                 };
                 dmenu_options.prompt = Some(value);
             }
             "-d" | "--delimiter" => {
+                dmenu_option = true;
                 let Some(value) = args.next() else {
                     return Command::UsageError(format!("{arg} requires a value"));
                 };
@@ -112,8 +130,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     Err(err) => return Command::UsageError(err.to_string()),
                 }
             }
-            "--json" => dmenu_options.entry_format = DmenuEntryFormat::JsonLines,
+            "--json" => {
+                dmenu_option = true;
+                dmenu_options.entry_format = DmenuEntryFormat::JsonLines;
+            }
             "--entry-format" => {
+                dmenu_option = true;
                 let Some(value) = args.next() else {
                     return Command::UsageError(format!("{arg} requires a value"));
                 };
@@ -129,11 +151,24 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     }
                 }
             }
-            "--no-custom" => dmenu_options.allow_custom = false,
-            _ => {}
+            "--no-custom" => {
+                dmenu_option = true;
+                dmenu_options.allow_custom = false;
+            }
+            _ => unknown_argument = Some(arg),
         }
     }
     if let Some(command) = special_mode {
+        if matches!(command, Command::OpenMenu(_)) {
+            if dmenu_option {
+                return Command::UsageError(
+                    "--open-menu cannot be combined with dmenu options".into(),
+                );
+            }
+            if let Some(arg) = unknown_argument {
+                return Command::UsageError(format!("unexpected argument {arg:?}"));
+            }
+        }
         if dmenu || check_config || explicit_source || configuration.show_source {
             return Command::UsageError("choose one command mode".into());
         }

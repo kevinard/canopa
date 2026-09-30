@@ -40,6 +40,7 @@ impl std::error::Error for ProtocolError {}
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum IpcRequest {
     DmenuSelection(DmenuRequest),
+    OpenMenu { name: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -91,6 +92,7 @@ impl DmenuEntry {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum IpcResponse {
+    Accepted,
     Selected { value: String },
     Cancelled,
     Rejected { reason: String },

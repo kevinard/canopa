@@ -110,10 +110,33 @@ application-opening `command` actions in your own config to `launch`.
 ```sh
 niribar --version
 niribar --toggle-panel
+niribar --open-menu apps
+niribar --open-menu main
 printf 'First\nSecond\n' | niribar --dmenu --prompt 'Choose' --no-custom
 ```
 
 The IPC commands require a running bar. Selection input is bounded to 1 MiB.
+
+`--open-menu NAME` opens any named menu in the running bar's configuration,
+including menus with `source "installed-apps"`. Names are exact and case-sensitive;
+quote names containing spaces and use `--open-menu=NAME` for names starting with
+`-`. The request uses a bar on Niri's focused output,
+falling back to one deterministic bar surface if that output has no bar or focus
+is unavailable. Opening a menu replaces the current interactive overlay; repeating
+the command opens the menu again instead of toggling it closed.
+
+The command exits as soon as the running bar accepts the request, without waiting
+for a selection. Exit status is `0` for acceptance, `1` for an unknown menu, no
+available bar surface, or an IPC failure, and `2` for invalid command-line usage.
+The running bar must also support this command; restart it after upgrading.
+
+For example, put this inside Niri's existing `binds` block to open an `apps` menu:
+
+```kdl
+Mod+D repeat=false hotkey-overlay-title="Run an Application: niribar" {
+    spawn "niribar" "--open-menu" "apps";
+}
+```
 
 ## Install a release
 
