@@ -143,7 +143,7 @@ async fn slider_keyboard_repeats_preview_then_commit_and_home_end_reach_bounds()
         .await
         .unwrap();
     let mut tree = Tree::empty();
-    let key = |named, pressed| {
+    let key = |named, pressed, repeat| {
         let key = Key::Named(named);
         if pressed {
             Event::Keyboard(keyboard::Event::KeyPressed {
@@ -153,7 +153,7 @@ async fn slider_keyboard_repeats_preview_then_commit_and_home_end_reach_bounds()
                 location: keyboard::Location::Standard,
                 modifiers: keyboard::Modifiers::empty(),
                 text: None,
-                repeat: false,
+                repeat,
             })
         } else {
             Event::Keyboard(keyboard::Event::KeyReleased {
@@ -167,13 +167,13 @@ async fn slider_keyboard_repeats_preview_then_commit_and_home_end_reach_bounds()
     };
     // The pointer is outside the control: keyboard focus, not hover, owns these keys.
     let point = iced::Point::new(900.0, 900.0);
-    for _ in 0..2 {
+    for repeat in [false, true] {
         assert!(
             values(&event(
                 &mut tree,
                 &renderer,
                 1,
-                key(Named::ArrowRight, true),
+                key(Named::ArrowRight, true, repeat),
                 point
             ))
             .is_empty()
@@ -184,16 +184,86 @@ async fn slider_keyboard_repeats_preview_then_commit_and_home_end_reach_bounds()
             &mut tree,
             &renderer,
             1,
-            key(Named::ArrowRight, false),
+            key(Named::ArrowRight, false, false),
             point
         )),
         [42]
     );
+    // A second release must win even when it returns to the advertised value
+    // before the first command's authoritative replacement has arrived.
+    for repeat in [false, true] {
+        event(
+            &mut tree,
+            &renderer,
+            1,
+            key(Named::ArrowLeft, true, repeat),
+            point,
+        );
+    }
+    assert_eq!(
+        values(&event(
+            &mut tree,
+            &renderer,
+            1,
+            key(Named::ArrowLeft, false, false),
+            point
+        )),
+        [40]
+    );
     for (named, value) in [(Named::Home, 0), (Named::End, 100)] {
-        event(&mut tree, &renderer, 1, key(named, true), point);
+        event(&mut tree, &renderer, 1, key(named, true, false), point);
         assert_eq!(
-            values(&event(&mut tree, &renderer, 1, key(named, false), point)),
+            values(&event(
+                &mut tree,
+                &renderer,
+                1,
+                key(named, false, false),
+                point
+            )),
             [value]
         );
     }
+    event(
+        &mut tree,
+        &renderer,
+        1,
+        key(Named::ArrowLeft, true, false),
+        point,
+    );
+    event(
+        &mut tree,
+        &renderer,
+        2,
+        key(Named::ArrowLeft, true, true),
+        point,
+    );
+    assert!(
+        values(&event(
+            &mut tree,
+            &renderer,
+            2,
+            key(Named::ArrowLeft, false, false),
+            point
+        ))
+        .is_empty(),
+        "replacement cancels the held key, including later OS repeats"
+    );
+    event(
+        &mut tree,
+        &renderer,
+        2,
+        key(Named::ArrowLeft, true, false),
+        point,
+    );
+    assert_eq!(
+        values(&event(
+            &mut tree,
+            &renderer,
+            2,
+            key(Named::ArrowLeft, false, false),
+            point
+        )),
+        [39],
+        "a fresh key press still works after replacement"
+    );
 }

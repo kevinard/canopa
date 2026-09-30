@@ -9,7 +9,7 @@ use iced::{Event, Rectangle, Renderer, Size, Theme, mouse};
 pub(super) fn wrap<'a>(
     content: Element<'a, Message>,
     id: iced::widget::Id,
-    focused_slider: Option<iced::widget::Id>,
+    focused_slider: Option<(String, iced::widget::Id)>,
 ) -> Element<'a, Message> {
     Element::new(ReadingPanel {
         content,
@@ -21,11 +21,11 @@ pub(super) fn wrap<'a>(
 struct ReadingPanel<'a> {
     content: Element<'a, Message>,
     id: iced::widget::Id,
-    focused_slider: Option<iced::widget::Id>,
+    focused_slider: Option<(String, iced::widget::Id)>,
 }
 
 #[derive(Default)]
-struct FocusedSlider(Option<iced::widget::Id>);
+struct FocusedSlider(Option<String>);
 
 impl Widget<Message, Theme, Renderer> for ReadingPanel<'_> {
     fn tag(&self) -> tree::Tag {
@@ -79,13 +79,14 @@ impl Widget<Message, Theme, Renderer> for ReadingPanel<'_> {
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
+        let focused_identity = self.focused_slider.as_ref().map(|(identity, _)| identity);
         if matches!(
             event,
             Event::Window(iced::window::Event::RedrawRequested(_))
-        ) && tree.state.downcast_ref::<FocusedSlider>().0 != self.focused_slider
+        ) && tree.state.downcast_ref::<FocusedSlider>().0.as_ref() != focused_identity
         {
-            tree.state.downcast_mut::<FocusedSlider>().0 = self.focused_slider.clone();
-            if let Some(target) = &self.focused_slider {
+            tree.state.downcast_mut::<FocusedSlider>().0 = focused_identity.cloned();
+            if let Some((_, target)) = &self.focused_slider {
                 let mut find = SliderPosition {
                     target: target.clone(),
                     scroll: self.id.clone(),

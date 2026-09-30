@@ -26,6 +26,7 @@ pub(super) fn render<'a>(
 ) -> Element<'a, Message> {
     let reading_id = iced::widget::Id::from(format!("canopa-reading/{provider}"));
     let mut panel = column![].spacing(20);
+    let mut focused_slider = None;
     if let Some(error) = &snapshot.content.error {
         panel = panel.push(semantic(
             snapshot,
@@ -285,6 +286,17 @@ pub(super) fn render<'a>(
             };
             if let Some(slider) = &item.slider {
                 let id = snapshot.slider_id(&item.id, slider);
+                if snapshot.focused_action_id() == Some(id.as_str()) {
+                    focused_slider = Some((
+                        serde_json::to_string(&(provider, &item.id, &slider.key))
+                            .expect("control identity is serializable"),
+                        super::canopa_accessibility_bounds::widget_id(&semantic_key(
+                            snapshot,
+                            provider,
+                            &SemanticNode::Action(id.clone()),
+                        )),
+                    ));
+                }
                 card = card.push(semantic(
                     snapshot,
                     provider,
@@ -354,16 +366,7 @@ pub(super) fn render<'a>(
         .style(move |theme| canopa_ui::panel::surface(theme, drawer))
         .into(),
         reading_id,
-        snapshot
-            .focused_action_id()
-            .filter(|id| snapshot.slider(id).is_some())
-            .map(|id| {
-                super::canopa_accessibility_bounds::widget_id(&semantic_key(
-                    snapshot,
-                    provider,
-                    &SemanticNode::Action(id.into()),
-                ))
-            }),
+        focused_slider,
     )
 }
 

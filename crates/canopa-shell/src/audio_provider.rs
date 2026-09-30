@@ -4,7 +4,12 @@ use canopa_panel_protocol::v5::{self, Content, HostMessage, Interaction, Session
 use canopa_panel_protocol::{
     InteractionTarget, PanelAction, PanelContent, PanelItem, PanelSection,
 };
-use std::{collections::HashMap, future::Future, pin::Pin, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    future::Future,
+    pin::Pin,
+    time::Duration,
+};
 use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
 
 type ActionMap = HashMap<(String, String), (AudioDeviceId, DeviceOperation)>;
@@ -172,6 +177,7 @@ pub async fn run(
     let mut current = state.borrow_and_update().clone();
     let mut pending: Option<PendingOperation> = None;
     let mut pending_volume = false;
+    let mut queued: VecDeque<(AudioDeviceId, DeviceOperation)> = VecDeque::new();
     let mut error = None;
     write(&mut output, panel.publish(current.as_ref(), false, None)?).await?;
     loop {
@@ -179,6 +185,19 @@ pub async fn run(
         let frame = HostMessage::read_async(&mut input);
         tokio::pin!(frame);
         let message = loop {
+            if pending.is_none()
+                && let Some((id, operation)) = queued.pop_front()
+            {
+                let had_error = error.take().is_some();
+                pending_volume = matches!(operation, DeviceOperation::SetVolume { .. });
+                // Keep the committed preview until the observer publishes the
+                // actual volume; a progress echo would restore the old level.
+                if !pending_volume || had_error {
+                    write(&mut output, panel.publish(current.as_ref(), true, None)?).await?;
+                }
+                let audio = audio.clone();
+                pending = Some(Box::pin(async move { audio.apply(id, operation).await }));
+            }
             tokio::select! {
                 message = &mut frame => break message?,
                 change = state.changed() => {
@@ -211,18 +230,27 @@ pub async fn run(
         if matches!(message, HostMessage::Close { .. }) {
             return Ok(());
         }
-        if pending.is_none()
-            && let Some((id, operation)) = panel.action(&message)
-        {
-            let had_error = error.take().is_some();
-            pending_volume = matches!(operation, DeviceOperation::SetVolume { .. });
-            // Keep the host's committed preview until an authoritative volume
-            // snapshot arrives; a progress echo would briefly restore the old level.
-            if !pending_volume || had_error {
-                write(&mut output, panel.publish(current.as_ref(), true, None)?).await?;
+        if let Some((id, operation)) = panel.action(&message) {
+            // Validate the published revision on receipt. Accepted commands keep
+            // their exact device identity, which the audio worker revalidates.
+            // Coalesce only adjacent absolute volume edits: mute/default retain
+            // their order relative to volume and to other devices.
+            if matches!(operation, DeviceOperation::SetVolume { .. })
+                && let Some((last_id, last_operation)) = queued.back_mut()
+                && *last_id == id
+                && matches!(last_operation, DeviceOperation::SetVolume { .. })
+            {
+                *last_operation = operation;
+            } else if queued.len() < 8 {
+                queued.push_back((id, operation));
+            } else {
+                error = Some("Too many audio changes are pending. Please try again.".into());
+                write(
+                    &mut output,
+                    panel.publish(current.as_ref(), !pending_volume, error.as_deref())?,
+                )
+                .await?;
             }
-            let audio = audio.clone();
-            pending = Some(Box::pin(async move { audio.apply(id, operation).await }));
         }
     }
 }

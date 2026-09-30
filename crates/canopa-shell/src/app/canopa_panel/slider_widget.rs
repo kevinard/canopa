@@ -37,7 +37,7 @@ struct State {
     value: u16,
     pointer: bool,
     keyboard: bool,
-    pending: bool,
+    submitted: Option<u16>,
 }
 #[derive(Clone)]
 enum Input {
@@ -79,9 +79,9 @@ impl NumericSlider {
         })
         .into()
     }
-    fn commit(&self, value: u16, shell: &mut Shell<'_, Message>) -> bool {
-        if value != self.spec.value
-            && let Some(element_id) = slider_value_action(&self.id, value)
+    fn commit(&self, state: &mut State, shell: &mut Shell<'_, Message>) {
+        if state.value != state.submitted.unwrap_or(self.spec.value)
+            && let Some(element_id) = slider_value_action(&self.id, state.value)
         {
             shell.publish(Message::ExternalPanel(
                 ExternalPanelEvent::ButtonActivated {
@@ -89,9 +89,8 @@ impl NumericSlider {
                     element_id,
                 },
             ));
-            return true;
+            state.submitted = Some(state.value);
         }
-        false
     }
 }
 
@@ -104,7 +103,7 @@ impl Widget<Message, Theme, Renderer> for NumericSlider {
             value: self.spec.value,
             pointer: false,
             keyboard: false,
-            pending: false,
+            submitted: None,
         })
     }
     fn children(&self) -> Vec<Tree> {
@@ -115,7 +114,7 @@ impl Widget<Message, Theme, Renderer> for NumericSlider {
         if state.keyboard && !self.focused {
             state.keyboard = false;
         }
-        if !state.pointer && !state.keyboard && !state.pending {
+        if !state.pointer && !state.keyboard && state.submitted.is_none() {
             state.value = self.spec.value;
         }
         let value = state.value;
@@ -166,10 +165,12 @@ impl Widget<Message, Theme, Renderer> for NumericSlider {
         if let Event::Keyboard(KeyEvent::KeyPressed {
             key: Key::Named(key),
             modifiers,
+            repeat,
             ..
         }) = event
         {
-            if self.focused && modifiers.is_empty() && !state.pointer {
+            if self.focused && modifiers.is_empty() && !state.pointer && (!repeat || state.keyboard)
+            {
                 let step = self.spec.step;
                 let next = match key {
                     Named::ArrowLeft | Named::ArrowDown => {
@@ -186,6 +187,7 @@ impl Widget<Message, Theme, Renderer> for NumericSlider {
                     state.value = value;
                     state.keyboard = true;
                     shell.capture_event();
+                    shell.invalidate_layout();
                     shell.request_redraw();
                 }
             }
@@ -209,7 +211,7 @@ impl Widget<Message, Theme, Renderer> for NumericSlider {
             && state.keyboard
         {
             if self.focused {
-                state.pending = self.commit(state.value, shell);
+                self.commit(state, shell);
             }
             state.keyboard = false;
             shell.capture_event();
@@ -247,13 +249,14 @@ impl Widget<Message, Theme, Renderer> for NumericSlider {
                 Input::Preview(value) => {
                     state.value = value;
                     if matches!(event, Event::Mouse(mouse::Event::WheelScrolled { .. })) {
-                        state.pending = self.commit(value, shell);
+                        self.commit(state, shell);
                     }
+                    shell.invalidate_layout();
                     shell.request_redraw();
                 }
                 Input::Release if state.pointer => {
                     if !matches!(event, Event::Touch(iced::touch::Event::FingerLost { .. })) {
-                        state.pending = self.commit(state.value, shell);
+                        self.commit(state, shell);
                     }
                     state.pointer = false;
                     shell.capture_event();

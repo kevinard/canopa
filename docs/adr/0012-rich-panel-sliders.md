@@ -23,6 +23,10 @@ final value once. Home/End select endpoints; native accessibility supports bound
 set-value, increment and decrement. Preview state belongs to a captured generation:
 a replacement cancels an unfinished gesture rather than rebasing it onto a new
 contract. Focus can still follow the same opaque control after replacement.
+Focus reveal compares the logical provider/item/control identity so replacements
+preserve scroll position. A held key's repeats cannot start a replacement gesture;
+it requires a fresh press. Consecutive commits compare with the last submitted
+value, including a return to the previously advertised value.
 Providers retain their domain validation and error/recovery behavior.
 
 Sound replaces its two volume buttons with a 0–100% slider in one-point steps.
@@ -31,3 +35,7 @@ control. Pulse channel scaling preserves existing nonzero channel proportions an
 leaves mute unchanged. Values amplified externally appear at the slider's 100%
 limit; merely opening the panel does not lower them. Muting and choosing the default
 remain separate actions. The normal updater installs both host and provider.
+The provider validates revisions when receiving interactions, then serializes
+accepted commands in a bounded queue. Adjacent absolute volume edits for the same
+device coalesce to the latest value; mute/default and other devices retain order.
+The audio worker revalidates captured device identity before executing each command.

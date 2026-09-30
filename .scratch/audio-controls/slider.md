@@ -1,6 +1,6 @@
 # Volume sliders
 
-Status: ready-for-agent
+Status: done
 
 Replace Sound's volume decrease/increase buttons with a 0–100% slider for every
 output and microphone. Keep mute/unmute and default-device selection. Show the
@@ -21,3 +21,28 @@ contract. Focus and visual styling follow existing host behavior. No vendor chan
 Validate protocol bounds/compatibility, actual Pulse volume/mute/channel balance,
 provider transport, host pointer/keyboard replacement behavior and native slider
 accessibility. Run workspace checks and an isolated graphical acceptance fixture.
+
+## Delivered
+
+Optional rich-item sliders now replace Sound's volume buttons for outputs and
+microphones. Pointer/key gestures preserve generation identity; quick consecutive
+commits preserve the latest submitted value. The provider queues validated commands
+and coalesces adjacent absolute volume changes without changing mute/default order.
+Logical focus survives replacements without scrolling back to an earlier selection.
+
+## Validation
+
+- `bash scripts/check.sh` passed, including workspace tests, clippy, compatibility,
+  updater, configuration, portal and vendor checks.
+- Final shell `cargo test --locked -p canopa-shell --all-targets -- --test-threads=2`
+  passed; the initial unrestricted rerun hit an existing installed-app 50 ms timing
+  assertion under build load. Slider, stale-gesture, scrolling and real Pulse
+  rapid-command regressions pass.
+- Final shell clippy, formatting and `git diff --check` passed.
+- Standards and spec reviews have no remaining findings after corrections.
+- Private Sway/AT-SPI/PipeWire acceptance passed: native value setting, keyboard
+  arrows/endpoints, pointer preview without audio writes, final release, mute,
+  microphone control, focus reveal and Escape. Screenshots and the result are in
+  `/tmp/canopa-slider-desktop/`; harness in `/tmp/canopa-slider-desktop.py`.
+- Physical hardware and native PulseAudio hardware behavior remain desktop
+  acceptance work. The normal updater installs both host and provider.

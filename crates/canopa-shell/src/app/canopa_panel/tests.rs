@@ -742,4 +742,54 @@ async fn focused_slider_is_revealed_in_a_short_panel() {
         bounds.y >= 0.0 && bounds.y + bounds.height <= viewport.height,
         "focused slider was not visible: {bounds:?}"
     );
+    // Reading elsewhere after focusing a slider must survive a live replacement.
+    use iced::advanced::widget::operation::scrollable::{AbsoluteOffset, scroll_by};
+    view.as_widget_mut().operate(
+        &mut widgets,
+        Layout::new(&layout),
+        &renderer,
+        &mut scroll_by(
+            iced::widget::Id::from("canopa-reading/levels"),
+            AbsoluteOffset {
+                x: 0.0,
+                y: -100_000.0,
+            },
+        ),
+    );
+    let mut replacement = CanopaSession::default()
+        .prepare(snapshot.content.clone())
+        .await
+        .unwrap();
+    replacement.preserve_focus_from(&snapshot);
+    assert_ne!(
+        snapshot.focused_action_id(),
+        replacement.focused_action_id()
+    );
+    let mut view = render(&replacement, "levels", false);
+    widgets.diff(view.as_widget());
+    let layout = view.as_widget_mut().layout(
+        &mut widgets,
+        &renderer,
+        &layout::Limits::new(Size::ZERO, viewport.size()),
+    );
+    view.as_widget_mut().update(
+        &mut widgets,
+        &iced::Event::Window(iced::window::Event::RedrawRequested(
+            iced::time::Instant::now(),
+        )),
+        Layout::new(&layout),
+        iced::mouse::Cursor::Unavailable,
+        &renderer,
+        &mut iced::advanced::clipboard::Null,
+        &mut iced::advanced::Shell::new(&mut Vec::new()),
+        &viewport,
+    );
+    let mut scroll = ScrollBounds::default();
+    view.as_widget_mut()
+        .operate(&mut widgets, Layout::new(&layout), &renderer, &mut scroll);
+    assert_eq!(
+        scroll.0.last().unwrap().1.y,
+        0.0,
+        "replacement must not scroll back to preserved focus"
+    );
 }

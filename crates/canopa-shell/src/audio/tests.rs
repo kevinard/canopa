@@ -590,7 +590,9 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
     let set_volume = v5::HostMessage::event(
         current.revision,
         v5::Interaction::Rich(InteractionEvent::Invoke {
-            target: InteractionTarget::Item { id: item_id },
+            target: InteractionTarget::Item {
+                id: item_id.clone(),
+            },
             action_key: "volume".into(),
             value: Some("64".into()),
         }),
@@ -599,11 +601,53 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
         .write_all(&set_volume.encode().unwrap())
         .await
         .unwrap();
-    next(&mut input, false, Some(64)).await;
+    let current = next(&mut input, false, Some(64)).await;
     let channels = server.pactl(&["get-sink-volume", "speakers"]).await;
     assert!(
         channels.contains("64%") && channels.contains("32%"),
         "{channels}"
+    );
+    // Stall only this private Pulse server so multiple valid releases arrive
+    // while the first command is still pending. Accepted edits must survive the
+    // intermediate observer publication, and the following mute must also run.
+    let pulse_pid = server.children.last().unwrap().id().to_string();
+    server.run("kill", &["-STOP", &pulse_pid]).await;
+    let mut batch = Vec::new();
+    for (action_key, value) in [
+        ("volume", Some("42")),
+        ("volume", Some("57")),
+        ("volume", Some("64")),
+        ("mute", None),
+    ] {
+        batch.extend(
+            v5::HostMessage::event(
+                current.revision,
+                v5::Interaction::Rich(InteractionEvent::Invoke {
+                    target: InteractionTarget::Item {
+                        id: item_id.clone(),
+                    },
+                    action_key: action_key.into(),
+                    value: value.map(str::to_owned),
+                }),
+            )
+            .encode()
+            .unwrap(),
+        );
+    }
+    output.write_all(&batch).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    server.run("kill", &["-CONT", &pulse_pid]).await;
+    next(&mut input, true, Some(64)).await;
+    let channels = server.pactl(&["get-sink-volume", "speakers"]).await;
+    assert!(
+        channels.contains("64%") && channels.contains("32%"),
+        "{channels}"
+    );
+    assert!(
+        server
+            .pactl(&["get-sink-mute", "speakers"])
+            .await
+            .contains("yes")
     );
     output
         .write_all(&v5::HostMessage::close().encode().unwrap())
