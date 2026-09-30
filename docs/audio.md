@@ -8,6 +8,8 @@ choices.
 - **Volume −5% / +5%** changes the loudest channel in five percentage-point steps,
   keeping channel proportions. The displayed percentage is the channel average,
   matching the bar. Changes stop at 0–100% and do not automatically unmute.
+  Increase is unavailable when any channel is at or above 100%; external
+  amplification is left untouched until you choose to lower the volume.
 - **Mute / Unmute** explicitly changes that device's mute state.
 - **Use this device** requests the default output or input. Existing application
   streams follow the audio session manager's routing policy; Canopa does not move
@@ -38,4 +40,7 @@ outputs and remapped inputs. They cover speaker and microphone volume/mute,
 channel proportions, default requests, external changes, monitor exclusion,
 removal, reconnection and stale actions through the v5 provider transport.
 The fixture supplies active-default metadata because it has no session manager.
+An isolated Sway/AT-SPI acceptance run also verified opening Sound from the volume
+module, accessible mute and volume activation, keyboard focus across live updates,
+and Escape dismissal with synthetic speakers and a microphone.
 Physical devices and native PulseAudio hardware behavior require desktop acceptance.

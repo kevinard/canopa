@@ -80,7 +80,7 @@ async fn queued_navigation_keeps_the_panel_window_and_delivers_both_keys() {
 }
 
 #[tokio::test]
-async fn replacement_clears_selection_without_interrupting_the_keyboard_window() {
+async fn replacement_preserves_selection_with_a_fresh_action_and_the_same_keyboard_window() {
     let mut session = CanopaSession::default();
     let (mut app, window) = open(document(&mut session).await);
     let _ = app.update(Message::Surface(SurfaceEvent::FocusMovePrev(window)));
@@ -92,10 +92,9 @@ async fn replacement_clears_selection_without_interrupting_the_keyboard_window()
             content: document(&mut session).await,
         },
     ));
-    assert_eq!(displayed(&app).focused_action_id(), None);
-    for _ in 0..2 {
-        let _ = app.update(Message::Surface(SurfaceEvent::FocusMovePrev(window)));
-    }
+    assert_eq!(displayed(&app).focused_label(), Some("Second"));
+    assert_ne!(displayed(&app).focused_action_id(), Some(old_id.as_str()));
+    let _ = app.update(Message::Surface(SurfaceEvent::FocusMovePrev(window)));
     assert_eq!(displayed(&app).focused_label(), Some("First"));
     assert_ne!(displayed(&app).focused_action_id(), Some(old_id.as_str()));
     assert_eq!(app.foreground.active_panel_window(), Some(window));
@@ -396,11 +395,13 @@ async fn accessibility_focus_uses_the_current_opaque_action_without_recreating_t
             content: document(&mut session).await,
         },
     ));
+    let current = displayed(&app).focused_action_id().unwrap().to_owned();
+    assert_ne!(current, id);
     let _ = app.update(Message::CanopaAccessibilityFocus {
         provider: "notifications".into(),
         action_id: id,
     });
-    assert_eq!(displayed(&app).focused_action_id(), None);
+    assert_eq!(displayed(&app).focused_action_id(), Some(current.as_str()));
     let snapshot = displayed(&app);
     let id = snapshot.action_id(
         canopa_panel_protocol::InteractionTarget::Content,
@@ -410,7 +411,7 @@ async fn accessibility_focus_uses_the_current_opaque_action_without_recreating_t
         provider: "other".into(),
         action_id: id.clone(),
     });
-    assert_eq!(displayed(&app).focused_action_id(), None);
+    assert_eq!(displayed(&app).focused_action_id(), Some(current.as_str()));
     let _ = app.update(Message::Surface(SurfaceEvent::EscapePressed(window)));
     let _ = app.update(Message::CanopaAccessibilityFocus {
         provider: "notifications".into(),

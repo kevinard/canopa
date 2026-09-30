@@ -1262,7 +1262,7 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_activate_on_volume_enters_interaction_mode() {
+    fn keyboard_activate_on_volume_dispatches_the_sound_provider() {
         let (mut app, wid) = make_interact_app();
         let _ = app.update(Message::Surface(messages::SurfaceEvent::BarFocusGained(
             wid,
@@ -1273,10 +1273,21 @@ mod tests {
             Some(ModuleId::new("volume"))
         );
         assert!(!app.surfaces[&wid].module_activated);
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
+        let task = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
             wid,
         )));
-        assert!(app.surfaces[&wid].module_activated);
+        assert!(!app.surfaces[&wid].module_activated);
+        assert!(
+            task.units() > 0,
+            "activation must dispatch the provider action"
+        );
+        assert_eq!(
+            app.modules.action_for(
+                &ModuleId::new("volume"),
+                &crate::config::ActionTrigger::Click
+            ),
+            Some(&crate::config::PanelAction::OpenProvider("audio".into()))
+        );
         assert_eq!(
             app.surfaces[&wid].focused_module,
             Some(ModuleId::new("volume"))
@@ -1290,10 +1301,9 @@ mod tests {
             wid,
         )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
-            wid,
-        )));
-        assert!(app.surfaces[&wid].module_activated);
+        // Exercise generic scroll-interaction navigation independently of the
+        // volume module's primary action, which now opens Sound.
+        app.surface_mut(wid).module_activated = true;
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
         assert_eq!(
             app.surfaces[&wid].focused_module,
@@ -1314,10 +1324,9 @@ mod tests {
             wid,
         )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
-            wid,
-        )));
-        assert!(app.surfaces[&wid].module_activated);
+        // Exercise generic scroll-interaction navigation independently of the
+        // volume module's primary action, which now opens Sound.
+        app.surface_mut(wid).module_activated = true;
         let _ = app.update(Message::Surface(messages::SurfaceEvent::EscapePressed(wid)));
         assert!(!app.surfaces[&wid].module_activated);
         assert_eq!(
@@ -1352,10 +1361,9 @@ mod tests {
             wid,
         )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
-            wid,
-        )));
-        assert!(app.surfaces[&wid].module_activated);
+        // Exercise generic scroll-interaction navigation independently of the
+        // volume module's primary action, which now opens Sound.
+        app.surface_mut(wid).module_activated = true;
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusNextZone(wid)));
         assert!(!app.surfaces[&wid].module_activated);
         assert_eq!(
@@ -1371,10 +1379,9 @@ mod tests {
             wid,
         )));
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusMoveNext(wid)));
-        let _ = app.update(Message::Surface(messages::SurfaceEvent::KeyboardActivate(
-            wid,
-        )));
-        assert!(app.surfaces[&wid].module_activated);
+        // Exercise generic scroll-interaction navigation independently of the
+        // volume module's primary action, which now opens Sound.
+        app.surface_mut(wid).module_activated = true;
         let _ = app.update(Message::Surface(messages::SurfaceEvent::FocusPrevZone(wid)));
         assert!(!app.surfaces[&wid].module_activated);
     }

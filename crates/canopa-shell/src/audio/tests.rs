@@ -233,6 +233,31 @@ async fn audio_devices_support_mute_volume_selection_and_reject_removed_targets(
         volume.contains("35%") && volume.contains("70%"),
         "channel proportions changed: {volume}"
     );
+    for (left, average) in [("100%", 75.0), ("120%", 85.0)] {
+        server
+            .pactl(&["set-sink-volume", "speakers", left, "50%"])
+            .await;
+        let snapshot = devices_matching(&mut state, |s| {
+            s.devices
+                .iter()
+                .any(|d| d.id == speakers && (d.volume - average).abs() < 0.1)
+        })
+        .await;
+        let device = snapshot.devices.iter().find(|d| d.id == speakers).unwrap();
+        assert!(!device.can_increase_volume());
+        audio
+            .apply(
+                speakers.clone(),
+                DeviceOperation::AdjustVolume { step: 5, up: true },
+            )
+            .await
+            .unwrap();
+        let volume = server.pactl(&["get-sink-volume", "speakers"]).await;
+        assert!(
+            volume.contains(left) && volume.contains("50%"),
+            "increase must not lower amplified or unbalanced channels: {volume}"
+        );
+    }
     audio
         .apply(speakers.clone(), DeviceOperation::SetMuted(false))
         .await
@@ -466,6 +491,9 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
     server
         .pactl(&["load-module", "module-null-sink", "sink_name=speakers"])
         .await;
+    server
+        .pactl(&["set-sink-volume", "speakers", "100%", "50%"])
+        .await;
     let (host, provider) = tokio::io::duplex(65536);
     let (input, output) = tokio::io::split(provider);
     let address = server.server.clone();
@@ -513,6 +541,10 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
         unreachable!()
     };
     let item = &content.sections[0].items[0];
+    assert!(
+        !item.actions.iter().any(|action| action.key == "louder"),
+        "a capped channel must hide volume increase even when the average is lower"
+    );
     let invoke = v5::HostMessage::event(
         initial.revision,
         v5::Interaction::Rich(InteractionEvent::Invoke {

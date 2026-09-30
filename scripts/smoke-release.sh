@@ -27,7 +27,7 @@ test -s "$bundle/share/canopa/notifications.md"
 test -s "$bundle/share/canopa/audio.md"
 test -s "$bundle/share/canopa/shell-rename.md"
 PATH="$bundle/bin" canopa-shell --version
-python3 - "$bundle/bin/canopa-wifi-provider" <<'PY'
+python3 - "$bundle/bin/canopa-wifi-provider" "$bundle/bin/canopa-audio-provider" <<'PY'
 import json
 import os
 import struct
@@ -61,5 +61,15 @@ message = json.loads(result.stdout)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'form'
 assert message['content']['body']['elements'][0]['title'] == 'Wi-Fi unavailable'
+result = subprocess.run([sys.argv[2], '--protocol', 'canopa-v5'],
+                        input=b'{"type":"close","protocol_version":5}\n',
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+                        env={'PATH': os.path.dirname(sys.argv[2]),
+                             'PULSE_SERVER': 'unix:/nonexistent-canopa-release-audio'}, check=True)
+message = json.loads(result.stdout)
+assert message['protocol_version'] == 5 and message['revision'] == 1
+assert message['content']['kind'] == 'rich'
+assert message['content']['body']['title'] == 'Sound'
+assert 'unavailable' in message['content']['body']['error']
 print('Release bundle: all six binaries execute; v1 and v5 provider close pass.')
 PY

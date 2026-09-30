@@ -37,6 +37,12 @@ pub struct AudioDevice {
     channels: ChannelVolumes,
 }
 
+impl AudioDevice {
+    pub fn can_increase_volume(&self) -> bool {
+        self.channels.max() < pulse::volume::Volume::NORMAL
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AudioSnapshot {
     pub devices: Vec<AudioDevice>,
@@ -313,6 +319,13 @@ fn apply_to(
         .iter()
         .find(|device| device.id == *id)
         .ok_or("The audio device is no longer available. Choose a current device.")?;
+    // An external mixer may allow amplification. An increase must never turn
+    // into a decrease when such a device is already above our normal-volume cap.
+    if matches!(operation, DeviceOperation::AdjustVolume { up: true, .. })
+        && !device.can_increase_volume()
+    {
+        return Ok(());
+    }
     let (tx, rx) = mpsc::channel();
     let callback = move |success| {
         let _ = tx.send(success);

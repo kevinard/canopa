@@ -1,6 +1,6 @@
 # Audio device controls
 
-Status: ready-for-agent
+Status: done
 
 ## Outcome
 
@@ -35,3 +35,23 @@ to cover control, external updates, default selection, missing devices and resta
 Exercise provider publication, stale action rejection and close through the actual
 v5 transport. Check shell routing and existing volume behavior. Run the workspace
 validation entry point and review the implementation against this specification.
+
+## Completion — 2026-09-30
+
+Implemented the built-in Sound provider, shared Pulse device controls, volume-module
+routing, keyboard focus preservation, packaging/updater support and user documentation.
+All checks from `scripts/check.sh` passed after resuming the initial run at the
+corrected lint/test steps. The actual provider transport also passed the release
+smoke checks against the current debug binaries.
+
+A private Sway/AT-SPI desktop with synthetic speakers and a remapped microphone
+verified opening Sound, native accessible mute/volume activation, keyboard focus
+through updates and Escape dismissal. This does not validate physical hardware or
+native PulseAudio hardware behavior. Per-application controls remain outside scope.
+
+Standards review: the runtime logging violation was fixed; no documented-standard
+violations remain. One optional suggestion to consolidate the internal device
+helper's positional parameters was deferred.
+
+Spec review: the maximum-channel increase boundary was fixed and covered for
+100%/50% and externally amplified 120%/50% channels. No remaining spec findings.

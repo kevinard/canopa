@@ -52,38 +52,36 @@ impl AudioPanel {
             {
                 let id = format!("{kind:?}-{}-{}", device.id.session, device.id.index);
                 let mut actions = Vec::new();
-                {
-                    for (key, label, operation) in [
-                        (
-                            "quieter",
-                            "Volume −5%",
-                            DeviceOperation::AdjustVolume { step: 5, up: false },
-                        ),
-                        (
-                            "louder",
-                            "Volume +5%",
-                            DeviceOperation::AdjustVolume { step: 5, up: true },
-                        ),
-                        (
-                            "mute",
-                            if device.muted { "Unmute" } else { "Mute" },
-                            DeviceOperation::SetMuted(!device.muted),
-                        ),
-                        ("default", "Use this device", DeviceOperation::SetDefault),
-                    ] {
-                        if key == "default" && device.is_default {
-                            continue;
-                        }
-                        if key == "quieter" && device.volume <= 0.0 {
-                            continue;
-                        }
-                        if key == "louder" && device.volume >= 100.0 {
-                            continue;
-                        }
-                        self.actions
-                            .insert((id.clone(), key.into()), (device.id.clone(), operation));
-                        actions.push(PanelAction::new(key, label));
+                for (key, label, operation) in [
+                    (
+                        "quieter",
+                        "Volume −5%",
+                        DeviceOperation::AdjustVolume { step: 5, up: false },
+                    ),
+                    (
+                        "louder",
+                        "Volume +5%",
+                        DeviceOperation::AdjustVolume { step: 5, up: true },
+                    ),
+                    (
+                        "mute",
+                        if device.muted { "Unmute" } else { "Mute" },
+                        DeviceOperation::SetMuted(!device.muted),
+                    ),
+                    ("default", "Use this device", DeviceOperation::SetDefault),
+                ] {
+                    if key == "default" && device.is_default {
+                        continue;
                     }
+                    if key == "quieter" && device.volume <= 0.0 {
+                        continue;
+                    }
+                    if key == "louder" && !device.can_increase_volume() {
+                        continue;
+                    }
+                    self.actions
+                        .insert((id.clone(), key.into()), (device.id.clone(), operation));
+                    actions.push(PanelAction::new(key, label));
                 }
                 let status = format!(
                     "{:.0}% · {}{}{}",
