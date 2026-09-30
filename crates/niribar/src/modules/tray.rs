@@ -9,7 +9,9 @@ fn icon_widget(
     item: &TrayItem,
     bar_style: &crate::config::Style,
 ) -> iced::Element<'static, crate::app::Message> {
-    const ICON_SIZE: u16 = 20;
+    let icon_size = bar_style
+        .size
+        .unwrap_or(crate::theme::bar_metrics::ICON_SIZE as f32);
 
     let icon_element: iced::Element<'static, crate::app::Message> = match &item.icon {
         TrayIcon::Named(name) => {
@@ -17,13 +19,13 @@ fn icon_widget(
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                 if ext == "svg" {
                     iced::widget::svg(iced::widget::svg::Handle::from_path(&path))
-                        .width(ICON_SIZE as u32)
-                        .height(ICON_SIZE as u32)
+                        .width(icon_size)
+                        .height(icon_size)
                         .into()
                 } else {
                     iced::widget::image(iced::widget::image::Handle::from_path(&path))
-                        .width(ICON_SIZE as u32)
-                        .height(ICON_SIZE as u32)
+                        .width(icon_size)
+                        .height(icon_size)
                         .into()
                 }
             } else if let Some(fallback_path) = resolve_icon_path("application-x-executable") {
@@ -33,37 +35,37 @@ fn icon_widget(
                     .unwrap_or("");
                 if ext == "svg" {
                     iced::widget::svg(iced::widget::svg::Handle::from_path(&fallback_path))
-                        .width(ICON_SIZE as u32)
-                        .height(ICON_SIZE as u32)
+                        .width(icon_size)
+                        .height(icon_size)
                         .into()
                 } else {
                     iced::widget::image(iced::widget::image::Handle::from_path(&fallback_path))
-                        .width(ICON_SIZE as u32)
-                        .height(ICON_SIZE as u32)
+                        .width(icon_size)
+                        .height(icon_size)
                         .into()
                 }
             } else {
                 // Both named icon and application-x-executable unavailable -- blank placeholder.
                 iced::widget::Space::new()
-                    .width(ICON_SIZE as u32)
-                    .height(ICON_SIZE as u32)
+                    .width(icon_size)
+                    .height(icon_size)
                     .into()
             }
         }
         TrayIcon::Pixmap(pixmaps) => {
             if let Some((w, h, argb)) =
-                crate::dbus::sni::host::pick_best_pixmap(pixmaps, ICON_SIZE as i32)
+                crate::dbus::sni::host::pick_best_pixmap(pixmaps, icon_size.ceil() as i32)
             {
                 let rgba = crate::dbus::sni::host::argb_to_rgba(argb);
                 let handle = iced::widget::image::Handle::from_rgba(*w as u32, *h as u32, rgba);
                 iced::widget::image(handle)
-                    .width(ICON_SIZE as u32)
-                    .height(ICON_SIZE as u32)
+                    .width(icon_size)
+                    .height(icon_size)
                     .into()
             } else {
                 crate::modules::view::styled_segment_text(
                     "?".to_string(),
-                    14,
+                    crate::theme::bar_metrics::ICON_SIZE,
                     crate::theme::palette().text,
                     crate::modules::view::fallback_resolved_style(bar_style),
                 )
@@ -190,7 +192,17 @@ impl TrayIconModule {
     ) -> iced::Element<'static, crate::app::Message> {
         use iced::widget::mouse_area;
 
-        let icon = icon_widget(&self.item, bar_style);
+        // Keep the existing 20 px interaction area around the smaller glyph,
+        // while allowing explicit icon sizes to grow the cell.
+        let cell_size = bar_style
+            .size
+            .unwrap_or(crate::theme::bar_metrics::ICON_SIZE as f32)
+            .max(20.0);
+        let icon = iced::widget::container(icon_widget(&self.item, bar_style))
+            .width(cell_size)
+            .height(cell_size)
+            .align_x(iced::Alignment::Center)
+            .align_y(iced::Alignment::Center);
         let service = self.item.runtime_id();
 
         // Left/right click are handled by on_interaction via the outer module machinery.
@@ -369,6 +381,40 @@ impl crate::modules::render::ModuleRender for TrayIconModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn tray_pixmap_layout_uses_compact_icon_size_and_explicit_override() {
+        use iced::advanced::{layout, renderer::Headless, widget::Tree};
+        let renderer =
+            iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
+                .await
+                .expect("software renderer");
+        let item = TrayItem {
+            service: "org.test.App".into(),
+            object_path: "/StatusNotifierItem".try_into().unwrap(),
+            icon: TrayIcon::Pixmap(vec![(32, 32, vec![255; 32 * 32 * 4])]),
+            status: ItemStatus::Active,
+            item_is_menu: false,
+            menu_path: None,
+            tooltip: None,
+        };
+        for (size, expected) in [(None, 16.0), (Some(23.5), 23.5)] {
+            let mut element = icon_widget(
+                &item,
+                &crate::config::Style {
+                    size,
+                    ..Default::default()
+                },
+            );
+            let mut tree = Tree::new(element.as_widget());
+            let node = element.as_widget_mut().layout(
+                &mut tree,
+                &renderer,
+                &layout::Limits::new(iced::Size::ZERO, iced::Size::new(100.0, 100.0)),
+            );
+            assert_eq!(node.size(), iced::Size::new(expected, expected));
+        }
+    }
     use crate::modules::Module;
     use crate::modules::dynamic::DynamicModuleInstance;
     use crate::modules::interaction::ModuleInteractionHandler;

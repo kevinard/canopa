@@ -1,3 +1,5 @@
+use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
+
 /// Runtime state for the clock module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClockState {
@@ -484,7 +486,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
                 ) {
                     return crate::modules::view::styled_segments_row(
                         segments,
-                        11,
+                        TEXT_SIZE,
                         crate::theme::palette().text,
                     )
                     .width(Length::Fill)
@@ -495,7 +497,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
                 {
                     return column![crate::modules::view::styled_segment_text(
                         formatted,
-                        11,
+                        TEXT_SIZE,
                         crate::theme::palette().text,
                         crate::modules::view::fallback_resolved_style(bar_style),
                     )]
@@ -507,13 +509,13 @@ impl crate::modules::render::ModuleRender for ClockModule {
                 column![
                     crate::modules::view::styled_segment_text(
                         "⌚".to_string(),
-                        16,
+                        ICON_SIZE,
                         crate::theme::palette().text,
                         style,
                     ),
                     crate::modules::view::styled_segment_text(
                         s.time.clone(),
-                        11,
+                        TEXT_SIZE,
                         crate::theme::palette().text,
                         style,
                     ),
@@ -552,7 +554,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
-                11,
+                TEXT_SIZE,
                 crate::theme::palette().text,
                 rotation,
             ))
@@ -682,7 +684,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
                     return Some(
                         iced::widget::container(crate::modules::view::styled_segments_row(
                             segments,
-                            12,
+                            TEXT_SIZE,
                             crate::theme::palette().text,
                         ))
                         .height(iced::Length::Fill)
@@ -739,7 +741,7 @@ impl crate::modules::render::ModuleRender for ClockModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
-                12,
+                TEXT_SIZE,
                 crate::theme::palette().text,
                 rotation,
             ))

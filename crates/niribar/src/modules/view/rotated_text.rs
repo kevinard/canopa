@@ -11,18 +11,7 @@ use iced::widget::shader;
 use iced::{Color, Font, Pixels, Point, Rectangle, Size, wgpu};
 
 use super::FormattedSegmentVisual;
-use crate::config::{ResolvedContentRotation, ResolvedStyle, Weight};
-
-pub(super) fn font(style: ResolvedStyle) -> Font {
-    Font {
-        weight: match style.weight.unwrap_or(Weight::Normal) {
-            Weight::Light => iced::font::Weight::Light,
-            Weight::Normal => iced::font::Weight::Normal,
-            Weight::Bold => iced::font::Weight::Bold,
-        },
-        ..Font::DEFAULT
-    }
-}
+use crate::config::{ResolvedContentRotation, ResolvedStyle};
 
 fn paragraph(content: &str, font: Font, size: f32) -> graphics_text::Paragraph {
     graphics_text::Paragraph::with_text(text::Text {
@@ -39,7 +28,7 @@ fn paragraph(content: &str, font: Font, size: f32) -> graphics_text::Paragraph {
 }
 
 pub(super) fn measure(content: &str, style: ResolvedStyle, size: f32) -> Size {
-    paragraph(content, font(style), size).min_bounds()
+    paragraph(content, super::segment_font(content, style), size).min_bounds()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,7 +69,7 @@ impl Program {
                     runs.push(Run {
                         content: text.clone(),
                         origin: Point::new(x, (content_size.height - height) / 2.0),
-                        font: font(*style),
+                        font: super::segment_font(text, *style),
                         size: super::visual_segment_size(*style, fallback_size),
                         color: style.color.unwrap_or(fallback_color),
                     });
@@ -400,6 +389,25 @@ fn rasterize(key: &RasterKey) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rotated_configured_icons_use_the_dedicated_symbols_font() {
+        for rotation in [
+            ResolvedContentRotation::Clockwise,
+            ResolvedContentRotation::CounterClockwise,
+        ] {
+            let segments = vec![FormattedSegmentVisual::Text {
+                text: "".into(),
+                style: ResolvedStyle::default(),
+            }];
+            let program =
+                Program::new(&segments, 16, Color::WHITE, Size::new(20.0, 20.0), rotation);
+            assert_eq!(
+                program.runs[0].font.family,
+                iced::font::Family::Name("Symbols Nerd Font Mono")
+            );
+        }
+    }
 
     #[test]
     fn quarter_turns_preserve_native_glyph_pixels_at_each_output_scale() {

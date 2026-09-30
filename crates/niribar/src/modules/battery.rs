@@ -1,3 +1,4 @@
+use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum BatteryPowerState {
     #[default]
@@ -362,12 +363,12 @@ impl crate::modules::render::ModuleRender for BatteryModule {
         let content = if let Some(segments) =
             self.collapsed_styled_segments_with_default(battery, bar_style)
         {
-            crate::modules::view::styled_segments_row(segments, 16, color).into()
+            crate::modules::view::styled_segments_row(segments, TEXT_SIZE, color).into()
         } else {
             let icon_str = self
                 .formatted_text(battery, crate::config::FormatMode::Collapsed)
                 .unwrap_or_else(|| <Self as crate::modules::view::IconLabel>::icon(self, state));
-            crate::modules::view::styled_segment_text(icon_str, 16, color, style)
+            crate::modules::view::styled_segment_text(icon_str, ICON_SIZE, color, style)
         };
         let icon = container(content)
             .width(Length::Fill)
@@ -420,7 +421,7 @@ impl crate::modules::render::ModuleRender for BatteryModule {
         let segments = self.collapsed_styled_segments_with_default(battery, bar_style)?;
         Some(
             iced::widget::container(crate::modules::view::formatted_segments_content(
-                segments, 16, color, rotation,
+                segments, TEXT_SIZE, color, rotation,
             ))
             .width(iced::Length::Fill)
             .height(iced::Length::Shrink)
@@ -840,7 +841,13 @@ mod tests {
             )
             .unwrap();
         assert_eq!(segments[0].1.color, Some(crate::theme::palette().danger));
-        assert_eq!(segments[1].1, crate::config::ResolvedStyle::default());
+        assert_eq!(
+            segments[1].1,
+            crate::config::ResolvedStyle {
+                size: Some(TEXT_SIZE as f32),
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -863,6 +870,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(segments[0].1.color, Some(crate::theme::palette().danger));
-        assert_eq!(segments[1].1, crate::config::ResolvedStyle::default());
+        assert_eq!(
+            segments[1].1,
+            crate::config::ResolvedStyle {
+                size: Some(TEXT_SIZE as f32),
+                ..Default::default()
+            }
+        );
     }
 }

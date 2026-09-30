@@ -17,3 +17,10 @@ pub fn current() -> &'static iced::Theme {
 pub fn palette() -> canopa_ui::Colors {
     canopa_ui::colors(current())
 }
+
+/// Compact bar roles in logical pixels; Iced applies output scaling.
+pub mod bar_metrics {
+    pub const TEXT_SIZE: u32 = canopa_ui::metrics::LABEL as u32;
+    pub const WINDOW_TITLE_SIZE: u32 = canopa_ui::metrics::TITLE as u32;
+    pub const ICON_SIZE: u32 = 16;
+}

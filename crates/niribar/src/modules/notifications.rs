@@ -174,13 +174,13 @@ impl ModuleRender for NotificationsModule {
         iced::widget::column![
             super::view::styled_segment_text(
                 self.icon(state),
-                16,
+                crate::theme::bar_metrics::ICON_SIZE,
                 self.color(state),
                 super::view::fallback_resolved_style(style)
             ),
             super::view::styled_segment_text(
                 Presentation::for_state(state).count,
-                12,
+                crate::theme::bar_metrics::TEXT_SIZE,
                 crate::theme::palette().text,
                 super::view::fallback_resolved_style(style)
             ),

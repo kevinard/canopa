@@ -36,6 +36,26 @@ examples in [config/default.kdl](config/default.kdl), [docs](../../docs/niribar/
 The adjacent shared `appearance` block controls the dark/light palette and accent
 for the shell, Notification Center, and Notify banners.
 
+### Bar text and icons
+
+Bars use compact defaults of 12 logical pixels for status text and 16 for focused-window
+titles and icons, including workspace icons, tray images, and focused-window
+application icons. Each role keeps its size on every edge, including rotated titles.
+The compositor's output scale applies to all three.
+
+Standalone Nerd Font glyphs use `Symbols Nerd Font Mono` when installed, avoiding
+the compressed icon shapes in patched coding fonts. Normal text keeps its default
+font, and systems without the symbols font keep normal glyph fallback.
+
+In bar formats, a standalone `"{icon}"` segment uses the icon size; other segments
+use the text size. Write `format "{icon}" "{value}"` to keep those roles distinct.
+A mixed segment such as `"{icon} {value}"` stays one text run. Workspace `"{icon}"`
+uses the text size when it falls back to a workspace number.
+
+Explicit bar `style size=...` and segment sizes override these defaults; segment
+styles take precedence over the bar style. Tray images also follow the explicit
+bar size.
+
 ### Panel appearance and motion
 
 Drawers and automatic popovers share headings, close controls, menu rows, spacing,

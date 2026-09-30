@@ -10,6 +10,7 @@ use iced::{Alignment, Element, Length, Pixels, Point, Rectangle, Size, Vector};
 
 use crate::app::Message;
 use crate::config::FormatMode;
+use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
 
 mod rotated_text;
 
@@ -83,7 +84,7 @@ pub(super) fn collapsed_icon_with_style<'a>(
 ) -> Element<'a, Message> {
     container(styled_segment_text(
         icon.to_string(),
-        16,
+        ICON_SIZE,
         color,
         fallback_resolved_style(default_style),
     ))
@@ -114,13 +115,13 @@ pub(super) fn horizontal_icon_label_with_style<'a>(
         row![
             styled_segment_text(
                 icon.to_string(),
-                16,
+                ICON_SIZE,
                 icon_color,
                 fallback_resolved_style(default_style)
             ),
             styled_segment_text(
                 label.to_string(),
-                12,
+                TEXT_SIZE,
                 crate::theme::palette().muted,
                 fallback_resolved_style(default_style)
             ),
@@ -151,13 +152,13 @@ pub(super) fn expanded_icon_label_with_style<'a>(
         row![
             styled_segment_text(
                 icon.to_string(),
-                16,
+                ICON_SIZE,
                 icon_color,
                 fallback_resolved_style(default_style)
             ),
             styled_segment_text(
                 label.to_string(),
-                12,
+                TEXT_SIZE,
                 crate::theme::palette().muted,
                 fallback_resolved_style(default_style)
             ),
@@ -203,14 +204,20 @@ where
     if let Some(segments) = module.styled_segments_for_layout(state, layout, default_style) {
         return match layout {
             IconLabelLayout::Collapsed => {
-                collapsed_formatted_segments(segments, 16, module.color(state), rotation)
+                collapsed_formatted_segments(segments, TEXT_SIZE, module.color(state), rotation)
             }
-            IconLabelLayout::Expanded => {
-                expanded_formatted_segments(segments, 12, crate::theme::palette().muted, rotation)
-            }
-            IconLabelLayout::Horizontal => {
-                horizontal_formatted_segments(segments, 12, crate::theme::palette().muted, rotation)
-            }
+            IconLabelLayout::Expanded => expanded_formatted_segments(
+                segments,
+                TEXT_SIZE,
+                crate::theme::palette().muted,
+                rotation,
+            ),
+            IconLabelLayout::Horizontal => horizontal_formatted_segments(
+                segments,
+                TEXT_SIZE,
+                crate::theme::palette().muted,
+                rotation,
+            ),
         };
     }
 
@@ -332,19 +339,36 @@ pub(super) fn styled_segment_text<'a>(
     fallback_color: iced::Color,
     style: crate::config::ResolvedStyle,
 ) -> Element<'a, Message> {
-    let mut widget = text(segment)
+    let font = segment_font(&segment, style);
+    text(segment)
         .size(style.size.unwrap_or(fallback_size as f32))
-        .color(style.color.unwrap_or(fallback_color));
-    if let Some(weight) = style.weight {
-        let mut font = iced::Font::DEFAULT;
-        font.weight = match weight {
+        .color(style.color.unwrap_or(fallback_color))
+        .font(font)
+        .into()
+}
+
+/// Give standalone Nerd Font icons a full icon cell instead of a code font's
+/// narrower character cell. Ordinary text keeps the toolkit's font selection;
+/// systems without the symbols font retain normal glyph fallback.
+pub(super) fn segment_font(segment: &str, style: crate::config::ResolvedStyle) -> iced::Font {
+    let mut chars = segment.chars();
+    let is_icon = matches!(
+        chars.next(),
+        Some('\u{e000}'..='\u{f8ff}' | '\u{f0000}'..='\u{ffffd}' | '\u{100000}'..='\u{10fffd}')
+    ) && chars.next().is_none();
+    iced::Font {
+        family: if is_icon {
+            iced::font::Family::Name("Symbols Nerd Font Mono")
+        } else {
+            iced::Font::DEFAULT.family
+        },
+        weight: match style.weight.unwrap_or(crate::config::Weight::Normal) {
             crate::config::Weight::Light => iced::font::Weight::Light,
             crate::config::Weight::Normal => iced::font::Weight::Normal,
             crate::config::Weight::Bold => iced::font::Weight::Bold,
-        };
-        widget = widget.font(font);
+        },
+        ..iced::Font::DEFAULT
     }
-    widget.into()
 }
 
 pub(super) fn fallback_resolved_style(
@@ -360,8 +384,34 @@ pub(super) fn render_format_segments<'a>(
     state: Option<&str>,
     default_style: &crate::config::Style,
 ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+    render_format_segments_with_text_size(format, mode, values, state, default_style, TEXT_SIZE)
+}
+
+pub(super) fn render_format_segments_with_text_size<'a>(
+    format: &crate::config::FormatConfig,
+    mode: crate::config::FormatMode,
+    values: &[crate::config::FormatValue<'a>],
+    state: Option<&str>,
+    default_style: &crate::config::Style,
+    text_size: u32,
+) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
     format.template_for(mode).map(|template| {
-        template.render_styled_cow_segments_with_default(values, state, default_style)
+        let mut segments =
+            template.render_styled_cow_segments_with_default(values, state, default_style);
+        if mode != FormatMode::Expanded {
+            for (index, (_, style)) in segments.iter_mut().enumerate() {
+                // Keep explicit bar/segment sizes authoritative. A mixed segment
+                // such as "{icon} {value}" remains one run at the text size.
+                style
+                    .size
+                    .get_or_insert(if template.segment_is_exact_placeholder(index, "icon") {
+                        ICON_SIZE as f32
+                    } else {
+                        text_size as f32
+                    });
+            }
+        }
+        segments
     })
 }
 
@@ -564,14 +614,7 @@ fn draw_canvas_visual_segment(
             ..
         } => {
             let size = visual_segment_size(*style, fallback_size);
-            let mut font = iced::Font::DEFAULT;
-            if let Some(weight) = style.weight {
-                font.weight = match weight {
-                    crate::config::Weight::Light => iced::font::Weight::Light,
-                    crate::config::Weight::Normal => iced::font::Weight::Normal,
-                    crate::config::Weight::Bold => iced::font::Weight::Bold,
-                };
-            }
+            let font = segment_font(text, *style);
             let layout = visual_segment_canvas_text_layout(origin, width, height, text_alignment);
 
             frame.fill_text(canvas::Text {
@@ -685,6 +728,116 @@ mod tests {
     use crate::config::{ColorValue, Style, ThemeToken, Weight};
 
     #[test]
+    fn configured_nerd_icons_use_symbol_metrics_without_changing_text_fonts() {
+        let style = crate::config::ResolvedStyle {
+            weight: Some(Weight::Bold),
+            ..Default::default()
+        };
+        for icon in ["", "󰁾", "󱐋"] {
+            let font = super::segment_font(icon, style);
+            assert_eq!(
+                font.family,
+                iced::font::Family::Name("Symbols Nerd Font Mono")
+            );
+            assert_eq!(font.weight, iced::font::Weight::Bold);
+        }
+        for text in ["Quarterly planning", "42%", "◆", " Wi-Fi", "", "󰁾󱐋"] {
+            let font = super::segment_font(text, style);
+            assert_eq!(font.family, iced::Font::DEFAULT.family);
+            assert_eq!(font.weight, iced::font::Weight::Bold);
+        }
+    }
+
+    #[test]
+    fn bar_formats_keep_icon_and_text_sizes_across_layouts_and_fallbacks() {
+        use crate::config::{FormatConfig, FormatMode, FormatTemplate, SegmentStyles};
+        let mut template = FormatTemplate::parse(
+            &["{icon}", "{value}", "{icon} {value}"],
+            &["icon", "value"],
+            "test.format",
+        )
+        .unwrap();
+        let values = [("icon", "⚡".into()), ("value", "75%".into())];
+        for mode in [FormatMode::Collapsed, FormatMode::Horizontal] {
+            let format = FormatConfig {
+                collapsed: Some(template.clone()),
+                ..Default::default()
+            };
+            let segments =
+                super::render_format_segments(&format, mode, &values, None, &Style::default())
+                    .unwrap();
+            assert_eq!(
+                segments
+                    .iter()
+                    .map(|(_, style)| style.size)
+                    .collect::<Vec<_>>(),
+                vec![Some(16.0), Some(12.0), Some(12.0)]
+            );
+            assert_eq!(segments[2].0, "⚡ 75%");
+
+            let segments = super::render_format_segments(
+                &format,
+                mode,
+                &values,
+                None,
+                &Style {
+                    size: Some(19.0),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(segments.iter().all(|(_, style)| style.size == Some(19.0)));
+        }
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Stateful {
+                default: Some(Style {
+                    size: Some(18.0),
+                    ..Default::default()
+                }),
+                by_state: vec![(
+                    "critical".into(),
+                    Style {
+                        size: Some(22.0),
+                        ..Default::default()
+                    },
+                )],
+            },
+        );
+        let format = FormatConfig {
+            collapsed: Some(template),
+            ..Default::default()
+        };
+        for (state, expected) in [(None, 18.0), (Some("critical"), 22.0)] {
+            let segments = super::render_format_segments(
+                &format,
+                FormatMode::Horizontal,
+                &values,
+                state,
+                &Style {
+                    size: Some(14.0),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(segments[0].1.size, Some(expected));
+            assert_eq!(segments[1].1.size, Some(14.0));
+        }
+        let panel = super::render_format_segments(
+            &format,
+            FormatMode::Expanded,
+            &values,
+            None,
+            &Style::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            panel[1].1.size, None,
+            "expanded content keeps its existing fallback"
+        );
+    }
+
+    #[test]
     fn bar_style_resolves_as_fallback_text_style() {
         let bar_style = Style {
             color: Some(ColorValue::Token(ThemeToken::Accent)),
@@ -746,7 +899,7 @@ mod tests {
                 bounds: iced::Size::new(width, f32::INFINITY),
                 size: iced::Pixels(16.0),
                 line_height: text::LineHeight::Relative(1.2),
-                font: super::rotated_text::font(style),
+                font: super::segment_font(title, style),
                 align_x: text::Alignment::Left,
                 align_y: iced::alignment::Vertical::Top,
                 shaping: text::Shaping::Advanced,

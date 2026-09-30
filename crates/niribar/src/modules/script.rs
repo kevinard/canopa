@@ -1,3 +1,5 @@
+use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
+
 /// Runtime state for the script module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScriptState {
@@ -192,7 +194,7 @@ impl crate::modules::render::ModuleRender for ScriptModule {
                     crate::config::FormatMode::Collapsed,
                     bar_style,
                 ) {
-                    return styled_segments_row(segments, 11, crate::theme::palette().text)
+                    return styled_segments_row(segments, TEXT_SIZE, crate::theme::palette().text)
                         .width(Length::Fill)
                         .into();
                 }
@@ -202,8 +204,13 @@ impl crate::modules::render::ModuleRender for ScriptModule {
                 let truncated: String = output.chars().take(5).collect();
                 let style = fallback_resolved_style(bar_style);
                 column![
-                    styled_segment_text(">_".to_string(), 16, crate::theme::palette().text, style),
-                    styled_segment_text(truncated, 11, crate::theme::palette().text, style),
+                    styled_segment_text(
+                        ">_".to_string(),
+                        ICON_SIZE,
+                        crate::theme::palette().text,
+                        style
+                    ),
+                    styled_segment_text(truncated, TEXT_SIZE, crate::theme::palette().text, style),
                 ]
                 .align_x(Alignment::Center)
                 .width(Length::Fill)
@@ -239,7 +246,7 @@ impl crate::modules::render::ModuleRender for ScriptModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
-                11,
+                TEXT_SIZE,
                 crate::theme::palette().text,
                 rotation,
             ))
@@ -311,7 +318,7 @@ impl crate::modules::render::ModuleRender for ScriptModule {
                     return Some(
                         container(styled_segments_row(
                             segments,
-                            12,
+                            TEXT_SIZE,
                             crate::theme::palette().text,
                         ))
                         .height(Length::Fill)
@@ -358,7 +365,7 @@ impl crate::modules::render::ModuleRender for ScriptModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
-                12,
+                TEXT_SIZE,
                 crate::theme::palette().text,
                 rotation,
             ))

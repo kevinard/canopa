@@ -1,4 +1,5 @@
 use crate::theme;
+use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
 
 /// Returns `(background, foreground)` colours for a workspace pill.
 ///
@@ -150,17 +151,19 @@ impl WorkspaceItemModule {
 
         if horizontal {
             if let Some(segments) = styled {
-                return container(crate::modules::view::styled_segments_row(segments, 10, fg))
-                    .width(32)
-                    .height(Length::Fill)
-                    .align_x(Alignment::Center)
-                    .align_y(Alignment::Center)
-                    .style(move |_theme| container::Style {
-                        background: Some(Background::Color(bg)),
-                        border,
-                        ..Default::default()
-                    })
-                    .into();
+                return container(crate::modules::view::styled_segments_row(
+                    segments, TEXT_SIZE, fg,
+                ))
+                .width(32)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .style(move |_theme| container::Style {
+                    background: Some(Background::Color(bg)),
+                    border,
+                    ..Default::default()
+                })
+                .into();
             }
             let content = formatted
                 .map(|segments| segments.join(" "))
@@ -171,7 +174,11 @@ impl WorkspaceItemModule {
                 });
             container(crate::modules::view::styled_segment_text(
                 content,
-                10,
+                if configured_icon.is_some() {
+                    ICON_SIZE
+                } else {
+                    TEXT_SIZE
+                },
                 fg,
                 crate::modules::view::fallback_resolved_style(bar_style),
             ))
@@ -187,23 +194,25 @@ impl WorkspaceItemModule {
             .into()
         } else {
             if let Some(segments) = styled {
-                return container(crate::modules::view::styled_segments_row(segments, 12, fg))
-                    .width(Length::Fill)
-                    .height(20)
-                    .align_x(Alignment::Center)
-                    .align_y(Alignment::Center)
-                    .padding([0, 6])
-                    .style(move |_theme| container::Style {
-                        background: Some(Background::Color(bg)),
-                        border,
-                        ..Default::default()
-                    })
-                    .into();
+                return container(crate::modules::view::styled_segments_row(
+                    segments, TEXT_SIZE, fg,
+                ))
+                .width(Length::Fill)
+                .height(20)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .padding([0, 6])
+                .style(move |_theme| container::Style {
+                    background: Some(Background::Color(bg)),
+                    border,
+                    ..Default::default()
+                })
+                .into();
             }
             if let Some(content) = formatted.map(|segments| segments.join(" ")) {
                 return container(crate::modules::view::styled_segment_text(
                     content,
-                    12,
+                    TEXT_SIZE,
                     fg,
                     crate::modules::view::fallback_resolved_style(bar_style),
                 ))
@@ -227,14 +236,14 @@ impl WorkspaceItemModule {
             if let Some(icon) = icon_str {
                 parts.push(crate::modules::view::styled_segment_text(
                     icon.to_string(),
-                    12,
+                    ICON_SIZE,
                     fg,
                     style,
                 ));
             } else {
                 parts.push(crate::modules::view::styled_segment_text(
                     format!("{ws_num}"),
-                    12,
+                    TEXT_SIZE,
                     fg,
                     style,
                 ));
@@ -242,7 +251,7 @@ impl WorkspaceItemModule {
             if let Some(lbl) = label_str {
                 parts.push(crate::modules::view::styled_segment_text(
                     lbl.to_string(),
-                    12,
+                    TEXT_SIZE,
                     fg,
                     style,
                 ));
@@ -284,12 +293,8 @@ impl WorkspaceItemModule {
             crate::config::FormatMode::Collapsed
         };
         let segments = self.styled_segments_with_default(mode, bar_style)?;
-        let content = crate::modules::view::formatted_segments_content(
-            segments,
-            if horizontal { 10 } else { 12 },
-            fg,
-            rotation,
-        );
+        let content =
+            crate::modules::view::formatted_segments_content(segments, TEXT_SIZE, fg, rotation);
 
         if horizontal {
             Some(
@@ -373,11 +378,27 @@ impl WorkspaceItemModule {
         default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
         self.config.format.template_for(mode).map(|template| {
-            template.render_styled_segments_with_default(
+            let mut segments = template.render_styled_segments_with_default(
                 &self.format_values(),
                 Some(self.state_key()),
                 default_style,
-            )
+            );
+            let has_icon = self
+                .config
+                .workspaces
+                .get(&(self.workspace.idx as u32))
+                .is_some_and(|workspace| workspace.icon.is_some());
+            for (index, (_, style)) in segments.iter_mut().enumerate() {
+                // {icon} falls back to the workspace number when no icon is configured.
+                style.size.get_or_insert(
+                    if has_icon && template.segment_is_exact_placeholder(index, "icon") {
+                        ICON_SIZE as f32
+                    } else {
+                        TEXT_SIZE as f32
+                    },
+                );
+            }
+            segments
         })
     }
 }
@@ -573,6 +594,51 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn workspace_formats_size_number_fallback_as_text_and_configured_icon_as_icon() {
+        use crate::config::{FormatMode, FormatTemplate, WorkspaceLabelConfig};
+        let mut config = crate::config::WorkspacesConfig::default();
+        config.format.collapsed = Some(
+            FormatTemplate::parse(&["{icon}", "{label}"], &["icon", "label"], "test.format")
+                .unwrap(),
+        );
+        for icon in [None, Some("◆".to_owned())] {
+            config.workspaces.insert(
+                1,
+                WorkspaceLabelConfig {
+                    icon: icon.clone(),
+                    label: Some("web".into()),
+                },
+            );
+            let module = WorkspaceItemModule::new(
+                make_workspace(1, true),
+                config.clone(),
+                "workspaces".into(),
+            );
+            for mode in [FormatMode::Collapsed, FormatMode::Horizontal] {
+                let parts = module
+                    .styled_segments_with_default(mode, &Style::default())
+                    .unwrap();
+                assert_eq!(parts[0].0, icon.as_deref().unwrap_or("1"));
+                assert_eq!(
+                    parts[0].1.size,
+                    Some(if icon.is_some() { 16.0 } else { 12.0 })
+                );
+                assert_eq!(parts[1].1.size, Some(12.0));
+                let parts = module
+                    .styled_segments_with_default(
+                        mode,
+                        &Style {
+                            size: Some(18.0),
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                assert!(parts.iter().all(|(_, style)| style.size == Some(18.0)));
+            }
         }
     }
 

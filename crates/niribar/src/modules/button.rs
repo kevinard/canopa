@@ -1,3 +1,5 @@
+use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
+
 /// Runtime state for the button module. Button appearance is config-driven, not data-driven.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ButtonState;
@@ -143,7 +145,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
                 if let Some(segments) = self
                     .styled_segments_with_default(crate::config::FormatMode::Collapsed, bar_style)
                 {
-                    return styled_segments_row(segments, 16, crate::theme::palette().text)
+                    return styled_segments_row(segments, TEXT_SIZE, crate::theme::palette().text)
                         .width(Length::Fill)
                         .into();
                 }
@@ -152,7 +154,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
                     .unwrap_or_else(|| self.icon.clone());
                 column![styled_segment_text(
                     content,
-                    16,
+                    ICON_SIZE,
                     crate::theme::palette().text,
                     fallback_resolved_style(bar_style),
                 )]
@@ -187,7 +189,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
-                16,
+                TEXT_SIZE,
                 crate::theme::palette().text,
                 rotation,
             ))
@@ -258,7 +260,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
                     return Some(
                         container(styled_segments_row(
                             segments,
-                            12,
+                            TEXT_SIZE,
                             crate::theme::palette().text,
                         ))
                         .height(Length::Fill)
@@ -302,7 +304,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segments_content(
                 segments,
-                12,
+                TEXT_SIZE,
                 crate::theme::palette().text,
                 rotation,
             ))

@@ -1,5 +1,6 @@
 use crate::modules::view::collapsed_icon_with_style;
 use crate::theme;
+use crate::theme::bar_metrics::WINDOW_TITLE_SIZE;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FocusedWindowState {
@@ -104,7 +105,7 @@ impl FocusedWindowModule {
 
         let title = info.title.as_deref().unwrap_or_default();
         let app_id = info.app_id.as_deref().unwrap_or_default();
-        crate::modules::view::render_format_segments(
+        crate::modules::view::render_format_segments_with_text_size(
             &self.format,
             mode,
             &[
@@ -115,6 +116,7 @@ impl FocusedWindowModule {
             ],
             None,
             default_style,
+            WINDOW_TITLE_SIZE,
         )
     }
 
@@ -135,26 +137,32 @@ impl FocusedWindowModule {
             ("title", Cow::Borrowed(title)),
             ("app-id", Cow::Borrowed(app_id)),
         ];
-        let parts = template
-            .render_styled_cow_segments_with_default(&values, None, default_style)
-            .into_iter()
-            .enumerate()
-            .map(|(index, (segment, style))| {
-                if let Some(icon) = exact_application_icon_segment(template, index, info)
-                    && let Some(path) = icon.path.as_ref()
-                {
-                    return crate::modules::view::FormattedSegmentVisual::Image {
-                        path: path.clone(),
-                        fallback_text: segment,
-                        style,
-                    };
-                }
-                crate::modules::view::FormattedSegmentVisual::Text {
-                    text: segment,
+        let parts = crate::modules::view::render_format_segments_with_text_size(
+            &self.format,
+            mode,
+            &values,
+            None,
+            default_style,
+            WINDOW_TITLE_SIZE,
+        )?
+        .into_iter()
+        .enumerate()
+        .map(|(index, (segment, style))| {
+            if let Some(icon) = exact_application_icon_segment(template, index, info)
+                && let Some(path) = icon.path.as_ref()
+            {
+                return crate::modules::view::FormattedSegmentVisual::Image {
+                    path: path.clone(),
+                    fallback_text: segment,
                     style,
-                }
-            })
-            .collect::<Vec<_>>();
+                };
+            }
+            crate::modules::view::FormattedSegmentVisual::Text {
+                text: segment,
+                style,
+            }
+        })
+        .collect::<Vec<_>>();
 
         Some(parts)
     }
@@ -253,7 +261,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             info,
             crate::config::FormatMode::Collapsed,
             bar_style,
-            16,
+            WINDOW_TITLE_SIZE,
             theme::palette().text,
         ) {
             return iced::widget::container(content)
@@ -296,7 +304,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segment_visuals_content(
                 segments,
-                16,
+                WINDOW_TITLE_SIZE,
                 theme::palette().text,
                 rotation,
             ))
@@ -387,7 +395,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             info,
             crate::config::FormatMode::Horizontal,
             bar_style,
-            12,
+            WINDOW_TITLE_SIZE,
             theme::palette().text,
         ) {
             return Some(
@@ -408,7 +416,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
         Some(
             container(crate::modules::view::styled_segment_text(
                 display,
-                12,
+                WINDOW_TITLE_SIZE,
                 theme::palette().text,
                 crate::modules::view::fallback_resolved_style(bar_style),
             ))
@@ -445,7 +453,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segment_visuals_content(
                 segments,
-                12,
+                WINDOW_TITLE_SIZE,
                 theme::palette().text,
                 rotation,
             ))
@@ -663,6 +671,67 @@ mod tests {
             crate::modules::view::FormattedSegmentVisual::Image { style, .. }
                 if style.size == Some(18.0)
         ));
+    }
+
+    #[test]
+    fn application_icon_and_window_title_preserve_bar_defaults_and_overrides() {
+        let template = crate::config::FormatTemplate::parse(
+            &["{icon}", "{title}"],
+            &["icon", "title"],
+            "test.format",
+        )
+        .unwrap();
+        let module = FocusedWindowModule::new(
+            crate::modules::ModuleId::new("focused-window"),
+            crate::config::FormatConfig {
+                collapsed: Some(template),
+                ..Default::default()
+            },
+            "□".into(),
+        );
+        for path in [None, Some(std::path::PathBuf::from("/tmp/firefox.svg"))] {
+            let info = FocusedWindowInfo {
+                title: Some("Quarterly planning".into()),
+                app_id: Some("firefox".into()),
+                application_icon: Some(crate::focused_window_icons::ApplicationIcon {
+                    name: "firefox".into(),
+                    path,
+                }),
+            };
+            for mode in [
+                crate::config::FormatMode::Collapsed,
+                crate::config::FormatMode::Horizontal,
+            ] {
+                let parts = module
+                    .formatted_segment_visuals(&info, mode, &Style::default())
+                    .unwrap();
+                match &parts[0] {
+                    crate::modules::view::FormattedSegmentVisual::Image { style, .. }
+                    | crate::modules::view::FormattedSegmentVisual::Text { style, .. } => {
+                        assert_eq!(style.size, Some(16.0))
+                    }
+                }
+                assert!(
+                    matches!(&parts[1], crate::modules::view::FormattedSegmentVisual::Text { style, .. }
+                    if style.size == Some(16.0))
+                );
+                let overridden = module
+                    .formatted_segment_visuals(
+                        &info,
+                        mode,
+                        &Style {
+                            size: Some(18.0),
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                assert!(overridden.iter().all(|part| match part {
+                    crate::modules::view::FormattedSegmentVisual::Image { style, .. }
+                    | crate::modules::view::FormattedSegmentVisual::Text { style, .. } =>
+                        style.size == Some(18.0),
+                }));
+            }
+        }
     }
 
     #[test]
