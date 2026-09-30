@@ -1,0 +1,214 @@
+//! Canopa JSON-lines transport and generation-scoped host interactions.
+//! The provider's domain keys remain opaque to Canopa Shell.
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+use canopa_panel_protocol::{InteractionEvent, InteractionTarget, PanelAction, PanelContent};
+use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
+
+use canopa_panel_protocol::ProtocolError;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanopaSnapshot {
+    pub content: PanelContent,
+    generation: u64,
+    images: HashMap<String, iced::widget::image::Handle>,
+    icons: HashMap<canopa_panel_protocol::PanelIcon, iced::widget::image::Handle>,
+    affordances: Vec<(String, String)>,
+    focused: Option<usize>,
+}
+
+impl CanopaSnapshot {
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn focus_action(&mut self, id: &str) -> bool {
+        let Some(index) = self
+            .affordances
+            .iter()
+            .position(|(candidate, _)| candidate == id)
+        else {
+            return false;
+        };
+        self.focused = Some(index);
+        true
+    }
+
+    pub fn move_focus(&mut self, forward: bool) {
+        if self.affordances.is_empty() {
+            self.focused = None;
+            return;
+        }
+        let count = self.affordances.len();
+        self.focused = Some(match (self.focused, forward) {
+            (None, true) => 0,
+            (None, false) => count - 1,
+            (Some(index), true) => (index + 1) % count,
+            (Some(index), false) => (index + count - 1) % count,
+        });
+    }
+    pub fn focused_action_id(&self) -> Option<&str> {
+        self.focused
+            .and_then(|index| self.affordances.get(index))
+            .map(|(id, _)| id.as_str())
+    }
+    pub fn focused_label(&self) -> Option<&str> {
+        self.focused
+            .and_then(|index| self.affordances.get(index))
+            .map(|(_, label)| label.as_str())
+    }
+    pub fn image(&self, path: &str) -> Option<&iced::widget::image::Handle> {
+        self.images.get(path)
+    }
+    pub fn icon(
+        &self,
+        icon: &canopa_panel_protocol::PanelIcon,
+    ) -> Option<&iced::widget::image::Handle> {
+        self.icons.get(icon)
+    }
+    pub fn action_id(&self, target: InteractionTarget, action: &PanelAction) -> String {
+        serde_json::to_string(&(
+            self.generation,
+            InteractionEvent::Invoke {
+                target,
+                action_key: action.key.clone(),
+                value: action.value.clone(),
+            },
+        ))
+        .expect("protocol values are JSON serializable")
+    }
+}
+
+#[derive(Default)]
+struct SessionState {
+    actions: HashSet<String>,
+}
+
+#[derive(Clone, Default)]
+pub struct CanopaSession {
+    state: Arc<Mutex<SessionState>>,
+}
+
+impl CanopaSession {
+    pub async fn read_content<R: AsyncBufRead + Unpin>(
+        &self,
+        reader: &mut R,
+    ) -> Result<CanopaSnapshot, ProtocolError> {
+        let content = canopa_panel_protocol::v4::Frame::read_async(reader)
+            .await?
+            .ok_or(ProtocolError::FrameTooShort)?
+            .into_content();
+        self.prepare(content).await
+    }
+
+    pub async fn prepare(&self, content: PanelContent) -> Result<CanopaSnapshot, ProtocolError> {
+        content
+            .validate()
+            .map_err(|_| ProtocolError::InvalidContent("invalid Canopa content".into()))?;
+        let assets = super::canopa_images::prepare(&content).await;
+        let mut state = self.state.lock().unwrap();
+        // Unique across sessions as well as replacements: late clicks from a closed panel stay stale.
+        static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+        let generation = NEXT_GENERATION
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .map_err(|_| ProtocolError::UnexpectedMessage)?;
+        let mut snapshot = CanopaSnapshot {
+            content,
+            generation,
+            images: assets.images,
+            icons: assets.icons,
+            affordances: Vec::new(),
+            focused: None,
+        };
+        let mut affordances = Vec::new();
+        for action in &snapshot.content.actions {
+            affordances.push((
+                snapshot.action_id(InteractionTarget::Content, action),
+                action.label.clone(),
+            ));
+        }
+        for section in &snapshot.content.sections {
+            for control in &section.controls {
+                for option in &control.options {
+                    affordances.push((
+                        snapshot.action_id(
+                            InteractionTarget::Section {
+                                id: section.id.clone(),
+                            },
+                            &PanelAction {
+                                key: control.key.clone(),
+                                label: option.label.clone(),
+                                value: Some(option.value.clone()),
+                            },
+                        ),
+                        format!("{}: {} · {}", control.label, option.label, section.title),
+                    ));
+                }
+            }
+            for item in &section.items {
+                let links = item
+                    .rich_body
+                    .iter()
+                    .flat_map(|body| &body.segments)
+                    .filter_map(|segment| match segment {
+                        canopa_panel_protocol::RichBodySegment::Link { action, .. } => Some(action),
+                        _ => None,
+                    });
+                for action in links.chain(&item.actions) {
+                    affordances.push((
+                        snapshot.action_id(
+                            InteractionTarget::Item {
+                                id: item.id.clone(),
+                            },
+                            action,
+                        ),
+                        format!(
+                            "{} · {} · {}",
+                            action.label,
+                            item.attribution
+                                .as_ref()
+                                .map_or(section.title.as_str(), |source| source.label.as_str()),
+                            item.title
+                        ),
+                    ));
+                }
+            }
+        }
+        state.actions = affordances.iter().map(|(id, _)| id.clone()).collect();
+        snapshot.affordances = affordances;
+        Ok(snapshot)
+    }
+
+    /// Ignore stale/unknown affordances instead of dispatching them against new content.
+    pub async fn write_interaction<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        action_id: &str,
+    ) -> Result<bool, ProtocolError> {
+        let Some(event) = self.interaction(action_id) else {
+            return Ok(false);
+        };
+        let mut bytes = serde_json::to_vec(&event).map_err(|_| ProtocolError::UnexpectedMessage)?;
+        bytes.push(b'\n');
+        writer
+            .write_all(&bytes)
+            .await
+            .map_err(|error| ProtocolError::Io(error.to_string()))?;
+        writer
+            .flush()
+            .await
+            .map_err(|error| ProtocolError::Io(error.to_string()))?;
+        Ok(true)
+    }
+    pub fn interaction(&self, action_id: &str) -> Option<InteractionEvent> {
+        if !self.state.lock().unwrap().actions.contains(action_id) {
+            return None;
+        }
+        let (_, event): (u64, InteractionEvent) = serde_json::from_str(action_id).ok()?;
+        Some(event)
+    }
+}

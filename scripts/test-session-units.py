@@ -8,7 +8,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = [ROOT / 'packaging/systemd/canopa-session.target',
-           ROOT / 'packaging/systemd/niribar.service',
+           ROOT / 'packaging/systemd/canopa-shell.service',
            ROOT / 'packaging/systemd/canopa-notify.service',
            ROOT / 'packaging/systemd/xdg-desktop-portal-canopa.service']
 

@@ -99,7 +99,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             );
             install_new(&output, text.as_bytes())?;
             println!(
-                "Created {}. Install this candidate at the shared configuration path (or select it explicitly), then restart Niribar and reload Notify.",
+                "Created {}. Install this candidate at the shared configuration path (or select it explicitly), then restart Canopa Shell and reload Notify.",
                 output.display()
             );
         }
@@ -208,12 +208,12 @@ fn validator(component: Component) -> anyhow::Result<Command> {
         .parent()
         .ok_or_else(|| anyhow::anyhow!("cannot find installation directory"))?
         .join(match component {
-            Component::Shell => "niribar",
+            Component::Shell => "canopa-shell",
             Component::Notifications => "canopa-notify",
         });
     anyhow::ensure!(
         sibling.is_file(),
-        "install Niribar and Canopa Notify beside the canopa executable"
+        "install Canopa Shell and Canopa Notify beside the canopa executable"
     );
     let mut command = Command::new(sibling);
     command.arg(match component {

@@ -94,9 +94,9 @@ def verify(args, session):
     session.run(["cc", "-Wall", "-Wextra", "-Werror", "-I"+str(runtime), str(source / "click.c"),
                  str(runtime / "virtual-pointer.c"), "-o", pointer, *flags])
     session.env["WAYLAND_DEBUG"] = "client"
-    session.start([str(args.niribar)], "niribar.log")
+    session.start([str(args.shell)], "canopa-shell.log")
     session.env.pop("WAYLAND_DEBUG")
-    session.wait_for(lambda: (runtime / "niribar.sock").is_socket(), "Niribar")
+    session.wait_for(lambda: (runtime / "canopa-shell.sock").is_socket(), "Canopa Shell")
     session.wait_for(lambda: "org.kde.StatusNotifierWatcher" in session.run([
         "busctl", "--address="+session.env["DBUS_SESSION_BUS_ADDRESS"], "list"]), "tray watcher")
     session.start([sys.executable, str(Path(__file__).resolve()), "--serve-tray"], "tray.log")
@@ -107,7 +107,7 @@ def verify(args, session):
     session.wait_for(bar_visible, "initial bar frame")
     time.sleep(1)
     session.run([pointer, "15", "20"])
-    trace = lambda: (output / "niribar.log").read_text()
+    trace = lambda: (output / "canopa-shell.log").read_text()
     session.wait_for(lambda: "xdg_popup" in trace() and ".grab(" in trace(), "grabbed popup")
     session.wait_for(lambda: re.search(r"xdg_popup[@#]\d+\.configure\(", trace()), "popup configuration")
     time.sleep(1)
@@ -143,9 +143,9 @@ def verify(args, session):
     # Outside dismissal also covers an output with no bar, including one
     # connected while the panel is already open.
     before_panel = len(trace())
-    session.run([str(args.niribar), "--toggle-panel"])
+    session.run([str(args.shell), "--toggle-panel"])
     dismissal_ids = lambda: re.findall(
-        r'get_layer_surface\(new id zwlr_layer_surface_v1[@#](\d+),[^\n]*"niribar-dismissal"',
+        r'get_layer_surface\(new id zwlr_layer_surface_v1[@#](\d+),[^\n]*"canopa-shell-dismissal"',
         trace()[before_panel:])
     session.wait_for(lambda: len(dismissal_ids()) == 1, "first dismissal surface")
     session.run(["swaymsg", "create_output"])
@@ -167,15 +167,15 @@ def verify(args, session):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serve-tray", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--niribar", type=Path)
+    parser.add_argument("--shell", type=Path)
     parser.add_argument("--artifacts", type=Path)
     args = parser.parse_args()
     if args.serve_tray:
         serve_tray()
         return
-    if args.niribar is None or args.artifacts is None:
-        parser.error("--niribar and --artifacts are required")
-    args.niribar = args.niribar.resolve(strict=True)
+    if args.shell is None or args.artifacts is None:
+        parser.error("--shell and --artifacts are required")
+    args.shell = args.shell.resolve(strict=True)
     output = args.artifacts.resolve()
     output.mkdir(parents=True, exist_ok=False)
     with tempfile.TemporaryDirectory(prefix="canopa-fork-desktop-") as directory:

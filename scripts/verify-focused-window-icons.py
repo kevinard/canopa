@@ -135,7 +135,7 @@ def verify(binary, output, session, scale):
         real_socket = session.env["NIRI_SOCKET"]
         session.env["NIRI_SOCKET"] = fixture_socket
         try:
-            session.start([str(binary)], "niribar.log")
+            session.start([str(binary)], "canopa-shell.log")
         finally:
             session.env["NIRI_SOCKET"] = real_socket
         connection, _ = listener.accept()

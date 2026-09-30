@@ -113,7 +113,7 @@ def verify(binary, output, session, scales):
     module "focused-window" {}
 }
 ''')
-    session.start([str(binary)], "niribar.log")
+    session.start([str(binary)], "canopa-shell.log")
     session.wait_for_layers(3)
     titles = ["Focused window: Quarterly planning - Firefox", "Updated title: iii WWW — Résumé"]
     title_file = runtime / "title"

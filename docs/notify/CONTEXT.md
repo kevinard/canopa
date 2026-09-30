@@ -42,7 +42,7 @@ _Avoid_: Active notification when referring to pending content whose sender life
 
 **Notification Center**:
 An interactive view of notification state owned by the **Notification Daemon**, including recent and historical notifications.
-_Avoid_: Niribar panel when referring to the notification domain, popup
+_Avoid_: Canopa Shell panel when referring to the notification domain, popup
 
 **App Identity**:
 The canonical identity of the application that sent a notification, used for per-application policy and history grouping.
@@ -257,7 +257,7 @@ A **Notify Control API** stream that delivers notification state changes to a co
 _Avoid_: Polling when referring to push updates
 
 **Notification Status Summary**:
-A bounded snapshot of the daemon instance, retained **Requires Attention** count and **Do Not Disturb**. Notify computes its count without decoding history content. Niribar subscribes to this summary; it never derives notification policy or attention from Center items.
+A bounded snapshot of the daemon instance, retained **Requires Attention** count and **Do Not Disturb**. Notify computes its count without decoding history content. Canopa Shell subscribes to this summary; it never derives notification policy or attention from Center items.
 _Avoid_: Unread count, active count
 
 **Notification Center Projection**:
@@ -265,7 +265,7 @@ A derived current-state representation of **Notification Center** content produc
 _Avoid_: Event log when referring to display state, Notification Snapshot when referring to display-ready content
 
 **Panel Provider Mode**:
-The `canopa-notify` mode that serves Notify-owned notification center content to Niribar.
+The `canopa-notify` mode that serves Notify-owned notification center content to Canopa Shell.
 _Avoid_: Notification Daemon when referring to the short-lived provider process
 
 **Notification Center Target**:
@@ -437,7 +437,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - First-version **Notification Timeout** configuration is global with per-urgency defaults, not per-app.
 - Sender-requested **Notification Timeout** values are respected within user-configured bounds when the current revision becomes visible in a **Notification Banner**.
 - **Notification Banners** appear at the top right of the focused output by default.
-- **Notification Banners** are owned by the **Notification Daemon**, not by Niribar.
+- **Notification Banners** are owned by the **Notification Daemon**, not by Canopa Shell.
 - First-version **Notification Image** and **Notification App Icon** rendering starts with **Notification Banners**.
 - First-version **Notification Banner** visual rendering does not require full freedesktop icon-theme lookup.
 - First-version **Notification Banner** file-backed visual rendering supports common static raster image formats before vector or animated image formats.
@@ -572,9 +572,9 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - The shared panel protocol contains generic panel wire contracts, not Notify-specific notification logic. Notify uses its v4 contract for legacy clients and an explicitly selected v5 provider bridge for the built-in shell; the private daemon stream and notification revision guards remain unchanged. All provider contracts live in the shared crate ([Canopa ADR 0006](../adr/0006-shared-provider-contracts.md)).
 - Shared panel protocol styled text is generic inline presentation data, not raw freedesktop notification markup.
 - Shared panel protocol shape changes for generic styled text should advance the panel protocol version.
-- The first Niribar-hosted **Notification Center** does not require progress rendering.
-- The first Niribar-hosted **Notification Center** does not require **Notification Image** or **Notification App Icon** rendering.
-- First-version documentation includes a Niribar configuration example for opening the **Notification Center**.
+- The first Canopa Shell-hosted **Notification Center** does not require progress rendering.
+- The first Canopa Shell-hosted **Notification Center** does not require **Notification Image** or **Notification App Icon** rendering.
+- First-version documentation includes a Canopa Shell configuration example for opening the **Notification Center**.
 - The first **Notification Center** does not show counts for **Dropped Notifications**.
 - Full-text **Notification History** search is outside the first **Notification Center** scope.
 - Unread/read notification state is outside the first version scope.

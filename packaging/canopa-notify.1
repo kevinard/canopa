@@ -21,7 +21,7 @@ canopa-notify \- Wayland desktop notifications and local notification history
 .SH DESCRIPTION
 Canopa Notify owns org.freedesktop.Notifications on the session bus in service
 mode. It displays banners without taking keyboard focus and provides a
-Notification Center through a compatible Niribar host. Service mode requires
+Notification Center through a compatible Canopa Shell host. Service mode requires
 Wayland and the wlr layer-shell protocol. Headless mode is intended for tests and
 development; a development bus name must be requested explicitly.
 .PP
@@ -102,5 +102,5 @@ transmission can have an unknown command outcome; inspect state before retrying.
 .SH CANOPA INTEGRATION
 The daemon, ctl and panel-provider commands use
 $XDG_RUNTIME_DIR/canopa-notify/control.sock when --socket is omitted.
-The runtime directory must be absolute. Niribar's built-in notifications module
+The runtime directory must be absolute. Canopa Shell's built-in notifications module
 uses this endpoint for its attention count, DND commands and Notification Center.

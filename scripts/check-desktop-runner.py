@@ -10,8 +10,8 @@ import sys
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--niribar-root', type=Path,
-                        default=Path(__file__).resolve().parents[1] / 'crates/niribar')
+    parser.add_argument('--shell-root', type=Path,
+                        default=Path(__file__).resolve().parents[1] / 'crates/canopa-shell')
     args = parser.parse_args()
     failures = []
     for command in ['cargo', 'rustc', 'git', 'dbus-daemon', 'dbus-run-session',
@@ -21,8 +21,8 @@ def main():
         print(f'{command}: {path or "MISSING"}')
         if not path:
             failures.append(command)
-    workspace = args.niribar_root.resolve().parents[1]
-    for path in [args.niribar_root / 'Cargo.toml', workspace / 'Cargo.lock',
+    workspace = args.shell_root.resolve().parents[1]
+    for path in [args.shell_root / 'Cargo.toml', workspace / 'Cargo.lock',
                  workspace / 'crates/canopa-panel-protocol/Cargo.toml']:
         if not path.is_file():
             failures.append(str(path))

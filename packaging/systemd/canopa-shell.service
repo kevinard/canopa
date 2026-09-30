@@ -1,0 +1,13 @@
+[Unit]
+Description=Canopa desktop shell
+After=graphical-session-pre.target
+Before=graphical-session.target
+PartOf=graphical-session.target canopa-session.target
+
+[Service]
+ExecStart=%h/.local/bin/canopa-shell
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

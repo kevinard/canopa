@@ -1,7 +1,7 @@
 # Canopa
 
 Canopa is a desktop environment built around the Niri Wayland compositor. Its Rust
-workspace currently contains Niribar (the shell and Wi-Fi provider), Canopa Notify,
+workspace currently contains Canopa Shell (the shell and Wi-Fi provider), Canopa Notify,
 the `canopa` configuration tool, a Settings portal backend, and shared configuration, appearance, Iced controls
 and panel protocol crates. Local icon lookup and bounded raster preparation are
 shared through `canopa-assets`; see the [asset contracts](docs/adr/0005-shared-assets.md).
@@ -13,8 +13,8 @@ sudo apt-get install build-essential pkg-config libpulse-dev libasound2-dev libu
 cargo build --workspace --bins --locked
 ```
 
-Binaries are in root `target/debug/`: `niribar`, `niribar-wifi-provider`, and
-`canopa-notify`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p niribar` or
+Binaries are in root `target/debug/`: `canopa-shell`, `canopa-wifi-provider`, and
+`canopa-notify`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p canopa-shell` or
 `cargo build --locked -p canopa-notify`. Notify's core build remains available with
 `cargo build --locked -p canopa-notify --no-default-features`.
 
@@ -33,7 +33,7 @@ The optional graphical acceptance workflow uses a dedicated runner with Niri, Sw
 grim, Weston, wtype, Python GI/AT-SPI/Pillow, and software Mesa;
 see `scripts/check-desktop-runner.py`.
 
-After building Niribar, `python3 scripts/verify-menu-scrolling.py --output
+After building Canopa Shell, `python3 scripts/verify-menu-scrolling.py --output
 /tmp/canopa-scroll-new` checks installed-apps drawer scrolling in a private
 desktop with PNG/SVG icons. It verifies keyboard scrolling without a blinking
 search cursor, touchpad travel from steady and bursty input, and long gestures
@@ -41,12 +41,12 @@ across cached-row boundaries.
 Screenshots and results are saved in the new output directory.
 
 There is one lockfile, one set of dependency forks, and one panel protocol source.
-All supported packages live under `crates/`, including `crates/niribar/` and
+All supported packages live under `crates/`, including `crates/canopa-shell/` and
 `crates/canopa-notify/`. Repository tooling is in `scripts/`, service units and
 release metadata are in `packaging/`, and application documentation is in
-`docs/niribar/` and `docs/notify/`. Run development commands from this root.
+`docs/shell/` and `docs/notify/`. Run development commands from this root.
 Cargo unifies dependency features when building applications together: combined GUI
-builds include Niribar's theme-detection feature; Notify-only builds retain its
+builds include Canopa Shell's theme-detection feature; Notify-only builds retain its
 disabled theme-detection default. Always select `-p canopa-notify` for core-only
 validation. The rotation prototype in `experiments/focused-window-rotation/`
 retains its independent experimental build.
@@ -55,7 +55,7 @@ Both applications discover `$XDG_CONFIG_HOME/canopa/config.kdl` (with the usual
 `~/.config` fallback). Existing application files still work when that shared file
 is absent. Run `canopa config check` to validate both schemas, and see the
 [configuration guide](docs/configuration.md) for explicit migration and reloads.
-Shell changes require restarting Niribar; Notify supports reload while running.
+Shell changes require restarting Canopa Shell; Notify supports reload while running.
 Notify continues to deliver banners while the shell is stopped. Both UIs use the
 shared `appearance` settings for dark/light palettes and an optional accent color.
 The default notification module opens the Center and controls DND without provider
@@ -65,8 +65,9 @@ phases in the [integration proposal](docs/canopa-integration-proposal.md).
 The [Settings portal](docs/settings-portal.md) exposes shared appearance to
 applications, with explicit backend selection and its own SIGHUP reload.
 
-Follow the [shell guide](crates/niribar/README.md) and [notification guide](crates/canopa-notify/README.md)
-for feature options, using root `target/` paths. Runtime state paths are unchanged.
+Follow the [shell guide](crates/canopa-shell/README.md) and [notification guide](crates/canopa-notify/README.md)
+for feature options, using root `target/` paths. Existing Niribar installations
+should follow the [shell rename guide](docs/shell-rename.md) before updating.
 
 Build a release with `cargo build --workspace --bins --locked --release`, then run
 `bash scripts/package-release.sh target/release dist`. The archive contains all five
@@ -82,7 +83,7 @@ For subsequent updates of an existing local companion installation, run:
 ```
 
 This builds the current checkout, including uncommitted changes, and installs
-`niribar`, `niribar-wifi-provider`, `canopa-notify`, and `canopa` together. It does
+`canopa-shell`, `canopa-wifi-provider`, `canopa-notify`, and `canopa` together. It does
 not fetch or pull Git commits. The updater requires Python 3, both companion user
 services, their standard `~/.local/bin` executable paths, and default configuration,
 control socket and state discovery in the same graphical-session environment.

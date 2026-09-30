@@ -27,6 +27,7 @@ impl Component {
 
     fn legacy_directory(self) -> &'static str {
         match self {
+            // Renaming the shell must not hide an existing pre-Canopa configuration.
             Self::Shell => "niribar",
             Self::Notifications => "canopa-notify",
         }

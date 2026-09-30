@@ -1,6 +1,6 @@
 # Notification Center verification
 
-The compatible host consumes **Canopa protocol v4**. Use the [provider setup](niribar-panel-provider.md)
+The compatible host consumes **Canopa protocol v4**. Use the [provider setup](shell-panel-provider.md)
 and [recorded desktop acceptance](notification-desktop-acceptance.md). Banners and
 Center expose native AT-SPI; the acceptance record includes actual Orca speech,
 keyboard reading, links, images/fallbacks and four named actions on a narrow transient.

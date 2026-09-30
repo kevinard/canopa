@@ -33,7 +33,7 @@ builds, so lifecycle and delivery-policy tests do not require a display or devic
 | `presentation/renderer.rs` and children | Actual Iced widgets, revision-owned input, surface/display lifetimes, bounded assets and AT-SPI. Widget, native bus and compositor evidence. |
 | `sound/playback.rs`, `sound/playback/theme.rs` | Bounded playback and sound-theme resolution. Real offline mixer fixtures. |
 | `link_opening/portal.rs`, `activation/wayland.rs` | Desktop opening and best-effort activation context. Private portal mocks and graphical acceptance. |
-| `canopa-panel-protocol` | Generic versioned presentation contract; no notification-domain interpretation in the host. Protocol validation and Niribar round trips. |
+| `canopa-panel-protocol` | Generic versioned presentation contract; no notification-domain interpretation in the host. Protocol validation and Canopa Shell round trips. |
 
 Keep slow file/device/portal work outside the mutation coordinator. Preserve the
 distinction between ordered sender events and replaceable UI projections. A test
@@ -77,7 +77,7 @@ regressions for reported inputs.
 
 ## Repeatable desktop check
 
-`scripts/test-desktop.py` requires a compatible Niribar binary, Niri, Sway, grim,
+`scripts/test-desktop.py` requires a compatible Canopa Shell binary, Niri, Sway, grim,
 software Mesa, Python GI with Gio/AT-SPI, the AT-SPI launcher/registry, a C compiler,
 `pkg-config` and `wayland-scanner`. It builds its small private pointer helper,
 starts a nonactivating private bus and fresh XDG directories, then exercises both
@@ -86,7 +86,7 @@ versions and results, and terminates only its own process groups.
 
 ```sh
 python3 scripts/test-desktop.py --notify target/debug/canopa-notify \
-  --niribar target/debug/niribar --artifacts /tmp/notify-desktop-new
+  --shell target/debug/canopa-shell --artifacts /tmp/notify-desktop-new
 ```
 
 The manually dispatched `Desktop acceptance` workflow runs this check, the shared

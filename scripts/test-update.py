@@ -18,8 +18,8 @@ from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parent
-PROGRAMS = ('niribar', 'niribar-wifi-provider', 'canopa-notify', 'canopa')
-SERVICES = ('niribar.service', 'canopa-notify.service')
+PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-notify', 'canopa')
+SERVICES = ('canopa-shell.service', 'canopa-notify.service')
 LOCAL_PACKAGES = ('canopa-panel-protocol', 'canopa-config', 'canopa-assets', 'accesskit_unix')
 SYSTEMCTL = r'''#!/usr/bin/env python3
 import json
@@ -109,7 +109,7 @@ fn main() {
             std::process::exit(1);
         }
         let exe = std::env::current_exe().unwrap();
-        for name in ["niribar", "canopa-notify"] {
+        for name in ["canopa-shell", "canopa-notify"] {
             let output = std::process::Command::new(exe.parent().unwrap().join(name))
                 .arg("--version").output().unwrap();
             assert!(String::from_utf8(output.stdout).unwrap().starts_with(VERSION));
@@ -172,14 +172,14 @@ class UpdateTests(unittest.TestCase):
                         XDG_STATE_HOME=str(self.root / 'state'),
                         XDG_RUNTIME_DIR=str(self.root / 'runtime'),
                         CANOPA_TEST_SERVICES=str(self.service),
-                        CANOPA_TEST_OLD_BINARY=str(self.root / 'old-niribar'))
+                        CANOPA_TEST_OLD_BINARY=str(self.root / 'old-canopa-shell'))
         self.addCleanup(self.stop_services)
         self.run_command(['cargo', 'generate-lockfile', '--offline'], self.repo)
 
     def write_project(self, root, version):
         root.mkdir(parents=True, exist_ok=True)
         (root / 'Cargo.toml').write_text(
-            '[workspace]\nresolver = "2"\nmembers = ["crates/niribar", '
+            '[workspace]\nresolver = "2"\nmembers = ["crates/canopa-shell", '
             '"crates/canopa-notify", "crates/canopa-cli"]\n'
             'exclude = ["vendor/accesskit_unix"]\n'
             '[patch.crates-io]\naccesskit_unix = { path = "vendor/accesskit_unix" }\n')
@@ -193,7 +193,7 @@ class UpdateTests(unittest.TestCase):
         deps = '\n'.join('accesskit_unix = "0.1.0"' if name == 'accesskit_unix' else
                          f'{name} = {{ path = "../../vendor/{name}" }}' for name in LOCAL_PACKAGES)
         source = RUST_MAIN.replace('@VERSION@', version)
-        for name, binary in [('niribar', 'niribar'), ('canopa-notify', 'canopa-notify'),
+        for name, binary in [('canopa-shell', 'canopa-shell'), ('canopa-notify', 'canopa-notify'),
                              ('canopa-cli', 'canopa')]:
             package = root / 'crates' / name
             (package / 'src').mkdir(parents=True)
@@ -201,9 +201,9 @@ class UpdateTests(unittest.TestCase):
                 f'[package]\nname = "{name}"\nversion = "0.1.0"\nedition = "2021"\n'
                 f'[[bin]]\nname = "{binary}"\npath = "src/main.rs"\n[dependencies]\n{deps}\n')
             (package / 'src/main.rs').write_text(source)
-            if name == 'niribar':
+            if name == 'canopa-shell':
                 (package / 'src/bin').mkdir()
-                (package / 'src/bin/niribar-wifi-provider.rs').write_text(source)
+                (package / 'src/bin/canopa-wifi-provider.rs').write_text(source)
 
     def run_command(self, args, cwd=None, check=True):
         result = subprocess.run(args, cwd=cwd or self.root, env=self.env,
@@ -237,7 +237,7 @@ class UpdateTests(unittest.TestCase):
                           '--target-dir', str(self.repo / 'target')], baseline)
         for name in PROGRAMS:
             shutil.copy2(self.repo / 'target/release' / name, self.bin_dir / name)
-        shutil.copy2(self.bin_dir / 'niribar', self.root / 'old-niribar')
+        shutil.copy2(self.bin_dir / 'canopa-shell', self.root / 'old-canopa-shell')
 
     def assert_versions(self, version):
         for name in PROGRAMS:
@@ -278,7 +278,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_shell_edit_reuses_unchanged_packages(self):
         self.update()
-        source = self.repo / 'crates/niribar/src/main.rs'
+        source = self.repo / 'crates/canopa-shell/src/main.rs'
         source.write_text(source.read_text().replace('fn main() {', '''fn main() {
     if std::env::args().any(|arg| arg == "--edited") {
         println!("edited");
@@ -286,10 +286,10 @@ class UpdateTests(unittest.TestCase):
     }
 '''))
         result = self.update()
-        self.assertIn('Compiling niribar ', result.stderr)
+        self.assertIn('Compiling canopa-shell ', result.stderr)
         for package in (*LOCAL_PACKAGES, 'canopa-notify', 'canopa-cli'):
             self.assertNotIn(f'Compiling {package} ', result.stderr)
-        edited = self.run_command([str(self.bin_dir / 'niribar'), '--edited'])
+        edited = self.run_command([str(self.bin_dir / 'canopa-shell'), '--edited'])
         self.assertEqual(edited.stdout.strip(), 'edited')
 
     def test_rebuilds_after_other_checkout_overwrites_warm_cache(self):
@@ -304,7 +304,7 @@ class UpdateTests(unittest.TestCase):
     def test_explicit_rebuild_invalidates_warm_cache(self):
         self.update()
         result = self.update(True, '--rebuild')
-        self.assertIn('Compiling niribar ', result.stderr)
+        self.assertIn('Compiling canopa-shell ', result.stderr)
         self.assertIn('Compiling accesskit_unix ', result.stderr)
         self.assert_versions('current')
         result = self.update()
@@ -325,8 +325,8 @@ class UpdateTests(unittest.TestCase):
         self.state('canopa-notify.service', active='failed')
         result = self.update()
         self.assertEqual(self.state('canopa-notify.service')['active'], 'active')
-        self.assertEqual(self.state('niribar.service')['active'], 'inactive')
-        self.assertIn('niribar.service is inactive', result.stdout)
+        self.assertEqual(self.state('canopa-shell.service')['active'], 'inactive')
+        self.assertIn('canopa-shell.service is inactive', result.stdout)
         self.assert_versions('current')
 
     def test_leaves_both_intentionally_stopped_services_stopped(self):
@@ -339,7 +339,7 @@ class UpdateTests(unittest.TestCase):
         self.install_previous()
         for service in SERVICES:
             self.state(service, active='active')
-        self.state('niribar.service', mode='crash')
+        self.state('canopa-shell.service', mode='crash')
         self.env['CANOPA_TEST_MIGRATE'] = str(self.database)
         result = self.update(check=False)
         self.assertNotEqual(result.returncode, 0)
@@ -352,7 +352,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_rejects_different_executable_and_restores_installation(self):
         self.install_previous()
-        self.state('niribar.service', active='active', mode='wrong-binary')
+        self.state('canopa-shell.service', active='active', mode='wrong-binary')
         result = self.update(check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('different executable', result.stderr)

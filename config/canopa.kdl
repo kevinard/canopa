@@ -6,7 +6,7 @@ appearance {
     // accent "#89b4fa" // omit to use the selected preset's accent
 }
 
-// To customize Niribar, put its bar/modules/menus/panel-providers declarations
+// To customize Canopa Shell, put its bar/modules/menus/panel-providers declarations
 // inside a shell block. Omitting it keeps the complete embedded shell defaults.
 // shell {
 //     bar "main" { edge "top"; }

@@ -12,6 +12,6 @@ do not duplicate or renumber them. Repository consolidation is scoped in
 [ADR 0009](../adr/0009-consolidated-repository-layout.md).
 
 Integration decisions live in root `docs/adr/`; application ADR histories live in
-`docs/niribar/adr/` and `docs/notify/adr/`. Built-in providers share v5 with explicit
+`docs/shell/adr/` and `docs/notify/adr/`. Built-in providers share v5 with explicit
 v1/v4 compatibility. The Settings portal is implemented; interactive portal
 request presentation remains separate work for the first interface needing it.

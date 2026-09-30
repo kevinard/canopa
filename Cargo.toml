@@ -11,7 +11,7 @@ members = [
     "crates/canopa-notify-client",
     "crates/canopa-panel-protocol",
     "crates/canopa-notify",
-    "crates/niribar",
+    "crates/canopa-shell",
 ]
 exclude = [
     "vendor/accesskit_unix",

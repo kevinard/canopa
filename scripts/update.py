@@ -15,8 +15,8 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROGRAMS = ("niribar", "niribar-wifi-provider", "canopa-notify", "canopa")
-SERVICES = ("canopa-notify.service", "niribar.service")
+PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-notify", "canopa")
+SERVICES = ("canopa-notify.service", "canopa-shell.service")
 
 
 def run(*args, check=True, timeout=60):
@@ -85,7 +85,7 @@ def build(jobs, rebuild=False):
     else:
         print("Reusing local release build cache; Cargo will rebuild changed sources.", flush=True)
     subprocess.run(["cargo", "build", "--locked", "--release", "--bins",
-                    "--package", "niribar", "--package", "canopa-notify",
+                    "--package", "canopa-shell", "--package", "canopa-notify",
                     "--package", "canopa-cli", "--jobs", str(jobs),
                     "--target-dir", "target"], cwd=ROOT, check=True)
     cache.write_text(json.dumps(build_cache_state(packages)) + "\n")
@@ -144,7 +144,9 @@ def update(jobs, rebuild=False):
     states = {}
     for service in SERVICES:
         if property_value(service, "LoadState") != "loaded":
-            raise RuntimeError(f"{service} is not loaded; install the companion user services first")
+            raise RuntimeError(
+                f"{service} is not loaded; install the companion user services first "
+                "(existing Niribar installations: see docs/shell-rename.md)")
         state = property_value(service, "ActiveState")
         if state not in ("active", "inactive", "failed"):
             raise RuntimeError(f"{service} is {state}; retry when it has settled")

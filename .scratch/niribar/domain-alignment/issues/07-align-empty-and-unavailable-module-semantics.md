@@ -27,7 +27,7 @@ Implementation is present in crates/niribar/src/config/validate.rs; crates/nirib
 
 Routed to human acceptance review to avoid reimplementing an existing feature.
 The original acceptance boxes are retained; this routing change does not certify
-manual acceptance. See [the remediation record](../../../../docs/niribar/audits/2026-09-23-remediation.md)
+manual acceptance. See [the remediation record](../../../../docs/shell/audits/2026-09-23-remediation.md)
 for known limits and remaining checks.
 
 ### Desktop verification follow-up — 2026-09-23
@@ -38,5 +38,5 @@ now filters bar/panel frames, navigation and tooltips, including output-specific
 workspace children and empty script output. Data-source loss retires stale focus
 and tooltip state; recovery restores the visible target. App-level regressions
 cover omission and loss/recovery. See the
-[desktop record](../../../../docs/niribar/audits/2026-09-23-desktop-validation.md).
+[desktop record](../../../../docs/shell/audits/2026-09-23-desktop-validation.md).
 Operator acceptance remains open.

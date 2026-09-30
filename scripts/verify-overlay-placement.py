@@ -94,7 +94,7 @@ modules {{
         }
         session.start([str(binary)], f"bar-{index}.log")
         session.wait_for_layers(index + 1)
-        session.wait_for(lambda: (runtime / "niribar.sock").is_socket(), "bar IPC")
+        session.wait_for(lambda: (runtime / "canopa-shell.sock").is_socket(), "bar IPC")
         bars.append(session.env.copy())
     session.env = compositor_env
     # Layer registration precedes the first GPU frame. Wait for both bars to
@@ -152,7 +152,7 @@ def main():
     for edge in args.edge:
         case_output = output / edge
         case_output.mkdir()
-        with tempfile.TemporaryDirectory(prefix="niribar-placement-") as directory:
+        with tempfile.TemporaryDirectory(prefix="canopa-shell-placement-") as directory:
             session = desktop.Session(Path(directory), case_output)
             try:
                 verify(binary, case_output, session, edge, args.bars, args.scale)

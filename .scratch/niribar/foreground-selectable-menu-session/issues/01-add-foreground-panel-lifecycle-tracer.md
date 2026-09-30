@@ -32,5 +32,5 @@ Implementation is present in crates/niribar/src/app/foreground.rs; crates/niriba
 
 Routed to human acceptance review to avoid reimplementing an existing feature.
 The original acceptance boxes are retained; this routing change does not certify
-manual acceptance. See [the remediation record](../../../../docs/niribar/audits/2026-09-23-remediation.md)
+manual acceptance. See [the remediation record](../../../../docs/shell/audits/2026-09-23-remediation.md)
 for known limits and remaining checks.

@@ -21,7 +21,7 @@ spec = importlib.util.spec_from_file_location('desktop', ROOT / 'scripts/validat
 desktop = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(desktop)
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--binary', type=Path, default=ROOT / 'target/debug/niribar')
+parser.add_argument('--binary', type=Path, default=ROOT / 'target/debug/canopa-shell')
 parser.add_argument('--output', type=Path, required=True)
 args = parser.parse_args()
 out = args.output.resolve()
@@ -71,9 +71,9 @@ modules { module "button" { label "Apps"; icon "A"; actions { click { toggle-men
                 Image.new('RGBA', (22, 22), (0, 136, 255, 255)).save(icons / f'app-{i:03}.png')
             (apps / f'app-{i:03}.desktop').write_text(f'[Desktop Entry]\nType=Application\nName=App {i:03}\nIcon=app-{i:03}\nExec=true\n')
         session.env['XDG_DATA_DIRS'] = str(runtime / 'empty')
-        session.start([str(binary)], 'niribar.log')
+        session.start([str(binary)], 'canopa-shell.log')
         session.wait_for_layers(1)
-        session.wait_for(lambda: (runtime / 'niribar.sock').is_socket(), 'IPC')
+        session.wait_for(lambda: (runtime / 'canopa-shell.sock').is_socket(), 'IPC')
         time.sleep(1)
         # Use an actual pointer click on the launcher.
         generated = out / 'virtual-pointer.h'

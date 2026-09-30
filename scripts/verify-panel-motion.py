@@ -90,7 +90,7 @@ modules {{ module "button" {{ label "Panel motion"; icon "B"; actions {{ click {
 ''')
         process = session.start([str(binary)], f"{case}.log")
         session.wait_for_layers(1)
-        session.wait_for(lambda: (runtime / "niribar.sock").is_socket(), "bar IPC")
+        session.wait_for(lambda: (runtime / "canopa-shell.sock").is_socket(), "bar IPC")
         time.sleep(1)
         # Warm the software renderer before sampling an already-running shell.
         session.run([str(binary), "--toggle-panel"])
@@ -225,7 +225,7 @@ modules {{ module "button" {{ label "Panel motion"; icon "B"; actions {{ click {
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, default=ROOT / "target/debug/niribar")
+    parser.add_argument("--binary", type=Path, default=ROOT / "target/debug/canopa-shell")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scale", type=float, default=1.0)
     parser.add_argument("--case", help="Run one named case, such as left-auto-1000")

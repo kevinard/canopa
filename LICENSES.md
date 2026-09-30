@@ -2,8 +2,8 @@
 
 The combined repository preserves the original source licenses:
 
-- Niribar, including its original scripts and documentation: MIT, in
-  `crates/niribar/LICENSE`.
+- Canopa Shell (originally Niribar), including its original scripts and documentation:
+  MIT, in `crates/canopa-shell/LICENSE`.
 - Canopa Notify, including its original scripts and documentation: MIT OR Apache-2.0,
   in `crates/canopa-notify/LICENSE-MIT` and `crates/canopa-notify/LICENSE-APACHE`.
 - Canopa panel protocol: MIT, selecting the original v4 MIT option and retaining

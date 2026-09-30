@@ -7,8 +7,8 @@ tar -xzf "$archive" -C "$stage"
 bundle="$stage/canopa-x86_64-unknown-linux-gnu"
 test -x "$bundle/bin/canopa"
 "$bundle/bin/canopa" config check --file "$bundle/share/canopa/canopa.kdl"
-test -x "$bundle/bin/niribar"
-test -x "$bundle/bin/niribar-wifi-provider"
+test -x "$bundle/bin/canopa-shell"
+test -x "$bundle/bin/canopa-wifi-provider"
 test -x "$bundle/bin/canopa-notify"
 "$bundle/bin/xdg-desktop-portal-canopa" --help > /dev/null
 test -s "$bundle/share/xdg-desktop-portal/portals/canopa.portal"
@@ -18,13 +18,14 @@ test -s "$bundle/share/canopa/dependency-attributions.md"
 test -s "$bundle/share/canopa-notify/LICENSE-MIT"
 test -s "$bundle/share/systemd/user/canopa-notify.service"
 "$bundle/bin/canopa-notify" --help > /dev/null
-test -s "$bundle/share/niribar/LICENSE"
-test -s "$bundle/share/niribar/default.kdl"
-test -s "$bundle/share/systemd/user/niribar.service"
+test -s "$bundle/share/canopa-shell/LICENSE"
+test -s "$bundle/share/canopa-shell/default.kdl"
+test -s "$bundle/share/systemd/user/canopa-shell.service"
 test -s "$bundle/share/systemd/user/canopa-session.target"
 test -s "$bundle/share/canopa/notifications.md"
-PATH="$bundle/bin" niribar --version
-python3 - "$bundle/bin/niribar-wifi-provider" <<'PY'
+test -s "$bundle/share/canopa/shell-rename.md"
+PATH="$bundle/bin" canopa-shell --version
+python3 - "$bundle/bin/canopa-wifi-provider" <<'PY'
 import json
 import os
 import struct
@@ -43,7 +44,7 @@ close = {'type': 'event', 'payload': {'type': 'close'}}
 result = subprocess.run([sys.argv[1]], input=frame(handshake) + frame(close),
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[1]),
-                             'NIRIBAR_WIFI_PROVIDER_BACKEND': 'none'}, check=True)
+                             'CANOPA_WIFI_PROVIDER_BACKEND': 'none'}, check=True)
 assert result.stdout.startswith(magic)
 size = struct.unpack('>Q', result.stdout[len(magic):len(magic)+8])[0]
 message = json.loads(result.stdout[len(magic)+8:len(magic)+8+size])
@@ -53,7 +54,7 @@ result = subprocess.run([sys.argv[1], '--protocol', 'canopa-v5'],
                         input=b'{"type":"close","protocol_version":5}\n',
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[1]),
-                             'NIRIBAR_WIFI_PROVIDER_BACKEND': 'none'}, check=True)
+                             'CANOPA_WIFI_PROVIDER_BACKEND': 'none'}, check=True)
 message = json.loads(result.stdout)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'form'

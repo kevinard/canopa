@@ -1,6 +1,6 @@
 # Desktop notification acceptance, 2026-09-16
 
-Implementation baseline: Notify `8898be0`, Niribar `05e6e5f`. This records the
+Implementation baseline: Notify `8898be0`, Canopa Shell `05e6e5f`. This records the
 paired working-tree implementation; final repository checks and revisions belong
 in the completion tracker. Earlier output/expiry evidence remains linked below.
 
@@ -9,7 +9,7 @@ in the completion tracker. Earlier output/expiry evidence remains linked below.
 The test used a private, nonactivating D-Bus session, fresh XDG directories,
 software-rendered headless Sway, and nested Niri 26.04. The outer output was
 1600×1000 at scale 1, then 600×1000 with Niri scale 2 (300 logical pixels wide).
-Niribar consumed Canopa protocol v4 with a 720-pixel panel. Notify sound was disabled.
+Canopa Shell consumed Canopa protocol v4 with a 720-pixel panel. Notify sound was disabled.
 The real xdg-desktop-portal frontend 1.22.0 and GTK backend 1.15.3 negotiated
 OpenURI version 5. A fixture-local HTTP(S) handler recorded targets and opened a
 GTK test window; no network request or system default-browser change occurred.
@@ -82,7 +82,7 @@ were exercised. The research note documents Niri session-mode monitor requiremen
 
 The first Orca pass exposed two defects that model-only tests missed: a Link role
 without Hyperlink destination metadata, and malformed AT-SPI cache signal argument
-structures. Both were corrected in Notify and Niribar. Native tests now query
+structures. Both were corrected in Notify and Canopa Shell. Native tests now query
 `Hyperlink.GetURI(0)`, exact transmitted cache signatures, layout-derived bounds,
 focus and retired-control rejection. No new cache-signature warnings or link-detail
 exception appeared with the corrected binaries. First-banner silence was then
@@ -91,10 +91,10 @@ a real-bus regression verifies the initial announcement and redraw deduplication
 
 ## Re-run boundaries
 
-Run the private-bus suite and the compatible Niribar native/widget tests first.
+Run the private-bus suite and the compatible Canopa Shell native/widget tests first.
 Use a disposable compositor with its own bus/XDG paths; start its accessibility bus
 and registry before adapters when service activation is disabled. Configure the
-local provider using [the integration guide](niribar-panel-provider.md), then run
+local provider using [the integration guide](shell-panel-provider.md), then run
 the [verification checklist](notification-center-verification.md). Capture rendered
 pixels, actual sender signals and actual screen-reader speech as distinct evidence.
 A projection assertion or synthetic transcript does not substitute for these checks.

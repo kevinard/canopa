@@ -909,6 +909,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "canopa-shell"
+version = "0.1.0"
+dependencies = [
+ "accesskit",
+ "accesskit_unix",
+ "anyhow",
+ "canopa-assets",
+ "canopa-config",
+ "canopa-file",
+ "canopa-notify-client",
+ "canopa-panel-protocol",
+ "canopa-theme",
+ "canopa-ui",
+ "chrono",
+ "iced",
+ "iced_layershell",
+ "image",
+ "kdl",
+ "libpulse-binding",
+ "miette",
+ "niri-ipc",
+ "resvg",
+ "rustix 1.1.4",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zbus",
+]
+
+[[package]]
 name = "canopa-theme"
 version = "0.1.0"
 
@@ -3424,40 +3458,6 @@ checksum = "6a4adbddf4037ce047854d36a60b5bf80a7990b8db2f0a0b9ede7534b0bae09a"
 dependencies = [
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "niribar"
-version = "0.1.0"
-dependencies = [
- "accesskit",
- "accesskit_unix",
- "anyhow",
- "canopa-assets",
- "canopa-config",
- "canopa-file",
- "canopa-notify-client",
- "canopa-panel-protocol",
- "canopa-theme",
- "canopa-ui",
- "chrono",
- "iced",
- "iced_layershell",
- "image",
- "kdl",
- "libpulse-binding",
- "miette",
- "niri-ipc",
- "resvg",
- "rustix 1.1.4",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "zbus",
 ]
 
 [[package]]

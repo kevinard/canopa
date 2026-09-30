@@ -72,13 +72,13 @@ systemctl --user enable --now canopa-session.target
 ```
 
 Use one notification daemon in that session; disable any previously configured
-notification daemon before starting Notify. The target starts Niribar and Notify;
+notification daemon before starting Notify. The target starts Canopa Shell and Notify;
 both remain independently restartable. No application writes or installs service
 files automatically. Direct development launch also works without provider wiring:
 
 ```sh
 target/debug/canopa-notify daemon --service
-target/debug/niribar
+target/debug/canopa-shell
 ```
 
 The companions discover `$XDG_RUNTIME_DIR/canopa-notify/control.sock`. `--socket`
@@ -87,7 +87,7 @@ The built-in shell module uses the standard session endpoint.
 
 ## Restart behavior
 
-Restart Niribar to apply shell configuration changes. Notify keeps receiving and
+Restart Canopa Shell to apply shell configuration changes. Notify keeps receiving and
 presenting notifications; the new shell receives a complete summary immediately.
 Restart Notify independently to see the indicator become unavailable, then recover
 within a retry interval once the daemon accepts connections. DND and retained

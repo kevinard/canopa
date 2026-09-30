@@ -97,7 +97,7 @@ modules {{ module "button" {{ label "Open"; icon "B"; actions {{ click {{ toggle
 ''')
             process = session.start([str(binary)], f"{case}.log")
             session.wait_for_layers(2)
-            session.wait_for(lambda: (runtime / "niribar.sock").is_socket(), "bar IPC")
+            session.wait_for(lambda: (runtime / "canopa-shell.sock").is_socket(), "bar IPC")
             time.sleep(1)
             def bars_ready():
                 frame = capture(f"{case}-ready.png")
@@ -175,7 +175,7 @@ modules {{ module "button" {{ label "Open"; icon "B"; actions {{ click {{ toggle
         case = f"{edge}-empty-desktop"
         process = session.start([str(binary)], f"{case}.log")
         session.wait_for_layers(1)
-        session.wait_for(lambda: (runtime / "niribar.sock").is_socket(), "bar IPC")
+        session.wait_for(lambda: (runtime / "canopa-shell.sock").is_socket(), "bar IPC")
         time.sleep(.5)
         for button in ["left", "right"]:
             session.run([str(binary), "--toggle-panel"])
@@ -222,7 +222,7 @@ modules {{ module "button" {{ label "Open"; icon "B"; actions {{ click {{ toggle
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, default=ROOT / "target/debug/niribar")
+    parser.add_argument("--binary", type=Path, default=ROOT / "target/debug/canopa-shell")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scale", type=float, default=1.0)
     args = parser.parse_args()

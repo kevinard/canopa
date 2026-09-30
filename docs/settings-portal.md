@@ -2,7 +2,7 @@
 
 `xdg-desktop-portal-canopa` exposes Canopa's dark/light preference and effective
 accent color to applications through `xdg-desktop-portal`. It reads the same
-`appearance` block as Niribar and Notify. Applications choose how to use these
+`appearance` block as Canopa Shell and Notify. Applications choose how to use these
 preferences; the portal does not repaint their UI itself.
 
 ```kdl
@@ -67,7 +67,7 @@ The systemd reload command acknowledges signal delivery, not successful validati
 check the journal or read the portal value when confirming a change.
 Discovery is repeated on reload: creating the common
 file adopts it, and removing it restores shared defaults. Explicit paths never
-fall back if their file disappears. Restart Niribar and reload Notify separately
+fall back if their file disappears. Restart Canopa Shell and reload Notify separately
 to apply their own settings; this is not an atomic desktop-wide reload.
 
 Read the value applications receive through the frontend:

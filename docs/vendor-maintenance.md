@@ -36,11 +36,11 @@ Retained behavior:
 Removed local patches:
 
 - Popup grab serial tracking and popup dismissal: upstream 0.19.1 supplies them.
-  Niribar uses the upstream position constructor with explicit anchor/gravity to
+  Canopa Shell uses the upstream position constructor with explicit anchor/gravity to
   preserve its calculated top-left placement.
 - Notify's `OutputOption::Compositor`: upstream's `Active` layer-surface option now
   passes a null output, so the compositor selects placement directly.
-- Niribar's vendored-manifest sibling path patch: the root workspace patch supplies
+- Canopa Shell's vendored-manifest sibling path patch: the root workspace patch supplies
   the common layershellev source.
 - The second AccessKit and generic panel protocol snapshots: each has one source.
 
@@ -60,10 +60,10 @@ remains outside the supported workspace.
 After building root debug binaries, run these fixtures sequentially:
 
 ```sh
-python3 scripts/test-desktop.py --notify target/debug/canopa-notify --niribar target/debug/niribar --artifacts /tmp/canopa-notifications-new
-python3 scripts/test-fork-desktop.py --niribar target/debug/niribar --artifacts /tmp/canopa-forks-new
-python3 scripts/verify-overlay-placement.py --binary target/debug/niribar --output /tmp/canopa-placement-new --edge top bottom left right --scale 1.25
-python3 scripts/verify-focused-window-icons.py --binary target/debug/niribar --output /tmp/canopa-focused-icons-new
+python3 scripts/test-desktop.py --notify target/debug/canopa-notify --shell target/debug/canopa-shell --artifacts /tmp/canopa-notifications-new
+python3 scripts/test-fork-desktop.py --shell target/debug/canopa-shell --artifacts /tmp/canopa-forks-new
+python3 scripts/verify-overlay-placement.py --binary target/debug/canopa-shell --output /tmp/canopa-placement-new --edge top bottom left right --scale 1.25
+python3 scripts/verify-focused-window-icons.py --binary target/debug/canopa-shell --output /tmp/canopa-focused-icons-new
 ```
 
 Each artifact directory must be new. The first, third and fourth fixtures use

@@ -127,7 +127,7 @@ def run(args):
         start('keyboard', ['wtype', '-s', '600000'])
         notify_socket = root / 'runtime' / 'canopa-notify' / 'control.sock'
         notify = start('notify', [str(args.notify), 'daemon', '--service'])
-        shell_process = start('niribar', [str(args.niribar)])
+        shell_process = start('canopa-shell', [str(args.shell)])
         def ready():
             try:
                 with socket.socket(socket.AF_UNIX) as client:
@@ -168,7 +168,7 @@ def run(args):
         command(str(root / 'click'), '25', '20')
         subprocess.check_call(
             ['grim', '-o', 'HEADLESS-1', str(root / 'after-click.png')], env={**env, 'WAYLAND_DISPLAY': str(outer)})
-        clear = eventually(lambda: find('Clear active notifications'), 'real Niribar Center')
+        clear = eventually(lambda: find('Clear active notifications'), 'real Canopa Shell Center')
         center = clear.get_application()
         output_height = json.loads(command('niri', 'msg', '--json', 'outputs'))[output]['logical']['height']
         def center_geometry(title, application):
@@ -286,26 +286,26 @@ def run(args):
         call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
              'org.freedesktop.Notifications', 'Notify', GLib.Variant('(susssasa{sv}i)',
              ('Desktop fixture', 0, '', 'Retained across restarts', 'Restart fixture', [], {}, 0)), '(u)')
-        eventually(lambda: shell_summary('niribar.log', True, 1, False), 'shell attention count')
+        eventually(lambda: shell_summary('canopa-shell.log', True, 1, False), 'shell attention count')
         command(str(root / 'click'), '25', '20', 'right')
-        eventually(lambda: shell_summary('niribar.log', True, 1, True), 'built-in DND toggle')
+        eventually(lambda: shell_summary('canopa-shell.log', True, 1, True), 'built-in DND toggle')
         os.killpg(shell_process.pid, signal.SIGTERM)
         shell_process.wait(timeout=10)
-        assert ready(), 'Notify stopped with Niribar'
+        assert ready(), 'Notify stopped with Canopa Shell'
         # Receipt continues while the shell is stopped, even with DND enabled.
         call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
              'org.freedesktop.Notifications', 'Notify', GLib.Variant('(susssasa{sv}i)',
              ('Desktop fixture', 0, '', 'Received without shell', 'Independent daemon', [], {}, 0)), '(u)')
-        shell_process = start('niribar-restarted', [str(args.niribar)])
-        eventually(lambda: shell_summary('niribar-restarted.log', True, 2, True), 'shell restart fresh snapshot')
+        shell_process = start('canopa-shell-restarted', [str(args.shell)])
+        eventually(lambda: shell_summary('canopa-shell-restarted.log', True, 2, True), 'shell restart fresh snapshot')
         os.killpg(notify.pid, signal.SIGTERM)
         notify.wait(timeout=20)
-        eventually(lambda: shell_summary('niribar-restarted.log', False, 0, False), 'unavailable shell state')
+        eventually(lambda: shell_summary('canopa-shell-restarted.log', False, 0, False), 'unavailable shell state')
         subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'unavailable.png')],
                               env={**env, 'WAYLAND_DISPLAY': str(outer)})
         notify = start('notify-restarted', [str(args.notify), 'daemon', '--service'])
         eventually(ready, 'restarted daemon')
-        eventually(lambda: shell_summary('niribar-restarted.log', True, 2, True), 'reconnected summary with retained history and DND')
+        eventually(lambda: shell_summary('canopa-shell-restarted.log', True, 2, True), 'reconnected summary with retained history and DND')
         command(str(root / 'click'), '25', '20')
         clear = eventually(lambda: find('Clear active notifications'), 'Center after independent restarts')
         eventually(lambda: find('Retained across restarts', clear.get_application()), 'retained Center item')
@@ -347,7 +347,7 @@ def run(args):
         eventually(lambda: find('Desktop acceptance', center), 'last card after scrolling')
         command('wtype', '-k', 'Escape')
         # Rich dmenu entries use the shell's icon lookup and its SVG renderer.
-        menu = start('svg-menu', [str(args.niribar), '--dmenu', '--json', '--no-custom'],
+        menu = start('svg-menu', [str(args.shell), '--dmenu', '--json', '--no-custom'],
                      json.dumps({'value': 'fixture', 'label': 'SVG asset fixture',
                                  'icon': 'canopa-fixture-svg'}) + '\n')
         def svg_frame():
@@ -411,14 +411,14 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--notify', type=Path, required=True)
-    parser.add_argument('--niribar', type=Path, required=True)
+    parser.add_argument('--shell', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--color-scheme', choices=['dark', 'light'], default='dark')
     parser.add_argument('--scale', type=float, choices=[1.0, 1.25, 1.5, 2.0], default=1.0)
     parser.add_argument('--inside-private-bus', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.notify = args.notify.resolve(strict=True)
-    args.niribar = args.niribar.resolve(strict=True)
+    args.shell = args.shell.resolve(strict=True)
     args.artifacts = args.artifacts.resolve()
     if args.inside_private_bus:
         run(args)
@@ -433,7 +433,7 @@ if __name__ == '__main__':
         for key in ['runtime','state','config','data','cache']:
             (root / key).mkdir(mode=0o700)
             env['XDG_RUNTIME_DIR' if key == 'runtime' else f'XDG_{key.upper()}_HOME'] = str(root / key)
-        env['RUST_LOG'] = 'niribar::notifications=debug'
+        env['RUST_LOG'] = 'canopa_shell::notifications=debug'
         env.update(WLR_BACKENDS='headless', WLR_HEADLESS_OUTPUTS='1', WLR_RENDERER='pixman',
                    LIBGL_ALWAYS_SOFTWARE='1', GTK_A11Y='always', DCONF_BACKEND='memory')
         (root / 'alsa.conf').write_text('pcm.!default { type null }\n')
@@ -453,5 +453,5 @@ modules { module "notifications"; }
             'schema-version 1\nappearance { color-scheme "' + args.color_scheme + '"; }\n'
             'notifications { sound enabled=#false; }\nshell {\n' + shell + '\n}\n')
         sys.exit(subprocess.call(['dbus-run-session', '--config-file='+str(root/'bus.conf'), '--', sys.executable,
-            str(Path(__file__).resolve()), '--notify', str(args.notify), '--niribar', str(args.niribar),
+            str(Path(__file__).resolve()), '--notify', str(args.notify), '--shell', str(args.shell),
             '--artifacts', str(root), '--color-scheme', args.color_scheme, '--scale', str(args.scale), '--inside-private-bus'], env=env))

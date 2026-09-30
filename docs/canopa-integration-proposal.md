@@ -44,11 +44,11 @@ The existing code provides a substantial starting point:
 | Assets | Separate icon discovery and image preparation implementations have different formats, limits, and caching. | Share mechanisms only after preserving both callers' contracts. |
 | Operation | Separate unit files, install paths, release scripts, and companion setup instructions. | Product integration includes packaging and session behavior. |
 
-Evidence: [Niribar manifest](../crates/niribar/Cargo.toml), [shared manifest](../Cargo.toml),
-[provider integration](notify/niribar-panel-provider.md),
-[Niribar configuration](../crates/niribar/src/config.rs),
+Evidence: [Niribar manifest](../crates/canopa-shell/Cargo.toml), [shared manifest](../Cargo.toml),
+[provider integration](notify/shell-panel-provider.md),
+[Niribar configuration](../crates/canopa-shell/src/config.rs),
 [Notify configuration](../crates/canopa-notify/src/configuration.rs),
-[shell palette](../crates/niribar/src/theme.rs),
+[shell palette](../crates/canopa-shell/src/theme.rs),
 [banner styles](../crates/canopa-notify/src/presentation/renderer.rs), and the
 [Niribar](niribar/vendor-maintenance.md) and
 [Notify](notify/maintaining.md) maintenance records. Vendor identity above

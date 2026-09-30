@@ -12,7 +12,7 @@ appearance {
 }
 shell {
     bar "main" { edge "top"; }
-    // Existing Niribar modules, menus, command-policy and panel-providers go here.
+    // Existing Canopa Shell modules, menus, command-policy and panel-providers go here.
 }
 notifications {
     sound enabled=#true theme="freedesktop" default="message-new-instant"
@@ -20,7 +20,7 @@ notifications {
 }
 ```
 
-See [the shared example](../config/canopa.kdl), [shell options](../crates/niribar/README.md),
+See [the shared example](../config/canopa.kdl), [shell options](../crates/canopa-shell/README.md),
 and [notification options](../crates/canopa-notify/README.md). Unknown root nodes and duplicate
 namespaces are errors.
 
@@ -34,17 +34,17 @@ Presets have contrast checks; custom colors can reduce contrast.
 
 A missing namespace uses that application's embedded defaults. An empty `shell {}`
 uses the shell schema's empty-document defaults (one bar and no configured modules);
-omit the namespace to get Niribar's complete embedded configuration. Settings are
+omit the namespace to get Canopa Shell's complete embedded configuration. Settings are
 never merged with legacy files. Syntax/envelope/appearance errors affect both consumers;
 invalid options inside a namespace affect only its owner.
 
-If the common file is absent, Niribar reads `niribar/config.kdl` and Notify reads
+If the common file is absent, Canopa Shell reads `niribar/config.kdl` and Notify reads
 `canopa-notify/config.kdl` under the same config directory. If both are absent, that
 application uses embedded defaults. A present invalid common file is an error,
 including a broken symlink. Files must be readable regular UTF-8 files at most
 1 MiB; symlinks to regular files work.
 
-Build/install `canopa`, `niribar`, and `canopa-notify` in the same binary directory.
+Build/install `canopa`, `canopa-shell`, and `canopa-notify` in the same binary directory.
 Validation opens no desktop surfaces, control socket, or history database:
 
 ```sh
@@ -73,7 +73,7 @@ The command preserves source comments, validates both schemas, and creates a mod
 0600 file without replacing an existing output. After reviewing, place the file at
 `~/.config/canopa/config.kdl` (or your XDG equivalent). Originals are left intact.
 
-Shell settings require restarting Niribar. Notify reloads with:
+Shell settings require restarting Canopa Shell. Notify reloads with:
 
 ```sh
 canopa-notify ctl --socket /path/to/control.sock reload
@@ -86,11 +86,11 @@ started with discovery, it discovers again, allowing migration to the common fil
 without a daemon restart. Explicit file selections stay explicit. Failed reloads
 retain the last good source, rules, settings and generation. Source fingerprints
 identify the complete source bytes and can be compared across consumers; generations
-are local to each Notify process. Niribar reports its installed source at startup;
+are local to each Notify process. Canopa Shell reports its installed source at startup;
 `canopa config check` reports candidates, not the running shell's state.
 
 Appearance changes repaint Notify's existing banners after a successful reload,
-without resetting notification timeouts. Restart Niribar to apply the same changes
+without resetting notification timeouts. Restart Canopa Shell to apply the same changes
 to bars and the Notification Center. These are independent installations; reload
 success does not promise that a disconnected renderer has repainted. Rendering
 failures remain visible in Notify's presentation status.
@@ -98,7 +98,7 @@ failures remain visible in Notify's presentation status.
 For explicit startup overrides, both applications accept `--canopa-config PATH`
 for the shared format or `--config PATH` for legacy syntax. Notify places these
 options after `daemon`. Its positional `ctl ... reload PATH` remains legacy.
-Owner-only validators are `niribar --check-config` and
+Owner-only validators are `canopa-shell --check-config` and
 `canopa-notify check-config`; both support `--defaults`, `--config PATH`,
 `--canopa-config PATH`, and local `--show-source`.
 
@@ -112,5 +112,5 @@ The optional Settings backend consumes only the common file's shared appearance;
 it does not consult application legacy files. Send SIGHUP (or use its systemd unit's
 reload command) after editing the file. Invalid candidates retain the previous
 values; unchanged effective values emit no portal signal. Discovery repeats on
-reload, while an explicit path remains selected. Niribar still requires a restart.
+reload, while an explicit path remains selected. Canopa Shell still requires a restart.
 See [Settings portal installation and selection](settings-portal.md).

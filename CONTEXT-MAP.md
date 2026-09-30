@@ -1,10 +1,10 @@
 # Canopa contexts
 
-Canopa is a desktop environment based on Niri. Niribar is its shell; Canopa Notify
+Canopa is a desktop environment based on Niri. Canopa Shell is its shell; Canopa Notify
 owns notification receipt, policy, persistence, sound, and banners. The shell hosts
 the Notification Center through generic declarative panel content.
 
-- [Shell language and ownership](docs/niribar/CONTEXT.md)
+- [Shell language and ownership](docs/shell/CONTEXT.md)
 - [Notification language and ownership](docs/notify/CONTEXT.md)
 - [Configuration source and reload contract](docs/adr/0002-shared-configuration.md)
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
@@ -16,6 +16,7 @@ the Notification Center through generic declarative panel content.
 - [Configuration user guide](docs/configuration.md)
 - [Workspace decision](docs/adr/0001-shared-workspace-and-upstream-forks.md)
 - [Repository layout and tooling ownership](docs/adr/0009-consolidated-repository-layout.md)
+- [Canopa Shell naming and compatibility](docs/adr/0011-canopa-shell-name.md)
 - [Integration proposal and remaining phases](docs/canopa-integration-proposal.md)
 
 Use each context's terminology for its domain. Shared panel types contain no

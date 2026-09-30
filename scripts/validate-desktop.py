@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure Niribar in a private software-rendered Weston/Niri session (Linux)."""
+"""Measure Canopa Shell in a private software-rendered Weston/Niri session (Linux)."""
 
 import argparse
 import hashlib
@@ -45,7 +45,7 @@ class Session:
         for key in (
             "DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "NIRI_SOCKET",
             "DBUS_SESSION_BUS_ADDRESS", "AT_SPI_BUS_ADDRESS", "SESSION_MANAGER",
-            "NOTIFY_SOCKET", "RUST_LOG", "NIRIBAR_PERF",
+            "NOTIFY_SOCKET", "RUST_LOG", "CANOPA_SHELL_PERF", "NIRIBAR_PERF",
         ):
             self.env.pop(key, None)
         self.env.update(
@@ -89,11 +89,11 @@ class Session:
     def layers(self):
         return [
             layer for layer in json.loads(self.run(["niri", "msg", "--json", "layers"]))
-            if layer["namespace"] == "niribar"
+            if layer["namespace"] == "canopa-shell"
         ]
 
     def wait_for_layers(self, count):
-        return self.wait_for(lambda: len(self.layers()) == count, f"{count} Niribar layers")
+        return self.wait_for(lambda: len(self.layers()) == count, f"{count} Canopa Shell layers")
 
     def screenshot(self, name):
         path = self.output / name
@@ -123,7 +123,7 @@ class Session:
 def sample_process(pid):
     fields = Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()
     if fields[0] in ("Z", "X"):
-        raise RuntimeError("Niribar exited while being measured")
+        raise RuntimeError("Canopa Shell exited while being measured")
     return {
         "monotonic_seconds": time.monotonic(),
         "cpu_ticks": int(fields[11]) + int(fields[12]),
@@ -204,10 +204,10 @@ def validate(args, session):
     results = []
     for run in range(1, args.runs + 1):
         started = time.monotonic()
-        bar = session.start([str(args.binary)], f"niribar-{run}.log")
+        bar = session.start([str(args.binary)], f"canopa-shell-{run}.log")
         session.wait_for_layers(1)
         layer_ms = (time.monotonic() - started) * 1000
-        session.wait_for(lambda: (session.runtime / "niribar.sock").is_socket(), "bar IPC")
+        session.wait_for(lambda: (session.runtime / "canopa-shell.sock").is_socket(), "bar IPC")
         print(f"Run {run}/{args.runs}: bar registered, settling {args.settle_seconds}s", flush=True)
         time.sleep(args.settle_seconds)
         result = measure(bar.pid, args.sample_seconds)
@@ -250,7 +250,7 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True, help="new directory for logs and measurements")
     parser.add_argument("--label", required=True, help="revision and build profile of the supplied binary")
-    parser.add_argument("--config", type=Path, default=Path(__file__).resolve().parents[1] / "crates/niribar/config/default.kdl")
+    parser.add_argument("--config", type=Path, default=Path(__file__).resolve().parents[1] / "crates/canopa-shell/config/default.kdl")
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--settle-seconds", type=int, default=60)
     parser.add_argument("--sample-seconds", type=int, default=60)
@@ -266,7 +266,7 @@ def main():
         raise InterruptedError("Desktop validation received SIGTERM")
 
     signal.signal(signal.SIGTERM, terminated)
-    with tempfile.TemporaryDirectory(prefix="niribar-validation-") as directory:
+    with tempfile.TemporaryDirectory(prefix="canopa-shell-validation-") as directory:
         session = Session(Path(directory), args.output)
         try:
             validate(args, session)

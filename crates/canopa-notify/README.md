@@ -6,7 +6,7 @@ normal build outputs to root `target/`.
 
 A Wayland notification daemon implementing the freedesktop Desktop Notifications
 interface, with non-focus-stealing banners, application rules, persistent local
-history, and a Notification Center hosted by Niribar.
+history, and a Notification Center hosted by Canopa Shell.
 
 The target is the static Desktop Notifications 1.3 profile. The
 [compliance matrix](../../docs/notify/freedesktop-notification-compliance.md) records supported
@@ -56,7 +56,7 @@ The supplied user unit uses `%h/.local/bin/canopa-notify`. System packages shoul
 replace that path with their installed binary path. The compositor must support
 the wlr layer-shell protocol and start `graphical-session.target` for automatic
 session startup. The Center requires the compatible host configuration in
-[Niribar integration](../../docs/notify/niribar-panel-provider.md).
+[Canopa Shell integration](../../docs/notify/shell-panel-provider.md).
 
 Configuration comes from the `notifications` namespace of
 `$XDG_CONFIG_HOME/canopa/config.kdl` (default `~/.config/canopa/config.kdl`). When the
@@ -64,7 +64,7 @@ common file is absent, the legacy `canopa-notify/config.kdl` is still supported.
 Put [the example settings](examples/config.kdl) inside that namespace, or use the
 [shared configuration guide](../../docs/configuration.md) to migrate and validate both
 applications. Policy changes affect future requests after a successful Notify reload.
-The shared `appearance` block selects the same palette as Niribar and repaints
+The shared `appearance` block selects the same palette as Canopa Shell and repaints
 existing banners on reload; the shell applies it after a restart.
 
 ```sh
@@ -81,7 +81,7 @@ control limits, import behavior, renderer failures, and smoke checks.
 ## Upgrade and remove
 
 For the standard local companion installation, run `./scripts/update.sh` from the
-workspace root to build and update Notify, Niribar, its Wi-Fi helper, and `canopa`
+workspace root to build and update Notify, Canopa Shell, its Wi-Fi helper, and `canopa`
 together. It validates configuration, backs up stopped notification state, and
 checks startup with automatic rollback on failure. See the
 [workspace update guide](../../README.md) for prerequisites and options.
