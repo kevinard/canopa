@@ -20,7 +20,7 @@ target/release/canopa-shell
 ```
 
 Run inside a Niri/Wayland desktop session with its session D-Bus environment.
-Keep `canopa-wifi-provider` alongside `canopa-shell` or on PATH. PulseAudio or
+Keep `canopa-wifi-provider` and `canopa-audio-provider` alongside `canopa-shell` or on PATH. PulseAudio or
 PipeWire's PulseAudio compatibility service supplies audio state and control.
 Ordinary desktop-entry launching requires `gio` (`libglib2.0-bin` on Debian/Ubuntu).
 D-Bus-enabled entries activate through the session bus. Executable launches use niri's IPC; without `NIRI_SOCKET`, they require
@@ -169,12 +169,12 @@ Mod+D repeat=false hotkey-overlay-title="Run an Application: canopa-shell" {
 For an existing Niribar installation, first follow the
 [shell rename guide](../../docs/shell-rename.md) to migrate services and startup commands.
 
-The Canopa Linux x86-64 archive contains all four companion executables, shared
+The Canopa Linux x86-64 archive contains the companion executables, shared
 configuration, documentation and user service units. From the extracted directory:
 
 ```sh
 mkdir -p ~/.local/bin ~/.config/systemd/user
-install -m755 bin/canopa-shell bin/canopa-wifi-provider bin/canopa-notify bin/canopa ~/.local/bin/
+install -m755 bin/canopa-shell bin/canopa-wifi-provider bin/canopa-audio-provider bin/canopa-notify bin/canopa ~/.local/bin/
 cp share/systemd/user/*.service share/systemd/user/canopa-session.target ~/.config/systemd/user/
 systemctl --user daemon-reload
 ```
@@ -187,6 +187,11 @@ behavior. Canopa Shell can still be launched directly from Niri's startup config
 use one startup mechanism for each process.
 
 ## Wi-Fi and external panels
+
+The volume module opens **Sound**, with speaker/headphone and microphone volume,
+mute and default-device controls. Existing volume `open-panel` bindings also open
+Sound. Other explicit actions remain authoritative. See [Sound controls](../../docs/audio.md)
+for keyboard behavior, routing semantics and validation limits.
 
 The built-in Wi-Fi provider prefers NetworkManager; when it is absent, it uses
 iwd. It supports scanning, saved/open networks, personal credentials, and

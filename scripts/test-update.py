@@ -18,7 +18,7 @@ from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parent
-PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-notify', 'canopa')
+PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-notify', 'canopa')
 SERVICES = ('canopa-shell.service', 'canopa-notify.service')
 LOCAL_PACKAGES = ('canopa-panel-protocol', 'canopa-config', 'canopa-assets', 'accesskit_unix')
 SYSTEMCTL = r'''#!/usr/bin/env python3
@@ -204,6 +204,7 @@ class UpdateTests(unittest.TestCase):
             if name == 'canopa-shell':
                 (package / 'src/bin').mkdir()
                 (package / 'src/bin/canopa-wifi-provider.rs').write_text(source)
+                (package / 'src/bin/canopa-audio-provider.rs').write_text(source)
 
     def run_command(self, args, cwd=None, check=True):
         result = subprocess.run(args, cwd=cwd or self.root, env=self.env,

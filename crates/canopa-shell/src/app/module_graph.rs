@@ -91,6 +91,22 @@ fn effective_module_actions(
     panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> ModuleActionsConfig {
     let mut actions = module_config.actions.clone();
+    if descriptor.kind == crate::modules::ModuleKind::Volume {
+        // Sound is now the volume module's detail view. Preserve old open-panel
+        // bindings (including custom module names) without rewriting user files.
+        for binding in &mut actions.bindings {
+            if matches!(binding.action, crate::config::PanelAction::OpenPanel) {
+                binding.action = crate::config::PanelAction::OpenProvider("audio".into());
+            }
+        }
+        if actions.action_for(&ActionTrigger::Click).is_none() {
+            actions.bindings.push(ActionBinding {
+                trigger: ActionTrigger::Click,
+                action: crate::config::PanelAction::OpenProvider("audio".into()),
+            });
+        }
+        return actions;
+    }
     if descriptor.kind == crate::modules::ModuleKind::Notifications {
         for (trigger, action) in [
             (
@@ -136,6 +152,44 @@ fn effective_module_actions(
 mod tests {
     use crate::config::{BarConfig, BarModules, Config};
     use crate::modules::{ModuleKind, Zone};
+
+    #[test]
+    fn volume_sound_panel_defaults_migrate_detail_bindings_and_preserve_custom_actions() {
+        use crate::config::{ActionBinding, ActionTrigger, PanelAction};
+        let (mut config, _) =
+            crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
+        let index = config
+            .modules
+            .iter()
+            .position(|module| module.module_type == "volume")
+            .unwrap();
+        for (configured, expected) in [
+            (None, PanelAction::OpenProvider("audio".into())),
+            (
+                Some(PanelAction::OpenPanel),
+                PanelAction::OpenProvider("audio".into()),
+            ),
+            (
+                Some(PanelAction::OpenMenu("main".into())),
+                PanelAction::OpenMenu("main".into()),
+            ),
+        ] {
+            config.modules[index].actions.bindings.clear();
+            if let Some(action) = configured {
+                config.modules[index].actions.bindings.push(ActionBinding {
+                    trigger: ActionTrigger::Click,
+                    action,
+                });
+            }
+            let graph = super::build_module_graph(&config).unwrap();
+            let (_, _, actions) = graph
+                .modules
+                .iter()
+                .find(|(_, module, _)| module.kind() == ModuleKind::Volume)
+                .unwrap();
+            assert_eq!(actions.action_for(&ActionTrigger::Click), Some(&expected));
+        }
+    }
 
     #[test]
     fn referenced_builtin_is_synthesized() {

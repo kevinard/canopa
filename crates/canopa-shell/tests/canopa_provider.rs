@@ -1,6 +1,34 @@
 use canopa_shell::external_panel::canopa::CanopaSession;
 
 #[tokio::test]
+async fn live_controls_preserve_keyboard_target_without_accepting_stale_actions() {
+    use canopa_panel_protocol::{PanelAction, PanelContent};
+    let session = CanopaSession::default();
+    let mut content = PanelContent::new("Sound");
+    content
+        .actions
+        .push(PanelAction::new("volume-up", "Increase volume"));
+    let mut first = session.prepare(content.clone()).await.unwrap();
+    first.move_focus(true);
+    let old_action = first.focused_action_id().unwrap().to_owned();
+    content.title = "Sound: 55%".into();
+    let mut updated = session.prepare(content.clone()).await.unwrap();
+    updated.preserve_focus_from(&first);
+    assert_eq!(updated.focused_label(), Some("Increase volume"));
+    assert_ne!(updated.focused_action_id(), Some(old_action.as_str()));
+    assert!(session.interaction(&old_action).is_none());
+    assert!(
+        session
+            .interaction(updated.focused_action_id().unwrap())
+            .is_some()
+    );
+    content.actions.clear();
+    let mut removed = session.prepare(content).await.unwrap();
+    removed.preserve_focus_from(&updated);
+    assert!(removed.focused_action_id().is_none());
+}
+
+#[tokio::test]
 async fn keyboard_selection_names_action_before_context_and_preserves_wire_target() {
     let mut input = serde_json::json!({
         "type": "replace_content", "protocol_version": 4,

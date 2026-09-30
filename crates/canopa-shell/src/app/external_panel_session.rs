@@ -121,8 +121,14 @@ impl ActiveExternalPanelSession {
 
     fn replace_content(
         &mut self,
-        content: crate::surface::panel::ExternalPanelContent,
+        mut content: crate::surface::panel::ExternalPanelContent,
     ) -> ExternalPanelSessionEffect {
+        if let (Some(next), Some(previous)) = (
+            content.document.canopa_mut(),
+            self.content.document.canopa(),
+        ) {
+            next.preserve_focus_from(previous);
+        }
         self.content = content;
         self.update_content_effect()
     }

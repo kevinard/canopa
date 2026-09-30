@@ -9,6 +9,7 @@ test -x "$bundle/bin/canopa"
 "$bundle/bin/canopa" config check --file "$bundle/share/canopa/canopa.kdl"
 test -x "$bundle/bin/canopa-shell"
 test -x "$bundle/bin/canopa-wifi-provider"
+"$bundle/bin/canopa-audio-provider" --help > /dev/null
 test -x "$bundle/bin/canopa-notify"
 "$bundle/bin/xdg-desktop-portal-canopa" --help > /dev/null
 test -s "$bundle/share/xdg-desktop-portal/portals/canopa.portal"
@@ -23,6 +24,7 @@ test -s "$bundle/share/canopa-shell/default.kdl"
 test -s "$bundle/share/systemd/user/canopa-shell.service"
 test -s "$bundle/share/systemd/user/canopa-session.target"
 test -s "$bundle/share/canopa/notifications.md"
+test -s "$bundle/share/canopa/audio.md"
 test -s "$bundle/share/canopa/shell-rename.md"
 PATH="$bundle/bin" canopa-shell --version
 python3 - "$bundle/bin/canopa-wifi-provider" <<'PY'
@@ -59,5 +61,5 @@ message = json.loads(result.stdout)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'form'
 assert message['content']['body']['elements'][0]['title'] == 'Wi-Fi unavailable'
-print('Release bundle: all five binaries execute; v1 and v5 provider close pass.')
+print('Release bundle: all six binaries execute; v1 and v5 provider close pass.')
 PY

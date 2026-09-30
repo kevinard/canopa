@@ -146,6 +146,19 @@ limits and worker admission; see [shared asset ownership](../adr/0005-shared-ass
 The built-in `notifications` **Module** displaying Notify's attention count, DND and availability. It shares one **Module Data Source**, opens the built-in Center provider on primary activation and requests an atomic DND toggle on secondary activation. It stays visible when unavailable and replaces its snapshot after reconnect; Notify owns history and policy.
 _Avoid_: Notification daemon, unread counter
 
+### Audio
+
+**Audio Panel Provider**:
+The built-in `audio` **External Panel Provider** owning output/input device volume,
+mute and default-device selection. It shares PulseAudio connection mechanics with
+the volume **Module**, while its controls and observation end with its **Panel**.
+_Avoid_: Audio daemon, mixer when referring to application streams
+
+**Audio Device**:
+A PulseAudio output sink or non-monitor input source, identified by its live
+connection generation, server cookie, kind, index and name.
+_Avoid_: Output when the term means a Wayland display
+
 ### Network
 
 **Network Status Integration**:
@@ -605,6 +618,11 @@ _Avoid_: Unavailable module, runtime failure
 - **Network Status Integration** distinguishes unknown connectivity, captive portals and confirmed Internet access. networkd's online state means connected links, not measured Internet access; its label lists usable online links and refreshes on link changes.
 - Battery readings retain UPower presence and power state. An absent display battery maps to **Empty Module**, while charging, full and pending states remain distinct for formatting.
 - Audio observation and adjustment use the same PulseAudio protocol server, including PipeWire's compatibility server. Losing the default sink invalidates its reading without requiring the audio server to disconnect.
+- The volume **Module** opens the **Audio Panel Provider** by default. Existing
+  module `open-panel` bindings resolve to Sound; other explicit actions take
+  precedence. The provider uses existing v5 rich controls, preserves channel
+  proportions when adjusting volume, excludes monitor sources, and binds changes
+  to an exact live **Audio Device** ([ADR 0016](adr/0016-audio-device-panel-provider.md)).
 - Canopa Shell does not mix NetworkManager status with iwd Wi-Fi control.
 
 ### Dynamic Modules and Data Sources

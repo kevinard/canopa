@@ -433,12 +433,13 @@ impl<'a> PanelProviderCatalog<'a> {
 }
 
 pub(crate) fn is_builtin_provider_name(name: &str) -> bool {
-    matches!(name, "wifi" | "notifications")
+    matches!(name, "wifi" | "notifications" | "audio")
 }
 
 pub(crate) fn builtin_provider_command(name: &str) -> Option<crate::config::ConfiguredCommand> {
     let binary_name = match name {
         "wifi" => "canopa-wifi-provider",
+        "audio" => "canopa-audio-provider",
         "notifications" => "canopa-notify",
         _ => return None,
     };
@@ -743,6 +744,13 @@ mod tests {
         assert!(program.ends_with("canopa-notify"));
         assert_eq!(args, &["panel-provider", "--protocol", "canopa-v5"]);
         assert_eq!(catalog.protocol("wifi"), ProviderProtocol::CanopaV5);
+        assert_eq!(catalog.protocol("audio"), ProviderProtocol::CanopaV5);
+        let audio = catalog.resolve("audio").unwrap();
+        let crate::config::ConfiguredCommandSpec::Argv { program, args } = audio.spec() else {
+            panic!("audio argv")
+        };
+        assert!(program.ends_with("canopa-audio-provider"));
+        assert_eq!(args, &["--protocol", "canopa-v5"]);
         let custom = crate::config::ConfiguredCommand::argv_for_test("custom", vec![]);
         let configured = vec![crate::config::PanelProviderConfig {
             name: "notifications".into(),

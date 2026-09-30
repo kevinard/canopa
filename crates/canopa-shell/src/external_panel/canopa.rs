@@ -59,6 +59,20 @@ impl CanopaSnapshot {
             .and_then(|index| self.affordances.get(index))
             .map(|(_, label)| label.as_str())
     }
+    /// Keep keyboard focus on the same declared action after a live update,
+    /// while retaining the new generation's protection against stale events.
+    pub fn preserve_focus_from(&mut self, previous: &Self) {
+        let Some(previous) = previous.focused_action_id() else {
+            return;
+        };
+        let Ok((_, target)) = serde_json::from_str::<(u64, InteractionEvent)>(previous) else {
+            return;
+        };
+        self.focused = self.affordances.iter().position(|(id, _)| {
+            serde_json::from_str::<(u64, InteractionEvent)>(id)
+                .is_ok_and(|(_, event)| event == target)
+        });
+    }
     pub fn image(&self, path: &str) -> Option<&iced::widget::image::Handle> {
         self.images.get(path)
     }

@@ -1,7 +1,7 @@
 # Canopa
 
 Canopa is a desktop environment built around the Niri Wayland compositor. Its Rust
-workspace currently contains Canopa Shell (the shell and Wi-Fi provider), Canopa Notify,
+workspace currently contains Canopa Shell (the shell, Wi-Fi and audio providers), Canopa Notify,
 the `canopa` configuration tool, a Settings portal backend, and shared configuration, appearance, Iced controls
 and panel protocol crates. Local icon lookup and bounded raster preparation are
 shared through `canopa-assets`; see the [asset contracts](docs/adr/0005-shared-assets.md).
@@ -13,7 +13,7 @@ sudo apt-get install build-essential pkg-config libpulse-dev libasound2-dev libu
 cargo build --workspace --bins --locked
 ```
 
-Binaries are in root `target/debug/`: `canopa-shell`, `canopa-wifi-provider`, and
+Binaries are in root `target/debug/`: `canopa-shell`, `canopa-wifi-provider`, `canopa-audio-provider`,
 `canopa-notify`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p canopa-shell` or
 `cargo build --locked -p canopa-notify`. Notify's core build remains available with
 `cargo build --locked -p canopa-notify --no-default-features`.
@@ -58,7 +58,8 @@ is absent. Run `canopa config check` to validate both schemas, and see the
 Shell changes require restarting Canopa Shell; Notify supports reload while running.
 Notify continues to deliver banners while the shell is stopped. Both UIs use the
 shared `appearance` settings for dark/light palettes and an optional accent color.
-The default notification module opens the Center and controls DND without provider
+The volume module opens [Sound controls](docs/audio.md) for speakers, headphones and
+microphones. The default notification module opens the Center and controls DND without provider
 wiring. See [notifications and session setup](docs/notifications.md).
 See [the appearance decision](docs/adr/0003-shared-appearance.md) and the remaining
 phases in the [integration proposal](docs/canopa-integration-proposal.md).
@@ -70,7 +71,7 @@ for feature options, using root `target/` paths. Existing Niribar installations
 should follow the [shell rename guide](docs/shell-rename.md) before updating.
 
 Build a release with `cargo build --workspace --bins --locked --release`, then run
-`bash scripts/package-release.sh target/release dist`. The archive contains all five
+`bash scripts/package-release.sh target/release dist`. The archive contains all six
 binaries, current example configurations, service units, manuals, and source license
 notices. The companion user services use `~/.local/bin`; `canopa-session.target` starts
 both. See the session setup guide before enabling them. Packaging does not install or restart anything.
@@ -83,7 +84,7 @@ For subsequent updates of an existing local companion installation, run:
 ```
 
 This builds the current checkout, including uncommitted changes, and installs
-`canopa-shell`, `canopa-wifi-provider`, `canopa-notify`, and `canopa` together. It does
+`canopa-shell`, `canopa-wifi-provider`, `canopa-audio-provider`, `canopa-notify`, and `canopa` together. It does
 not fetch or pull Git commits. The updater requires Python 3, both companion user
 services, their standard `~/.local/bin` executable paths, and default configuration,
 control socket and state discovery in the same graphical-session environment.

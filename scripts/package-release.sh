@@ -12,12 +12,14 @@ mkdir -p "$dest/bin" "$dest/share/canopa" "$dest/share/canopa-shell" \
     "$dest/share/canopa-notify" "$dest/share/systemd/user" "$dest/share/man/man1" \
     "$dest/share/dbus-1/services" "$dest/share/xdg-desktop-portal/portals"
 install -m755 "$build_dir/canopa-shell" "$build_dir/canopa-wifi-provider" \
+    "$build_dir/canopa-audio-provider" \
     "$build_dir/canopa-notify" "$build_dir/canopa" \
     "$build_dir/xdg-desktop-portal-canopa" "$dest/bin/"
 install -m644 packaging/portal/*.portal "$dest/share/xdg-desktop-portal/portals/"
 install -m644 packaging/portal/*.service "$dest/share/dbus-1/services/"
 install -m644 packaging/systemd/xdg-desktop-portal-canopa.service "$dest/share/systemd/user/"
 install -m644 docs/settings-portal.md docs/shell-rename.md "$dest/share/canopa/"
+install -m644 docs/audio.md "$dest/share/canopa/"
 install -m644 docs/notifications.md docs/configuration.md config/canopa.kdl README.md LICENSES.md "$dest/share/canopa/"
 install -m644 crates/canopa-shell/README.md crates/canopa-shell/LICENSE crates/canopa-shell/config/default.kdl "$dest/share/canopa-shell/"
 install -m644 crates/canopa-notify/README.md crates/canopa-notify/LICENSE-MIT crates/canopa-notify/LICENSE-APACHE \
