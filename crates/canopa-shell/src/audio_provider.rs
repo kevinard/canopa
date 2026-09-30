@@ -14,6 +14,7 @@ type PendingOperation = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
 struct AudioPanel {
     session: Session,
     actions: ActionMap,
+    volumes: HashMap<String, AudioDeviceId>,
 }
 
 impl AudioPanel {
@@ -24,6 +25,7 @@ impl AudioPanel {
         error: Option<&str>,
     ) -> Result<v5::Response, canopa_panel_protocol::ProtocolError> {
         self.actions.clear();
+        self.volumes.clear();
         let mut content = PanelContent::new("Sound");
         content.error = error.map(str::to_owned);
         let Some(snapshot) = snapshot else {
@@ -54,16 +56,6 @@ impl AudioPanel {
                 let mut actions = Vec::new();
                 for (key, label, operation) in [
                     (
-                        "quieter",
-                        "Volume −5%",
-                        DeviceOperation::AdjustVolume { step: 5, up: false },
-                    ),
-                    (
-                        "louder",
-                        "Volume +5%",
-                        DeviceOperation::AdjustVolume { step: 5, up: true },
-                    ),
-                    (
                         "mute",
                         if device.muted { "Unmute" } else { "Mute" },
                         DeviceOperation::SetMuted(!device.muted),
@@ -73,24 +65,27 @@ impl AudioPanel {
                     if key == "default" && device.is_default {
                         continue;
                     }
-                    if key == "quieter" && device.volume <= 0.0 {
-                        continue;
-                    }
-                    if key == "louder" && !device.can_increase_volume() {
-                        continue;
-                    }
                     self.actions
                         .insert((id.clone(), key.into()), (device.id.clone(), operation));
                     actions.push(PanelAction::new(key, label));
                 }
                 let status = format!(
-                    "{:.0}% · {}{}{}",
-                    device.volume,
+                    "{}{}{}",
                     if device.muted { "Muted" } else { "Unmuted" },
                     if device.is_default { " · Default" } else { "" },
                     if busy { " · Applying change…" } else { "" }
                 );
+                self.volumes.insert(id.clone(), device.id.clone());
                 items.push(PanelItem {
+                    slider: Some(canopa_panel_protocol::PanelSlider {
+                        key: "volume".into(),
+                        label: "Volume".into(),
+                        min: 0,
+                        max: 100,
+                        step: 1,
+                        value: device.max_volume_percent().round().clamp(0.0, 100.0) as u16,
+                        unit: "%".into(),
+                    }),
                     id,
                     title: device.description.clone(),
                     body: Some(status),
@@ -103,6 +98,7 @@ impl AudioPanel {
             }
             if items.is_empty() {
                 items.push(PanelItem {
+                    slider: None,
                     id: format!("empty-{kind:?}"),
                     title: empty.into(),
                     body: None,
@@ -134,13 +130,21 @@ impl AudioPanel {
                 Interaction::Rich(canopa_panel_protocol::InteractionEvent::Invoke {
                     target: InteractionTarget::Item { id },
                     action_key,
-                    ..
+                    value,
                 }),
             ..
         } = message
         else {
             return None;
         };
+        if action_key == "volume" {
+            return Some((
+                self.volumes.get(id)?.clone(),
+                DeviceOperation::SetVolume {
+                    percent: value.as_deref()?.parse().ok()?,
+                },
+            ));
+        }
         self.actions.get(&(id.clone(), action_key.clone())).cloned()
     }
 }
@@ -167,6 +171,7 @@ pub async fn run(
     let mut panel = AudioPanel::default();
     let mut current = state.borrow_and_update().clone();
     let mut pending: Option<PendingOperation> = None;
+    let mut pending_volume = false;
     let mut error = None;
     write(&mut output, panel.publish(current.as_ref(), false, None)?).await?;
     loop {
@@ -179,7 +184,7 @@ pub async fn run(
                 change = state.changed() => {
                     change?;
                     current = state.borrow_and_update().clone();
-                    write(&mut output, panel.publish(current.as_ref(), pending.is_some(), error.as_deref())?).await?;
+                    write(&mut output, panel.publish(current.as_ref(), pending.is_some() && !pending_volume, error.as_deref())?).await?;
                 }
                 result = async {
                     match pending.as_mut() {
@@ -191,8 +196,12 @@ pub async fn run(
                     error = result.err();
                     // The observer supplies authoritative values; do not invent
                     // a successful volume/default state from command completion.
-                    current = state.borrow_and_update().clone();
-                    write(&mut output, panel.publish(current.as_ref(), false, error.as_deref())?).await?;
+                    let latest = state.borrow_and_update().clone();
+                    let changed = latest != current;
+                    current = latest;
+                    if !pending_volume || error.is_some() || changed {
+                        write(&mut output, panel.publish(current.as_ref(), false, error.as_deref())?).await?;
+                    }
                 }
             }
         };
@@ -205,8 +214,13 @@ pub async fn run(
         if pending.is_none()
             && let Some((id, operation)) = panel.action(&message)
         {
-            error = None;
-            write(&mut output, panel.publish(current.as_ref(), true, None)?).await?;
+            let had_error = error.take().is_some();
+            pending_volume = matches!(operation, DeviceOperation::SetVolume { .. });
+            // Keep the host's committed preview until an authoritative volume
+            // snapshot arrives; a progress echo would briefly restore the old level.
+            if !pending_volume || had_error {
+                write(&mut output, panel.publish(current.as_ref(), true, None)?).await?;
+            }
             let audio = audio.clone();
             pending = Some(Box::pin(async move { audio.apply(id, operation).await }));
         }

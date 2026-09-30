@@ -38,6 +38,9 @@ pub struct AudioDevice {
 }
 
 impl AudioDevice {
+    pub fn max_volume_percent(&self) -> f64 {
+        f64::from(self.channels.max().0) / f64::from(pulse::volume::Volume::NORMAL.0) * 100.0
+    }
     pub fn can_increase_volume(&self) -> bool {
         self.channels.max() < pulse::volume::Volume::NORMAL
     }
@@ -51,6 +54,7 @@ pub struct AudioSnapshot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeviceOperation {
     AdjustVolume { step: u8, up: bool },
+    SetVolume { percent: u8 },
     SetMuted(bool),
     SetDefault,
 }
@@ -326,6 +330,9 @@ fn apply_to(
     {
         return Ok(());
     }
+    if matches!(operation, DeviceOperation::SetVolume { percent } if percent > 100) {
+        return Err("Volume must be between 0% and 100%.".into());
+    }
     let (tx, rx) = mpsc::channel();
     let callback = move |success| {
         let _ = tx.send(success);
@@ -358,14 +365,22 @@ fn apply_to(
                     );
                 }
             },
-            DeviceOperation::AdjustVolume { step, up } => {
+            DeviceOperation::AdjustVolume { .. } | DeviceOperation::SetVolume { .. } => {
                 use pulse::volume::Volume;
                 let mut channels = device.channels;
-                let delta = u32::from(step.min(100)) * Volume::NORMAL.0 / 100;
-                let maximum = if up {
-                    channels.max().0.saturating_add(delta).min(Volume::NORMAL.0)
-                } else {
-                    channels.max().0.saturating_sub(delta).min(Volume::NORMAL.0)
+                let maximum = match operation {
+                    DeviceOperation::SetVolume { percent } => {
+                        u32::from(percent) * Volume::NORMAL.0 / 100
+                    }
+                    DeviceOperation::AdjustVolume { step, up } => {
+                        let delta = u32::from(step.min(100)) * Volume::NORMAL.0 / 100;
+                        if up {
+                            channels.max().0.saturating_add(delta).min(Volume::NORMAL.0)
+                        } else {
+                            channels.max().0.saturating_sub(delta).min(Volume::NORMAL.0)
+                        }
+                    }
+                    _ => unreachable!(),
                 };
                 channels.scale(Volume(maximum));
                 match id.kind {

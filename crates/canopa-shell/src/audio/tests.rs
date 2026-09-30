@@ -507,6 +507,7 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
     async fn next(
         reader: &mut (impl tokio::io::AsyncBufRead + Unpin),
         muted: bool,
+        volume: Option<u16>,
     ) -> v5::Response {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
@@ -519,7 +520,11 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
                     .iter()
                     .flat_map(|section| &section.items)
                     .any(|item| {
-                        item.actions.iter().any(|action| {
+                        volume.is_none_or(|value| {
+                            item.slider
+                                .as_ref()
+                                .is_some_and(|slider| slider.value == value)
+                        }) && item.actions.iter().any(|action| {
                             action.key == "mute"
                                 && action.label == if muted { "Unmute" } else { "Mute" }
                         }) && !item
@@ -536,7 +541,7 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
         .await
         .unwrap()
     }
-    let initial = next(&mut input, false).await;
+    let initial = next(&mut input, false, None).await;
     let v5::Content::Rich(content) = &initial.content else {
         unreachable!()
     };
@@ -545,6 +550,12 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
         !item.actions.iter().any(|action| action.key == "louder"),
         "a capped channel must hide volume increase even when the average is lower"
     );
+    assert_eq!(
+        item.slider.as_ref().unwrap().value,
+        100,
+        "slider shows the loudest channel, not its average"
+    );
+    let item_id = item.id.clone();
     let invoke = v5::HostMessage::event(
         initial.revision,
         v5::Interaction::Rich(InteractionEvent::Invoke {
@@ -556,7 +567,7 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
         }),
     );
     output.write_all(&invoke.encode().unwrap()).await.unwrap();
-    let updated = next(&mut input, true).await;
+    let updated = next(&mut input, true, None).await;
     assert!(updated.revision > initial.revision);
     assert!(
         server
@@ -567,7 +578,7 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
     // Return the hardware to unmuted externally, then submit an old "mute"
     // frame. Accepting it would wrongly mute the device again.
     server.pactl(&["set-sink-mute", "speakers", "0"]).await;
-    next(&mut input, false).await;
+    let current = next(&mut input, false, None).await;
     output.write_all(&invoke.encode().unwrap()).await.unwrap();
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert!(
@@ -575,6 +586,24 @@ async fn audio_panel_v5_controls_devices_and_ignores_old_revisions() {
             .pactl(&["get-sink-mute", "speakers"])
             .await
             .contains("no")
+    );
+    let set_volume = v5::HostMessage::event(
+        current.revision,
+        v5::Interaction::Rich(InteractionEvent::Invoke {
+            target: InteractionTarget::Item { id: item_id },
+            action_key: "volume".into(),
+            value: Some("64".into()),
+        }),
+    );
+    output
+        .write_all(&set_volume.encode().unwrap())
+        .await
+        .unwrap();
+    next(&mut input, false, Some(64)).await;
+    let channels = server.pactl(&["get-sink-volume", "speakers"]).await;
+    assert!(
+        channels.contains("64%") && channels.contains("32%"),
+        "{channels}"
     );
     output
         .write_all(&v5::HostMessage::close().encode().unwrap())
@@ -653,4 +682,76 @@ async fn pulse_protocol_controls_and_tracks_default_sink_removal_and_reappearanc
     .unwrap();
     drop(rx);
     observer.join().unwrap();
+}
+
+#[tokio::test]
+async fn audio_slider_sets_exact_output_and_input_levels_without_unmuting() {
+    let server = AudioServer::new().await;
+    server
+        .pactl(&["load-module", "module-null-sink", "sink_name=speakers"])
+        .await;
+    server
+        .pactl(&[
+            "load-module",
+            "module-remap-source",
+            "master=speakers.monitor",
+            "source_name=microphone",
+        ])
+        .await;
+    let (audio, mut state) = monitor(Some(server.server.clone()));
+    let initial = devices_matching(&mut state, |s| s.devices.len() == 2).await;
+    for (name, kind) in [("speakers", "sink"), ("microphone", "source")] {
+        let id = initial
+            .devices
+            .iter()
+            .find(|device| device.id.name == name)
+            .unwrap()
+            .id
+            .clone();
+        server
+            .pactl(&[&format!("set-{kind}-volume"), name, "30%", "60%"])
+            .await;
+        server
+            .pactl(&[&format!("set-{kind}-mute"), name, "1"])
+            .await;
+        audio
+            .apply(id.clone(), DeviceOperation::SetVolume { percent: 80 })
+            .await
+            .unwrap();
+        devices_matching(&mut state, |s| {
+            s.devices
+                .iter()
+                .any(|d| d.id == id && d.muted && (d.max_volume_percent() - 80.0).abs() < 0.1)
+        })
+        .await;
+        let channels = server.pactl(&[&format!("get-{kind}-volume"), name]).await;
+        assert!(
+            channels.contains("40%") && channels.contains("80%"),
+            "{channels}"
+        );
+        assert!(
+            audio
+                .apply(id.clone(), DeviceOperation::SetVolume { percent: 101 })
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            server.pactl(&[&format!("get-{kind}-volume"), name]).await,
+            channels
+        );
+        for percent in [100, 0] {
+            audio
+                .apply(id.clone(), DeviceOperation::SetVolume { percent })
+                .await
+                .unwrap();
+            devices_matching(&mut state, |s| {
+                s.devices.iter().any(|d| {
+                    d.id == id
+                        && d.muted
+                        && (d.max_volume_percent() - f64::from(percent)).abs() < 0.1
+                })
+            })
+            .await;
+        }
+    }
 }

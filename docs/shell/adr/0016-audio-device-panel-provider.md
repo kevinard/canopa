@@ -36,3 +36,7 @@ in release archives and the updater.
 Live rich-content updates preserve keyboard focus when the same opaque action
 target/key/value still exists in the same provider session. Generation-scoped action
 IDs are always renewed, so preserving focus never makes an old event valid.
+
+The slider follow-up replaces volume buttons with an absolute control using the
+shared optional rich-item slider ([Canopa ADR 0012](../../adr/0012-rich-panel-sliders.md)).
+The initial button choice above records the first milestone, not the current UI.

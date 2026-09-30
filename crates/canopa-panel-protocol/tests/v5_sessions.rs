@@ -184,6 +184,7 @@ fn rich_membership_checks_section_options_and_item_actions_including_links() {
             }],
         }],
         items: vec![v4::PanelItem {
+            slider: None,
             attribution: None,
             id: "message".into(),
             title: "Message".into(),
@@ -301,4 +302,86 @@ async fn async_and_sync_codecs_share_the_same_frames() {
             .unwrap(),
         Some(HostMessage::close())
     );
+}
+
+#[test]
+fn rich_sliders_validate_ranges_values_and_revisions_without_changing_legacy_items() {
+    use canopa_panel_protocol::{v4, v5};
+    let content: v4::PanelContent = serde_json::from_value(serde_json::json!({
+        "title":"Levels", "error":null, "actions":[], "sections":[{
+            "id":"levels", "title":"Levels", "controls":[], "items":[{
+                "id":"device", "title":"Device", "body":null, "styled_body":null,
+                "rich_body":null, "metadata":[], "actions":[],
+                "slider":{"key":"level", "label":"Level", "min":10, "max":90,
+                          "step":5, "value":40, "unit":"%"}
+            }]
+        }]
+    }))
+    .unwrap();
+    let mut session = v5::Session::default();
+    let response = session
+        .replace(v5::Content::Rich(content.clone()), v5::Update::Replace)
+        .unwrap();
+    assert_eq!(
+        v5::Response::decode(&response.encode().unwrap()).unwrap(),
+        response
+    );
+    let event = |revision, key: &str, value: Option<&str>| {
+        v5::HostMessage::event(
+            revision,
+            v5::Interaction::Rich(v4::InteractionEvent::Invoke {
+                target: v4::InteractionTarget::Item {
+                    id: "device".into(),
+                },
+                action_key: key.into(),
+                value: value.map(str::to_owned),
+            }),
+        )
+    };
+    for value in ["10", "45", "90"] {
+        assert!(session.accepts(&event(response.revision, "level", Some(value))));
+    }
+    for value in [
+        None,
+        Some("9"),
+        Some("91"),
+        Some("41"),
+        Some("045"),
+        Some("45.0"),
+        Some("NaN"),
+        Some("-1"),
+        Some("65536"),
+    ] {
+        assert!(
+            !session.accepts(&event(response.revision, "level", value)),
+            "{value:?}"
+        );
+    }
+    assert!(!session.accepts(&event(response.revision, "unknown", Some("45"))));
+    session
+        .replace(v5::Content::Rich(content.clone()), v5::Update::Replace)
+        .unwrap();
+    assert!(!session.accepts(&event(response.revision, "level", Some("45"))));
+    for (min, max, step, value) in [
+        (10, 90, 0, 40),
+        (90, 10, 5, 40),
+        (10, 10, 5, 10),
+        (10, 91, 5, 40),
+        (10, 90, 5, 41),
+        (10, 90, 5, 95),
+    ] {
+        let mut invalid = content.clone();
+        let slider = invalid.sections[0].items[0].slider.as_mut().unwrap();
+        (slider.min, slider.max, slider.step, slider.value) = (min, max, step, value);
+        assert!(invalid.validate().is_err());
+    }
+    let mut collision = content.clone();
+    collision.sections[0].items[0]
+        .actions
+        .push(v4::PanelAction::new("level", "Conflict"));
+    assert!(collision.validate().is_err());
+    let mut legacy = content;
+    legacy.sections[0].items[0].slider = None;
+    let wire = serde_json::to_value(&legacy).unwrap();
+    assert!(wire["sections"][0]["items"][0].get("slider").is_none());
 }

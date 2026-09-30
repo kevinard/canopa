@@ -11,6 +11,7 @@ the Notification Center through generic declarative panel content.
 - [Local asset mechanisms and caller policies](docs/adr/0005-shared-assets.md)
 - [Shared provider contracts and host state](docs/adr/0006-shared-provider-contracts.md)
 - [Unified built-in provider protocol](docs/adr/0007-unified-panel-protocol.md)
+- [Rich item sliders](docs/adr/0012-rich-panel-sliders.md)
 - [Rich item source attribution](docs/adr/0010-rich-item-source-attribution.md)
 - [Settings portal and shared-only configuration](docs/adr/0008-settings-portal.md)
 - [Configuration user guide](docs/configuration.md)

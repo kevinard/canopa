@@ -20,6 +20,7 @@ struct Published {
     tree: TreeUpdate,
     actions: BTreeMap<NodeId, String>,
     provider: String,
+    sliders: BTreeMap<NodeId, canopa_panel_protocol::PanelSlider>,
 }
 
 struct Handler {
@@ -41,6 +42,41 @@ impl ActionHandler for Handler {
         let Some(id) = published.actions.get(&request.target_node).cloned() else {
             return;
         };
+        if let Some(slider) = published.sliders.get(&request.target_node)
+            && request.action != Action::Focus
+        {
+            let value = match (request.action, request.data) {
+                (Action::SetValue, Some(accesskit::ActionData::NumericValue(value)))
+                    if value.is_finite()
+                        && value >= 0.0
+                        && value <= f64::from(u16::MAX)
+                        && value.fract() == 0.0 =>
+                {
+                    value as u16
+                }
+                (Action::SetValue, Some(accesskit::ActionData::Value(value))) => {
+                    let Some(value) = slider.parse_value(Some(&value)) else {
+                        return;
+                    };
+                    value
+                }
+                (Action::Increment, _) => slider.value.saturating_add(slider.step).min(slider.max),
+                (Action::Decrement, _) => slider.value.saturating_sub(slider.step).max(slider.min),
+                _ => return,
+            };
+            if slider.accepts(value)
+                && let Some(element_id) =
+                    canopa_shell::external_panel::canopa::slider_value_action(&id, value)
+            {
+                let _ = self.sender.try_send(Message::ExternalPanel(
+                    ExternalPanelEvent::ButtonActivated {
+                        provider_name: published.provider.clone(),
+                        element_id,
+                    },
+                ));
+            }
+            return;
+        }
         let message = match request.action {
             Action::Click => Message::ExternalPanel(ExternalPanelEvent::ButtonActivated {
                 provider_name: published.provider.clone(),
@@ -96,6 +132,7 @@ impl PanelAccessibility {
             tree: tree("Notifications", Vec::new(), Vec::new(), ROOT),
             actions: BTreeMap::new(),
             provider: String::new(),
+            sliders: BTreeMap::new(),
         }));
         let handler = || Handler {
             published: published.clone(),
@@ -146,6 +183,7 @@ impl PanelAccessibility {
             next_id: &mut self.next_id,
             nodes: Vec::new(),
             actions: BTreeMap::new(),
+            sliders: BTreeMap::new(),
             focus: ROOT,
         };
         let mut children = Vec::new();
@@ -267,6 +305,9 @@ impl PanelAccessibility {
                         &super::canopa_semantics::metadata_label(metadata),
                     ));
                 }
+                if let Some(slider) = &item.slider {
+                    item_children.push(builder.slider(&item.id, slider));
+                }
                 for action in &item.actions {
                     item_children.push(builder.action(
                         InteractionTarget::Item {
@@ -306,6 +347,7 @@ impl PanelAccessibility {
         *self.published.lock().unwrap() = Published {
             tree: update.clone(),
             actions: builder.actions,
+            sliders: builder.sliders,
             provider: provider.to_owned(),
         };
         self.adapter.update_if_active(|| update);
@@ -368,9 +410,36 @@ struct Builder<'a> {
     next_id: &'a mut u64,
     nodes: Vec<(NodeId, Node)>,
     actions: BTreeMap<NodeId, String>,
+    sliders: BTreeMap<NodeId, canopa_panel_protocol::PanelSlider>,
     focus: NodeId,
 }
 impl Builder<'_> {
+    fn slider(&mut self, item: &str, slider: &canopa_panel_protocol::PanelSlider) -> NodeId {
+        let action_id = self.snapshot.slider_id(item, slider);
+        let mut node = Node::new(Role::Slider);
+        node.set_label(slider.label.clone());
+        node.set_value(format!("{}{}", slider.value, slider.unit));
+        node.set_numeric_value(f64::from(slider.value));
+        node.set_min_numeric_value(f64::from(slider.min));
+        node.set_max_numeric_value(f64::from(slider.max));
+        node.set_numeric_value_step(f64::from(slider.step));
+        node.set_orientation(accesskit::Orientation::Horizontal);
+        for action in [
+            Action::Focus,
+            Action::SetValue,
+            Action::Increment,
+            Action::Decrement,
+        ] {
+            node.add_action(action);
+        }
+        let id = self.node(&SemanticNode::Action(action_id.clone()), node);
+        if self.snapshot.focused_action_id() == Some(&action_id) {
+            self.focus = id;
+        }
+        self.actions.insert(id, action_id);
+        self.sliders.insert(id, slider.clone());
+        id
+    }
     fn node(&mut self, key: &SemanticNode, node: Node) -> NodeId {
         let key = super::canopa_panel::semantic_key(self.snapshot, self.provider, key);
         let id = self.previous.remove(&key).unwrap_or_else(|| {
@@ -460,7 +529,9 @@ fn tree(
 
 impl Drop for PanelAccessibility {
     fn drop(&mut self) {
-        self.published.lock().unwrap().actions.clear();
+        let mut published = self.published.lock().unwrap();
+        published.actions.clear();
+        published.sliders.clear();
     }
 }
 

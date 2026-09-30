@@ -2,23 +2,38 @@
 use super::*;
 use iced::advanced::{
     Clipboard, Layout, Shell, Widget, layout, renderer,
-    widget::{Operation, Tree},
+    widget::{Operation, Tree, tree},
 };
 use iced::{Event, Rectangle, Renderer, Size, Theme, mouse};
 
 pub(super) fn wrap<'a>(
     content: Element<'a, Message>,
     id: iced::widget::Id,
+    focused_slider: Option<iced::widget::Id>,
 ) -> Element<'a, Message> {
-    Element::new(ReadingPanel { content, id })
+    Element::new(ReadingPanel {
+        content,
+        id,
+        focused_slider,
+    })
 }
 
 struct ReadingPanel<'a> {
     content: Element<'a, Message>,
     id: iced::widget::Id,
+    focused_slider: Option<iced::widget::Id>,
 }
 
+#[derive(Default)]
+struct FocusedSlider(Option<iced::widget::Id>);
+
 impl Widget<Message, Theme, Renderer> for ReadingPanel<'_> {
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<FocusedSlider>()
+    }
+    fn state(&self) -> tree::State {
+        tree::State::new(FocusedSlider::default())
+    }
     fn children(&self) -> Vec<Tree> {
         vec![Tree::new(self.content.as_widget())]
     }
@@ -64,6 +79,48 @@ impl Widget<Message, Theme, Renderer> for ReadingPanel<'_> {
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
+        if matches!(
+            event,
+            Event::Window(iced::window::Event::RedrawRequested(_))
+        ) && tree.state.downcast_ref::<FocusedSlider>().0 != self.focused_slider
+        {
+            tree.state.downcast_mut::<FocusedSlider>().0 = self.focused_slider.clone();
+            if let Some(target) = &self.focused_slider {
+                let mut find = SliderPosition {
+                    target: target.clone(),
+                    scroll: self.id.clone(),
+                    bounds: None,
+                    viewport: None,
+                };
+                self.content.as_widget_mut().operate(
+                    &mut tree.children[0],
+                    layout,
+                    renderer,
+                    &mut find,
+                );
+                if let (Some(target), Some((viewport, translation))) = (find.bounds, find.viewport)
+                {
+                    let target = target - translation;
+                    let delta = if target.y < viewport.y {
+                        target.y - viewport.y
+                    } else {
+                        (target.y + target.height - viewport.y - viewport.height).max(0.0)
+                    };
+                    if delta != 0.0 {
+                        use iced::advanced::widget::operation::scrollable::{
+                            AbsoluteOffset, scroll_by,
+                        };
+                        self.content.as_widget_mut().operate(
+                            &mut tree.children[0],
+                            layout,
+                            renderer,
+                            &mut scroll_by(self.id.clone(), AbsoluteOffset { x: 0.0, y: delta }),
+                        );
+                        shell.request_redraw();
+                    }
+                }
+            }
+        }
         self.content.as_widget_mut().update(
             &mut tree.children[0],
             event,
@@ -139,6 +196,35 @@ impl Widget<Message, Theme, Renderer> for ReadingPanel<'_> {
             viewport,
             renderer,
         )
+    }
+}
+
+struct SliderPosition {
+    target: iced::widget::Id,
+    scroll: iced::widget::Id,
+    bounds: Option<Rectangle>,
+    viewport: Option<(Rectangle, iced::Vector)>,
+}
+impl Operation for SliderPosition {
+    fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation)) {
+        operate(self);
+    }
+    fn container(&mut self, id: Option<&iced::widget::Id>, bounds: Rectangle) {
+        if id == Some(&self.target) {
+            self.bounds = Some(bounds);
+        }
+    }
+    fn scrollable(
+        &mut self,
+        id: Option<&iced::widget::Id>,
+        bounds: Rectangle,
+        _: Rectangle,
+        translation: iced::Vector,
+        _: &mut dyn iced::advanced::widget::operation::Scrollable,
+    ) {
+        if id == Some(&self.scroll) {
+            self.viewport = Some((bounds, translation));
+        }
     }
 }
 

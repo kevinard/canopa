@@ -685,3 +685,61 @@ async fn canopa_body_links_support_selection_clicks_and_replacement_guards() {
     );
     assert!(!session.write_interaction(&mut written, &id).await.unwrap());
 }
+
+#[tokio::test]
+async fn focused_slider_is_revealed_in_a_short_panel() {
+    let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
+        .await
+        .unwrap();
+    let content = serde_json::from_value(serde_json::json!({
+        "title":"Levels", "actions":[], "error":null, "sections":[{
+            "id":"s", "title":"Devices", "controls":[], "items":(0..12).map(|index| serde_json::json!({
+                "id":index.to_string(), "title":format!("Device {index}"), "body":null,
+                "metadata":[], "actions":[], "slider":{"key":"volume", "label":"Volume", "min":0,"max":100,"value":40,"step":1,"unit":"%"}
+            })).collect::<Vec<_>>()
+        }]
+    })).unwrap();
+    let mut snapshot = CanopaSession::default().prepare(content).await.unwrap();
+    snapshot.move_focus(false);
+    let id = snapshot.focused_action_id().unwrap().to_owned();
+    let key = semantic_key(&snapshot, "levels", &SemanticNode::Action(id));
+    let mut view = render(&snapshot, "levels", false);
+    let mut widgets = Tree::new(view.as_widget());
+    let viewport = Rectangle::with_size(Size::new(360.0, 300.0));
+    let layout = view.as_widget_mut().layout(
+        &mut widgets,
+        &renderer,
+        &layout::Limits::new(Size::ZERO, viewport.size()),
+    );
+    let measure = |view: &mut Element<'_, Message>, widgets: &mut Tree| {
+        let mut measure = super::super::canopa_accessibility_bounds::Measure::new(
+            std::iter::once(key.clone()),
+            Default::default(),
+        );
+        view.as_widget_mut().operate(
+            widgets,
+            Layout::new(&layout),
+            &renderer,
+            &mut iced::advanced::widget::operation::black_box(&mut measure),
+        );
+        measure.bounds[&key]
+    };
+    assert!(measure(&mut view, &mut widgets).y > viewport.height);
+    view.as_widget_mut().update(
+        &mut widgets,
+        &iced::Event::Window(iced::window::Event::RedrawRequested(
+            iced::time::Instant::now(),
+        )),
+        Layout::new(&layout),
+        iced::mouse::Cursor::Unavailable,
+        &renderer,
+        &mut iced::advanced::clipboard::Null,
+        &mut iced::advanced::Shell::new(&mut Vec::new()),
+        &viewport,
+    );
+    let bounds = measure(&mut view, &mut widgets);
+    assert!(
+        bounds.y >= 0.0 && bounds.y + bounds.height <= viewport.height,
+        "focused slider was not visible: {bounds:?}"
+    );
+}

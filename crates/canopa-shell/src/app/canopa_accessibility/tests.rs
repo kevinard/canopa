@@ -207,6 +207,37 @@ registry=$!
             .await
             .is_none()
     );
+    let (slider_bus, slider_path) = named(&connection, "Test level").await;
+    let value = zbus::Proxy::new(
+        &connection,
+        slider_bus.as_str(),
+        slider_path.as_str(),
+        "org.a11y.atspi.Value",
+    )
+    .await
+    .unwrap();
+    for (property, expected) in [
+        ("CurrentValue", 40.0),
+        ("MinimumValue", 0.0),
+        ("MaximumValue", 100.0),
+        ("MinimumIncrement", 1.0),
+    ] {
+        assert_eq!(value.get_property::<f64>(property).await.unwrap(), expected);
+    }
+    value.set_property("CurrentValue", 63.0f64).await.unwrap();
+    let message = tokio::time::timeout(Duration::from_secs(2), async {
+        bridge.events.receiver.lock().await.recv().await
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    let Message::ExternalPanel(ExternalPanelEvent::ButtonActivated { element_id, .. }) = message
+    else {
+        panic!("expected slider value interaction");
+    };
+    assert!(
+        matches!(session.interaction(&element_id), Some(canopa_panel_protocol::InteractionEvent::Invoke { value: Some(value), .. }) if value == "63")
+    );
     let (bus, path) = named(&connection, "Fourth action").await;
     let accessible = zbus::Proxy::new(
         &connection,
@@ -400,6 +431,7 @@ async fn content(session: &mut CanopaSession, fourth: &str) -> CanopaSnapshot {
             "sections": [{ "id": "mail", "title": "Mail", "controls": [],
                 "items": [{ "id": "message", "title": "New message", "body": "Before image Chart alternative After image",
                     "attribution": {"label":"Mail source"},
+                    "slider": {"key":"numeric", "label":"Test level", "min":0, "max":100, "step":1, "value":40, "unit":"%"},
                     "rich_body": {"segments": [
                         {"kind": "text", "text": "Before image", "style": {"bold": false, "italic": false, "underline": false}},
                         {"kind": "image", "image": {"source": {"kind": "local_path", "path": "/missing-chart.png"}, "alt": "Chart alternative"}},

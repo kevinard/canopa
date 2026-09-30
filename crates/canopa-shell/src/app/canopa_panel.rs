@@ -14,6 +14,7 @@ use super::{Message, messages::ExternalPanelEvent};
 
 mod action_widget;
 mod reading;
+mod slider_widget;
 
 #[cfg(test)]
 mod tests;
@@ -282,6 +283,20 @@ pub(super) fn render<'a>(
             } else {
                 card
             };
+            if let Some(slider) = &item.slider {
+                let id = snapshot.slider_id(&item.id, slider);
+                card = card.push(semantic(
+                    snapshot,
+                    provider,
+                    &SemanticNode::Action(id.clone()),
+                    slider_widget::render(
+                        id.clone(),
+                        provider,
+                        slider,
+                        snapshot.focused_action_id() == Some(id.as_str()),
+                    ),
+                ));
+            }
             if !item.actions.is_empty() {
                 card = card.push(action_row(
                     snapshot,
@@ -311,7 +326,9 @@ pub(super) fn render<'a>(
     }
     let title = crate::surface::panel::panel_header(snapshot.content.title.clone());
     let mut header = column![title].spacing(6);
-    if let (Some(id), Some(label)) = (snapshot.focused_action_id(), snapshot.focused_label()) {
+    if let (Some(id), Some(label)) = (snapshot.focused_action_id(), snapshot.focused_label())
+        && snapshot.slider(id).is_none()
+    {
         header = header.push(action_widget::preview(id, label, provider));
     }
     reading::wrap(
@@ -337,6 +354,16 @@ pub(super) fn render<'a>(
         .style(move |theme| canopa_ui::panel::surface(theme, drawer))
         .into(),
         reading_id,
+        snapshot
+            .focused_action_id()
+            .filter(|id| snapshot.slider(id).is_some())
+            .map(|id| {
+                super::canopa_accessibility_bounds::widget_id(&semantic_key(
+                    snapshot,
+                    provider,
+                    &SemanticNode::Action(id.into()),
+                ))
+            }),
     )
 }
 

@@ -5,11 +5,12 @@ The panel lists speakers/headphones and microphones with their volume, mute stat
 and current default marker. Output monitor sources are excluded from microphone
 choices.
 
-- **Volume −5% / +5%** changes the loudest channel in five percentage-point steps,
-  keeping channel proportions. The displayed percentage is the channel average,
-  matching the bar. Changes stop at 0–100% and do not automatically unmute.
-  Increase is unavailable when any channel is at or above 100%; external
-  amplification is left untouched until you choose to lower the volume.
+- **Volume slider** selects 0–100% in one-point steps. The thumb and percentage
+  preview your choice while dragging; releasing applies it. Tab to the slider and
+  use arrow keys or Home/End, or use your screen reader's value controls.
+  The level represents the loudest channel. Changes preserve existing nonzero
+  channel proportions and do not automatically unmute. Externally amplified
+  devices appear at the slider's 100% limit and remain untouched until adjusted.
 - **Mute / Unmute** explicitly changes that device's mute state.
 - **Use this device** requests the default output or input. Existing application
   streams follow the audio session manager's routing policy; Canopa does not move
@@ -17,7 +18,7 @@ choices.
 
 The panel follows external changes and device removal. It shows an unavailable
 message while reconnecting after audio-server loss. Failed operations display an
-error. Keyboard focus remains on an existing control after a live update; Tab and
+error. A provider update during an unfinished drag cancels that gesture. Keyboard focus remains on an existing control after a live update; Tab and
 the panel's existing keyboard navigation can reach each action, and Escape closes.
 
 Both the bar and panel work with PulseAudio or PipeWire's PulseAudio compatibility
@@ -31,13 +32,13 @@ module or a named menu, use `open-provider "audio"`; no provider declaration is
 required. A configured provider named `audio` overrides the built-in.
 
 This milestone covers devices. Application mixing, audio-card profiles, connector
-selection and continuous volume sliders remain future work.
+selection remain future work.
 
 ## Validation
 
 The library's `audio` tests use private PipeWire/Pulse servers with synthetic
 outputs and remapped inputs. They cover speaker and microphone volume/mute,
-channel proportions, default requests, external changes, monitor exclusion,
+absolute slider levels, channel proportions, default requests, external changes, monitor exclusion,
 removal, reconnection and stale actions through the v5 provider transport.
 The fixture supplies active-default metadata because it has no session manager.
 An isolated Sway/AT-SPI acceptance run also verified opening Sound from the volume

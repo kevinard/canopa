@@ -163,6 +163,9 @@ fn allows(content: &Content, interaction: &Interaction) -> bool {
                     .filter(|item| item.id == *id)
                     .any(|item| {
                         item.actions.iter().any(matches)
+                            || item.slider.as_ref().is_some_and(|slider| {
+                                slider.key == *action_key && slider.parse_value(value.as_deref()).is_some()
+                            })
                             || item.rich_body.iter().flat_map(|body| &body.segments).any(
                                 |segment| matches!(segment, v4::RichBodySegment::Link { action, .. } if matches(action)),
                             )

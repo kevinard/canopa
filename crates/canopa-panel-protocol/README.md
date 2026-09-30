@@ -47,3 +47,10 @@ removed. Existing provider wire bytes remain compatible.
 Rendering, list search text, prepared images and keyboard focus are host state.
 Notification policy and Wi-Fi backend state belong to their respective providers.
 See [ADR 0006](../../docs/adr/0006-shared-provider-contracts.md).
+
+Rich items may include an optional `slider` with `key`, `label`, `min`, `max`,
+`step`, `value` and `unit`. Numeric fields are bounded unsigned integers. A committed
+value uses the existing item `Invoke` and canonical decimal string; v5 validates
+the declared range/grid and revision. Constructors without a slider use
+`slider: None`, which preserves the existing wire shape. See
+[ADR 0012](../../docs/adr/0012-rich-panel-sliders.md).

@@ -17,6 +17,9 @@ v1/v4 semantic primitives rather than copying them into another schema. Neither
 mode carries executable commands, toolkit widgets or host focus/search/image state.
 Mixing form fields into rich sections is deferred until an actual consumer needs it.
 
+[ADR 0012](0012-rich-panel-sliders.md) adds optional bounded rich-item sliders using
+the existing opaque interaction envelope and replacement revisions.
+
 [ADR 0010](0010-rich-item-source-attribution.md) adds optional source attribution
 to rich items while preserving existing item decoding and interaction behavior.
 

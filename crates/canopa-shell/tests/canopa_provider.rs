@@ -269,3 +269,39 @@ async fn canopa_panel_keyboard_focus_visits_each_action_and_resets_on_replacemen
         .unwrap();
     assert!(next.focused_action_id().is_none());
 }
+
+#[tokio::test]
+async fn numeric_controls_keep_opaque_focus_but_only_accept_advertised_current_values() {
+    use canopa_shell::external_panel::canopa::{CanopaSession, slider_value_action};
+    let content: canopa_panel_protocol::PanelContent = serde_json::from_value(serde_json::json!({
+        "title":"Level", "error":null, "actions":[], "sections":[{
+            "id":"s", "title":"Levels", "controls":[], "items":[{
+                "id":"i", "title":"Device", "body":null, "styled_body":null, "rich_body":null,
+                "metadata":[], "actions":[], "slider":{"key":"level","label":"Level",
+                "min":0,"max":100,"step":1,"value":40,"unit":"%"}
+            }]
+        }]
+    }))
+    .unwrap();
+    let session = CanopaSession::default();
+    let mut initial = session.prepare(content.clone()).await.unwrap();
+    initial.move_focus(true);
+    let id = initial.focused_action_id().unwrap().to_owned();
+    assert!(initial.slider(&id).is_some());
+    assert!(
+        session.interaction(&id).is_none(),
+        "focusing or pressing Enter must not change a level"
+    );
+    let selected = slider_value_action(&id, 63).unwrap();
+    assert!(session.interaction(&selected).is_some());
+    assert!(
+        session
+            .interaction(&slider_value_action(&id, 101).unwrap())
+            .is_none()
+    );
+    let mut next = session.prepare(content).await.unwrap();
+    next.preserve_focus_from(&initial);
+    assert_eq!(next.focused_label(), initial.focused_label());
+    assert_ne!(next.focused_action_id(), Some(id.as_str()));
+    assert!(session.interaction(&selected).is_none());
+}

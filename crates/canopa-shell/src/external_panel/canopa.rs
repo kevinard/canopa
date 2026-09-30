@@ -93,11 +93,60 @@ impl CanopaSnapshot {
         ))
         .expect("protocol values are JSON serializable")
     }
+
+    pub fn slider_id(&self, item: &str, slider: &canopa_panel_protocol::PanelSlider) -> String {
+        self.action_id(
+            InteractionTarget::Item { id: item.into() },
+            &PanelAction {
+                key: slider.key.clone(),
+                label: slider.label.clone(),
+                value: None,
+            },
+        )
+    }
+
+    pub fn slider(&self, id: &str) -> Option<&canopa_panel_protocol::PanelSlider> {
+        let (
+            generation,
+            InteractionEvent::Invoke {
+                target: InteractionTarget::Item { id },
+                action_key,
+                value,
+            },
+        ): (u64, InteractionEvent) = serde_json::from_str(id).ok()?
+        else {
+            return None;
+        };
+        if generation != self.generation || value.is_some() {
+            return None;
+        }
+        self.content
+            .sections
+            .iter()
+            .flat_map(|section| &section.items)
+            .find(|item| item.id == id)?
+            .slider
+            .as_ref()
+            .filter(|slider| slider.key == action_key)
+    }
+}
+
+/// Add a numeric value to a captured control identity without rebasing its generation.
+pub fn slider_value_action(id: &str, value: u16) -> Option<String> {
+    let (generation, mut event): (u64, InteractionEvent) = serde_json::from_str(id).ok()?;
+    let InteractionEvent::Invoke { value: current, .. } = &mut event;
+    if current.is_some() {
+        return None;
+    }
+    *current = Some(value.to_string());
+    serde_json::to_string(&(generation, event)).ok()
 }
 
 #[derive(Default)]
 struct SessionState {
     actions: HashSet<String>,
+    generation: u64,
+    sliders: HashMap<(String, String), canopa_panel_protocol::PanelSlider>,
 }
 
 #[derive(Clone, Default)]
@@ -164,6 +213,12 @@ impl CanopaSession {
                 }
             }
             for item in &section.items {
+                if let Some(slider) = &item.slider {
+                    affordances.push((
+                        snapshot.slider_id(&item.id, slider),
+                        format!("{} · {}", slider.label, item.title),
+                    ));
+                }
                 let links = item
                     .rich_body
                     .iter()
@@ -193,6 +248,18 @@ impl CanopaSession {
             }
         }
         state.actions = affordances.iter().map(|(id, _)| id.clone()).collect();
+        state.generation = generation;
+        state.sliders = snapshot
+            .content
+            .sections
+            .iter()
+            .flat_map(|section| &section.items)
+            .filter_map(|item| {
+                item.slider
+                    .as_ref()
+                    .map(|slider| ((item.id.clone(), slider.key.clone()), slider.clone()))
+            })
+            .collect();
         snapshot.affordances = affordances;
         Ok(snapshot)
     }
@@ -219,10 +286,21 @@ impl CanopaSession {
         Ok(true)
     }
     pub fn interaction(&self, action_id: &str) -> Option<InteractionEvent> {
-        if !self.state.lock().unwrap().actions.contains(action_id) {
+        let (generation, event): (u64, InteractionEvent) = serde_json::from_str(action_id).ok()?;
+        let state = self.state.lock().unwrap();
+        if generation != state.generation {
             return None;
         }
-        let (_, event): (u64, InteractionEvent) = serde_json::from_str(action_id).ok()?;
-        Some(event)
+        if let InteractionEvent::Invoke {
+            target: InteractionTarget::Item { id },
+            action_key,
+            value,
+        } = &event
+            && let Some(slider) = state.sliders.get(&(id.clone(), action_key.clone()))
+        {
+            slider.parse_value(value.as_deref())?;
+            return Some(event);
+        }
+        state.actions.contains(action_id).then_some(event)
     }
 }

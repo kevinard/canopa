@@ -379,6 +379,12 @@ _Avoid_: Panel Menu when entries are provider-owned external content
 A user-submitted typed value from an **External Selectable List** instead of an existing provider-supplied entry.
 _Avoid_: Custom Menu Value when the value belongs to provider-owned external content
 
+**External Slider**:
+A bounded integer control declared on a rich item in **External Panel Content**.
+The host owns local gesture preview, keyboard focus and native value accessibility;
+the provider interprets committed values through its opaque action key.
+_Avoid_: Volume widget when referring to the generic host primitive
+
 **External Text Input**:
 A text-entry primitive in **External Panel Content**, optionally rendered as secret input, whose value changes are sent to an **External Panel Provider**.
 _Avoid_: Search input when the text is provider-owned form data
@@ -718,7 +724,7 @@ _Avoid_: Unavailable module, runtime failure
 - An **External Panel Provider** may be launched on demand when Canopa Shell opens the **Panel** that will host its **External Panel Content**.
 - An **External Panel Session** ends when its hosting **Panel** closes unless a later provider lifecycle explicitly keeps the provider alive.
 - A launched **External Panel Provider** communicates over standard input and standard output using its explicitly configured protocol. The default `niribar-v1` uses framed JSON; `canopa-v4` uses bounded JSON lines. Both wire models and codecs live in `canopa-panel-protocol`; prepared images, focus and list search text remain host state ([Canopa ADR 0006](../adr/0006-shared-provider-contracts.md)) ([ADR 0011](adr/0011-explicit-canopa-panel-protocol-adapter.md)).
-- Built-in Wi-Fi and Notification Center providers use `canopa-v5`: provider-first JSON lines, complete form or rich content, interaction revisions and explicit close. Compatible input echoes preserve the form revision; new operations retire it ([Canopa ADR 0007](../adr/0007-unified-panel-protocol.md)). User-declared providers retain explicit version selection and the v1 default.
+- Built-in Wi-Fi, Sound and Notification Center providers use `canopa-v5`: provider-first JSON lines, complete form or rich content, interaction revisions and explicit close. Compatible input echoes preserve the form revision; new operations retire it ([Canopa ADR 0007](../adr/0007-unified-panel-protocol.md)). User-declared providers retain explicit version selection and the v1 default.
 - A framed-v1 **External Panel Session** starts with a host-first protocol-version handshake. A Canopa-v4 session starts with a provider-first, versioned complete content replacement.
 - An **External Panel Provider** updates **External Panel Content** by sending a complete replacement content model, not incremental patches.
 - Replacing **External Panel Content** redraws the existing **Panel** window. Updates and local text/search edits preserve that window's focus and scroll state; a control with a different identity starts with fresh input state.
@@ -732,6 +738,7 @@ _Avoid_: Unavailable module, runtime failure
 - User interactions with **External Panel Content** are sent to the **External Panel Provider** as typed events addressed by **External Panel Element IDs**.
 - Canopa Shell does not interpret **External Panel Element IDs** as domain meaning.
 - Rich **External Panel Content** may attribute an item to a source label and local/theme icon, and decorate section titles with the same icon type. The host prepares bounded icon assets off the UI thread, renders a decorative icon or initial badge, and exposes the label to native accessibility. Duplicate section headings may be omitted when all items already name that source ([Canopa ADR 0010](../adr/0010-rich-item-source-attribution.md)).
+- Rich **External Panel Content** may include an **External Slider**. Replacements cancel unfinished gestures; committed values must match the published range/grid and current generation/revision ([Canopa ADR 0012](../adr/0012-rich-panel-sliders.md)).
 - **External Panel Content** may include **External Selectable Lists**.
 - Canopa Shell owns **Selectable Search** state and matching for **External Selectable Lists** unless a later provider-filtered list mode is introduced.
 - The first **External Panel Content** model supports only a small set of primitives needed for list selection, text entry, status, and simple actions.

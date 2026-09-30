@@ -122,7 +122,15 @@ impl PanelContent {
                 count = count
                     .saturating_add(item.actions.len())
                     .saturating_add(links.clone().count());
-                validate_actions(item.actions.iter().chain(links))?;
+                let actions = item.actions.iter().chain(links);
+                validate_actions(actions.clone())?;
+                if let Some(slider) = &item.slider {
+                    slider.validate()?;
+                    if actions.clone().any(|action| action.key == slider.key) {
+                        return Err(InvalidPanelContent);
+                    }
+                    count = count.saturating_add(1);
+                }
             }
         }
         if count > MAX_INTERACTIVE_ELEMENTS || item_ids.len() > 4096 || section_ids.len() > 1024 {
@@ -173,6 +181,48 @@ pub struct PanelItem {
     pub rich_body: Option<RichBody>,
     pub metadata: Vec<PanelMetadata>,
     pub actions: Vec<PanelAction>,
+    /// Optional bounded numeric control. Its values use the item's opaque action key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slider: Option<PanelSlider>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PanelSlider {
+    pub key: String,
+    pub label: String,
+    pub min: u16,
+    pub max: u16,
+    pub step: u16,
+    pub value: u16,
+    pub unit: String,
+}
+
+impl PanelSlider {
+    pub fn validate(&self) -> Result<(), InvalidPanelContent> {
+        if self.key.is_empty()
+            || self.label.trim().is_empty()
+            || self.min >= self.max
+            || self.step == 0
+            || !(self.max - self.min).is_multiple_of(self.step)
+            || !self.accepts(self.value)
+        {
+            return Err(InvalidPanelContent);
+        }
+        Ok(())
+    }
+
+    pub fn accepts(&self, value: u16) -> bool {
+        self.step > 0
+            && value >= self.min
+            && value <= self.max
+            && (value - self.min).is_multiple_of(self.step)
+    }
+
+    pub fn parse_value(&self, value: Option<&str>) -> Option<u16> {
+        let text = value?;
+        let value = text.parse::<u16>().ok()?;
+        (self.accepts(value) && value.to_string() == text).then_some(value)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -434,6 +484,7 @@ mod tests {
     #[test]
     fn panel_items_can_carry_generic_styled_text() {
         let item = PanelItem {
+            slider: None,
             id: "1".to_string(),
             attribution: None,
             title: "Inbox".to_string(),
@@ -460,6 +511,7 @@ mod tests {
     #[test]
     fn panel_items_can_carry_ordered_rich_body_content() {
         let item = PanelItem {
+            slider: None,
             id: "1".to_string(),
             attribution: None,
             title: "Report".to_string(),

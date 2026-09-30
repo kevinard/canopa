@@ -389,6 +389,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                         .items
                         .into_iter()
                         .map(|item| PanelItem {
+                            slider: None,
                             id: item.notification_id.to_string(),
                             attribution: Some(PanelAttribution {
                                 label: if item.app_name.trim().is_empty() {
