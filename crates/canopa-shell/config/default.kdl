@@ -83,6 +83,8 @@ bar "main" {
         // Start zone: stacks from the leading edge of the bar.
         start "workspaces"
         // Center zone: centered on the bar surface midpoint.
+        // Add "media" to a zone for MPRIS now-playing and playback controls.
+        // See docs/media.md; the module hides when no player is open.
         center "focused-window"
         // End zone: stacks from the trailing edge of the bar.
         // Multiple modules: list as separate string arguments on the same line.

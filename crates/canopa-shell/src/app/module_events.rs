@@ -74,6 +74,10 @@ impl App {
             ModuleRuntimeEvent::Battery(event) => self.handle_battery_event(event),
             ModuleRuntimeEvent::Network(event) => self.handle_network_event(event),
             ModuleRuntimeEvent::Volume(event) => self.handle_volume_event(event),
+            ModuleRuntimeEvent::Media(snapshot) => {
+                let transition = self.data_sources.handle_media_event(snapshot);
+                self.apply_module_data_source_transition(transition)
+            }
             ModuleRuntimeEvent::Notifications(summary) => {
                 tracing::debug!(target: "canopa_shell::notifications", available = summary.is_some(),
                     requires_attention = summary.map_or(0, |s| s.requires_attention),

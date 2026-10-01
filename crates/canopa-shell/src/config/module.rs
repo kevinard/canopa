@@ -410,6 +410,13 @@ impl Default for VolumeConfig {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct MediaConfig {
+    pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
+    pub content_rotation: ContentRotation,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct NotificationsConfig {
     pub format: FormatConfig,
     pub tooltip: TooltipSetting,
@@ -428,6 +435,7 @@ pub struct IdleInhibitorConfig {
 pub enum ModuleParams {
     IdleInhibitor(IdleInhibitorConfig),
     Notifications(NotificationsConfig),
+    Media(MediaConfig),
     #[cfg(test)]
     None,
     Battery(BatteryConfig),

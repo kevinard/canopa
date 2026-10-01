@@ -10,3 +10,6 @@ pub mod wifi_provider;
 
 pub mod audio;
 pub mod audio_provider;
+
+pub mod media;
+pub mod media_provider;

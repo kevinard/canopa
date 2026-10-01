@@ -360,6 +360,7 @@ pub enum ModuleRuntimeEvent {
     Network(crate::modules::network::NetworkEvent),
     Volume(crate::modules::volume::VolumeEvent),
     Notifications(Option<canopa_notify_client::Summary>),
+    Media(canopa_shell::media::Snapshot),
 }
 
 impl ModuleRuntimeEvent {
@@ -389,6 +390,7 @@ impl ModuleRuntimeEvent {
                     "Modules::Network::Unavailable"
                 }
             },
+            ModuleRuntimeEvent::Media(_) => "Modules::Media",
             ModuleRuntimeEvent::Notifications(_) => "Modules::Notifications",
             ModuleRuntimeEvent::Volume(event) => match event {
                 crate::modules::volume::VolumeEvent::StateChanged { .. } => {

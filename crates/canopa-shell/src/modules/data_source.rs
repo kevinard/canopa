@@ -2,6 +2,7 @@ use super::ModuleState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModuleDataSourceIdentity {
+    Media,
     IdleInhibitor,
     Battery,
     Network,
@@ -16,7 +17,8 @@ pub trait ModuleDataSourceMapper: Send + Sync {
 }
 
 impl ModuleDataSourceIdentity {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
+        Self::Media,
         Self::IdleInhibitor,
         Self::Battery,
         Self::Network,
@@ -46,6 +48,7 @@ pub struct VolumeReading {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModuleDataSourceState {
+    Media(canopa_shell::media::Snapshot),
     IdleInhibitor(super::idle_inhibitor::IdleInhibitorState),
     Battery(BatteryReading),
     Network(NetworkReading),
@@ -58,6 +61,7 @@ impl ModuleDataSourceState {
         match self {
             Self::IdleInhibitor(_) => ModuleDataSourceIdentity::IdleInhibitor,
             Self::Battery(_) => ModuleDataSourceIdentity::Battery,
+            Self::Media(_) => ModuleDataSourceIdentity::Media,
             Self::Notifications(_) => ModuleDataSourceIdentity::Notifications,
             Self::Network(_) => ModuleDataSourceIdentity::Network,
             Self::Volume(_) => ModuleDataSourceIdentity::Volume,

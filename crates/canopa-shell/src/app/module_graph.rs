@@ -91,18 +91,23 @@ fn effective_module_actions(
     panel_provider_catalog: &crate::external_panel::PanelProviderCatalog<'_>,
 ) -> ModuleActionsConfig {
     let mut actions = module_config.actions.clone();
-    if descriptor.kind == crate::modules::ModuleKind::Volume {
-        // Sound is now the volume module's detail view. Preserve old open-panel
-        // bindings (including custom module names) without rewriting user files.
+    let control_provider = match descriptor.kind {
+        crate::modules::ModuleKind::Volume => Some("audio"),
+        crate::modules::ModuleKind::Media => Some("media"),
+        _ => None,
+    };
+    if let Some(provider) = control_provider {
+        // Built-in control modules use their provider for the detail view.
+        // Preserve explicit commands and other configured actions.
         for binding in &mut actions.bindings {
             if matches!(binding.action, crate::config::PanelAction::OpenPanel) {
-                binding.action = crate::config::PanelAction::OpenProvider("audio".into());
+                binding.action = crate::config::PanelAction::OpenProvider(provider.into());
             }
         }
         if actions.action_for(&ActionTrigger::Click).is_none() {
             actions.bindings.push(ActionBinding {
                 trigger: ActionTrigger::Click,
-                action: crate::config::PanelAction::OpenProvider("audio".into()),
+                action: crate::config::PanelAction::OpenProvider(provider.into()),
             });
         }
         return actions;
@@ -150,6 +155,28 @@ fn effective_module_actions(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn media_placement_synthesizes_a_shared_source_and_opens_the_media_provider() {
+        use crate::config::{ActionTrigger, Config, PanelAction};
+        use crate::modules::{ModuleKind, data_source::ModuleDataSourceIdentity};
+        let mut config = Config::default();
+        config.bars[0].modules.center = vec!["media".into()];
+        let graph = super::build_module_graph(&config).unwrap();
+        let (_, module, actions) = graph
+            .modules
+            .iter()
+            .find(|(_, module, _)| module.kind() == ModuleKind::Media)
+            .unwrap();
+        assert_eq!(
+            module.data_source().unwrap().data_source_identity(),
+            ModuleDataSourceIdentity::Media
+        );
+        assert_eq!(
+            actions.action_for(&ActionTrigger::Click),
+            Some(&PanelAction::OpenProvider("media".into()))
+        );
+    }
+
     use crate::config::{BarConfig, BarModules, Config};
     use crate::modules::{ModuleKind, Zone};
 

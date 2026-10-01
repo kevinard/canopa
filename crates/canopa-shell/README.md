@@ -188,6 +188,10 @@ use one startup mechanism for each process.
 
 ## Wi-Fi and external panels
 
+The optional `media` module displays the selected MPRIS player and opens a panel
+with player selection and previous/play-pause/next controls. See the
+[Media guide](../../docs/media.md) for configuration and selection behavior.
+
 The volume module opens **Sound**, with speaker/headphone and microphone volume,
 mute and default-device controls. Existing volume `open-panel` bindings also open
 Sound. Other explicit actions remain authoritative. See [Sound controls](../../docs/audio.md)

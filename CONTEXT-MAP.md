@@ -4,6 +4,7 @@ Canopa is a desktop environment based on Niri. Canopa Shell is its shell; Canopa
 owns notification receipt, policy, persistence, sound, and banners. The shell hosts
 the Notification Center through generic declarative panel content.
 
+- [MPRIS media controls](docs/shell/adr/0018-mpris-media-controls.md)
 - [Shell language and ownership](docs/shell/CONTEXT.md)
 - [Notification language and ownership](docs/notify/CONTEXT.md)
 - [Configuration source and reload contract](docs/adr/0002-shared-configuration.md)

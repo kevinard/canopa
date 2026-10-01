@@ -66,6 +66,13 @@ pub fn tray_default() -> Option<FormatTemplate> {
     Some(template("{title}", &["title", "description"]))
 }
 
+pub fn media_default() -> Option<FormatTemplate> {
+    Some(template(
+        "{label} · {player} · {state}",
+        &["label", "player", "state"],
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

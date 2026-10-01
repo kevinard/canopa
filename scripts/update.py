@@ -15,7 +15,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-notify", "canopa")
+PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-media-provider", "canopa-notify", "canopa")
 SERVICES = ("canopa-notify.service", "canopa-shell.service")
 
 

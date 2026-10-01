@@ -433,13 +433,14 @@ impl<'a> PanelProviderCatalog<'a> {
 }
 
 pub(crate) fn is_builtin_provider_name(name: &str) -> bool {
-    matches!(name, "wifi" | "notifications" | "audio")
+    matches!(name, "wifi" | "notifications" | "audio" | "media")
 }
 
 pub(crate) fn builtin_provider_command(name: &str) -> Option<crate::config::ConfiguredCommand> {
     let binary_name = match name {
         "wifi" => "canopa-wifi-provider",
         "audio" => "canopa-audio-provider",
+        "media" => "canopa-media-provider",
         "notifications" => "canopa-notify",
         _ => return None,
     };

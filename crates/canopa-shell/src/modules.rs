@@ -7,6 +7,7 @@ pub mod dynamic;
 pub mod focused_window;
 pub mod idle_inhibitor;
 pub mod interaction;
+pub mod media;
 pub mod network;
 pub mod notifications;
 pub mod render;
@@ -82,6 +83,7 @@ impl ModuleId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModuleKind {
+    Media,
     IdleInhibitor,
     Battery,
     Button,
@@ -116,6 +118,7 @@ impl ModuleKind {
             ModuleKind::Button => "button",
             ModuleKind::Network => "network",
             ModuleKind::Notifications => "notifications",
+            ModuleKind::Media => "media",
             ModuleKind::Volume => "volume",
             ModuleKind::Clock => "clock",
             ModuleKind::Script => "script",
@@ -147,6 +150,7 @@ pub enum Zone {
 /// Per-module runtime state. Variants added per concrete module (Stories 2.3+).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum ModuleState {
+    Media(canopa_shell::media::Player),
     IdleInhibitor(idle_inhibitor::IdleInhibitorState),
     /// Module has no visible content. Used for available-but-empty Module outcomes
     /// and as the no-state render fallback while first emission is pending inside
@@ -296,6 +300,7 @@ macro_rules! config_module_descriptors {
             (ModuleKind::Button, "button", button_ctor, None, ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY),
             (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
             (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor, Some(focused_window_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Media, "media", media_ctor, Some(media_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY),
             (ModuleKind::Notifications, "notifications", notifications_ctor, Some(notifications_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY_AND_SECONDARY),
             (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
             (ModuleKind::Script, "script", script_ctor, None, ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
@@ -356,6 +361,21 @@ pub(crate) fn descriptor_for_kind(kind: ModuleKind) -> Option<&'static ModuleDes
     MODULE_DESCRIPTORS
         .iter()
         .find(|descriptor| descriptor.kind == kind)
+}
+
+fn media_synthesized_params() -> ModuleParams {
+    ModuleParams::Media(crate::config::MediaConfig::default())
+}
+
+fn media_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
+    let config = match &mc.params {
+        ModuleParams::Media(config) => config.clone(),
+        _ => Default::default(),
+    };
+    Ok(Box::new(media::MediaModule {
+        id: ModuleId::new(&mc.name),
+        config,
+    }))
 }
 
 fn notifications_synthesized_params() -> ModuleParams {
@@ -682,6 +702,7 @@ mod tests {
             ModuleKind::FocusedWindow,
             ModuleKind::Network,
             ModuleKind::Notifications,
+            ModuleKind::Media,
             ModuleKind::Script,
             ModuleKind::Tray,
             ModuleKind::Volume,

@@ -10,6 +10,7 @@ test -x "$bundle/bin/canopa"
 test -x "$bundle/bin/canopa-shell"
 test -x "$bundle/bin/canopa-wifi-provider"
 "$bundle/bin/canopa-audio-provider" --help > /dev/null
+"$bundle/bin/canopa-media-provider" --help > /dev/null
 test -x "$bundle/bin/canopa-notify"
 "$bundle/bin/xdg-desktop-portal-canopa" --help > /dev/null
 test -s "$bundle/share/xdg-desktop-portal/portals/canopa.portal"
@@ -27,7 +28,7 @@ test -s "$bundle/share/canopa/notifications.md"
 test -s "$bundle/share/canopa/audio.md"
 test -s "$bundle/share/canopa/shell-rename.md"
 PATH="$bundle/bin" canopa-shell --version
-python3 - "$bundle/bin/canopa-wifi-provider" "$bundle/bin/canopa-audio-provider" <<'PY'
+python3 - "$bundle/bin/canopa-wifi-provider" "$bundle/bin/canopa-audio-provider" "$bundle/bin/canopa-media-provider" <<'PY'
 import json
 import os
 import struct
@@ -71,5 +72,14 @@ assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'rich'
 assert message['content']['body']['title'] == 'Sound'
 assert 'unavailable' in message['content']['body']['error']
-print('Release bundle: all six binaries execute; v1 and v5 provider close pass.')
+result = subprocess.run([sys.argv[3], '--protocol', 'canopa-v5'],
+                        input=b'{"type":"close","protocol_version":5}\n',
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+                        env={'PATH': os.path.dirname(sys.argv[3]),
+                             'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/nonexistent-canopa-release-media'}, check=True)
+message = json.loads(result.stdout)
+assert message['protocol_version'] == 5 and message['revision'] == 1
+assert message['content']['kind'] == 'rich'
+assert message['content']['body']['title'] == 'Media'
+print('Release bundle: all seven binaries execute; v1 and v5 provider close pass.')
 PY

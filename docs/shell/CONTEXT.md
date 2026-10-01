@@ -169,6 +169,20 @@ A PulseAudio output sink or non-monitor input source, identified by its live
 connection generation, server cookie, kind, index and name.
 _Avoid_: Output when the term means a Wayland display
 
+### Media
+
+**Media Module**:
+The built-in `media` **Module** showing the selected MPRIS player's metadata and
+playback state. Its shared **Module Data Source** owns automatic or manual player
+selection and dispatches supported playback controls. Existing players own playback.
+_Avoid_: Media player when referring to the shell, audio device
+
+**Media Panel Provider**:
+The built-in `media` **External Panel Provider** showing track information, player
+selection and supported transport controls. It shares the shell's selected player
+through the source-owned session-bus interface. See [ADR 0018](adr/0018-mpris-media-controls.md).
+_Avoid_: Playback engine, media daemon
+
 ### Network
 
 **Network Status Integration**:
@@ -622,6 +636,13 @@ _Avoid_: Unavailable module, runtime failure
 - An **Empty Module** renders no visible content, leaves no **Module Gap**, has no **Tooltip**, and is skipped by **Keyboard Focus** navigation.
 - An **Empty Module** is not a runtime failure.
 - A **Bar Surface** reflows visible targets when a **Module** becomes unavailable, empty, visible, or recovered.
+
+### Media
+
+- Every **Media Module** observes the same selected player.
+- The **Media Panel Provider** changes that shared selection and exposes only supported controls.
+- Playback controls target the captured player owner and track; they never substitute another player.
+- Existing players own media playback; an empty player list produces an **Empty Module**.
 
 ### Network
 

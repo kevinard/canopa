@@ -784,6 +784,7 @@ impl App {
             ModuleParams::Battery(c) => (&c.tooltip, td::battery_default()),
             ModuleParams::Volume(c) => (&c.tooltip, td::volume_default()),
             ModuleParams::Clock(c) => (&c.tooltip, td::clock_default()),
+            ModuleParams::Media(c) => (&c.tooltip, td::media_default()),
             ModuleParams::Notifications(c) => (&c.tooltip, td::notifications_default()),
             ModuleParams::IdleInhibitor(c) => (&c.tooltip, td::idle_inhibitor_default()),
             ModuleParams::Network(c) => (&c.tooltip, td::network_default()),

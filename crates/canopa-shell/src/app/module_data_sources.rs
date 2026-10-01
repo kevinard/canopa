@@ -16,6 +16,16 @@ struct ModuleDataSourceCatalogEntry {
 
 const SOURCE_CATALOG: &[ModuleDataSourceCatalogEntry] = &[
     ModuleDataSourceCatalogEntry {
+        identity: ModuleDataSourceIdentity::Media,
+        subscription: |enabled, _| {
+            if enabled {
+                crate::modules::media::subscription()
+            } else {
+                iced::Subscription::none()
+            }
+        },
+    },
+    ModuleDataSourceCatalogEntry {
         identity: ModuleDataSourceIdentity::IdleInhibitor,
         // Driven by acknowledgements from the Wayland adapter, without polling.
         subscription: |_, _| iced::Subscription::none(),
@@ -169,6 +179,17 @@ impl ModuleDataSourceRuntime {
                 label,
             })),
             NetworkEvent::Unavailable => self.mark_unavailable(ModuleDataSourceIdentity::Network),
+        }
+    }
+
+    pub(super) fn handle_media_event(
+        &mut self,
+        snapshot: canopa_shell::media::Snapshot,
+    ) -> ModuleDataSourceTransition {
+        if snapshot.available {
+            self.apply_source_state(ModuleDataSourceState::Media(snapshot))
+        } else {
+            self.mark_unavailable(ModuleDataSourceIdentity::Media)
         }
     }
 

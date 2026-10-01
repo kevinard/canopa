@@ -20,7 +20,7 @@ pub(crate) use error::{
 pub use module::{
     ActionBinding, ActionTrigger, ActionsConfig, BatteryConfig, ButtonConfig, ClockConfig,
     CommandPolicy, ConfiguredCommand, FocusedWindowConfig, IconRulesConfig, IconThreshold,
-    IdleInhibitorConfig, MenuConfig, MenuItemConfig, MenuSourceConfig, MenuSourceKind,
+    IdleInhibitorConfig, MediaConfig, MenuConfig, MenuItemConfig, MenuSourceConfig, MenuSourceKind,
     ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig, NotificationsConfig,
     PanelAction, PanelProviderConfig, ScriptConfig, StateRule, StatesConfig, TrayConfig,
     VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
