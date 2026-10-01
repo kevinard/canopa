@@ -106,6 +106,42 @@ Configuration migration does not move or change history, DND, UI-managed permiss
 rules, or other runtime state. See [the architecture decision](adr/0002-shared-configuration.md)
 for ownership and reload guarantees.
 
+## Idle inhibitor
+
+Add `"idle-inhibitor"` to a shell bar's `modules` list to show a manual keep-awake
+toggle. It starts off on every shell launch. Click it, or activate it with the
+keyboard, to switch it on or off. All instances share the same toggle.
+
+For example, inside the existing `shell` block:
+
+```kdl
+bar "main" {
+    edge "top"
+    modules { end "idle-inhibitor" "clock"; }
+}
+modules {
+    module "idle-inhibitor" {
+        horizontal-format "{icon}" "{value}"
+        tooltip "{label}"
+    }
+}
+```
+
+The optional declaration supports `format`, `expanded-format`,
+`horizontal-format`, `content-rotation`, `tooltip`, `icons`, and the usual
+`actions` overrides. Format placeholders are `{icon}`, `{value}` (`On`/`Off`),
+`{state}`, and `{label}` (status and help). Icon and segment style states are
+`active`, `inactive`, `pending`, and `unavailable`.
+
+The module uses the compositor's Wayland idle-inhibit protocol, with inhibitors
+attached to live bar surfaces. Output changes preserve the selected toggle;
+switching off, removing the module, or exiting the shell releases its inhibitors.
+An unsupported compositor displays `unavailable`. There is no polling process.
+
+Inhibition applies while a bar surface is visible and depends on the compositor
+and idle daemon honoring the protocol. It does not block explicit lock, suspend,
+or shutdown commands. See the [Wayland protocol contract](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/blob/main/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml).
+
 ## Settings portal
 
 The optional Settings backend consumes only the common file's shared appearance;

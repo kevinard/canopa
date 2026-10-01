@@ -29,6 +29,7 @@ Retained behavior:
 | --- | --- | --- |
 | Named Wayland output snapshots | The shell plans Bar Surfaces from output names even before a window exists; upstream does not expose this snapshot to application messages. | Shell eligible-output/surface reconciliation tests and compositor output checks. |
 | Activation token context | Banner actions need the originating surface and recent input serial on the existing connection. | Notification activation tests and isolated desktop action checks. |
+| Surface-owned idle inhibition | The shell's manual idle-inhibitor module needs optional protocol support, idempotent requests and cleanup when bar surfaces retire. | Shell lifecycle tests, retired-window adapter regression and `scripts/verify-idle-inhibitor.py` with a private compositor and idle daemon. |
 | Retired-window cleanup | Compositor output loss may remove a backend unit before Closed is delivered; completed closes must not stay in the adapter retry queue. | The retained vendor adapter regression plus notification surface lifecycle tests. |
 | Renderer redraw and relayout notifications | Asynchronous image completion must refresh idle surfaces; otherwise focused-window titles update while application icons remain blank until an unrelated event. | `scripts/verify-focused-window-icons.py` checks fresh PNG/SVG icons and cached switches on rotated and horizontal bars with a controlled, otherwise idle IPC stream. |
 | AT-SPI cache signal wrapping | AddAccessible and RemoveAccessible require one structure argument; upstream 0.24.0 still sends unwrapped structures. | Actual native bus signature/accessibility tests in both applications. |
@@ -64,6 +65,8 @@ python3 scripts/test-desktop.py --notify target/debug/canopa-notify --shell targ
 python3 scripts/test-fork-desktop.py --shell target/debug/canopa-shell --artifacts /tmp/canopa-forks-new
 python3 scripts/verify-overlay-placement.py --binary target/debug/canopa-shell --output /tmp/canopa-placement-new --edge top bottom left right --scale 1.25
 python3 scripts/verify-focused-window-icons.py --binary target/debug/canopa-shell --output /tmp/canopa-focused-icons-new
+python3 scripts/verify-idle-inhibitor.py --binary target/debug/canopa-shell --output /tmp/canopa-idle-sway-new
+python3 scripts/verify-idle-inhibitor.py --binary target/debug/canopa-shell --compositor niri --output /tmp/canopa-idle-niri-new
 ```
 
 Each artifact directory must be new. The first, third and fourth fixtures use

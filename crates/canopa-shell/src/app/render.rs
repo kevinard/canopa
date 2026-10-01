@@ -138,6 +138,7 @@ impl App {
                     Some(ModuleKind::Volume) => "Sound".to_owned(),
                     Some(ModuleKind::Network) => "Network".to_owned(),
                     Some(ModuleKind::Notifications) => "Notifications".to_owned(),
+                    Some(ModuleKind::IdleInhibitor) => "Idle inhibitor".to_owned(),
                     Some(ModuleKind::Battery) => "Battery".to_owned(),
                     Some(ModuleKind::Workspaces | ModuleKind::WorkspaceItem) => {
                         "Workspaces".to_owned()

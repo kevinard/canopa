@@ -733,6 +733,16 @@ where
             .and_then(|iced_id| self.window_manager.get(iced_id))
             .map(|window| window.id);
         if iced_id.is_some() && layer_shell_id.is_none() {
+            // Inhibition requests are issued for opened windows. A retired
+            // surface must complete the request instead of retrying forever.
+            if let LayerShellCustomAction::SetIdleInhibition { callback, .. } = &action
+                && !ev
+                    .get_unit_iter()
+                    .any(|unit| unit.get_binding().copied() == iced_id)
+            {
+                (callback.0)(false);
+                return;
+            }
             // Close can arrive after output removal has already retired the
             // window. Retry only while a created backend unit still owns the
             // ID (before its first refresh); absent IDs need no close or tombstone.
@@ -748,6 +758,11 @@ where
             return;
         }
         match action {
+            LayerShellCustomAction::SetIdleInhibition { enabled, callback } => {
+                let available =
+                    layer_shell_id.is_some_and(|id| ev.set_idle_inhibition(id, enabled));
+                (callback.0)(available);
+            }
             LayerShellCustomAction::AnchorChange(anchor) => {
                 ref_layer_shell_window!(ev, iced_id, layer_shell_id, layer_shell_window);
                 layer_shell_window.set_anchor(anchor);

@@ -16,6 +16,11 @@ struct ModuleDataSourceCatalogEntry {
 
 const SOURCE_CATALOG: &[ModuleDataSourceCatalogEntry] = &[
     ModuleDataSourceCatalogEntry {
+        identity: ModuleDataSourceIdentity::IdleInhibitor,
+        // Driven by acknowledgements from the Wayland adapter, without polling.
+        subscription: |_, _| iced::Subscription::none(),
+    },
+    ModuleDataSourceCatalogEntry {
         identity: ModuleDataSourceIdentity::Notifications,
         subscription: |enabled, _| {
             if enabled {
@@ -92,6 +97,7 @@ pub(super) enum ModuleDataSourceTransition {
 
 #[derive(Debug, Default)]
 pub(super) struct ModuleDataSourceRuntime {
+    pub(super) idle_inhibitor: super::idle_inhibitor::IdleInhibitorRuntime,
     sources: HashMap<ModuleDataSourceIdentity, ModuleDataSourceStatus>,
 }
 
@@ -192,7 +198,10 @@ impl ModuleDataSourceRuntime {
         self.sources.contains_key(&identity)
     }
 
-    fn apply_source_state(&mut self, state: ModuleDataSourceState) -> ModuleDataSourceTransition {
+    pub(super) fn apply_source_state(
+        &mut self,
+        state: ModuleDataSourceState,
+    ) -> ModuleDataSourceTransition {
         let identity = state.identity();
         self.sources
             .insert(identity, ModuleDataSourceStatus::Available(state.clone()));

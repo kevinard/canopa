@@ -415,9 +415,18 @@ pub struct NotificationsConfig {
     pub tooltip: TooltipSetting,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct IdleInhibitorConfig {
+    pub icons: IconRulesConfig,
+    pub format: FormatConfig,
+    pub tooltip: TooltipSetting,
+    pub content_rotation: ContentRotation,
+}
+
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
 #[derive(Debug, Clone)]
 pub enum ModuleParams {
+    IdleInhibitor(IdleInhibitorConfig),
     Notifications(NotificationsConfig),
     #[cfg(test)]
     None,

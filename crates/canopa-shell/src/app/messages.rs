@@ -341,6 +341,12 @@ impl PanelEvent {
 
 #[derive(Debug, Clone)]
 pub enum ModuleRuntimeEvent {
+    ToggleIdleInhibitor,
+    IdleInhibitorApplied {
+        window: iced::window::Id,
+        requested: bool,
+        available: bool,
+    },
     Module(ModuleId, ModuleEvent),
     Detail {
         target: ModuleId,
@@ -359,6 +365,8 @@ pub enum ModuleRuntimeEvent {
 impl ModuleRuntimeEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
+            Self::ToggleIdleInhibitor => "Modules::ToggleIdleInhibitor",
+            Self::IdleInhibitorApplied { .. } => "Modules::IdleInhibitorApplied",
             ModuleRuntimeEvent::Module(_, event) => module_event_diagnostic_label(event),
             ModuleRuntimeEvent::Detail { .. } => "Modules::Detail",
             ModuleRuntimeEvent::ModuleClick(_, _) => "Modules::ModuleClick",

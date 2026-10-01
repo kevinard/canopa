@@ -140,6 +140,16 @@ Local icon lookup and Center raster preparation use shared `canopa-assets`
 mechanisms. Canopa Shell owns SVG rendering, process-lifetime icon caches, Center image
 limits and worker admission; see [shared asset ownership](../adr/0005-shared-assets.md).
 
+### Idle inhibition
+
+**Idle Inhibitor Module**:
+The built-in `idle-inhibitor` **Module** controls one manual, shell-wide
+keep-awake preference, initially off. Pointer and keyboard activation toggle it.
+Its app-owned **Module Data Source** serializes Wayland adapter requests and shares
+acknowledged state across **Module Instances**. The adapter owns one inhibitor
+per live **Bar Surface** and destroys it with the surface. See [ADR 0017](adr/0017-manual-idle-inhibitor.md).
+_Avoid_: Suspend blocker, idle daemon
+
 ### Notifications
 
 **Notification Module**:

@@ -7,7 +7,7 @@
       "archive_sha256": "51b59e8af02bf4c51db2ee5d130293e6e1e5ac4ae9f74a1e57990a19221aa0d5",
       "upstream_commit": "5e39311c8c5e652bd493a8f78e68e62b8929d9cf",
       "patch": "vendor/patches/iced_layershell.patch",
-      "patch_sha256": "18365d41f23ca78501ef247b777dcfda2104007e750941b44db94bcb9146527e",
+      "patch_sha256": "bb1f28eb2ae55933d1c5a59d5b4fd5c1b810f9dbc0bbbc8a5f608892639c6fd8",
       "files": {
         "Cargo.lock": {
           "upstream": "38f7f0ba4d38a3b3c02ef4669ace1f5dfed6e81129b6f9a5d472ff8ec5a6a493",
@@ -31,7 +31,7 @@
         },
         "src/actions.rs": {
           "upstream": "e4c5e8fd6a5c2bd599d22a22c64a81ba0da2b3acc679deac115752a0d3711e95",
-          "local": "7e8b3f77c0590d71b2515b41443b4e9fdb8f967bfd0e583ea49d4748dd8ffa42"
+          "local": "9be83c58cebedcf187e6a9a0d43d5c53a044d25b05abf2bd4ff3daf406e16967"
         },
         "src/build_pattern.rs": {
           "upstream": "b98221d296bf4135fbfdc8a4f025f4f711c37010969615bb957bd632b7a77529",
@@ -87,7 +87,7 @@
         },
         "src/multi_window.rs": {
           "upstream": "4c686e0474d13c9baca27e15e6ce949b934c7e1243093ebfeeb7649176edc2a3",
-          "local": "9b7c87802de004e8c971978ae398d52450c0532892bc5d9c89a0df8ca5403416"
+          "local": "d50043a5d332251bb1d08c27724f3c53f5cf272491b2743f2d8093d36a874dfc"
         },
         "src/multi_window/state.rs": {
           "upstream": "9c55f882d39dcf8458998ab7ff36671faa7839a12f3ab61cf0e82984853ecfb2",
@@ -95,7 +95,7 @@
         },
         "src/multi_window/tests.rs": {
           "upstream": null,
-          "local": "9b5644c6e1626fffe54e00208f43570b31383fa5b27f6dde23593aea3d5b18fe"
+          "local": "5ec606372d0b7f1026319bd7b7e2e0f50c54bbb79941c3b15a6f32aa79c71c79"
         },
         "src/multi_window/window_manager.rs": {
           "upstream": "622f3c0a78300b2b63374377620f9fdd67dd47ed7aa8c93c9334e94c83f51c18",
@@ -125,7 +125,7 @@
       "archive_sha256": "69fbd3ced50d91a5a118e3e00f49c72040ea6b48b78b159a3936104fc2632925",
       "upstream_commit": "5e39311c8c5e652bd493a8f78e68e62b8929d9cf",
       "patch": "vendor/patches/layershellev.patch",
-      "patch_sha256": "6c018f5fd2de538322055bae8a1fb706c4e1fc46a09b10e8e58fdb0dc1f406e5",
+      "patch_sha256": "3ce94796a9a4b305322d5b5e25088aadfbc007d2d5eadd684bcfccf91c12b825",
       "files": {
         "Cargo.lock": {
           "upstream": "11484affa506c554ed75218821c9aaafbd92e5d87f9d954edb460a2cf6fc99a5",
@@ -165,7 +165,7 @@
         },
         "src/lib.rs": {
           "upstream": "32a0dd2f42769900a7ea0ff57ddf789766310f66c8882280fedc83c833d2f80d",
-          "local": "4a38d93099fcbdcb5d48c91f5feced23dca59f2427bd9fc8d142e14df12277ae"
+          "local": "91003fcc0a1966bd6e1aa788a10cc17c573066a6494ba56e329f44dccdb1e45a"
         },
         "src/seat.rs": {
           "upstream": "823a549c7b084684be6d59bb460bd6f8f7d2ce4be5f6ab16a16a265608d17d3a",

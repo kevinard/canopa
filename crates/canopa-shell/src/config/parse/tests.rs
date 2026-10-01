@@ -2,6 +2,37 @@ use crate::config::parse::parse;
 use crate::config::parse::{ConfigInput, ConfigSourceName, parse_input};
 
 #[test]
+fn idle_inhibitor_supports_implicit_placement_and_named_customization() {
+    let config = parse(
+        r#"
+        bar "main" { modules { start "idle-inhibitor" "awake"; }; }
+        modules { module "awake" {
+            type "idle-inhibitor"
+            icons { icon "ON" state="active"; icon "OFF" state="inactive"; }
+            format "{icon}" "{value}"
+            horizontal-format "{state}"
+            expanded-format "{icon}" "{label}"
+            tooltip "{label}"
+            content-rotation "auto"
+        }; }
+    "#,
+    )
+    .unwrap();
+    assert_eq!(config.modules[0].module_type, "idle-inhibitor");
+    let crate::config::ModuleParams::IdleInhibitor(params) = &config.modules[0].params else {
+        panic!("wrong module params")
+    };
+    assert_eq!(params.icons.icon_for_state("active"), Some("ON"));
+    assert!(
+        parse(r#"modules { module "awake" { type "idle-inhibitor"; format "{unknown}"; }; }"#)
+            .is_err()
+    );
+    assert!(
+        parse(r#"modules { module "awake" { type "idle-inhibitor"; enabled #true; }; }"#).is_err()
+    );
+}
+
+#[test]
 fn canopa_panel_provider_selects_explicit_transport() {
     let config = parse(
         r#"

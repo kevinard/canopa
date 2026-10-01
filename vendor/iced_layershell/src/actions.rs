@@ -107,6 +107,16 @@ pub struct IcedNewMenuSettings {
 type Callback = Arc<dyn Fn(&WlRegion) + Send + Sync>;
 type ActivationCallback = Arc<dyn Fn(Option<String>) + Send + Sync>;
 
+/// Reports whether the surface and idle-inhibit protocol were available.
+#[derive(Clone)]
+pub struct IdleInhibitionCallback(pub Arc<dyn Fn(bool) + Send + Sync>);
+
+impl std::fmt::Debug for IdleInhibitionCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("idle inhibition callback")
+    }
+}
+
 // Callback wrapper around dyn Fn(&WlRegion)
 #[derive(Clone)]
 pub struct ActionCallback(pub Callback);
@@ -148,6 +158,10 @@ impl ActivationTokenCallback {
 /// use macro to_layer_message
 #[derive(Debug, Clone)]
 pub enum LayerShellCustomAction {
+    SetIdleInhibition {
+        enabled: bool,
+        callback: IdleInhibitionCallback,
+    },
     AnchorChange(Anchor),
     LayerChange(Layer),
     AnchorSizeChange(Anchor, (u32, u32)),

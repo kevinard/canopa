@@ -28,6 +28,25 @@ impl App {
             "module runtime event received"
         );
         match event {
+            ModuleRuntimeEvent::ToggleIdleInhibitor => {
+                if self
+                    .modules
+                    .has_kind(crate::modules::ModuleKind::IdleInhibitor)
+                {
+                    self.data_sources.idle_inhibitor.toggle();
+                }
+                Task::none()
+            }
+            ModuleRuntimeEvent::IdleInhibitorApplied {
+                window,
+                requested,
+                available,
+            } => {
+                self.data_sources
+                    .idle_inhibitor
+                    .completed(window, requested, available);
+                Task::none()
+            }
             ModuleRuntimeEvent::Module(id, event) => self.handle_module_event(id, event),
             ModuleRuntimeEvent::Detail { target, message } => {
                 self.handle_module_detail_message(target, message)
@@ -306,7 +325,7 @@ impl App {
         Task::batch(tasks)
     }
 
-    fn apply_module_data_source_transition(
+    pub(super) fn apply_module_data_source_transition(
         &mut self,
         transition: super::module_data_sources::ModuleDataSourceTransition,
     ) -> Task<Message> {

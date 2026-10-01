@@ -13,6 +13,7 @@ mod clock;
 mod focused_window;
 mod formats;
 mod icons;
+mod idle_inhibitor;
 mod network;
 mod notifications;
 mod script;
@@ -31,6 +32,9 @@ pub(super) fn dispatch(
     command_policy: &CommandPolicy,
 ) -> ConfigResult<ModuleParams> {
     match kind {
+        ModuleKind::IdleInhibitor => {
+            idle_inhibitor::parse_ctx(node, ctx).map(ModuleParams::IdleInhibitor)
+        }
         ModuleKind::Script => {
             script::parse(node, idx, ctx, command_policy).map(ModuleParams::Script)
         }
@@ -68,6 +72,7 @@ mod tests {
         matches!(
             kind,
             ModuleKind::Battery
+                | ModuleKind::IdleInhibitor
                 | ModuleKind::Clock
                 | ModuleKind::Notifications
                 | ModuleKind::Network

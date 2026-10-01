@@ -246,6 +246,7 @@ impl SurfaceManager {
         stale.sort_by_key(|(_, window)| format!("{window:?}"));
         for (identity, window) in stale {
             self.surfaces.remove(&window);
+            self.pending_surface_keys.remove(&window);
             effects.extend(
                 self.close_tooltips_for_surface(window)
                     .into_iter()
@@ -636,6 +637,11 @@ impl App {
         id: crate::modules::ModuleId,
         window: iced::window::Id,
     ) -> Task<Message> {
+        // Hover messages may already be queued when an output retires. They
+        // must not resurrect a surface and suppress its later recreation.
+        if self.surface(window).is_none() {
+            return Task::none();
+        }
         let resolved = self.resolved_tooltip_for(window, &id);
         let s = self.surface_mut(window);
         s.hovered_module = Some(id.clone());
@@ -660,7 +666,9 @@ impl App {
         id: crate::modules::ModuleId,
         window: iced::window::Id,
     ) -> Task<Message> {
-        let s = self.surface_mut(window);
+        let Some(s) = self.surfaces.get_mut(&window) else {
+            return Task::none();
+        };
         if s.hovered_module.as_ref() == Some(&id) {
             s.hovered_module = None;
         }
@@ -777,6 +785,7 @@ impl App {
             ModuleParams::Volume(c) => (&c.tooltip, td::volume_default()),
             ModuleParams::Clock(c) => (&c.tooltip, td::clock_default()),
             ModuleParams::Notifications(c) => (&c.tooltip, td::notifications_default()),
+            ModuleParams::IdleInhibitor(c) => (&c.tooltip, td::idle_inhibitor_default()),
             ModuleParams::Network(c) => (&c.tooltip, td::network_default()),
             ModuleParams::FocusedWindow(c) => (&c.tooltip, td::focused_window_default()),
             ModuleParams::Workspaces(c) => (&c.tooltip, td::workspaces_default()),
@@ -1314,6 +1323,7 @@ mod tests {
     fn wrapped_module_hover_enter_sets_hovered_module() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let id = crate::modules::ModuleId::new("clock");
 
         let _ = app.update(Message::Surface(
@@ -1321,6 +1331,34 @@ mod tests {
         ));
 
         assert_eq!(app.surface(wid).unwrap().hovered_module, Some(id));
+    }
+
+    #[test]
+    fn queued_hover_after_output_removal_does_not_prevent_multiple_bars_returning() {
+        use super::super::messages::SurfaceEvent;
+        let mut config = make_config();
+        let mut second = config.bars[0].clone();
+        second.name = "second".into();
+        second.edge = Edge::Bottom;
+        config.bars.push(second);
+        let (mut app, _) = App::boot(config, vec!["DP-1".into()]);
+        let old: Vec<_> = app.surfaces.keys().copied().collect();
+        assert_eq!(old.len(), 2);
+        let _ = app.update(Message::WaylandOutputSnapshot(vec![]));
+        for window in old {
+            assert!(!app.surfaces.pending_surface_keys.contains_key(&window));
+            let module = crate::modules::ModuleId::new("clock");
+            let _ = app.update(Message::Surface(SurfaceEvent::ModuleHoverExit(
+                module.clone(),
+                window,
+            )));
+            let _ = app.update(Message::Surface(SurfaceEvent::ModuleHoverEnter(
+                module, window,
+            )));
+        }
+        assert!(app.surfaces.is_empty());
+        let _ = app.update(Message::WaylandOutputSnapshot(vec!["DP-1".into()]));
+        assert_eq!(app.surfaces.len(), 2);
     }
 
     #[test]

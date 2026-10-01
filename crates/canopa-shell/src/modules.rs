@@ -5,6 +5,7 @@ pub mod data_source;
 pub mod detail;
 pub mod dynamic;
 pub mod focused_window;
+pub mod idle_inhibitor;
 pub mod interaction;
 pub mod network;
 pub mod notifications;
@@ -81,6 +82,7 @@ impl ModuleId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModuleKind {
+    IdleInhibitor,
     Battery,
     Button,
     Network,
@@ -109,6 +111,7 @@ impl ModuleKind {
 
     pub(crate) fn runtime_name(self) -> &'static str {
         match self {
+            ModuleKind::IdleInhibitor => "idle-inhibitor",
             ModuleKind::Battery => "battery",
             ModuleKind::Button => "button",
             ModuleKind::Network => "network",
@@ -144,6 +147,7 @@ pub enum Zone {
 /// Per-module runtime state. Variants added per concrete module (Stories 2.3+).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum ModuleState {
+    IdleInhibitor(idle_inhibitor::IdleInhibitorState),
     /// Module has no visible content. Used for available-but-empty Module outcomes
     /// and as the no-state render fallback while first emission is pending inside
     /// the Module Data Source runtime lifecycle.
@@ -287,6 +291,7 @@ impl ModuleCapabilities {
 macro_rules! config_module_descriptors {
     ($macro:ident) => {
         $macro! {
+            (ModuleKind::IdleInhibitor, "idle-inhibitor", idle_inhibitor_ctor, Some(idle_inhibitor_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY),
             (ModuleKind::Battery, "battery", battery_ctor, Some(battery_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
             (ModuleKind::Button, "button", button_ctor, None, ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY),
             (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
@@ -355,6 +360,21 @@ pub(crate) fn descriptor_for_kind(kind: ModuleKind) -> Option<&'static ModuleDes
 
 fn notifications_synthesized_params() -> ModuleParams {
     ModuleParams::Notifications(crate::config::NotificationsConfig::default())
+}
+
+fn idle_inhibitor_synthesized_params() -> ModuleParams {
+    ModuleParams::IdleInhibitor(crate::config::IdleInhibitorConfig::default())
+}
+
+fn idle_inhibitor_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
+    let config = match &mc.params {
+        ModuleParams::IdleInhibitor(config) => config.clone(),
+        _ => crate::config::IdleInhibitorConfig::default(),
+    };
+    Ok(Box::new(idle_inhibitor::IdleInhibitorModule {
+        id: ModuleId::new(&mc.name),
+        config,
+    }))
 }
 
 fn notifications_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
@@ -655,6 +675,7 @@ mod tests {
     #[test]
     fn every_config_facing_kind_has_exactly_one_descriptor() {
         let expected = HashSet::from([
+            ModuleKind::IdleInhibitor,
             ModuleKind::Battery,
             ModuleKind::Button,
             ModuleKind::Clock,

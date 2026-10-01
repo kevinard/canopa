@@ -38,6 +38,10 @@ pub fn notifications_default() -> Option<FormatTemplate> {
     Some(template("{label}", &["icon", "value", "label", "state"]))
 }
 
+pub fn idle_inhibitor_default() -> Option<FormatTemplate> {
+    Some(template("{label}", &["icon", "value", "label", "state"]))
+}
+
 pub fn network_default() -> Option<FormatTemplate> {
     Some(template("{label}", &["icon", "value", "label", "state"]))
 }

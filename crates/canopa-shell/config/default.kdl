@@ -132,6 +132,12 @@ bar "main" {
 //         right-click { command "my-other-command" }
 //     }
 modules {
+    // Optional manual keep-awake toggle, initially off. Add "idle-inhibitor" to
+    // a bar's modules list to show it. All instances share one toggle.
+    // module "idle-inhibitor" {
+    //     horizontal-format "{icon}" "{value}"
+    //     tooltip "{label}"
+    // }
     // Click opens the Center; right-click toggles DND.
     module "notifications"
     // workspaces: Niri workspace indicators. Click or scroll to switch workspace.

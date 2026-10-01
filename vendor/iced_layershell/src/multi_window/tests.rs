@@ -73,6 +73,20 @@ fn closing_retired_windows_does_not_leave_retriable_adapter_work() {
     );
     let mut backend = WindowState::new("retired-window-test");
     for _ in 0..100 {
+        let completed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let callback_completed = completed.clone();
+        context.waiting_layer_shell_actions.push((
+            Some(IcedId::unique()),
+            LayerShellCustomAction::SetIdleInhibition {
+                enabled: true,
+                callback: crate::actions::IdleInhibitionCallback(std::sync::Arc::new(
+                    move |available| {
+                        assert!(!available, "retired windows cannot inhibit idle");
+                        callback_completed.store(true, std::sync::atomic::Ordering::SeqCst);
+                    },
+                )),
+            },
+        ));
         context.handle_user_action(
             &mut backend,
             Action::Window(iced_runtime::window::Action::Close(IcedId::unique())),
@@ -83,6 +97,7 @@ fn closing_retired_windows_does_not_leave_retriable_adapter_work() {
             panic!("closing an absent window must not initialize graphics")
         };
         context = next;
+        assert!(completed.load(std::sync::atomic::Ordering::SeqCst));
     }
     assert!(
         context.waiting_layer_shell_actions.is_empty(),

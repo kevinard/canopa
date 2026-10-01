@@ -11,6 +11,8 @@ pub(crate) mod eligible_outputs;
 mod external_panel_session;
 mod focus;
 mod foreground;
+mod idle_inhibitor;
+mod layer_shell_message;
 mod layout;
 mod menu;
 pub(crate) mod messages;
@@ -42,7 +44,6 @@ mod visibility;
 mod widget_ops;
 
 use iced::Task;
-use iced_layershell::to_layer_message;
 
 use crate::config::Config;
 use crate::dbus::DbusConnections;
@@ -73,9 +74,26 @@ pub(crate) struct App {
         std::collections::HashMap<(String, String), crate::surface::panel::ExternalPanelDocument>,
 }
 
-#[to_layer_message(multi)]
 #[derive(Debug, Clone)]
 pub enum Message {
+    LayerShell(iced_layershell::actions::LayerShellCustomActionWithId),
+    NewLayerShell {
+        settings: iced_layershell::reexport::NewLayerShellSettings,
+        id: iced::window::Id,
+    },
+    SetInputRegion {
+        id: iced::window::Id,
+        callback: iced_layershell::actions::ActionCallback,
+    },
+    SizeChange {
+        id: iced::window::Id,
+        size: (u32, u32),
+    },
+    KeyboardInteractivityChange {
+        id: iced::window::Id,
+        keyboard_interactivity: iced_layershell::reexport::KeyboardInteractivity,
+    },
+    RemoveWindow(iced::window::Id),
     CanopaAccessibilityFrame(iced::window::Id),
     CanopaAccessibilityBounds {
         window: iced::window::Id,
@@ -427,6 +445,7 @@ impl App {
             task,
             self.prepare_panel_icons(),
             self.sync_dismissal_surfaces(),
+            self.sync_idle_inhibitor(),
         ]);
         if visibility_changed {
             Task::batch(std::iter::once(task).chain(self.reconcile_module_visibility()))
@@ -520,6 +539,7 @@ mod tests {
     fn hover_enter_sets_hovered_module() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let id = ModuleId::new("clock");
         let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverEnter(
             id.clone(),
@@ -532,6 +552,7 @@ mod tests {
     fn hover_exit_clears_hovered_module() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let id = ModuleId::new("clock");
         let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverEnter(
             id.clone(),
@@ -547,6 +568,7 @@ mod tests {
     fn hover_exit_different_id_does_not_clear() {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
+        app.surface_mut(wid);
         let id_a = ModuleId::new("clock");
         let id_b = ModuleId::new("battery");
         let _ = app.update(Message::Surface(messages::SurfaceEvent::ModuleHoverEnter(
