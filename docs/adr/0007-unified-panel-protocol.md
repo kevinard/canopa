@@ -32,6 +32,16 @@ instead of building an unbounded serialized frame. Content identifiers, labels,
 actions and list entries are validated, with at most 4,096 form elements and 8,192
 form elements/entries combined; rich-content limits remain those of v4.
 
+Content validation also checks each advertised fixed interaction against the
+64 KiB event limit, including JSON escaping and the longest revision. This covers
+form buttons/list entries, current input values, rich actions/links, section
+options and slider endpoints. A response that fits the content limit but exposes
+an unsendable interaction is rejected before installation. Editable form values
+are checked against their complete submit envelope before local echo or dispatch.
+An oversized edit keeps the last sendable value and shows an error beside the
+control; values, including credentials, are never silently truncated. A shorter
+valid edit clears the error. These v5 constraints do not alter legacy v1/v4 wires.
+
 A revision advances when the meaning of the interaction changes. Providers use
 `Session::replace` with `Update::Replace` for a new view or operation. Wi-Fi may
 request `PreserveFormEdits` after an input edit or background synchronization. The

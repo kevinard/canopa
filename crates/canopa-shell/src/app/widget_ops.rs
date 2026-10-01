@@ -2,7 +2,7 @@ pub(crate) fn module_widget_id(
     window: iced::window::Id,
     id: &crate::modules::ModuleId,
 ) -> iced::widget::Id {
-    iced::widget::Id::from(format!("module:{}:{:?}", id.0, window))
+    iced::widget::Id::from(format!("module:{id:?}:{window:?}"))
 }
 
 pub(super) struct FindBounds {

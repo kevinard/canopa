@@ -1,7 +1,7 @@
 use super::data_source::{
     ModuleDataSourceIdentity, ModuleDataSourceMapper, ModuleDataSourceState, ModuleInstanceOutcome,
 };
-use super::render::{BarRenderContext, ModuleRender};
+use super::render::ModuleRender;
 use super::view::{IconLabel, IconLabelLayout};
 use super::{Module, ModuleId, ModuleKind, ModuleState};
 use crate::app::{Message, messages::ModuleRuntimeEvent};
@@ -52,6 +52,10 @@ impl ModuleDataSourceMapper for MediaModule {
 }
 
 impl IconLabel for MediaModule {
+    fn content_rotation(&self) -> crate::config::ContentRotation {
+        self.config.content_rotation
+    }
+
     fn icon(&self, state: &ModuleState) -> String {
         if player(state).is_some_and(|p| p.status == "Playing") {
             "▶"
@@ -98,6 +102,10 @@ impl IconLabel for MediaModule {
 }
 
 impl ModuleRender for MediaModule {
+    fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
+        Some(self)
+    }
+
     fn has_content(&self, state: &ModuleState, _: crate::config::FormatMode) -> bool {
         player(state).is_some()
     }
@@ -114,49 +122,6 @@ impl ModuleRender for MediaModule {
             ("player", p.name.clone()),
             ("state", p.status.to_lowercase()),
         ]
-    }
-    fn render_collapsed_with_style(
-        &self,
-        state: &ModuleState,
-        style: &Style,
-    ) -> iced::Element<'_, Message> {
-        super::view::icon_label_view_with_default(self, state, IconLabelLayout::Collapsed, style)
-    }
-    fn render_panel_with_style(
-        &self,
-        state: &ModuleState,
-        style: &Style,
-    ) -> iced::Element<'_, Message> {
-        super::view::icon_label_view_with_default(self, state, IconLabelLayout::Expanded, style)
-    }
-    fn render_horizontal_with_style(
-        &self,
-        state: &ModuleState,
-        style: &Style,
-    ) -> Option<iced::Element<'_, Message>> {
-        Some(super::view::icon_label_view_with_default(
-            self,
-            state,
-            IconLabelLayout::Horizontal,
-            style,
-        ))
-    }
-    fn render_bar_collapsed_with_style(
-        &self,
-        state: &ModuleState,
-        context: &BarRenderContext<'_>,
-        style: &Style,
-    ) -> Option<iced::Element<'_, Message>> {
-        let rotation = self.config.content_rotation.resolve_for_edge(context.edge);
-        (rotation != crate::config::ResolvedContentRotation::None).then(|| {
-            super::view::icon_label_view_with_rotation(
-                self,
-                state,
-                IconLabelLayout::Collapsed,
-                style,
-                rotation,
-            )
-        })
     }
 }
 

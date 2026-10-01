@@ -654,6 +654,14 @@ impl SqlitePersistedState {
         Ok(u64::try_from(count)?)
     }
 
+    pub(crate) async fn active_thread_count(&self) -> anyhow::Result<u64> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM notification_threads WHERE status = 'active'")
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(u64::try_from(count)?)
+    }
+
     pub(crate) async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
         let sql = notification_thread_select_sql("ORDER BY created_at DESC, id DESC");
         let rows = sqlx::query(&sql).fetch_all(&self.pool).await?;
@@ -882,6 +890,19 @@ impl NotificationHistory for SqlitePersistedState {
 
     async fn thread(&self, id: InternalNotificationId) -> anyhow::Result<NotificationThread> {
         SqlitePersistedState::thread(self, id).await
+    }
+
+    async fn active_thread(
+        &self,
+        id: InternalNotificationId,
+    ) -> anyhow::Result<Option<NotificationThread>> {
+        let sql = notification_thread_select_sql("WHERE id = ?1 AND status = 'active'");
+        sqlx::query(&sql)
+            .bind(id.get())
+            .fetch_optional(&self.pool)
+            .await?
+            .map(|row| NotificationThreadRecord::from_row(&row)?.into_thread())
+            .transpose()
     }
 
     async fn persist_thread(

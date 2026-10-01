@@ -74,6 +74,11 @@ pub enum LifecycleEffect {
     ThreadExpired(NotificationThread),
     ThreadClosed(NotificationThread),
     ThreadStale(NotificationThread),
+    ThreadAttentionChanged {
+        notification_id: InternalNotificationId,
+        revision: i64,
+        requires_attention: bool,
+    },
     NotificationDropped {
         replaces_id: Option<InternalNotificationId>,
     },
@@ -224,7 +229,8 @@ impl LifecycleEffects {
             | LifecycleEffect::ThreadStale(thread) => Some(BannerLifecycleChange::Remove {
                 notification_id: thread.id,
             }),
-            LifecycleEffect::SenderReceipt(_)
+            LifecycleEffect::ThreadAttentionChanged { .. }
+            | LifecycleEffect::SenderReceipt(_)
             | LifecycleEffect::NotificationDropped { .. }
             | LifecycleEffect::NotificationTimeoutStartsOnDisplay { .. }
             | LifecycleEffect::NotificationTimeoutCancelledThroughRevision { .. }
@@ -285,6 +291,12 @@ pub trait NotificationHistory: Clone + Send + Sync + 'static {
         thread: NewNotificationThread,
     ) -> anyhow::Result<NotificationThread>;
     async fn thread(&self, id: InternalNotificationId) -> anyhow::Result<NotificationThread>;
+    /// Point lookup of a live replacement target. Absence is distinct from a
+    /// storage/decoding failure; unrelated rows must not be read.
+    async fn active_thread(
+        &self,
+        id: InternalNotificationId,
+    ) -> anyhow::Result<Option<NotificationThread>>;
     async fn persist_thread(
         &self,
         thread: NotificationThread,
@@ -447,11 +459,10 @@ where
             return Ok(None);
         };
 
-        Ok(self
-            .active_threads()
-            .await?
-            .into_iter()
-            .find(|thread| thread.id == replaces_id))
+        if let Some(thread) = self.transient_threads.lock().unwrap().get(&replaces_id) {
+            return Ok((thread.status == NotificationStatus::Active).then(|| thread.clone()));
+        }
+        self.history.active_thread(replaces_id).await
     }
 
     pub async fn dismiss(
@@ -494,10 +505,13 @@ where
         if thread.requires_attention {
             thread.requires_attention = false;
             thread.updated_at = self.now_millis();
-            self.persist_thread(thread, PersistPrecondition::ExpectedRevision(revision))
+            let committed = self
+                .persist_thread(thread, PersistPrecondition::ExpectedRevision(revision))
                 .await?;
+            // Attention is independent of the already-completed sender lifecycle.
+            return Ok(LifecycleEffects::new(vec![attention_changed(&committed)]));
         }
-        // This sender lifecycle already ended. Acknowledgement emits no second closure.
+        // An already acknowledged thread commits nothing.
         Ok(LifecycleEffects::empty())
     }
 
@@ -610,11 +624,13 @@ where
         } else {
             thread.requires_attention = false;
             let revision = thread.revision;
-            self.persist_thread(
-                thread,
-                PersistPrecondition::ExpectedActiveRevision(revision),
-            )
-            .await?;
+            let committed = self
+                .persist_thread(
+                    thread,
+                    PersistPrecondition::ExpectedActiveRevision(revision),
+                )
+                .await?;
+            effects.effects.push(attention_changed(&committed));
         }
 
         Ok(effects)
@@ -775,26 +791,31 @@ where
             .collect()
     }
 
-    pub(crate) fn transient_center_threads_after(
+    pub(crate) fn transient_center_cursors(&self) -> Vec<crate::NotificationCenterCursor> {
+        let mut cursors: Vec<_> = self
+            .transient_threads
+            .lock()
+            .unwrap()
+            .values()
+            .map(crate::NotificationCenterCursor::for_thread)
+            .collect();
+        cursors.sort_unstable_by(|a, b| b.cmp(a));
+        cursors
+    }
+
+    pub(crate) fn transient_center_threads(
         &self,
+        cursors: &[crate::NotificationCenterCursor],
         after: Option<crate::NotificationCenterCursor>,
         limit: u8,
     ) -> Vec<NotificationThread> {
         let threads = self.transient_threads.lock().unwrap();
-        // Sort references before cloning: a page never clones the full transient budget.
-        let mut candidates: Vec<_> = threads
-            .values()
-            .filter(|thread| {
-                after.is_none_or(|cursor| {
-                    crate::NotificationCenterCursor::for_thread(thread) < cursor
-                })
-            })
-            .collect();
-        candidates.sort_by_key(|thread| {
-            std::cmp::Reverse(crate::NotificationCenterCursor::for_thread(thread))
+        let start = after.map_or(0, |after| {
+            cursors.partition_point(|cursor| *cursor >= after)
         });
-        candidates
-            .into_iter()
+        cursors[start..]
+            .iter()
+            .filter_map(|cursor| threads.get(&cursor.id))
             .take(usize::from(limit))
             .cloned()
             .collect()
@@ -914,5 +935,68 @@ where
             }
             NotificationTimeout::Never => {}
         }
+    }
+}
+
+fn attention_changed(thread: &NotificationThread) -> LifecycleEffect {
+    LifecycleEffect::ThreadAttentionChanged {
+        notification_id: thread.id,
+        revision: thread.revision,
+        requires_attention: thread.requires_attention,
+    }
+}
+
+#[cfg(test)]
+mod effect_tests {
+    use super::*;
+    use crate::intake::{NotificationIntakeResult, intake_notification};
+    use crate::{NotificationInput, sqlite_persisted_state::SqlitePersistedState};
+
+    #[tokio::test]
+    async fn inactive_acknowledgement_has_state_effects_without_sender_or_banner_effects() {
+        let directory = tempfile::tempdir().unwrap();
+        let storage = SqlitePersistedState::open(directory.path().join("history.db"), 30, 1000)
+            .await
+            .unwrap();
+        let lifecycle = NotificationLifecycle::new(storage);
+        let NotificationIntakeResult::Accepted(accepted) = intake_notification(NotificationInput {
+            summary: "Retained attention".into(),
+            ..Default::default()
+        }) else {
+            panic!("fixture must be accepted")
+        };
+        let receipt = lifecycle
+            .receive(
+                accepted.notification,
+                LifecycleDelivery::shown(),
+                NotificationTimeout::Never,
+            )
+            .await
+            .unwrap()
+            .sender_receipt()
+            .unwrap();
+        lifecycle.expire(receipt.notification_id).await.unwrap();
+        let expired = lifecycle.thread(receipt.notification_id).await.unwrap();
+        assert!(expired.requires_attention);
+        let effects = lifecycle
+            .acknowledge_if_current_revision(expired.id, expired.revision)
+            .await
+            .unwrap();
+        assert!(
+            !effects.is_empty(),
+            "committed attention change must be visible to every effect consumer"
+        );
+        assert!(effects.sender_events().next().is_none());
+        assert!(effects.banner_changes().next().is_none());
+        assert!(effects.timeout_changes().next().is_none());
+        let acknowledged = lifecycle.thread(expired.id).await.unwrap();
+        assert!(!acknowledged.requires_attention);
+        assert!(
+            lifecycle
+                .acknowledge_if_current_revision(acknowledged.id, acknowledged.revision)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }

@@ -105,23 +105,23 @@ pub(super) enum PanelRuntimeIntent<'a> {
         catalog: PanelMenuCatalog<'a>,
     },
     Clear,
-    SearchChanged(String),
-    MenuScrolled {
-        y: f32,
-        viewport_height: f32,
-    },
-    FocusIndex(usize),
-    RequestSearchFocus,
-    SearchFocusSettled,
     FocusMove(isize),
-    Back,
-    Escape,
-    Activate(Option<usize>),
     BeginDmenuSelection {
         request: crate::ipc::protocol::DmenuRequest,
         responder: super::messages::IpcResponder,
         panel_request: Option<PanelOpenRequest>,
     },
+}
+
+pub(super) enum PanelInteraction {
+    SearchChanged(String),
+    MenuScrolled { y: f32, viewport_height: f32 },
+    FocusIndex(usize),
+    RequestSearchFocus,
+    SearchFocusSettled,
+    Back,
+    Escape,
+    Activate(Option<usize>),
 }
 
 impl PartialEq for PanelRuntimeEffect {
@@ -188,35 +188,40 @@ impl PanelRuntime {
                 catalog,
             } => self.open_panel_after_installed_apps_loaded(pending, apps, catalog),
             PanelRuntimeIntent::Clear => self.clear_with_cancelled_dmenu_response(),
-            PanelRuntimeIntent::SearchChanged(query) => {
-                self.search_changed(query);
-                Vec::new()
-            }
-            PanelRuntimeIntent::MenuScrolled { y, viewport_height } => {
-                self.set_menu_scrolled(y, viewport_height);
-                Vec::new()
-            }
-            PanelRuntimeIntent::FocusIndex(index) => {
-                self.focus_index(index);
-                Vec::new()
-            }
-            PanelRuntimeIntent::RequestSearchFocus => vec![self.request_search_focus()],
-            PanelRuntimeIntent::SearchFocusSettled => {
-                self.search_focus_pending = false;
-                Vec::new()
-            }
             PanelRuntimeIntent::FocusMove(delta) => {
                 self.move_focus(delta);
                 Vec::new()
             }
-            PanelRuntimeIntent::Back => self.back(),
-            PanelRuntimeIntent::Escape => self.escape(),
-            PanelRuntimeIntent::Activate(index) => self.activate(index),
             PanelRuntimeIntent::BeginDmenuSelection {
                 request,
                 responder,
                 panel_request,
             } => self.begin_dmenu_selection(request, responder, panel_request),
+        }
+    }
+
+    pub(super) fn interact(&mut self, interaction: PanelInteraction) -> Vec<PanelRuntimeEffect> {
+        match interaction {
+            PanelInteraction::SearchChanged(query) => {
+                self.search_changed(query);
+                Vec::new()
+            }
+            PanelInteraction::MenuScrolled { y, viewport_height } => {
+                self.set_menu_scrolled(y, viewport_height);
+                Vec::new()
+            }
+            PanelInteraction::FocusIndex(index) => {
+                self.focus_index(index);
+                Vec::new()
+            }
+            PanelInteraction::RequestSearchFocus => vec![self.request_search_focus()],
+            PanelInteraction::SearchFocusSettled => {
+                self.search_focus_pending = false;
+                Vec::new()
+            }
+            PanelInteraction::Back => self.back(),
+            PanelInteraction::Escape => self.escape(),
+            PanelInteraction::Activate(index) => self.activate(index),
         }
     }
 
@@ -230,7 +235,6 @@ impl PanelRuntime {
         self.dmenu_responder = None;
     }
 
-    #[cfg(test)]
     pub(super) fn active_panel_tree(&self) -> Option<&crate::surface::panel::PanelTree> {
         self.active_panel.as_ref().map(|panel| &panel.tree)
     }
@@ -1073,7 +1077,7 @@ mod tests {
     fn clear_resets_session_scroll_focus_and_dmenu_state() {
         let mut runtime = PanelRuntime::default();
         runtime.set_menu_scrolled(120.0, 300.0);
-        runtime.handle(PanelRuntimeIntent::RequestSearchFocus);
+        runtime.interact(PanelInteraction::RequestSearchFocus);
         runtime.clear();
 
         assert_eq!(runtime.menu_scroll_y(), 0.0);
@@ -1092,7 +1096,7 @@ mod tests {
         );
 
         assert_eq!(
-            runtime.handle(PanelRuntimeIntent::Escape),
+            runtime.interact(PanelInteraction::Escape),
             vec![PanelRuntimeEffect::RequestPanelClose]
         );
     }
@@ -1103,9 +1107,9 @@ mod tests {
         runtime.open_session(
             super::super::panel_menu_session::PanelMenuSource::Configured(menu_with_apps_submenu()),
         );
-        runtime.handle(PanelRuntimeIntent::Activate(Some(0)));
+        runtime.interact(PanelInteraction::Activate(Some(0)));
 
-        let effects = runtime.handle(PanelRuntimeIntent::Escape);
+        let effects = runtime.interact(PanelInteraction::Escape);
 
         assert_eq!(effects, vec![PanelRuntimeEffect::RequestSearchFocus]);
         assert!(runtime.search_focus_pending());
@@ -1120,9 +1124,9 @@ mod tests {
         runtime.open_session(
             super::super::panel_menu_session::PanelMenuSource::Configured(menu_with_apps_submenu()),
         );
-        runtime.handle(PanelRuntimeIntent::Activate(Some(0)));
+        runtime.interact(PanelInteraction::Activate(Some(0)));
 
-        let effects = runtime.handle(PanelRuntimeIntent::Back);
+        let effects = runtime.interact(PanelInteraction::Back);
 
         assert_eq!(effects, vec![PanelRuntimeEffect::RequestSearchFocus]);
         assert!(runtime.search_focus_pending());

@@ -105,7 +105,7 @@ impl DynamicModuleRuntimeSnapshotEntry {
     }
 
     fn parent_name(&self) -> Option<&str> {
-        self.parent.as_ref().map(|parent| parent.0.as_str())
+        self.parent.as_ref().map(|parent| parent.configured_name())
     }
 }
 
@@ -116,6 +116,8 @@ pub(super) struct DynamicModuleRuntimeSnapshot {
 
 impl DynamicModuleRuntimeSnapshot {
     pub(super) fn new(entries: Vec<DynamicModuleRuntimeSnapshotEntry>) -> Self {
+        #[cfg(test)]
+        SNAPSHOT_ENTRIES.with(|count| count.set(count.get() + entries.len()));
         Self { entries }
     }
 
@@ -128,10 +130,6 @@ impl DynamicModuleRuntimeSnapshot {
             .collect();
         children.sort_by_key(|(order, _)| *order);
         children.into_iter().map(|(_, id)| id).collect()
-    }
-
-    fn contains_instance(&self, name: &str) -> bool {
-        self.entries.iter().any(|entry| entry.id.0 == name)
     }
 
     fn slots_for_family(&self, family: DynamicModuleFamily) -> Vec<DynamicModuleSlot> {
@@ -147,36 +145,6 @@ impl DynamicModuleRuntimeSnapshot {
             })
             .collect()
     }
-
-    pub(super) fn configured_module_name_for_instance<'a>(&'a self, id: &'a ModuleId) -> &'a str {
-        self.entries
-            .iter()
-            .find(|entry| entry.id == *id)
-            .and_then(DynamicModuleRuntimeSnapshotEntry::parent_name)
-            .unwrap_or(id.0.as_str())
-    }
-}
-
-pub(super) fn expand_dynamic_module_layout(
-    snapshot: &DynamicModuleRuntimeSnapshot,
-    placements: [(Zone, &[String]); 3],
-) -> Vec<(Zone, ModuleId)> {
-    let mut layout = Vec::new();
-
-    for (zone, names) in placements {
-        for name in names {
-            let expanded_ids = snapshot.child_ids_for_parent(name);
-            if expanded_ids.is_empty() {
-                if snapshot.contains_instance(name) {
-                    layout.push((zone.clone(), ModuleId(name.clone())));
-                }
-            } else {
-                layout.extend(expanded_ids.into_iter().map(|id| (zone.clone(), id)));
-            }
-        }
-    }
-
-    layout
 }
 
 pub(super) struct DynamicModuleReconciliationPlan {
@@ -204,7 +172,6 @@ impl DynamicModuleReconciliationPlan {
 }
 
 pub(super) struct DynamicModuleParentReconciliation {
-    pub(super) parent: ModuleId,
     pub(super) parent_name: String,
     pub(super) insert_after_index: usize,
     pub(super) zone: Zone,
@@ -274,7 +241,6 @@ pub(super) fn workspace_reconciliation_plan(
             .collect();
 
         plan.push_parent(DynamicModuleParentReconciliation {
-            parent: slot.parent.clone(),
             parent_name,
             insert_after_index: slot.index,
             zone: slot.zone.clone(),
@@ -325,7 +291,6 @@ pub(super) fn tray_reconciliation_plan(
             .collect();
 
         plan.push_parent(DynamicModuleParentReconciliation {
-            parent: slot.parent.clone(),
             parent_name,
             insert_after_index: slot.index,
             zone: slot.zone.clone(),
@@ -350,7 +315,7 @@ pub(super) struct DynamicModuleSlot {
 
 impl DynamicModuleSlot {
     pub(super) fn parent_name(&self) -> &str {
-        self.parent.0.as_str()
+        self.parent.configured_name()
     }
 
     fn workspaces_input(&self) -> WorkspacesDynamicModuleInput {
@@ -451,6 +416,11 @@ pub(super) fn placements_for_panel_modules(modules: &PanelModules) -> [(Zone, &[
 }
 
 #[cfg(test)]
+thread_local! {
+    static SNAPSHOT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::App;
@@ -536,11 +506,211 @@ mod tests {
     }
 
     #[test]
+    fn lookup_and_layout_do_not_clone_reconciliation_payloads() {
+        let mut config = Config {
+            modules: (0..256)
+                .map(|index| ModuleConfig {
+                    name: format!("clock-{index}"),
+                    module_type: "clock".into(),
+                    params: ModuleParams::Clock(Default::default()),
+                    actions: ModuleActionsConfig {
+                        bindings: vec![ActionBinding {
+                            trigger: ActionTrigger::Key("Ctrl+E".into()),
+                            action: PanelAction::OpenMenu(format!("menu-{index}")),
+                        }],
+                    },
+                })
+                .collect(),
+            ..Default::default()
+        };
+        config.bars[0].modules.start = (0..256).map(|index| format!("clock-{index}")).collect();
+        config.bars[0].modules.center.clear();
+        config.bars[0].modules.end.clear();
+        let (app, _) = App::boot(config, vec![]);
+        SNAPSHOT_ENTRIES.set(0);
+        for _ in 0..32 {
+            assert_eq!(
+                app.modules
+                    .configured_module_name_for_instance(&ModuleId::new("clock-255")),
+                "clock-255"
+            );
+        }
+        for _ in 0..4 {
+            let layout = app.effective_module_layout_for_bar(&app.config.bars[0]);
+            assert_eq!(layout.len(), 256);
+            assert_eq!(
+                layout.last(),
+                Some(&(Zone::Start, ModuleId::new("clock-255")))
+            );
+        }
+        assert_eq!(
+            SNAPSHOT_ENTRIES.get(),
+            0,
+            "point lookups/layout cloned reconciliation entries containing configuration and actions"
+        );
+    }
+
+    #[test]
+    fn configured_names_cannot_alias_dynamic_children_in_either_placement_order() {
+        for tray in [false, true] {
+            for configured_first in [false, true] {
+                let parent = if tray { "tray" } else { "workspaces" };
+                let configured_name = if tray {
+                    "tray:org.example.App"
+                } else {
+                    "workspace:1"
+                };
+                let child_id = if tray {
+                    crate::modules::tray::TrayIconModule::module_id(parent, "org.example.App")
+                } else {
+                    crate::modules::workspaces::WorkspaceItemModule::module_id(parent, 1)
+                };
+                let configured_id = ModuleId::new(configured_name);
+                let binding = |action| ModuleActionsConfig {
+                    bindings: vec![ActionBinding {
+                        trigger: ActionTrigger::Click,
+                        action,
+                    }],
+                };
+                let mut definitions = vec![
+                    ModuleConfig {
+                        name: parent.into(),
+                        module_type: parent.into(),
+                        params: if tray {
+                            ModuleParams::Tray(Default::default())
+                        } else {
+                            ModuleParams::Workspaces(Default::default())
+                        },
+                        actions: binding(PanelAction::OpenPanel),
+                    },
+                    ModuleConfig {
+                        name: configured_name.into(),
+                        module_type: "clock".into(),
+                        params: ModuleParams::Clock(Default::default()),
+                        actions: binding(PanelAction::ClosePanel),
+                    },
+                ];
+                let mut placement = vec![parent.to_owned(), configured_name.to_owned()];
+                if configured_first {
+                    definitions.reverse();
+                    placement.reverse();
+                }
+                let mut config = Config {
+                    modules: definitions,
+                    ..Default::default()
+                };
+                config.bars[0].modules.start = placement.clone();
+                config.bars[0].modules.center.clear();
+                config.bars[0].modules.end.clear();
+                config.bars[0].panel.modules.start = placement;
+                config.bars[0].panel.modules.center.clear();
+                config.bars[0].panel.modules.end.clear();
+                let (mut app, _) = App::boot(config, vec![]);
+                let workspace = niri_ipc::Workspace {
+                    id: 1,
+                    idx: 1,
+                    name: None,
+                    output: Some("DP-1".into()),
+                    is_urgent: false,
+                    is_active: true,
+                    is_focused: true,
+                    active_window_id: None,
+                };
+                let reconcile = |app: &mut App| {
+                    if tray {
+                        insert_tray_children(app, &["org.example.App"]);
+                    } else {
+                        app.reconcile_workspace_dynamic_modules(std::slice::from_ref(&workspace));
+                    }
+                };
+                reconcile(&mut app);
+                assert_eq!(
+                    app.modules.kind_for(&configured_id),
+                    Some(ModuleKind::Clock)
+                );
+                assert_eq!(
+                    app.modules.kind_for(&child_id),
+                    Some(if tray {
+                        ModuleKind::TrayIcon
+                    } else {
+                        ModuleKind::WorkspaceItem
+                    })
+                );
+                assert_ne!(configured_id, child_id);
+                assert_eq!(
+                    app.modules
+                        .action_for(&configured_id, &ActionTrigger::Click),
+                    Some(&PanelAction::ClosePanel)
+                );
+                assert_eq!(
+                    app.modules.action_for(&child_id, &ActionTrigger::Click),
+                    Some(&PanelAction::OpenPanel)
+                );
+                let mut expected = vec![
+                    (Zone::Start, child_id.clone()),
+                    (Zone::Start, configured_id.clone()),
+                ];
+                if configured_first {
+                    expected.reverse();
+                }
+                assert_eq!(
+                    app.effective_module_layout_for_bar(&app.config.bars[0]),
+                    expected
+                );
+                assert_eq!(
+                    app.effective_panel_module_layout_for_bar(&app.config.bars[0]),
+                    expected
+                );
+                let window = iced::window::Id::unique();
+                assert_ne!(
+                    super::super::widget_ops::module_widget_id(window, &configured_id),
+                    super::super::widget_ops::module_widget_id(window, &child_id)
+                );
+                app.surface_mut(window).focused_module = Some(configured_id.clone());
+                app.surface_mut(window).hovered_module = Some(child_id.clone());
+                if tray {
+                    insert_tray_children(&mut app, &[]);
+                } else {
+                    app.reconcile_workspace_dynamic_modules(&[]);
+                }
+                assert_eq!(
+                    app.modules.kind_for(&configured_id),
+                    Some(ModuleKind::Clock)
+                );
+                assert_eq!(
+                    app.surface(window).unwrap().focused_module.as_ref(),
+                    Some(&configured_id)
+                );
+                assert!(app.surface(window).unwrap().hovered_module.is_none());
+                assert!(!app.modules.contains_instance(&child_id));
+                reconcile(&mut app);
+                assert_eq!(
+                    app.effective_module_layout_for_bar(&app.config.bars[0]),
+                    expected
+                );
+                assert_eq!(
+                    app.modules
+                        .action_for(&configured_id, &ActionTrigger::Click),
+                    Some(&PanelAction::ClosePanel)
+                );
+                assert_eq!(
+                    app.modules.action_for(&child_id, &ActionTrigger::Click),
+                    Some(&PanelAction::OpenPanel)
+                );
+                assert_eq!(
+                    app.surface(window).unwrap().focused_module.as_ref(),
+                    Some(&configured_id)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn tray_reconciliation_removes_stale_children_clears_refs_and_expands_layouts() {
         let (mut app, _) = App::boot(tray_config(), vec![]);
         insert_tray_children(&mut app, &["org.old"]);
-        let old_id = ModuleId::new("tray:org.old");
-        let new_id = ModuleId::new("tray:org.new");
+        let old_id = ModuleId::tray("tray", "org.old");
+        let new_id = ModuleId::tray("tray", "org.new");
         let window = iced::window::Id::unique();
         app.surface_mut(window).focused_module = Some(old_id.clone());
         app.surface_mut(window).hovered_module = Some(old_id.clone());
@@ -571,7 +741,7 @@ mod tests {
         let ids: Vec<_> = app
             .effective_module_layout_for_bar(&app.config.bars[0])
             .into_iter()
-            .map(|(_, id)| id.0)
+            .map(|(_, id)| id.display_name())
             .collect();
         assert_eq!(
             ids,
@@ -583,8 +753,8 @@ mod tests {
     fn tray_reconciliation_removal_preserves_sibling_children_and_clears_refs() {
         let (mut app, _) = App::boot(tray_config(), vec![]);
         insert_tray_children(&mut app, &["org.a", "org.b"]);
-        let removed_id = ModuleId::new("tray:org.a");
-        let retained_id = ModuleId::new("tray:org.b");
+        let removed_id = ModuleId::tray("tray", "org.a");
+        let retained_id = ModuleId::tray("tray", "org.b");
         let window = iced::window::Id::unique();
         app.surface_mut(window).focused_module = Some(removed_id.clone());
 
@@ -599,7 +769,7 @@ mod tests {
     fn child_instances_inherit_parent_actions_and_interactions() {
         let (mut app, _) = App::boot(tray_config(), vec![]);
         insert_tray_children(&mut app, &["org.test"]);
-        let child_id = ModuleId::new("tray:org.test");
+        let child_id = ModuleId::tray("tray", "org.test");
 
         assert_eq!(
             app.modules.action_for(&child_id, &ActionTrigger::Click),
@@ -610,10 +780,10 @@ mod tests {
     }
 
     #[test]
-    fn configured_module_name_lookup_uses_runtime_origin_metadata() {
+    fn configured_module_name_lookup_uses_structural_parent() {
         let (mut app, _) = App::boot(Config::default(), vec![]);
-        let child_id = ModuleId::new("dynamic-child");
-        app.modules.insert_with_actions_and_origin(
+        let child_id = ModuleId::tray("dynamic-parent", "unprefixed-runtime-key");
+        app.modules.insert_with_actions(
             0,
             (
                 Zone::Start,
@@ -622,16 +792,11 @@ mod tests {
                 }),
             ),
             ModuleActionsConfig::default(),
-            super::super::module_runtime::ModuleOrigin::ExpandedFrom(ModuleId::new(
-                "dynamic-parent",
-            )),
             ModuleInteractionProfile::NONE,
         );
 
-        let snapshot = app.modules.dynamic_module_runtime_snapshot();
-
         assert_eq!(
-            snapshot.configured_module_name_for_instance(&child_id),
+            app.modules.configured_module_name_for_instance(&child_id),
             "dynamic-parent"
         );
     }
@@ -697,16 +862,19 @@ mod tests {
             active_window_id: None,
         };
         app.reconcile_workspace_dynamic_modules(&[first.clone()]);
-        app.surface_mut(window).focused_module = Some(ModuleId::new("workspace:1"));
+        app.surface_mut(window).focused_module = Some(ModuleId::workspace("workspaces", 1));
 
         first.is_focused = false;
         app.reconcile_workspace_dynamic_modules(&[first]);
 
         assert_eq!(
             app.surface(window).unwrap().focused_module,
-            Some(ModuleId::new("workspace:1"))
+            Some(ModuleId::workspace("workspaces", 1))
         );
-        assert!(app.modules.contains_instance(&ModuleId::new("workspace:1")));
+        assert!(
+            app.modules
+                .contains_instance(&ModuleId::workspace("workspaces", 1))
+        );
     }
 
     #[test]
@@ -747,7 +915,7 @@ mod tests {
             .modules
             .iter()
             .filter(|(_, module)| module.kind() == ModuleKind::WorkspaceItem)
-            .map(|(_, module)| module.id().0)
+            .map(|(_, module)| module.id().display_name())
             .collect();
         assert_eq!(
             ids,

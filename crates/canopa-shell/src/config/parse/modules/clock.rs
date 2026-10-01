@@ -49,6 +49,26 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<ClockCon
         .help("expected a chrono format string such as \"%a %d %b\"")
         .nonempty_string()
         .unwrap_or(defaults.date_format)?;
+    for (name, format) in [("time-format", &time_format), ("date-format", &date_format)] {
+        if let Some(field) = children.get(name)
+            && chrono::DateTime::from_timestamp(1_700_000_000, 0)
+                .expect("valid validation timestamp")
+                .format(format)
+                .write_to(&mut String::new())
+                .is_err()
+        {
+            // Exercise Chrono's formatter as well as its parser: parse-only
+            // directives such as %#z are not valid clock output formats.
+            return Err(ctx.child(name).node_err(
+                field,
+                "invalid clock format directive",
+                Some(
+                    "use Chrono output directives such as %H:%M, or %% for a literal percent"
+                        .into(),
+                ),
+            ));
+        }
+    }
     let (format, tooltip) = formats::parse_format_and_tooltip_ctx(
         children,
         ctx,

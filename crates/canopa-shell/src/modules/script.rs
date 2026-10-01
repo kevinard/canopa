@@ -1,5 +1,3 @@
-use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
-
 /// Runtime state for the script module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScriptState {
@@ -65,20 +63,6 @@ impl ScriptModule {
             format,
             content_rotation,
         }
-    }
-
-    fn formatted_text(
-        &self,
-        state: &ScriptState,
-        mode: crate::config::FormatMode,
-    ) -> Option<String> {
-        self.format.template_for(mode).map(|template| {
-            template.render_joined(&[
-                ("icon", ">_".to_string()),
-                ("value", state.output.clone()),
-                ("output", state.output.clone()),
-            ])
-        })
     }
 
     fn styled_segments_with_default(
@@ -147,6 +131,10 @@ impl crate::modules::Module for ScriptModule {
 }
 
 impl crate::modules::render::ModuleRender for ScriptModule {
+    fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
+        Some(self)
+    }
+
     fn has_content(
         &self,
         state: &crate::modules::ModuleState,
@@ -155,12 +143,11 @@ impl crate::modules::render::ModuleRender for ScriptModule {
         let crate::modules::ModuleState::Script(state) = state else {
             return false;
         };
-        !self
-            .formatted_text(state, mode)
-            .as_deref()
-            .unwrap_or(&state.output)
-            .trim()
-            .is_empty()
+        self.styled_segments_with_default(state, mode, &crate::config::Style::default())
+            .map_or_else(
+                || !state.output.trim().is_empty(),
+                |segments| segments.iter().any(|(text, _)| !text.trim().is_empty()),
+            )
     }
 
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
@@ -174,206 +161,71 @@ impl crate::modules::render::ModuleRender for ScriptModule {
             Vec::new()
         }
     }
+}
 
-    fn render_collapsed_with_style(
+impl crate::modules::view::IconLabel for ScriptModule {
+    fn content_rotation(&self) -> crate::config::ContentRotation {
+        self.content_rotation
+    }
+    fn accepts_state(&self, state: &crate::modules::ModuleState) -> bool {
+        matches!(state, crate::modules::ModuleState::Script(_))
+    }
+    fn icon(&self, _state: &crate::modules::ModuleState) -> String {
+        ">_".into()
+    }
+    fn label(&self, state: &crate::modules::ModuleState) -> String {
+        if let crate::modules::ModuleState::Script(s) = state {
+            s.output.clone()
+        } else {
+            String::new()
+        }
+    }
+    fn styled_segments_for_layout(
         &self,
         state: &crate::modules::ModuleState,
-        bar_style: &crate::config::Style,
+        layout: crate::modules::view::IconLabelLayout,
+        style: &crate::config::Style,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        if let crate::modules::ModuleState::Script(s) = state {
+            self.styled_segments_with_default(s, layout.into(), style)
+        } else {
+            None
+        }
+    }
+    fn formatted_color(
+        &self,
+        _state: &crate::modules::ModuleState,
+        _layout: crate::modules::view::IconLabelLayout,
+    ) -> iced::Color {
+        crate::theme::palette().text
+    }
+    fn formatted_size(&self, layout: crate::modules::view::IconLabelLayout) -> u32 {
+        if layout == crate::modules::view::IconLabelLayout::Expanded {
+            13
+        } else {
+            crate::theme::bar_metrics::TEXT_SIZE
+        }
+    }
+    fn fallback_view(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+        style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-        use crate::modules::view::{
-            fallback_resolved_style, styled_segment_text, styled_segments_row,
-        };
-        use iced::widget::column;
-        use iced::{Alignment, Length};
-
-        match state {
-            ModuleState::Script(s) => {
-                if let Some(segments) = self.styled_segments_with_default(
-                    s,
-                    crate::config::FormatMode::Collapsed,
-                    bar_style,
-                ) {
-                    return styled_segments_row(segments, TEXT_SIZE, crate::theme::palette().text)
-                        .width(Length::Fill)
-                        .into();
-                }
-                let output = self
-                    .formatted_text(s, crate::config::FormatMode::Collapsed)
-                    .unwrap_or_else(|| s.output.clone());
-                let truncated: String = output.chars().take(5).collect();
-                let style = fallback_resolved_style(bar_style);
-                column![
-                    styled_segment_text(
-                        ">_".to_string(),
-                        ICON_SIZE,
-                        crate::theme::palette().text,
-                        style
-                    ),
-                    styled_segment_text(truncated, TEXT_SIZE, crate::theme::palette().text, style),
-                ]
-                .align_x(Alignment::Center)
-                .width(Length::Fill)
-                .into()
+        match layout {
+            crate::modules::view::IconLabelLayout::Collapsed => {
+                crate::modules::view::stacked_icon_label(
+                    self.icon(state),
+                    self.label(state).chars().take(5).collect(),
+                    self.color(state),
+                    style,
+                )
             }
-            _ => iced::widget::Space::new().into(),
-        }
-    }
-
-    fn render_bar_collapsed_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        context: &crate::modules::render::BarRenderContext<'_>,
-        bar_style: &crate::config::Style,
-    ) -> Option<iced::Element<'_, crate::app::Message>> {
-        let rotation = self.content_rotation.resolve_for_edge(context.edge);
-        if rotation == crate::config::ResolvedContentRotation::None
-            || self
-                .format
-                .template_for(crate::config::FormatMode::Collapsed)
-                .is_none()
-        {
-            return None;
-        }
-        let crate::modules::ModuleState::Script(script) = state else {
-            return None;
-        };
-        let segments = self.styled_segments_with_default(
-            script,
-            crate::config::FormatMode::Collapsed,
-            bar_style,
-        )?;
-        Some(
-            iced::widget::container(crate::modules::view::formatted_segments_content(
-                segments,
-                TEXT_SIZE,
-                crate::theme::palette().text,
-                rotation,
-            ))
-            .width(iced::Length::Fill)
-            .height(iced::Length::Shrink)
-            .align_x(iced::Alignment::Center)
-            .align_y(iced::Alignment::Center)
-            .into(),
-        )
-    }
-
-    fn render_panel_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-        use crate::modules::view::{
-            fallback_resolved_style, styled_segment_text, styled_segments_row,
-        };
-        use iced::widget::row;
-        use iced::{Alignment, Length};
-
-        match state {
-            ModuleState::Script(s) => {
-                if let Some(segments) = self.styled_segments_with_default(
-                    s,
-                    crate::config::FormatMode::Expanded,
-                    bar_style,
-                ) {
-                    return styled_segments_row(segments, 13, crate::theme::palette().text)
-                        .width(Length::Fill)
-                        .into();
-                }
-                let output = self
-                    .formatted_text(s, crate::config::FormatMode::Expanded)
-                    .unwrap_or_else(|| s.output.clone());
-                let style = fallback_resolved_style(bar_style);
-                row![
-                    styled_segment_text(">_".to_string(), 16, crate::theme::palette().text, style),
-                    iced::widget::Space::new().width(Length::Fill),
-                    styled_segment_text(output, 13, crate::theme::palette().text, style),
-                ]
-                .align_y(Alignment::Center)
-                .width(Length::Fill)
-                .into()
+            crate::modules::view::IconLabelLayout::Expanded => {
+                crate::modules::view::spaced_icon_label(self.icon(state), self.label(state), style)
             }
-            _ => iced::widget::Space::new().into(),
+            _ => crate::modules::view::default_icon_label_view(self, state, layout, style),
         }
-    }
-
-    fn render_horizontal_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> Option<iced::Element<'_, crate::app::Message>> {
-        use crate::modules::ModuleState;
-        use crate::modules::view::{horizontal_icon_label_with_style, styled_segments_row};
-        use iced::widget::container;
-        use iced::{Alignment, Length};
-
-        match state {
-            ModuleState::Script(s) => {
-                if let Some(segments) = self.styled_segments_with_default(
-                    s,
-                    crate::config::FormatMode::Horizontal,
-                    bar_style,
-                ) {
-                    return Some(
-                        container(styled_segments_row(
-                            segments,
-                            TEXT_SIZE,
-                            crate::theme::palette().text,
-                        ))
-                        .height(Length::Fill)
-                        .align_y(Alignment::Center)
-                        .padding([0, 6])
-                        .into(),
-                    );
-                }
-                Some(horizontal_icon_label_with_style(
-                    ">_",
-                    crate::theme::palette().text,
-                    self.formatted_text(s, crate::config::FormatMode::Horizontal)
-                        .unwrap_or_else(|| s.output.clone()),
-                    bar_style,
-                ))
-            }
-            _ => Some(iced::widget::Space::new().into()),
-        }
-    }
-
-    fn render_bar_horizontal_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        context: &crate::modules::render::BarRenderContext<'_>,
-        bar_style: &crate::config::Style,
-    ) -> Option<iced::Element<'_, crate::app::Message>> {
-        let rotation = self.content_rotation.resolve_for_edge(context.edge);
-        if rotation == crate::config::ResolvedContentRotation::None
-            || self
-                .format
-                .template_for(crate::config::FormatMode::Horizontal)
-                .is_none()
-        {
-            return None;
-        }
-        let crate::modules::ModuleState::Script(script) = state else {
-            return None;
-        };
-        let segments = self.styled_segments_with_default(
-            script,
-            crate::config::FormatMode::Horizontal,
-            bar_style,
-        )?;
-        Some(
-            iced::widget::container(crate::modules::view::formatted_segments_content(
-                segments,
-                TEXT_SIZE,
-                crate::theme::palette().text,
-                rotation,
-            ))
-            .height(iced::Length::Fill)
-            .align_y(iced::Alignment::Center)
-            .padding([0, 6])
-            .into(),
-        )
     }
 }
 
@@ -382,7 +234,6 @@ mod tests {
     use super::*;
     use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
     use crate::modules::Module;
-    use crate::modules::render::{BarRenderContext, ModuleRender};
 
     fn styled_format_config() -> crate::config::FormatConfig {
         let mut template = crate::config::FormatTemplate::parse(
@@ -413,7 +264,7 @@ mod tests {
             5,
             crate::config::FormatConfig::default(),
         );
-        assert_eq!(m.id().0, "script");
+        assert_eq!(m.id().display_name(), "script");
         assert_eq!(m.module_type(), "script");
     }
 
@@ -425,7 +276,7 @@ mod tests {
             5,
             crate::config::FormatConfig::default(),
         );
-        assert_eq!(m.id().0, "status");
+        assert_eq!(m.id().display_name(), "status");
         assert_eq!(m.module_type(), "script");
     }
 
@@ -464,65 +315,6 @@ mod tests {
 
         assert_eq!(segment.1.color, Some(crate::theme::palette().accent));
         assert_eq!(segment.1.weight, Some(Weight::Bold));
-    }
-
-    #[test]
-    fn script_auto_rotation_overrides_side_bar_collapsed_format() {
-        let m = ScriptModule::new_with_content_rotation(
-            crate::modules::ModuleId::new("script"),
-            crate::config::ConfiguredCommand::shell_for_test("echo hi"),
-            5,
-            styled_format_config(),
-            crate::config::ContentRotation::Auto,
-        );
-        let state = crate::modules::ModuleState::Script(ScriptState {
-            output: "ok".into(),
-        });
-        let edge = crate::config::Edge::Left;
-        let context = BarRenderContext {
-            window: iced::window::Id::unique(),
-            edge: &edge,
-            horizontal: false,
-        };
-
-        assert!(
-            m.render_bar_collapsed_with_style(&state, &context, &crate::config::Style::default())
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn script_explicit_rotation_overrides_horizontal_format() {
-        let horizontal = crate::config::FormatTemplate::parse(
-            &["{output}"],
-            &["icon", "value", "output"],
-            "test.format.horizontal",
-        )
-        .unwrap();
-        let m = ScriptModule::new_with_content_rotation(
-            crate::modules::ModuleId::new("script"),
-            crate::config::ConfiguredCommand::shell_for_test("echo hi"),
-            5,
-            crate::config::FormatConfig {
-                horizontal: Some(horizontal),
-                ..Default::default()
-            },
-            crate::config::ContentRotation::Clockwise,
-        );
-        let state = crate::modules::ModuleState::Script(ScriptState {
-            output: "ok".into(),
-        });
-        let edge = crate::config::Edge::Top;
-        let context = BarRenderContext {
-            window: iced::window::Id::unique(),
-            edge: &edge,
-            horizontal: true,
-        };
-
-        assert!(
-            m.render_bar_horizontal_with_style(&state, &context, &crate::config::Style::default())
-                .is_some()
-        );
     }
 
     #[test]

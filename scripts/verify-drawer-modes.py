@@ -8,8 +8,8 @@ Never connects to the live desktop. Keeps screenshots and results in --output.
 import argparse
 import importlib.util
 import json
-from pathlib import Path
 import subprocess
+from pathlib import Path
 import sys
 import tempfile
 import time
@@ -25,37 +25,13 @@ spec.loader.exec_module(desktop)
 
 def verify(binary, output, session, scale):
     runtime = session.runtime
-    bus = runtime / "bus.conf"
-    bus.write_text(f'<busconfig><type>session</type><listen>unix:tmpdir={runtime}</listen>'
-                   '<policy context="default"><allow send_destination="*"/>'
-                   '<allow receive_sender="*"/><allow own="*"/></policy></busconfig>')
-    session.start(["dbus-daemon", f"--config-file={bus}", "--nofork", "--print-address=1"], "bus.log")
-    session.env["DBUS_SESSION_BUS_ADDRESS"] = session.wait_for(
-        lambda: (output / "bus.log").read_text().strip(), "private bus").splitlines()[0]
-    niri = runtime / "niri.kdl"
-    niri.write_text('prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\n'
-                    'hotkey-overlay { skip-at-startup; }\nlayout { gaps 0; border { off; }; '
-                    'focus-ring { off; }; default-column-width { proportion 1.0; }; }\n')
-    session.start(["weston", "--backend=headless", "--renderer=pixman", "--fake-seat",
-                   "--width=1280", "--height=800", "--socket=wayland-parent", "--no-config",
-                   "--idle-time=0"], "weston.log")
-    session.wait_for(lambda: (runtime / "wayland-parent").is_socket(), "Weston")
-    session.env["WAYLAND_DISPLAY"] = "wayland-parent"
-    session.start(["niri", "-c", str(niri)], "niri.log")
-    session.env["NIRI_SOCKET"] = str(session.wait_for(
-        lambda: list(runtime.glob("niri.*.sock")), "Niri IPC")[0])
-    session.env["WAYLAND_DISPLAY"] = str(session.wait_for(
-        lambda: [p for p in runtime.glob("wayland-*")
-                 if p.is_socket() and p.name != "wayland-parent"], "Niri display")[0])
-    name = next(iter(json.loads(session.run(["niri", "msg", "--json", "outputs"]))))
-    session.run(["niri", "msg", "output", name, "scale", str(scale)])
+    session.start_niri(
+        'prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\n'
+        'hotkey-overlay { skip-at-startup; }\nlayout { gaps 0; border { off; }; '
+        'focus-ring { off; }; default-column-width { proportion 1.0; }; }\n', scale=scale,
+    )
     session.start(["wtype", "-s", "600000"], "keyboard.log")
-    protocol = ROOT / "scripts/desktop-fixture/wlr-virtual-pointer-unstable-v1.xml"
-    for kind, target in [("client-header", "virtual-pointer.h"), ("private-code", "virtual-pointer.c")]:
-        subprocess.run(["wayland-scanner", kind, str(protocol), str(output / target)], check=True)
-    click = output / "click"
-    subprocess.run(["cc", "-I", str(output), str(ROOT / "scripts/desktop-fixture/click.c"),
-                    str(output / "virtual-pointer.c"), "-lwayland-client", "-o", str(click)], check=True)
+    click = session.build_pointer()
     client = runtime / "client.py"
     client.write_text('''import gi
 gi.require_version("Gtk", "3.0")

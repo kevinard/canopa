@@ -239,6 +239,8 @@ _Avoid_: Password dialog, credential popup, separate overlay
 
 ### Dynamic Modules and Data Sources
 
+Configured names and child identities are structurally distinct. A child identity contains its configured parent and typed runtime key; formatting a name never creates a child identity. Parent ownership is stored once in the identity. See [ADR 0019](adr/0019-structural-module-identities.md).
+
 **Dynamic Module**:
 A **Module** that produces runtime child **Module Instances** from external state.
 _Avoid_: Generated module, synthetic module
@@ -264,7 +266,7 @@ A pure runtime description of child **Module Instance** changes, inherited metad
 _Avoid_: App mutation, callback result, generated diff
 
 **Dynamic Module Runtime Snapshot**:
-A narrow, read-only snapshot of app-owned runtime facts the **Dynamic Module Lifecycle** needs to reconcile or expand **Dynamic Modules**.
+A narrow, read-only snapshot of app-owned runtime facts the **Dynamic Module Lifecycle** needs to reconcile **Dynamic Modules**. Layout expansion reads indexed identities without constructing this snapshot.
 _Avoid_: Module Runtime reference, storage view, full runtime state
 
 **Dynamic Module Lifecycle**:
@@ -664,12 +666,14 @@ _Avoid_: Unavailable module, runtime failure
 
 ### Dynamic Modules and Data Sources
 
+Configured names and child identities are structurally distinct. A child identity contains its configured parent and typed runtime key; formatting a name never creates a child identity. Parent ownership is stored once in the identity. See [ADR 0019](adr/0019-structural-module-identities.md).
+
 - A **Dynamic Module** owns the placement and configuration for its runtime child **Module Instances**.
 - Tray and **Niri Integration** pass **Dynamic Module Child Facts** to the **Dynamic Module Lifecycle**; they do not construct child **Module Instances**.
 - The **Dynamic Module Lifecycle** is explicit about supported **Dynamic Module Families**.
 - The **Dynamic Module Lifecycle** owns **Dynamic Module Child Key** matching, child construction, child reconciliation, stale focus and hover cleanup, inherited actions and interactions, and layout expansion for **Dynamic Modules**.
 - The **Dynamic Module Lifecycle** returns a **Dynamic Module Reconciliation Plan** rather than directly mutating **Module Runtime**.
-- The **Dynamic Module Lifecycle** consumes a **Dynamic Module Runtime Snapshot**, not a raw **Module Runtime** reference.
+- Reconciliation in the **Dynamic Module Lifecycle** consumes a **Dynamic Module Runtime Snapshot**. Placement expansion reads Module Store’s configured-name and ordered-child indexes.
 - Durable child **Module Instance** state remains in **Module Runtime**.
 - The **Dynamic Module Lifecycle** supports per-family child update policy: some families update matching child **Module Instances** in place, while others rebuild matching child **Module Instances** from current child source facts.
 - The **Dynamic Module Lifecycle** owns per-family child ordering policy. Workspace child **Module Instances** are ordered by compositor workspace index; tray child **Module Instances** are ordered deterministically by SNI runtime identity.
@@ -917,6 +921,8 @@ _Avoid_: Unavailable module, runtime failure
 ### Focus and Compositor Integration
 
 - **Keyboard Focus** belongs to a **Bar Surface**.
+- Physical window lifetime, geometry, focus and pointer events are always observed, including on empty or passive-only **Bar Surfaces**; optional module backend capabilities do not gate surface input. A physical bar close retires its surface, tooltip and foreground origin through the same ownership path as output removal.
+- Keyboard target eligibility is an instance property derived from configured **Module Actions**, intrinsic interactions and resolved **Tooltip** availability. Visible content without any of these remains available to rendering and pointer hover but is skipped by keyboard navigation.
 - **Keyboard Focus** navigation includes visible targets that are actionable or inspectable.
 - A target with a hover **Tooltip** is inspectable and therefore participates in **Keyboard Focus** navigation.
 - A target that exposes a **Menu** participates in **Keyboard Focus** navigation.
@@ -944,6 +950,11 @@ _Avoid_: Unavailable module, runtime failure
 - A shell-form **Configured Command** is a **Configuration Error** when **Command Policy** disables shell-form commands.
 - An unknown **Module** reference in configuration is a **Configuration Error**.
 - A valid **Module** with a missing runtime dependency becomes an **Unavailable Module**, not a **Configuration Error**.
+
+### Module presentation
+
+- Ordinary **Modules** provide presentation values and optional fallback/decorations; the shared renderer owns format layout, style defaults and edge-specific rotation (ADR-0020).
+- **Network Status Integration** and shipped **Wi-Fi Control Integration** consume the same live daemon-bundle policy, and retire state tied to a replaced owner (ADR-0009).
 
 ## Resolved Ambiguities
 

@@ -244,20 +244,35 @@ impl SurfaceManager {
             .filter(|(identity, _)| !desired_identities.contains(identity))
             .collect();
         stale.sort_by_key(|(_, window)| format!("{window:?}"));
-        for (identity, window) in stale {
-            self.surfaces.remove(&window);
-            self.pending_surface_keys.remove(&window);
-            effects.extend(
-                self.close_tooltips_for_surface(window)
-                    .into_iter()
-                    .map(|effect| match effect {
-                        RegistryEffect::TooltipClosed { window } => {
-                            BarSurfaceLifecycleEffect::RemoveWindow(window)
-                        }
-                    }),
-            );
-            effects.push(BarSurfaceLifecycleEffect::BarSurfaceRemoved { identity, window });
+        for (_, window) in stale {
+            effects.extend(self.retire_bar_surface(window));
         }
+
+        effects
+    }
+
+    pub(super) fn retire_bar_surface(
+        &mut self,
+        window: iced::window::Id,
+    ) -> Vec<BarSurfaceLifecycleEffect> {
+        let Some(surface) = self.surfaces.remove(&window) else {
+            return Vec::new();
+        };
+        let identity = BarSurfaceIdentity::from_surface_state(&surface);
+        self.pending_surface_keys.remove(&window);
+        if self.last_cursor.is_some_and(|(target, _)| target == window) {
+            self.last_cursor = None;
+        }
+        let mut effects: Vec<_> = self
+            .close_tooltips_for_surface(window)
+            .into_iter()
+            .map(|effect| match effect {
+                RegistryEffect::TooltipClosed { window } => {
+                    BarSurfaceLifecycleEffect::RemoveWindow(window)
+                }
+            })
+            .collect();
+        effects.push(BarSurfaceLifecycleEffect::BarSurfaceRemoved { identity, window });
         effects
     }
 
@@ -479,6 +494,10 @@ impl App {
             } => {
                 self.surfaces.surface_mut(window).screen_size = (width, height);
                 self.drawer_bar_input_region(window)
+            }
+            SurfaceInputEffect::BarWindowClosed(window) => {
+                let effects = self.surfaces.retire_bar_surface(window);
+                Task::batch(self.apply_bar_surface_lifecycle_effects(effects))
             }
             SurfaceInputEffect::PanelWindowClosed(window) => {
                 if self.panel_window_is_external_provider(window) {
@@ -760,16 +779,23 @@ impl App {
         window: iced::window::Id,
         module: &crate::modules::ModuleId,
     ) -> Option<crate::config::FormatTemplate> {
-        use crate::config::ModuleParams;
-        use crate::config::tooltip_defaults as td;
-
         if !self
-            .effective_nav_list(window)
+            .visible_module_layout(window)
             .iter()
             .any(|(_, id)| id == module)
         {
             return None;
         }
+        self.module_tooltip_template(module)
+    }
+
+    pub(super) fn module_tooltip_template(
+        &self,
+        module: &crate::modules::ModuleId,
+    ) -> Option<crate::config::FormatTemplate> {
+        use crate::config::ModuleParams;
+        use crate::config::tooltip_defaults as td;
+
         let config_name = self.modules.configured_module_name_for_instance(module);
         let synthesized;
         let params = if let Some(mc) = self.config.modules.iter().find(|m| m.name == config_name) {

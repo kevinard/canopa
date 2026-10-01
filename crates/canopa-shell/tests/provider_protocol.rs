@@ -46,6 +46,7 @@ fn provider_side_code_uses_shared_protocol_and_content_model() {
 async fn shipped_wifi_provider_binary_completes_handshake_with_shared_protocol() {
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_canopa-wifi-provider"))
         .env("CANOPA_WIFI_PROVIDER_BACKEND", "none")
+        .kill_on_drop(true)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -104,6 +105,55 @@ async fn shipped_wifi_provider_binary_completes_handshake_with_shared_protocol()
         .await
         .expect("provider should exit after close")
         .unwrap();
+}
+
+#[tokio::test]
+async fn audio_and_media_close_without_waiting_for_stdin_eof() {
+    use canopa_panel_protocol::v5;
+    use tokio::io::AsyncWriteExt;
+    let directory = tempfile::tempdir().unwrap();
+    for binary in [
+        env!("CARGO_BIN_EXE_canopa-audio-provider"),
+        env!("CARGO_BIN_EXE_canopa-media-provider"),
+    ] {
+        let mut child = tokio::process::Command::new(binary)
+            .env(
+                "PULSE_SERVER",
+                format!("unix:{}/no-audio", directory.path().display()),
+            )
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                format!("unix:path={}/no-bus", directory.path().display()),
+            )
+            .kill_on_drop(true)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        let mut output = tokio::io::BufReader::new(child.stdout.take().unwrap());
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            v5::Response::read_async(&mut output),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+        input
+            .write_all(&v5::HostMessage::close().encode().unwrap())
+            .await
+            .unwrap();
+        // Keep stdin open: Close itself must finish the process and its runtime.
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(2), child.wait())
+                .await
+                .expect("provider must exit before stdin EOF")
+                .unwrap()
+                .success()
+        );
+    }
 }
 
 #[tokio::test]

@@ -17,7 +17,6 @@ pub(super) struct PanelMotion {
 
 pub(super) struct RetiringPanel {
     pub(super) window: iced::window::Id,
-    pub(super) tree: crate::surface::panel::PanelTree,
     pub(super) runtime: crate::app::panel_runtime::PanelRuntime,
     animation: Animation,
 }
@@ -116,7 +115,6 @@ impl Foreground {
     pub(super) fn retire_panel(
         &mut self,
         window: iced::window::Id,
-        tree: crate::surface::panel::PanelTree,
     ) -> Option<Vec<ForegroundEffect>> {
         let motion = self.motion.take()?;
         let scale = motion.scale?;
@@ -135,7 +133,6 @@ impl Foreground {
         let mut effects = self.apply_panel_runtime_effects(cleanup);
         self.retiring = Some(RetiringPanel {
             window,
-            tree,
             runtime,
             animation: Animation {
                 started: now,

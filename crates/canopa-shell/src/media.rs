@@ -1,5 +1,9 @@
 //! Shared now-playing state. The shell owns selection; the panel is a client.
-use iced::futures::{StreamExt, stream};
+use futures_util::{
+    StreamExt, TryStreamExt,
+    future::BoxFuture,
+    stream::{self, FuturesUnordered},
+};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 use tokio::sync::{mpsc, oneshot, watch};
@@ -166,8 +170,20 @@ async fn read_player(conn: &zbus::Connection, bus: String) -> anyhow::Result<Pla
         .get_name_owner(bus.as_str().try_into()?)
         .await?
         .to_string();
+    read_owned_player(
+        conn,
+        PlayerId {
+            bus,
+            owner,
+            server: conn.server_guid().to_string(),
+        },
+    )
+    .await
+}
+
+async fn read_owned_player(conn: &zbus::Connection, id: PlayerId) -> anyhow::Result<Player> {
     let props = zbus::fdo::PropertiesProxy::builder(conn)
-        .destination(owner.clone())?
+        .destination(id.owner.clone())?
         .path(MPRIS_PATH)?
         .build()
         .await?;
@@ -211,17 +227,14 @@ async fn read_player(conn: &zbus::Connection, bus: String) -> anyhow::Result<Pla
         .map(ToString::to_string)
         .unwrap_or_default();
     anyhow::ensure!(track.len() <= 2048, "Media track identifier too long");
+    let name = if name.is_empty() {
+        bounded(id.bus.trim_start_matches(PREFIX))
+    } else {
+        name
+    };
     Ok(Player {
-        id: PlayerId {
-            bus: bus.clone(),
-            owner,
-            server: conn.server_guid().to_string(),
-        },
-        name: if name.is_empty() {
-            bounded(bus.trim_start_matches(PREFIX))
-        } else {
-            name
-        },
+        id,
+        name,
         title: string(&metadata, "xesam:title"),
         artist: bounded(&artists.into_iter().take(16).collect::<Vec<_>>().join(", ")),
         track,
@@ -233,28 +246,155 @@ async fn read_player(conn: &zbus::Connection, bus: String) -> anyhow::Result<Pla
     })
 }
 
-async fn discover(conn: &zbus::Connection) -> anyhow::Result<Vec<Player>> {
-    let names = tokio::time::timeout(DEADLINE, async {
-        zbus::fdo::DBusProxy::new(conn).await?.list_names().await
+/// Inventory reads only the bus daemon. Slow player properties are separate work.
+async fn discover_owners(conn: &zbus::Connection) -> anyhow::Result<Vec<PlayerId>> {
+    tokio::time::timeout(DEADLINE, async {
+        let dbus = zbus::fdo::DBusProxy::new(conn).await?;
+        let mut names: Vec<String> = dbus
+            .list_names()
+            .await?
+            .into_iter()
+            .map(|name| name.to_string())
+            .filter(|name| name.starts_with(PREFIX))
+            .collect();
+        names.sort();
+        let dbus = &dbus;
+        let owners: Vec<Option<PlayerId>> = stream::iter(names.into_iter().take(64))
+            .map(|bus| async move {
+                match dbus.get_name_owner(bus.as_str().try_into()?).await {
+                    Ok(owner) => Ok(Some(PlayerId {
+                        bus,
+                        owner: owner.to_string(),
+                        server: conn.server_guid().to_string(),
+                    })),
+                    // The name can disappear between ListNames and GetNameOwner.
+                    Err(zbus::fdo::Error::NameHasNoOwner(_)) => Ok(None),
+                    Err(error) => Err(anyhow::Error::from(error)),
+                }
+            })
+            .buffer_unordered(16)
+            .try_collect()
+            .await?;
+        Ok::<_, anyhow::Error>(owners.into_iter().flatten().collect())
     })
-    .await??;
-    let mut names: Vec<String> = names
-        .into_iter()
-        .map(|n| n.to_string())
-        .filter(|n| n.starts_with(PREFIX))
-        .collect();
-    names.sort();
-    Ok(stream::iter(names.into_iter().take(64))
-        .map(|name| async move {
-            tokio::time::timeout(DEADLINE, read_player(conn, name))
-                .await
-                .ok()
-                .and_then(Result::ok)
-        })
-        .buffer_unordered(16)
-        .filter_map(|p| async { p })
-        .collect()
-        .await)
+    .await?
+}
+
+struct PlayerRecord {
+    id: PlayerId,
+    player: Option<Player>,
+    dirty: bool,
+    reading: Option<u64>,
+    initialized: bool,
+}
+
+type ReadResult = (PlayerId, u64, Option<Player>);
+
+#[derive(Default)]
+struct PlayerRegistry {
+    records: HashMap<String, PlayerRecord>,
+    next_read: u64,
+}
+
+impl PlayerRegistry {
+    fn reconcile_owners(&mut self, owners: Vec<PlayerId>) {
+        let mut previous = std::mem::take(&mut self.records);
+        self.records = owners
+            .into_iter()
+            .map(|id| {
+                let record = previous
+                    .remove(&id.bus)
+                    .filter(|record| record.id == id)
+                    .unwrap_or_else(|| PlayerRecord {
+                        id: id.clone(),
+                        player: None,
+                        dirty: true,
+                        reading: None,
+                        initialized: false,
+                    });
+                (id.bus, record)
+            })
+            .collect();
+    }
+
+    fn dirty(&mut self, bus: &str) {
+        if let Some(record) = self.records.get_mut(bus) {
+            record.dirty = true;
+        }
+    }
+
+    fn properties_changed(&mut self, owner: &str) {
+        for record in self
+            .records
+            .values_mut()
+            .filter(|record| record.id.owner == owner)
+        {
+            record.dirty = true;
+        }
+    }
+
+    fn start_reads(
+        &mut self,
+        conn: &zbus::Connection,
+        reads: &mut FuturesUnordered<BoxFuture<'static, ReadResult>>,
+    ) {
+        for record in self.records.values_mut() {
+            if reads.len() == 16 {
+                break;
+            }
+            if !record.dirty || record.reading.is_some() {
+                continue;
+            }
+            record.dirty = false;
+            self.next_read = self.next_read.wrapping_add(1);
+            let read_id = self.next_read;
+            record.reading = Some(read_id);
+            let id = record.id.clone();
+            let conn = conn.clone();
+            reads.push(Box::pin(async move {
+                let player = tokio::time::timeout(DEADLINE, read_owned_player(&conn, id.clone()))
+                    .await
+                    .ok()
+                    .and_then(Result::ok);
+                (id, read_id, player)
+            }));
+        }
+    }
+
+    fn finish_read(&mut self, (id, read_id, player): ReadResult) -> bool {
+        let Some(record) = self
+            .records
+            .get_mut(&id.bus)
+            .filter(|record| record.id == id && record.reading == Some(read_id))
+        else {
+            return false;
+        };
+        record.reading = None;
+        let initial_read = !record.initialized;
+        record.initialized = true;
+        // One read per live record may advance the display even during a burst.
+        // Signals received during that read retain the next refresh obligation.
+        if let Some(player) = player
+            && record.player.as_ref() != Some(&player)
+        {
+            record.player = Some(player);
+            return true;
+        }
+        // A failed metadata read is not evidence of departure. Retain the last
+        // valid presentation (including manual selection) until ownership changes.
+        initial_read
+    }
+
+    fn initial_reads_complete(&self) -> bool {
+        !self.records.is_empty() && self.records.values().all(|record| record.initialized)
+    }
+
+    fn players(&self) -> Vec<Player> {
+        self.records
+            .values()
+            .filter_map(|record| record.player.clone())
+            .collect()
+    }
 }
 
 async fn apply(
@@ -331,39 +471,82 @@ async fn connected(
     let mut changes = zbus::MessageStream::for_match_rule(changes, &conn, Some(128)).await?;
     let mut owners = zbus::MessageStream::for_match_rule(owners, &conn, Some(128)).await?;
     let mut state = Snapshot::default();
+    let mut registry = PlayerRegistry::default();
+    let mut reads = FuturesUnordered::new();
+    let mut inventory: Option<BoxFuture<'static, anyhow::Result<Vec<PlayerId>>>> = None;
+    let mut inventory_dirty = true;
+    let mut publication_needed = false;
+    let mut initial_selection = true;
     loop {
-        state.reconcile(discover(&conn).await?);
-        if *output.borrow() != state {
-            output.send_replace(state.clone());
-            conn.emit_signal(
-                None::<&str>,
-                PATH,
-                INTERFACE,
-                "Changed",
-                &serde_json::to_string(&state)?,
-            )
-            .await?;
+        if inventory_dirty && inventory.is_none() {
+            let conn = conn.clone();
+            inventory = Some(Box::pin(async move { discover_owners(&conn).await }));
+            inventory_dirty = false;
         }
-        loop {
-            tokio::select! {
-                _ = output.closed() => return Ok(()),
-                signal = changes.next() => { signal.ok_or_else(|| anyhow::anyhow!("Media bus disconnected"))??; break; },
-                signal = owners.next() => {
-                    let signal = signal.ok_or_else(|| anyhow::anyhow!("Media bus disconnected"))??;
-                    if let Ok((name, _, _)) = signal.body().deserialize::<(String, String, String)>()
-                        && name.starts_with(PREFIX) { break; }
-                },
-                command = commands.recv() => {
-                    let Some(command) = command else { return Ok(()); };
-                    if command.result.is_closed() || tokio::time::Instant::now() >= command.expires {
-                        let _ = command.result.send(Err("Media request expired; try again".into()));
-                        continue;
-                    }
-                    let result = tokio::time::timeout(DEADLINE, apply(&conn, &mut state, command.request)).await
-                        .map_err(|_| "Media control timed out".to_string()).and_then(|r| r.map_err(|e| e.to_string()));
-                    let _ = command.result.send(result);
-                    break;
+        registry.start_reads(&conn, &mut reads);
+        if publication_needed {
+            publication_needed = false;
+            // Publish available players immediately, but resolve initial automatic
+            // ties by bus name until the discovery cohort has completed its reads.
+            // An explicit user selection always wins, even during discovery.
+            initial_selection |= state.selected.is_none();
+            if initial_selection && !state.pinned {
+                state.selected = None;
+            }
+            state.reconcile(registry.players());
+            if registry.initial_reads_complete() {
+                initial_selection = false;
+            }
+            if *output.borrow() != state {
+                output.send_replace(state.clone());
+                conn.emit_signal(
+                    None::<&str>,
+                    PATH,
+                    INTERFACE,
+                    "Changed",
+                    &serde_json::to_string(&state)?,
+                )
+                .await?;
+            }
+        }
+        // Metadata reads remain alive while commands and signals are serviced.
+        // The select is fair; neither an update burst nor controls own the loop.
+        tokio::select! {
+            _ = output.closed() => return Ok(()),
+            result = async { match inventory.as_mut() {
+                Some(work) => work.await, None => std::future::pending().await,
+            }} => {
+                registry.reconcile_owners(result?);
+                inventory = None;
+                publication_needed = true;
+            },
+            Some(result) = reads.next(), if !reads.is_empty() => publication_needed |= registry.finish_read(result),
+            signal = changes.next() => {
+                let signal = signal.ok_or_else(|| anyhow::anyhow!("Media bus disconnected"))??;
+                if let Ok((interface, _, _)) = signal.body().deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+                    && matches!(interface.as_str(), PLAYER | "org.mpris.MediaPlayer2")
+                    && let Some(owner) = signal.header().sender() {
+                    registry.properties_changed(owner.as_str());
                 }
+            },
+            signal = owners.next() => {
+                let signal = signal.ok_or_else(|| anyhow::anyhow!("Media bus disconnected"))??;
+                if let Ok((name, _, _)) = signal.body().deserialize::<(String, String, String)>()
+                    && name.starts_with(PREFIX) { inventory_dirty = true; }
+            },
+            command = commands.recv() => {
+                let Some(command) = command else { return Ok(()); };
+                let now = tokio::time::Instant::now();
+                if command.result.is_closed() || now >= command.expires {
+                    let _ = command.result.send(Err("Media request expired; try again".into()));
+                    continue;
+                }
+                let target = match &command.request { Request::Control { player, .. } => Some(player.bus.clone()), _ => None };
+                let result = tokio::time::timeout(DEADLINE.min(command.expires - now), apply(&conn, &mut state, command.request)).await
+                    .map_err(|_| "Media control timed out".to_string()).and_then(|r| r.map_err(|e| e.to_string()));
+                if let Some(bus) = target { registry.dirty(&bus); }
+                publication_needed |= result.is_ok();
+                let _ = command.result.send(result);
             }
         }
     }

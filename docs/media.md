@@ -70,8 +70,16 @@ The media tests use a private D-Bus daemon and synthetic MPRIS players. They cov
 discovery, metadata updates, shared selection, supported controls, player replacement,
 stale track actions, panel revisions and clean provider shutdown. Configuration
 tests cover named instances, templates and default panel activation.
+A private Shell Media fixture delays a Snapshot reply while a host action arrives;
+the panel must publish the changed track without requiring a second Changed signal.
+The client retains a consumed signal's pending refresh across host-input cancellation.
 
 Desktop acceptance on 2026-10-01 used a private Sway session and a synthetic player.
 Pointer activation opened the panel; Previous, Pause, Play and Next reached the
 player and updated the bar and panel. Manual selection, return to Automatic and
 panel dismissal were also checked.
+
+Player property updates refresh only the affected owner. Slow players do not block
+controls for other players. A temporary read failure retains the last displayed
+metadata and manual selection until a later update or confirmed player departure;
+controls still check the current owner, track and capabilities before acting.

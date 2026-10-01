@@ -599,14 +599,13 @@ mod tests {
         let (mut app, _) = App::boot(make_config(), vec![]);
         let wid = test_wid();
         app.surface_mut(wid);
-        app.modules.insert_with_actions_and_origin(
+        app.modules.insert_with_actions(
             app.modules.len(),
             (
                 Zone::Start,
                 Box::new(crate::modules::tray::TrayModule::new(ModuleId::new("tray"))),
             ),
             crate::config::ModuleActionsConfig::default(),
-            module_runtime::ModuleOrigin::Configured,
             ModuleInteractionProfile::NONE,
         );
         let point = iced::Point::new(10.0, 20.0);
@@ -854,6 +853,15 @@ mod tests {
 
     // --- Story 6.2 tests ---
 
+    fn navigation_actions() -> crate::config::ModuleActionsConfig {
+        crate::config::ModuleActionsConfig {
+            bindings: vec![crate::config::ActionBinding {
+                trigger: crate::config::ActionTrigger::Key("Ctrl+E".into()),
+                action: crate::config::PanelAction::ClosePanel,
+            }],
+        }
+    }
+
     fn make_nav_app() -> (App, iced::window::Id) {
         use crate::config::{ClockConfig, ModuleConfig, ModuleParams};
         let mut config = Config {
@@ -862,7 +870,7 @@ mod tests {
                     name: "clock".into(),
                     module_type: "clock".into(),
                     params: ModuleParams::Clock(ClockConfig::default()),
-                    actions: crate::config::ModuleActionsConfig::default(),
+                    actions: navigation_actions(),
                 },
                 ModuleConfig {
                     name: "battery".into(),
@@ -874,7 +882,7 @@ mod tests {
                         content_rotation: Default::default(),
                         tooltip: Default::default(),
                     }),
-                    actions: crate::config::ModuleActionsConfig::default(),
+                    actions: navigation_actions(),
                 },
                 ModuleConfig {
                     name: "network".into(),
@@ -886,7 +894,7 @@ mod tests {
                         content_rotation: Default::default(),
                         tooltip: Default::default(),
                     }),
-                    actions: crate::config::ModuleActionsConfig::default(),
+                    actions: navigation_actions(),
                 },
                 ModuleConfig {
                     name: "workspaces".into(),
@@ -898,7 +906,7 @@ mod tests {
                         content_rotation: Default::default(),
                         tooltip: Default::default(),
                     }),
-                    actions: crate::config::ModuleActionsConfig::default(),
+                    actions: navigation_actions(),
                 },
             ],
             ..Default::default()
@@ -1030,7 +1038,7 @@ mod tests {
                     name: "clock".into(),
                     module_type: "clock".into(),
                     params: ModuleParams::Clock(ClockConfig::default()),
-                    actions: crate::config::ModuleActionsConfig::default(),
+                    actions: navigation_actions(),
                 },
                 ModuleConfig {
                     name: "workspaces".into(),
@@ -1042,7 +1050,7 @@ mod tests {
                         content_rotation: Default::default(),
                         tooltip: Default::default(),
                     }),
-                    actions: crate::config::ModuleActionsConfig::default(),
+                    actions: navigation_actions(),
                 },
             ],
             ..Default::default()
@@ -1103,13 +1111,13 @@ mod tests {
                     name: "clock".into(),
                     module_type: "clock".into(),
                     params: ModuleParams::Clock(ClockConfig::default()),
-                    actions: crate::config::ModuleActionsConfig::default(),
+                    actions: navigation_actions(),
                 },
                 ModuleConfig {
                     name: "volume".into(),
                     module_type: "volume".into(),
                     params: ModuleParams::Volume(VolumeConfig::default()),
-                    actions: crate::config::ModuleActionsConfig::default(),
+                    actions: navigation_actions(),
                 },
                 ModuleConfig {
                     name: "button".into(),
@@ -1121,7 +1129,7 @@ mod tests {
                         content_rotation: crate::config::ContentRotation::None,
                         tooltip: crate::config::TooltipSetting::Default,
                     }),
-                    actions: crate::config::ModuleActionsConfig::default(),
+                    actions: navigation_actions(),
                 },
             ],
             ..Default::default()
@@ -1261,12 +1269,12 @@ mod tests {
     #[test]
     fn clear_surface_module_refs_clears_focus_and_hover_for_matching_ids() {
         let (mut app, wid) = make_interact_app();
-        app.surface_mut(wid).focused_module = Some(ModuleId::new("workspace:1"));
-        app.surface_mut(wid).hovered_module = Some(ModuleId::new("workspace:2"));
+        app.surface_mut(wid).focused_module = Some(ModuleId::workspace("workspaces", 1));
+        app.surface_mut(wid).hovered_module = Some(ModuleId::workspace("workspaces", 2));
 
         app.clear_surface_module_refs(&[
-            ModuleId::new("workspace:1"),
-            ModuleId::new("workspace:2"),
+            ModuleId::workspace("workspaces", 1),
+            ModuleId::workspace("workspaces", 2),
         ]);
 
         assert!(app.surfaces[&wid].focused_module.is_none());
@@ -1536,7 +1544,7 @@ mod tests {
             .modules
             .module_ids()
             .into_iter()
-            .map(|id| id.0)
+            .map(|id| id.display_name())
             .collect();
         assert!(
             instantiated.iter().any(|n| n == "clock"),
@@ -1557,7 +1565,7 @@ mod tests {
         let module = app
             .modules
             .iter()
-            .find(|(_, module)| module.id().0 == "clock")
+            .find(|(_, module)| module.id().display_name() == "clock")
             .map(|(_, module)| module)
             .expect("clock should be instantiated from an undeclared built-in");
 

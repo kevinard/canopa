@@ -218,6 +218,8 @@ fn cli_preserves_success_formats_and_committed_partial_clear_counts() {
         presentation_error: Some("é backend unavailable".into()),
         sender_publication_error: None,
         timeout_records: 0,
+        timeout_retrying: 0,
+        timeout_failed: 0,
     });
     let output = cli_with_reply(
         &["status", "--json"],

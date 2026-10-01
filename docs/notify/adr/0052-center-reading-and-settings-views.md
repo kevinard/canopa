@@ -62,3 +62,19 @@ The provider retains each bounded row's cursor while assembling the app-grouped
 page, then flattens and sorts only the reading presentation. Both views therefore
 keep identical page boundaries, category coverage and action continuation.
 Settings retains app groups with a decorative source icon beside each app name.
+
+Page construction now opens one Notify-owned `NotificationCenterReader` for each
+frame. The reader captures permission maps, icon settings and a sorted lightweight
+index of transient positions once, then fetches up to sixteen retained/live rows
+per read. Each row retains its own cursor and category controls. Content remains
+live at each bounded read; a state subscription requests a new frame after a
+concurrent change. No full-history snapshot or long-lived read transaction is held.
+
+The page builder measures each JSON item, action and new control once, including
+array separators, before committing it to the page. It reserves byte and interaction
+capacity for navigation. Overflow has one admission decision, so a rejected row
+cannot leak its controls and action continuation retains the previous cursor plus
+the next action offset. Final protocol validation and capped serialization remain
+mandatory. Tests compare the estimate to exact escaped JSON at the byte boundary,
+exercise action continuation and rejected category controls, and bound read and
+serialization work for many small notifications.

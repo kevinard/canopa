@@ -323,15 +323,19 @@ fn apply_to(
         .iter()
         .find(|device| device.id == *id)
         .ok_or("The audio device is no longer available. Choose a current device.")?;
-    // An external mixer may allow amplification. An increase must never turn
-    // into a decrease when such a device is already above our normal-volume cap.
-    if matches!(operation, DeviceOperation::AdjustVolume { up: true, .. })
-        && !device.can_increase_volume()
-    {
+    let channels = match operation {
+        DeviceOperation::AdjustVolume { step, up } => Some(super::volume::apply(
+            device.channels,
+            super::volume::Change::Adjust { step, up },
+        )?),
+        DeviceOperation::SetVolume { percent } => Some(super::volume::apply(
+            device.channels,
+            super::volume::Change::Set { percent },
+        )?),
+        _ => None,
+    };
+    if channels == Some(device.channels) {
         return Ok(());
-    }
-    if matches!(operation, DeviceOperation::SetVolume { percent } if percent > 100) {
-        return Err("Volume must be between 0% and 100%.".into());
     }
     let (tx, rx) = mpsc::channel();
     let callback = move |success| {
@@ -366,23 +370,7 @@ fn apply_to(
                 }
             },
             DeviceOperation::AdjustVolume { .. } | DeviceOperation::SetVolume { .. } => {
-                use pulse::volume::Volume;
-                let mut channels = device.channels;
-                let maximum = match operation {
-                    DeviceOperation::SetVolume { percent } => {
-                        u32::from(percent) * Volume::NORMAL.0 / 100
-                    }
-                    DeviceOperation::AdjustVolume { step, up } => {
-                        let delta = u32::from(step.min(100)) * Volume::NORMAL.0 / 100;
-                        if up {
-                            channels.max().0.saturating_add(delta).min(Volume::NORMAL.0)
-                        } else {
-                            channels.max().0.saturating_sub(delta).min(Volume::NORMAL.0)
-                        }
-                    }
-                    _ => unreachable!(),
-                };
-                channels.scale(Volume(maximum));
+                let channels = channels.expect("volume operation has channel levels");
                 match id.kind {
                     DeviceKind::Output => {
                         context.introspect().set_sink_volume_by_index(

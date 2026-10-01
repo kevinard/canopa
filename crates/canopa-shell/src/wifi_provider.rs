@@ -1,5 +1,6 @@
 pub mod backends;
 pub mod cleanup;
+mod identity;
 pub mod session;
 pub mod transport;
 
@@ -18,22 +19,7 @@ pub type WifiBackendFuture<'a, T> =
 pub enum BackendName {
     Iwd,
     NetworkManager,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WifiBackendAvailability {
-    pub networkmanager: bool,
-    pub iwd: bool,
-}
-
-pub fn select_backend(availability: WifiBackendAvailability) -> Option<BackendName> {
-    if availability.networkmanager {
-        Some(BackendName::NetworkManager)
-    } else if availability.iwd {
-        Some(BackendName::Iwd)
-    } else {
-        None
-    }
+    Unavailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +45,7 @@ impl WifiBackendError {
 impl std::fmt::Display for WifiBackendError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self.category {
+            WifiBackendErrorCategory::TargetChanged => "selected Wi-Fi target changed",
             WifiBackendErrorCategory::NoControl => {
                 "no supported Wi-Fi control backend is available"
             }
@@ -81,6 +68,7 @@ pub enum WifiBackendErrorCategory {
     CredentialRejected,
     UnsupportedNetwork,
     AuthorizationRequired,
+    TargetChanged,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,12 +90,15 @@ pub struct WifiNetwork {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WifiSnapshot {
+    /// Opaque handle for the currently observed daemon/device pair.
+    pub device_id: Option<String>,
     pub networks: Vec<WifiNetwork>,
     pub scanning: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct WifiConnectRequest {
+    pub device_id: String,
     pub network_id: Option<String>,
     pub label: String,
     pub credential: Option<String>,
@@ -151,7 +142,6 @@ pub fn no_control_document() -> ExternalPanelDocument {
 
 pub struct WifiPanelProvider<B> {
     backend: B,
-    backend_name: BackendName,
     capabilities: BackendCapabilities,
     snapshot: WifiSnapshot,
     connecting_network_id: Option<String>,
@@ -162,6 +152,7 @@ pub struct WifiPanelProvider<B> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CredentialPrompt {
+    device_id: String,
     network: WifiNetwork,
     value: String,
     error: Option<String>,
@@ -173,13 +164,12 @@ where
     B: WifiControlBackend,
 {
     pub fn new(backend: B) -> Self {
-        let backend_name = backend.name();
         let capabilities = backend.capabilities();
         Self {
             backend,
-            backend_name,
             capabilities,
             snapshot: WifiSnapshot {
+                device_id: None,
                 networks: Vec::new(),
                 scanning: true,
             },
@@ -217,7 +207,26 @@ where
     }
 
     pub async fn synchronize(&mut self) -> Result<ExternalPanelDocument, WifiBackendError> {
-        self.snapshot = normalize_snapshot(self.backend.initial_snapshot().await?);
+        self.snapshot = match self.backend.initial_snapshot().await {
+            Ok(snapshot) => normalize_snapshot(snapshot),
+            Err(error) => {
+                self.credential_prompt = None;
+                self.snapshot = WifiSnapshot {
+                    device_id: None,
+                    networks: vec![],
+                    scanning: false,
+                };
+                return Ok(self.render_error(error.category()));
+            }
+        };
+        if self
+            .credential_prompt
+            .as_ref()
+            .is_some_and(|prompt| !self.prompt_is_current(prompt))
+        {
+            self.credential_prompt = None;
+            return Ok(self.render_error(WifiBackendErrorCategory::TargetChanged));
+        }
         Ok(if self.credential_prompt.is_some() {
             self.render_credential_prompt()
         } else {
@@ -231,6 +240,7 @@ where
     }
 
     pub async fn refresh(&mut self) -> Result<ExternalPanelDocument, WifiBackendError> {
+        self.credential_prompt = None;
         self.snapshot.scanning = true;
         self.progress_documents();
         self.snapshot = normalize_snapshot(self.backend.scan().await?);
@@ -238,7 +248,7 @@ where
     }
 
     pub fn backend_name(&self) -> BackendName {
-        self.backend_name
+        self.backend.name()
     }
 
     pub async fn handle_event(
@@ -283,6 +293,16 @@ where
         }
     }
 
+    fn prompt_is_current(&self, prompt: &CredentialPrompt) -> bool {
+        self.snapshot.device_id.as_deref() == Some(prompt.device_id.as_str())
+            && (prompt.hidden
+                || self
+                    .snapshot
+                    .networks
+                    .iter()
+                    .any(|network| network.id == prompt.network.id))
+    }
+
     async fn submit_custom_network_value(
         &mut self,
         value: String,
@@ -300,7 +320,11 @@ where
             return self.activate_network(network.id.clone()).await;
         }
 
+        let Some(device_id) = self.snapshot.device_id.clone() else {
+            return Ok(vec![self.render_error(WifiBackendErrorCategory::NoControl)]);
+        };
         self.credential_prompt = Some(CredentialPrompt {
+            device_id,
             network: WifiNetwork {
                 id: format!("hidden:{label}"),
                 label: label.to_string(),
@@ -330,6 +354,9 @@ where
             return Ok(Vec::new());
         };
 
+        let Some(device_id) = self.snapshot.device_id.clone() else {
+            return Ok(vec![self.render_error(WifiBackendErrorCategory::NoControl)]);
+        };
         if network.active {
             return Ok(Vec::new());
         }
@@ -341,6 +368,7 @@ where
         }
         if network.security == WifiSecurity::Personal && !network.known {
             self.credential_prompt = Some(CredentialPrompt {
+                device_id: device_id.clone(),
                 network,
                 value: String::new(),
                 error: None,
@@ -353,6 +381,7 @@ where
         self.connecting_network_id = Some(network.id.clone());
         let connecting = self.progress_documents();
         let request = WifiConnectRequest {
+            device_id: device_id.clone(),
             network_id: Some(network.id.clone()),
             label: network.label.clone(),
             credential: None,
@@ -371,6 +400,7 @@ where
             {
                 self.connecting_network_id = None;
                 self.credential_prompt = Some(CredentialPrompt {
+                    device_id,
                     network,
                     value: String::new(),
                     error: Some("Credential required".into()),
@@ -394,19 +424,21 @@ where
             return Ok(Vec::new());
         };
 
+        if !self.prompt_is_current(&prompt) {
+            self.credential_prompt = None;
+            return Ok(vec![
+                self.render_error(WifiBackendErrorCategory::TargetChanged),
+            ]);
+        }
         self.credential_prompt = None;
         self.failed_network_id = None;
-        if !self
-            .snapshot
-            .networks
-            .iter()
-            .any(|network| network.id == prompt.network.id)
-        {
+        if prompt.hidden {
             self.snapshot.networks.push(prompt.network.clone());
         }
         self.connecting_network_id = Some(prompt.network.id.clone());
         let connecting = self.progress_documents();
         let request = WifiConnectRequest {
+            device_id: prompt.device_id.clone(),
             network_id: if prompt.hidden {
                 None
             } else {
@@ -432,6 +464,10 @@ where
                 });
                 Ok(vec![self.render_credential_prompt()])
             }
+            Err(err) if err.category() == WifiBackendErrorCategory::TargetChanged => {
+                self.connecting_network_id = None;
+                Ok(self.completed(connecting, self.render_error(err.category())))
+            }
             Err(err) => {
                 self.connecting_network_id = None;
                 self.credential_prompt = Some(CredentialPrompt {
@@ -445,6 +481,9 @@ where
     }
 
     fn render(&self) -> ExternalPanelDocument {
+        if self.backend.name() == BackendName::Unavailable {
+            return no_control_document();
+        }
         let active = self.snapshot.networks.iter().find(|network| network.active);
         let connecting = self.connecting_network();
         let message = if let Some(connecting) = connecting {
@@ -574,11 +613,11 @@ fn normalize_snapshot(mut snapshot: WifiSnapshot) -> WifiSnapshot {
         std::collections::HashMap::new();
 
     for network in snapshot.networks {
-        match collapsed.get_mut(&network.label) {
+        match collapsed.get_mut(&network.id) {
             Some(current) if better_representative(&network, current) => *current = network,
             Some(_) => {}
             None => {
-                collapsed.insert(network.label.clone(), network);
+                collapsed.insert(network.id.clone(), network);
             }
         }
     }
@@ -606,10 +645,12 @@ fn compare_network_rows(left: &WifiNetwork, right: &WifiNetwork) -> std::cmp::Or
         .then(right.known.cmp(&left.known))
         .then(right.signal_strength.cmp(&left.signal_strength))
         .then(left.label.cmp(&right.label))
+        .then(left.id.cmp(&right.id))
 }
 
 fn user_message_for_error(category: WifiBackendErrorCategory) -> &'static str {
     match category {
+        WifiBackendErrorCategory::TargetChanged => "The selected network changed. Select it again.",
         WifiBackendErrorCategory::NoControl => "No supported Wi-Fi control backend is available.",
         WifiBackendErrorCategory::ScanFailed => "Wi-Fi scan failed.",
         WifiBackendErrorCategory::ConnectionFailed => "Connection failed.",

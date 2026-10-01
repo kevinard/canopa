@@ -318,6 +318,167 @@ struct PausedPublisher {
     completed: Arc<tokio::sync::Notify>,
 }
 
+struct FailingExpiry {
+    _directory: tempfile::TempDir,
+    daemon: Daemon,
+    presenter: DeferredPresenter,
+    pool: sqlx::SqlitePool,
+    receipt: canopa_notify::NotificationReceipt,
+}
+
+impl FailingExpiry {
+    async fn new() -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("history.db");
+        let presenter = DeferredPresenter::default();
+        let daemon = Daemon::open(DaemonOptions::graphical(
+            database.clone(),
+            presenter.clone(),
+        ))
+        .await
+        .unwrap();
+        let receipt = daemon
+            .receive_notification(notification(NotificationTimeout::Milliseconds(20)))
+            .await
+            .unwrap();
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&database))
+            .await
+            .unwrap();
+        sqlx::query("CREATE TRIGGER fail_expiry BEFORE UPDATE ON notification_threads WHEN NEW.status = 'expired' BEGIN SELECT RAISE(ABORT, 'injected expiry failure'); END")
+            .execute(&pool).await.unwrap();
+        Self {
+            _directory: directory,
+            daemon,
+            presenter,
+            pool,
+            receipt,
+        }
+    }
+
+    async fn recover_storage(&self) {
+        sqlx::query("DROP TRIGGER fail_expiry")
+            .execute(&self.pool)
+            .await
+            .unwrap();
+    }
+
+    async fn wait_for_failure(&self, terminal: bool) -> canopa_notify::ControlStatus {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let ControlReply::Status(status) = NotifyControl::new(self.daemon.clone())
+                    .execute(ControlCommand::Status)
+                    .await
+                    .unwrap()
+                else {
+                    unreachable!()
+                };
+                if if terminal {
+                    status.timeout_failed == 1
+                } else {
+                    status.timeout_retrying == 1
+                } {
+                    return status;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("expiry failure must be observable")
+    }
+}
+
+#[tokio::test]
+async fn failed_firing_expiry_recovers_when_storage_becomes_writable() {
+    let fixture = FailingExpiry::new().await;
+    let daemon = &fixture.daemon;
+    let mut events = daemon.subscribe_sender_events();
+    fixture.presenter.take_latest().acknowledge();
+    fixture.wait_for_failure(false).await;
+    assert_eq!(
+        timeout_records(daemon).await,
+        1,
+        "failed expiry must retain recoverable work"
+    );
+    assert_eq!(daemon.visible_banners().await.len(), 1);
+    fixture.recover_storage().await;
+    let event = tokio::time::timeout(Duration::from_secs(3), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        matches!(event, SenderEvent::NotificationClosed { notification_id, reason: SenderCloseReason::Expired } if notification_id == fixture.receipt.notification_id)
+    );
+    assert!(daemon.snapshot().await.unwrap().active.is_empty());
+    assert_eq!(timeout_records(daemon).await, 0);
+    assert!(daemon.visible_banners().await.is_empty());
+    fixture.pool.close().await;
+    daemon.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn replacement_and_shutdown_retire_failed_expiry_retries() {
+    for shutdown in [false, true] {
+        let fixture = FailingExpiry::new().await;
+        let daemon = &fixture.daemon;
+        fixture.presenter.take_latest().acknowledge();
+        fixture.wait_for_failure(false).await;
+        if shutdown {
+            daemon.shutdown().await.unwrap();
+        } else {
+            daemon
+                .receive_notification(NotificationInput {
+                    replaces_id: Some(fixture.receipt.notification_id),
+                    summary: "Replacement".into(),
+                    ..notification(NotificationTimeout::Never)
+                })
+                .await
+                .unwrap();
+            fixture.presenter.take_latest().acknowledge();
+        }
+        assert_eq!(timeout_records(daemon).await, 0);
+        fixture.recover_storage().await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_eq!(daemon.snapshot().await.unwrap().active.len(), 1);
+        assert!(
+            daemon.sender_events().await.is_empty(),
+            "obsolete retry expired a live notification"
+        );
+        assert_eq!(timeout_records(daemon).await, 0);
+        fixture.pool.close().await;
+        if !shutdown {
+            daemon.shutdown().await.unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn exhausted_expiry_retries_remain_reported_until_explicit_completion() {
+    let fixture = FailingExpiry::new().await;
+    let daemon = &fixture.daemon;
+    fixture.presenter.take_latest().acknowledge();
+    let status = fixture.wait_for_failure(true).await;
+    assert_eq!(
+        (
+            status.timeout_records,
+            status.timeout_retrying,
+            status.timeout_failed
+        ),
+        (1, 0, 1)
+    );
+    assert_eq!(daemon.snapshot().await.unwrap().active.len(), 1);
+    fixture.recover_storage().await;
+    daemon
+        .expire_notification(fixture.receipt.notification_id)
+        .await
+        .unwrap();
+    assert_eq!(timeout_records(daemon).await, 0);
+    assert!(daemon.visible_banners().await.is_empty());
+    fixture.pool.close().await;
+    daemon.shutdown().await.unwrap();
+}
+
 impl SenderEventPublisher for PausedPublisher {
     fn publish(&self, _event: SenderEvent) -> SenderEventPublication {
         let publisher = self.clone();

@@ -25,12 +25,12 @@ desktop = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(desktop)
 
 
-def capture_title_pixels(session, output, scale, name):
+def capture_title_pixels(session, output, scale, name, *, thickness=48, require_icon=True):
     session.screenshot(name)
     with Image.open(output / name) as screenshot:
         image = screenshot.convert("RGB")
     width, height = image.size
-    inset, thickness = round(3 * scale), round(48 * scale)
+    inset, thickness = round(3 * scale), round(thickness * scale)
     boxes = {
         "left": (inset, thickness + inset, thickness - inset, height - inset),
         "right": (width - thickness + inset, thickness + inset, width - inset, height - inset),
@@ -38,7 +38,12 @@ def capture_title_pixels(session, output, scale, name):
     }
     results = []
     for edge, box in boxes.items():
-        colors = image.crop(box).getcolors(width * height)
+        crop = image.crop(box)
+        colors = crop.getcolors(width * height)
+        ink = Image.new("L", crop.size)
+        ink.putdata([255 if min(color) > 128 and max(color) - min(color) < 12 else 0
+                     for color in crop.getdata()])
+        ink_bounds = ink.getbbox()
         icon_pixels = sum(count for count, color in colors if color == (255, 0, 0))
         # Exclude the red icon (including its edges) from the text-quality test.
         colors = [(count, color) for count, color in colors
@@ -51,7 +56,8 @@ def capture_title_pixels(session, output, scale, name):
         results.append({
             "edge": edge, "scale": scale, "colors": color_count,
             "ink_pixels": ink_pixels, "icon_pixels": icon_pixels,
-            "passed": color_count >= 32 and ink_pixels > 100 and icon_pixels > 100,
+            "passed": color_count >= 32 and ink_pixels > 100 and (not require_icon or icon_pixels > 100),
+            "ink_bounds": ink_bounds,
             "pixels_sha256": hashlib.sha256(image.crop(box).tobytes()).hexdigest(),
         })
     return results
@@ -60,39 +66,10 @@ def capture_title_pixels(session, output, scale, name):
 def verify(binary, output, session, scales):
     runtime = session.runtime
     session.env["ICED_BACKEND"] = "wgpu"
-    bus = runtime / "bus.conf"
-    # No inherited service activation in this disposable session.
-    bus.write_text(f'''<busconfig>
-<type>session</type><listen>unix:tmpdir={runtime}</listen>
-<policy context="default"><allow send_destination="*"/><allow receive_sender="*"/>
-<allow own="*"/></policy></busconfig>''')
-    session.start([
-        "dbus-daemon", f"--config-file={bus}", "--nofork", "--print-address=1",
-    ], "dbus.log")
-    session.env["DBUS_SESSION_BUS_ADDRESS"] = session.wait_for(
-        lambda: (output / "dbus.log").read_text().strip(), "private bus",
-    ).splitlines()[0]
-    niri_config = runtime / "niri.kdl"
-    niri_config.write_text(
+    output_name = session.start_niri(
         "prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\n"
         "hotkey-overlay { skip-at-startup; }\n"
     )
-    session.start([
-        "weston", "--backend=headless", "--renderer=pixman", "--fake-seat",
-        "--width=1280", "--height=800", "--socket=wayland-parent", "--no-config",
-        "--idle-time=0",
-    ], "weston.log")
-    session.wait_for(lambda: (runtime / "wayland-parent").is_socket(), "Weston")
-    session.env["WAYLAND_DISPLAY"] = "wayland-parent"
-    session.start(["niri", "-c", str(niri_config)], "niri.log")
-    session.env["NIRI_SOCKET"] = str(session.wait_for(
-        lambda: list(runtime.glob("niri.*.sock")), "Niri IPC",
-    )[0])
-    session.env["WAYLAND_DISPLAY"] = str(session.wait_for(
-        lambda: [p for p in runtime.glob("wayland-*")
-                 if p.is_socket() and p.name != "wayland-parent"], "Niri display",
-    )[0])
-    output_name = next(iter(json.loads(session.run(["niri", "msg", "--json", "outputs"]))))
     icon = runtime / "application.svg"
     icon.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">'
                     '<path fill="#ff0000" d="M0 0h16v16H0z"/></svg>')
@@ -113,7 +90,7 @@ def verify(binary, output, session, scales):
     module "focused-window" {}
 }
 ''')
-    session.start([str(binary)], "canopa-shell.log")
+    bar = session.start([str(binary)], "canopa-shell.log")
     session.wait_for_layers(3)
     titles = ["Focused window: Quarterly planning - Firefox", "Updated title: iii WWW — Résumé"]
     title_file = runtime / "title"
@@ -180,9 +157,59 @@ Gtk.main()
                 results.extend(row | {"frame": frame, "title_index": title_index} for row in rows)
                 previous = {row["edge"]: row["pixels_sha256"] for row in rows}
                 time.sleep(0.2)
+    # Exercise an ordinary Module through the shared presentation boundary as
+    # well as the rich focused-window image path. Restart to apply each config.
+    desktop.stop(bar)
+    session.processes.remove(bar)
+    session.wait_for_layers(0)
+    for rotation in ("auto", "clockwise"):
+        config.write_text("".join(f'''bar "{edge}" {{
+    edge "{edge}"
+    collapsed-width 96
+    style size=16 color="#ffffff"
+    modules {{ center "idle-inhibitor"; }}
+}}
+''' for edge in ("left", "right", "top")) + f'''modules {{
+    module "idle-inhibitor" {{
+        content-rotation "{rotation}"
+        format "Ordinary module rendering: iii WWW - Resume"
+    }}
+}}
+''')
+        bar = session.start([str(binary)], f"ordinary-{rotation}.log")
+        session.wait_for_layers(3)
+        for scale in scales:
+            session.run(["niri", "msg", "output", output_name, "scale", str(scale)])
+            session.wait_for(
+                lambda: json.loads(session.run(["niri", "msg", "--json", "outputs"]))
+                [output_name]["logical"]["scale"] == scale, "ordinary output scale",
+            )
+            attempts = itertools.count()
+
+            def populated_ordinary():
+                rows = capture_title_pixels(session, output, scale,
+                    f"ordinary-{rotation}-{scale}-{next(attempts)}.png",
+                    thickness=96, require_icon=False)
+                for result in rows:
+                    bounds = result["ink_bounds"]
+                    if not bounds:
+                        return None
+                    ink_width, ink_height = bounds[2] - bounds[0], bounds[3] - bounds[1]
+                    vertical = rotation == "clockwise" or result["edge"] != "top"
+                    result["orientation_passed"] = (ink_height > ink_width if vertical
+                                                     else ink_width > ink_height)
+                    result["passed"] = result["passed"] and result["orientation_passed"]
+                    result["module"] = "idle-inhibitor"
+                    result["rotation"] = rotation
+                return rows if all(result["passed"] for result in rows) else None
+
+            results.extend(session.wait_for(populated_ordinary, "ordinary rotated glyphs", timeout=30))
+        desktop.stop(bar)
+        session.processes.remove(bar)
+        session.wait_for_layers(0)
     desktop.write_json(output / "result.json", results)
     print(json.dumps(results, indent=2), flush=True)
-    assert all(result["passed"] for result in results), "Missing or aliased focused-window text"
+    assert all(result["passed"] for result in results), "Missing, misoriented or aliased module text"
 
 
 def main():

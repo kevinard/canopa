@@ -107,7 +107,8 @@ impl RuntimeResources {
                 | LifecycleEffect::ThreadStale(thread) => {
                     self.remove(thread.id);
                 }
-                LifecycleEffect::SenderReceipt(_)
+                LifecycleEffect::ThreadAttentionChanged { .. }
+                | LifecycleEffect::SenderReceipt(_)
                 | LifecycleEffect::ThreadCreated(_)
                 | LifecycleEffect::ThreadRevised(_)
                 | LifecycleEffect::NotificationDropped { .. }

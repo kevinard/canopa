@@ -98,7 +98,9 @@ impl NotificationServer {
         let mut input = request
             .into_notification_input()
             .map_err(|error| zbus::fdo::Error::LimitsExceeded(error.to_string()))?;
-        let resolved = std::sync::OnceLock::new();
+        let resolved = std::sync::Arc::new(std::sync::OnceLock::new());
+        let registered = resolved.clone();
+        let sender_ids = self.sender_ids.clone();
 
         self.daemon
             .receive_notification_with_preparation(
@@ -109,9 +111,8 @@ impl NotificationServer {
                     resolved.set(sender_id).unwrap();
                     Ok(input)
                 },
-                |receipt| {
-                    self.sender_ids
-                        .commit(*resolved.get().unwrap(), receipt.notification_id);
+                move |receipt| {
+                    sender_ids.commit(*registered.get().unwrap(), receipt.notification_id);
                 },
             )
             .await
@@ -126,7 +127,7 @@ impl NotificationServer {
                 None => zbus::fdo::Error::Failed(error.to_string()),
             })?;
 
-        Ok(resolved.into_inner().unwrap().value.get())
+        Ok(resolved.get().unwrap().value.get())
     }
 
     async fn close_notification(&self, id: u32) -> zbus::fdo::Result<()> {

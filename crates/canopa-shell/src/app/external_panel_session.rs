@@ -62,6 +62,22 @@ impl Drop for ActiveExternalPanelSession {
 }
 
 impl ActiveExternalPanelSession {
+    fn accepts_input(
+        &mut self,
+        id: &str,
+        event: &crate::external_panel::protocol::ProviderEvent,
+    ) -> bool {
+        let fits = self
+            .handle
+            .as_ref()
+            .is_none_or(|handle| handle.input_fits(event));
+        self.content.set_input_error(
+            id,
+            (!fits).then_some("Value is too long. Shorten it and try again."),
+        );
+        fits
+    }
+
     fn panel_identity(&self) -> ExternalPanelPanelIdentity {
         ExternalPanelPanelIdentity {
             origin_window: self.origin_window,
@@ -391,6 +407,15 @@ impl ExternalPanelSessionRuntime {
         if active.provider_name != provider_name || !active.matches_panel(active_panel) {
             return Vec::new();
         }
+        if !active.accepts_input(
+            &list_id,
+            &crate::external_panel::protocol::ProviderEvent::SelectableListCustomValueSubmitted {
+                element_id: list_id.clone(),
+                value: query.clone(),
+            },
+        ) {
+            return vec![active.update_content_effect()];
+        }
         active.content = active.content.with_list_search(&list_id, query);
         vec![active.update_content_effect()]
     }
@@ -413,14 +438,15 @@ impl ExternalPanelSessionRuntime {
     }
 
     pub(super) fn list_custom_value_submitted(
-        &self,
+        &mut self,
         provider_name: String,
         list_id: String,
         value: String,
         active_panel: Option<&ExternalPanelPanelIdentity>,
     ) -> Vec<ExternalPanelSessionEffect> {
-        self.send_provider_event(
+        self.send_input(
             provider_name,
+            list_id.clone(),
             crate::external_panel::protocol::ProviderEvent::SelectableListCustomValueSubmitted {
                 element_id: list_id,
                 value,
@@ -442,6 +468,13 @@ impl ExternalPanelSessionRuntime {
         if active.provider_name != provider_name || !active.matches_panel(active_panel) {
             return Vec::new();
         }
+        let event = crate::external_panel::protocol::ProviderEvent::TextInputChanged {
+            element_id: element_id.clone(),
+            value: value.clone(),
+        };
+        if !active.accepts_input(&element_id, &event) {
+            return vec![active.update_content_effect()];
+        }
         active.content = active
             .content
             .with_text_input_value(&element_id, value.clone());
@@ -451,30 +484,49 @@ impl ExternalPanelSessionRuntime {
                 session_id: active.session_id.clone(),
                 provider_name,
                 handle,
-                event: crate::external_panel::protocol::ProviderEvent::TextInputChanged {
-                    element_id,
-                    value,
-                },
+                event,
             });
         }
         effects
     }
 
     pub(super) fn text_input_submitted(
-        &self,
+        &mut self,
         provider_name: String,
         element_id: String,
         value: String,
         active_panel: Option<&ExternalPanelPanelIdentity>,
     ) -> Vec<ExternalPanelSessionEffect> {
-        self.send_provider_event(
+        self.send_input(
             provider_name,
+            element_id.clone(),
             crate::external_panel::protocol::ProviderEvent::TextInputSubmitted {
                 element_id,
                 value,
             },
             active_panel,
         )
+    }
+
+    fn send_input(
+        &mut self,
+        provider_name: String,
+        element_id: String,
+        event: crate::external_panel::protocol::ProviderEvent,
+        active_panel: Option<&ExternalPanelPanelIdentity>,
+    ) -> Vec<ExternalPanelSessionEffect> {
+        let Some(active) = self.active.as_mut() else {
+            return Vec::new();
+        };
+        if active.provider_name != provider_name || !active.matches_panel(active_panel) {
+            return Vec::new();
+        }
+        let accepted = active.accepts_input(&element_id, &event);
+        let mut effects = vec![active.update_content_effect()];
+        if accepted {
+            effects.extend(self.send_provider_event(provider_name, event, active_panel));
+        }
+        effects
     }
 
     pub(super) fn close(&mut self) -> bool {
@@ -768,5 +820,146 @@ mod tests {
         assert!(runtime.close());
         assert!(!runtime.close());
         assert_eq!(runtime.active_session_id(), None);
+    }
+
+    #[tokio::test]
+    async fn oversized_v5_edits_keep_the_last_sendable_value_and_do_not_dispatch() {
+        use crate::external_panel::{ProviderProtocol, protocol, spawn_provider_process};
+        use canopa_panel_protocol::v5;
+        let mut elements = text_input_document().elements().to_vec();
+        elements.extend_from_slice(selectable_document().elements());
+        let response = v5::Session::default()
+            .replace(
+                v5::Content::Form(v5::FormContent { elements }),
+                v5::Update::Replace,
+            )
+            .unwrap();
+        let command = crate::config::ConfiguredCommand::argv_for_test(
+            "python3",
+            vec![
+                "-u".into(),
+                "-c".into(),
+                "import sys; print(sys.argv[1]); sys.stdin.read()".into(),
+                String::from_utf8(response.encode().unwrap())
+                    .unwrap()
+                    .trim_end()
+                    .into(),
+            ],
+        );
+        let session = spawn_provider_process(&command)
+            .unwrap()
+            .start_session_for_protocol(
+                protocol::HostHandshake {
+                    protocol_version: protocol::PROTOCOL_VERSION,
+                    session_id: "session-1".into(),
+                    provider_name: "wifi".into(),
+                    origin: protocol::ProviderOrigin {
+                        bar_name: "main".into(),
+                        output_name: "test".into(),
+                        origin_kind: "bar".into(),
+                    },
+                },
+                ProviderProtocol::CanopaV5,
+            )
+            .await
+            .unwrap();
+        let ids: Vec<_> = session
+            .content
+            .elements()
+            .iter()
+            .filter_map(|element| match element {
+                crate::surface::panel::ExternalPanelElement::TextInput { id, .. }
+                | crate::surface::panel::ExternalPanelElement::SelectableList { id, .. } => {
+                    Some(id.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        let origin = iced::window::Id::unique();
+        let panel = active_panel(origin);
+        let mut runtime = ExternalPanelSessionRuntime::default();
+        runtime.begin_open_provider("session-1".into(), panel.clone());
+        runtime.handshake_completed(
+            "session-1".into(),
+            origin,
+            panel.origin.clone(),
+            "wifi".into(),
+            None,
+            (Some(session.handle.clone()), session.content),
+        );
+        runtime.text_input_changed(
+            "wifi".into(),
+            ids[0].clone(),
+            "accepted".into(),
+            Some(&panel),
+        );
+        runtime.list_search_changed(
+            "wifi".into(),
+            ids[1].clone(),
+            "accepted".into(),
+            Some(&panel),
+        );
+        let oversized = "\u{1}".repeat(v5::MAX_EVENT_BYTES / 6);
+        let mut effects = runtime.text_input_changed(
+            "wifi".into(),
+            ids[0].clone(),
+            oversized.clone(),
+            Some(&panel),
+        );
+        effects.extend(runtime.text_input_submitted(
+            "wifi".into(),
+            ids[0].clone(),
+            oversized.clone(),
+            Some(&panel),
+        ));
+        effects.extend(runtime.list_search_changed(
+            "wifi".into(),
+            ids[1].clone(),
+            oversized.clone(),
+            Some(&panel),
+        ));
+        effects.extend(runtime.list_custom_value_submitted(
+            "wifi".into(),
+            ids[1].clone(),
+            oversized,
+            Some(&panel),
+        ));
+        assert!(
+            !effects.iter().any(|effect| matches!(
+                effect,
+                ExternalPanelSessionEffect::SendProviderEvent { .. }
+            )),
+            "oversized input must not be dispatched"
+        );
+        let content = effects
+            .iter()
+            .rev()
+            .find_map(|effect| match effect {
+                ExternalPanelSessionEffect::UpdatePanelContent { content, .. } => Some(content),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            matches!(&content.elements()[0], crate::surface::panel::ExternalPanelElement::TextInput { value, .. } if value == "accepted")
+        );
+        assert_eq!(content.list_search(&ids[1]), "accepted");
+        for id in &ids {
+            assert!(content.input_error(id).unwrap().contains("too long"));
+        }
+        let recovered = runtime.text_input_changed(
+            "wifi".into(),
+            ids[0].clone(),
+            "shorter".into(),
+            Some(&panel),
+        );
+        assert!(
+            recovered.iter().any(|effect| matches!(
+                effect,
+                ExternalPanelSessionEffect::SendProviderEvent { .. }
+            ))
+        );
+        assert!(recovered.iter().any(|effect| matches!(effect, ExternalPanelSessionEffect::UpdatePanelContent { content, .. } if content.input_error(&ids[0]).is_none())));
+        runtime.close();
+        session.handle.wait_for_exit().await.unwrap();
     }
 }

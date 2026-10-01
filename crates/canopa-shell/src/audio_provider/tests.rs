@@ -1,4 +1,5 @@
 use super::*;
+use std::time::Duration;
 
 #[tokio::test]
 async fn unavailable_provider_publishes_and_closes_on_a_split_frame() {

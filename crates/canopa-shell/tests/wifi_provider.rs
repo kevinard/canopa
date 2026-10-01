@@ -2,9 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use canopa_panel_protocol::v1::{ExternalPanelElement, ExternalPanelSeverity};
 use canopa_shell::wifi_provider::{
-    BackendCapabilities, BackendName, WifiBackendAvailability, WifiBackendError,
-    WifiBackendErrorCategory, WifiConnectRequest, WifiControlBackend, WifiNetwork,
-    WifiPanelProvider, WifiSecurity, WifiSnapshot, select_backend,
+    BackendCapabilities, BackendName, WifiBackendError, WifiBackendErrorCategory,
+    WifiConnectRequest, WifiControlBackend, WifiNetwork, WifiPanelProvider, WifiSecurity,
+    WifiSnapshot,
 };
 
 #[derive(Clone)]
@@ -132,6 +132,7 @@ impl WifiControlBackend for FakeBackend {
 #[tokio::test]
 async fn iwd_provider_initial_content_reports_active_network_without_scanning() {
     let (backend, calls) = FakeBackend::new(WifiSnapshot {
+        device_id: Some("test-device".into()),
         networks: vec![WifiNetwork {
             id: "iwd:/station/0/Home".into(),
             label: "Home".into(),
@@ -179,10 +180,12 @@ async fn iwd_provider_initial_content_reports_active_network_without_scanning() 
 async fn iwd_provider_scan_collapses_and_orders_wifi_network_rows() {
     let (backend, calls) = FakeBackend::with_scan(
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![
                 WifiNetwork {
                     id: "ap:guest".into(),
@@ -209,7 +212,7 @@ async fn iwd_provider_scan_collapses_and_orders_wifi_network_rows() {
                     active: false,
                 },
                 WifiNetwork {
-                    id: "ap:cafe-low".into(),
+                    id: "network:cafe".into(),
                     label: "Cafe".into(),
                     signal_strength: 30,
                     security: WifiSecurity::Open,
@@ -217,7 +220,7 @@ async fn iwd_provider_scan_collapses_and_orders_wifi_network_rows() {
                     active: false,
                 },
                 WifiNetwork {
-                    id: "ap:cafe-high".into(),
+                    id: "network:cafe".into(),
                     label: "Cafe".into(),
                     signal_strength: 70,
                     security: WifiSecurity::Open,
@@ -253,7 +256,7 @@ async fn iwd_provider_scan_collapses_and_orders_wifi_network_rows() {
         vec!["Home", "Office", "Airport", "Cafe", "Guest"]
     );
     let cafe = entries.iter().find(|entry| entry.label == "Cafe").unwrap();
-    assert_eq!(cafe.id, "ap:cafe-high");
+    assert_eq!(cafe.id, "network:cafe");
     assert_eq!(cafe.description.as_deref(), Some("open 70%"));
 }
 
@@ -261,10 +264,12 @@ async fn iwd_provider_scan_collapses_and_orders_wifi_network_rows() {
 async fn known_wifi_row_activation_streams_connecting_then_active_content() {
     let (backend, calls, requests) = FakeBackend::with_connect(
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![WifiNetwork {
                 id: "ap:home".into(),
                 label: "Home".into(),
@@ -276,6 +281,7 @@ async fn known_wifi_row_activation_streams_connecting_then_active_content() {
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![WifiNetwork {
                 id: "ap:home".into(),
                 label: "Home".into(),
@@ -339,10 +345,12 @@ async fn rejected_network_credential_keeps_prompt_and_clears_secret() {
     let secret = "wrong credential";
     let (backend, _calls, requests) = FakeBackend::with_connect_error(
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![WifiNetwork {
                 id: "ap:cafe".into(),
                 label: "Cafe".into(),
@@ -410,14 +418,17 @@ async fn rejected_network_credential_keeps_prompt_and_clears_secret() {
 async fn custom_list_value_starts_trimmed_hidden_network_prompt() {
     let (backend, calls, requests) = FakeBackend::with_connect(
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
@@ -466,14 +477,17 @@ async fn hidden_network_credential_submit_uses_hidden_connect_request() {
     let secret = "hidden secret";
     let (backend, _calls, requests) = FakeBackend::with_connect(
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![WifiNetwork {
                 id: "known:hidden-cafe".into(),
                 label: "Hidden Cafe".into(),
@@ -532,10 +546,12 @@ async fn hidden_network_credential_submit_uses_hidden_connect_request() {
 async fn unknown_enterprise_wifi_row_reports_unsupported_without_connecting() {
     let (backend, _calls, requests) = FakeBackend::with_connect(
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![WifiNetwork {
                 id: "ap:enterprise".into(),
                 label: "Enterprise".into(),
@@ -547,6 +563,7 @@ async fn unknown_enterprise_wifi_row_reports_unsupported_without_connecting() {
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
@@ -580,10 +597,12 @@ async fn unknown_enterprise_wifi_row_reports_unsupported_without_connecting() {
 async fn unknown_secured_wifi_row_activation_shows_secret_credential_prompt() {
     let (backend, calls, requests) = FakeBackend::with_connect(
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![WifiNetwork {
                 id: "ap:cafe".into(),
                 label: "Cafe".into(),
@@ -595,6 +614,7 @@ async fn unknown_secured_wifi_row_activation_shows_secret_credential_prompt() {
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
@@ -643,10 +663,12 @@ async fn submitted_network_credential_connects_without_rendering_the_secret() {
     let secret = "correct horse battery staple";
     let (backend, _calls, requests) = FakeBackend::with_connect(
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: Vec::new(),
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![WifiNetwork {
                 id: "ap:cafe".into(),
                 label: "Cafe".into(),
@@ -658,6 +680,7 @@ async fn submitted_network_credential_connects_without_rendering_the_secret() {
             scanning: false,
         },
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![WifiNetwork {
                 id: "ap:cafe".into(),
                 label: "Cafe".into(),
@@ -743,29 +766,4 @@ fn document_text(document: &canopa_panel_protocol::v1::ExternalPanelDocument) ->
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-#[test]
-fn backend_selection_prefers_networkmanager_then_iwd_then_no_control() {
-    assert_eq!(
-        select_backend(WifiBackendAvailability {
-            networkmanager: true,
-            iwd: true,
-        }),
-        Some(BackendName::NetworkManager)
-    );
-    assert_eq!(
-        select_backend(WifiBackendAvailability {
-            networkmanager: false,
-            iwd: true,
-        }),
-        Some(BackendName::Iwd)
-    );
-    assert_eq!(
-        select_backend(WifiBackendAvailability {
-            networkmanager: false,
-            iwd: false,
-        }),
-        None
-    );
 }

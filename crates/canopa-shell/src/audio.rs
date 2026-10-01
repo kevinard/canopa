@@ -2,6 +2,7 @@
 use tokio::sync::mpsc;
 
 mod devices;
+mod volume;
 pub use devices::{
     AudioControl, AudioDevice, AudioDeviceId, AudioSnapshot, DeviceKind, DeviceOperation, monitor,
 };
@@ -173,7 +174,6 @@ pub async fn adjust_default_sink_volume(step: u8, up: bool) -> Result<(), String
 
 fn adjust_volume_on(server: Option<&str>, step: u8, up: bool) -> Result<(), String> {
     use pulse::callbacks::ListResult;
-    use pulse::volume::Volume;
     let mut connection = PulseConnection::connect(server, || false)?;
     let (tx, rx) = std::sync::mpsc::channel();
     let context = Rc::clone(&connection.context);
@@ -186,15 +186,15 @@ fn adjust_volume_on(server: Option<&str>, step: u8, up: bool) -> Result<(), Stri
         .get_sink_info_by_name("@DEFAULT_SINK@", move |result| match result {
             ListResult::Item(sink) => {
                 found = true;
-                let mut volume = sink.volume;
-                let delta = Volume((u64::from(Volume::NORMAL.0) * u64::from(step) / 100) as u32);
-                let adjusted = if up {
-                    volume.inc_clamp(delta, Volume::NORMAL)
-                } else {
-                    volume.decrease(delta)
+                let volume = match volume::apply(sink.volume, volume::Change::Adjust { step, up }) {
+                    Ok(volume) => volume,
+                    Err(error) => {
+                        let _ = tx.send(Err(error));
+                        return;
+                    }
                 };
-                if adjusted.is_none() {
-                    let _ = tx.send(Err("invalid sink volume".into()));
+                if volume == sink.volume {
+                    let _ = tx.send(Ok(()));
                     return;
                 }
                 let tx = tx.clone();

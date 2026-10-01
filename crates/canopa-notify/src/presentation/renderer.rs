@@ -4,8 +4,10 @@ use crate::NotificationBodyRun;
 use canopa_assets::icons;
 use canopa_ui::metrics;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{OnceLock, mpsc};
+#[cfg(test)]
+use std::sync::mpsc;
 
 const APP_ICON_VISUAL_SIZE: u16 = 34;
 const NOTIFICATION_IMAGE_VISUAL_SIZE: u16 = 58;
@@ -32,20 +34,22 @@ pub struct IcedLayerShellBannerPresenter {
 }
 
 impl IcedLayerShellBannerPresenter {
-    pub async fn start(interactions: mpsc::Sender<BannerInteraction>) -> anyhow::Result<Self> {
+    pub async fn start(
+        interactions: tokio::sync::mpsc::Sender<BannerInteraction>,
+    ) -> anyhow::Result<Self> {
         let presenter = Self::start_with(interactions, run_banner_ui)?;
         await_banner_renderer(&presenter).await?;
         Ok(presenter)
     }
 
     fn start_with<F>(
-        interactions: mpsc::Sender<BannerInteraction>,
+        interactions: tokio::sync::mpsc::Sender<BannerInteraction>,
         run_ui: F,
     ) -> anyhow::Result<Self>
     where
         F: FnOnce(
                 u64,
-                mpsc::Sender<BannerInteraction>,
+                tokio::sync::mpsc::Sender<BannerInteraction>,
                 tokio::sync::watch::Sender<BannerRendererState>,
             ) -> iced_layershell::Result
             + Send
@@ -233,7 +237,7 @@ struct BannerUiState {
     presentation_generation: u64,
     pending_acknowledgement: Option<PendingBannerAcknowledgement>,
     input_region: BannerInputRegion,
-    interactions: mpsc::Sender<BannerInteraction>,
+    interactions: tokio::sync::mpsc::Sender<BannerInteraction>,
     renderer_state: tokio::sync::watch::Sender<BannerRendererState>,
     accessibility_enabled: bool,
     accessibility: Option<(iced::window::Id, u64, accessibility::BannerAccessibility)>,
@@ -440,11 +444,13 @@ fn banner_updates(
 
 fn spawn_banner_ui_thread<F>(
     runtime_id: u64,
-    interactions: mpsc::Sender<BannerInteraction>,
+    interactions: tokio::sync::mpsc::Sender<BannerInteraction>,
     run_ui: F,
 ) -> anyhow::Result<()>
 where
-    F: FnOnce(u64, mpsc::Sender<BannerInteraction>) -> iced_layershell::Result + Send + 'static,
+    F: FnOnce(u64, tokio::sync::mpsc::Sender<BannerInteraction>) -> iced_layershell::Result
+        + Send
+        + 'static,
 {
     let runtime_handle = tokio::runtime::Handle::try_current()
         .context("notification banner UI must be started from the daemon Tokio runtime")?;
@@ -461,7 +467,7 @@ where
 
 fn run_banner_ui(
     runtime_id: u64,
-    interactions: mpsc::Sender<BannerInteraction>,
+    interactions: tokio::sync::mpsc::Sender<BannerInteraction>,
     renderer_state: tokio::sync::watch::Sender<BannerRendererState>,
 ) -> iced_layershell::Result {
     use iced_layershell::settings::Settings;
@@ -670,7 +676,7 @@ fn banner_ui_update(
         } => {
             state
                 .interactions
-                .send(BannerInteraction::OpenLink {
+                .try_send(BannerInteraction::OpenLink {
                     target,
                     segment_index,
                     activation_token,
@@ -684,7 +690,7 @@ fn banner_ui_update(
         } => {
             state
                 .interactions
-                .send(BannerInteraction::Activate {
+                .try_send(BannerInteraction::Activate {
                     target,
                     activation_token,
                 })
@@ -694,7 +700,7 @@ fn banner_ui_update(
         BannerUiMessage::Dismiss(target) => {
             state
                 .interactions
-                .send(BannerInteraction::Dismiss(target))
+                .try_send(BannerInteraction::Dismiss(target))
                 .ok();
             iced::Task::none()
         }
@@ -720,7 +726,7 @@ fn banner_ui_update(
         } => {
             state
                 .interactions
-                .send(BannerInteraction::InvokeAction {
+                .try_send(BannerInteraction::InvokeAction {
                     target,
                     action_key,
                     activation_token,
@@ -918,7 +924,7 @@ mod tests {
         .await
         .unwrap();
         let before = seed.snapshot().await.unwrap();
-        let (interactions, _) = mpsc::channel();
+        let (interactions, _) = tokio::sync::mpsc::channel(32);
         let presenter =
             IcedLayerShellBannerPresenter::start_with(interactions, |_, _, _| Ok(())).unwrap();
         let result =
@@ -937,7 +943,7 @@ mod tests {
     #[tokio::test]
     async fn idle_renderer_exit_degrades_status_without_disabling_notification_state() {
         let temp = tempfile::tempdir().unwrap();
-        let (interactions, _) = mpsc::channel();
+        let (interactions, _) = tokio::sync::mpsc::channel(32);
         let (exit_ui, exit_requested) = mpsc::channel();
         let presenter =
             IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, renderer_state| {
@@ -1021,7 +1027,7 @@ mod tests {
     async fn cancelled_renderer_startup_retires_transport_and_rejects_late_readiness() {
         let temp = tempfile::tempdir().unwrap();
         let database = temp.path().join("history.db");
-        let (interactions, _) = mpsc::channel();
+        let (interactions, _) = tokio::sync::mpsc::channel(32);
         let (release_ui, released) = mpsc::channel();
         let (late_state, observed_late_state) = tokio::sync::oneshot::channel();
         let presenter =
@@ -1089,7 +1095,7 @@ mod tests {
     async fn renderer_readiness_timeout_retires_startup_without_opening_history() {
         let temp = tempfile::tempdir().unwrap();
         let database = temp.path().join("history.db");
-        let (interactions, _) = mpsc::channel();
+        let (interactions, _) = tokio::sync::mpsc::channel(32);
         let (release_ui, released) = mpsc::channel::<()>();
         let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, _| {
             let _ = released.recv_timeout(Duration::from_secs(15));
@@ -1125,7 +1131,7 @@ mod tests {
         .await
         .unwrap();
         let before = seed.snapshot().await.unwrap();
-        let (interactions, _) = mpsc::channel();
+        let (interactions, _) = tokio::sync::mpsc::channel(32);
         let (ready_ui, ready_requested) = mpsc::channel();
         let (exit_ui, exit_requested) = mpsc::channel::<()>();
         let presenter =
@@ -1162,7 +1168,7 @@ mod tests {
     }
 
     fn banner_ui_test_state() -> BannerUiState {
-        let (interactions, _interaction_receiver) = mpsc::channel();
+        let (interactions, _interaction_receiver) = tokio::sync::mpsc::channel(32);
         BannerUiState {
             theme: canopa_ui::theme(Default::default()),
             surface: surface::Surface::new(),
@@ -1199,7 +1205,7 @@ mod tests {
 
     #[tokio::test]
     async fn banner_ui_thread_enters_daemon_tokio_runtime() {
-        let (interactions, _interaction_receiver) = mpsc::channel();
+        let (interactions, _interaction_receiver) = tokio::sync::mpsc::channel(32);
         let (observed, observed_receiver) = mpsc::channel();
 
         spawn_banner_ui_thread(0, interactions, move |_, _| {
@@ -1222,7 +1228,7 @@ mod tests {
 
     #[tokio::test]
     async fn publication_cannot_refill_a_closing_renderers_callback_slot() {
-        let (interactions, _) = mpsc::channel();
+        let (interactions, _) = tokio::sync::mpsc::channel(32);
         let (exit_ui, exit_requested) = mpsc::channel();
         let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, _| {
             exit_requested.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -1275,7 +1281,7 @@ mod tests {
 
     #[tokio::test]
     async fn renderer_exit_before_subscription_releases_callbacks_and_closes_transport() {
-        let (interactions, _) = mpsc::channel();
+        let (interactions, _) = tokio::sync::mpsc::channel(32);
         let (exit_ui, exit_requested) = mpsc::channel();
         let (finished, finished_receiver) = tokio::sync::oneshot::channel();
         let presenter = IcedLayerShellBannerPresenter::start_with(interactions, move |_, _, _| {

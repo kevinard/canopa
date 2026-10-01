@@ -1,5 +1,6 @@
 //! Device controls presented through the existing accessible rich panel contract.
 use crate::audio::{self, AudioDeviceId, AudioSnapshot, DeviceKind, DeviceOperation};
+use crate::provider_io::write_v5 as write;
 use canopa_panel_protocol::v5::{self, Content, HostMessage, Interaction, Session, Update};
 use canopa_panel_protocol::{
     InteractionTarget, PanelAction, PanelContent, PanelItem, PanelSection,
@@ -8,9 +9,8 @@ use std::{
     collections::{HashMap, VecDeque},
     future::Future,
     pin::Pin,
-    time::Duration,
 };
-use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncBufRead, AsyncWrite};
 
 type ActionMap = HashMap<(String, String), (AudioDeviceId, DeviceOperation)>;
 type PendingOperation = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
@@ -154,24 +154,12 @@ impl AudioPanel {
     }
 }
 
-async fn write(
-    output: &mut (impl AsyncWrite + Unpin),
-    response: v5::Response,
-) -> anyhow::Result<()> {
-    let frame = response.encode()?;
-    tokio::time::timeout(Duration::from_secs(2), async {
-        output.write_all(&frame).await?;
-        output.flush().await
-    })
-    .await??;
-    Ok(())
-}
-
 pub async fn run(
-    mut input: impl AsyncBufRead + Unpin,
+    input: impl AsyncBufRead + Unpin + Send + 'static,
     mut output: impl AsyncWrite + Unpin,
     server: Option<String>,
 ) -> anyhow::Result<()> {
+    let mut input = crate::provider_io::Input::v5(input);
     let (audio, mut state) = audio::monitor(server);
     let mut panel = AudioPanel::default();
     let mut current = state.borrow_and_update().clone();
@@ -181,9 +169,7 @@ pub async fn run(
     let mut error = None;
     write(&mut output, panel.publish(current.as_ref(), false, None)?).await?;
     loop {
-        // Preserve a partially read frame across unrelated device updates.
-        let frame = HostMessage::read_async(&mut input);
-        tokio::pin!(frame);
+        // Domain updates can race input without owning frame assembly.
         let message = loop {
             if pending.is_none()
                 && let Some((id, operation)) = queued.pop_front()
@@ -199,7 +185,7 @@ pub async fn run(
                 pending = Some(Box::pin(async move { audio.apply(id, operation).await }));
             }
             tokio::select! {
-                message = &mut frame => break message?,
+                message = input.next() => break message?,
                 change = state.changed() => {
                     change?;
                     current = state.borrow_and_update().clone();

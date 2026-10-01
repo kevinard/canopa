@@ -13,15 +13,13 @@ headless App view regression also checks the exact frame before physical removal
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util
-import io
-import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
 
-from PIL import Image, ImageChops, ImageStat
+from PIL import ImageChops, ImageStat
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
@@ -32,40 +30,17 @@ spec.loader.exec_module(desktop)
 
 def verify(binary, output, session, scale, only, default_timings=False, close_flash_only=False):
     runtime = session.runtime
-    bus = runtime / "bus.conf"
-    bus.write_text(f'<busconfig><type>session</type><listen>unix:tmpdir={runtime}</listen>'
-                   '<policy context="default"><allow send_destination="*"/>'
-                   '<allow receive_sender="*"/><allow own="*"/></policy></busconfig>')
-    session.start(["dbus-daemon", f"--config-file={bus}", "--nofork", "--print-address=1"], "bus.log")
-    session.env["DBUS_SESSION_BUS_ADDRESS"] = session.wait_for(
-        lambda: (output / "bus.log").read_text().strip(), "private bus").splitlines()[0]
-    niri = runtime / "niri.kdl"
-    niri.write_text('animations { off; }\nxwayland-satellite { off; }\n'
-                    'hotkey-overlay { skip-at-startup; }\n')
-    session.start(["weston", "--backend=headless", "--renderer=pixman", "--fake-seat",
-                   "--width=1280", "--height=800", "--socket=wayland-parent", "--no-config",
-                   "--idle-time=0"], "weston.log")
-    session.wait_for(lambda: (runtime / "wayland-parent").is_socket(), "Weston")
-    session.env["WAYLAND_DISPLAY"] = "wayland-parent"
-    session.start(["niri", "-c", str(niri)], "niri.log")
-    session.env["NIRI_SOCKET"] = str(session.wait_for(
-        lambda: list(runtime.glob("niri.*.sock")), "Niri IPC")[0])
-    session.env["WAYLAND_DISPLAY"] = str(session.wait_for(
-        lambda: [p for p in runtime.glob("wayland-*")
-                 if p.is_socket() and p.name != "wayland-parent"], "Niri display")[0])
-    name = next(iter(json.loads(session.run(["niri", "msg", "--json", "outputs"]))))
-    session.run(["niri", "msg", "output", name, "scale", str(scale)])
+    session.start_niri(
+        'animations { off; }\nxwayland-satellite { off; }\n'
+        'hotkey-overlay { skip-at-startup; }\n', scale=scale,
+    )
     session.start(["wtype", "-s", "600000"], "keyboard.log")
     config = runtime / "config/niribar/config.kdl"
     config.parent.mkdir(parents=True)
     results = []
 
     def capture(name):
-        raw = subprocess.check_output(["grim", "-t", "ppm", "-"], env=session.env,
-                                      stderr=subprocess.PIPE, timeout=5)
-        frame = Image.open(io.BytesIO(raw)).convert("RGB")
-        frame.save(output / f"{name}.png")
-        return frame
+        return session.capture(f"{name}.png")
 
     def difference(a, b):
         return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean)

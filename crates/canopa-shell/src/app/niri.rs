@@ -473,7 +473,11 @@ mod tests {
             .filter(|(_, m)| m.kind() == ModuleKind::WorkspaceItem)
             .collect();
         assert_eq!(items.len(), 2);
-        assert!(items.iter().any(|(_, m)| m.id().0 == "workspace:2"));
+        assert!(
+            items
+                .iter()
+                .any(|(_, m)| m.id().display_name() == "workspace:2")
+        );
     }
 
     #[test]
@@ -508,9 +512,9 @@ mod tests {
             .filter(|(_, m)| m.kind() == ModuleKind::WorkspaceItem)
             .collect();
         assert_eq!(items.len(), 3);
-        assert_eq!(items[0].1.id().0, "workspace:1");
-        assert_eq!(items[1].1.id().0, "workspace:2");
-        assert_eq!(items[2].1.id().0, "workspace:3");
+        assert_eq!(items[0].1.id().display_name(), "workspace:1");
+        assert_eq!(items[1].1.id().display_name(), "workspace:2");
+        assert_eq!(items[2].1.id().display_name(), "workspace:3");
     }
 
     #[test]

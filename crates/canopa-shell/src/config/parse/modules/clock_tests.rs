@@ -50,6 +50,26 @@ mod tests {
     }
 
     #[test]
+    fn malformed_clock_directives_are_rejected_with_their_source_location() {
+        for field in ["time-format", "date-format"] {
+            for format in ["%Q", "%", "%H:%M %Q", "%#z"] {
+                let source = format!(r#"modules {{ module "clock" {{ {field} "{format}" }} }}"#);
+                let error = parse(&source).expect_err("invalid clock directive must be rejected");
+                let diagnostic = error.as_diagnostic().expect("configuration diagnostic");
+                assert_eq!(
+                    diagnostic.path(),
+                    Some(format!("modules[0].clock.{field}").as_str())
+                );
+                assert!(diagnostic.has_span());
+            }
+        }
+        for format in ["%%Q", "%H:%M", "%_S", "%.3f", "%3f", "%+", "%:z"] {
+            let source = format!(r#"modules {{ module "clock" {{ time-format "{format}" }} }}"#);
+            assert!(parse(&source).is_ok(), "supported format {format}");
+        }
+    }
+
+    #[test]
     fn parse_clock_with_custom_formats() {
         let kdl = r#"
 modules {

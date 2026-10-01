@@ -62,3 +62,25 @@ credential edits, and pass Wi-Fi and Center fixtures while both existing adapter
 remain available. Portal request lifetimes are also separate from bar panels.
 
 See [validation](../shared-provider-contracts-validation.md).
+
+
+## Headless provider transport and host dependencies
+
+Shell's `desktop` feature owns host rendering, asset preparation and the main Shell
+binary. Audio, media and Wi-Fi providers can be built and tested with
+`cargo test -p canopa-shell --no-default-features --all-targets`. This excludes Iced,
+layer shell, WGPU, image decoding and accessibility adapters, including dev edges;
+`check-provider-dependencies.sh` guards that boundary in the core validation path.
+Default desktop builds retain the existing supported binaries and host API.
+
+The provider I/O boundary owns one bounded input queue and its reader task. Partial
+frames survive cancellation of a waiting consumer, and dropping the session aborts
+the reader. A terminal Close frame also ends read-ahead immediately: Tokio's
+blocking stdin read cannot be aborted and must not delay runtime shutdown while
+the host keeps its pipe open. All three providers use a two-second write-and-flush deadline; a host
+that stops reading terminates publication rather than indefinitely retaining a
+backend operation or credential session. Version-specific codecs still own their
+wire contracts. The shared v5 Session owns revision validation; each domain owns
+when revisions change and how accepted operations are ordered. In particular,
+Wi-Fi preserves immediate edit/submission order and cleanup, audio coalesces only
+adjacent absolute-volume edits, and media retains its dirty refresh obligation.

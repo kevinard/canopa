@@ -70,14 +70,82 @@ pub struct ModuleDetailUpdate {
     pub effects: Vec<ModuleDetailEffect>,
 }
 
-/// Unique identifier for a module instance.
+/// Structural identity: configured names and runtime children occupy separate namespaces.
+/// Cloning an identity shares its immutable allocation, including in layout and state indexes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ModuleId(pub String);
+pub struct ModuleId(Arc<ModuleIdentity>);
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum ModuleIdentity {
+    Configured(String),
+    Child { parent: String, key: ModuleChildKey },
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum ModuleChildKey {
+    Workspace(u64),
+    Tray(String),
+}
 
 impl ModuleId {
-    // Used in tests and by Stories 2.2+ when module instances are constructed from config.
-    pub(crate) fn new(s: impl Into<String>) -> Self {
-        ModuleId(s.into())
+    pub(crate) fn new(name: impl Into<String>) -> Self {
+        Self(Arc::new(ModuleIdentity::Configured(name.into())))
+    }
+
+    pub(crate) fn workspace(parent: &str, workspace: u64) -> Self {
+        Self(Arc::new(ModuleIdentity::Child {
+            parent: parent.into(),
+            key: ModuleChildKey::Workspace(workspace),
+        }))
+    }
+
+    pub(crate) fn tray(parent: &str, runtime_id: &str) -> Self {
+        Self(Arc::new(ModuleIdentity::Child {
+            parent: parent.into(),
+            key: ModuleChildKey::Tray(runtime_id.into()),
+        }))
+    }
+
+    pub(crate) fn configured_name(&self) -> &str {
+        match self.0.as_ref() {
+            ModuleIdentity::Configured(name) => name,
+            ModuleIdentity::Child { parent, .. } => parent,
+        }
+    }
+
+    pub(crate) fn parent_name(&self) -> Option<&str> {
+        match self.0.as_ref() {
+            ModuleIdentity::Configured(_) => None,
+            ModuleIdentity::Child { parent, .. } => Some(parent),
+        }
+    }
+
+    // Historical human-readable labels are useful in display assertions, never as identity.
+    #[cfg(test)]
+    pub(crate) fn display_name(&self) -> String {
+        match self.0.as_ref() {
+            ModuleIdentity::Configured(name) => name.clone(),
+            ModuleIdentity::Child {
+                parent,
+                key: ModuleChildKey::Workspace(id),
+            } => {
+                if parent == "workspaces" {
+                    format!("workspace:{id}")
+                } else {
+                    format!("workspace:{parent}:{id}")
+                }
+            }
+            ModuleIdentity::Child {
+                parent,
+                key: ModuleChildKey::Tray(id),
+            } => {
+                if parent == "tray" {
+                    format!("tray:{id}")
+                } else {
+                    format!("tray:{parent}:{id}")
+                }
+            }
+        }
     }
 }
 
@@ -276,7 +344,6 @@ pub(crate) type SynthesizedParamsFactory = fn() -> ModuleParams;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct ModuleCapabilities {
     pub needs_niri: bool,
-    pub needs_keyboard_focus: bool,
     pub needs_system_dbus: bool,
     pub needs_session_dbus: bool,
     pub needs_wireplumber: bool,
@@ -285,7 +352,6 @@ pub(crate) struct ModuleCapabilities {
 impl ModuleCapabilities {
     pub(crate) const NONE: Self = Self {
         needs_niri: false,
-        needs_keyboard_focus: false,
         needs_system_dbus: false,
         needs_session_dbus: false,
         needs_wireplumber: false,
@@ -295,18 +361,18 @@ impl ModuleCapabilities {
 macro_rules! config_module_descriptors {
     ($macro:ident) => {
         $macro! {
-            (ModuleKind::IdleInhibitor, "idle-inhibitor", idle_inhibitor_ctor, Some(idle_inhibitor_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY),
+            (ModuleKind::IdleInhibitor, "idle-inhibitor", idle_inhibitor_ctor, Some(idle_inhibitor_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::PRIMARY),
             (ModuleKind::Battery, "battery", battery_ctor, Some(battery_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
-            (ModuleKind::Button, "button", button_ctor, None, ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY),
+            (ModuleKind::Button, "button", button_ctor, None, ModuleCapabilities::NONE, ModuleInteractionProfile::PRIMARY),
             (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
             (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor, Some(focused_window_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
-            (ModuleKind::Media, "media", media_ctor, Some(media_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY),
-            (ModuleKind::Notifications, "notifications", notifications_ctor, Some(notifications_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::PRIMARY_AND_SECONDARY),
+            (ModuleKind::Media, "media", media_ctor, Some(media_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::PRIMARY),
+            (ModuleKind::Notifications, "notifications", notifications_ctor, Some(notifications_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::PRIMARY_AND_SECONDARY),
             (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
             (ModuleKind::Script, "script", script_ctor, None, ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
-            (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, needs_session_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
-            (ModuleKind::Volume, "volume", volume_ctor, Some(volume_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_keyboard_focus: true, needs_wireplumber: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::SCROLL),
-            (ModuleKind::Workspaces, "workspaces", workspaces_ctor, Some(workspaces_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, needs_keyboard_focus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_session_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Volume, "volume", volume_ctor, Some(volume_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_wireplumber: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::SCROLL),
+            (ModuleKind::Workspaces, "workspaces", workspaces_ctor, Some(workspaces_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
         }
     };
 }
@@ -614,7 +680,7 @@ mod tests {
 
     #[test]
     fn module_id_new_stores_string() {
-        assert_eq!(ModuleId::new("clock").0, "clock");
+        assert_eq!(ModuleId::new("clock").configured_name(), "clock");
     }
 
     #[test]
@@ -730,7 +796,6 @@ mod tests {
     fn descriptors_capture_subscription_capabilities() {
         let tray = descriptor_for_kind(ModuleKind::Tray).expect("tray descriptor");
         assert!(tray.capabilities.needs_session_dbus);
-        assert!(tray.capabilities.needs_keyboard_focus);
 
         let focused_window =
             descriptor_for_kind(ModuleKind::FocusedWindow).expect("focused-window descriptor");

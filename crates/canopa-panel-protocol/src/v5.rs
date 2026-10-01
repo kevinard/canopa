@@ -3,6 +3,7 @@
 use crate::{ProtocolError, v1, v4};
 use serde::{Deserialize, Serialize};
 
+mod interaction_limits;
 mod session;
 pub use session::{Session, Update};
 pub use v1::{
@@ -43,7 +44,7 @@ impl Content {
             Self::Rich(content) => content.validate().is_ok(),
         };
         if valid {
-            Ok(())
+            interaction_limits::validate(self)
         } else {
             Err(ProtocolError::InvalidContent("invalid v5 content".into()))
         }

@@ -6,7 +6,7 @@ use accesskit::{
     NodeId, Role, TreeId, TreeInfo, TreeUpdate,
 };
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex};
 
 const ROOT: NodeId = NodeId(1);
 
@@ -17,7 +17,7 @@ struct Published {
 
 struct Handler {
     published: Arc<Mutex<Published>>,
-    interactions: mpsc::Sender<BannerInteraction>,
+    interactions: tokio::sync::mpsc::Sender<BannerInteraction>,
     activation: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
@@ -48,7 +48,7 @@ impl ActionHandler for Handler {
             .cloned();
         if let Some(action) = action {
             // Runtime validation still rejects a queued click after replacement/closure.
-            let _ = self.interactions.send(action);
+            let _ = self.interactions.try_send(action);
         }
     }
 }
@@ -68,7 +68,7 @@ pub(super) struct BannerAccessibility {
 }
 
 impl BannerAccessibility {
-    pub(super) fn new(interactions: mpsc::Sender<BannerInteraction>) -> Self {
+    pub(super) fn new(interactions: tokio::sync::mpsc::Sender<BannerInteraction>) -> Self {
         let published = Arc::new(Mutex::new(Published {
             tree: tree(Vec::new(), Vec::new()),
             actions: BTreeMap::new(),

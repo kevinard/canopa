@@ -6,6 +6,12 @@ Request decoding only decodes content: it must never cast a wire replacement ID 
 
 Replacement operates only on live threads. Closed, dismissed, expired and stale history is immutable through `Notify`. Fixed caller-supplied replacement tokens remain a transport compatibility behavior: a previously unknown token creates a new thread and subsequent live uses replace it. It never searches history for an application/token alias. This removes the former lifecycle fallback; callers of the library must use a receipt's internal ID to replace a live thread.
 
+Replacement resolves one active ID through a fallible point lookup. Runtime-only
+threads use their keyed store; retained threads use an ID/status query. Missing or
+inactive IDs remain distinct from unreadable targets: a storage error fails the
+request, while corruption in an unrelated active row cannot block replacement.
+Bulk active reads remain reserved for operations such as clear-active.
+
 Native desktop-entry remains an untrusted claimed application identity for grouping and rules, not a security principal (ADR 0002). Live IDs are session-global. This preserves freedesktop interoperability, including portal adapters that multiplex multiple application identities over one connection, without claiming sender authentication that the protocol does not provide.
 
 The specification requires returning a nonzero replacement ID unchanged on success but does not fully specify unknown-token behavior. A never-issued caller token is accepted unchanged; a live token replaces its current thread. Once closed, a token is invalid: attempting to reuse it fails with `InvalidArgs`, rather than reviving it or allocating a different return value. This tightens the previous compatibility behavior for callers that reused closed fixed tokens. Such callers must submit zero to start again.

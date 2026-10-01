@@ -5,29 +5,73 @@ edition.workspace = true
 rust-version.workspace = true
 license = "MIT"
 
+[features]
+default = ["desktop"]
+desktop = [
+    "dep:canopa-assets",
+    "dep:canopa-file",
+    "dep:canopa-notify-client",
+    "dep:canopa-config",
+    "dep:canopa-theme",
+    "dep:canopa-ui",
+    "dep:accesskit",
+    "dep:accesskit_unix",
+    "dep:image",
+    "dep:rustix",
+    "dep:resvg",
+    "dep:iced_layershell",
+    "dep:iced",
+    "dep:kdl",
+    "dep:miette",
+    "dep:chrono",
+    "dep:niri-ipc",
+]
+
+[[bin]]
+name = "canopa-shell"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[[test]]
+name = "canopa_provider"
+required-features = ["desktop"]
+
+[[test]]
+name = "configuration"
+required-features = ["desktop"]
+
+[[test]]
+name = "diagnostics"
+required-features = ["desktop"]
+
+[[test]]
+name = "menu_cli"
+required-features = ["desktop"]
+
 [dependencies]
-canopa-assets.workspace = true
-canopa-file.workspace = true
-canopa-notify-client.workspace = true
-canopa-config.workspace = true
-canopa-theme.workspace = true
-canopa-ui.workspace = true
-accesskit.workspace = true
-accesskit_unix.workspace = true
+futures-util.workspace = true
+canopa-assets = { workspace = true, optional = true }
+canopa-file = { workspace = true, optional = true }
+canopa-notify-client = { workspace = true, optional = true }
+canopa-config = { workspace = true, optional = true }
+canopa-theme = { workspace = true, optional = true }
+canopa-ui = { workspace = true, optional = true }
+accesskit = { workspace = true, optional = true }
+accesskit_unix = { workspace = true, optional = true }
 canopa-panel-protocol = { workspace = true, features = ["tokio"] }
-image = { workspace = true, features = ["gif", "webp"] }
-rustix.workspace = true
-resvg.workspace = true
-iced_layershell = { workspace = true, features = ["linux-theme-detection"] }
-iced = { workspace = true, features = ["svg", "canvas", "tokio"] }
+image = { workspace = true, optional = true, features = ["gif", "webp"] }
+rustix = { workspace = true, optional = true }
+resvg = { workspace = true, optional = true }
+iced_layershell = { workspace = true, optional = true, features = ["linux-theme-detection"] }
+iced = { workspace = true, optional = true, features = ["svg", "canvas", "tokio", "tiny-skia"] }
 zbus.workspace = true
-kdl.workspace = true
-miette.workspace = true
+kdl = { workspace = true, optional = true }
+miette = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 anyhow.workspace = true
-chrono.workspace = true
-niri-ipc.workspace = true
+chrono = { workspace = true, optional = true }
+niri-ipc = { workspace = true, optional = true }
 libpulse-binding.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -35,5 +79,4 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-iced = { workspace = true, features = ["tiny-skia"] }
 tempfile.workspace = true

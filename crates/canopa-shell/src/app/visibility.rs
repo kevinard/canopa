@@ -22,15 +22,19 @@ impl App {
         let windows: Vec<_> = self.surfaces.surfaces.keys().copied().collect();
         let mut tasks = Vec::new();
         for window in windows {
-            let visible = self.effective_nav_list(window);
+            let visible = self.visible_module_layout(window);
             let hidden = |id: &ModuleId| !visible.iter().any(|(_, candidate)| candidate == id);
             let hide_tooltip = self
                 .surfaces
                 .tooltip_popups
                 .values()
                 .any(|popup| popup.target_window == window && hidden(&popup.target_module));
+            let clear_focus = self
+                .surface(window)
+                .and_then(|surface| surface.focused_module.as_ref())
+                .is_some_and(|id| hidden(id) || !self.module_is_keyboard_target(id));
             let surface = self.surface_mut(window);
-            if surface.focused_module.as_ref().is_some_and(hidden) {
+            if clear_focus {
                 surface.focused_module = None;
                 surface.module_activated = false;
             }

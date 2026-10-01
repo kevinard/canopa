@@ -3,6 +3,8 @@
 
 import argparse
 import hashlib
+import io
+import math
 import json
 import os
 from pathlib import Path
@@ -86,6 +88,85 @@ class Session:
             time.sleep(0.05)
         raise RuntimeError(f"Timed out waiting for {description}")
 
+    def start_private_bus(self):
+        # Deliberately omit service directories: no installed desktop activation.
+        config = self.runtime / "bus.conf"
+        config.write_text(
+            f'<busconfig><type>session</type><listen>unix:tmpdir={self.runtime}</listen>'
+            '<policy context="default"><allow send_destination="*"/>'
+            '<allow receive_sender="*"/><allow own="*"/></policy></busconfig>'
+        )
+        self.start(["dbus-daemon", f"--config-file={config}", "--nofork",
+                    "--print-address=1"], "dbus.log")
+        address = self.wait_for(
+            lambda: (self.output / "dbus.log").read_text().strip(), "private session bus"
+        ).splitlines()[0]
+        if not address.startswith("unix:"):
+            raise RuntimeError(f"Invalid private bus address: {address}")
+        self.env["DBUS_SESSION_BUS_ADDRESS"] = address
+
+    def start_niri(self, config, *, width=1280, height=800, scale=1.0):
+        """Own a private bus and nested compositor; return a ready, scaled output."""
+        self.start_private_bus()
+        path = self.runtime / "niri.kdl"
+        path.write_text(config)
+        self.start([
+            "weston", "--backend=headless", "--renderer=pixman", "--fake-seat",
+            f"--width={width}", f"--height={height}", "--socket=wayland-parent",
+            "--no-config", "--idle-time=0",
+        ], "weston.log")
+        self.wait_for(lambda: (self.runtime / "wayland-parent").is_socket(), "Weston")
+        self.env["WAYLAND_DISPLAY"] = "wayland-parent"
+        self.start(["niri", "-c", str(path)], "niri.log")
+        sockets = self.wait_for(lambda: list(self.runtime.glob("niri.*.sock")), "Niri IPC")
+        self.env["NIRI_SOCKET"] = str(sockets[0])
+        displays = self.wait_for(
+            lambda: [p for p in self.runtime.glob("wayland-*")
+                     if p.is_socket() and p.name != "wayland-parent"], "Niri display",
+        )
+        # Absolute path also works for fixtures with separate client runtime dirs.
+        self.env["WAYLAND_DISPLAY"] = str(displays[0])
+
+        def ready_outputs():
+            try:
+                outputs = json.loads(self.run(["niri", "msg", "--json", "outputs"]))
+                return outputs if any(o.get("logical") for o in outputs.values()) else None
+            except (subprocess.SubprocessError, json.JSONDecodeError):
+                return None
+
+        outputs = self.wait_for(ready_outputs, "Niri output")
+        name = next(name for name, output in outputs.items() if output.get("logical"))
+        self.run(["niri", "msg", "output", name, "scale", str(scale)])
+        self.wait_for(
+            lambda: math.isclose(((ready_outputs() or {}).get(name, {}).get("logical") or {})
+                                 .get("scale", 0), scale), "output scale",
+        )
+        return name
+
+    def build_pointer(self, kind="click"):
+        if kind not in ("click", "scroll"):
+            raise ValueError(f"Unknown pointer fixture: {kind}")
+        fixture = Path(__file__).parent / "desktop-fixture"
+        protocol = fixture / "wlr-virtual-pointer-unstable-v1.xml"
+        for mode, name in (("client-header", "virtual-pointer.h"),
+                           ("private-code", "virtual-pointer.c")):
+            subprocess.run(["wayland-scanner", mode, str(protocol), str(self.output / name)],
+                           check=True, timeout=15)
+        executable = self.output / kind
+        subprocess.run(["cc", "-I", str(self.output), str(fixture / f"{kind}.c"),
+                        str(self.output / "virtual-pointer.c"), "-lwayland-client",
+                        "-o", str(executable)], check=True, timeout=30)
+        return executable
+
+    def capture(self, name):
+        """Capture a fresh synchronous frame for motion/pixel assertions."""
+        from PIL import Image
+        raw = subprocess.check_output(["grim", "-t", "ppm", "-"], env=self.env,
+                                      stderr=subprocess.PIPE, timeout=5)
+        frame = Image.open(io.BytesIO(raw)).convert("RGB")
+        frame.save(self.output / name)
+        return frame
+
     def layers(self):
         return [
             layer for layer in json.loads(self.run(["niri", "msg", "--json", "layers"]))
@@ -97,6 +178,7 @@ class Session:
 
     def screenshot(self, name):
         path = self.output / name
+        path.unlink(missing_ok=True)
         self.run([
             "niri", "msg", "action", "screenshot-screen", "--show-pointer", "false",
             "--path", str(path),
@@ -155,33 +237,10 @@ def validate(args, session):
     config = session.runtime / "config/niribar/config.kdl"
     config.parent.mkdir(parents=True)
     config.write_bytes(args.config.read_bytes())
-    niri_config = session.runtime / "niri.kdl"
-    niri_config.write_text(
+    session.start_niri(
         "prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\n"
         "hotkey-overlay { skip-at-startup; }\n"
     )
-    session.start(["dbus-daemon", "--session", "--nofork", "--print-address=1"], "dbus.log")
-    address = session.wait_for(
-        lambda: (session.output / "dbus.log").read_text().strip(), "private session bus",
-    ).splitlines()[0]
-    if not address.startswith("unix:"):
-        raise RuntimeError(f"Invalid private bus address: {address}")
-    session.env["DBUS_SESSION_BUS_ADDRESS"] = address
-    session.start([
-        "weston", "--backend=headless", "--renderer=pixman", "--fake-seat",
-        "--width=1280", "--height=800", "--socket=wayland-parent", "--no-config",
-        "--idle-time=0",
-    ], "weston.log")
-    session.wait_for(lambda: (session.runtime / "wayland-parent").is_socket(), "Weston")
-    session.env["WAYLAND_DISPLAY"] = "wayland-parent"
-    session.start(["niri", "-c", str(niri_config)], "niri.log")
-    sockets = session.wait_for(lambda: list(session.runtime.glob("niri.*.sock")), "Niri IPC")
-    session.env["NIRI_SOCKET"] = str(sockets[0])
-    displays = session.wait_for(
-        lambda: [p for p in session.runtime.glob("wayland-*")
-                 if p.is_socket() and p.name != "wayland-parent"], "Niri Wayland socket",
-    )
-    session.env["WAYLAND_DISPLAY"] = displays[0].name
     metadata = {
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "label": args.label,

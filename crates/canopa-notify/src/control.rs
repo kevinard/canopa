@@ -26,15 +26,20 @@ impl NotifyControl {
 
     pub async fn execute(&self, command: ControlCommand) -> anyhow::Result<ControlReply> {
         match command {
-            ControlCommand::Status => Ok(ControlReply::Status(ControlStatus {
-                available: true,
-                do_not_disturb: self.daemon.do_not_disturb().await?,
-                configuration: self.daemon.configuration_status(),
-                presentation_error: self.daemon.presentation_error(),
-                sender_publication_error: self.daemon.sender_publication_error(),
-                timeout_records: self.daemon.timeout_record_count(),
-                link_opening: self.daemon.link_opening_status(),
-            })),
+            ControlCommand::Status => {
+                let (timeout_retrying, timeout_failed) = self.daemon.timeout_failure_counts();
+                Ok(ControlReply::Status(ControlStatus {
+                    available: true,
+                    do_not_disturb: self.daemon.do_not_disturb().await?,
+                    configuration: self.daemon.configuration_status(),
+                    presentation_error: self.daemon.presentation_error(),
+                    sender_publication_error: self.daemon.sender_publication_error(),
+                    timeout_records: self.daemon.timeout_record_count(),
+                    timeout_retrying,
+                    timeout_failed,
+                    link_opening: self.daemon.link_opening_status(),
+                }))
+            }
             ControlCommand::DoNotDisturb => Ok(ControlReply::DoNotDisturb(
                 self.daemon.do_not_disturb().await?,
             )),
@@ -60,7 +65,10 @@ impl NotifyControl {
                 Ok(ControlReply::CommandApplied)
             }
             ControlCommand::ActiveNotifications => Ok(ControlReply::ActiveNotifications(
-                self.daemon.snapshot().await?.active,
+                self.daemon.retained_active_threads().await?,
+            )),
+            ControlCommand::ActiveNotificationCount => Ok(ControlReply::ActiveNotificationCount(
+                self.daemon.retained_active_count().await?,
             )),
             ControlCommand::NotificationCenterProjection => {
                 Ok(ControlReply::NotificationCenterProjection(
@@ -139,6 +147,14 @@ impl NotifyControl {
         }
     }
 
+    /// Capture read policy once for one Center frame, then fetch at most sixteen
+    /// rows per read. A fresh reader observes subsequent policy/state changes.
+    pub async fn notification_center_reader(
+        &self,
+    ) -> anyhow::Result<crate::NotificationCenterReader> {
+        self.daemon.runtime.notification_center_reader().await
+    }
+
     pub fn subscribe_notification_state(&self) -> NotificationStateSubscription {
         self.daemon.subscribe_notification_state()
     }
@@ -163,6 +179,7 @@ pub enum ControlCommand {
         path: Option<std::path::PathBuf>,
     },
     ActiveNotifications,
+    ActiveNotificationCount,
     NotificationCenterProjection,
     NotificationCenterBatch {
         after: Option<NotificationCenterCursor>,
@@ -230,6 +247,7 @@ pub enum ControlReply {
     Status(ControlStatus),
     DoNotDisturb(bool),
     ActiveNotifications(Vec<NotificationThread>),
+    ActiveNotificationCount(u64),
     NotificationCenterProjection(NotificationCenterProjection),
     NotificationCenterBatch(NotificationCenterBatch),
     CommandApplied,
@@ -248,6 +266,13 @@ pub struct ControlStatus {
     /// Retained timeout bookkeeping records, not process memory or expired history.
     #[serde(default)]
     pub timeout_records: usize,
+    /// Live expiry registrations awaiting a retry or retry result.
+    #[serde(default)]
+    pub timeout_retrying: usize,
+    /// Registrations that exhausted bounded retries; explicit completion or
+    /// replacement retires them. No notification content is exposed here.
+    #[serde(default)]
+    pub timeout_failed: usize,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

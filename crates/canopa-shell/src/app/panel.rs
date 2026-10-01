@@ -855,7 +855,9 @@ impl App {
         if self.foreground.is_menu_panel_window(window) {
             let effects = self
                 .foreground
-                .handle(super::foreground::ForegroundIntent::PanelRequestSearchFocus);
+                .handle(super::foreground::ForegroundIntent::Panel(
+                    super::foreground::PanelInteraction::RequestSearchFocus,
+                ));
             return Task::batch(self.apply_foreground_effects(effects));
         }
         Task::none()
@@ -927,15 +929,19 @@ impl App {
             }
             PanelEvent::Close => Task::batch(self.close_active_panel()),
             PanelEvent::SearchChanged(query) => {
-                let effects = self.foreground.handle(
-                    super::foreground::ForegroundIntent::PanelSearchChanged(query),
-                );
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::Panel(
+                        super::foreground::PanelInteraction::SearchChanged(query),
+                    ));
                 Task::batch(self.apply_foreground_effects(effects))
             }
             PanelEvent::MenuScrolled { y, viewport_height } => {
-                let effects = self.foreground.handle(
-                    super::foreground::ForegroundIntent::PanelMenuScrolled { y, viewport_height },
-                );
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::Panel(
+                        super::foreground::PanelInteraction::MenuScrolled { y, viewport_height },
+                    ));
                 Task::batch(self.apply_foreground_effects(effects))
             }
             PanelEvent::MenuScrollApplied => Task::none(),
@@ -944,7 +950,9 @@ impl App {
             PanelEvent::FocusIndex(index) => {
                 let effects = self
                     .foreground
-                    .handle(super::foreground::ForegroundIntent::PanelFocusIndex(index));
+                    .handle(super::foreground::ForegroundIntent::Panel(
+                        super::foreground::PanelInteraction::FocusIndex(index),
+                    ));
                 Task::batch(self.apply_foreground_effects(effects))
             }
             PanelEvent::FocusSearchInput { retries } => self.focus_panel_search_input(retries),
@@ -953,7 +961,9 @@ impl App {
             PanelEvent::Back => {
                 let effects = self
                     .foreground
-                    .handle(super::foreground::ForegroundIntent::PanelBack);
+                    .handle(super::foreground::ForegroundIntent::Panel(
+                        super::foreground::PanelInteraction::Back,
+                    ));
                 Task::batch(self.apply_foreground_effects(effects))
             }
         }
@@ -1197,7 +1207,9 @@ impl App {
         }
         let effects = self
             .foreground
-            .handle(super::foreground::ForegroundIntent::PanelEscape);
+            .handle(super::foreground::ForegroundIntent::Panel(
+                super::foreground::PanelInteraction::Escape,
+            ));
         Task::batch(self.apply_foreground_effects(effects))
     }
 
@@ -1217,7 +1229,9 @@ impl App {
     fn activate_panel_entry(&mut self, index: Option<usize>) -> Task<Message> {
         let effects = self
             .foreground
-            .handle(super::foreground::ForegroundIntent::PanelActivate(index));
+            .handle(super::foreground::ForegroundIntent::Panel(
+                super::foreground::PanelInteraction::Activate(index),
+            ));
         Task::batch(self.apply_foreground_effects(effects))
     }
 
@@ -1227,7 +1241,9 @@ impl App {
         }
         let Some(panel_window) = self.foreground.active_panel_window() else {
             self.foreground
-                .handle(super::foreground::ForegroundIntent::PanelSearchFocusSettled);
+                .handle(super::foreground::ForegroundIntent::Panel(
+                    super::foreground::PanelInteraction::SearchFocusSettled,
+                ));
             return Task::none();
         };
         let search_input_id = panel_search_input_id(panel_window);
@@ -1245,7 +1261,9 @@ impl App {
             ));
         } else {
             self.foreground
-                .handle(super::foreground::ForegroundIntent::PanelSearchFocusSettled);
+                .handle(super::foreground::ForegroundIntent::Panel(
+                    super::foreground::PanelInteraction::SearchFocusSettled,
+                ));
         }
         Task::batch(tasks)
     }
@@ -2796,7 +2814,9 @@ mod tests {
 
     fn set_panel_search(app: &mut App, query: &str) {
         app.foreground
-            .handle(super::super::foreground::ForegroundIntent::PanelSearchChanged(query.into()));
+            .handle(super::super::foreground::ForegroundIntent::Panel(
+                super::super::foreground::PanelInteraction::SearchChanged(query.into()),
+            ));
     }
 
     fn set_panel_focus(app: &mut App, index: usize) {
@@ -2809,8 +2829,8 @@ mod tests {
             );
         }
         app.foreground
-            .handle(super::super::foreground::ForegroundIntent::PanelFocusIndex(
-                index,
+            .handle(super::super::foreground::ForegroundIntent::Panel(
+                super::super::foreground::PanelInteraction::FocusIndex(index),
             ));
     }
 
@@ -3223,12 +3243,13 @@ mod tests {
         let origin = iced::window::Id::unique();
         let panel = iced::window::Id::unique();
         set_panel_focus(&mut app, 10);
-        app.foreground.handle(
-            super::super::foreground::ForegroundIntent::PanelMenuScrolled {
-                y: 10.0 * MENU_ROW_EXTENT,
-                viewport_height: DEFAULT_MENU_VIEWPORT_HEIGHT,
-            },
-        );
+        app.foreground
+            .handle(super::super::foreground::ForegroundIntent::Panel(
+                super::super::foreground::PanelInteraction::MenuScrolled {
+                    y: 10.0 * MENU_ROW_EXTENT,
+                    viewport_height: DEFAULT_MENU_VIEWPORT_HEIGHT,
+                },
+            ));
         register_menu_panel(&mut app, panel, origin);
 
         let _ =
@@ -3264,7 +3285,9 @@ mod tests {
         let panel = iced::window::Id::unique();
         register_menu_panel(&mut app, panel, origin);
         app.foreground
-            .handle(super::super::foreground::ForegroundIntent::PanelRequestSearchFocus);
+            .handle(super::super::foreground::ForegroundIntent::Panel(
+                super::super::foreground::PanelInteraction::RequestSearchFocus,
+            ));
 
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusSearchInput {
             retries: 0,
@@ -3283,7 +3306,9 @@ mod tests {
         let panel = iced::window::Id::unique();
         register_menu_panel(&mut app, panel, origin);
         app.foreground
-            .handle(super::super::foreground::ForegroundIntent::PanelSearchFocusSettled);
+            .handle(super::super::foreground::ForegroundIntent::Panel(
+                super::super::foreground::PanelInteraction::SearchFocusSettled,
+            ));
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::ActivateIndex(0));
 
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::Back);
@@ -3300,7 +3325,9 @@ mod tests {
         let panel = iced::window::Id::unique();
         register_menu_panel(&mut app, panel, origin);
         app.foreground
-            .handle(super::super::foreground::ForegroundIntent::PanelRequestSearchFocus);
+            .handle(super::super::foreground::ForegroundIntent::Panel(
+                super::super::foreground::PanelInteraction::RequestSearchFocus,
+            ));
 
         let _ = app.handle_panel_event(super::super::messages::PanelEvent::FocusIndex(1));
 
@@ -3412,11 +3439,11 @@ mod tests {
                 module_detail_sessions: std::collections::HashMap::new(),
             },
         );
-        panel.handle(super::super::panel_runtime::PanelRuntimeIntent::SearchChanged("term".into()));
+        panel.interact(super::super::panel_runtime::PanelInteraction::SearchChanged("term".into()));
 
         assert!(matches!(
             panel
-                .handle(super::super::panel_runtime::PanelRuntimeIntent::Escape)
+                .interact(super::super::panel_runtime::PanelInteraction::Escape)
                 .as_slice(),
             [super::super::panel_runtime::PanelRuntimeEffect::RequestSearchFocus]
         ));
@@ -3436,7 +3463,9 @@ mod tests {
         register_menu_panel(&mut app, panel, origin);
         set_panel_search(&mut app, "term");
         app.foreground
-            .handle(super::super::foreground::ForegroundIntent::PanelSearchFocusSettled);
+            .handle(super::super::foreground::ForegroundIntent::Panel(
+                super::super::foreground::PanelInteraction::SearchFocusSettled,
+            ));
 
         let _ = app.handle_panel_escape_pressed();
 

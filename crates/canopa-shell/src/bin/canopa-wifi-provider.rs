@@ -87,6 +87,7 @@ fn backend_error_document(
 
 fn category_message(category: WifiBackendErrorCategory) -> &'static str {
     match category {
+        WifiBackendErrorCategory::TargetChanged => "The selected network changed. Select it again.",
         WifiBackendErrorCategory::NoControl => "No supported Wi-Fi control backend is available.",
         WifiBackendErrorCategory::ScanFailed => "Wi-Fi scan failed.",
         WifiBackendErrorCategory::ConnectionFailed => "Connection failed.",

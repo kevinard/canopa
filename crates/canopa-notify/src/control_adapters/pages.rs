@@ -1,4 +1,4 @@
-//! Per-view Center navigation. Read one bounded row at a time; retain one frame.
+//! Per-view Center navigation. Read bounded batches; account for one frame incrementally.
 use super::*;
 use canopa_notify::NotificationCenterCursor;
 use serde::{Deserialize, Serialize};
@@ -226,147 +226,233 @@ fn navigation(generation: u64, direction: Direction) -> PanelAction {
     }
 }
 
+const READ_BATCH: u8 = 16;
+const NAVIGATION_ACTIONS: usize = 4;
+
 async fn page(control: &NotifyControl, mut position: Position) -> anyhow::Result<Page> {
-    let mut content = panel_content_from_projection(NotificationCenterProjection::default());
-    let mut order = std::collections::BTreeMap::new();
+    let reader = control.notification_center_reader().await?;
+    let mut page = PageBuilder::new()?;
     loop {
-        let ControlReply::NotificationCenterBatch(batch) = control
-            .execute(ControlCommand::NotificationCenterBatch {
-                after: position.after,
-                limit: 1,
-            })
-            .await?
-        else {
-            unreachable!("Center batch reply");
-        };
-        let Some(last) = batch.last else {
-            return Ok(Page {
-                content,
-                next: None,
-                order,
-            });
-        };
-        let mut projected = panel_content_from_projection(batch.projection);
-        let mut section = projected
-            .sections
-            .pop()
-            .expect("one Center row has a section");
+        #[cfg(test)]
+        work::read();
+        let rows = reader.read(position.after, READ_BATCH).await?;
+        if rows.is_empty() {
+            return Ok(page.finish(None));
+        }
+        for row in rows {
+            let mut projected = panel_content_from_projection(row.projection);
+            let section = projected
+                .sections
+                .pop()
+                .expect("one Center row has a section");
+            match page.insert(section, row.cursor, position.action_offset)? {
+                Insert::Complete => {
+                    position = Position {
+                        after: Some(row.cursor),
+                        action_offset: 0,
+                    }
+                }
+                Insert::Partial(action_offset) => {
+                    return Ok(page.finish(Some(Position {
+                        after: position.after,
+                        action_offset,
+                    })));
+                }
+                Insert::Full { action } => {
+                    if page.items == 0 {
+                        page.content = PanelContent::error(
+                            "Canopa Notify",
+                            if action {
+                                "One stored notification action exceeds the display budget."
+                            } else {
+                                "One stored notification exceeds the display budget."
+                            },
+                        );
+                        return Ok(page.finish(None));
+                    }
+                    return Ok(page.finish(Some(position)));
+                }
+            }
+        }
+    }
+}
+
+enum Insert {
+    Complete,
+    Partial(usize),
+    Full { action: bool },
+}
+
+/// Account for each JSON fragment once, including array separators. Tentative
+/// rows/actions are sized before insertion, so overflow needs no rollback path.
+/// Session::frame still validates and serializes the final navigable content exactly.
+struct PageBuilder {
+    content: PanelContent,
+    order: std::collections::BTreeMap<String, NotificationCenterCursor>,
+    sections: std::collections::HashMap<String, usize>,
+    controls: Vec<std::collections::HashSet<String>>,
+    bytes: usize,
+    interactions: usize,
+    items: usize,
+}
+
+impl PageBuilder {
+    fn new() -> anyhow::Result<Self> {
+        let content = panel_content_from_projection(NotificationCenterProjection::default());
+        let bytes = encode(&content, canopa_panel_protocol::MAX_FRAME_BYTES)?
+            .unwrap()
+            .len();
+        Ok(Self {
+            interactions: content.actions.len(),
+            content,
+            order: Default::default(),
+            sections: Default::default(),
+            controls: Vec::new(),
+            bytes,
+            items: 0,
+        })
+    }
+
+    fn fits(&self, bytes: usize, interactions: usize) -> bool {
+        self.bytes.saturating_add(bytes)
+            <= canopa_panel_protocol::MAX_FRAME_BYTES - NAVIGATION_RESERVE
+            && self.interactions.saturating_add(interactions)
+                <= canopa_panel_protocol::MAX_INTERACTIVE_ELEMENTS - NAVIGATION_ACTIONS
+    }
+
+    fn insert(
+        &mut self,
+        mut section: PanelSection,
+        cursor: NotificationCenterCursor,
+        offset: usize,
+    ) -> anyhow::Result<Insert> {
         let mut item = section.items.pop().expect("one Center row has an item");
-        order.insert(item.id.clone(), last);
-        // V3's rich body is complete. Avoid serializing its plain/styled fallback
-        // twice more; both supported renderers consume the ordered rich body.
+        // Supported renderers consume the complete rich body. Do not serialize
+        // its plain/styled compatibility fallbacks twice more.
         if item.rich_body.is_some() {
             item.body = None;
             item.styled_body = None;
         }
         let actions = std::mem::take(&mut item.actions);
-        let offset = position.action_offset.min(actions.len());
-        let existing = content
-            .sections
-            .iter()
-            .position(|current| current.id == section.id);
-        let index = existing.unwrap_or(content.sections.len());
-        let previous_controls = existing.map(|index| content.sections[index].controls.len());
-        if existing.is_none() {
-            content.sections.push(section);
+        let offset = offset.min(actions.len());
+        let existing = self.sections.get(&section.id).copied();
+        if let Some(index) = existing {
+            section
+                .controls
+                .retain(|control| !self.controls[index].contains(&control.key));
+        }
+        let mut extra_bytes = measured_bytes(&item)?;
+        if let Some(index) = existing {
+            extra_bytes += usize::from(!self.content.sections[index].items.is_empty());
+            for (added, control) in section.controls.iter().enumerate() {
+                extra_bytes += measured_bytes(control)?
+                    + usize::from(added + self.content.sections[index].controls.len() > 0);
+            }
         } else {
-            for control in section.controls {
-                if !content.sections[index]
+            extra_bytes +=
+                measured_bytes(&section)? + usize::from(!self.content.sections.is_empty());
+        }
+        let mut extra_interactions = section
+            .controls
+            .iter()
+            .map(|control| control.options.len())
+            .sum::<usize>()
+            + item
+                .rich_body
+                .iter()
+                .flat_map(|body| &body.segments)
+                .filter(|segment| matches!(segment, RichBodySegment::Link { .. }))
+                .count()
+            + usize::from(item.slider.is_some());
+        if self.items == 4096
+            || (existing.is_none() && self.sections.len() == 1024)
+            || !self.fits(extra_bytes, extra_interactions)
+        {
+            return Ok(Insert::Full { action: false });
+        }
+        let mut included = 0;
+        for action in actions.iter().skip(offset) {
+            let bytes = measured_bytes(action)? + usize::from(included > 0);
+            if !self.fits(extra_bytes + bytes, extra_interactions + 1) {
+                break;
+            }
+            extra_bytes += bytes;
+            extra_interactions += 1;
+            included += 1;
+        }
+        let partial = offset + included < actions.len();
+        if partial && included == 0 {
+            return Ok(Insert::Full { action: true });
+        }
+        item.actions = actions.into_iter().skip(offset).take(included).collect();
+        self.order.insert(item.id.clone(), cursor);
+        match existing {
+            Some(index) => {
+                self.controls[index]
+                    .extend(section.controls.iter().map(|control| control.key.clone()));
+                self.content.sections[index]
                     .controls
-                    .iter()
-                    .any(|current| current.key == control.key)
-                {
-                    content.sections[index].controls.push(control);
-                }
+                    .extend(section.controls);
+                self.content.sections[index].items.push(item);
+            }
+            None => {
+                self.sections
+                    .insert(section.id.clone(), self.content.sections.len());
+                self.controls.push(
+                    section
+                        .controls
+                        .iter()
+                        .map(|control| control.key.clone())
+                        .collect(),
+                );
+                section.items.push(item);
+                self.content.sections.push(section);
             }
         }
-        content.sections[index].items.push(item);
-        if !fits(&content)? {
-            content.sections[index].items.pop();
-            if let Some(length) = previous_controls {
-                content.sections[index].controls.truncate(length);
-            }
-            if existing.is_none() {
-                content.sections.pop();
-            }
-            if content.sections.is_empty() {
-                return Ok(Page {
-                    content: PanelContent::error(
-                        "Canopa Notify",
-                        "One stored notification exceeds the display budget.",
-                    ),
-                    next: None,
-                    order,
-                });
-            }
-            return Ok(Page {
-                content,
-                next: Some(position),
-                order,
-            });
+        self.bytes += extra_bytes;
+        self.interactions += extra_interactions;
+        self.items += 1;
+        Ok(if partial {
+            Insert::Partial(offset + included)
+        } else {
+            Insert::Complete
+        })
+    }
+
+    fn finish(self, next: Option<Position>) -> Page {
+        #[cfg(test)]
+        if self.content.error.is_none() {
+            assert_eq!(
+                self.bytes,
+                encode(&self.content, usize::MAX).unwrap().unwrap().len(),
+                "fragment accounting differs from actual wire encoding"
+            );
         }
-        for (included, action) in actions.iter().skip(offset).enumerate() {
-            content.sections[index]
-                .items
-                .last_mut()
-                .unwrap()
-                .actions
-                .push(action.clone());
-            if !fits(&content)? {
-                content.sections[index]
-                    .items
-                    .last_mut()
-                    .unwrap()
-                    .actions
-                    .pop();
-                if included == 0 {
-                    content.sections[index].items.pop();
-                    if let Some(length) = previous_controls {
-                        content.sections[index].controls.truncate(length);
-                    }
-                    if existing.is_none() {
-                        content.sections.pop();
-                    }
-                    if content.sections.is_empty() {
-                        return Ok(Page {
-                            content: PanelContent::error(
-                                "Canopa Notify",
-                                "One stored notification action exceeds the display budget.",
-                            ),
-                            next: None,
-                            order,
-                        });
-                    }
-                    return Ok(Page {
-                        content,
-                        next: Some(position),
-                        order,
-                    });
-                }
-                return Ok(Page {
-                    content,
-                    next: Some(Position {
-                        after: position.after,
-                        action_offset: offset + included,
-                    }),
-                    order,
-                });
-            }
+        Page {
+            content: self.content,
+            next,
+            order: self.order,
         }
-        position = Position {
-            after: Some(last),
-            action_offset: 0,
-        };
     }
 }
 
-fn fits(content: &PanelContent) -> anyhow::Result<bool> {
-    Ok(content.validate().is_ok()
-        && encode(
-            content,
-            canopa_panel_protocol::MAX_FRAME_BYTES - NAVIGATION_RESERVE,
-        )?
-        .is_some())
+fn measured_bytes(value: &impl Serialize) -> anyhow::Result<usize> {
+    #[derive(Default)]
+    struct Counter(usize);
+    impl std::io::Write for Counter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counter = Counter::default();
+    serde_json::to_writer(&mut counter, value)?;
+    #[cfg(test)]
+    work::bytes(counter.0);
+    Ok(counter.0)
 }
 
 fn encode(content: &PanelContent, maximum: usize) -> anyhow::Result<Option<String>> {
@@ -378,12 +464,182 @@ fn encode(content: &PanelContent, maximum: usize) -> anyhow::Result<Option<Strin
         protocol_version: u16,
         content: &'a PanelContent,
     }
-    transport::json_line(
+    let encoded = transport::json_line(
         &Frame {
             kind: "replace_content",
             protocol_version: canopa_panel_protocol::PROTOCOL_VERSION,
             content,
         },
         maximum,
-    )
+    )?;
+    #[cfg(test)]
+    if let Some(frame) = &encoded {
+        work::bytes(frame.len());
+    }
+    Ok(encoded)
+}
+
+#[cfg(test)]
+mod work {
+    use std::cell::Cell;
+    #[derive(Clone, Copy, Default, Debug)]
+    pub(super) struct Counts {
+        pub reads: usize,
+        pub serialized_bytes: usize,
+    }
+    thread_local! { pub(super) static COUNTS: Cell<Counts> = Cell::default(); }
+    pub(super) fn read() {
+        COUNTS.with(|slot| {
+            let mut counts = slot.get();
+            counts.reads += 1;
+            slot.set(counts);
+        });
+    }
+    pub(super) fn bytes(bytes: usize) {
+        COUNTS.with(|slot| {
+            let mut counts = slot.get();
+            counts.serialized_bytes += bytes;
+            slot.set(counts);
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn section(id: &str, actions: Vec<PanelAction>) -> PanelSection {
+        PanelSection {
+            id: "Mail".into(),
+            title: "Mail".into(),
+            icon: None,
+            controls: vec![],
+            items: vec![PanelItem {
+                id: id.into(),
+                title: "Escaped \"\\\n".into(),
+                attribution: None,
+                body: None,
+                styled_body: None,
+                rich_body: None,
+                metadata: vec![],
+                actions,
+                slider: None,
+            }],
+        }
+    }
+
+    #[test]
+    fn exact_escaped_byte_boundary_preserves_action_continuation_and_rejected_controls() {
+        let cursor: NotificationCenterCursor =
+            serde_json::from_value(serde_json::json!({"created_at": 1, "id": 1})).unwrap();
+        for fitting_actions in [0, 1] {
+            let mut first = section("first", vec![]);
+            let mut second = section(
+                "second",
+                vec![
+                    PanelAction::new("a", "Quote \" and newline\n"),
+                    PanelAction::new("b", "Backslash \\ and tab\t"),
+                ],
+            );
+            second.controls.push(PanelControl {
+                key: "category/new".into(),
+                label: "New category".into(),
+                value: "allow".into(),
+                options: vec![PanelControlOption {
+                    label: "Allow".into(),
+                    value: "allow".into(),
+                }],
+            });
+            let mut oracle = panel_content_from_projection(NotificationCenterProjection::default());
+            let mut combined = first.clone();
+            combined.controls = second.controls.clone();
+            let mut item = second.items[0].clone();
+            item.actions.truncate(fitting_actions);
+            combined.items.push(item);
+            oracle.sections.push(combined);
+            let remaining = canopa_panel_protocol::MAX_FRAME_BYTES
+                - NAVIGATION_RESERVE
+                - encode(&oracle, usize::MAX).unwrap().unwrap().len();
+            first.items[0].title.push_str(&"x".repeat(remaining));
+            let mut builder = PageBuilder::new().unwrap();
+            assert!(matches!(
+                builder.insert(first, cursor, 0).unwrap(),
+                Insert::Complete
+            ));
+            let result = builder.insert(second.clone(), cursor, 0).unwrap();
+            if fitting_actions == 0 {
+                assert!(matches!(result, Insert::Full { action: true }));
+                let page = builder.finish(None);
+                assert_eq!(page.content.sections[0].items.len(), 1);
+                assert!(
+                    page.content.sections[0].controls.is_empty(),
+                    "rejected row leaked a category control"
+                );
+            } else {
+                assert!(matches!(result, Insert::Partial(1)));
+                let page = builder.finish(None);
+                page.content.validate().unwrap();
+                assert_eq!(
+                    encode(&page.content, usize::MAX).unwrap().unwrap().len(),
+                    canopa_panel_protocol::MAX_FRAME_BYTES - NAVIGATION_RESERVE
+                );
+                let mut continuation = PageBuilder::new().unwrap();
+                assert!(matches!(
+                    continuation.insert(second, cursor, 1).unwrap(),
+                    Insert::Complete
+                ));
+                let continued = continuation.finish(None);
+                assert_eq!(
+                    continued.content.sections[0].items[0].actions,
+                    vec![PanelAction::new("b", "Backslash \\ and tab\t")]
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn many_small_rows_use_bounded_batches_and_linear_serialization_work() {
+        let directory = tempfile::tempdir().unwrap();
+        let daemon = canopa_notify::Daemon::open(canopa_notify::DaemonOptions::headless(
+            directory.path().join("history.db"),
+        ))
+        .await
+        .unwrap();
+        for index in 0..256 {
+            daemon
+                .receive_notification(canopa_notify::NotificationInput {
+                    app_name: format!("Application {}", index % 8),
+                    summary: format!("Message {index}"),
+                    actions: vec![canopa_notify::NotificationAction::new("reply", "Reply")],
+                    expire_timeout: canopa_notify::NotificationTimeout::Never,
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+        }
+        work::COUNTS.set(work::Counts::default());
+        let page = page(&NotifyControl::new(daemon.clone()), Position::default())
+            .await
+            .unwrap();
+        assert!(page.next.is_none());
+        assert_eq!(
+            page.content
+                .sections
+                .iter()
+                .map(|section| section.items.len())
+                .sum::<usize>(),
+            256
+        );
+        let encoded = encode(&page.content, canopa_panel_protocol::MAX_FRAME_BYTES)
+            .unwrap()
+            .unwrap();
+        let work = work::COUNTS.get();
+        eprintln!("Center page work: {work:?}; frame bytes={}", encoded.len());
+        assert!(work.reads <= 17, "expected sixteen-row batches: {work:?}");
+        assert!(
+            work.serialized_bytes <= encoded.len() * 3,
+            "repeated growing-page serialization: {work:?}, final bytes={}",
+            encoded.len()
+        );
+        daemon.shutdown().await.unwrap();
+    }
 }

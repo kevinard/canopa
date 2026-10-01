@@ -129,49 +129,44 @@ async fn run_network_task(
     conn: zbus::Connection,
     tx: mpsc::UnboundedSender<Result<(NetworkConnectivity, Option<String>), ()>>,
 ) -> zbus::Error {
-    // Auto-detect: try NetworkManager first, fall back to systemd-networkd.
-    let dbus = match zbus::fdo::DBusProxy::new(&conn).await {
-        Ok(p) => p,
-        Err(e) => {
+    use canopa_shell::network_integration::{Kind, Watch};
+    let mut watch = match Watch::new(&conn).await {
+        Ok(watch) => watch,
+        Err(error) => {
             let _ = tx.send(Err(()));
-            return e;
+            return error;
         }
     };
-
-    let has_nm = dbus
-        .name_has_owner("org.freedesktop.NetworkManager".try_into().unwrap())
-        .await
-        .unwrap_or(false);
-    let has_nd = dbus
-        .name_has_owner("org.freedesktop.network1".try_into().unwrap())
-        .await
-        .unwrap_or(false);
-
-    if has_nm {
-        {
-            crate::dbus::subscription::while_service_owned(
-                &conn,
-                "org.freedesktop.NetworkManager",
-                &tx,
-                run_nm_task(conn.clone(), tx.clone()),
-            )
-            .await;
-            zbus::Error::Failure("NetworkManager disconnected".into())
+    loop {
+        let selected = watch.current().status;
+        let work = async {
+            match selected.as_ref() {
+                Some(owner) if owner.kind == Kind::NetworkManager => {
+                    run_nm_task(conn.clone(), owner.unique.clone(), tx.clone()).await;
+                }
+                Some(owner) => {
+                    run_networkd_task(conn.clone(), owner.unique.clone(), tx.clone()).await;
+                }
+                None => {
+                    let _ = tx.send(Err(()));
+                    std::future::pending::<()>().await;
+                }
+            }
+        };
+        tokio::pin!(work);
+        loop {
+            tokio::select! {
+                _ = tx.closed() => return zbus::Error::Failure("network observer closed".into()),
+                result = watch.changed() => {
+                    if result.is_err() { let _ = tx.send(Err(())); return zbus::Error::Failure("network bus closed".into()); }
+                    if watch.current().status != selected { break; }
+                }
+                _ = &mut work => {
+                    // Let the subscription's bounded retry recover transient property failures.
+                    return zbus::Error::Failure("network observation failed".into());
+                }
+            }
         }
-    } else if has_nd {
-        {
-            crate::dbus::subscription::while_service_owned(
-                &conn,
-                "org.freedesktop.network1",
-                &tx,
-                run_networkd_task(conn.clone(), tx.clone()),
-            )
-            .await;
-            zbus::Error::Failure("networkd disconnected".into())
-        }
-    } else {
-        let _ = tx.send(Err(()));
-        zbus::Error::Failure("no network backend available".into())
     }
 }
 
@@ -188,13 +183,15 @@ async fn network_signals(
 
 async fn run_nm_task(
     conn: zbus::Connection,
+    owner: String,
     tx: mpsc::UnboundedSender<Result<(NetworkConnectivity, Option<String>), ()>>,
 ) -> zbus::Error {
     use iced::futures::StreamExt;
     let result = async {
         // Subscribe before the first snapshot, including active-profile renames.
-        let mut changes = network_signals(&conn, "org.freedesktop.NetworkManager").await?;
+        let mut changes = network_signals(&conn, &owner).await?;
         let proxy = NetworkManagerProxy::builder(&conn)
+            .destination(owner)?
             .cache_properties(zbus::proxy::CacheProperties::No)
             .build()
             .await?;
@@ -231,6 +228,9 @@ async fn read_nm_label(proxy: &NetworkManagerProxy<'_>, conn: &zbus::Connection)
         return None;
     }
     let active = NMActiveConnectionProxy::builder(conn)
+        .destination(proxy.inner().destination().to_string())
+        .ok()?
+        .cache_properties(zbus::proxy::CacheProperties::No)
         .path(path)
         .ok()?
         .build()
@@ -241,14 +241,16 @@ async fn read_nm_label(proxy: &NetworkManagerProxy<'_>, conn: &zbus::Connection)
 
 async fn run_networkd_task(
     conn: zbus::Connection,
+    owner: String,
     tx: mpsc::UnboundedSender<Result<(NetworkConnectivity, Option<String>), ()>>,
 ) -> zbus::Error {
     use iced::futures::StreamExt;
     let result = async {
         // Link state, additions and removals can change the label without changing
         // the manager's OnlineState. Observe the daemon's whole signal stream.
-        let mut changes = network_signals(&conn, "org.freedesktop.network1").await?;
+        let mut changes = network_signals(&conn, &owner).await?;
         let proxy = NetworkdManagerProxy::builder(&conn)
+            .destination(owner)?
             .cache_properties(zbus::proxy::CacheProperties::No)
             .build()
             .await?;
@@ -290,6 +292,7 @@ async fn read_networkd_state(
             continue;
         }
         let link = NetworkdLinkProxy::builder(conn)
+            .destination(proxy.inner().destination().to_string())?
             .path(path)?
             .cache_properties(zbus::proxy::CacheProperties::No)
             .build()

@@ -114,7 +114,7 @@ Configuration validation accepts provider references that resolve to either a us
 
 If a built-in provider reference validates but the shipped provider binary cannot be found or launched at runtime, Canopa Shell renders provider failure content in the hosting panel.
 
-The built-in Wi-Fi provider detects its own control backend when it starts. It uses NetworkManager when available, falls back to iwd Wi-Fi control when NetworkManager is unavailable, and renders no-control status content when neither backend is available. Canopa Shell does not pass its app-owned network status backend choice through the V1 provider protocol.
+The built-in Wi-Fi provider and Shell status share the live backend bundle resolver described in ADR-0009. NetworkManager owns both when available; otherwise networkd may supply status and iwd may supply control. Both consumers track daemon ownership changes, including recovery from no-control state. Backend choice remains outside the provider wire protocol. Backend environment overrides restrict this policy and cannot force iwd alongside NetworkManager status.
 
 The built-in Wi-Fi provider talks to supported control backends through structured zbus D-Bus clients, not by shelling out to tools such as `nmcli` or `iwctl`.
 
@@ -127,7 +127,7 @@ or disabled network list. Scan results arrive as full content replacements.
 
 The built-in Wi-Fi provider starts one **Wi-Fi Scan** when the panel opens and exposes a manual refresh action in its content. It does not need a background polling policy for the first version.
 
-When multiple physical access points advertise the same user-facing network, the provider renders one **Wi-Fi Network** row and chooses the backend target internally.
+When multiple physical access points advertise the same SSID and security identity, the provider renders one **Wi-Fi Network** row and chooses the current matching access point internally. Display labels alone do not establish identity. Opaque selections bind daemon, device and network identity; changed or missing targets retire credential prompts and require reselection.
 
 Wi-Fi list rows should use existing entry metadata for signal strength, security state, active state, known state, connecting state, and failures. V1 does not add provider-supplied icons or custom row widgets for Wi-Fi rows.
 

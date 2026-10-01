@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 mod activation;
+mod center;
 mod clock;
 mod configuration;
 pub mod control;
@@ -27,6 +28,7 @@ mod sqlite_persisted_state;
 #[cfg(feature = "gui")]
 pub use activation::WaylandActivationTokenProvider;
 pub use activation::{ActivationTokenFuture, ActivationTokenProvider, NoopActivationTokenProvider};
+pub use center::{NotificationCenterReader, NotificationCenterRow};
 pub use configuration::{ConfigurationStatus, check_configuration, check_configuration_document};
 pub use control::{
     AppPermissionControl, CategoryPermissionControl, ControlCommand, ControlReply, ControlStatus,
@@ -247,7 +249,7 @@ impl Daemon {
     pub async fn receive_notification_with_receipt_hook(
         &self,
         input: NotificationInput,
-        on_receipt: impl FnOnce(&NotificationReceipt),
+        on_receipt: impl FnOnce(&NotificationReceipt) + Send + 'static,
     ) -> anyhow::Result<NotificationReceipt> {
         self.receive_notification_with_preparation(|| Ok(input), on_receipt)
             .await
@@ -258,39 +260,49 @@ impl Daemon {
     pub async fn receive_notification_with_preparation(
         &self,
         prepare: impl FnOnce() -> anyhow::Result<NotificationInput>,
-        on_receipt: impl FnOnce(&NotificationReceipt),
+        on_receipt: impl FnOnce(&NotificationReceipt) + Send + 'static,
     ) -> anyhow::Result<NotificationReceipt> {
         let command = self.runtime.begin_receipt().await?;
         let input = prepare()?;
-        input_limits::validate_input(&input)?;
-        let expire_timeout = input.expire_timeout;
-        let accepted = match intake_notification(input) {
-            NotificationIntakeResult::Accepted(accepted) => *accepted,
-            NotificationIntakeResult::NoOpDropped {
-                app_identity,
-                replaces_id,
-            } => {
-                return self
-                    .runtime
-                    .drop_notification(&command, app_identity, replaces_id, on_receipt)
-                    .await;
-            }
-        };
+        let runtime = self.runtime.clone();
+        NotificationRuntime::complete_mutation(command, async move {
+            input_limits::validate_input(&input)?;
+            let expire_timeout = input.expire_timeout;
+            let accepted = match intake_notification(input) {
+                NotificationIntakeResult::Accepted(accepted) => *accepted,
+                NotificationIntakeResult::NoOpDropped {
+                    app_identity,
+                    replaces_id,
+                } => {
+                    return runtime
+                        .drop_notification(app_identity, replaces_id, on_receipt)
+                        .await;
+                }
+            };
 
-        self.runtime
-            .receive_notification_with_receipt_hook(
-                &command,
-                accepted.notification,
-                accepted.image_data,
-                expire_timeout,
-                accepted.sound,
-                on_receipt,
-            )
-            .await
+            runtime
+                .receive_notification_with_receipt_hook(
+                    accepted.notification,
+                    accepted.image_data,
+                    expire_timeout,
+                    accepted.sound,
+                    on_receipt,
+                )
+                .await
+        })
+        .await
     }
 
     pub async fn snapshot(&self) -> anyhow::Result<NotificationSnapshot> {
         self.runtime.snapshot().await
+    }
+
+    pub(crate) async fn retained_active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
+        self.runtime.retained_active_threads().await
+    }
+
+    pub(crate) async fn retained_active_count(&self) -> anyhow::Result<u64> {
+        self.runtime.retained_active_count().await
     }
 
     pub async fn visible_banners(&self) -> Vec<BannerView> {
@@ -442,8 +454,8 @@ impl Daemon {
         &self,
         source: Option<canopa_config::Request>,
     ) -> anyhow::Result<()> {
-        // Both the caller and actual file job retain serialization. Cancelling
-        // the caller cannot admit another preparation while this job still runs.
+        // Preparation remains cancellable. Both the waiter and file job retain
+        // serialization until that job exits, even if the waiter disappears.
         let reload = Arc::new(self.configuration_reloads.clone().lock_owned().await);
         let mut candidate = self.configuration.lock().unwrap().clone();
         let source = source.unwrap_or_else(|| candidate.request());
@@ -465,24 +477,31 @@ impl Daemon {
                 return Err(error);
             }
         };
-        if let Err(error) = self
-            .runtime
-            .install_configuration(
-                candidate.delivery_policy_rules(),
-                candidate.sound_settings(),
-                candidate.icon_settings(),
-                candidate.appearance(),
-            )
-            .await
-            .map_err(|_| {
-                anyhow::anyhow!("Notification Configuration presentation installation failed")
-            })
-        {
-            self.configuration.lock().unwrap().record_error(&error);
-            return Err(error);
-        }
-        *self.configuration.lock().unwrap() = candidate;
-        Ok(())
+        // Once installation is admitted, its runtime projection and the public
+        // configuration status must finish together despite a disconnected caller.
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            let _reload = reload;
+            if let Err(error) = daemon
+                .runtime
+                .install_configuration(
+                    candidate.delivery_policy_rules(),
+                    candidate.sound_settings(),
+                    candidate.icon_settings(),
+                    candidate.appearance(),
+                )
+                .await
+                .map_err(|_| {
+                    anyhow::anyhow!("Notification Configuration presentation installation failed")
+                })
+            {
+                daemon.configuration.lock().unwrap().record_error(&error);
+                return Err(error);
+            }
+            *daemon.configuration.lock().unwrap() = candidate;
+            Ok(())
+        })
+        .await?
     }
 
     pub fn configuration_status(&self) -> ConfigurationStatus {
@@ -545,6 +564,10 @@ impl Daemon {
 
     pub(crate) fn timeout_record_count(&self) -> usize {
         self.runtime.timeout_record_count()
+    }
+
+    pub(crate) fn timeout_failure_counts(&self) -> (usize, usize) {
+        self.runtime.timeout_failure_counts()
     }
 
     pub(crate) async fn notification_center_projection(

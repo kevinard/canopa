@@ -176,6 +176,60 @@ async fn devices_matching(
 }
 
 #[tokio::test]
+async fn bar_and_device_controls_share_channel_volume_policy() {
+    let server = AudioServer::new().await;
+    server
+        .pactl(&["load-module", "module-null-sink", "sink_name=speakers"])
+        .await;
+    server.set_default_sink("speakers").await;
+    server.pactl(&["set-sink-mute", "speakers", "1"]).await;
+    let (audio, mut state) = monitor(Some(server.server.clone()));
+    let initial = devices_matching(&mut state, |s| s.devices.len() == 1).await;
+    let id = initial.devices[0].id.clone();
+
+    for device_control in [false, true] {
+        for (left, right, step, up, expected_left, expected_right) in [
+            (0, 0, 10, true, 10, 10),
+            (30, 60, 10, true, 35, 70),
+            (90, 90, 20, true, 100, 100),
+            (100, 50, 5, true, 100, 50),
+            (120, 60, 5, true, 120, 60),
+            (120, 60, 30, false, 90, 45),
+            (30, 60, 100, false, 0, 0),
+        ] {
+            server
+                .pactl(&[
+                    "set-sink-volume",
+                    "speakers",
+                    &format!("{left}%"),
+                    &format!("{right}%"),
+                ])
+                .await;
+            if device_control {
+                audio
+                    .apply(id.clone(), DeviceOperation::AdjustVolume { step, up })
+                    .await
+                    .unwrap();
+            } else {
+                adjust_volume_on(Some(&server.server), step, up).unwrap();
+            }
+            let volume = server.pactl(&["get-sink-volume", "speakers"]).await;
+            assert!(
+                volume.contains(&format!(" {expected_left}%"))
+                    && volume.contains(&format!(" {expected_right}%")),
+                "device_control={device_control}, ({left}, {right}), step={step}, up={up}: {volume}"
+            );
+            assert!(
+                server
+                    .pactl(&["get-sink-mute", "speakers"])
+                    .await
+                    .contains("yes")
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn audio_devices_support_mute_volume_selection_and_reject_removed_targets() {
     let server = AudioServer::new().await;
     let (audio, mut state) = monitor(Some(server.server.clone()));

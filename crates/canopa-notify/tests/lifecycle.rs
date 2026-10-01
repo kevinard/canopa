@@ -16,7 +16,7 @@ use canopa_notify::{
 use notifications::notification;
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicI64, Ordering},
+    atomic::{AtomicI64, AtomicUsize, Ordering},
 };
 use std::time::Duration;
 
@@ -25,6 +25,8 @@ struct MemoryHistory {
     threads: Arc<Mutex<Vec<NotificationThread>>>,
     preconditions: Arc<Mutex<Vec<PersistPrecondition>>>,
     replace_after_read: Arc<Mutex<bool>>,
+    point_reads: Arc<AtomicUsize>,
+    scan_reads: Arc<AtomicUsize>,
 }
 
 impl MemoryHistory {
@@ -101,7 +103,22 @@ impl NotificationHistory for MemoryHistory {
         Ok(stored.clone())
     }
 
+    async fn active_thread(
+        &self,
+        id: InternalNotificationId,
+    ) -> anyhow::Result<Option<NotificationThread>> {
+        self.point_reads.fetch_add(1, Ordering::Relaxed);
+        Ok(self
+            .threads
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|thread| thread.id == id && thread.status == NotificationStatus::Active)
+            .cloned())
+    }
+
     async fn active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
+        self.scan_reads.fetch_add(1, Ordering::Relaxed);
         Ok(self
             .threads
             .lock()
@@ -110,6 +127,51 @@ impl NotificationHistory for MemoryHistory {
             .filter(|thread| thread.status == NotificationStatus::Active)
             .cloned()
             .collect())
+    }
+}
+
+#[tokio::test]
+async fn replacement_uses_one_point_read_regardless_of_other_live_threads() {
+    for live_count in [1, 64, 1024] {
+        let history = MemoryHistory::default();
+        let lifecycle = NotificationLifecycle::new(history.clone());
+        for _ in 0..live_count {
+            lifecycle
+                .receive(
+                    lifecycle_notification(None, "Original"),
+                    LifecycleDelivery::shown(),
+                    NotificationTimeout::Never,
+                )
+                .await
+                .unwrap();
+        }
+        lifecycle
+            .receive(
+                lifecycle_notification(Some(FIRST_ID), "Updated"),
+                LifecycleDelivery::shown(),
+                NotificationTimeout::Never,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            history.point_reads.load(Ordering::Relaxed),
+            1,
+            "{live_count} live threads"
+        );
+        assert_eq!(
+            history.scan_reads.load(Ordering::Relaxed),
+            0,
+            "replacement must not enumerate unrelated threads"
+        );
+        assert_eq!(
+            lifecycle
+                .thread(FIRST_ID)
+                .await
+                .unwrap()
+                .accepted_notification
+                .summary,
+            "Updated"
+        );
     }
 }
 

@@ -27,6 +27,11 @@ service. Install `canopa-audio-provider` beside `canopa-shell` or on PATH. No `p
 or `wpctl` executable is required for production controls. Microphone discovery
 reads device information; it does not record audio.
 
+Bar scrolling and panel adjustments use the same channel-volume policy. Relative
+changes preserve channel proportions and mute state. Increasing a device whose
+loudest channel is already at or above 100% leaves it unchanged; lowering or
+setting its volume returns it to the 0–100% control range.
+
 Existing volume `actions { click { open-panel; } }` bindings open Sound. Explicit
 custom commands or other actions still take precedence. To open Sound from another
 module or a named menu, use `open-provider "audio"`; no provider declaration is

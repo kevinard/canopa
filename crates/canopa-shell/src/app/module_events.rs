@@ -101,7 +101,7 @@ impl App {
         let module_name = self.modules.configured_module_name_for_instance(&id);
         tracing::trace!(
             target: "canopa_shell::modules",
-            module_name = module_name.as_str(),
+            module_name,
             module_kind,
             module_event = super::messages::module_event_diagnostic_label(&event),
             "module event received"

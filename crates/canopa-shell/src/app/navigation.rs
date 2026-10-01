@@ -2,9 +2,8 @@ use super::App;
 use crate::modules::{ModuleId, Zone};
 
 impl App {
-    /// Build an ordered list of (zone, module_id) for the given surface's effective module layout.
-    /// This filters self.modules to only those visible on this bar's module list, in zone order.
-    pub(super) fn effective_nav_list(&self, window: iced::window::Id) -> Vec<(Zone, ModuleId)> {
+    /// Visible content is shared by rendering, hover and tooltip availability.
+    pub(super) fn visible_module_layout(&self, window: iced::window::Id) -> Vec<(Zone, ModuleId)> {
         let surface = self.surface(window).cloned().unwrap_or_default();
         let bar = Self::bar_for_surface_name(&self.config.bars, &surface.bar_name);
         let mode = if bar.edge.is_horizontal() {
@@ -16,6 +15,19 @@ impl App {
             .into_iter()
             .filter(|(_, id)| self.module_has_content_on_surface(id, &surface, mode))
             .collect()
+    }
+
+    /// Focus includes visible, actionable or inspectable targets. Configured
+    /// instance actions matter even when the module kind has no intrinsic action.
+    pub(super) fn effective_nav_list(&self, window: iced::window::Id) -> Vec<(Zone, ModuleId)> {
+        self.visible_module_layout(window)
+            .into_iter()
+            .filter(|(_, id)| self.module_is_keyboard_target(id))
+            .collect()
+    }
+
+    pub(super) fn module_is_keyboard_target(&self, id: &ModuleId) -> bool {
+        self.modules.supports_keyboard_interaction(id) || self.module_tooltip_template(id).is_some()
     }
 
     /// Returns the ID of the next module in the surface's effective layout (wraps last→first).

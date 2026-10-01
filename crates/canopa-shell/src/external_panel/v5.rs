@@ -66,7 +66,7 @@ impl Session {
         Ok(document)
     }
 
-    fn message(&self, mut event: v1::ProviderEvent) -> Option<v5::HostMessage> {
+    fn candidate(&self, mut event: v1::ProviderEvent) -> Option<v5::HostMessage> {
         if event == v1::ProviderEvent::Close {
             return Some(v5::HostMessage::close());
         }
@@ -98,8 +98,38 @@ impl Session {
             *element_id = original;
             v5::Interaction::Form(event)
         };
-        let message = v5::HostMessage::event(state.revision, interaction);
-        state.contract.accepts(&message).then_some(message)
+        Some(v5::HostMessage::event(state.revision, interaction))
+    }
+
+    fn message(&self, event: v1::ProviderEvent) -> Option<v5::HostMessage> {
+        let message = self.candidate(event)?;
+        self.state
+            .lock()
+            .unwrap()
+            .contract
+            .accepts(&message)
+            .then_some(message)
+    }
+
+    pub(super) fn input_fits(&self, event: &v1::ProviderEvent) -> bool {
+        // Check the longer submit envelope before accepting a local edit.
+        // The value is never truncated, especially for secret inputs.
+        let event = match event {
+            v1::ProviderEvent::TextInputChanged { element_id, value } => {
+                v1::ProviderEvent::TextInputSubmitted {
+                    element_id: element_id.clone(),
+                    value: value.clone(),
+                }
+            }
+            _ => event.clone(),
+        };
+        let Some(mut message) = self.candidate(event) else {
+            return true;
+        };
+        if let v5::HostMessage::Event { revision, .. } = &mut message {
+            *revision = u64::MAX;
+        }
+        message.encode().is_ok()
     }
 
     pub async fn write(
@@ -107,6 +137,9 @@ impl Session {
         writer: &mut (impl AsyncWrite + Unpin),
         event: v1::ProviderEvent,
     ) -> Result<(), ProtocolError> {
+        if !self.input_fits(&event) {
+            return Err(ProtocolError::FrameTooLarge);
+        }
         let Some(message) = self.message(event) else {
             return Ok(());
         };

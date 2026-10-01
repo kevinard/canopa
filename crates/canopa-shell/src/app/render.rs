@@ -144,7 +144,10 @@ impl App {
                         "Workspaces".to_owned()
                     }
                     Some(ModuleKind::FocusedWindow) => "Focused window".to_owned(),
-                    _ => self.modules.configured_module_name_for_instance(id),
+                    _ => self
+                        .modules
+                        .configured_module_name_for_instance(id)
+                        .to_owned(),
                 },
                 PanelContent::Menu(name) => name.clone(),
                 PanelContent::DmenuRequest => "Choose an item".to_owned(),
@@ -218,7 +221,6 @@ impl App {
                         id: id.clone(),
                         window,
                         edge: &bar.edge,
-                        horizontal: is_horizontal,
                         expanded: shows_expanded,
                         style: &bar.style,
                         state_override: Some(state.clone()),
@@ -582,11 +584,11 @@ mod tests {
         let workspace_states: Vec<_> = model
             .start
             .iter()
-            .filter(|entry| entry.id.0.starts_with("workspace:"))
+            .filter(|entry| entry.id.display_name().starts_with("workspace:"))
             .map(|entry| &entry.state)
             .collect();
         assert_eq!(workspace_states.len(), 1);
-        assert_eq!(model.start[0].id, ModuleId::new("workspace:10"));
+        assert_eq!(model.start[0].id, ModuleId::workspace("workspaces", 10));
         assert!(
             workspace_states
                 .iter()
@@ -637,7 +639,7 @@ mod tests {
         let layout = app.effective_panel_module_layout_for_bar(&app.config.bars[0]);
         let workspace_items: Vec<_> = layout
             .into_iter()
-            .filter(|(_, id)| id.0.starts_with("workspace:"))
+            .filter(|(_, id)| id.display_name().starts_with("workspace:"))
             .collect();
 
         assert_eq!(workspace_items.len(), 2);
@@ -1031,7 +1033,11 @@ mod tests {
         ));
 
         let model = app.bar_render_model(wid);
-        let end_ids: Vec<_> = model.end.iter().map(|entry| entry.id.0.as_str()).collect();
+        let end_ids: Vec<_> = model
+            .end
+            .iter()
+            .map(|entry| entry.id.display_name())
+            .collect();
 
         assert_eq!(end_ids, vec!["tray:org.test", "clock"]);
     }

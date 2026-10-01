@@ -1,13 +1,14 @@
 //! Declarative controls for the shell-owned media selection.
 use crate::media::{self, Operation, Request, Snapshot};
+use crate::provider_io::write_v5 as write;
 use canopa_panel_protocol::v5::{self, Content, HostMessage, Interaction, Session, Update};
 use canopa_panel_protocol::{
     InteractionTarget, PanelAction, PanelContent, PanelControl, PanelControlOption, PanelItem,
     PanelSection,
 };
-use iced::futures::StreamExt;
+use futures_util::StreamExt;
 use std::{collections::HashMap, time::Duration};
-use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncBufRead, AsyncWrite};
 
 #[derive(Default)]
 struct MediaPanel {
@@ -168,6 +169,7 @@ struct Client {
     proxy: zbus::Proxy<'static>,
     changes: zbus::proxy::SignalStream<'static>,
     owners: zbus::MessageStream,
+    dirty: bool,
 }
 
 impl Client {
@@ -197,6 +199,7 @@ impl Client {
             proxy,
             changes,
             owners,
+            dirty: false,
         })
     }
     async fn snapshot(&self) -> anyhow::Result<Snapshot> {
@@ -207,15 +210,22 @@ impl Client {
         Ok(serde_json::from_str(&json)?)
     }
     async fn next(&mut self) -> anyhow::Result<Snapshot> {
-        tokio::select! {
-            message = self.changes.next() => {
-                message.ok_or_else(|| anyhow::anyhow!("Media disconnected"))?;
-                // A signal may predate the initial Snapshot reply. Read the
-                // latest state so queued signals cannot rewind the selection.
-                self.snapshot().await
-            },
-            _ = self.owners.next() => anyhow::bail!("Media connection changed"),
+        if !self.dirty {
+            tokio::select! {
+                message = self.changes.next() => {
+                    message.ok_or_else(|| anyhow::anyhow!("Media disconnected"))?;
+                    // Consuming readiness and recording the required refresh
+                    // have no cancellation point between them.
+                    self.dirty = true;
+                },
+                _ = self.owners.next() => anyhow::bail!("Media connection changed"),
+            }
         }
+        // Host input may cancel this RPC after Changed was consumed. Keep the
+        // refresh obligation on the client until a replacement is returned.
+        let snapshot = self.snapshot().await?;
+        self.dirty = false;
+        Ok(snapshot)
     }
     async fn apply(&self, request: Request) -> anyhow::Result<()> {
         self.proxy
@@ -225,23 +235,11 @@ impl Client {
     }
 }
 
-async fn write(
-    output: &mut (impl AsyncWrite + Unpin),
-    response: v5::Response,
-) -> anyhow::Result<()> {
-    let bytes = response.encode()?;
-    tokio::time::timeout(Duration::from_secs(2), async {
-        output.write_all(&bytes).await?;
-        output.flush().await
-    })
-    .await??;
-    Ok(())
-}
-
 pub async fn run(
-    mut input: impl AsyncBufRead + Unpin,
+    input: impl AsyncBufRead + Unpin + Send + 'static,
     mut output: impl AsyncWrite + Unpin,
 ) -> anyhow::Result<()> {
+    let mut input = crate::provider_io::Input::v5(input);
     let mut panel = MediaPanel::default();
     let mut snapshot = Snapshot::default();
     let mut client: Option<Client> = None;
@@ -249,12 +247,10 @@ pub async fn run(
     retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     write(&mut output, panel.publish(&snapshot, None)?).await?;
     loop {
-        // Keep a partially consumed host frame alive across metadata updates.
-        let frame = HostMessage::read_async(&mut input);
-        tokio::pin!(frame);
+        // Domain updates can race input without owning frame assembly.
         let message = loop {
             tokio::select! {
-                message = &mut frame => break message?,
+                message = input.next() => break message?,
                 _ = retry.tick(), if client.is_none() => {
                     if let Ok(Ok((connected, state))) = tokio::time::timeout(Duration::from_millis(800), async {
                         let connected = Client::connect().await?;

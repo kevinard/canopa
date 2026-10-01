@@ -1,7 +1,7 @@
 //! Version selection is explicit; the Wi-Fi operation loop remains transport-neutral.
 use canopa_panel_protocol::{ProtocolError, v1, v5};
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncBufRead, AsyncWrite};
 
 #[derive(Clone, Default)]
 pub enum Transport {
@@ -12,6 +12,16 @@ pub enum Transport {
 pub enum Input {
     V1(v1::HostMessage),
     V5(v5::HostMessage),
+}
+impl Input {
+    pub(crate) fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::V1(
+                v1::HostMessage::Handshake(_) | v1::HostMessage::Event(v1::ProviderEvent::Close)
+            ) | Self::V5(v5::HostMessage::Close { .. })
+        )
+    }
 }
 pub enum Action {
     Event(v1::ProviderEvent),
@@ -85,36 +95,47 @@ impl Transport {
         initial: bool,
         update: v5::Update,
     ) -> Result<(), ProtocolError> {
-        match self {
-            Self::V1 => {
-                v1::write_frame(
-                    writer,
-                    &if initial {
-                        v1::ProviderMessage::Handshake {
-                            protocol_version: v1::PROTOCOL_VERSION,
-                            content,
-                        }
-                    } else {
-                        v1::ProviderMessage::Content { content }
-                    },
-                )
-                .await
-            }
-            Self::V5(state) => {
-                let bytes = state
-                    .lock()
-                    .unwrap()
-                    .replace(v5::Content::Form(content), update)?
-                    .encode()?;
-                writer
-                    .write_all(&bytes)
-                    .await
-                    .map_err(|error| ProtocolError::Io(error.to_string()))?;
-                writer
-                    .flush()
-                    .await
-                    .map_err(|error| ProtocolError::Io(error.to_string()))
-            }
+        let bytes = match self {
+            Self::V1 => v1::encode_frame(&if initial {
+                v1::ProviderMessage::Handshake {
+                    protocol_version: v1::PROTOCOL_VERSION,
+                    content,
+                }
+            } else {
+                v1::ProviderMessage::Content { content }
+            })?,
+            Self::V5(state) => state
+                .lock()
+                .unwrap()
+                .replace(v5::Content::Form(content), update)?
+                .encode()?,
+        };
+        crate::provider_io::write_frame(writer, &bytes).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn both_versions_bound_a_blocked_host_output() {
+        for transport in [Transport::V1, Transport::v5()] {
+            let (mut writer, _host_not_reading) = tokio::io::duplex(1);
+            let result = tokio::time::timeout(
+                std::time::Duration::from_millis(2300),
+                transport.write(
+                    &mut writer,
+                    super::super::no_control_document(),
+                    true,
+                    v5::Update::Replace,
+                ),
+            )
+            .await;
+            assert!(
+                matches!(result, Ok(Err(ProtocolError::Io(_)))),
+                "blocked host output did not terminate within its publication deadline"
+            );
         }
     }
 }

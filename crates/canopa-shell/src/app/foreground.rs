@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 mod dismissal;
 mod motion;
 
@@ -96,32 +93,7 @@ impl ForegroundRoleSnapshot {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(super) struct PanelMenuRenderState {
-    pub(super) entries: Arc<[super::selectable_menu_session::SelectableMenuEntry]>,
-    pub(super) show_icons: bool,
-    pub(super) prompt: Option<String>,
-    pub(super) search_query: String,
-    pub(super) focused_index: Option<usize>,
-    pub(super) can_go_back: bool,
-    pub(super) scroll_y: f32,
-    pub(super) viewport_height: f32,
-}
-
-impl From<super::panel_runtime::PanelMenuRenderState> for PanelMenuRenderState {
-    fn from(value: super::panel_runtime::PanelMenuRenderState) -> Self {
-        Self {
-            entries: value.entries,
-            show_icons: value.show_icons,
-            prompt: value.prompt,
-            search_query: value.search_query,
-            focused_index: value.focused_index,
-            can_go_back: value.can_go_back,
-            scroll_y: value.scroll_y,
-            viewport_height: value.viewport_height,
-        }
-    }
-}
+pub(super) use super::panel_runtime::{PanelInteraction, PanelMenuRenderState};
 
 pub(super) struct PanelRenderSnapshot<'a> {
     pub(super) tree: &'a crate::surface::panel::PanelTree,
@@ -138,12 +110,11 @@ pub(super) struct PanelMenuScrollContext {
 pub(super) enum ForegroundOverlay {
     Panel {
         window: Option<iced::window::Id>,
-        tree: crate::surface::panel::PanelTree,
     },
     Menu {
         window: iced::window::Id,
         meta: MenuPopupMeta,
-        session: super::selectable_menu_session::SelectableMenuSession,
+        session: Box<super::selectable_menu_session::SelectableMenuSession>,
     },
 }
 
@@ -176,21 +147,11 @@ pub(super) enum ForegroundIntent<'a> {
         identity: super::surfaces::BarSurfaceIdentity,
         window: iced::window::Id,
     },
-    PanelSearchChanged(String),
-    PanelMenuScrolled {
-        y: f32,
-        viewport_height: f32,
-    },
-    PanelFocusIndex(usize),
-    PanelRequestSearchFocus,
-    PanelSearchFocusSettled,
+    Panel(PanelInteraction),
     PanelFocusMove {
         delta: isize,
         scroll: PanelMenuScrollContext,
     },
-    PanelBack,
-    PanelEscape,
-    PanelActivate(Option<usize>),
     PanelActionRequested(crate::config::PanelAction),
     BeginDmenuSelection {
         request: crate::ipc::protocol::DmenuRequest,
@@ -343,6 +304,13 @@ impl PartialEq for ForegroundEffect {
     }
 }
 
+/// Only one opening may survive a later user intent. Menus wait for physical
+/// close acknowledgements; application lists wait for a generation-bound load.
+enum PendingOpening {
+    Menu(MenuForegroundRequest),
+    InstalledApps(super::panel_runtime::PendingPanelOpen),
+}
+
 #[derive(Default)]
 pub(super) struct Foreground {
     dismissal: dismissal::DismissalSurfaces,
@@ -352,12 +320,18 @@ pub(super) struct Foreground {
     retiring: Option<motion::RetiringPanel>,
     closing_panel_windows: HashSet<iced::window::Id>,
     closing_menu_windows: HashMap<iced::window::Id, MenuPopupMeta>,
-    pending_menu: Option<MenuForegroundRequest>,
-    pending_apps: Option<super::panel_runtime::PendingPanelOpen>,
+    pending: Option<PendingOpening>,
     apps_generation: u64,
 }
 
 impl Foreground {
+    fn pending_apps(&self) -> Option<&super::panel_runtime::PendingPanelOpen> {
+        match self.pending.as_ref()? {
+            PendingOpening::InstalledApps(pending) => Some(pending),
+            PendingOpening::Menu(_) => None,
+        }
+    }
+
     pub(super) fn apps_generation(&self) -> u64 {
         self.apps_generation
     }
@@ -371,7 +345,10 @@ impl Foreground {
         if generation != self.apps_generation {
             return Vec::new();
         }
-        let Some(pending) = self.pending_apps.take() else {
+        if self.pending_apps().is_none() {
+            return Vec::new();
+        }
+        let Some(PendingOpening::InstalledApps(pending)) = self.pending.take() else {
             return Vec::new();
         };
         self.handle(ForegroundIntent::PanelInstalledAppsLoaded {
@@ -389,11 +366,10 @@ impl Foreground {
             return Some(self.close_panel());
         }
         if self
-            .pending_apps
-            .as_ref()
+            .pending_apps()
             .is_some_and(|pending| pending.menu_name == name)
         {
-            self.pending_apps = None;
+            self.pending = None;
             return Some(Vec::new());
         }
         None
@@ -402,29 +378,28 @@ impl Foreground {
     pub(super) fn handle(&mut self, intent: ForegroundIntent<'_>) -> Vec<ForegroundEffect> {
         if let ForegroundIntent::TogglePanel { request, .. } = &intent
             && self
-                .pending_apps
-                .as_ref()
+                .pending_apps()
                 .is_some_and(|pending| pending.request == *request)
         {
-            self.pending_apps = None;
+            self.pending = None;
             return Vec::new();
         }
         match &intent {
             ForegroundIntent::OpenPanel { .. }
             | ForegroundIntent::TogglePanel { .. }
             | ForegroundIntent::ClosePanel
+            | ForegroundIntent::CloseMenu
             | ForegroundIntent::OpenMenu { .. }
             | ForegroundIntent::BeginDmenuSelection { .. }
-            | ForegroundIntent::PanelEscape => {
-                self.pending_apps = None;
+            | ForegroundIntent::Panel(PanelInteraction::Escape) => {
+                self.pending = None;
             }
             ForegroundIntent::BarSurfaceRemoved { window, .. }
                 if self
-                    .pending_apps
-                    .as_ref()
+                    .pending_apps()
                     .is_some_and(|pending| pending.request.origin_window == *window) =>
             {
-                self.pending_apps = None;
+                self.pending = None;
             }
             _ => {}
         }
@@ -450,59 +425,14 @@ impl Foreground {
             ForegroundIntent::BarSurfaceRemoved { identity, window } => {
                 self.bar_surface_removed(identity, window)
             }
-            ForegroundIntent::PanelSearchChanged(query) => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::SearchChanged(
-                        query,
-                    ));
-                Vec::new()
-            }
-            ForegroundIntent::PanelMenuScrolled { y, viewport_height } => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::MenuScrolled {
-                        y,
-                        viewport_height,
-                    });
-                Vec::new()
-            }
-            ForegroundIntent::PanelFocusIndex(index) => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::FocusIndex(index));
-                Vec::new()
-            }
-            ForegroundIntent::PanelRequestSearchFocus => {
-                let effects = self
-                    .panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::RequestSearchFocus);
+            ForegroundIntent::Panel(interaction) => {
+                let effects = self.panel.interact(interaction);
                 self.apply_panel_runtime_effects(effects)
-            }
-            ForegroundIntent::PanelSearchFocusSettled => {
-                self.panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::SearchFocusSettled);
-                Vec::new()
             }
             ForegroundIntent::PanelFocusMove { delta, scroll } => {
                 self.panel
                     .handle(super::panel_runtime::PanelRuntimeIntent::FocusMove(delta));
                 self.scroll_focused_panel_menu(scroll)
-            }
-            ForegroundIntent::PanelBack => {
-                let effects = self
-                    .panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::Back);
-                self.apply_panel_runtime_effects(effects)
-            }
-            ForegroundIntent::PanelEscape => {
-                let effects = self
-                    .panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::Escape);
-                self.apply_panel_runtime_effects(effects)
-            }
-            ForegroundIntent::PanelActivate(index) => {
-                let effects = self
-                    .panel
-                    .handle(super::panel_runtime::PanelRuntimeIntent::Activate(index));
-                self.apply_panel_runtime_effects(effects)
             }
             ForegroundIntent::PanelActionRequested(action) => self.panel_action_requested(action),
             ForegroundIntent::BeginDmenuSelection {
@@ -584,25 +514,22 @@ impl Foreground {
 
     pub(super) fn active_panel_tree(&self) -> Option<&crate::surface::panel::PanelTree> {
         match self.active.as_ref()? {
-            ForegroundOverlay::Panel { tree, .. } => Some(tree),
+            ForegroundOverlay::Panel { .. } => self.panel.active_panel_tree(),
             ForegroundOverlay::Menu { .. } => None,
         }
     }
 
     pub(super) fn active_panel_menu_render_state(&self) -> PanelMenuRenderState {
-        self.panel.panel_menu_render_state().into()
+        self.panel.panel_menu_render_state()
     }
 
     pub(super) fn active_panel_origin_for(
         &self,
         origin_window: iced::window::Id,
     ) -> Option<&crate::surface::panel::PanelOrigin> {
-        match self.active.as_ref()? {
-            ForegroundOverlay::Panel { tree, .. } if tree.origin_window == origin_window => {
-                Some(&tree.origin)
-            }
-            ForegroundOverlay::Panel { .. } | ForegroundOverlay::Menu { .. } => None,
-        }
+        self.active_panel_tree()
+            .filter(|tree| tree.origin_window == origin_window)
+            .map(|tree| &tree.origin)
     }
 
     pub(super) fn module_action_targets_active_panel(
@@ -640,13 +567,9 @@ impl Foreground {
         &self,
         window: iced::window::Id,
     ) -> Option<&crate::surface::panel::PanelTree> {
-        match self.active.as_ref()? {
-            ForegroundOverlay::Panel {
-                window: Some(current),
-                tree,
-            } if *current == window => Some(tree),
-            ForegroundOverlay::Panel { .. } | ForegroundOverlay::Menu { .. } => None,
-        }
+        (self.active_panel_window() == Some(window))
+            .then(|| self.panel.active_panel_tree())
+            .flatten()
     }
 
     pub(super) fn is_menu_panel_window(&self, window: iced::window::Id) -> bool {
@@ -752,14 +675,14 @@ impl Foreground {
             && retiring.window == window
         {
             return Some(PanelRenderSnapshot {
-                tree: &retiring.tree,
-                menu: retiring.runtime.panel_menu_render_state().into(),
+                tree: retiring.runtime.active_panel_tree()?,
+                menu: retiring.runtime.panel_menu_render_state(),
             });
         }
         let tree = self.panel_tree_for_window(window)?;
         Some(PanelRenderSnapshot {
             tree,
-            menu: self.panel.panel_menu_render_state().into(),
+            menu: self.panel.panel_menu_render_state(),
         })
     }
 
@@ -893,7 +816,7 @@ impl Foreground {
         content: crate::surface::panel::ExternalPanelContent,
     ) {
         use crate::surface::panel::PanelContent;
-        let Some(ForegroundOverlay::Panel { tree, .. }) = self.active.as_mut() else {
+        let Some(tree) = self.active_panel_tree() else {
             return;
         };
         let PanelContent::ExternalProvider(current) = &tree.content else {
@@ -908,7 +831,6 @@ impl Foreground {
         }
         // Updating an existing document must not retire its focused window.
         // External content has a fixed physical size; only its view changes.
-        tree.content = PanelContent::ExternalProvider(content.clone());
         self.panel
             .handle(super::panel_runtime::PanelRuntimeIntent::UpdateExternalContent(content));
         // A captured entry frame cannot represent newly arranged provider controls.
@@ -928,7 +850,7 @@ impl Foreground {
         request: PanelForegroundRequest,
         context: PanelOpenContext<'_>,
     ) -> Vec<ForegroundEffect> {
-        self.pending_apps = None;
+        self.pending = None;
         let catalog = super::panel_runtime::PanelMenuCatalog::new(context.menus);
         let effects = self
             .panel
@@ -977,16 +899,13 @@ impl Foreground {
             tree.origin_window,
         ));
         effects.push(ForegroundEffect::SuspendBarKeyboardInteractivity);
-        self.active = Some(ForegroundOverlay::Panel {
-            window: None,
-            tree: tree.clone(),
-        });
+        self.active = Some(ForegroundOverlay::Panel { window: None });
         effects.push(ForegroundEffect::OpenPanelWindow { tree });
         effects
     }
 
     fn close_panel(&mut self) -> Vec<ForegroundEffect> {
-        self.pending_apps = None;
+        self.pending = None;
         if matches!(self.active, Some(ForegroundOverlay::Panel { .. })) {
             self.close_active_panel()
         } else {
@@ -995,7 +914,7 @@ impl Foreground {
     }
 
     fn open_menu(&mut self, request: MenuForegroundRequest) -> Vec<ForegroundEffect> {
-        self.pending_apps = None;
+        self.pending = None;
         self.motion = None;
         let mut effects = self.remove_retiring_panel();
         effects.push(ForegroundEffect::CloseAllTooltips);
@@ -1046,14 +965,14 @@ impl Foreground {
                 window, meta: old, ..
             }) => {
                 self.closing_menu_windows.insert(window, old.clone());
-                self.pending_menu = Some(request);
+                self.pending = Some(PendingOpening::Menu(request));
                 vec![ForegroundEffect::CloseMenu { window, meta: old }]
             }
             None => {
                 if self.closing_menu_windows.is_empty() {
                     vec![ForegroundEffect::OpenMenuWindow { request }]
                 } else {
-                    self.pending_menu = Some(request);
+                    self.pending = Some(PendingOpening::Menu(request));
                     Vec::new()
                 }
             }
@@ -1065,10 +984,9 @@ impl Foreground {
         let mut effects = match active {
             Some(ForegroundOverlay::Panel {
                 window: Some(window),
-                tree,
             }) => {
                 self.closing_panel_windows.insert(window);
-                if let Some(mut effects) = self.retire_panel(window, tree) {
+                if let Some(mut effects) = self.retire_panel(window) {
                     effects.push(ForegroundEffect::RestoreBarKeyboardInteractivity);
                     return effects;
                 }
@@ -1146,7 +1064,7 @@ impl Foreground {
                     pending,
                 ) => {
                     self.apps_generation = self.apps_generation.wrapping_add(1);
-                    self.pending_apps = Some(pending.clone());
+                    self.pending = Some(PendingOpening::InstalledApps(pending.clone()));
                     foreground_effects
                         .push(ForegroundEffect::LoadInstalledAppsThenPreparePanel(pending));
                 }
@@ -1214,26 +1132,20 @@ impl Foreground {
 
     fn menu_window_closed(&mut self, window: iced::window::Id) -> Vec<ForegroundEffect> {
         if self.closing_menu_windows.remove(&window).is_some() {
-            return self
-                .pending_menu
-                .take()
-                .map(|request| vec![ForegroundEffect::OpenMenuWindow { request }])
-                .unwrap_or_default();
-        }
-        if let Some(ForegroundOverlay::Menu {
-            window: current,
-            meta,
-            session,
-        }) = self.active.take()
-        {
-            if current == window {
-                return vec![ForegroundEffect::CloseMenu { window, meta }];
+            if self.closing_menu_windows.is_empty()
+                && self.active.is_none()
+                && matches!(self.pending, Some(PendingOpening::Menu(_)))
+                && let Some(PendingOpening::Menu(request)) = self.pending.take()
+            {
+                return vec![ForegroundEffect::OpenMenuWindow { request }];
             }
-            self.active = Some(ForegroundOverlay::Menu {
-                window: current,
-                meta,
-                session,
-            });
+            return Vec::new();
+        }
+        // A duplicate or unknown close must not take a newer Panel's identity.
+        if self.active_menu_window() == Some(window)
+            && let Some(ForegroundOverlay::Menu { meta, .. }) = self.active.take()
+        {
+            return vec![ForegroundEffect::CloseMenu { window, meta }];
         }
         Vec::new()
     }
@@ -1244,11 +1156,11 @@ impl Foreground {
         request: MenuForegroundRequest,
     ) {
         let session = Self::menu_session_for(&request.meta.tree, request.search_enabled);
-        self.pending_menu = None;
+        self.pending = None;
         self.active = Some(ForegroundOverlay::Menu {
             window,
             meta: request.meta,
-            session,
+            session: Box::new(session),
         });
     }
 
@@ -1266,7 +1178,7 @@ impl Foreground {
             && *current == window
         {
             meta.tree = tree.clone();
-            *session = Self::menu_session_for(&tree, search_enabled);
+            **session = Self::menu_session_for(&tree, search_enabled);
         }
     }
 
@@ -1297,7 +1209,7 @@ impl Foreground {
     }
 
     fn close_menu(&mut self) -> Vec<ForegroundEffect> {
-        self.pending_menu = None;
+        self.pending = None;
         match self.active.take() {
             Some(ForegroundOverlay::Menu { window, meta, .. }) => {
                 self.closing_menu_windows.insert(window, meta.clone());
@@ -1316,21 +1228,19 @@ impl Foreground {
         identity: super::surfaces::BarSurfaceIdentity,
         window: iced::window::Id,
     ) -> Vec<ForegroundEffect> {
-        let mut retired_effects = if self
-            .retiring
-            .as_ref()
-            .is_some_and(|panel| panel.tree.origin_window == window)
-        {
+        let mut retired_effects = if self.retiring.as_ref().is_some_and(|panel| {
+            panel
+                .runtime
+                .active_panel_tree()
+                .is_some_and(|tree| tree.origin_window == window)
+        }) {
             self.remove_retiring_panel()
         } else {
             Vec::new()
         };
-        if self
-            .pending_menu
-            .as_ref()
-            .is_some_and(|request| request.meta.origin == identity)
+        if matches!(&self.pending, Some(PendingOpening::Menu(request)) if request.meta.origin == identity)
         {
-            self.pending_menu = None;
+            self.pending = None;
         }
 
         let Some(active) = self.active.take() else {
@@ -1340,8 +1250,11 @@ impl Foreground {
         retired_effects.extend(match active {
             ForegroundOverlay::Panel {
                 window: panel_window,
-                tree,
-            } if tree.origin_window == window => {
+            } if self
+                .panel
+                .active_panel_tree()
+                .is_some_and(|tree| tree.origin_window == window) =>
+            {
                 self.motion = None;
                 let mut effects = match panel_window {
                     Some(panel_window) => {
@@ -1374,13 +1287,11 @@ impl Foreground {
     }
 
     fn active_panel_matches(&self, request: &PanelForegroundRequest) -> bool {
-        matches!(
-            self.active.as_ref(),
-            Some(ForegroundOverlay::Panel { tree, .. })
-                if tree.origin_window == request.origin_window
-                    && tree.origin == request.origin
-                    && tree.content == request.content
-        )
+        self.active_panel_tree().is_some_and(|tree| {
+            tree.origin_window == request.origin_window
+                && tree.origin == request.origin
+                && tree.content == request.content
+        })
     }
 }
 
@@ -1877,6 +1788,97 @@ mod tests {
         expected.extend(panel_open_effects(origin, tree));
         assert_eq!(open_panel(&mut foreground, request), expected);
         assert_eq!(foreground.active_menu_window(), None);
+    }
+
+    #[test]
+    fn newer_panel_retires_a_pending_menu_opening() {
+        let origin = wid();
+        let old_window = wid();
+        let panel_window = wid();
+        let old = menu_request("org.old", false);
+        let pending = menu_request("org.pending", false);
+        let mut foreground = Foreground::default();
+        foreground.handle(ForegroundIntent::OpenMenu {
+            request: old.clone(),
+        });
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
+            window: old_window,
+            request: old,
+        });
+        foreground.handle(ForegroundIntent::OpenMenu { request: pending });
+
+        let request = panel_request(origin, crate::surface::panel::PanelContent::BarPanel);
+        open_panel(&mut foreground, request.clone());
+        foreground.handle(ForegroundIntent::PanelWindowOpened {
+            window: panel_window,
+        });
+
+        for window in [old_window, old_window, wid()] {
+            let effects = foreground.handle(ForegroundIntent::MenuWindowClosed { window });
+            assert!(effects.is_empty(), "an obsolete menu must not reopen");
+            assert_eq!(foreground.active_panel_window(), Some(panel_window));
+            assert_eq!(foreground.active_panel_tree(), Some(&request.tree()));
+        }
+    }
+
+    #[test]
+    fn dmenu_retires_a_pending_menu_and_completes_exactly_once_on_replacement() {
+        let old_window = wid();
+        let old = menu_request("org.old", false);
+        let mut foreground = Foreground::default();
+        foreground.handle(ForegroundIntent::OpenMenu {
+            request: old.clone(),
+        });
+        foreground.handle(ForegroundIntent::MenuWindowOpened {
+            window: old_window,
+            request: old,
+        });
+        foreground.handle(ForegroundIntent::OpenMenu {
+            request: menu_request("org.pending", false),
+        });
+
+        let request = panel_request(wid(), crate::surface::panel::PanelContent::DmenuRequest);
+        let (sender, _receiver) = tokio::sync::oneshot::channel();
+        let responder = crate::app::messages::ipc_responder(sender);
+        foreground.handle(ForegroundIntent::BeginDmenuSelection {
+            request: crate::ipc::protocol::DmenuRequest {
+                prompt: None,
+                entries: vec![crate::ipc::protocol::DmenuEntry::plain("choice")],
+                allow_custom: false,
+            },
+            responder: responder.clone(),
+            panel_request: Some(request.clone()),
+        });
+        assert!(
+            foreground
+                .handle(ForegroundIntent::MenuWindowClosed { window: old_window })
+                .is_empty()
+        );
+        assert_eq!(foreground.active_panel_tree(), Some(&request.tree()));
+
+        let mut effects = open_panel(
+            &mut foreground,
+            panel_request(wid(), crate::surface::panel::PanelContent::BarPanel),
+        );
+        effects
+            .extend(foreground.handle(ForegroundIntent::MenuWindowClosed { window: old_window }));
+        effects.extend(foreground.handle(ForegroundIntent::ClosePanel));
+        let responses: Vec<_> = effects
+            .iter()
+            .filter_map(|effect| match effect {
+                ForegroundEffect::SendDmenuResponse {
+                    responder,
+                    response,
+                } => Some((responder, response)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(responses.len(), 1);
+        assert!(std::sync::Arc::ptr_eq(responses[0].0, &responder));
+        assert_eq!(
+            responses[0].1,
+            &crate::ipc::protocol::IpcResponse::Cancelled
+        );
     }
 
     #[test]

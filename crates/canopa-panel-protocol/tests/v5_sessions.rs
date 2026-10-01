@@ -239,6 +239,156 @@ fn rich_membership_checks_section_options_and_item_actions_including_links() {
     assert!(!accepts(item, "unknown", "domain-token"));
 }
 #[test]
+fn advertised_actions_must_fit_the_event_limit_including_json_escapes() {
+    let large = "\u{1}".repeat(MAX_EVENT_BYTES / 6);
+    for content in [
+        Content::Form(FormContent {
+            elements: vec![FormElement::Button {
+                id: large.clone(),
+                label: "Run".into(),
+            }],
+        }),
+        Content::Form(FormContent {
+            elements: vec![FormElement::TextInput {
+                id: "input".into(),
+                label: "Input".into(),
+                value: large.clone(),
+                secret: false,
+                error: None,
+            }],
+        }),
+        {
+            let mut content = RichContent::new("Actions");
+            content.actions.push(v4::PanelAction {
+                key: "run".into(),
+                label: "Run".into(),
+                value: Some(large),
+            });
+            Content::Rich(content)
+        },
+    ] {
+        let mut session = Session::default();
+        let original = session.replace(form(""), Update::Replace).unwrap();
+        let response = Response {
+            protocol_version: PROTOCOL_VERSION,
+            revision: 1,
+            content: content.clone(),
+        };
+        assert!(
+            response.encode().is_err(),
+            "must reject an unsendable advertised interaction"
+        );
+        assert!(session.replace(content, Update::Replace).is_err());
+        assert!(session.accepts(&edit(original.revision, "valid")));
+    }
+}
+
+#[test]
+fn action_boundaries_round_trip_at_the_exact_encoded_event_limit() {
+    let mut id = "é\"\\\u{1}".repeat(100);
+    let event = |id: &str| {
+        HostMessage::event(
+            u64::MAX,
+            Interaction::Form(FormEvent::ButtonActivated {
+                element_id: id.into(),
+            }),
+        )
+    };
+    let spare = MAX_EVENT_BYTES - event(&id).encode().unwrap().len();
+    id.push_str(&"x".repeat(spare));
+    let frame = event(&id).encode().unwrap();
+    assert_eq!(frame.len(), MAX_EVENT_BYTES);
+    assert_eq!(HostMessage::decode(&frame).unwrap(), event(&id));
+    let content = |id: &str| {
+        Content::Form(FormContent {
+            elements: vec![FormElement::Button {
+                id: id.into(),
+                label: "Run".into(),
+            }],
+        })
+    };
+    let mut host = Session::default();
+    host.observe(Response {
+        protocol_version: PROTOCOL_VERSION,
+        revision: u64::MAX,
+        content: content(&id),
+    })
+    .unwrap();
+    assert!(host.accepts(&event(&id)));
+    id.push('x');
+    assert_eq!(
+        event(&id).encode().unwrap_err(),
+        ProtocolError::FrameTooLarge
+    );
+    assert_eq!(
+        content(&id).validate().unwrap_err(),
+        ProtocolError::FrameTooLarge
+    );
+}
+
+#[test]
+fn every_rich_interaction_field_is_checked_for_event_size() {
+    let base = serde_json::json!({
+        "title":"Controls", "actions":[{"key":"top", "label":"Top", "value":"value"}],
+        "sections":[{"id":"section", "title":"Section",
+            "controls":[{"key":"choice", "label":"Choice", "value":"one", "options":[{"value":"one", "label":"One"}]}],
+            "items":[{"id":"item", "title":"Item", "metadata":[],
+                "actions":[{"key":"run", "label":"Run", "value":"value"}],
+                "rich_body":{"segments":[{"kind":"link", "uri":"https://example.org", "action":{"key":"link", "label":"Link", "value":"value"}, "style":{"bold":false,"italic":false,"underline":false}}]},
+                "slider":{"key":"level", "label":"Level", "min":0, "max":65535, "step":1, "value":0, "unit":"%"}
+            }]
+        }]
+    });
+    for path in [
+        "/actions/0/key",
+        "/actions/0/value",
+        "/sections/0/id",
+        "/sections/0/controls/0/key",
+        "/sections/0/controls/0/options/0/value",
+        "/sections/0/items/0/id",
+        "/sections/0/items/0/actions/0/key",
+        "/sections/0/items/0/actions/0/value",
+        "/sections/0/items/0/rich_body/segments/0/action/key",
+        "/sections/0/items/0/rich_body/segments/0/action/value",
+        "/sections/0/items/0/slider/key",
+    ] {
+        let mut value = base.clone();
+        *value.pointer_mut(path).unwrap() =
+            serde_json::Value::String("\u{1}".repeat(MAX_EVENT_BYTES / 6));
+        let content: RichContent = serde_json::from_value(value).unwrap();
+        content.validate().unwrap(); // Valid legacy rich semantics; only the v5 event is too large.
+        assert_eq!(
+            Content::Rich(content).validate().unwrap_err(),
+            ProtocolError::FrameTooLarge,
+            "{path}"
+        );
+    }
+    for (list_id, entry_id) in [
+        ("x".repeat(MAX_EVENT_BYTES), "entry".into()),
+        ("list".into(), "x".repeat(MAX_EVENT_BYTES)),
+    ] {
+        let content = Content::Form(FormContent {
+            elements: vec![FormElement::SelectableList {
+                id: list_id,
+                allow_custom: true,
+                entries: vec![v1::ExternalSelectableEntry {
+                    id: entry_id,
+                    label: "Entry".into(),
+                    description: None,
+                    disabled: false,
+                    active: false,
+                    status: None,
+                }],
+            }],
+        });
+        assert_eq!(
+            content.validate().unwrap_err(),
+            ProtocolError::FrameTooLarge
+        );
+    }
+}
+
+#[test]
 fn codecs_bound_both_directions_and_do_not_install_unsendable_content() {
     let mut session = Session::default();
     let response = session.replace(form(""), Update::Replace).unwrap();

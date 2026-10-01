@@ -15,6 +15,68 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+#[tokio::test]
+async fn active_diagnostics_do_not_decode_inactive_history() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("history.db");
+    let daemon = Daemon::open(DaemonOptions::headless(database.clone()))
+        .await
+        .unwrap();
+    let archived = daemon
+        .receive_notification(notification("Mail", "Archived"))
+        .await
+        .unwrap();
+    daemon
+        .close_notification(archived.notification_id)
+        .await
+        .unwrap();
+    let current = daemon
+        .receive_notification(notification("Mail", "Current"))
+        .await
+        .unwrap();
+    daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            ..notification("Chat", "Transient")
+        })
+        .await
+        .unwrap();
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&database))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE notification_threads SET actions_json = 'invalid' WHERE id = ?1")
+        .bind(archived.notification_id.get())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let ControlReply::ActiveNotifications(active) = NotifyControl::new(daemon.clone())
+        .execute(ControlCommand::ActiveNotifications)
+        .await
+        .expect("inactive history must not affect active diagnostics")
+    else {
+        panic!("active reply")
+    };
+    assert_eq!(active.len(), 1, "legacy diagnostics remain retained-only");
+    assert_eq!(active[0].id, current.notification_id);
+    // Count-only callers must not decode even the active row's body/actions.
+    sqlx::query("UPDATE notification_threads SET actions_json = 'invalid' WHERE id = ?1")
+        .bind(current.notification_id.get())
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        NotifyControl::new(daemon.clone())
+            .execute(ControlCommand::ActiveNotificationCount)
+            .await
+            .unwrap(),
+        ControlReply::ActiveNotificationCount(1)
+    );
+    pool.close().await;
+    daemon.shutdown().await.unwrap();
+}
+
 async fn center_item(
     control: &NotifyControl,
     id: canopa_notify::InternalNotificationId,
@@ -326,6 +388,8 @@ async fn retained_attention_can_be_acknowledged_after_expiry_without_sender_call
     let expired = center_item(&control, receipt.notification_id).await;
     assert!(expired.requires_attention);
     let events = daemon.sender_events().await;
+    let mut changes = control.subscribe_notification_state();
+    assert!(changes.changed().await);
     control
         .execute(ControlCommand::InteractWithNotificationCenter {
             target: expired.target,
@@ -333,6 +397,11 @@ async fn retained_attention_can_be_acknowledged_after_expiry_without_sender_call
         })
         .await
         .unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(1), changes.changed())
+            .await
+            .unwrap()
+    );
     assert_eq!(
         daemon.sender_events().await,
         events,
@@ -1985,4 +2054,122 @@ async fn notify_control_clears_active_notifications() {
     assert!(snapshot.active.is_empty());
     assert_eq!(snapshot.history.len(), 1);
     assert_eq!(snapshot.history[0].status.as_str(), "dismissed");
+}
+
+#[tokio::test]
+async fn center_reader_keeps_one_permission_snapshot_across_bounded_reads() {
+    let directory = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::headless(directory.path().join("history.db")))
+        .await
+        .unwrap();
+    let control = NotifyControl::new(daemon.clone());
+    for index in 0..20 {
+        daemon
+            .receive_notification(NotificationInput {
+                category: Some("email.arrived".into()),
+                ..notification("Mail", format!("Message {index}"))
+            })
+            .await
+            .unwrap();
+    }
+    let reader = control.notification_center_reader().await.unwrap();
+    let first = reader.read(None, 16).await.unwrap();
+    assert_eq!(first.len(), 16);
+    control
+        .execute(ControlCommand::SetAppPermission {
+            app_identity: "Mail".into(),
+            permission: AppPermissionControl::Silence,
+        })
+        .await
+        .unwrap();
+    let second = reader
+        .read(Some(first.last().unwrap().cursor), 16)
+        .await
+        .unwrap();
+    assert_eq!(second.len(), 4);
+    assert!(first.iter().chain(&second).all(|row| {
+        let group = &row.projection.groups[0];
+        group.permission == AppPermissionControl::Allow
+            && group.category_permissions[0].permission == AppPermissionControl::Allow
+    }));
+    let next_frame = control
+        .notification_center_reader()
+        .await
+        .unwrap()
+        .read(None, 16)
+        .await
+        .unwrap();
+    assert!(
+        next_frame
+            .iter()
+            .all(|row| row.projection.groups[0].permission == AppPermissionControl::Silence)
+    );
+    assert!(reader.read(None, 17).await.is_err());
+    assert!(reader.read(None, 0).await.is_err());
+    daemon.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn center_reader_never_moves_backwards_when_a_transient_is_replaced_between_batches() {
+    let directory = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::headless(directory.path().join("history.db")))
+        .await
+        .unwrap();
+    let control = NotifyControl::new(daemon.clone());
+    let mut ids = vec![];
+    for index in 0..3 {
+        ids.push(
+            daemon
+                .receive_notification(NotificationInput {
+                    transient: true,
+                    ..notification("Transient", format!("Original {index}"))
+                })
+                .await
+                .unwrap()
+                .notification_id,
+        );
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    let reader = control.notification_center_reader().await.unwrap();
+    let first = reader.read(None, 1).await.unwrap();
+    let after = first[0].cursor;
+    daemon
+        .receive_notification(NotificationInput {
+            transient: true,
+            replaces_id: Some(ids[0]),
+            ..notification("Transient", "Replacement")
+        })
+        .await
+        .unwrap();
+    let second = reader.read(Some(after), 16).await.unwrap();
+    assert!(
+        second.iter().all(|row| row.cursor < after),
+        "a changed row moved the pagination cursor backwards"
+    );
+    assert_eq!(
+        second.len(),
+        2,
+        "replacement keeps its immutable creation position"
+    );
+    let seen: std::collections::BTreeSet<_> =
+        first.iter().chain(&second).map(|row| row.cursor).collect();
+    assert_eq!(seen.len(), 3, "each cursor appears once");
+    let refreshed = control
+        .notification_center_reader()
+        .await
+        .unwrap()
+        .read(None, 16)
+        .await
+        .unwrap();
+    assert!(
+        refreshed
+            .iter()
+            .any(|row| row.projection.groups[0].items[0].summary == "Replacement")
+    );
+    assert_eq!(
+        refreshed[0].cursor, first[0].cursor,
+        "updates preserve creation order"
+    );
+    assert_eq!(refreshed.len(), 3);
+    daemon.shutdown().await.unwrap();
 }

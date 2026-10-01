@@ -91,6 +91,10 @@ impl CtlRequest {
                             ControlReply::ActiveNotifications(_)
                         )
                         | (
+                            ControlCommand::ActiveNotificationCount,
+                            ControlReply::ActiveNotificationCount(_)
+                        )
+                        | (
                             ControlCommand::NotificationCenterProjection,
                             ControlReply::NotificationCenterProjection(_)
                         )
@@ -198,7 +202,7 @@ const SOCKET_CONTROL_REQUESTS: &[SocketControlRequestSpec] = &[
     SocketControlRequestSpec {
         request: SocketControlRequest::ActiveCount,
         line: "active\n",
-        command: Some(ControlCommand::ActiveNotifications),
+        command: Some(ControlCommand::ActiveNotificationCount),
         format_reply: Some(format_active_count_reply),
     },
     SocketControlRequestSpec {
@@ -329,10 +333,10 @@ fn format_active_json_reply(reply: ControlReply) -> anyhow::Result<String> {
 }
 
 fn format_active_count_reply(reply: ControlReply) -> anyhow::Result<String> {
-    let ControlReply::ActiveNotifications(active) = reply else {
+    let ControlReply::ActiveNotificationCount(count) = reply else {
         return Err(unexpected_control_reply());
     };
-    Ok(format!("{} active notifications\n", active.len()))
+    Ok(format!("{count} active notifications\n"))
 }
 
 fn format_panel_snapshot_reply(reply: ControlReply) -> anyhow::Result<String> {
@@ -974,7 +978,7 @@ mod tests {
         );
         assert_eq!(
             SocketControlRequest::parse("active").command(),
-            Some(ControlCommand::ActiveNotifications)
+            Some(ControlCommand::ActiveNotificationCount)
         );
         assert_eq!(
             SocketControlRequest::parse("active-json").command(),

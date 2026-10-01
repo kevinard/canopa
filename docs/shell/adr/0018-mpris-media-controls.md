@@ -40,3 +40,26 @@ The first version omits artwork, seeking, queue management, shuffle/repeat and
 per-player volume. These can be added when needed without making the shell a
 media player. See [the user guide](../../media.md) and the
 [MPRIS player interface](https://specifications.freedesktop.org/mpris/latest/Player_Interface.html).
+
+
+Property refreshes use the signal's unique sender to mark only that owner's players
+as dirty. Discovery inventories names/owners on ownership changes; it no longer
+re-reads every player after a property signal or control. At most 16 property reads
+run concurrently for the bounded 64-player inventory, alongside command handling.
+Signals during a read retain one subsequent refresh obligation, and read identity
+prevents completions from retired reads from replacing current data. One in-flight
+read per player lets the display advance even while more signals arrive. Snapshot
+projection runs when presentation/selection changes rather than for each signal.
+
+A failed property read retains the last valid player and its manual pin. Confirmed
+ownership loss retires the player; a later property signal retries a failed read.
+Controls still revalidate the exact owner, track and current capabilities, with a
+deadline bounded by the request's remaining lifetime. A stale display therefore
+cannot redirect a control or bypass current capability validation.
+
+During initial discovery, completed reads may publish provisional automatic
+selection so available players remain controllable. Automatic ties are resolved
+by bus name until the initial cohort has completed its reads, regardless of
+metadata response order. A manual selection made during discovery takes
+precedence. Thereafter the existing selection remains stable among equal-status
+players, as before.

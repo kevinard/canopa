@@ -110,6 +110,24 @@ impl Presentation {
 }
 
 impl IconLabel for NotificationsModule {
+    fn fallback_view(
+        &self,
+        state: &ModuleState,
+        layout: IconLabelLayout,
+        style: &Style,
+    ) -> iced::Element<'_, Message> {
+        if layout == IconLabelLayout::Collapsed {
+            super::view::stacked_icon_label(
+                self.icon(state),
+                Presentation::for_state(state).count,
+                self.color(state),
+                style,
+            )
+        } else {
+            super::view::default_icon_label_view(self, state, layout, style)
+        }
+    }
+
     fn icon(&self, state: &ModuleState) -> String {
         Presentation::for_state(state).icon.into()
     }
@@ -147,66 +165,15 @@ impl IconLabel for NotificationsModule {
 }
 
 impl ModuleRender for NotificationsModule {
+    fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
+        Some(self)
+    }
+
     fn has_content(&self, _state: &ModuleState, _mode: crate::config::FormatMode) -> bool {
         true
     }
     fn tooltip_values(&self, state: &ModuleState) -> Vec<(&'static str, String)> {
         Presentation::for_state(state).values()
-    }
-    fn render_collapsed_with_style(
-        &self,
-        state: &ModuleState,
-        style: &Style,
-    ) -> iced::Element<'_, Message> {
-        if self
-            .config
-            .format
-            .template_for(crate::config::FormatMode::Collapsed)
-            .is_some()
-        {
-            return super::view::icon_label_view_with_default(
-                self,
-                state,
-                IconLabelLayout::Collapsed,
-                style,
-            );
-        }
-        iced::widget::column![
-            super::view::styled_segment_text(
-                self.icon(state),
-                crate::theme::bar_metrics::ICON_SIZE,
-                self.color(state),
-                super::view::fallback_resolved_style(style)
-            ),
-            super::view::styled_segment_text(
-                Presentation::for_state(state).count,
-                crate::theme::bar_metrics::TEXT_SIZE,
-                crate::theme::palette().text,
-                super::view::fallback_resolved_style(style)
-            ),
-        ]
-        .align_x(iced::Alignment::Center)
-        .width(iced::Length::Fill)
-        .into()
-    }
-    fn render_panel_with_style(
-        &self,
-        state: &ModuleState,
-        style: &Style,
-    ) -> iced::Element<'_, Message> {
-        super::view::icon_label_view_with_default(self, state, IconLabelLayout::Expanded, style)
-    }
-    fn render_horizontal_with_style(
-        &self,
-        state: &ModuleState,
-        style: &Style,
-    ) -> Option<iced::Element<'_, Message>> {
-        Some(super::view::icon_label_view_with_default(
-            self,
-            state,
-            IconLabelLayout::Horizontal,
-            style,
-        ))
     }
 }
 

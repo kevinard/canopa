@@ -3,10 +3,49 @@ use crate::modules::{ModuleDetailSession, ModuleState};
 pub struct BarRenderContext<'a> {
     pub window: iced::window::Id,
     pub edge: &'a crate::config::Edge,
-    pub horizontal: bool,
 }
 
 pub trait ModuleRender: Send + Sync {
+    /// Ordinary modules supply values and optional fallback/decorations. This
+    /// boundary owns format layout, style defaults and edge-specific rotation.
+    fn presentation(&self) -> Option<&dyn super::view::IconLabel> {
+        None
+    }
+
+    fn render_bar(
+        &self,
+        state: &ModuleState,
+        context: &BarRenderContext<'_>,
+        style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
+        let horizontal = context.edge.is_horizontal();
+        if let Some(presentation) = self.presentation() {
+            let layout = if horizontal {
+                super::view::IconLabelLayout::Horizontal
+            } else {
+                super::view::IconLabelLayout::Collapsed
+            };
+            return super::view::icon_label_view_with_rotation(
+                presentation,
+                state,
+                layout,
+                style,
+                presentation
+                    .content_rotation()
+                    .resolve_for_edge(context.edge),
+            );
+        }
+        // Rich surfaces retain their image, anchor or workspace frame semantics.
+        if horizontal {
+            self.render_bar_horizontal_with_style(state, context, style)
+                .or_else(|| self.render_horizontal_with_style(state, style))
+                .unwrap_or_else(|| self.render_panel_with_style(state, style))
+        } else {
+            self.render_bar_collapsed_with_style(state, context, style)
+                .unwrap_or_else(|| self.render_collapsed_with_style(state, style))
+        }
+    }
+
     /// Whether this presentation has content, before adding frames or input targets.
     fn has_content(&self, state: &ModuleState, _mode: crate::config::FormatMode) -> bool {
         match state {
@@ -21,13 +60,37 @@ pub trait ModuleRender: Send + Sync {
         &self,
         state: &ModuleState,
         style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message>;
+    ) -> iced::Element<'_, crate::app::Message> {
+        self.presentation().map_or_else(
+            || iced::widget::Space::new().into(),
+            |presentation| {
+                super::view::icon_label_view_with_default(
+                    presentation,
+                    state,
+                    super::view::IconLabelLayout::Collapsed,
+                    style,
+                )
+            },
+        )
+    }
 
     fn render_panel_with_style(
         &self,
         state: &ModuleState,
         style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message>;
+    ) -> iced::Element<'_, crate::app::Message> {
+        self.presentation().map_or_else(
+            || iced::widget::Space::new().into(),
+            |presentation| {
+                super::view::icon_label_view_with_default(
+                    presentation,
+                    state,
+                    super::view::IconLabelLayout::Expanded,
+                    style,
+                )
+            },
+        )
+    }
 
     fn render_bar_collapsed_with_style(
         &self,
@@ -40,10 +103,17 @@ pub trait ModuleRender: Send + Sync {
 
     fn render_horizontal_with_style(
         &self,
-        _state: &ModuleState,
-        _style: &crate::config::Style,
+        state: &ModuleState,
+        style: &crate::config::Style,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        None
+        self.presentation().map(|presentation| {
+            super::view::icon_label_view_with_default(
+                presentation,
+                state,
+                super::view::IconLabelLayout::Horizontal,
+                style,
+            )
+        })
     }
 
     fn render_bar_horizontal_with_style(
@@ -85,3 +155,6 @@ pub trait ModuleRender: Send + Sync {
         Vec::new()
     }
 }
+
+#[cfg(test)]
+mod tests;

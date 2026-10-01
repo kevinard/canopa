@@ -44,24 +44,16 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin,
 {
-    let mut reader = tokio::io::BufReader::new(reader);
+    let reader = tokio::io::BufReader::new(reader);
     let input_transport = transport.clone();
-    let (input_tx, mut input) = mpsc::channel(16);
-    let reader_task = tokio::spawn(async move {
-        while let Ok(message) = input_transport.read(&mut reader).await {
-            if input_tx.send(message).await.is_err() {
-                break;
-            }
-        }
-    });
-    // Dropping this session must also cancel its blocked stdin reader.
-    struct ReaderGuard(tokio::task::AbortHandle);
-    impl Drop for ReaderGuard {
-        fn drop(&mut self) {
-            self.0.abort();
-        }
-    }
-    let _reader = ReaderGuard(reader_task.abort_handle());
+    let mut input = crate::provider_io::Input::new(
+        reader,
+        move |reader| {
+            let transport = input_transport.clone();
+            Box::pin(async move { transport.read(reader).await.map(Some) })
+        },
+        super::transport::Input::is_terminal,
+    );
     let (progress_tx, mut progress) = mpsc::unbounded_channel();
     provider.stream_progress(progress_tx);
     let mut next = Some(Operation::Scan);
@@ -73,7 +65,7 @@ where
         } else {
             tokio::select! {
                 biased;
-                message = input.recv() => match transport.action(message) {
+                message = input.next() => match transport.action(message.ok().flatten()) {
                     Action::Close => return Ok(()),
                     Action::Event(event) => Operation::Event(event),
                     Action::Ignore => continue,
@@ -113,7 +105,7 @@ where
                         transport.write(&mut writer, content, false, Update::Replace).await?;
                     }
                     if busy {
-                        while let Ok(message) = input.try_recv() {
+                        while let Some(message) = input.try_next()? {
                             if matches!(transport.action(Some(message)), Action::Close) { return Ok(()); }
                         }
                     }
@@ -129,7 +121,7 @@ where
                     busy = true;
                     transport.write(&mut writer, content, false, Update::Replace).await?;
                 },
-                message = input.recv() => match transport.action(message) {
+                message = input.next() => match transport.action(message.ok().flatten()) {
                     Action::Close => return Ok(()),
                     Action::Event(event) if !busy => {
                         // A background snapshot may yield to input, without
@@ -158,6 +150,7 @@ mod tests {
     }
     fn snapshot() -> WifiSnapshot {
         WifiSnapshot {
+            device_id: Some("test-device".into()),
             networks: vec![WifiNetwork {
                 id: "home".into(),
                 label: "Home".into(),
@@ -193,14 +186,8 @@ mod tests {
     #[tokio::test]
     async fn buffered_credential_edits_and_submit_are_processed_in_order() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let mut provider = WifiPanelProvider::new(Delayed {
+        let provider = WifiPanelProvider::new(Delayed {
             calls: calls.clone(),
-        });
-        provider.credential_prompt = Some(CredentialPrompt {
-            network: snapshot().networks.remove(0),
-            value: String::new(),
-            error: None,
-            hidden: false,
         });
         let (mut host, transport) = tokio::io::duplex(65536);
         let (reader, writer) = tokio::io::split(transport);
@@ -209,6 +196,16 @@ mod tests {
         for _ in 0..2 {
             read_frame::<_, ProviderMessage>(&mut host).await.unwrap();
         }
+        write_frame(
+            &mut host,
+            &HostMessage::Event(ProviderEvent::SelectableListCustomValueSubmitted {
+                element_id: "networks".into(),
+                value: "Hidden".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        read_frame::<_, ProviderMessage>(&mut host).await.unwrap();
         // Send all frames together before reading any replacements.
         let mut frames = Vec::new();
         for event in [

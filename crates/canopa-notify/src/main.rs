@@ -7,7 +7,9 @@ use canopa_notify::{BannerInteraction, Daemon, DaemonOptions, NotifyControl};
 use canopa_notify::{IcedLayerShellBannerPresenter, WaylandActivationTokenProvider};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use std::sync::mpsc;
+use tokio::sync::mpsc;
+
+mod banner_interactions;
 
 mod control_adapters;
 mod notification_server;
@@ -247,9 +249,9 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         .with_configuration_source(configuration_request(args.config, args.canopa_config));
     let daemon = Daemon::open(startup.options).await?;
     let control = control_adapters::ControlSocket::new(NotifyControl::new(daemon.clone()));
-    if let Some(interactions) = startup.banner_interactions {
-        spawn_banner_interaction_forwarder(daemon.clone(), interactions)?;
-    }
+    let interactions = startup
+        .banner_interactions
+        .map(|receiver| banner_interactions::Forwarder::spawn(daemon.clone(), receiver));
     eprintln!(
         "level=info component=daemon event=startup mode={} socket={}",
         mode.as_str(),
@@ -284,9 +286,14 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         }
     }
 
-    tokio::time::timeout(std::time::Duration::from_secs(15), daemon.shutdown())
-        .await
-        .map_err(|_| anyhow::anyhow!("notification daemon shutdown timed out"))??;
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        if let Some(interactions) = interactions {
+            interactions.shutdown().await?;
+        }
+        daemon.shutdown().await
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("notification daemon shutdown timed out"))??;
     if let Some(connection) = bus_connection {
         tokio::time::timeout(std::time::Duration::from_secs(1), connection.close())
             .await
@@ -323,7 +330,8 @@ async fn daemon_startup(mode: DaemonMode, database: PathBuf) -> anyhow::Result<D
         ),
         #[cfg(feature = "gui")]
         DaemonMode::Service => {
-            let (interactions, banner_interactions) = mpsc::channel();
+            let (interactions, banner_interactions) =
+                mpsc::channel(banner_interactions::QUEUE_CAPACITY);
             Ok(graphical_daemon_startup(
                 database,
                 IcedLayerShellBannerPresenter::start(interactions).await?,
@@ -365,29 +373,6 @@ fn ensure_wayland_session() -> anyhow::Result<()> {
 #[cfg(not(feature = "gui"))]
 fn ensure_wayland_session() -> anyhow::Result<()> {
     anyhow::bail!("service mode requires the gui Cargo feature; use --headless with this build")
-}
-
-fn spawn_banner_interaction_forwarder(
-    daemon: Daemon,
-    interactions: mpsc::Receiver<BannerInteraction>,
-) -> anyhow::Result<()> {
-    let handle = tokio::runtime::Handle::current();
-    std::thread::Builder::new()
-        .name("canopa-notify-banner-interactions".to_string())
-        .spawn(move || {
-            while let Ok(interaction) = interactions.recv() {
-                let daemon = daemon.clone();
-                handle.spawn(async move {
-                    let result = daemon.handle_banner_interaction(interaction).await;
-                    if result.is_err() {
-                        eprintln!(
-                            "level=warn component=presentation event=banner_interaction_failed"
-                        );
-                    }
-                });
-            }
-        })?;
-    Ok(())
 }
 
 async fn run_ctl(mut args: CtlArgs) -> anyhow::Result<()> {
@@ -479,8 +464,9 @@ mod tests {
         let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
             .await
             .unwrap();
-        let (interactions, interaction_receiver) = mpsc::channel();
-        spawn_banner_interaction_forwarder(daemon.clone(), interaction_receiver).unwrap();
+        let (interactions, interaction_receiver) =
+            mpsc::channel(banner_interactions::QUEUE_CAPACITY);
+        let forwarder = banner_interactions::Forwarder::spawn(daemon.clone(), interaction_receiver);
 
         let receipt = daemon
             .receive_notification(canopa_notify::NotificationInput {
@@ -494,7 +480,7 @@ mod tests {
 
         let mut events = daemon.subscribe_sender_events();
         interactions
-            .send(BannerInteraction::InvokeAction {
+            .try_send(BannerInteraction::InvokeAction {
                 target: canopa_notify::BannerTarget {
                     notification_id: receipt.notification_id,
                     revision: 1,
@@ -515,6 +501,8 @@ mod tests {
                 action_key,
             } if notification_id == receipt.notification_id && action_key == "reply"
         ));
+        forwarder.shutdown().await.unwrap();
+        daemon.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -523,8 +511,9 @@ mod tests {
         let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
             .await
             .unwrap();
-        let (interactions, interaction_receiver) = mpsc::channel();
-        spawn_banner_interaction_forwarder(daemon.clone(), interaction_receiver).unwrap();
+        let (interactions, interaction_receiver) =
+            mpsc::channel(banner_interactions::QUEUE_CAPACITY);
+        let forwarder = banner_interactions::Forwarder::spawn(daemon.clone(), interaction_receiver);
 
         let receipt = daemon
             .receive_notification(canopa_notify::NotificationInput {
@@ -538,7 +527,7 @@ mod tests {
 
         let mut events = daemon.subscribe_sender_events();
         interactions
-            .send(BannerInteraction::InvokeAction {
+            .try_send(BannerInteraction::InvokeAction {
                 target: canopa_notify::BannerTarget {
                     notification_id: receipt.notification_id,
                     revision: 1,
@@ -571,6 +560,74 @@ mod tests {
                 action_key,
             } if notification_id == receipt.notification_id && action_key == "reply"
         ));
+        forwarder.shutdown().await.unwrap();
+        daemon.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn banner_interaction_preparation_has_a_bounded_worker_set() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        struct PausedTokens(Arc<AtomicUsize>);
+        impl canopa_notify::ActivationTokenProvider for PausedTokens {
+            fn available(&self) -> bool {
+                true
+            }
+            fn activation_token(&self, _: String) -> canopa_notify::ActivationTokenFuture {
+                self.0.fetch_add(1, Ordering::Relaxed);
+                Box::pin(std::future::pending())
+            }
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let entered = Arc::new(AtomicUsize::new(0));
+        let daemon = Daemon::open(
+            DaemonOptions::headless(directory.path().join("history.db"))
+                .with_activation_token_provider(PausedTokens(entered.clone())),
+        )
+        .await
+        .unwrap();
+        let receipt = daemon
+            .receive_notification(canopa_notify::NotificationInput {
+                summary: "Busy sender".into(),
+                resident: true,
+                actions: vec![canopa_notify::NotificationAction::new("reply", "Reply")],
+                expire_timeout: canopa_notify::NotificationTimeout::Never,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let (sender, receiver) = mpsc::channel(banner_interactions::QUEUE_CAPACITY);
+        let forwarder = banner_interactions::Forwarder::spawn(daemon.clone(), receiver);
+        let mut accepted = 0;
+        for _ in 0..128 {
+            accepted += usize::from(
+                sender
+                    .try_send(BannerInteraction::InvokeAction {
+                        target: canopa_notify::BannerTarget {
+                            notification_id: receipt.notification_id,
+                            revision: 1,
+                        },
+                        action_key: "reply".into(),
+                        activation_token: None,
+                    })
+                    .is_ok(),
+            );
+        }
+        assert_eq!(accepted, banner_interactions::QUEUE_CAPACITY);
+        // Token calls cannot finish before the runtime's 100ms deadline. Observe
+        // actual concurrent external preparation, not an implementation task count.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let observed = entered.load(Ordering::Relaxed);
+        assert!(
+            observed > 0 && observed <= 4,
+            "unbounded token preparation: {observed}"
+        );
+        forwarder.shutdown().await.unwrap();
+        assert_eq!(entered.load(Ordering::Relaxed), accepted);
+        assert!(sender.is_closed());
+        daemon.shutdown().await.unwrap();
     }
 
     fn daemon_args(headless: bool, service: bool) -> DaemonArgs {

@@ -6,6 +6,8 @@ pub struct ModuleStore {
     ordered: Vec<(Zone, Box<dyn Module>)>,
     by_id: HashMap<ModuleId, usize>,
     by_kind: HashMap<ModuleKind, Vec<ModuleId>>,
+    configured: HashMap<String, ModuleId>,
+    children: HashMap<String, Vec<ModuleId>>,
 }
 
 impl ModuleStore {
@@ -14,6 +16,8 @@ impl ModuleStore {
             ordered,
             by_id: HashMap::new(),
             by_kind: HashMap::new(),
+            configured: HashMap::new(),
+            children: HashMap::new(),
         };
         store.rebuild_indexes();
         store
@@ -22,11 +26,40 @@ impl ModuleStore {
     fn rebuild_indexes(&mut self) {
         self.by_id.clear();
         self.by_kind.clear();
+        self.configured.clear();
+        self.children.clear();
         for (idx, (_, module)) in self.ordered.iter().enumerate() {
             let id = module.id();
-            self.by_id.insert(id.clone(), idx);
+            if let Some(parent) = id.parent_name() {
+                self.children
+                    .entry(parent.to_owned())
+                    .or_default()
+                    .push(id.clone());
+            } else {
+                self.configured
+                    .insert(id.configured_name().to_owned(), id.clone());
+            }
+            assert!(
+                self.by_id.insert(id.clone(), idx).is_none(),
+                "duplicate module identity: {id:?}"
+            );
             self.by_kind.entry(module.kind()).or_default().push(id);
         }
+    }
+
+    /// Placement reads only cached identities, preserving runtime child order.
+    pub fn expand_layout(&self, placements: [(Zone, &[String]); 3]) -> Vec<(Zone, ModuleId)> {
+        let mut layout = Vec::new();
+        for (zone, names) in placements {
+            for name in names {
+                if let Some(children) = self.children.get(name) {
+                    layout.extend(children.iter().map(|id| (zone.clone(), id.clone())));
+                } else if let Some(id) = self.configured.get(name) {
+                    layout.push((zone.clone(), id.clone()));
+                }
+            }
+        }
+        layout
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, (Zone, Box<dyn Module>)> {

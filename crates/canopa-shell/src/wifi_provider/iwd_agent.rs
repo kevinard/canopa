@@ -14,7 +14,7 @@ enum AgentError {
 struct Agent {
     conn: zbus::Connection,
     owner: String,
-    network: Option<String>,
+    kind: String,
     station: OwnedObjectPath,
     label: String,
     secret: Arc<Mutex<Option<String>>>,
@@ -30,25 +30,35 @@ impl Agent {
         if header.sender().map(|s| s.as_str()) != Some(self.owner.as_str()) {
             return Err(AgentError::Canceled);
         }
-        if let Some(expected) = &self.network {
-            if network.as_str() != expected {
-                return Err(AgentError::Canceled);
-            }
-        } else {
-            let proxy = IwdNetworkProxy::builder(&self.conn)
-                .destination(self.owner.clone())
-                .map_err(|_| AgentError::Canceled)?
-                .path(network)
-                .map_err(|_| AgentError::Canceled)?
-                .build()
-                .await
-                .map_err(|_| AgentError::Canceled)?;
-            if proxy.name().await.ok().as_deref() != Some(&self.label)
-                || proxy.device().await.ok().as_ref() != Some(&self.station)
-            {
-                return Err(AgentError::Canceled);
-            }
+        verify_control(
+            &self.conn,
+            crate::network_integration::Kind::Iwd,
+            &self.owner,
+        )
+        .await
+        .map_err(|_| AgentError::Canceled)?;
+        let proxy = IwdNetworkProxy::builder(&self.conn)
+            .destination(self.owner.clone())
+            .map_err(|_| AgentError::Canceled)?
+            .path(network)
+            .map_err(|_| AgentError::Canceled)?
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await
+            .map_err(|_| AgentError::Canceled)?;
+        if proxy.name().await.ok().as_deref() != Some(&self.label)
+            || proxy.network_type().await.ok().as_deref() != Some(&self.kind)
+            || proxy.device().await.ok().as_ref() != Some(&self.station)
+        {
+            return Err(AgentError::Canceled);
         }
+        verify_control(
+            &self.conn,
+            crate::network_integration::Kind::Iwd,
+            &self.owner,
+        )
+        .await
+        .map_err(|_| AgentError::Canceled)?;
         self.secret
             .lock()
             .unwrap()
@@ -81,14 +91,18 @@ pub(super) struct IwdAgentRegistration {
     cleanup: cleanup::Cleanup,
     conn: zbus::Connection,
     path: OwnedObjectPath,
+    owner: String,
     secret: Arc<Mutex<Option<String>>>,
 }
 
 impl IwdAgentRegistration {
     pub(super) async fn register(
         conn: &zbus::Connection,
+        owner: &str,
         request: &WifiConnectRequest,
         station: &OwnedObjectPath,
+        label: &str,
+        kind: &str,
         cleanup: cleanup::Cleanup,
     ) -> Result<Self, WifiBackendError> {
         static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -97,16 +111,10 @@ impl IwdAgentRegistration {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ))
         .unwrap();
-        let owner = zbus::fdo::DBusProxy::new(conn)
-            .await
-            .map_err(connection_error)?
-            .get_name_owner("net.connman.iwd".try_into().unwrap())
-            .await
-            .map_err(connection_error)?
-            .to_string();
         let registration = Self {
             cleanup,
             conn: conn.clone(),
+            owner: owner.into(),
             path,
             secret: Arc::new(Mutex::new(request.credential.clone())),
         };
@@ -115,16 +123,19 @@ impl IwdAgentRegistration {
                 registration.path.clone(),
                 Agent {
                     conn: conn.clone(),
-                    owner,
-                    network: request.network_id.clone(),
+                    owner: owner.into(),
+                    kind: kind.into(),
                     station: station.clone(),
-                    label: request.label.clone(),
+                    label: label.into(),
                     secret: registration.secret.clone(),
                 },
             )
             .await
             .map_err(connection_error)?;
-        AgentManagerProxy::new(conn)
+        AgentManagerProxy::builder(conn)
+            .destination(owner)
+            .map_err(connection_error)?
+            .build()
             .await
             .map_err(connection_error)?
             .register_agent(&registration.path)
@@ -139,9 +150,15 @@ impl Drop for IwdAgentRegistration {
         self.secret.lock().unwrap().take();
         let conn = self.conn.clone();
         let path = self.path.clone();
+        let owner = self.owner.clone();
         self.cleanup.spawn(async move {
             let _ = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-                if let Ok(manager) = AgentManagerProxy::new(&conn).await {
+                if let Ok(manager) = AgentManagerProxy::builder(&conn)
+                    .destination(owner)
+                    .unwrap()
+                    .build()
+                    .await
+                {
                     let _ = manager.unregister_agent(&path).await;
                 }
             })

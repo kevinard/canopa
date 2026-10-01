@@ -100,6 +100,13 @@ impl ProviderStderrTail {
 }
 
 impl ExternalPanelSessionHandle {
+    pub(crate) fn input_fits(&self, event: &protocol::ProviderEvent) -> bool {
+        match &self.adapter {
+            ProviderAdapter::V5(session) => session.input_fits(event),
+            _ => true,
+        }
+    }
+
     pub(crate) fn close(&self) {
         self.closed.store(true, Ordering::Release);
     }

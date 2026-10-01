@@ -923,6 +923,7 @@ dependencies = [
  "canopa-theme",
  "canopa-ui",
  "chrono",
+ "futures-util",
  "iced",
  "iced_layershell",
  "image",

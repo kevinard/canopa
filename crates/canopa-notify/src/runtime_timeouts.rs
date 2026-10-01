@@ -2,11 +2,15 @@
 //! committed changes; its single timer lock also covers acknowledgement/start.
 use crate::{InternalNotificationId, NotificationTimeout, NotificationTimeoutChange, Urgency};
 use std::collections::{BTreeSet, HashMap};
+use std::time::Duration;
 use tokio::task::JoinHandle;
+
+const MAX_EXPIRY_ATTEMPTS: u32 = 6;
 
 struct Entry {
     revision: i64,
     state: State,
+    failures: u32,
 }
 
 enum State {
@@ -15,6 +19,8 @@ enum State {
         urgency: Urgency,
     },
     Scheduled(JoinHandle<()>),
+    Firing,
+    Failed,
 }
 
 #[derive(Default)]
@@ -55,6 +61,7 @@ impl RuntimeTimeouts {
                         Entry {
                             revision,
                             state: State::PendingDisplay { timeout, urgency },
+                            failures: 0,
                         },
                     );
                 }
@@ -101,7 +108,7 @@ impl RuntimeTimeouts {
         };
         let (timeout, urgency) = match &entry.state {
             State::PendingDisplay { timeout, urgency } => (*timeout, *urgency),
-            State::Scheduled(_) => return,
+            State::Scheduled(_) | State::Firing | State::Failed => return,
         };
         if let Some(handle) = schedule(timeout, urgency) {
             entry.state = State::Scheduled(handle);
@@ -110,9 +117,24 @@ impl RuntimeTimeouts {
         }
     }
 
-    /// Called by the firing task before lifecycle expiration. Dropping its handle
-    /// detaches rather than aborts it, so it can finish committed effect publication.
-    pub(crate) fn finish(&mut self, notification_id: InternalNotificationId, revision: i64) {
+    /// Detach the firing task's handle before commitment: applying its own
+    /// cancellation effect must not abort committed sender publication. Keep the
+    /// registration so an unsuccessful storage transition can be retried.
+    pub(crate) fn begin_expiry(
+        &mut self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+    ) -> bool {
+        let Some(entry) = self.entries.get_mut(&notification_id).filter(|entry| {
+            entry.revision == revision && matches!(entry.state, State::Scheduled(_))
+        }) else {
+            return false;
+        };
+        entry.state = State::Firing;
+        true
+    }
+
+    pub(crate) fn complete(&mut self, notification_id: InternalNotificationId, revision: i64) {
         if self
             .entries
             .get(&notification_id)
@@ -120,6 +142,42 @@ impl RuntimeTimeouts {
         {
             self.entries.remove(&notification_id);
         }
+    }
+
+    /// Retry only the still-current firing registration. Attempts are bounded;
+    /// terminal failure stays visible until explicit completion or replacement.
+    /// Returns whether the failure is terminal, or None for obsolete work.
+    pub(crate) fn failed(
+        &mut self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+        schedule: impl FnOnce(Duration) -> JoinHandle<()>,
+    ) -> Option<bool> {
+        let entry = self
+            .entries
+            .get_mut(&notification_id)
+            .filter(|entry| entry.revision == revision && matches!(entry.state, State::Firing))?;
+        entry.failures += 1;
+        let terminal = entry.failures >= MAX_EXPIRY_ATTEMPTS;
+        entry.state = if terminal {
+            State::Failed
+        } else {
+            State::Scheduled(schedule(Duration::from_millis(100 << (entry.failures - 1))))
+        };
+        Some(terminal)
+    }
+
+    pub(crate) fn failure_counts(&self) -> (usize, usize) {
+        let mut retrying = 0;
+        let mut failed = 0;
+        for entry in self.entries.values().filter(|entry| entry.failures > 0) {
+            if matches!(entry.state, State::Failed) {
+                failed += 1;
+            } else {
+                retrying += 1;
+            }
+        }
+        (retrying, failed)
     }
 
     pub(crate) fn record_count(&self) -> usize {

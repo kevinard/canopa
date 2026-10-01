@@ -106,6 +106,14 @@ Configuration migration does not move or change history, DND, UI-managed permiss
 rules, or other runtime state. See [the architecture decision](adr/0002-shared-configuration.md)
 for ownership and reload guarantees.
 
+## Clock formats
+
+Clock modules accept Chrono output directives in `time-format` (default `%H:%M`)
+and `date-format` (default `%a %d %b`). Invalid directives, dangling `%`, and
+parse-only directives fail configuration validation with a source location.
+Use `%%` for a literal percent. Formats showing seconds or fractions update each
+second; other formats update at minute boundaries, including escaped directives.
+
 ## Idle inhibitor
 
 Add `"idle-inhibitor"` to a shell bar's `modules` list to show a manual keep-awake

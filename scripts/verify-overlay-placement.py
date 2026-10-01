@@ -24,44 +24,9 @@ spec.loader.exec_module(desktop)
 
 
 def verify(binary, output, session, edge, bar_count, scale):
-    niri_config = session.runtime / "niri.kdl"
-    niri_config.write_text(
+    session.start_niri(
         'prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\n'
-        'hotkey-overlay { skip-at-startup; }\n'
-    )
-    # No service directories: test clients must not auto-activate desktop
-    # services (or FUSE mounts) inherited from the user's installation.
-    bus_config = session.runtime / "bus.conf"
-    bus_config.write_text(f'''<busconfig>
-<type>session</type><listen>unix:tmpdir={session.runtime}</listen>
-<policy context="default"><allow send_destination="*"/><allow receive_sender="*"/>
-<allow own="*"/></policy></busconfig>''')
-    session.start(["dbus-daemon", f"--config-file={bus_config}", "--nofork", "--print-address=1"], "dbus.log")
-    session.env["DBUS_SESSION_BUS_ADDRESS"] = session.wait_for(
-        lambda: (output / "dbus.log").read_text().strip(), "private bus"
-    ).splitlines()[0]
-    session.start([
-        "weston", "--backend=headless", "--renderer=pixman", "--fake-seat",
-        "--width=1280", "--height=800", "--socket=wayland-parent", "--no-config",
-        "--idle-time=0",
-    ], "weston.log")
-    session.wait_for(lambda: (session.runtime / "wayland-parent").is_socket(), "Weston")
-    session.env["WAYLAND_DISPLAY"] = "wayland-parent"
-    session.start(["niri", "-c", str(niri_config)], "niri.log")
-    session.env["NIRI_SOCKET"] = str(session.wait_for(
-        lambda: list(session.runtime.glob("niri.*.sock")), "Niri IPC"
-    )[0])
-    display = session.wait_for(
-        lambda: [p for p in session.runtime.glob("wayland-*")
-                 if p.is_socket() and p.name != "wayland-parent"], "Niri socket"
-    )[0]
-    session.env["WAYLAND_DISPLAY"] = str(display)
-    outputs = json.loads(session.run(["niri", "msg", "--json", "outputs"]))
-    output_name = next(iter(outputs))
-    session.run(["niri", "msg", "output", output_name, "scale", str(scale)])
-    session.wait_for(
-        lambda: json.loads(session.run(["niri", "msg", "--json", "outputs"]))
-        [output_name]["logical"]["scale"] == scale, "output scale",
+        'hotkey-overlay { skip-at-startup; }\n', scale=scale,
     )
     compositor_env = session.env.copy()
     bars = []

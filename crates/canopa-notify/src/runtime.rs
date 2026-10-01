@@ -1,10 +1,9 @@
 use crate::InternalNotificationId;
 use crate::SenderEventPublisher;
 use crate::activation::ActivationTokenProvider;
+use crate::center::{CenterProjection, NotificationCenterReader};
 use crate::control::{
-    AppPermissionControl, CategoryPermissionControl, NotificationCenterAction,
-    NotificationCenterGroup, NotificationCenterItem, NotificationCenterProjection,
-    NotificationCenterTarget,
+    NotificationCenterAction, NotificationCenterProjection, NotificationCenterTarget,
 };
 use crate::delivery_policy::{
     DeliveryDecisionLog, DeliveryPolicy, DeliveryPolicyRule, LoadedDeliveryPolicyState,
@@ -16,7 +15,7 @@ use crate::domain::{
     NotificationTimeoutDefaults, SenderEvent, Urgency, UserRule,
 };
 use crate::lifecycle::{
-    LifecycleDelivery, LifecycleEffect, LifecycleEffects, NotificationLifecycle,
+    LifecycleDelivery, LifecycleEffects, NotificationHistory, NotificationLifecycle,
 };
 use crate::presentation::{
     BannerInteraction, BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter,
@@ -26,7 +25,7 @@ use crate::runtime_resources::RuntimeResources;
 use crate::runtime_timeouts::RuntimeTimeouts;
 use crate::sound::SoundPresenter;
 use crate::sqlite_persisted_state::SqlitePersistedState;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -156,6 +155,30 @@ impl NotificationRuntime {
         Ok(command)
     }
 
+    /// The coordinator admits at most one completion task. Waiting callers may
+    /// cancel before admission; after admission they own only the reply waiter.
+    /// The owned guard keeps subsequent mutations and shutdown behind all effects.
+    pub(crate) async fn complete_mutation<T: Send + 'static>(
+        command: tokio::sync::OwnedMutexGuard<()>,
+        operation: impl std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
+    ) -> anyhow::Result<T> {
+        tokio::spawn(async move {
+            let _command = command;
+            operation.await
+        })
+        .await?
+    }
+
+    async fn mutate<T, F, Fut>(&self, operation: F) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(Self) -> Fut,
+        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
+    {
+        let command = self.begin_mutation().await?;
+        Self::complete_mutation(command, operation(self.clone())).await
+    }
+
     pub(crate) async fn begin_receipt(&self) -> anyhow::Result<tokio::sync::OwnedMutexGuard<()>> {
         let command = self.begin_mutation().await?;
         anyhow::ensure!(
@@ -167,7 +190,6 @@ impl NotificationRuntime {
 
     pub(crate) async fn receive_notification_with_receipt_hook(
         &self,
-        _command: &tokio::sync::OwnedMutexGuard<()>,
         notification: AcceptedNotification,
         image_data: Option<NotificationImageData>,
         expire_timeout: NotificationTimeout,
@@ -206,14 +228,12 @@ impl NotificationRuntime {
                 summary: sound_summary,
                 requested_sound: sound_request.sound,
             });
-        self.apply_lifecycle_effects_and_notify_with_sound(&effects, sound)
-            .await?;
+        self.apply_lifecycle_effects(&effects, None, sound).await?;
         Ok(receipt)
     }
 
     pub(crate) async fn drop_notification(
         &self,
-        _command: &tokio::sync::OwnedMutexGuard<()>,
         app_identity: String,
         replaces_id: Option<InternalNotificationId>,
         on_receipt: impl FnOnce(&NotificationReceipt),
@@ -224,7 +244,7 @@ impl NotificationRuntime {
             .await?;
         let receipt = effects.sender_receipt()?;
         on_receipt(&receipt);
-        self.apply_lifecycle_effects_and_notify(&effects).await?;
+        self.apply_lifecycle_effects(&effects, None, None).await?;
         Ok(receipt)
     }
 
@@ -232,8 +252,20 @@ impl NotificationRuntime {
         self.storage.snapshot().await
     }
 
+    pub(crate) async fn retained_active_threads(&self) -> anyhow::Result<Vec<NotificationThread>> {
+        self.storage.active_threads().await
+    }
+
+    pub(crate) async fn retained_active_count(&self) -> anyhow::Result<u64> {
+        self.storage.active_thread_count().await
+    }
+
     pub(crate) fn timeout_record_count(&self) -> usize {
         self.timeouts.lock().unwrap().record_count()
+    }
+
+    pub(crate) fn timeout_failure_counts(&self) -> (usize, usize) {
+        self.timeouts.lock().unwrap().failure_counts()
     }
 
     pub(crate) async fn visible_banners(&self) -> Vec<BannerView> {
@@ -281,40 +313,54 @@ impl NotificationRuntime {
                     .await
             }
         };
-        let _command = self.begin_mutation().await?;
-        let effects = self
-            .lifecycle
-            .invoke_action_if_current_revision(notification_id, action_key, Some(thread.revision))
-            .await?;
-        self.apply_lifecycle_effects_and_notify_with_activation_token(&effects, activation_token)
-            .await
+        let action_key = action_key.to_owned();
+        self.mutate(move |runtime| async move {
+            let effects = runtime
+                .lifecycle
+                .invoke_action_if_current_revision(
+                    notification_id,
+                    &action_key,
+                    Some(thread.revision),
+                )
+                .await?;
+            runtime
+                .apply_lifecycle_effects(&effects, activation_token, None)
+                .await
+        })
+        .await
     }
 
     pub(crate) async fn dismiss_notification(
         &self,
         notification_id: InternalNotificationId,
     ) -> anyhow::Result<()> {
-        let _command = self.begin_mutation().await?;
-        let effects = self.lifecycle.dismiss(notification_id).await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.mutate(move |runtime| async move {
+            let effects = runtime.lifecycle.dismiss(notification_id).await?;
+            runtime.apply_lifecycle_effects(&effects, None, None).await
+        })
+        .await
     }
 
     pub(crate) async fn expire_notification(
         &self,
         notification_id: InternalNotificationId,
     ) -> anyhow::Result<()> {
-        let _command = self.begin_mutation().await?;
-        let effects = self.lifecycle.expire(notification_id).await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.mutate(move |runtime| async move {
+            let effects = runtime.lifecycle.expire(notification_id).await?;
+            runtime.apply_lifecycle_effects(&effects, None, None).await
+        })
+        .await
     }
 
     pub(crate) async fn close_notification(
         &self,
         notification_id: InternalNotificationId,
     ) -> anyhow::Result<()> {
-        let _command = self.begin_mutation().await?;
-        let effects = self.lifecycle.close(notification_id).await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.mutate(move |runtime| async move {
+            let effects = runtime.lifecycle.close(notification_id).await?;
+            runtime.apply_lifecycle_effects(&effects, None, None).await
+        })
+        .await
     }
 
     pub(crate) async fn activate_notification(
@@ -366,12 +412,14 @@ impl NotificationRuntime {
         notification_id: InternalNotificationId,
         revision: i64,
     ) -> anyhow::Result<()> {
-        let _command = self.begin_mutation().await?;
-        let effects = self
-            .lifecycle
-            .dismiss_if_current_revision(notification_id, revision)
-            .await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.mutate(move |runtime| async move {
+            let effects = runtime
+                .lifecycle
+                .dismiss_if_current_revision(notification_id, revision)
+                .await?;
+            runtime.apply_lifecycle_effects(&effects, None, None).await
+        })
+        .await
     }
 
     pub(crate) async fn activate_banner(
@@ -453,14 +501,17 @@ impl NotificationRuntime {
                 .await
             }
             NotificationCenterAction::Acknowledge => {
-                let _command = self.begin_mutation().await?;
-                let effects = self
-                    .lifecycle
-                    .acknowledge_if_current_revision(target.notification_id, target.revision)
-                    .await?;
-                self.apply_lifecycle_effects_and_notify(&effects).await?;
-                self.notify_state_changed();
-                Ok(())
+                self.mutate(move |runtime| async move {
+                    let effects = runtime
+                        .lifecycle
+                        .acknowledge_if_current_revision(target.notification_id, target.revision)
+                        .await?;
+                    runtime
+                        .apply_lifecycle_effects(&effects, None, None)
+                        .await?;
+                    Ok(())
+                })
+                .await
             }
             NotificationCenterAction::Activate => {
                 self.activate_notification_for_revision(
@@ -638,18 +689,23 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn clear_active_notifications(&self) -> anyhow::Result<()> {
-        let _command = self.begin_mutation().await?;
-        let batch = self.lifecycle.clear_active_notifications().await?;
-        self.apply_lifecycle_effects_and_notify(&batch.effects)
-            .await?;
-        batch.result
+        self.mutate(|runtime| async move {
+            let batch = runtime.lifecycle.clear_active_notifications().await?;
+            runtime
+                .apply_lifecycle_effects(&batch.effects, None, None)
+                .await?;
+            batch.result
+        })
+        .await
     }
 
     pub(crate) async fn delete_notification_history(&self) -> anyhow::Result<()> {
-        let _command = self.begin_mutation().await?;
-        self.storage.delete_inactive_history().await?;
-        self.notify_state_changed();
-        Ok(())
+        self.mutate(move |runtime| async move {
+            runtime.storage.delete_inactive_history().await?;
+            runtime.notify_state_changed();
+            Ok(())
+        })
+        .await
     }
 
     pub(crate) async fn set_do_not_disturb(&self, enabled: bool) -> anyhow::Result<()> {
@@ -660,13 +716,15 @@ impl NotificationRuntime {
         &self,
         enabled: Option<bool>,
     ) -> anyhow::Result<bool> {
-        let _change = self.begin_mutation().await?;
-        let enabled =
-            enabled.unwrap_or_else(|| !self.loaded_policy_state.lock().unwrap().do_not_disturb());
-        self.storage.set_do_not_disturb(enabled).await?;
-        self.replace_loaded_policy_state(|state| state.with_do_not_disturb(enabled));
-        self.notify_state_changed();
-        Ok(enabled)
+        self.mutate(move |runtime| async move {
+            let enabled = enabled
+                .unwrap_or_else(|| !runtime.loaded_policy_state.lock().unwrap().do_not_disturb());
+            runtime.storage.set_do_not_disturb(enabled).await?;
+            runtime.replace_loaded_policy_state(|state| state.with_do_not_disturb(enabled));
+            runtime.notify_state_changed();
+            Ok(enabled)
+        })
+        .await
     }
 
     pub(crate) async fn do_not_disturb(&self) -> anyhow::Result<bool> {
@@ -674,13 +732,15 @@ impl NotificationRuntime {
     }
 
     pub(crate) async fn upsert_user_rule(&self, rule: UserRule) -> anyhow::Result<()> {
-        let _change = self.begin_mutation().await?;
-        self.storage.upsert_user_rule(&rule).await?;
-        self.replace_loaded_policy_state(|state| {
-            state.with_user_rule(DeliveryPolicyRule::from(rule))
-        });
-        self.notify_state_changed();
-        Ok(())
+        self.mutate(move |runtime| async move {
+            runtime.storage.upsert_user_rule(&rule).await?;
+            runtime.replace_loaded_policy_state(|state| {
+                state.with_user_rule(DeliveryPolicyRule::from(rule))
+            });
+            runtime.notify_state_changed();
+            Ok(())
+        })
+        .await
     }
 
     pub(crate) async fn user_rules(&self) -> anyhow::Result<Vec<UserRule>> {
@@ -706,15 +766,19 @@ impl NotificationRuntime {
         app_identity: &str,
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
-        let _change = self.begin_mutation().await?;
-        self.storage
-            .remove_user_rule(app_identity, None, urgency)
-            .await?;
-        self.replace_loaded_policy_state(|state| {
-            state.without_user_rule(app_identity, None, urgency)
-        });
-        self.notify_state_changed();
-        Ok(())
+        let app_identity = app_identity.to_owned();
+        self.mutate(move |runtime| async move {
+            runtime
+                .storage
+                .remove_user_rule(&app_identity, None, urgency)
+                .await?;
+            runtime.replace_loaded_policy_state(|state| {
+                state.without_user_rule(&app_identity, None, urgency)
+            });
+            runtime.notify_state_changed();
+            Ok(())
+        })
+        .await
     }
 
     pub(crate) async fn remove_category_user_rule(
@@ -723,15 +787,20 @@ impl NotificationRuntime {
         category: &str,
         urgency: Option<Urgency>,
     ) -> anyhow::Result<()> {
-        let _change = self.begin_mutation().await?;
-        self.storage
-            .remove_user_rule(app_identity, Some(category), urgency)
-            .await?;
-        self.replace_loaded_policy_state(|state| {
-            state.without_user_rule(app_identity, Some(category), urgency)
-        });
-        self.notify_state_changed();
-        Ok(())
+        let app_identity = app_identity.to_owned();
+        let category = category.to_owned();
+        self.mutate(move |runtime| async move {
+            runtime
+                .storage
+                .remove_user_rule(&app_identity, Some(&category), urgency)
+                .await?;
+            runtime.replace_loaded_policy_state(|state| {
+                state.without_user_rule(&app_identity, Some(&category), urgency)
+            });
+            runtime.notify_state_changed();
+            Ok(())
+        })
+        .await
     }
 
     pub(crate) async fn install_configuration(
@@ -741,22 +810,26 @@ impl NotificationRuntime {
         icon_settings: crate::BannerIconSettings,
         appearance: canopa_theme::Appearance,
     ) -> anyhow::Result<()> {
-        let _change = self.begin_mutation().await?;
-        if !self.headless {
-            let disable = !sound_settings.enabled;
-            self.sound_presenter.apply_sound_settings(sound_settings)?;
-            if disable {
-                self.sound_presenter.stop_all_sounds();
+        self.mutate(move |runtime| async move {
+            if !runtime.headless {
+                let disable = !sound_settings.enabled;
+                runtime
+                    .sound_presenter
+                    .apply_sound_settings(sound_settings)?;
+                if disable {
+                    runtime.sound_presenter.stop_all_sounds();
+                }
             }
-        }
-        self.replace_loaded_policy_state(|state| state.with_config_rules(rules));
-        self.set_icon_settings(icon_settings);
-        self.set_appearance(appearance);
-        // A renderer outage is presentation status, not rejection of a valid local snapshot.
-        // Publication is synchronous and coalesced; it does not await redraw or restart timeouts.
-        let _ = self.sync_presentation();
-        self.notify_state_changed();
-        Ok(())
+            runtime.replace_loaded_policy_state(|state| state.with_config_rules(rules));
+            runtime.set_icon_settings(icon_settings);
+            runtime.set_appearance(appearance);
+            // A renderer outage is presentation status, not rejection of a valid local snapshot.
+            // Publication is synchronous and coalesced; it does not await redraw or restart timeouts.
+            let _ = runtime.sync_presentation();
+            runtime.notify_state_changed();
+            Ok(())
+        })
+        .await
     }
 
     pub(crate) fn set_appearance(&self, appearance: canopa_theme::Appearance) {
@@ -841,12 +914,12 @@ impl NotificationRuntime {
             std::cmp::Reverse(crate::NotificationCenterCursor::for_thread(thread))
         });
         let user_rules = self.user_rules().await?;
-        Ok(projection_from_threads(
-            threads,
+        Ok(CenterProjection::new(
             &user_rules,
             self.center_instance,
             self.presentation.icon_settings(),
-        ))
+        )
+        .project(threads))
     }
 
     pub(crate) fn subscribe_notification_state(&self) -> NotificationStateSubscription {
@@ -862,25 +935,25 @@ impl NotificationRuntime {
         after: Option<crate::NotificationCenterCursor>,
         limit: u8,
     ) -> anyhow::Result<crate::NotificationCenterBatch> {
-        let mut threads = self.storage.center_threads_after(after, limit).await?;
-        threads.extend(self.lifecycle.transient_center_threads_after(after, limit));
-        threads.sort_by_key(|thread| {
-            std::cmp::Reverse(crate::NotificationCenterCursor::for_thread(thread))
-        });
-        threads.truncate(usize::from(limit));
-        let last = threads
-            .last()
-            .map(crate::NotificationCenterCursor::for_thread);
+        self.notification_center_reader()
+            .await?
+            .batch(after, limit)
+            .await
+    }
+
+    pub(crate) async fn notification_center_reader(
+        &self,
+    ) -> anyhow::Result<NotificationCenterReader> {
         let rules = self.user_rules().await?;
-        Ok(crate::NotificationCenterBatch {
-            last,
-            projection: projection_from_threads(
-                threads,
+        Ok(NotificationCenterReader::new(
+            self.storage.clone(),
+            self.lifecycle.clone(),
+            CenterProjection::new(
                 &rules,
                 self.center_instance,
                 self.presentation.icon_settings(),
             ),
-        })
+        ))
     }
 
     fn delivery_policy(&self) -> DeliveryPolicy {
@@ -899,62 +972,7 @@ impl NotificationRuntime {
         *state = replace(state.clone());
     }
 
-    async fn apply_lifecycle_effects_and_notify(
-        &self,
-        effects: &LifecycleEffects,
-    ) -> anyhow::Result<()> {
-        self.apply_lifecycle_effects_with_activation_token(effects, None)
-            .await?;
-        if !effects.is_empty() {
-            self.notify_state_changed();
-        }
-        Ok(())
-    }
-
-    async fn apply_lifecycle_effects_and_notify_with_activation_token(
-        &self,
-        effects: &LifecycleEffects,
-        activation_token: Option<String>,
-    ) -> anyhow::Result<()> {
-        self.apply_lifecycle_effects_with_activation_token_and_sound(
-            effects,
-            activation_token,
-            None,
-        )
-        .await?;
-        if !effects.is_empty() {
-            self.notify_state_changed();
-        }
-        Ok(())
-    }
-
-    async fn apply_lifecycle_effects_and_notify_with_sound(
-        &self,
-        effects: &LifecycleEffects,
-        sound: Option<NotificationSoundPlayback>,
-    ) -> anyhow::Result<()> {
-        self.apply_lifecycle_effects_with_activation_token_and_sound(effects, None, sound)
-            .await?;
-        if !effects.is_empty() {
-            self.notify_state_changed();
-        }
-        Ok(())
-    }
-
-    async fn apply_lifecycle_effects_with_activation_token(
-        &self,
-        effects: &LifecycleEffects,
-        activation_token: Option<String>,
-    ) -> anyhow::Result<()> {
-        self.apply_lifecycle_effects_with_activation_token_and_sound(
-            effects,
-            activation_token,
-            None,
-        )
-        .await
-    }
-
-    async fn apply_lifecycle_effects_with_activation_token_and_sound(
+    async fn apply_lifecycle_effects(
         &self,
         effects: &LifecycleEffects,
         activation_token: Option<String>,
@@ -978,6 +996,9 @@ impl NotificationRuntime {
             // Lifecycle commitment is independent of the replaceable UI projection.
             eprintln!("level=warn component=presentation event=update_failed error={error:#}");
         }
+        if !effects.is_empty() {
+            self.notify_state_changed();
+        }
         Ok(())
     }
 
@@ -1000,9 +1021,23 @@ impl NotificationRuntime {
         effects: &LifecycleEffects,
         activation_token: Option<String>,
     ) {
-        let events = self
-            .sender_events_for_effects(effects, activation_token)
-            .await;
+        let mut activation_token = activation_token.filter(|token| !token.is_empty());
+        // Decorate the canonical Lifecycle projection. Only the first action
+        // consumes the token, immediately before its action event.
+        let events = effects.sender_events().flat_map(move |event| {
+            let token = match &event {
+                SenderEvent::ActionInvoked {
+                    notification_id, ..
+                } => activation_token
+                    .take()
+                    .map(|activation_token| SenderEvent::ActivationToken {
+                        notification_id: *notification_id,
+                        activation_token,
+                    }),
+                _ => None,
+            };
+            token.into_iter().chain(std::iter::once(event))
+        });
         let publisher = self.sender_publisher.lock().unwrap().clone();
         for event in events {
             if let Some(publisher) = &publisher
@@ -1014,55 +1049,6 @@ impl NotificationRuntime {
             record_recent(&self.sender_events, event.clone());
             let _ = self.sender_event_changes.send(event);
         }
-    }
-
-    async fn sender_events_for_effects(
-        &self,
-        effects: &LifecycleEffects,
-        activation_token: Option<String>,
-    ) -> Vec<SenderEvent> {
-        let mut events = Vec::new();
-        let mut activation_token = activation_token.filter(|token| !token.is_empty());
-        for effect in effects {
-            match effect {
-                LifecycleEffect::ActionInvoked {
-                    notification_id,
-                    action_key,
-                    ..
-                } => {
-                    let activation_token = activation_token.take();
-                    if let Some(activation_token) = activation_token {
-                        events.push(SenderEvent::ActivationToken {
-                            notification_id: *notification_id,
-                            activation_token,
-                        });
-                    }
-                    events.push(SenderEvent::ActionInvoked {
-                        notification_id: *notification_id,
-                        action_key: action_key.clone(),
-                    });
-                }
-                LifecycleEffect::SenderClosed {
-                    notification_id,
-                    reason,
-                } => events.push(SenderEvent::NotificationClosed {
-                    notification_id: *notification_id,
-                    reason: *reason,
-                }),
-                LifecycleEffect::SenderReceipt(_)
-                | LifecycleEffect::ThreadCreated(_)
-                | LifecycleEffect::ThreadRevised(_)
-                | LifecycleEffect::ThreadSilenced(_)
-                | LifecycleEffect::ThreadDismissed(_)
-                | LifecycleEffect::ThreadExpired(_)
-                | LifecycleEffect::ThreadClosed(_)
-                | LifecycleEffect::ThreadStale(_)
-                | LifecycleEffect::NotificationDropped { .. }
-                | LifecycleEffect::NotificationTimeoutStartsOnDisplay { .. }
-                | LifecycleEffect::NotificationTimeoutCancelledThroughRevision { .. } => {}
-            }
-        }
-        events
     }
 
     async fn activation_token(&self, app_identity: String) -> Option<String> {
@@ -1155,20 +1141,52 @@ impl NotificationRuntime {
                 let duration = self
                     .lifecycle
                     .timeout_duration_on_display(timeout, urgency)?;
-                let runtime = self.clone();
-                Some(tokio::spawn(async move {
-                    tokio::time::sleep(duration).await;
-                    runtime
-                        .timeouts
-                        .lock()
-                        .unwrap()
-                        .finish(notification_id, revision);
-                    let _ = runtime
-                        .expire_notification_if_current_revision(notification_id, revision)
-                        .await;
-                }))
+                Some(self.schedule_expiry(notification_id, revision, duration))
             });
         }
+    }
+
+    fn schedule_expiry(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+        delay: Duration,
+    ) -> tokio::task::JoinHandle<()> {
+        let runtime = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(delay).await;
+            if !runtime
+                .timeouts
+                .lock()
+                .unwrap()
+                .begin_expiry(notification_id, revision)
+            {
+                return;
+            }
+            match runtime
+                .expire_notification_if_current_revision(notification_id, revision)
+                .await
+            {
+                Ok(()) => runtime
+                    .timeouts
+                    .lock()
+                    .unwrap()
+                    .complete(notification_id, revision),
+                Err(_) => {
+                    let terminal = runtime.timeouts.lock().unwrap().failed(
+                        notification_id,
+                        revision,
+                        |delay| runtime.schedule_expiry(notification_id, revision, delay),
+                    );
+                    if let Some(terminal) = terminal {
+                        // Storage error strings may contain notification data.
+                        eprintln!(
+                            "level=warn component=timeout event=expiry_failed terminal={terminal}"
+                        );
+                    }
+                }
+            }
+        })
     }
 
     async fn expire_notification_if_current_revision(
@@ -1176,12 +1194,14 @@ impl NotificationRuntime {
         notification_id: InternalNotificationId,
         revision: i64,
     ) -> anyhow::Result<()> {
-        let _command = self.begin_mutation().await?;
-        let effects = self
-            .lifecycle
-            .expire_timeout_if_current_revision(notification_id, revision)
-            .await?;
-        self.apply_lifecycle_effects_and_notify(&effects).await
+        self.mutate(move |runtime| async move {
+            let effects = runtime
+                .lifecycle
+                .expire_timeout_if_current_revision(notification_id, revision)
+                .await?;
+            runtime.apply_lifecycle_effects(&effects, None, None).await
+        })
+        .await
     }
 }
 
@@ -1218,112 +1238,5 @@ impl NotificationStateSubscription {
         } else {
             Ok(None)
         }
-    }
-}
-
-fn projection_from_threads(
-    threads: Vec<NotificationThread>,
-    user_rules: &[UserRule],
-    instance: [u8; 16],
-    icon_settings: crate::BannerIconSettings,
-) -> NotificationCenterProjection {
-    let mut grouped: BTreeMap<String, Vec<NotificationCenterItem>> = BTreeMap::new();
-    let app_permissions: HashMap<_, _> = user_rules
-        .iter()
-        .filter(|rule| rule.category.is_none() && rule.urgency.is_none())
-        .map(|rule| {
-            (
-                rule.app_identity.as_str(),
-                AppPermissionControl::from_delivery_outcome(rule.outcome),
-            )
-        })
-        .collect();
-    let category_permissions: HashMap<_, _> = user_rules
-        .iter()
-        .filter_map(|rule| {
-            if rule.urgency.is_some() {
-                return None;
-            }
-            let category = rule.category.as_ref()?;
-            Some((
-                (rule.app_identity.clone(), category.clone()),
-                AppPermissionControl::from_delivery_outcome(rule.outcome),
-            ))
-        })
-        .collect();
-    let mut categories: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-
-    for thread in threads {
-        let notification = thread.accepted_notification;
-        if let Some(category) = &notification.category {
-            categories
-                .entry(notification.app_identity.clone())
-                .or_default()
-                .insert(category.clone());
-        }
-        let actions = if thread.status == NotificationStatus::Active {
-            notification
-                .actions
-                .iter()
-                .filter(|action| action.key != "default")
-                .cloned()
-                .collect()
-        } else {
-            Vec::new()
-        };
-        grouped
-            .entry(notification.app_identity.clone())
-            .or_default()
-            .push(NotificationCenterItem {
-                app_name: notification.app_name,
-                app_icon: notification.app_icon,
-                requires_attention: thread.requires_attention,
-                notification_id: thread.id,
-                target: NotificationCenterTarget {
-                    instance,
-                    notification_id: thread.id,
-                    revision: thread.revision,
-                },
-                transient: notification.transient,
-                has_default_action: thread.status == NotificationStatus::Active
-                    && notification
-                        .actions
-                        .iter()
-                        .any(|action| action.key == "default"),
-                summary: notification.summary,
-                body: notification.body,
-                body_content: notification.body_content,
-                status: thread.status,
-                delivery_outcome: thread.delivery_outcome,
-                actions,
-            });
-    }
-
-    NotificationCenterProjection {
-        icon_settings,
-        groups: grouped
-            .into_iter()
-            .map(|(app_identity, items)| NotificationCenterGroup {
-                permission: app_permissions
-                    .get(app_identity.as_str())
-                    .copied()
-                    .unwrap_or(AppPermissionControl::Allow),
-                category_permissions: categories
-                    .remove(&app_identity)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|category| CategoryPermissionControl {
-                        permission: category_permissions
-                            .get(&(app_identity.clone(), category.clone()))
-                            .copied()
-                            .or_else(|| app_permissions.get(app_identity.as_str()).copied())
-                            .unwrap_or(AppPermissionControl::Allow),
-                        category,
-                    })
-                    .collect(),
-                app_identity,
-                items,
-            })
-            .collect(),
     }
 }

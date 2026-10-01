@@ -79,6 +79,7 @@ pub(super) enum SurfaceInputEffect {
         width: u32,
         height: u32,
     },
+    BarWindowClosed(iced::window::Id),
     PanelWindowClosed(iced::window::Id),
     RegistryWindowClosed(iced::window::Id),
     MenuWindowClosed(iced::window::Id),
@@ -209,6 +210,7 @@ fn route_bar_input(event: &super::messages::SurfaceEvent) -> SurfaceInputEffect 
             width: *width,
             height: *height,
         },
+        SurfaceEvent::WindowClosed(window) => SurfaceInputEffect::BarWindowClosed(*window),
         SurfaceEvent::BarClick(window) => SurfaceInputEffect::BarClick(*window),
         SurfaceEvent::BarRightClick(window) => SurfaceInputEffect::BarRightClick(*window),
         SurfaceEvent::BarHoverEnter(window) => SurfaceInputEffect::BarHoverEnter(*window),
@@ -314,6 +316,7 @@ impl PartialEq for SurfaceInputEffect {
             | (BarRightClick(left), BarRightClick(right))
             | (CloseTooltip(left), CloseTooltip(right))
             | (PanelFocusGained(left), PanelFocusGained(right))
+            | (BarWindowClosed(left), BarWindowClosed(right))
             | (PanelWindowClosed(left), PanelWindowClosed(right))
             | (RegistryWindowClosed(left), RegistryWindowClosed(right))
             | (MenuWindowClosed(left), MenuWindowClosed(right)) => left == right,

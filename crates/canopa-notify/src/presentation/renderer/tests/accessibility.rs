@@ -133,7 +133,7 @@ registry=$!
     )
     .await
     .unwrap();
-    let (sender, receiver) = mpsc::channel();
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(32);
     let mut bridge = crate::presentation::renderer::accessibility::BannerAccessibility::new(sender);
     let mut banner = banner_view(42, "Message body and image alternative");
     banner.body_content = crate::intake::interpreted_body_content(
@@ -233,17 +233,14 @@ registry=$!
     .unwrap();
     let invoked: bool = action.call("DoAction", &(0i32,)).await.unwrap();
     assert!(invoked);
-    let received = tokio::task::spawn_blocking(move || {
-        let event = receiver.recv_timeout(Duration::from_secs(2)).unwrap();
-        (event, receiver)
-    })
-    .await
-    .unwrap();
+    let received = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
     assert!(
-        matches!(received.0, BannerInteraction::InvokeAction { target, action_key, .. }
+        matches!(received, BannerInteraction::InvokeAction { target, action_key, .. }
         if target == banner.target() && action_key == "opaque/3/α")
     );
-    let receiver = received.1;
     let (link_bus, link_path) = named(&connection, "Read online").await;
     let accessible_link = zbus::Proxy::new(
         &connection,
@@ -300,14 +297,10 @@ registry=$!
     .await
     .unwrap();
     assert!(link.call::<_, _, bool>("DoAction", &(0i32,)).await.unwrap());
-    let (event, receiver) = tokio::task::spawn_blocking(move || {
-        (
-            receiver.recv_timeout(Duration::from_secs(2)).unwrap(),
-            receiver,
-        )
-    })
-    .await
-    .unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
     assert!(
         matches!(event, BannerInteraction::OpenLink { target, segment_index: 1, .. } if target == banner.target())
     );

@@ -101,16 +101,11 @@ pub(crate) struct WorkspaceItemModule {
     id: crate::modules::ModuleId,
     workspace: niri_ipc::Workspace,
     config: crate::config::WorkspacesConfig,
-    config_name: String,
 }
 
 impl WorkspaceItemModule {
     pub(crate) fn module_id(config_name: &str, workspace_id: u64) -> crate::modules::ModuleId {
-        if config_name == "workspaces" {
-            crate::modules::ModuleId(format!("workspace:{workspace_id}"))
-        } else {
-            crate::modules::ModuleId(format!("workspace:{config_name}:{workspace_id}"))
-        }
+        crate::modules::ModuleId::workspace(config_name, workspace_id)
     }
 
     pub(crate) fn new(
@@ -123,7 +118,6 @@ impl WorkspaceItemModule {
             id,
             workspace,
             config,
-            config_name,
         }
     }
 
@@ -458,7 +452,7 @@ impl crate::modules::dynamic::DynamicModuleInstance for WorkspaceItemModule {
     }
 
     fn config_name(&self) -> &str {
-        &self.config_name
+        self.id.configured_name()
     }
 }
 
@@ -648,7 +642,7 @@ mod tests {
             crate::modules::ModuleId::new("workspaces"),
             crate::config::WorkspacesConfig::default(),
         );
-        assert_eq!(m.id().0, "workspaces");
+        assert_eq!(m.id().display_name(), "workspaces");
         assert_eq!(m.module_type(), "workspaces");
     }
 
@@ -715,7 +709,7 @@ mod tests {
             },
         );
         let m = WorkspacesModule::new(crate::modules::ModuleId::new("workspaces"), cfg.clone());
-        assert_eq!(m.id().0, "workspaces");
+        assert_eq!(m.id().display_name(), "workspaces");
         assert!(cfg.workspaces.contains_key(&2));
         assert!(!cfg.workspaces.contains_key(&1));
     }
@@ -730,7 +724,7 @@ mod tests {
             crate::config::WorkspacesConfig::default(),
             "workspaces".into(),
         );
-        assert_eq!(m.id().0, "workspace:1");
+        assert_eq!(m.id().display_name(), "workspace:1");
         assert_eq!(m.module_type(), "workspace_item");
         assert_eq!(m.config_name(), "workspaces");
     }
@@ -837,7 +831,6 @@ mod tests {
         let context = BarRenderContext {
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: false,
         };
 
         assert!(
@@ -868,7 +861,6 @@ mod tests {
         let context = BarRenderContext {
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: true,
         };
 
         assert!(

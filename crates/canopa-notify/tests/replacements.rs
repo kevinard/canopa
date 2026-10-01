@@ -9,6 +9,63 @@ use canopa_notify::{
 use notifications::notification;
 
 #[tokio::test]
+async fn replacement_reads_only_its_target_and_preserves_target_read_errors() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("history.db");
+    let daemon =
+        canopa_notify::Daemon::open(canopa_notify::DaemonOptions::headless(database.clone()))
+            .await
+            .unwrap();
+    let target = daemon
+        .receive_notification(notification("Mail", "Target"))
+        .await
+        .unwrap();
+    let unrelated = daemon
+        .receive_notification(notification("Chat", "Unrelated"))
+        .await
+        .unwrap();
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&database))
+        .await
+        .unwrap();
+    // Fault injection at the storage boundary; observations remain through Daemon.
+    sqlx::query("UPDATE notification_threads SET actions_json = 'invalid' WHERE id = ?1")
+        .bind(unrelated.notification_id.get())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let updated = daemon
+        .receive_notification(NotificationInput {
+            replaces_id: Some(target.notification_id),
+            ..notification("Mail", "Updated")
+        })
+        .await
+        .expect("an unrelated unreadable active row must not block replacement");
+    assert_eq!(updated.notification_id, target.notification_id);
+    assert!(
+        daemon
+            .visible_banners()
+            .await
+            .iter()
+            .any(|banner| banner.notification_id == target.notification_id
+                && banner.summary == "Updated")
+    );
+    assert!(
+        daemon
+            .receive_notification(NotificationInput {
+                replaces_id: Some(unrelated.notification_id),
+                ..notification("Chat", "Must fail")
+            })
+            .await
+            .is_err(),
+        "an unreadable target must not be treated as absent"
+    );
+    pool.close().await;
+    daemon.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn replacement_revises_existing_thread_and_can_create_banner_opportunity() {
     let daemon = daemon_support::open_headless_daemon().await;
 

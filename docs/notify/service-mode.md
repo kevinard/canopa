@@ -59,6 +59,13 @@ If another process already owns the runtime socket or the freedesktop notificati
 
 `dnd` without an argument reports the current state; changes survive restart. `reload` repeats the last committed selection (discovery or explicit source); `reload PATH` selects a legacy file and `reload-canopa PATH` selects a shared file. Each installs a validated candidate atomically. `clear` dismisses active notifications; `delete-history` removes inactive local history. JSON status includes configuration generation/error and source path/format/fingerprint, presentation error and sender-publication error. Retained attention follows the advertised `persistence` contract: expiry and restart preserve pending content; explicit deletion can remove inactive pending content.
 
+JSON status also reports timeout records, retries and exhausted retries. Automatic
+expiry retries storage failures with bounded backoff; exhausted retries remain
+reported until explicit completion or replacement. `ctl active --json` reads only
+retained active rows, and count-only `ctl active` uses a database count without
+decoding notification content. These legacy diagnostics remain retained-only;
+the Notification Center also includes live transient notifications.
+
 If the renderer exits after startup, JSON status reports `banner renderer stopped; restart the daemon to restore banners` even without another notification. Notification receipt, sender lifecycles and Center controls remain available. The error is terminal for that renderer lifetime; restart the daemon explicitly to restore banners. The process stays running, so the unit's `Restart=on-failure` does not automatically recover this degraded state. Restart also invalidates live sender IDs and removes runtime-only transient notifications; retained history becomes stale as usual. See [ADR 0043](adr/0043-renderer-readiness-and-degraded-service.md).
 
 Control requests must fit 64 KiB and ordinary replies must fit 8 MiB, including their terminating newline. Oversized replies return an error without truncating or deleting notification history. The CLI validates a complete reply before printing it and gives connect/write/read one 30-second deadline, with at most five seconds for writing. Malformed, incomplete, mismatched or oversized replies fail without printing their contents. A failed exchange can leave the command outcome unknown: the CLI never retries automatically. Inspect state before repeating a state-changing command, especially `dnd toggle` or `clear`. A completed partial-clear reply reports the number of committed dismissals.

@@ -3,7 +3,7 @@ use super::data_source::{
     ModuleDataSourceIdentity, ModuleDataSourceMapper, ModuleDataSourceState, ModuleInstanceOutcome,
 };
 use super::interaction::ModuleInteractionHandler;
-use super::render::{BarRenderContext, ModuleRender};
+use super::render::ModuleRender;
 use super::view::{IconLabel, IconLabelLayout};
 use super::{InteractionEvent, Module, ModuleId, ModuleKind, ModuleState};
 use crate::app::{Message, messages::ModuleRuntimeEvent};
@@ -102,6 +102,10 @@ impl ModuleDataSourceMapper for IdleInhibitorModule {
 }
 
 impl IconLabel for IdleInhibitorModule {
+    fn content_rotation(&self) -> crate::config::ContentRotation {
+        self.config.content_rotation
+    }
+
     fn icon(&self, state: &ModuleState) -> String {
         let status = status(state);
         self.config
@@ -147,6 +151,10 @@ impl IconLabel for IdleInhibitorModule {
 }
 
 impl ModuleRender for IdleInhibitorModule {
+    fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
+        Some(self)
+    }
+
     fn has_content(&self, _: &ModuleState, _: crate::config::FormatMode) -> bool {
         true
     }
@@ -158,55 +166,6 @@ impl ModuleRender for IdleInhibitorModule {
             ("state", status.name().into()),
             ("label", status.help().into()),
         ]
-    }
-    fn render_collapsed_with_style(
-        &self,
-        state: &ModuleState,
-        style: &Style,
-    ) -> iced::Element<'_, Message> {
-        super::view::icon_label_view_with_default(self, state, IconLabelLayout::Collapsed, style)
-    }
-    fn render_panel_with_style(
-        &self,
-        state: &ModuleState,
-        style: &Style,
-    ) -> iced::Element<'_, Message> {
-        super::view::icon_label_view_with_default(self, state, IconLabelLayout::Expanded, style)
-    }
-    fn render_horizontal_with_style(
-        &self,
-        state: &ModuleState,
-        style: &Style,
-    ) -> Option<iced::Element<'_, Message>> {
-        Some(super::view::icon_label_view_with_default(
-            self,
-            state,
-            IconLabelLayout::Horizontal,
-            style,
-        ))
-    }
-    fn render_bar_collapsed_with_style(
-        &self,
-        state: &ModuleState,
-        context: &BarRenderContext<'_>,
-        style: &Style,
-    ) -> Option<iced::Element<'_, Message>> {
-        let rotation = self.config.content_rotation.resolve_for_edge(context.edge);
-        (rotation != crate::config::ResolvedContentRotation::None
-            && self
-                .config
-                .format
-                .template_for(crate::config::FormatMode::Collapsed)
-                .is_some())
-        .then(|| {
-            super::view::icon_label_view_with_rotation(
-                self,
-                state,
-                IconLabelLayout::Collapsed,
-                style,
-                rotation,
-            )
-        })
     }
 }
 

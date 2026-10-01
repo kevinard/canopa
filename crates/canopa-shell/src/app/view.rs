@@ -176,6 +176,7 @@ fn render_external_panel_model<'a>(
                 entries,
                 *allow_custom,
                 content.list_search(id),
+                content.input_error(id),
             ),
             crate::surface::panel::ExternalPanelElement::TextInput {
                 id,
@@ -189,7 +190,7 @@ fn render_external_panel_model<'a>(
                 label.as_str(),
                 value.as_str(),
                 *secret,
-                error.as_deref(),
+                content.input_error(id).or(error.as_deref()),
             ),
             crate::surface::panel::ExternalPanelElement::Status {
                 title,
@@ -298,6 +299,7 @@ fn render_external_selectable_list<'a>(
     entries: &'a [crate::surface::panel::ExternalSelectableEntry],
     allow_custom: bool,
     search_query: &str,
+    error: Option<&str>,
 ) -> Element<'a, Message> {
     let provider_for_search = provider_name.to_string();
     let list_for_search = list_id.to_string();
@@ -362,9 +364,11 @@ fn render_external_selectable_list<'a>(
         }
     }
 
-    container(column![search, rows].spacing(8))
-        .width(Length::Fill)
-        .into()
+    let mut block = column![search].spacing(8);
+    if let Some(error) = error {
+        block = block.push(text(error.to_owned()).size(12));
+    }
+    container(block.push(rows)).width(Length::Fill).into()
 }
 
 fn external_selectable_row<'a>(

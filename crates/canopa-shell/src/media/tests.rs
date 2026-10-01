@@ -1,5 +1,8 @@
 use super::*;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+};
 
 pub(crate) fn player(name: &str, status: &str) -> Player {
     Player {
@@ -48,7 +51,20 @@ fn selection_prefers_playing_is_stable_and_clears_a_departed_pin() {
 }
 
 #[derive(Clone)]
-struct FakePlayer(Arc<Mutex<Player>>, Arc<Mutex<Vec<String>>>);
+struct FakePlayer(
+    Arc<Mutex<Player>>,
+    Arc<Mutex<Vec<String>>>,
+    Arc<ReadBehavior>,
+);
+
+#[derive(Default)]
+struct ReadBehavior {
+    delay_ms: AtomicU64,
+    calls: AtomicUsize,
+    fail_metadata: AtomicBool,
+    fail_state_once: AtomicBool,
+    failures: AtomicUsize,
+}
 
 #[zbus::interface(name = "org.mpris.MediaPlayer2")]
 impl FakePlayer {
@@ -64,12 +80,28 @@ struct FakePlayback(FakePlayer);
 impl FakePlayback {
     #[zbus(property)]
     fn playback_status(&self) -> String {
+        // GetAll may omit failed optional getters; make this one snapshot invalid
+        // even if the server still returns a partial property dictionary.
+        if self.0.2.fail_state_once.swap(false, Ordering::SeqCst) {
+            return "Invalid".into();
+        }
         self.0.0.lock().unwrap().status.clone()
     }
     #[zbus(property)]
-    fn metadata(&self) -> HashMap<String, OwnedValue> {
+    async fn metadata(&self) -> zbus::fdo::Result<HashMap<String, OwnedValue>> {
+        self.0.2.calls.fetch_add(1, Ordering::SeqCst);
+        let delay = self.0.2.delay_ms.load(Ordering::SeqCst);
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+        }
+        if self.0.2.fail_metadata.load(Ordering::SeqCst) {
+            self.0.2.failures.fetch_add(1, Ordering::SeqCst);
+            return Err(zbus::fdo::Error::Failed(
+                "Temporary metadata failure".into(),
+            ));
+        }
         let p = self.0.0.lock().unwrap();
-        HashMap::from([
+        Ok(HashMap::from([
             (
                 "mpris:trackid".into(),
                 zbus::zvariant::Value::from(
@@ -90,7 +122,7 @@ impl FakePlayback {
                     .try_to_owned()
                     .unwrap(),
             ),
-        ])
+        ]))
     }
     #[zbus(property)]
     fn can_control(&self) -> bool {
@@ -130,6 +162,7 @@ async fn export(bus: &crate::test_bus::TestBus, player: Player) -> (zbus::Connec
     let fake = FakePlayer(
         Arc::new(Mutex::new(player.clone())),
         Arc::new(Mutex::new(vec![])),
+        Arc::new(ReadBehavior::default()),
     );
     let conn = zbus::connection::Builder::address(bus.address.as_str())
         .unwrap()
@@ -240,7 +273,7 @@ async fn live_discovery_metadata_controls_capabilities_and_replaced_owner() {
         "unsupported control never reaches player"
     );
 
-    let (other, _) = export(&bus, player("other", "Paused")).await;
+    let (other, other_fake) = export(&bus, player("other", "Paused")).await;
     let multiple = until(&mut rx, |s| s.players.len() == 2).await;
     let other_id = multiple
         .players
@@ -267,6 +300,32 @@ async fn live_discovery_metadata_controls_capabilities_and_replaced_owner() {
         Some(other_id.clone()),
         "panel and bar share the manual choice"
     );
+    // A metadata error must not masquerade as departure or lose a manual pin.
+    other_fake.2.fail_metadata.store(true, Ordering::SeqCst);
+    other_fake.2.fail_state_once.store(true, Ordering::SeqCst);
+    changed(&other).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while other_fake.2.failures.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("metadata failure reached the worker");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(150), rx.changed())
+            .await
+            .is_err(),
+        "a failed player read changed the published selection"
+    );
+    other_fake.2.fail_metadata.store(false, Ordering::SeqCst);
+    other_fake.0.lock().unwrap().title = "Recovered metadata".into();
+    changed(&other).await;
+    let recovered = until(&mut rx, |s| {
+        s.players.iter().any(|p| p.title == "Recovered metadata")
+    })
+    .await;
+    assert!(recovered.pinned);
+    assert_eq!(recovered.selected, Some(other_id.clone()));
     client
         .call::<_, _, ()>(
             "Apply",
@@ -337,4 +396,159 @@ fn text_is_bounded_and_handles_missing_metadata() {
     p.title.clear();
     p.artist.clear();
     assert_eq!(p.label(), "Radio");
+}
+
+#[tokio::test]
+async fn slow_player_refresh_does_not_block_other_player_controls_or_reread_every_player() {
+    let bus = crate::test_bus::TestBus::new();
+    let (good_conn, good) = export(&bus, player("zz_fast", "Playing")).await;
+    let mut slow = Vec::new();
+    for index in 0..18 {
+        slow.push(export(&bus, player(&format!("slow_{index:02}"), "Paused")).await);
+    }
+    let (tx, mut rx) = watch::channel(Snapshot::default());
+    let (commands, commands_rx) = mpsc::channel(8);
+    let connection = zbus::connection::Builder::address(bus.address.as_str())
+        .unwrap()
+        .name(SERVICE)
+        .unwrap()
+        .serve_at(
+            PATH,
+            MediaInterface {
+                snapshots: rx.clone(),
+                commands,
+            },
+        )
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let worker = tokio::spawn(async move { connected(connection, &tx, commands_rx).await });
+    let state = until(&mut rx, |state| state.players.len() == 19).await;
+    let target = state.current().unwrap().clone();
+    let client_conn = bus.connect().await;
+    let client = zbus::Proxy::new(&client_conn, SERVICE, PATH, INTERFACE)
+        .await
+        .unwrap();
+    for (_, fake) in &slow {
+        fake.2.delay_ms.store(1500, Ordering::SeqCst);
+    }
+    let before = slow[0].1.2.calls.load(Ordering::SeqCst);
+    changed(&slow[0].0).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while slow[0].1.2.calls.load(Ordering::SeqCst) == before {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("slow refresh started");
+    let request = serde_json::to_string(&Request::Control {
+        player: target.id,
+        track: target.track,
+        operation: Operation::Pause,
+    })
+    .unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_millis(600),
+        client.call::<_, _, ()>("Apply", &(request,)),
+    )
+    .await;
+    assert!(
+        matches!(result, Ok(Ok(()))),
+        "an unrelated metadata refresh blocked the control deadline: {result:?}"
+    );
+    assert_eq!(*good.1.lock().unwrap(), ["Pause"]);
+    good.0.lock().unwrap().title = "Updated fast player".into();
+    changed(&good_conn).await;
+    until(&mut rx, |state| {
+        state
+            .current()
+            .is_some_and(|p| p.title == "Updated fast player")
+    })
+    .await;
+    assert!(
+        slow.iter()
+            .skip(1)
+            .all(|(_, fake)| fake.2.calls.load(Ordering::SeqCst) == 1),
+        "one player's properties caused unrelated player metadata reads"
+    );
+    // A burst for the in-flight owner retains one refresh obligation, not 100 scans.
+    for _ in 0..100 {
+        changed(&slow[0].0).await;
+    }
+    slow[0].1.2.delay_ms.store(0, Ordering::SeqCst);
+    slow[0].1.0.lock().unwrap().title = "Latest burst metadata".into();
+    changed(&slow[0].0).await;
+    until(&mut rx, |state| {
+        state
+            .players
+            .iter()
+            .any(|p| p.title == "Latest burst metadata")
+    })
+    .await;
+    let reads = slow[0].1.2.calls.load(Ordering::SeqCst) - before;
+    assert!(reads <= 3, "101 updates caused {reads} metadata reads");
+    assert!(
+        slow.iter()
+            .skip(1)
+            .all(|(_, fake)| fake.2.calls.load(Ordering::SeqCst) == 1)
+    );
+    eprintln!(
+        "101 updates during a slow read: {reads} metadata reads; unrelated players unchanged"
+    );
+    // A target that itself stops replying fails within the command's deadline,
+    // without sending the control after its revalidation timed out.
+    good.2.delay_ms.store(1500, Ordering::SeqCst);
+    let request = serde_json::to_string(&Request::Control {
+        player: state.current().unwrap().id.clone(),
+        track: state.current().unwrap().track.clone(),
+        operation: Operation::Pause,
+    })
+    .unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        client.call::<_, _, ()>("Apply", &(request,)),
+    )
+    .await
+    .unwrap();
+    assert!(result.is_err());
+    assert_eq!(*good.1.lock().unwrap(), ["Pause"]);
+    worker.abort();
+    let _ = worker.await;
+}
+
+#[tokio::test]
+async fn initial_equal_status_selection_uses_bus_order_despite_metadata_arrival_order() {
+    for pin_fast_player in [false, true] {
+        let bus = crate::test_bus::TestBus::new();
+        let (_a, slow) = export(&bus, player("a", "Playing")).await;
+        slow.2.delay_ms.store(300, Ordering::SeqCst);
+        let (_b, _fast) = export(&bus, player("b", "Playing")).await;
+        let (tx, mut rx) = watch::channel(Snapshot::default());
+        let (commands, commands_rx) = mpsc::channel(8);
+        let conn = bus.connect().await;
+        let worker = tokio::spawn(async move { connected(conn, &tx, commands_rx).await });
+        let early = until(&mut rx, |state| state.players.len() == 1).await;
+        assert!(early.current().unwrap().id.bus.ends_with(".b"));
+        if pin_fast_player {
+            let (result, answer) = oneshot::channel();
+            commands
+                .send(Command {
+                    expires: tokio::time::Instant::now() + Duration::from_secs(1),
+                    request: Request::Select(early.selected),
+                    result,
+                })
+                .await
+                .unwrap();
+            answer.await.unwrap().unwrap();
+        }
+        let complete = until(&mut rx, |state| state.players.len() == 2).await;
+        assert_eq!(
+            complete.current().unwrap().id.bus,
+            format!("{PREFIX}{}", if pin_fast_player { "b" } else { "a" })
+        );
+        assert_eq!(complete.pinned, pin_fast_player);
+        worker.abort();
+        let _ = worker.await;
+    }
 }

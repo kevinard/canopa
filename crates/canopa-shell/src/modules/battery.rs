@@ -1,4 +1,3 @@
-use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum BatteryPowerState {
     #[default]
@@ -166,24 +165,6 @@ impl BatteryModule {
         }
     }
 
-    fn formatted_text(
-        &self,
-        battery: &BatteryState,
-        mode: crate::config::FormatMode,
-    ) -> Option<String> {
-        let icon = self.current_icon(battery);
-        let value = format!("{}", battery.percentage.round() as u8);
-        let state = battery_state_key(battery, &self.states);
-        self.format.template_for(mode).map(|template| {
-            template.render_joined(&[
-                ("icon", icon),
-                ("value", value.clone()),
-                ("percent", value),
-                ("state", state),
-            ])
-        })
-    }
-
     fn current_icon(&self, battery: &BatteryState) -> String {
         let state = battery_state_key(battery, &self.states);
         self.icons
@@ -196,18 +177,6 @@ impl BatteryModule {
                 }
             })
             .to_owned()
-    }
-
-    fn collapsed_styled_segments_with_default(
-        &self,
-        battery: &BatteryState,
-        default_style: &crate::config::Style,
-    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        self.styled_segments_with_default(
-            battery,
-            crate::config::FormatMode::Collapsed,
-            default_style,
-        )
     }
 
     fn styled_segments_with_default(
@@ -237,6 +206,46 @@ impl BatteryModule {
 }
 
 impl crate::modules::view::IconLabel for BatteryModule {
+    fn decorate<'a>(
+        &'a self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+        rotation: crate::config::ResolvedContentRotation,
+        content: iced::Element<'a, crate::app::Message>,
+    ) -> iced::Element<'a, crate::app::Message> {
+        let crate::modules::ModuleState::Battery(battery) = state else {
+            return content;
+        };
+        if layout != crate::modules::view::IconLabelLayout::Collapsed
+            || rotation != crate::config::ResolvedContentRotation::None
+            || battery.percentage > self.critical_threshold as f64
+        {
+            return content;
+        }
+        let badge = iced::widget::container(
+            iced::widget::text(format!("{}%", battery.percentage.round() as u8))
+                .size(9)
+                .color(theme::palette().on_danger),
+        )
+        .padding([1, 3])
+        .style(|_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(theme::palette().danger)),
+            border: iced::Border {
+                radius: iced::border::Radius::from(4.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        iced::widget::stack![content, badge].into()
+    }
+
+    fn content_rotation(&self) -> crate::config::ContentRotation {
+        self.content_rotation
+    }
+    fn accepts_state(&self, state: &crate::modules::ModuleState) -> bool {
+        matches!(state, crate::modules::ModuleState::Battery(_))
+    }
+
     fn icon(&self, state: &crate::modules::ModuleState) -> String {
         match state {
             crate::modules::ModuleState::Battery(s) => self.current_icon(s),
@@ -321,6 +330,10 @@ impl crate::modules::data_source::ModuleDataSourceMapper for BatteryModule {
 }
 
 impl crate::modules::render::ModuleRender for BatteryModule {
+    fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
+        Some(self)
+    }
+
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Battery(b) = state {
             let icon = self.current_icon(b);
@@ -336,162 +349,6 @@ impl crate::modules::render::ModuleRender for BatteryModule {
             Vec::new()
         }
     }
-
-    fn render_collapsed_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-        use iced::widget::{container, stack, text};
-        use iced::{Alignment, Length};
-
-        let battery = match state {
-            ModuleState::Battery(s) => s,
-            _ => return iced::widget::Space::new().into(),
-        };
-
-        let color = icon_color(
-            battery.percentage,
-            battery.power_state.is_charging(),
-            self.critical_threshold,
-        );
-        let style = crate::modules::view::fallback_resolved_style(bar_style);
-
-        // Battery needs the raw container (not the helper) because it may be stacked
-        // with the CriticalBadge overlay below.
-        let content = if let Some(segments) =
-            self.collapsed_styled_segments_with_default(battery, bar_style)
-        {
-            crate::modules::view::styled_segments_row(segments, TEXT_SIZE, color).into()
-        } else {
-            let icon_str = self
-                .formatted_text(battery, crate::config::FormatMode::Collapsed)
-                .unwrap_or_else(|| <Self as crate::modules::view::IconLabel>::icon(self, state));
-            crate::modules::view::styled_segment_text(icon_str, ICON_SIZE, color, style)
-        };
-        let icon = container(content)
-            .width(Length::Fill)
-            .height(20)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center);
-
-        // CriticalBadge: shown when collapsed AND at/below threshold (AC: #3, UX-DR17).
-        if battery.percentage <= self.critical_threshold as f64 {
-            let badge_label = format!("{}%", battery.percentage.round() as u8);
-            let badge = container(text(badge_label).size(9).color(theme::palette().on_danger))
-                .padding([1, 3])
-                .style(|_| iced::widget::container::Style {
-                    background: Some(iced::Background::Color(theme::palette().danger)),
-                    border: iced::Border {
-                        radius: iced::border::Radius::from(4.0),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                });
-            stack![icon, badge].into()
-        } else {
-            icon.into()
-        }
-    }
-
-    fn render_bar_collapsed_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        context: &crate::modules::render::BarRenderContext<'_>,
-        bar_style: &crate::config::Style,
-    ) -> Option<iced::Element<'_, crate::app::Message>> {
-        let rotation = self.content_rotation.resolve_for_edge(context.edge);
-        if rotation == crate::config::ResolvedContentRotation::None
-            || self
-                .format
-                .template_for(crate::config::FormatMode::Collapsed)
-                .is_none()
-        {
-            return None;
-        }
-        let crate::modules::ModuleState::Battery(battery) = state else {
-            return None;
-        };
-        let color = icon_color(
-            battery.percentage,
-            battery.power_state.is_charging(),
-            self.critical_threshold,
-        );
-        let segments = self.collapsed_styled_segments_with_default(battery, bar_style)?;
-        Some(
-            iced::widget::container(crate::modules::view::formatted_segments_content(
-                segments, TEXT_SIZE, color, rotation,
-            ))
-            .width(iced::Length::Fill)
-            .height(iced::Length::Shrink)
-            .align_x(iced::Alignment::Center)
-            .align_y(iced::Alignment::Center)
-            .into(),
-        )
-    }
-
-    fn render_panel_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        match state {
-            crate::modules::ModuleState::Battery(_) => {
-                crate::modules::view::icon_label_view_with_default(
-                    self,
-                    state,
-                    crate::modules::view::IconLabelLayout::Expanded,
-                    bar_style,
-                )
-            }
-            _ => iced::widget::Space::new().into(),
-        }
-    }
-
-    fn render_horizontal_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> Option<iced::Element<'_, crate::app::Message>> {
-        match state {
-            crate::modules::ModuleState::Battery(_) => {
-                Some(crate::modules::view::icon_label_view_with_default(
-                    self,
-                    state,
-                    crate::modules::view::IconLabelLayout::Horizontal,
-                    bar_style,
-                ))
-            }
-            _ => Some(iced::widget::Space::new().into()),
-        }
-    }
-
-    fn render_bar_horizontal_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        context: &crate::modules::render::BarRenderContext<'_>,
-        bar_style: &crate::config::Style,
-    ) -> Option<iced::Element<'_, crate::app::Message>> {
-        let rotation = self.content_rotation.resolve_for_edge(context.edge);
-        if rotation == crate::config::ResolvedContentRotation::None
-            || self
-                .format
-                .template_for(crate::config::FormatMode::Horizontal)
-                .is_none()
-        {
-            return None;
-        }
-        matches!(state, crate::modules::ModuleState::Battery(_)).then(|| {
-            crate::modules::view::icon_label_view_with_rotation(
-                self,
-                state,
-                crate::modules::view::IconLabelLayout::Horizontal,
-                bar_style,
-                rotation,
-            )
-        })
-    }
 }
 
 #[cfg(test)]
@@ -503,6 +360,7 @@ mod tests {
     use crate::modules::Module;
     use crate::modules::data_source::ModuleDataSourceMapper;
     use crate::modules::view::IconLabel;
+    use crate::theme::bar_metrics::TEXT_SIZE;
     use std::collections::HashMap;
 
     fn format_config(field: &str, raw: &str) -> crate::config::FormatConfig {
@@ -567,7 +425,7 @@ mod tests {
             IconRulesConfig::default(),
             crate::config::FormatConfig::default(),
         );
-        assert_eq!(m.id().0, "battery");
+        assert_eq!(m.id().display_name(), "battery");
         assert_eq!(m.module_type(), "battery");
     }
 
@@ -792,7 +650,16 @@ mod tests {
         };
 
         assert_eq!(
-            m.formatted_text(&state, crate::config::FormatMode::Expanded),
+            m.styled_segments_with_default(
+                &state,
+                crate::config::FormatMode::Expanded,
+                &Style::default()
+            )
+            .map(|segments| segments
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<Vec<_>>()
+                .join(" ")),
             Some("▒ 42% normal".to_string())
         );
     }
@@ -813,7 +680,16 @@ mod tests {
         };
 
         assert_eq!(
-            m.formatted_text(&state, crate::config::FormatMode::Collapsed),
+            m.styled_segments_with_default(
+                &state,
+                crate::config::FormatMode::Collapsed,
+                &Style::default()
+            )
+            .map(|segments| segments
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<Vec<_>>()
+                .join(" ")),
             Some("critical".to_string())
         );
     }
@@ -866,7 +742,11 @@ mod tests {
         };
 
         let segments = m
-            .collapsed_styled_segments_with_default(&state, &crate::config::Style::default())
+            .styled_segments_with_default(
+                &state,
+                crate::config::FormatMode::Collapsed,
+                &crate::config::Style::default(),
+            )
             .unwrap();
 
         assert_eq!(segments[0].1.color, Some(crate::theme::palette().danger));

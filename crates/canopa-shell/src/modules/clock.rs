@@ -1,5 +1,3 @@
-use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
-
 /// Runtime state for the clock module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClockState {
@@ -33,52 +31,29 @@ enum ClockUpdateCadence {
 }
 
 fn format_needs_second_updates(format: &str) -> bool {
-    let mut chars = format.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '%' {
-            continue;
-        }
+    use chrono::format::{Fixed, Item, Numeric, StrftimeItems};
 
-        let Some(mut spec) = chars.next() else {
-            break;
-        };
-        if spec == '%' {
-            continue;
-        }
-
-        while matches!(spec, '-' | '_' | '0' | '^' | '#') {
-            let Some(next) = chars.next() else {
-                return false;
-            };
-            spec = next;
-        }
-
-        while spec.is_ascii_digit() {
-            let Some(next) = chars.next() else {
-                return false;
-            };
-            spec = next;
-        }
-
-        if spec == '.' {
-            let Some(next) = chars.next() else {
-                return true;
-            };
-            spec = next;
-            while spec.is_ascii_digit() {
-                let Some(next) = chars.next() else {
-                    return true;
-                };
-                spec = next;
-            }
-        }
-
-        if matches!(spec, 'S' | 'T' | 'X' | 'r' | 'c' | '+' | 's' | 'f') {
-            return true;
-        }
-    }
-
-    false
+    // Use the same directive expansion as rendering and configuration validation.
+    // Composite directives (%c, %T, ...) expand to their constituent items.
+    StrftimeItems::new(format).any(|item| {
+        matches!(
+            item,
+            Item::Numeric(
+                Numeric::Second | Numeric::Nanosecond | Numeric::Timestamp,
+                _
+            ) | Item::Fixed(
+                Fixed::Nanosecond
+                        | Fixed::Nanosecond3
+                        | Fixed::Nanosecond6
+                        | Fixed::Nanosecond9
+                        | Fixed::RFC2822
+                        | Fixed::RFC3339
+                        // Valid output directives with opaque fixed items are
+                        // fractional seconds without a dot (%3f, %6f, %9f).
+                        | Fixed::Internal(_)
+            )
+        )
+    })
 }
 
 fn clock_update_cadence(time_format: &str, date_format: &str) -> ClockUpdateCadence {
@@ -209,21 +184,6 @@ impl ClockModule {
             format,
             content_rotation,
         }
-    }
-
-    fn formatted_text(
-        &self,
-        state: &ClockState,
-        mode: crate::config::FormatMode,
-    ) -> Option<String> {
-        self.format.template_for(mode).map(|template| {
-            template.render_joined(&[
-                ("icon", "⌚".to_string()),
-                ("value", state.time.clone()),
-                ("time", state.time.clone()),
-                ("date", state.date.clone()),
-            ])
-        })
     }
 
     fn styled_segments_with_default(
@@ -453,6 +413,10 @@ impl crate::modules::detail::ModuleDetailLifecycle for ClockModule {
 }
 
 impl crate::modules::render::ModuleRender for ClockModule {
+    fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
+        Some(self)
+    }
+
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Clock(c) = state {
             vec![
@@ -463,172 +427,6 @@ impl crate::modules::render::ModuleRender for ClockModule {
             ]
         } else {
             Vec::new()
-        }
-    }
-
-    // Clock keeps custom views: collapsed renders icon + time in a column and
-    // panel renders time plus a second date row.
-    fn render_collapsed_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-        use iced::widget::column;
-        use iced::{Alignment, Length};
-
-        match state {
-            ModuleState::Clock(s) => {
-                if let Some(segments) = self.styled_segments_with_default(
-                    s,
-                    crate::config::FormatMode::Collapsed,
-                    bar_style,
-                ) {
-                    return crate::modules::view::styled_segments_row(
-                        segments,
-                        TEXT_SIZE,
-                        crate::theme::palette().text,
-                    )
-                    .width(Length::Fill)
-                    .into();
-                }
-                if let Some(formatted) =
-                    self.formatted_text(s, crate::config::FormatMode::Collapsed)
-                {
-                    return column![crate::modules::view::styled_segment_text(
-                        formatted,
-                        TEXT_SIZE,
-                        crate::theme::palette().text,
-                        crate::modules::view::fallback_resolved_style(bar_style),
-                    )]
-                    .align_x(Alignment::Center)
-                    .width(Length::Fill)
-                    .into();
-                }
-                let style = crate::modules::view::fallback_resolved_style(bar_style);
-                column![
-                    crate::modules::view::styled_segment_text(
-                        "⌚".to_string(),
-                        ICON_SIZE,
-                        crate::theme::palette().text,
-                        style,
-                    ),
-                    crate::modules::view::styled_segment_text(
-                        s.time.clone(),
-                        TEXT_SIZE,
-                        crate::theme::palette().text,
-                        style,
-                    ),
-                ]
-                .align_x(Alignment::Center)
-                .width(Length::Fill)
-                .into()
-            }
-            _ => iced::widget::Space::new().into(),
-        }
-    }
-
-    fn render_bar_collapsed_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        context: &crate::modules::render::BarRenderContext<'_>,
-        bar_style: &crate::config::Style,
-    ) -> Option<iced::Element<'_, crate::app::Message>> {
-        let rotation = self.content_rotation.resolve_for_edge(context.edge);
-        if rotation == crate::config::ResolvedContentRotation::None
-            || self
-                .format
-                .template_for(crate::config::FormatMode::Collapsed)
-                .is_none()
-        {
-            return None;
-        }
-        let crate::modules::ModuleState::Clock(clock) = state else {
-            return None;
-        };
-        let segments = self.styled_segments_with_default(
-            clock,
-            crate::config::FormatMode::Collapsed,
-            bar_style,
-        )?;
-        Some(
-            iced::widget::container(crate::modules::view::formatted_segments_content(
-                segments,
-                TEXT_SIZE,
-                crate::theme::palette().text,
-                rotation,
-            ))
-            .width(iced::Length::Fill)
-            .height(iced::Length::Shrink)
-            .align_x(iced::Alignment::Center)
-            .align_y(iced::Alignment::Center)
-            .into(),
-        )
-    }
-
-    fn render_panel_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> iced::Element<'_, crate::app::Message> {
-        use crate::modules::ModuleState;
-        use iced::widget::{column, row};
-        use iced::{Alignment, Length};
-
-        match state {
-            ModuleState::Clock(s) => {
-                if let Some(segments) = self.styled_segments_with_default(
-                    s,
-                    crate::config::FormatMode::Expanded,
-                    bar_style,
-                ) {
-                    return crate::modules::view::styled_segments_row(
-                        segments,
-                        12,
-                        crate::theme::palette().text,
-                    )
-                    .width(Length::Fill)
-                    .into();
-                }
-                if let Some(formatted) = self.formatted_text(s, crate::config::FormatMode::Expanded)
-                {
-                    return crate::modules::view::styled_segment_text(
-                        formatted,
-                        12,
-                        crate::theme::palette().text,
-                        crate::modules::view::fallback_resolved_style(bar_style),
-                    );
-                }
-                let style = crate::modules::view::fallback_resolved_style(bar_style);
-                column![
-                    row![
-                        crate::modules::view::styled_segment_text(
-                            "⌚".to_string(),
-                            16,
-                            crate::theme::palette().text,
-                            style,
-                        ),
-                        iced::widget::Space::new().width(Length::Fill),
-                        crate::modules::view::styled_segment_text(
-                            s.time.clone(),
-                            13,
-                            crate::theme::palette().text,
-                            style,
-                        ),
-                    ]
-                    .align_y(Alignment::Center)
-                    .width(Length::Fill),
-                    crate::modules::view::styled_segment_text(
-                        s.date.clone(),
-                        11,
-                        crate::theme::palette().text,
-                        style,
-                    ),
-                ]
-                .width(Length::Fill)
-                .into()
-            }
-            _ => iced::widget::Space::new().into(),
         }
     }
 
@@ -665,91 +463,84 @@ impl crate::modules::render::ModuleRender for ClockModule {
             height: 260,
         })
     }
+}
 
-    fn render_horizontal_with_style(
-        &self,
-        state: &crate::modules::ModuleState,
-        bar_style: &crate::config::Style,
-    ) -> Option<iced::Element<'_, crate::app::Message>> {
-        use crate::modules::ModuleState;
-        use crate::modules::view::horizontal_icon_label_with_style;
-
-        match state {
-            ModuleState::Clock(s) => {
-                if let Some(segments) = self.styled_segments_with_default(
-                    s,
-                    crate::config::FormatMode::Horizontal,
-                    bar_style,
-                ) {
-                    return Some(
-                        iced::widget::container(crate::modules::view::styled_segments_row(
-                            segments,
-                            TEXT_SIZE,
-                            crate::theme::palette().text,
-                        ))
-                        .height(iced::Length::Fill)
-                        .align_y(iced::Alignment::Center)
-                        .padding([0, 6])
-                        .into(),
-                    );
-                }
-                if let Some(formatted) =
-                    self.formatted_text(s, crate::config::FormatMode::Horizontal)
-                {
-                    Some(horizontal_icon_label_with_style(
-                        "",
-                        crate::theme::palette().text,
-                        formatted,
-                        bar_style,
-                    ))
-                } else {
-                    Some(horizontal_icon_label_with_style(
-                        "⌚",
-                        crate::theme::palette().text,
-                        &s.time,
-                        bar_style,
-                    ))
-                }
-            }
-            _ => Some(iced::widget::Space::new().into()),
+impl crate::modules::view::IconLabel for ClockModule {
+    fn content_rotation(&self) -> crate::config::ContentRotation {
+        self.content_rotation
+    }
+    fn accepts_state(&self, state: &crate::modules::ModuleState) -> bool {
+        matches!(state, crate::modules::ModuleState::Clock(_))
+    }
+    fn icon(&self, _state: &crate::modules::ModuleState) -> String {
+        "⌚".into()
+    }
+    fn label(&self, state: &crate::modules::ModuleState) -> String {
+        if let crate::modules::ModuleState::Clock(s) = state {
+            s.time.clone()
+        } else {
+            String::new()
         }
     }
-
-    fn render_bar_horizontal_with_style(
+    fn styled_segments_for_layout(
         &self,
         state: &crate::modules::ModuleState,
-        context: &crate::modules::render::BarRenderContext<'_>,
-        bar_style: &crate::config::Style,
-    ) -> Option<iced::Element<'_, crate::app::Message>> {
-        let rotation = self.content_rotation.resolve_for_edge(context.edge);
-        if rotation == crate::config::ResolvedContentRotation::None
-            || self
-                .format
-                .template_for(crate::config::FormatMode::Horizontal)
-                .is_none()
-        {
-            return None;
+        layout: crate::modules::view::IconLabelLayout,
+        style: &crate::config::Style,
+    ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
+        if let crate::modules::ModuleState::Clock(s) = state {
+            self.styled_segments_with_default(s, layout.into(), style)
+        } else {
+            None
         }
-        let crate::modules::ModuleState::Clock(clock) = state else {
-            return None;
-        };
-        let segments = self.styled_segments_with_default(
-            clock,
-            crate::config::FormatMode::Horizontal,
-            bar_style,
-        )?;
-        Some(
-            iced::widget::container(crate::modules::view::formatted_segments_content(
-                segments,
-                TEXT_SIZE,
-                crate::theme::palette().text,
-                rotation,
-            ))
-            .height(iced::Length::Fill)
-            .align_y(iced::Alignment::Center)
-            .padding([0, 6])
-            .into(),
-        )
+    }
+    fn formatted_color(
+        &self,
+        _state: &crate::modules::ModuleState,
+        _layout: crate::modules::view::IconLabelLayout,
+    ) -> iced::Color {
+        crate::theme::palette().text
+    }
+    fn formatted_size(&self, _layout: crate::modules::view::IconLabelLayout) -> u32 {
+        crate::theme::bar_metrics::TEXT_SIZE
+    }
+    fn fallback_view(
+        &self,
+        state: &crate::modules::ModuleState,
+        layout: crate::modules::view::IconLabelLayout,
+        style: &crate::config::Style,
+    ) -> iced::Element<'_, crate::app::Message> {
+        match layout {
+            crate::modules::view::IconLabelLayout::Collapsed => {
+                crate::modules::view::stacked_icon_label(
+                    self.icon(state),
+                    self.label(state),
+                    self.color(state),
+                    style,
+                )
+            }
+            crate::modules::view::IconLabelLayout::Expanded => {
+                let crate::modules::ModuleState::Clock(clock) = state else {
+                    return iced::widget::Space::new().into();
+                };
+                iced::widget::column![
+                    crate::modules::view::spaced_icon_label(
+                        self.icon(state),
+                        self.label(state),
+                        style
+                    ),
+                    crate::modules::view::styled_segment_text(
+                        clock.date.clone(),
+                        11,
+                        self.color(state),
+                        crate::modules::view::fallback_resolved_style(style)
+                    ),
+                ]
+                .width(iced::Length::Fill)
+                .into()
+            }
+            _ => crate::modules::view::default_icon_label_view(self, state, layout, style),
+        }
     }
 }
 
@@ -759,7 +550,6 @@ mod tests {
     use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
     use crate::modules::Module;
     use crate::modules::detail::ModuleDetailLifecycle;
-    use crate::modules::render::{BarRenderContext, ModuleRender};
 
     fn styled_format_config() -> crate::config::FormatConfig {
         let mut template = crate::config::FormatTemplate::parse(
@@ -790,7 +580,7 @@ mod tests {
             "%a %d %b".into(),
             crate::config::FormatConfig::default(),
         );
-        assert_eq!(m.id().0, "clock");
+        assert_eq!(m.id().display_name(), "clock");
         assert_eq!(m.module_type(), "clock");
     }
 
@@ -802,7 +592,7 @@ mod tests {
             "%a %d %b".into(),
             crate::config::FormatConfig::default(),
         );
-        assert_eq!(m.id().0, "my-clock");
+        assert_eq!(m.id().display_name(), "my-clock");
         assert_eq!(m.module_type(), "clock");
     }
 
@@ -828,67 +618,6 @@ mod tests {
 
         assert_eq!(segment.1.color, Some(crate::theme::palette().accent));
         assert_eq!(segment.1.weight, Some(Weight::Bold));
-    }
-
-    #[test]
-    fn clock_auto_rotation_overrides_side_bar_collapsed_format() {
-        let m = ClockModule::new_with_content_rotation(
-            crate::modules::ModuleId::new("clock"),
-            "%H:%M".into(),
-            "%a".into(),
-            styled_format_config(),
-            crate::config::ContentRotation::Auto,
-        );
-        let state = crate::modules::ModuleState::Clock(ClockState {
-            time: "12:34".into(),
-            date: "Mon".into(),
-        });
-        let edge = crate::config::Edge::Left;
-        let context = BarRenderContext {
-            window: iced::window::Id::unique(),
-            edge: &edge,
-            horizontal: false,
-        };
-
-        assert!(
-            m.render_bar_collapsed_with_style(&state, &context, &crate::config::Style::default())
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn clock_explicit_rotation_overrides_horizontal_format() {
-        let horizontal = crate::config::FormatTemplate::parse(
-            &["{time}"],
-            &["icon", "value", "time", "date"],
-            "test.format.horizontal",
-        )
-        .unwrap();
-        let m = ClockModule::new_with_content_rotation(
-            crate::modules::ModuleId::new("clock"),
-            "%H:%M".into(),
-            "%a".into(),
-            crate::config::FormatConfig {
-                horizontal: Some(horizontal),
-                ..Default::default()
-            },
-            crate::config::ContentRotation::Clockwise,
-        );
-        let state = crate::modules::ModuleState::Clock(ClockState {
-            time: "12:34".into(),
-            date: "Mon".into(),
-        });
-        let edge = crate::config::Edge::Top;
-        let context = BarRenderContext {
-            window: iced::window::Id::unique(),
-            edge: &edge,
-            horizontal: true,
-        };
-
-        assert!(
-            m.render_bar_horizontal_with_style(&state, &context, &crate::config::Style::default())
-                .is_some()
-        );
     }
 
     #[test]
@@ -919,6 +648,26 @@ mod tests {
             clock_update_cadence("%H:%M", "%c"),
             ClockUpdateCadence::Second
         );
+    }
+
+    #[test]
+    fn clock_update_cadence_follows_chrono_composites_padding_and_fractions() {
+        for format in [
+            "%_S", "%T", "%X", "%r", "%c", "%+", "%s", "%f", "%.3f", "%3f", "%6f", "%9f",
+        ] {
+            assert_eq!(
+                clock_update_cadence(format, "%Y"),
+                ClockUpdateCadence::Second,
+                "{format}"
+            );
+        }
+        for format in ["%R", "%%S", "%:z", "%::z", "%:::z", "%Z"] {
+            assert_eq!(
+                clock_update_cadence(format, "%Y"),
+                ClockUpdateCadence::Minute,
+                "{format}"
+            );
+        }
     }
 
     #[test]

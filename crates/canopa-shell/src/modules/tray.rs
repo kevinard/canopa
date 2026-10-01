@@ -161,27 +161,16 @@ pub(crate) struct TrayIconModule {
     id: ModuleId,
     /// The SNI item this module represents (snapshot at last TrayUpdated).
     item: TrayItem,
-    /// Config module name this icon was expanded from (e.g. `"tray"`).
-    /// Used by `effective_nav_list` and the view zone map to locate these modules.
-    config_name: String,
 }
 
 impl TrayIconModule {
     pub(crate) fn module_id(config_name: &str, runtime_id: &str) -> ModuleId {
-        if config_name == "tray" {
-            ModuleId(format!("tray:{runtime_id}"))
-        } else {
-            ModuleId(format!("tray:{config_name}:{runtime_id}"))
-        }
+        ModuleId::tray(config_name, runtime_id)
     }
 
     pub(crate) fn new(item: TrayItem, config_name: String) -> Self {
         let id = Self::module_id(&config_name, &item.runtime_id());
-        TrayIconModule {
-            id,
-            item,
-            config_name,
-        }
+        TrayIconModule { id, item }
     }
 
     fn build_view(
@@ -324,7 +313,7 @@ impl crate::modules::interaction::ModuleInteractionHandler for TrayIconModule {
 
 impl crate::modules::dynamic::DynamicModuleInstance for TrayIconModule {
     fn config_name(&self) -> &str {
-        &self.config_name
+        self.id.configured_name()
     }
 }
 
@@ -426,7 +415,7 @@ mod tests {
     #[test]
     fn tray_module_id_is_tray() {
         let m = make_module();
-        assert_eq!(m.id().0, "tray");
+        assert_eq!(m.id().display_name(), "tray");
         assert_eq!(m.module_type(), "tray");
     }
 
@@ -451,7 +440,7 @@ mod tests {
             tooltip: None,
         };
         let m = TrayIconModule::new(item, "tray".into());
-        assert_eq!(m.id().0, "tray:org.test.App");
+        assert_eq!(m.id().display_name(), "tray:org.test.App");
         assert_eq!(m.module_type(), "tray_icon");
         assert_eq!(m.config_name(), "tray");
     }

@@ -6,17 +6,10 @@ use crate::modules::{
     descriptor_for_kind,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum ModuleOrigin {
-    Configured,
-    ExpandedFrom(ModuleId),
-}
-
 pub(super) struct ModuleRuntime {
     store: super::module_store::ModuleStore,
     states: HashMap<ModuleId, ModuleState>,
     actions: HashMap<ModuleId, ModuleActionsConfig>,
-    origins: HashMap<ModuleId, ModuleOrigin>,
     interactions: HashMap<ModuleId, ModuleInteractionProfile>,
     dynamic_family_inputs: HashMap<ModuleId, super::dynamic_modules::DynamicModuleFamilyInput>,
 }
@@ -25,7 +18,6 @@ pub(super) struct BarModuleRenderRequest<'a> {
     pub id: ModuleId,
     pub window: iced::window::Id,
     pub edge: &'a crate::config::Edge,
-    pub horizontal: bool,
     pub expanded: bool,
     pub style: &'a crate::config::Style,
     pub state_override: Option<ModuleState>,
@@ -94,7 +86,6 @@ impl ModuleRuntime {
         modules: Vec<(Zone, Box<dyn Module>, ModuleActionsConfig)>,
     ) -> Self {
         let mut actions = HashMap::new();
-        let mut origins = HashMap::new();
         let mut interactions = HashMap::new();
         let ordered = modules
             .into_iter()
@@ -106,7 +97,6 @@ impl ModuleRuntime {
                 if let Some(descriptor) = descriptor_for_kind(module.kind()) {
                     interactions.insert(id.clone(), descriptor.interactions);
                 }
-                origins.insert(id, ModuleOrigin::Configured);
                 (zone, module)
             })
             .collect();
@@ -115,7 +105,6 @@ impl ModuleRuntime {
             store: super::module_store::ModuleStore::from_modules(ordered),
             states: HashMap::new(),
             actions,
-            origins,
             interactions,
             dynamic_family_inputs: HashMap::new(),
         }
@@ -224,11 +213,10 @@ impl ModuleRuntime {
             }
 
             for child in children.into_iter().rev() {
-                self.insert_with_actions_and_origin(
+                self.insert_with_actions(
                     parent.insert_after_index + 1,
                     (parent.zone.clone(), child),
                     parent.actions.clone(),
-                    ModuleOrigin::ExpandedFrom(parent.parent.clone()),
                     parent.interactions,
                 );
             }
@@ -307,7 +295,7 @@ impl ModuleRuntime {
             let module_name = self.configured_module_name_for_instance(&id);
             tracing::debug!(
                 target: "canopa_shell::modules",
-                module_name = module_name.as_str(),
+                module_name,
                 has_anchor = super::panel::panel_action_needs_anchor(&action),
                 "dispatching configured module action"
             );
@@ -329,7 +317,7 @@ impl ModuleRuntime {
             let module_name = self.configured_module_name_for_instance(&id);
             tracing::trace!(
                 target: "canopa_shell::modules",
-                module_name = module_name.as_str(),
+                module_name,
                 "module interaction produced app message"
             );
             return vec![ModuleRuntimeEffect::EmitMessage(message)];
@@ -458,12 +446,11 @@ impl ModuleRuntime {
         self.states.get(id).cloned().unwrap_or_default()
     }
 
-    pub(super) fn insert_with_actions_and_origin(
+    pub(super) fn insert_with_actions(
         &mut self,
         index: usize,
         item: (Zone, Box<dyn Module>),
         actions: ModuleActionsConfig,
-        origin: ModuleOrigin,
         interactions: ModuleInteractionProfile,
     ) {
         let id = item.1.id();
@@ -473,7 +460,6 @@ impl ModuleRuntime {
         } else {
             self.actions.insert(id.clone(), actions);
         }
-        self.origins.insert(id.clone(), origin);
         self.interactions.insert(id, interactions);
     }
 
@@ -491,10 +477,7 @@ impl ModuleRuntime {
                     return false;
                 }
                 let id = module.id();
-                matches!(
-                    self.origins.get(&id),
-                    Some(ModuleOrigin::ExpandedFrom(parent)) if parent.0 == parent_name
-                )
+                id.parent_name() == Some(parent_name)
             })
             .map(|(index, _)| index)
             .collect();
@@ -523,7 +506,6 @@ impl ModuleRuntime {
         let retained_ids: HashSet<_> = self.store.iter().map(|(_, module)| module.id()).collect();
         self.states.retain(|id, _| retained_ids.contains(id));
         self.actions.retain(|id, _| retained_ids.contains(id));
-        self.origins.retain(|id, _| retained_ids.contains(id));
         self.interactions.retain(|id, _| retained_ids.contains(id));
     }
 
@@ -590,7 +572,14 @@ impl ModuleRuntime {
     }
 
     pub(super) fn interaction_profile_for(&self, id: &ModuleId) -> ModuleInteractionProfile {
-        let mut profile = self.interactions.get(id).copied().unwrap_or_default();
+        // A descriptor describes intrinsic potential; a concrete instance must
+        // actually expose its handler. Configured actions remain independent.
+        let mut profile = self
+            .get(id)
+            .and_then(|module| module.interaction_handler())
+            .and_then(|_| self.interactions.get(id))
+            .copied()
+            .unwrap_or_default();
         if self
             .action_for(id, &crate::config::ActionTrigger::Click)
             .is_some()
@@ -604,6 +593,19 @@ impl ModuleRuntime {
             profile.secondary_activation = true;
         }
         profile
+    }
+
+    pub(super) fn supports_keyboard_interaction(&self, id: &ModuleId) -> bool {
+        let profile = self.interaction_profile_for(id);
+        profile.primary_activation
+            || profile.secondary_activation
+            || profile.scroll
+            || self.actions.get(id).is_some_and(|actions| {
+                actions
+                    .bindings
+                    .iter()
+                    .any(|binding| matches!(binding.trigger, crate::config::ActionTrigger::Key(_)))
+            })
     }
 
     pub(super) fn supports_primary_activation(&self, id: &ModuleId) -> bool {
@@ -638,10 +640,7 @@ impl ModuleRuntime {
             .enumerate()
             .map(|(order, (zone, module))| {
                 let id = module.id();
-                let parent = match self.origins.get(&id) {
-                    Some(ModuleOrigin::ExpandedFrom(parent)) => Some(parent.clone()),
-                    Some(ModuleOrigin::Configured) | None => None,
-                };
+                let parent = id.parent_name().map(ModuleId::new);
                 super::dynamic_modules::DynamicModuleRuntimeSnapshotEntry::new(
                     order,
                     id.clone(),
@@ -656,18 +655,15 @@ impl ModuleRuntime {
         super::dynamic_modules::DynamicModuleRuntimeSnapshot::new(entries)
     }
 
-    pub(super) fn configured_module_name_for_instance(&self, id: &ModuleId) -> String {
-        self.dynamic_module_runtime_snapshot()
-            .configured_module_name_for_instance(id)
-            .to_string()
+    pub(super) fn configured_module_name_for_instance<'a>(&self, id: &'a ModuleId) -> &'a str {
+        id.configured_name()
     }
 
     pub(super) fn expand_dynamic_module_layout(
         &self,
         placements: [(Zone, &[String]); 3],
     ) -> Vec<(Zone, ModuleId)> {
-        let snapshot = self.dynamic_module_runtime_snapshot();
-        super::dynamic_modules::expand_dynamic_module_layout(&snapshot, placements)
+        self.store.expand_layout(placements)
     }
 }
 
@@ -680,32 +676,14 @@ fn render_bar_form<'a>(
         return module.render_panel_with_style(state, request.style);
     }
 
-    if request.horizontal {
-        let context = crate::modules::render::BarRenderContext {
+    module.render_bar(
+        state,
+        &crate::modules::render::BarRenderContext {
             window: request.window,
             edge: request.edge,
-            horizontal: request.horizontal,
-        };
-        if let Some(element) =
-            module.render_bar_horizontal_with_style(state, &context, request.style)
-        {
-            return element;
-        }
-        if let Some(element) = module.render_horizontal_with_style(state, request.style) {
-            return element;
-        }
-        return module.render_panel_with_style(state, request.style);
-    }
-
-    let context = crate::modules::render::BarRenderContext {
-        window: request.window,
-        edge: request.edge,
-        horizontal: request.horizontal,
-    };
-    if let Some(element) = module.render_bar_collapsed_with_style(state, &context, request.style) {
-        return element;
-    }
-    module.render_collapsed_with_style(state, request.style)
+        },
+        request.style,
+    )
 }
 
 #[cfg(test)]
@@ -1187,7 +1165,6 @@ mod tests {
             id: button_id.clone(),
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: false,
             expanded: false,
             style: &crate::config::Style::default(),
             state_override: None,
@@ -1202,7 +1179,6 @@ mod tests {
             id: button_id.clone(),
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: false,
             expanded: false,
             style: &crate::config::Style::default(),
             state_override: None,
@@ -1233,7 +1209,6 @@ mod tests {
             id: ModuleId::new("button"),
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: false,
             expanded: false,
             style: &crate::config::Style::default(),
             state_override: None,
@@ -1258,7 +1233,6 @@ mod tests {
             id: ModuleId::new("button"),
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: true,
             expanded: false,
             style: &crate::config::Style::default(),
             state_override: None,
@@ -1283,7 +1257,6 @@ mod tests {
             id: ModuleId::new("button"),
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: true,
             expanded: false,
             style: &crate::config::Style::default(),
             state_override: None,
@@ -1308,7 +1281,6 @@ mod tests {
             id: ModuleId::new("button"),
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: false,
             expanded: true,
             style: &crate::config::Style::default(),
             state_override: None,
@@ -1504,7 +1476,6 @@ mod tests {
             crate::config::ModuleActionsConfig::default(),
         )]);
 
-        assert!(runtime.has_capability(|capabilities| capabilities.needs_keyboard_focus));
         assert!(!runtime.has_capability(|capabilities| capabilities.needs_niri));
     }
 
@@ -1584,11 +1555,10 @@ mod tests {
         let tray_child =
             crate::modules::tray::TrayIconModule::new(tray_item("org.test"), "tray".into());
         let tray_child_id = tray_child.id();
-        runtime.insert_with_actions_and_origin(
+        runtime.insert_with_actions(
             runtime.len(),
             (Zone::End, Box::new(tray_child)),
             crate::config::ModuleActionsConfig::default(),
-            super::ModuleOrigin::ExpandedFrom(ModuleId::new("tray")),
             ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
         );
         let workspace_child = crate::modules::workspaces::WorkspaceItemModule::new(
@@ -1597,11 +1567,10 @@ mod tests {
             "workspaces".into(),
         );
         let workspace_child_id = workspace_child.id();
-        runtime.insert_with_actions_and_origin(
+        runtime.insert_with_actions(
             runtime.len(),
             (Zone::Start, Box::new(workspace_child)),
             crate::config::ModuleActionsConfig::default(),
-            super::ModuleOrigin::ExpandedFrom(ModuleId::new("workspaces")),
             ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
         );
 
@@ -1635,16 +1604,16 @@ mod tests {
         let tray_child =
             crate::modules::tray::TrayIconModule::new(tray_item("org.test"), "tray".into());
         let tray_child_id = tray_child.id();
-        runtime.insert_with_actions_and_origin(
+        runtime.insert_with_actions(
             runtime.len(),
             (Zone::Start, Box::new(tray_child)),
             crate::config::ModuleActionsConfig::default(),
-            super::ModuleOrigin::ExpandedFrom(ModuleId::new("tray")),
             ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
         );
         let start = vec!["tray".to_string(), "missing".to_string()];
         let center = Vec::new();
-        let end = vec!["tray:org.test".to_string()];
+        // Only configured names address placements; a formatted child label is not one.
+        let end = vec!["tray".to_string(), "tray:org.test".to_string()];
 
         let layout = runtime.expand_dynamic_module_layout([
             (Zone::Start, start.as_slice()),
@@ -1999,7 +1968,7 @@ mod tests {
         assert!(
             app.modules
                 .iter()
-                .any(|(_, module)| module.id() == ModuleId::new("workspace:1"))
+                .any(|(_, module)| module.id() == ModuleId::workspace("workspaces", 1))
         );
     }
 
@@ -2037,8 +2006,12 @@ mod tests {
         let [super::ModuleRuntimeEffect::ClearSurfaceModuleRefs(ids)] = effects.as_slice() else {
             panic!("expected ClearSurfaceModuleRefs, got {effects:?}");
         };
-        assert_eq!(ids, &vec![ModuleId::new("workspace:1")]);
-        assert!(app.modules.get(&ModuleId::new("workspace:1")).is_none());
+        assert_eq!(ids, &vec![ModuleId::workspace("workspaces", 1)]);
+        assert!(
+            app.modules
+                .get(&ModuleId::workspace("workspaces", 1))
+                .is_none()
+        );
     }
 
     #[test]
@@ -2705,7 +2678,9 @@ mod tests {
                 let id = m.id();
                 (
                     m.kind(),
-                    app.modules.configured_module_name_for_instance(&id),
+                    app.modules
+                        .configured_module_name_for_instance(&id)
+                        .to_owned(),
                 )
             })
             .collect();
@@ -2726,7 +2701,7 @@ mod tests {
     fn tray_snapshot_removes_existing_tray_icons_before_insert() {
         let (mut app, _) = App::boot(make_tray_config(), vec![]);
 
-        app.modules.insert_with_actions_and_origin(
+        app.modules.insert_with_actions(
             app.modules.len(),
             (
                 Zone::End,
@@ -2736,7 +2711,6 @@ mod tests {
                 )),
             ),
             crate::config::ModuleActionsConfig::default(),
-            super::ModuleOrigin::ExpandedFrom(ModuleId::new("tray")),
             ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
         );
 
@@ -2745,27 +2719,40 @@ mod tests {
             vec![new_item],
         ))));
 
-        assert!(app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.new"));
-        assert!(!app.modules.iter().any(|(_, m)| m.id().0 == "tray:org.old"));
+        assert!(
+            app.modules
+                .iter()
+                .any(|(_, m)| m.id().display_name() == "tray:org.new")
+        );
+        assert!(
+            !app.modules
+                .iter()
+                .any(|(_, m)| m.id().display_name() == "tray:org.old")
+        );
     }
 
     #[test]
-    fn dynamic_child_removal_uses_runtime_origin_metadata() {
+    fn dynamic_child_removal_uses_structural_parent() {
         let (mut app, _) = App::boot(make_tray_config(), vec![]);
         let child = crate::modules::tray::TrayIconModule::new(tray_item("org.old"), "other".into());
         let child_id = child.id();
 
-        app.modules.insert_with_actions_and_origin(
+        app.modules.insert_with_actions(
             app.modules.len(),
             (Zone::End, Box::new(child)),
             crate::config::ModuleActionsConfig::default(),
-            super::ModuleOrigin::ExpandedFrom(ModuleId::new("tray")),
             ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
         );
 
+        assert!(
+            app.modules
+                .take_dynamic_children_by_id("tray", ModuleKind::TrayIcon)
+                .is_empty()
+        );
+        assert!(app.modules.get(&child_id).is_some());
         let removed = app
             .modules
-            .take_dynamic_children_by_id("tray", ModuleKind::TrayIcon);
+            .take_dynamic_children_by_id("other", ModuleKind::TrayIcon);
 
         assert!(removed.contains_key(&child_id));
         assert!(app.modules.get(&child_id).is_none());
@@ -2782,7 +2769,8 @@ mod tests {
         assert!(
             app.modules
                 .iter()
-                .any(|(_, m)| m.kind() == ModuleKind::TrayIcon && m.id().0 == "tray:org.test.App")
+                .any(|(_, m)| m.kind() == ModuleKind::TrayIcon
+                    && m.id().display_name() == "tray:org.test.App")
         );
     }
 
@@ -2796,7 +2784,7 @@ mod tests {
 
         assert_eq!(
             app.modules
-                .configured_module_name_for_instance(&ModuleId::new("tray:org.private.App")),
+                .configured_module_name_for_instance(&ModuleId::tray("tray", "org.private.App")),
             "tray"
         );
     }
@@ -2821,7 +2809,7 @@ mod tests {
 
         assert_eq!(
             app.modules.action_for(
-                &ModuleId::new("tray:org.test.App"),
+                &ModuleId::tray("tray", "org.test.App"),
                 &crate::config::ActionTrigger::RightClick,
             ),
             Some(&crate::config::PanelAction::Command(
@@ -2863,7 +2851,7 @@ mod tests {
 
         assert_eq!(
             app.modules.action_for(
-                &ModuleId::new("workspace:1"),
+                &ModuleId::workspace("workspaces", 1),
                 &crate::config::ActionTrigger::Click,
             ),
             Some(&crate::config::PanelAction::Command(
@@ -2911,8 +2899,10 @@ mod tests {
                 let id = m.id();
                 (
                     m.kind(),
-                    app.modules.configured_module_name_for_instance(&id),
-                    id.0.clone(),
+                    app.modules
+                        .configured_module_name_for_instance(&id)
+                        .to_owned(),
+                    id.display_name(),
                 )
             })
             .collect();
@@ -2962,7 +2952,7 @@ mod tests {
         assert!(
             app.modules
                 .iter()
-                .any(|(_, m)| m.id().0 == "tray::1.42/CustomStatusNotifierItem")
+                .any(|(_, m)| m.id().display_name() == "tray::1.42/CustomStatusNotifierItem")
         );
 
         let _ = app.handle_tray_event(TrayEvent::ItemRemoved(
@@ -2972,7 +2962,7 @@ mod tests {
         assert!(
             !app.modules
                 .iter()
-                .any(|(_, m)| m.id().0 == "tray::1.42/CustomStatusNotifierItem")
+                .any(|(_, m)| m.id().display_name() == "tray::1.42/CustomStatusNotifierItem")
         );
     }
 
@@ -2993,7 +2983,7 @@ mod tests {
         assert!(
             app.modules
                 .iter()
-                .any(|(_, m)| m.id().0 == "tray::1.77/StatusNotifierItem")
+                .any(|(_, m)| m.id().display_name() == "tray::1.77/StatusNotifierItem")
         );
 
         let _ = app.handle_tray_event(TrayEvent::ItemRemoved(":1.77/StatusNotifierItem".into()));
@@ -3001,7 +2991,7 @@ mod tests {
         assert!(
             !app.modules
                 .iter()
-                .any(|(_, m)| m.id().0 == "tray::1.77/StatusNotifierItem")
+                .any(|(_, m)| m.id().display_name() == "tray::1.77/StatusNotifierItem")
         );
     }
 
@@ -3028,7 +3018,9 @@ mod tests {
         let matches: Vec<_> = app
             .modules
             .iter()
-            .filter(|(_, module)| module.id().0 == "tray::1.88/CustomStatusNotifierItem")
+            .filter(|(_, module)| {
+                module.id().display_name() == "tray::1.88/CustomStatusNotifierItem"
+            })
             .collect();
         assert_eq!(matches.len(), 1);
     }
@@ -3036,7 +3028,7 @@ mod tests {
     #[test]
     fn removing_dynamic_tray_icon_prunes_cached_module_state() {
         let (mut app, _) = App::boot(make_tray_config(), vec![]);
-        let runtime_id = ModuleId::new("tray::1.42/CustomStatusNotifierItem");
+        let runtime_id = ModuleId::tray("tray", ":1.42/CustomStatusNotifierItem");
         let item = TrayItem {
             service: ":1.42".into(),
             object_path: OwnedObjectPath::try_from("/CustomStatusNotifierItem").unwrap(),

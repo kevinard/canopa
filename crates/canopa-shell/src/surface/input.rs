@@ -50,9 +50,9 @@ pub fn parse_keybind(s: &str) -> Option<(keyboard::Modifiers, keyboard::Key)> {
     Some((mods, key))
 }
 
-/// Event handler for [`keyboard_focus_subscription`]. A `fn` pointer so it can be
+/// Event handler for [`surface_input_subscription`]. A `fn` pointer so it can be
 /// used with `listen_with`.
-fn keyboard_handler(
+fn surface_input_handler(
     event: Event,
     status: iced::event::Status,
     window: iced::window::Id,
@@ -160,9 +160,10 @@ fn keyboard_handler(
     }
 }
 
-/// Subscribe to keyboard focus events and key presses.
-pub fn keyboard_focus_subscription() -> Subscription<Message> {
-    listen_with(keyboard_handler)
+/// Observe window lifetime, geometry, focus and pointer/keyboard input.
+/// This subscription must remain installed even on empty or passive-only bars.
+pub fn surface_input_subscription() -> Subscription<Message> {
+    listen_with(surface_input_handler)
 }
 
 #[cfg(test)]
@@ -179,7 +180,7 @@ mod tests {
     #[test]
     fn cursor_motion_emits_cursor_moved_event() {
         let wid = iced::window::Id::unique();
-        let msg = keyboard_handler(
+        let msg = surface_input_handler(
             Event::Mouse(iced::mouse::Event::CursorMoved {
                 position: iced::Point::new(12.0, 34.0),
             }),
@@ -198,7 +199,7 @@ mod tests {
     #[test]
     fn window_closed_emits_surface_window_closed_event() {
         let wid = iced::window::Id::unique();
-        let msg = keyboard_handler(
+        let msg = surface_input_handler(
             Event::Window(window::Event::Closed),
             iced::event::Status::Ignored,
             wid,
@@ -215,7 +216,7 @@ mod tests {
     #[test]
     fn configured_action_key_emits_surface_action_key_event() {
         let wid = iced::window::Id::unique();
-        let msg = keyboard_handler(
+        let msg = surface_input_handler(
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Character("e".into()),
                 modified_key: keyboard::Key::Character("e".into()),
@@ -246,7 +247,7 @@ mod tests {
     #[test]
     fn modified_space_emits_surface_action_key_event() {
         let wid = iced::window::Id::unique();
-        let msg = keyboard_handler(
+        let msg = surface_input_handler(
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(Named::Space),
                 modified_key: keyboard::Key::Named(Named::Space),
@@ -277,7 +278,7 @@ mod tests {
     #[test]
     fn plain_space_keeps_keyboard_secondary_activate() {
         let wid = iced::window::Id::unique();
-        let msg = keyboard_handler(
+        let msg = surface_input_handler(
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(Named::Space),
                 modified_key: keyboard::Key::Named(Named::Space),
@@ -302,7 +303,7 @@ mod tests {
     #[test]
     fn captured_action_key_does_not_emit_surface_action_key_event() {
         let wid = iced::window::Id::unique();
-        let msg = keyboard_handler(
+        let msg = surface_input_handler(
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Character("e".into()),
                 modified_key: keyboard::Key::Character("e".into()),
@@ -322,7 +323,7 @@ mod tests {
     #[test]
     fn captured_backspace_does_not_emit_back_pressed() {
         let wid = iced::window::Id::unique();
-        let msg = keyboard_handler(
+        let msg = surface_input_handler(
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(Named::Backspace),
                 modified_key: keyboard::Key::Named(Named::Backspace),
@@ -342,7 +343,7 @@ mod tests {
     #[test]
     fn captured_escape_still_emits_escape_pressed() {
         let wid = iced::window::Id::unique();
-        let msg = keyboard_handler(
+        let msg = surface_input_handler(
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(Named::Escape),
                 modified_key: keyboard::Key::Named(Named::Escape),

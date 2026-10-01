@@ -88,7 +88,11 @@ async fn networkd_tracks_usable_links_while_manager_stays_online() {
         .await
         .unwrap();
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let worker = tokio::spawn(run_networkd_task(bus.connect().await, tx));
+    let worker = tokio::spawn(run_networkd_task(
+        bus.connect().await,
+        service.unique_name().unwrap().to_string(),
+        tx,
+    ));
     expect(&mut rx, NetworkConnectivity::Connected, "eth0").await;
     for (index, online, operational, expected) in [
         (4, "online", "routable", "eth0, wlan0"),
@@ -162,7 +166,11 @@ async fn nm_unknown_portal_and_profile_rename_are_distinct() {
         .await
         .unwrap();
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let worker = tokio::spawn(run_nm_task(bus.connect().await, tx));
+    let worker = tokio::spawn(run_nm_task(
+        bus.connect().await,
+        service.unique_name().unwrap().to_string(),
+        tx,
+    ));
     expect(&mut rx, NetworkConnectivity::Unknown, "Wi-Fi").await;
     let manager = service
         .object_server()
@@ -189,4 +197,81 @@ async fn nm_unknown_portal_and_profile_rename_are_distinct() {
     expect(&mut rx, NetworkConnectivity::Portal, "Renamed").await;
     worker.abort();
     let _ = worker.await;
+}
+
+#[tokio::test]
+async fn status_observer_switches_live_bundles_and_recovers_after_absence() {
+    use canopa_shell::network_integration::{Bundle, Kind, NETWORKD, NM as NM_NAME};
+    let bus = crate::test_bus::TestBus::new();
+    let client = bus.connect().await;
+    let service = bus.connect().await;
+    service
+        .object_server()
+        .at("/org/freedesktop/NetworkManager", NM { connectivity: 4 })
+        .await
+        .unwrap();
+    service
+        .object_server()
+        .at(
+            "/Connection",
+            Active {
+                id: "Primary".into(),
+            },
+        )
+        .await
+        .unwrap();
+    service
+        .object_server()
+        .at("/org/freedesktop/network1", Manager)
+        .await
+        .unwrap();
+    for index in 0..5 {
+        service
+            .object_server()
+            .at(
+                format!("/org/freedesktop/network1/link/_{index}"),
+                Link {
+                    online: if index == 3 { "online" } else { "offline" },
+                    operational: "routable",
+                },
+            )
+            .await
+            .unwrap();
+    }
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let worker = tokio::spawn(run_network_task(client.clone(), tx));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err()
+    );
+    service.request_name(NETWORKD).await.unwrap();
+    expect(&mut rx, NetworkConnectivity::Connected, "eth0").await;
+    assert_eq!(
+        Bundle::resolve(&client).await.unwrap().status.unwrap().kind,
+        Kind::Networkd
+    );
+    service.request_name(NM_NAME).await.unwrap();
+    expect(&mut rx, NetworkConnectivity::Full, "Primary").await;
+    let bundle = Bundle::resolve(&client).await.unwrap();
+    assert_eq!(bundle.status, bundle.control);
+    service.release_name(NM_NAME).await.unwrap();
+    expect(&mut rx, NetworkConnectivity::Connected, "eth0").await;
+    service.release_name(NETWORKD).await.unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err()
+    );
+    service.request_name(NM_NAME).await.unwrap();
+    expect(&mut rx, NetworkConnectivity::Full, "Primary").await;
+    drop(rx);
+    tokio::time::timeout(std::time::Duration::from_secs(3), worker)
+        .await
+        .unwrap()
+        .unwrap();
 }

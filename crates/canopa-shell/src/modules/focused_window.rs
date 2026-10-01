@@ -502,7 +502,7 @@ mod tests {
             crate::config::FormatConfig::default(),
             "□".into(),
         );
-        assert_eq!(m.id().0, "focused-window");
+        assert_eq!(m.id().display_name(), "focused-window");
         assert_eq!(m.module_type(), "focused-window");
     }
 
@@ -753,7 +753,6 @@ mod tests {
         let context = BarRenderContext {
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: false,
         };
 
         assert!(
@@ -790,7 +789,6 @@ mod tests {
         let context = BarRenderContext {
             window: iced::window::Id::unique(),
             edge: &edge,
-            horizontal: true,
         };
 
         assert!(

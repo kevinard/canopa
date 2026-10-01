@@ -64,6 +64,7 @@ pub struct ExternalPanelContent {
     pub document: ExternalPanelDocument,
     // Search is host state, not provider content. Never send it on the wire.
     list_search: std::collections::HashMap<String, String>,
+    input_errors: std::collections::HashMap<String, String>,
 }
 
 impl ExternalPanelContent {
@@ -110,6 +111,7 @@ impl ExternalPanelContent {
             provider_name: provider_name.into(),
             document,
             list_search: Default::default(),
+            input_errors: Default::default(),
         }
     }
 
@@ -118,6 +120,18 @@ impl ExternalPanelContent {
             .get(list_id)
             .map(String::as_str)
             .unwrap_or("")
+    }
+
+    pub(crate) fn input_error(&self, element_id: &str) -> Option<&str> {
+        self.input_errors.get(element_id).map(String::as_str)
+    }
+
+    pub(crate) fn set_input_error(&mut self, element_id: &str, error: Option<&str>) {
+        if let Some(error) = error {
+            self.input_errors.insert(element_id.into(), error.into());
+        } else {
+            self.input_errors.remove(element_id);
+        }
     }
 
     pub(crate) fn with_list_search(&self, list_id: &str, query: String) -> Self {

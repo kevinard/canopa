@@ -15,7 +15,7 @@ use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
 mod rotated_text;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(super) enum IconLabelLayout {
+pub enum IconLabelLayout {
     Collapsed,
     Expanded,
     Horizontal,
@@ -48,7 +48,41 @@ impl From<IconLabelLayout> for FormatMode {
 ///
 /// Modules that need extra rows, overlay badges, focus handling, or custom
 /// click targets keep their bespoke `Module` view methods instead of using this.
-pub(super) trait IconLabel {
+pub trait IconLabel: Send + Sync {
+    fn content_rotation(&self) -> crate::config::ContentRotation {
+        crate::config::ContentRotation::None
+    }
+    fn accepts_state(&self, _state: &super::ModuleState) -> bool {
+        true
+    }
+    fn formatted_color(&self, state: &super::ModuleState, layout: IconLabelLayout) -> iced::Color {
+        if layout == IconLabelLayout::Collapsed {
+            self.color(state)
+        } else {
+            crate::theme::palette().muted
+        }
+    }
+    fn formatted_size(&self, _layout: IconLabelLayout) -> u32 {
+        TEXT_SIZE
+    }
+    fn fallback_view(
+        &self,
+        state: &super::ModuleState,
+        layout: IconLabelLayout,
+        style: &crate::config::Style,
+    ) -> Element<'_, Message> {
+        default_icon_label_view(self, state, layout, style)
+    }
+    fn decorate<'a>(
+        &'a self,
+        _state: &super::ModuleState,
+        _layout: IconLabelLayout,
+        _rotation: crate::config::ResolvedContentRotation,
+        content: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        content
+    }
+
     fn icon(&self, state: &super::ModuleState) -> String;
     fn label(&self, state: &super::ModuleState) -> String;
     fn label_for_layout(&self, state: &super::ModuleState, _layout: IconLabelLayout) -> String {
@@ -180,7 +214,7 @@ pub(super) fn icon_label_view_with_default<'a, M>(
     default_style: &crate::config::Style,
 ) -> Element<'a, Message>
 where
-    M: IconLabel,
+    M: IconLabel + ?Sized,
 {
     icon_label_view_with_rotation(
         module,
@@ -199,45 +233,102 @@ pub(super) fn icon_label_view_with_rotation<'a, M>(
     rotation: crate::config::ResolvedContentRotation,
 ) -> Element<'a, Message>
 where
-    M: IconLabel,
+    M: IconLabel + ?Sized,
 {
-    if let Some(segments) = module.styled_segments_for_layout(state, layout, default_style) {
-        return match layout {
-            IconLabelLayout::Collapsed => {
-                collapsed_formatted_segments(segments, TEXT_SIZE, module.color(state), rotation)
-            }
-            IconLabelLayout::Expanded => expanded_formatted_segments(
-                segments,
-                TEXT_SIZE,
-                crate::theme::palette().muted,
-                rotation,
-            ),
-            IconLabelLayout::Horizontal => horizontal_formatted_segments(
-                segments,
-                TEXT_SIZE,
-                crate::theme::palette().muted,
-                rotation,
-            ),
-        };
+    if !module.accepts_state(state) {
+        return iced::widget::Space::new().into();
     }
+    let mut applied_rotation = rotation;
+    let content =
+        if let Some(segments) = module.styled_segments_for_layout(state, layout, default_style) {
+            let size = module.formatted_size(layout);
+            let color = module.formatted_color(state, layout);
+            match layout {
+                IconLabelLayout::Collapsed => {
+                    collapsed_formatted_segments(segments, size, color, rotation)
+                }
+                IconLabelLayout::Expanded => {
+                    expanded_formatted_segments(segments, size, color, rotation)
+                }
+                IconLabelLayout::Horizontal => {
+                    horizontal_formatted_segments(segments, size, color, rotation)
+                }
+            }
+        } else {
+            applied_rotation = crate::config::ResolvedContentRotation::None;
+            module.fallback_view(state, layout, default_style)
+        };
+    module.decorate(state, layout, applied_rotation, content)
+}
 
+pub(super) fn default_icon_label_view<'a, M: IconLabel + ?Sized>(
+    module: &'a M,
+    state: &super::ModuleState,
+    layout: IconLabelLayout,
+    style: &crate::config::Style,
+) -> Element<'a, Message> {
     match layout {
         IconLabelLayout::Collapsed => {
-            collapsed_icon_with_style(module.icon(state), module.color(state), default_style)
+            collapsed_icon_with_style(module.icon(state), module.color(state), style)
         }
         IconLabelLayout::Expanded => expanded_icon_label_with_style(
             module.icon(state),
             module.color(state),
             module.label_for_layout(state, layout),
-            default_style,
+            style,
         ),
         IconLabelLayout::Horizontal => horizontal_icon_label_with_style(
             module.icon(state),
             module.color(state),
             module.label_for_layout(state, layout),
-            default_style,
+            style,
         ),
     }
+}
+
+pub(super) fn stacked_icon_label<'a>(
+    icon: String,
+    label: String,
+    color: iced::Color,
+    style: &crate::config::Style,
+) -> Element<'a, Message> {
+    iced::widget::column![
+        styled_segment_text(icon, ICON_SIZE, color, fallback_resolved_style(style)),
+        styled_segment_text(
+            label,
+            TEXT_SIZE,
+            crate::theme::palette().text,
+            fallback_resolved_style(style)
+        ),
+    ]
+    .align_x(Alignment::Center)
+    .width(Length::Fill)
+    .into()
+}
+
+pub(super) fn spaced_icon_label<'a>(
+    icon: String,
+    label: String,
+    style: &crate::config::Style,
+) -> Element<'a, Message> {
+    row![
+        styled_segment_text(
+            icon,
+            16,
+            crate::theme::palette().text,
+            fallback_resolved_style(style)
+        ),
+        iced::widget::Space::new().width(Length::Fill),
+        styled_segment_text(
+            label,
+            13,
+            crate::theme::palette().text,
+            fallback_resolved_style(style)
+        ),
+    ]
+    .align_y(Alignment::Center)
+    .width(Length::Fill)
+    .into()
 }
 
 /// Build a centred, 4px-spaced row of styled segments. Container wrapping
