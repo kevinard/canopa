@@ -5,6 +5,7 @@ mod canopa_accessibility;
 mod canopa_accessibility_bounds;
 mod canopa_panel;
 mod canopa_semantics;
+mod configuration;
 mod drawer;
 mod dynamic_modules;
 pub(crate) mod eligible_outputs;
@@ -52,6 +53,8 @@ use crate::modules::ModuleId;
 
 pub(crate) struct App {
     config: Config,
+    configuration: configuration::ConfigurationRuntime,
+    eligible_outputs: eligible_outputs::EligibleOutputState,
     shared: shared::SharedContext,
     surfaces: surfaces::SurfaceManager,
     foreground: foreground::Foreground,
@@ -76,6 +79,12 @@ pub(crate) struct App {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    Configuration(configuration::Event),
+    ConfiguredModule {
+        id: crate::modules::ModuleId,
+        generation: u64,
+        message: Box<Message>,
+    },
     LayerShell(iced_layershell::actions::LayerShellCustomActionWithId),
     NewLayerShell {
         settings: iced_layershell::reexport::NewLayerShellSettings,
@@ -133,6 +142,8 @@ impl Message {
         match self {
             Message::Surface(event) => event.diagnostic_label(),
             Message::WaylandOutputSnapshot(_) => "WaylandOutputSnapshot",
+            Message::Configuration(_) => "Configuration",
+            Message::ConfiguredModule { message, .. } => message.diagnostic_label(),
             Message::Ipc(event) => event.diagnostic_label(),
             Message::ExternalPanel(event) => event.diagnostic_label(),
             Message::Menu(event) => event.diagnostic_label(),
@@ -230,6 +241,9 @@ impl From<iced_layershell::WaylandOutputSnapshot> for Message {
 impl App {
     pub(super) fn handle_ipc_event(&mut self, event: messages::IpcEvent) -> Task<Message> {
         match event {
+            messages::IpcEvent::Reload { responder } => {
+                self.request_configuration_reload(Some(responder))
+            }
             messages::IpcEvent::OpenMenu { name, responder } => {
                 self.handle_open_menu_request(name, responder)
             }
@@ -282,6 +296,8 @@ impl App {
         let data_sources = module_data_sources::ModuleDataSourceRuntime::from_modules(&modules);
         let mut app = App {
             config,
+            configuration: Default::default(),
+            eligible_outputs,
             shared: shared::SharedContext::new(),
             surfaces,
             foreground: foreground::Foreground::default(),
@@ -319,6 +335,18 @@ impl App {
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
+        if let Message::ConfiguredModule {
+            id,
+            generation,
+            message,
+        } = message
+        {
+            return if self.modules.accepts_subscription_event(&id, generation) {
+                self.update(*message)
+            } else {
+                Task::none()
+            };
+        }
         let visibility_changed = matches!(
             &message,
             Message::Modules(_) | Message::Niri(_) | Message::DbusReady(_) | Message::Tray(_)
@@ -345,6 +373,7 @@ impl App {
         }
 
         let task = match message {
+            Message::Configuration(event) => self.handle_configuration_event(event),
             Message::CanopaAccessibilityFrame(window) => self.measure_canopa_accessibility(window),
             Message::CanopaAccessibilityBounds {
                 window,

@@ -73,7 +73,36 @@ The command preserves source comments, validates both schemas, and creates a mod
 0600 file without replacing an existing output. After reviewing, place the file at
 `~/.config/canopa/config.kdl` (or your XDG equivalent). Originals are left intact.
 
-Shell settings require restarting Canopa Shell. Notify reloads with:
+Canopa Shell reloads automatically within roughly half a second of a settled save. To request a reload and wait for its result:
+
+```sh
+canopa-shell reload
+```
+
+`--reload` is an alias. The command uses the running shell's configuration selection;
+it does not accept a replacement path. Exit status 0 means the candidate was
+installed (or already active); invalid input or unavailable IPC returns 1.
+
+All shell settings and shared appearance can change while running. Content edits
+retain existing bar windows; geometry, layer, target and ordering changes reconcile
+the affected surfaces. Successful effective changes dismiss panels, menus and
+tooltips. Unchanged configurations, including comment-only edits and changes solely
+to Notify's namespace, preserve foreground content. Unchanged modules keep their
+readings and subscriptions. Changed scripts are cancelled and restarted; their old
+results cannot update the replacement. The manual keep-awake preference survives
+reload while an idle-inhibitor module remains configured.
+
+Invalid input retains the previous complete configuration and foreground content.
+Safe errors go to the journal and the explicit command; use
+`canopa-shell --check-config --show-source` (with the same source override, if any)
+for local diagnostic details. Discovery is repeated, so creating the common file
+supersedes legacy input, and removing it reselects legacy input or defaults. A
+missing explicit file is an error; `--defaults` stays on embedded defaults.
+Atomic replacement and symlink targets are supported. The shell polls source
+metadata every 250 ms off the UI thread, debounces changes, and prepares one
+bounded candidate at a time.
+
+Notify reloads with:
 
 ```sh
 canopa-notify ctl --socket /path/to/control.sock reload
@@ -86,13 +115,14 @@ started with discovery, it discovers again, allowing migration to the common fil
 without a daemon restart. Explicit file selections stay explicit. Failed reloads
 retain the last good source, rules, settings and generation. Source fingerprints
 identify the complete source bytes and can be compared across consumers; generations
-are local to each Notify process. Canopa Shell reports its installed source at startup;
+are local to each process. Canopa Shell logs its installed source and local
+generation on reload;
 `canopa config check` reports candidates, not the running shell's state.
 
 Appearance changes repaint Notify's existing banners after a successful reload,
-without resetting notification timeouts. Restart Canopa Shell to apply the same changes
-to bars and the Notification Center. These are independent installations; reload
-success does not promise that a disconnected renderer has repainted. Rendering
+without resetting notification timeouts. Canopa Shell applies the same changes
+to bars and the Notification Center on reload. These are independent installations;
+reload success does not promise that a disconnected renderer has repainted. Rendering
 failures remain visible in Notify's presentation status.
 
 For explicit startup overrides, both applications accept `--canopa-config PATH`
@@ -156,5 +186,5 @@ The optional Settings backend consumes only the common file's shared appearance;
 it does not consult application legacy files. Send SIGHUP (or use its systemd unit's
 reload command) after editing the file. Invalid candidates retain the previous
 values; unchanged effective values emit no portal signal. Discovery repeats on
-reload, while an explicit path remains selected. Canopa Shell still requires a restart.
+reload, while an explicit path remains selected. Canopa Shell reloads automatically; the portal still requires its own reload.
 See [Settings portal installation and selection](settings-portal.md).

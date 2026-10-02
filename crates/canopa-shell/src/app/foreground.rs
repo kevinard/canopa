@@ -922,6 +922,16 @@ impl Foreground {
         effects
     }
 
+    /// Retire interactive content immediately before installing new configuration.
+    pub(super) fn configuration_changed(&mut self) -> Vec<ForegroundEffect> {
+        self.pending = None;
+        let mut effects = self.close_for_replacement();
+        effects.extend(self.clear_panel_runtime());
+        effects.push(ForegroundEffect::CloseAllTooltips);
+        effects.push(ForegroundEffect::RestoreBarKeyboardInteractivity);
+        effects
+    }
+
     fn close_for_replacement(&mut self) -> Vec<ForegroundEffect> {
         self.motion = None;
         let mut effects = self.remove_retiring_panel();

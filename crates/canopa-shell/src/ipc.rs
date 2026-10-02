@@ -246,6 +246,9 @@ fn ipc_message_for_request(
     responder: crate::app::messages::IpcResponder,
 ) -> Message {
     match request {
+        protocol::IpcRequest::Reload => {
+            Message::Ipc(crate::app::messages::IpcEvent::Reload { responder })
+        }
         protocol::IpcRequest::OpenMenu { name } => {
             Message::Ipc(crate::app::messages::IpcEvent::OpenMenu { name, responder })
         }

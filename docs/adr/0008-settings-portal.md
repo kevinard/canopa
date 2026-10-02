@@ -2,6 +2,10 @@
 
 Status: accepted for the first portal interface (2026-09-27).
 
+The shell restart requirement below is superseded by
+[Shell ADR 0021](../shell/adr/0021-live-configuration-reload.md). The portal retains
+its own explicit reload contract.
+
 The first Canopa portal backend implements Settings. It exposes the appearance
 already used by Niribar and Notify to applications through the existing XDG portal
 frontend. The common file remains authoritative, and the backend has no UI or

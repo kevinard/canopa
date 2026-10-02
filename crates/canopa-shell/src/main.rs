@@ -27,6 +27,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::Run(_) => "run",
         cli::Command::CheckConfig(_) => "check-config",
         cli::Command::PrintVersion => "version",
+        cli::Command::Reload => "reload",
         cli::Command::IpcCommand(_) => "ipc",
         cli::Command::OpenMenu(_) => "open-menu",
         cli::Command::ToggleMenu(_) => "toggle-menu",
@@ -42,6 +43,7 @@ fn main() {
 
     match command {
         cli::Command::PrintVersion => println!("{}", env!("CARGO_PKG_VERSION")),
+        cli::Command::Reload => std::process::exit(run_reload_cli()),
         cli::Command::IpcCommand(cmd) => send_ipc_command(&cmd),
         cli::Command::OpenMenu(name) => std::process::exit(run_menu_cli(name, false)),
         cli::Command::ToggleMenu(name) => std::process::exit(run_menu_cli(name, true)),
@@ -185,6 +187,30 @@ fn run_dmenu_cli(options: cli::DmenuOptions) -> i32 {
     exit_code_for_dmenu_response(&response)
 }
 
+fn run_reload_cli() -> i32 {
+    match send_framed_request(
+        &ipc::protocol::IpcRequest::Reload,
+        Some(std::time::Duration::from_secs(10)),
+    ) {
+        Ok(ipc::protocol::IpcResponse::Accepted) => {
+            println!("configuration reloaded");
+            0
+        }
+        Ok(ipc::protocol::IpcResponse::Rejected { reason }) => {
+            eprintln!("canopa-shell: reload rejected: {reason}");
+            1
+        }
+        Ok(_) => {
+            eprintln!("canopa-shell: unexpected reload response");
+            1
+        }
+        Err(error) => {
+            eprintln!("canopa-shell: reload failed: {error}");
+            1
+        }
+    }
+}
+
 fn run_menu_cli(name: String, toggle: bool) -> i32 {
     use ipc::protocol::{IpcRequest, IpcResponse};
 
@@ -260,7 +286,7 @@ fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
     // Load config fully before any surface is created (AR7).
     let (config, source) = config::load(request, false)?;
     theme::install(config.appearance);
-    tracing::info!(target: "canopa_shell::configuration", source = ?source, "configuration installed; shell changes require restart");
+    tracing::info!(target: "canopa_shell::configuration", source = ?source, "configuration installed; automatic reload enabled");
     tracing::debug!(
         target: "canopa_shell::runtime",
         bar_count = config.bars.len(),
@@ -291,8 +317,19 @@ fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
         "waiting for Wayland Output Snapshot before opening Bar Surfaces"
     );
 
+    let request = match request {
+        canopa_config::Request::Discover => request.clone(),
+        _ => request
+            .resolve(canopa_config::Component::Shell)
+            .map_err(config::ConfigError::Intake)?,
+    };
     daemon(
-        move || App::boot_with_eligible_outputs(config.clone(), eligible_outputs.clone()),
+        move || {
+            let (mut app, task) =
+                App::boot_with_eligible_outputs(config.clone(), eligible_outputs.clone());
+            app.configure_reload(request.clone(), source.clone());
+            (app, task)
+        },
         App::namespace,
         App::update,
         App::view,
@@ -308,7 +345,7 @@ fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
         },
         ..Default::default()
     })
-    .theme(|_: &App, _| theme::current().clone())
+    .theme(|_: &App, _| theme::current())
     .style(App::style)
     .subscription(App::subscription)
     .run()

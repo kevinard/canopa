@@ -124,6 +124,30 @@ impl ModuleDataSourceRuntime {
         runtime
     }
 
+    /// Keep live source snapshots and the manual inhibitor preference across reloads.
+    pub(super) fn reconfigure(&mut self, modules: &mut super::module_runtime::ModuleRuntime) {
+        self.sources
+            .retain(|identity, _| modules.has_data_source(*identity));
+        for identity in ModuleDataSourceIdentity::ALL {
+            if modules.has_data_source(identity) {
+                let status = self
+                    .sources
+                    .entry(identity)
+                    .or_insert(ModuleDataSourceStatus::PendingFirstEmission);
+                use super::module_runtime::ModuleRuntimeIntent;
+                match status {
+                    ModuleDataSourceStatus::Available(state) => {
+                        modules.handle(ModuleRuntimeIntent::ApplyDataSourceState(state.clone()));
+                    }
+                    ModuleDataSourceStatus::Unavailable => {
+                        modules.handle(ModuleRuntimeIntent::MarkDataSourceUnavailable(identity));
+                    }
+                    ModuleDataSourceStatus::PendingFirstEmission => {}
+                }
+            }
+        }
+    }
+
     pub(super) fn subscriptions(&self, shared: &SharedContext) -> iced::Subscription<Message> {
         iced::Subscription::batch(
             SOURCE_CATALOG
@@ -224,8 +248,9 @@ impl ModuleDataSourceRuntime {
         state: ModuleDataSourceState,
     ) -> ModuleDataSourceTransition {
         let identity = state.identity();
-        self.sources
-            .insert(identity, ModuleDataSourceStatus::Available(state.clone()));
+        if let Some(status) = self.sources.get_mut(&identity) {
+            *status = ModuleDataSourceStatus::Available(state.clone());
+        }
         ModuleDataSourceTransition::Available(state)
     }
 
@@ -233,8 +258,9 @@ impl ModuleDataSourceRuntime {
         &mut self,
         identity: ModuleDataSourceIdentity,
     ) -> ModuleDataSourceTransition {
-        self.sources
-            .insert(identity, ModuleDataSourceStatus::Unavailable);
+        if let Some(status) = self.sources.get_mut(&identity) {
+            *status = ModuleDataSourceStatus::Unavailable;
+        }
         ModuleDataSourceTransition::Unavailable(identity)
     }
 }
@@ -311,7 +337,10 @@ mod tests {
 
     #[test]
     fn notification_source_clears_stale_state_and_accepts_a_new_daemon_snapshot() {
-        let mut runtime = ModuleDataSourceRuntime::default();
+        let mut config = Config::default();
+        config.bars[0].modules.end = vec!["notifications".into()];
+        let (app, _) = App::boot(config, vec![]);
+        let mut runtime = app.data_sources;
         let first = canopa_notify_client::Summary {
             instance: [1; 16],
             requires_attention: 42,

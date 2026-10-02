@@ -104,6 +104,7 @@ impl App {
         };
 
         iced::Subscription::batch([
+            self.configuration.subscription(),
             self.canopa_accessibility.as_ref().map_or_else(
                 iced::Subscription::none,
                 super::canopa_accessibility::PanelAccessibility::subscription,

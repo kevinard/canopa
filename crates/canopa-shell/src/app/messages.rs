@@ -16,6 +16,9 @@ pub fn ipc_responder(
 
 #[derive(Debug, Clone)]
 pub enum IpcEvent {
+    Reload {
+        responder: IpcResponder,
+    },
     OpenMenu {
         name: String,
         responder: IpcResponder,
@@ -33,6 +36,7 @@ pub enum IpcEvent {
 impl IpcEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
+            IpcEvent::Reload { .. } => "Ipc::Reload",
             IpcEvent::OpenMenu { .. } => "Ipc::OpenMenu",
             IpcEvent::ToggleMenu { .. } => "Ipc::ToggleMenu",
             IpcEvent::DmenuSelection { .. } => "Ipc::DmenuSelection",

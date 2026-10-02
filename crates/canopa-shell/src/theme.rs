@@ -1,21 +1,19 @@
-//! The shell installs immutable appearance before constructing modules or surfaces.
-//! Shell reload is unsupported; validators never install process state.
-use std::sync::{LazyLock, OnceLock};
+//! Process appearance is replaced only when a complete configuration is installed.
+use std::sync::{LazyLock, RwLock};
 
-static INSTALLED: OnceLock<iced::Theme> = OnceLock::new();
-static DEFAULT: LazyLock<iced::Theme> = LazyLock::new(|| canopa_ui::theme(Default::default()));
+static INSTALLED: LazyLock<RwLock<iced::Theme>> =
+    LazyLock::new(|| RwLock::new(canopa_ui::theme(Default::default())));
 
 pub fn install(appearance: canopa_theme::Appearance) {
-    INSTALLED
-        .set(canopa_ui::theme(appearance))
-        .expect("shell appearance installed once at startup");
+    *INSTALLED.write().expect("appearance lock") = canopa_ui::theme(appearance);
 }
 
-pub fn current() -> &'static iced::Theme {
-    INSTALLED.get().unwrap_or(&DEFAULT)
+pub fn current() -> iced::Theme {
+    INSTALLED.read().expect("appearance lock").clone()
 }
+
 pub fn palette() -> canopa_ui::Colors {
-    canopa_ui::colors(current())
+    canopa_ui::colors(&current())
 }
 
 /// Compact bar roles in logical pixels; Iced applies output scaling.

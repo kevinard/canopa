@@ -3,6 +3,7 @@ pub enum Command {
     Run(ConfigOptions),
     CheckConfig(ConfigOptions),
     PrintVersion,
+    Reload,
     IpcCommand(String),
     OpenMenu(String),
     ToggleMenu(String),
@@ -86,11 +87,13 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     Command::OpenMenu(name)
                 });
             }
-            "--version" | "-V" | "--toggle-panel" => {
+            "--version" | "-V" | "--toggle-panel" | "reload" | "--reload" => {
                 if special_mode.is_some() {
                     return Command::UsageError("choose one command mode".into());
                 }
-                special_mode = Some(if arg == "--toggle-panel" {
+                special_mode = Some(if matches!(arg.as_str(), "reload" | "--reload") {
+                    Command::Reload
+                } else if arg == "--toggle-panel" {
                     Command::IpcCommand("toggle-panel".into())
                 } else {
                     Command::PrintVersion
@@ -166,10 +169,13 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
         }
     }
     if let Some(command) = special_mode {
-        if matches!(command, Command::OpenMenu(_) | Command::ToggleMenu(_)) {
+        if matches!(
+            command,
+            Command::OpenMenu(_) | Command::ToggleMenu(_) | Command::Reload
+        ) {
             if dmenu_option {
                 return Command::UsageError(
-                    "menu commands cannot be combined with dmenu options".into(),
+                    "IPC commands cannot be combined with dmenu options".into(),
                 );
             }
             if let Some(arg) = unknown_argument {
@@ -204,6 +210,25 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reload_is_a_standalone_command_for_the_running_selection() {
+        for command in ["reload", "--reload"] {
+            assert!(matches!(parse_args([command.to_string()]), Command::Reload));
+            for extra in [
+                "--defaults",
+                "--check-config",
+                "--toggle-panel",
+                "--json",
+                "unexpected",
+            ] {
+                assert!(matches!(
+                    parse_args([command.to_string(), extra.to_string()]),
+                    Command::UsageError(_)
+                ));
+            }
+        }
+    }
 
     #[test]
     fn check_mode_never_dispatches_ipc_with_conflicting_options() {

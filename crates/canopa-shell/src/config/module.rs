@@ -107,7 +107,7 @@ impl ConfiguredCommand {
 }
 
 /// Format strings for the clock module (AC: #4, #5).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClockConfig {
     pub time_format: String,
     pub date_format: String,
@@ -129,7 +129,7 @@ impl Default for ClockConfig {
 }
 
 /// Command and polling interval for the script module.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ScriptConfig {
     pub command: ConfiguredCommand,
     pub interval: u64, // seconds between executions
@@ -139,7 +139,7 @@ pub struct ScriptConfig {
 }
 
 /// Configuration for the button module — all fields required.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ButtonConfig {
     pub label: String,
     pub icon: String,
@@ -149,14 +149,14 @@ pub struct ButtonConfig {
 }
 
 /// Per-workspace label and icon for the workspaces module.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct WorkspaceLabelConfig {
     pub label: Option<String>,
     pub icon: Option<String>,
 }
 
 /// Configuration for the workspaces module — optional label/icon per workspace number.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct WorkspacesConfig {
     /// Maps workspace number (1-based: ws.idx + 1) to label/icon config.
     /// Absent key → workspace shows number only.
@@ -256,7 +256,7 @@ impl StatesConfig {
 }
 
 /// Configuration for the battery module.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BatteryConfig {
     /// Percentage at or below which the critical badge and red icon appear.
     /// Derived from `states` (the threshold of the "critical" rule). Falls back
@@ -316,7 +316,7 @@ pub struct IconThreshold {
 }
 
 /// Configuration for the network module.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NetworkConfig {
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
@@ -338,7 +338,7 @@ impl Default for NetworkConfig {
 }
 
 /// Configuration for the tray module.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TrayConfig {
     pub tooltip: TooltipSetting,
     pub menu_search: bool,
@@ -354,7 +354,7 @@ impl Default for TrayConfig {
 }
 
 /// Configuration for the focused-window module.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FocusedWindowConfig {
     pub format: FormatConfig,
     pub content_rotation: ContentRotation,
@@ -385,7 +385,7 @@ impl Default for FocusedWindowConfig {
 }
 
 /// Configuration for the volume module — scroll step in percent.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VolumeConfig {
     /// Volume adjustment step per scroll event (percent, 1–100). Default: 5.
     pub step: u8,
@@ -409,20 +409,20 @@ impl Default for VolumeConfig {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct MediaConfig {
     pub format: FormatConfig,
     pub tooltip: TooltipSetting,
     pub content_rotation: ContentRotation,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct NotificationsConfig {
     pub format: FormatConfig,
     pub tooltip: TooltipSetting,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct IdleInhibitorConfig {
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
@@ -431,7 +431,7 @@ pub struct IdleInhibitorConfig {
 }
 
 /// Module-specific parameters. Extensible for Stories 2.4–2.5.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ModuleParams {
     IdleInhibitor(IdleInhibitorConfig),
     Notifications(NotificationsConfig),
@@ -528,7 +528,7 @@ pub struct PanelProviderConfig {
 
 /// A single module entry from the config, specifying name, type, and module params.
 /// Zone placement is determined by `bar.modules`, not by this struct.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModuleConfig {
     /// Instance name — unique identifier for this module instance (e.g. "clock", "work-status").
     pub name: String,

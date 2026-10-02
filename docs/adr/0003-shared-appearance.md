@@ -2,6 +2,9 @@
 
 Status: accepted for integration phase 4 (2026-09-26).
 
+The startup-only shell appearance installation below is superseded by
+[Shell ADR 0021](../shell/adr/0021-live-configuration-reload.md).
+
 Niribar's fixed Catppuccin palette and Notify's independently selected Iced theme
 made notification banners and the shell look unrelated. Both now consume one
 appearance snapshot and the same Iced styling adapter. Processes, notification

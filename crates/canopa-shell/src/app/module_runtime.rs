@@ -9,6 +9,7 @@ use crate::modules::{
 pub(super) struct ModuleRuntime {
     store: super::module_store::ModuleStore,
     states: HashMap<ModuleId, ModuleState>,
+    subscription_generations: HashMap<ModuleId, u64>,
     actions: HashMap<ModuleId, ModuleActionsConfig>,
     interactions: HashMap<ModuleId, ModuleInteractionProfile>,
     dynamic_family_inputs: HashMap<ModuleId, super::dynamic_modules::DynamicModuleFamilyInput>,
@@ -104,10 +105,45 @@ impl ModuleRuntime {
         Self {
             store: super::module_store::ModuleStore::from_modules(ordered),
             states: HashMap::new(),
+            subscription_generations: HashMap::new(),
             actions,
             interactions,
             dynamic_family_inputs: HashMap::new(),
         }
+    }
+
+    /// Reuse state and subscription identity only for unchanged configured instances.
+    pub(super) fn inherit_configuration(
+        &mut self,
+        previous: &Self,
+        old: &crate::config::Config,
+        new: &crate::config::Config,
+        generation: u64,
+    ) {
+        for (_, module) in self.store.iter() {
+            let id = module.id();
+            let name = id.configured_name();
+            let unchanged = old.modules.iter().find(|entry| entry.name == name)
+                == new.modules.iter().find(|entry| entry.name == name)
+                && previous.kind_for(&id) == Some(module.kind());
+            let generation = if unchanged {
+                if let Some(state) = previous.states.get(&id) {
+                    self.states.insert(id.clone(), state.clone());
+                }
+                previous.subscription_generation(&id)
+            } else {
+                generation
+            };
+            self.subscription_generations.insert(id, generation);
+        }
+    }
+
+    pub(super) fn accepts_subscription_event(&self, id: &ModuleId, generation: u64) -> bool {
+        self.store.get(id).is_some() && self.subscription_generation(id) == generation
+    }
+
+    fn subscription_generation(&self, id: &ModuleId) -> u64 {
+        self.subscription_generations.get(id).copied().unwrap_or(0)
     }
 
     pub(super) fn set_dynamic_module_family_inputs(
@@ -525,7 +561,19 @@ impl ModuleRuntime {
     }
 
     pub(super) fn module_subscriptions(&self) -> iced::Subscription<super::Message> {
-        iced::Subscription::batch(self.store.iter().map(|(_, module)| module.subscription()))
+        iced::Subscription::batch(self.store.iter().map(|(_, module)| {
+            let id = module.id();
+            module
+                .subscription()
+                .with((id.clone(), self.subscription_generation(&id)))
+                .map(
+                    |((id, generation), message)| super::Message::ConfiguredModule {
+                        id,
+                        generation,
+                        message: Box::new(message),
+                    },
+                )
+        }))
     }
 
     fn get(&self, id: &ModuleId) -> Option<&dyn Module> {

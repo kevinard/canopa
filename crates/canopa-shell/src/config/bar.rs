@@ -60,7 +60,7 @@ impl OutputTarget {
 }
 
 /// Per-zone ordered list of module names for the bar layout.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BarModules {
     pub start: Vec<String>,
     pub center: Vec<String>,
@@ -116,7 +116,7 @@ pub enum DrawerMode {
 }
 
 /// Bar-level configuration: placement edge, size, layer, modules, and panel behavior.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BarConfig {
     /// Instance name — unique identifier for this bar (e.g. "main", "top-strip").
     pub name: String,
@@ -193,7 +193,7 @@ impl BarLayer {
 }
 
 /// Which screen edge the bar is anchored to.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum Edge {
     #[default]
     Left,

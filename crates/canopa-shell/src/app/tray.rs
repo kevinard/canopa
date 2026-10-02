@@ -24,6 +24,10 @@ fn tray_menu_anchor_for_bounds(edge: crate::config::Edge, bounds: iced::Rectangl
 }
 
 impl TrayState {
+    pub(super) fn snapshot(&self) -> Vec<TrayItem> {
+        self.items.values().cloned().collect()
+    }
+
     pub(crate) fn apply_host_event(&mut self, event: &TrayEvent) -> Vec<TrayItem> {
         match event {
             TrayEvent::Snapshot(items) => {

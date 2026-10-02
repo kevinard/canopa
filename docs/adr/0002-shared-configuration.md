@@ -2,6 +2,9 @@
 
 Status: accepted for integration phase 3 (2026-09-26).
 
+The shell restart requirement below is superseded by
+[Shell ADR 0021](../shell/adr/0021-live-configuration-reload.md).
+
 The appearance extension is now implemented by [ADR 0003](0003-shared-appearance.md).
 References below to future appearance support describe the original phase-3 scope.
 

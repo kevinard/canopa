@@ -942,6 +942,7 @@ Configured names and child identities are structurally distinct. A child identit
 ### Configuration Errors
 
 - A **Configuration Error** is reported actionably and prevents the invalid configuration from being used.
+- Saved configuration and explicit reload requests use the same complete candidate validation and installation path; failures preserve the running configuration and **Foreground**. Successful effective changes retire **Foreground**, reconcile **Bar Surfaces**, and preserve unchanged module subscriptions and shared readings. See [ADR 0021](adr/0021-live-configuration-reload.md).
 - A parsed **Config** contains only **Configured Commands** accepted by **Command Policy**.
 - Raw shell or argv command syntax is internal to **Configured Command** parsing and is not exposed by the runtime model.
 - A parsed **Configured Command** carries the execution timeout resolved from **Command Policy**.

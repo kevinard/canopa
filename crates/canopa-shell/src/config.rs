@@ -62,7 +62,7 @@ fn bar_module_placements(bar: &BarConfig) -> [(crate::modules::Zone, &[String]);
 
 /// Parsed configuration for canopa-shell.
 /// Fully populated before any surface is created (AR7).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub appearance: canopa_theme::Appearance,
     /// All named bar sections. At least one is always present (falls back to defaults when
@@ -96,7 +96,7 @@ impl Config {
     }
 }
 
-/// Prepare a complete configuration before creating surfaces. Live reload is not supported.
+/// Prepare and validate a complete candidate without changing the running shell.
 pub fn load(
     request: &canopa_config::Request,
     show_source: bool,

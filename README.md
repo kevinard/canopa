@@ -55,7 +55,8 @@ Both applications discover `$XDG_CONFIG_HOME/canopa/config.kdl` (with the usual
 `~/.config` fallback). Existing application files still work when that shared file
 is absent. Run `canopa config check` to validate both schemas, and see the
 [configuration guide](docs/configuration.md) for explicit migration and reloads.
-Shell changes require restarting Canopa Shell; Notify supports reload while running.
+Canopa Shell reloads saved configuration automatically, with `canopa-shell reload`
+for an explicit result. Notify supports its own reload while running.
 Notify continues to deliver banners while the shell is stopped. Both UIs use the
 shared `appearance` settings for dark/light palettes and an optional accent color.
 The optional `media` module shows the current track and opens [Media controls](docs/media.md) for existing MPRIS players.

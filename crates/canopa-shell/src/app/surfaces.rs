@@ -616,7 +616,9 @@ impl App {
         &mut self,
         observed_outputs: Option<Vec<String>>,
     ) -> Vec<Task<Message>> {
-        match super::eligible_outputs::resolve_eligible_outputs(observed_outputs, &[]) {
+        self.eligible_outputs =
+            super::eligible_outputs::resolve_eligible_outputs(observed_outputs, &[]);
+        match self.eligible_outputs.clone() {
             super::eligible_outputs::EligibleOutputState::Unknown => Vec::new(),
             super::eligible_outputs::EligibleOutputState::Known(eligible_outputs) => {
                 let desired = super::bar_surface_plan::plan_bar_surfaces(
