@@ -1,23 +1,22 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/canopa-portal",
-    "crates/canopa-cli",
-    "crates/canopa-assets",
-    "crates/canopa-file",
-    "crates/canopa-config",
-    "crates/canopa-theme",
-    "crates/canopa-ui",
-    "crates/canopa-notify-client",
-    "crates/canopa-panel-protocol",
-    "crates/canopa-notify",
-    "crates/canopa-shell",
+  "crates/canopa-portal",
+  "crates/canopa-cli",
+  "crates/canopa-assets",
+  "crates/canopa-file",
+  "crates/canopa-config",
+  "crates/canopa-theme",
+  "crates/canopa-ui",
+  "crates/canopa-notify-client",
+  "crates/canopa-panel-protocol",
+  "crates/canopa-notify",
+  "crates/canopa-shell",
 ]
 exclude = [
-    "vendor/accesskit_unix",
-    "vendor/iced_layershell",
-    "vendor/layershellev",
-    "experiments/focused-window-rotation",
+  "vendor/accesskit_unix",
+  "vendor/iced_layershell",
+  "vendor/layershellev",
 ]
 
 [workspace.package]
@@ -42,15 +41,28 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 accesskit = "0.25.1"
-accesskit_unix = { version = "0.24.0", default-features = false, features = ["tokio"] }
+accesskit_unix = { version = "0.24.0", default-features = false, features = [
+  "tokio",
+] }
 anyhow = "1"
 assert_cmd = "2"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
-iced = { version = "0.14", default-features = false, features = ["advanced", "wgpu", "crisp", "web-colors", "thread-pool", "wayland", "image"] }
+iced = { version = "0.14", default-features = false, features = [
+  "advanced",
+  "wgpu",
+  "crisp",
+  "web-colors",
+  "thread-pool",
+  "wayland",
+  "image",
+] }
 iced_layershell = { version = "0.19.1", default-features = false }
 iced_runtime = "0.14"
-image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25.10", default-features = false, features = [
+  "png",
+  "jpeg",
+] }
 kdl = "6.5.0"
 predicates = "3"
 roxmltree = "0.20"
@@ -61,7 +73,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
 tempfile = "3"
-tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1", features = [
+  "io-util",
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "signal",
+  "sync",
+  "time",
+] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
