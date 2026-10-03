@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_and_unavailable_modules_have_no_frames_or_navigation_targets() {
+    fn unavailable_bar_status_stays_hidden_while_panel_controls_remain_reachable() {
         let (mut app, window) = fixture();
         let panel = iced::window::Id::unique();
         app.register_panel_popup(panel, window);
@@ -158,7 +158,7 @@ mod tests {
                 .iter()
                 .map(|entry| entry.id.clone())
                 .collect::<Vec<_>>(),
-            vec![ModuleId::new("clock")]
+            vec![ModuleId::new("clock"), ModuleId::new("volume")]
         );
         assert!(
             app.resolved_tooltip_for(window, &ModuleId::new("volume"))

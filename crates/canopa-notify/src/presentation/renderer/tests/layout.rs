@@ -290,13 +290,13 @@ async fn queued_input_regions_use_the_latest_viewport_and_remain_empty_after_cle
     let reset = (2, vec![0, 0, i32::MAX, i32::MAX]);
     assert_eq!(
         region_requests(old),
-        vec![reset.clone(), (1, vec![616, 0, 360, 114])]
+        vec![reset.clone(), (1, vec![616, 0, 360, 132])]
     );
     let resized = frame_actions(&mut state, &renderer, Size::new(276.0, 216.0), &mut tree).await;
     let [LayerShellCustomAction::SetInputRegion(current)] = resized.as_slice() else {
         panic!("{resized:?}");
     };
-    let narrow = vec![reset.clone(), (1, vec![0, 0, 276, 114])];
+    let narrow = vec![reset.clone(), (1, vec![0, 0, 276, 132])];
     assert_eq!(region_requests(current), narrow);
     assert_eq!(
         region_requests(old),
@@ -399,7 +399,7 @@ async fn fully_visible_card_is_acknowledged_while_a_lower_card_is_clipped() {
         "the upper card must not wait for the clipped lower card"
     );
     assert!(state.pending_acknowledgement.is_some());
-    for message in frame_messages_in_tree(&state, &renderer, Size::new(360.0, 240.0), &mut tree) {
+    for message in frame_messages_in_tree(&state, &renderer, Size::new(360.0, 320.0), &mut tree) {
         let _ = banner_ui_update(&mut state, message);
     }
     assert_eq!(
@@ -1343,7 +1343,7 @@ async fn late_layout_from_lost_output_cannot_restore_its_input_region() {
         region_requests(current),
         vec![
             (2, vec![0, 0, i32::MAX, i32::MAX]),
-            (1, vec![0, 0, 276, 114]),
+            (1, vec![0, 0, 276, 132]),
         ],
         "late geometry cannot change the fallback output's input region"
     );
@@ -1629,7 +1629,7 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
         region_requests(region),
         vec![
             (2, vec![0, 0, i32::MAX, i32::MAX]),
-            (1, vec![616, 0, 360, 114])
+            (1, vec![616, 0, 360, 132])
         ]
     );
     assert!(

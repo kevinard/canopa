@@ -106,6 +106,25 @@ impl crate::modules::Module for ButtonModule {
 }
 
 impl crate::modules::render::ModuleRender for ButtonModule {
+    fn render_bar_panel_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        style: &crate::config::Style,
+        context: crate::modules::render::PanelModuleContext,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        Some(
+            crate::theme::action(
+                self.render_panel_with_style(state, style),
+                context.primary,
+                canopa_ui::Action::Quiet,
+                context.focused,
+            )
+            .width(iced::Length::Fill)
+            .height(44)
+            .into(),
+        )
+    }
+
     fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
         Some(self)
     }

@@ -387,7 +387,7 @@ mod tests {
             menu_path: None,
             tooltip: None,
         };
-        for (size, expected) in [(None, 16.0), (Some(23.5), 23.5)] {
+        for (size, expected) in [(None, 20.0), (Some(23.5), 23.5)] {
             let mut element = icon_widget(
                 &item,
                 &crate::config::Style {

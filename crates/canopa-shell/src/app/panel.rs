@@ -959,7 +959,22 @@ impl App {
             PanelEvent::FocusSearchInput { retries } => self.focus_panel_search_input(retries),
             PanelEvent::Activate => self.activate_panel_entry(None),
             PanelEvent::ActivateIndex(index) => self.activate_panel_entry(Some(index)),
+            PanelEvent::ModuleInteraction {
+                window,
+                target,
+                event,
+            } => self.interact_panel_module(window, target, event),
             PanelEvent::Back => {
+                if self.foreground.panel_return_to_bar()
+                    && let Some(tree) = self.foreground.active_panel_tree().cloned()
+                {
+                    return self.open_panel(
+                        tree.origin_window,
+                        tree.origin,
+                        crate::surface::panel::PanelContent::BarPanel,
+                        tree.anchor,
+                    );
+                }
                 let effects = self
                     .foreground
                     .handle(super::foreground::ForegroundIntent::Panel(
@@ -1081,15 +1096,18 @@ impl App {
                 self.effective_panel_module_layout_for_bar(bar)
                     .into_iter()
                     .filter(|(_, id)| {
-                        self.module_has_content_on_surface(
-                            id,
-                            &origin_surface,
-                            crate::config::FormatMode::Expanded,
-                        )
+                        self.modules.kind_for(id).is_some_and(|kind| {
+                            self.modules.has_bar_panel_content(
+                                id,
+                                &self.module_render_state(kind, id, &origin_surface),
+                            )
+                        })
                     })
                     .map(|(zone, id)| {
-                        let focused =
-                            origin == &crate::surface::panel::PanelOrigin::Module(id.clone());
+                        let focused = self.foreground.focused_panel_module().map_or(
+                            origin == &crate::surface::panel::PanelOrigin::Module(id.clone()),
+                            |focused| focused == &id,
+                        );
                         crate::surface::panel::PanelModuleEntry { id, zone, focused }
                     })
                     .collect()
@@ -1217,6 +1235,30 @@ impl App {
     }
 
     fn move_panel_focus(&mut self, delta: isize) -> Task<Message> {
+        if let Some(tree) = self.foreground.active_panel_tree()
+            && matches!(tree.content, crate::surface::panel::PanelContent::BarPanel)
+        {
+            let entries: Vec<_> = self
+                .panel_module_layout_for_content(tree.origin_window, &tree.origin, &tree.content)
+                .into_iter()
+                .filter(|entry| {
+                    self.modules
+                        .bar_panel_activation(&entry.id, tree.origin_window)
+                        .is_some()
+                })
+                .collect();
+            if !entries.is_empty() {
+                let index = self
+                    .foreground
+                    .focused_panel_module()
+                    .and_then(|id| entries.iter().position(|entry| &entry.id == id));
+                let next = index.map_or(if delta < 0 { entries.len() - 1 } else { 0 }, |index| {
+                    (index as isize + delta).rem_euclid(entries.len() as isize) as usize
+                });
+                self.foreground.focus_panel_module(entries[next].id.clone());
+            }
+            return Task::none();
+        }
         let effects = self
             .foreground
             .handle(super::foreground::ForegroundIntent::PanelFocusMove {
@@ -1230,12 +1272,88 @@ impl App {
     }
 
     fn activate_panel_entry(&mut self, index: Option<usize>) -> Task<Message> {
+        if let Some(tree) = self.foreground.active_panel_tree()
+            && matches!(tree.content, crate::surface::panel::PanelContent::BarPanel)
+        {
+            let target = index
+                .and_then(|index| {
+                    self.panel_module_layout_for_content(
+                        tree.origin_window,
+                        &tree.origin,
+                        &tree.content,
+                    )
+                    .get(index)
+                    .map(|entry| entry.id.clone())
+                })
+                .or_else(|| self.foreground.focused_panel_module().cloned());
+            if let Some(target) = target
+                && let Some(window) = self.foreground.active_panel_window()
+                && let Some(event) = self.modules.bar_panel_activation(&target, window)
+            {
+                return self.interact_panel_module(window, target, event);
+            }
+            return Task::none();
+        }
         let effects = self
             .foreground
             .handle(super::foreground::ForegroundIntent::Panel(
                 super::foreground::PanelInteraction::Activate(index),
             ));
         Task::batch(self.apply_foreground_effects(effects))
+    }
+
+    fn interact_panel_module(
+        &mut self,
+        window: iced::window::Id,
+        target: crate::modules::ModuleId,
+        event: crate::modules::InteractionEvent,
+    ) -> Task<Message> {
+        let Some(tree) = self.foreground.active_panel_tree().cloned() else {
+            return Task::none();
+        };
+        if self.foreground.active_panel_window() != Some(window)
+            || !matches!(tree.content, crate::surface::panel::PanelContent::BarPanel)
+            || !self
+                .panel_module_layout_for_content(tree.origin_window, &tree.origin, &tree.content)
+                .iter()
+                .any(|entry| entry.id == target)
+        {
+            return Task::none();
+        }
+        self.foreground.focus_panel_module(target.clone());
+        let trigger = match event {
+            crate::modules::InteractionEvent::Clicked => Some(crate::config::ActionTrigger::Click),
+            crate::modules::InteractionEvent::RightClicked(_) => {
+                Some(crate::config::ActionTrigger::RightClick)
+            }
+            _ => None,
+        };
+        if let Some(action) = trigger
+            .and_then(|trigger| self.modules.action_for(&target, &trigger))
+            .cloned()
+        {
+            // Use the active Panel's origin and anchor: this Module need not be on the Bar.
+            let action_origin = if matches!(
+                action,
+                crate::config::PanelAction::OpenPanel | crate::config::PanelAction::TogglePanel
+            ) {
+                crate::surface::panel::PanelOrigin::Module(target.clone())
+            } else {
+                tree.origin.clone()
+            };
+            if let Some(event) = panel_event_for_action(
+                tree.origin_window,
+                action_origin.clone(),
+                action.clone(),
+                tree.anchor,
+            ) {
+                return self.handle_panel_event(event);
+            }
+            return self.dispatch_panel_action(tree.origin_window, action_origin, action);
+        }
+        self.modules
+            .module_owned_interaction(&target, event, tree.origin_window)
+            .map_or_else(Task::none, Task::done)
     }
 
     fn focus_panel_search_input(&mut self, retries: u8) -> Task<Message> {
@@ -1363,6 +1481,8 @@ pub(super) fn panel_action_needs_anchor(action: &crate::config::PanelAction) -> 
         action,
         crate::config::PanelAction::OpenPanel
             | crate::config::PanelAction::TogglePanel
+            | crate::config::PanelAction::OpenBarPanel
+            | crate::config::PanelAction::ToggleBarPanel
             | crate::config::PanelAction::OpenMenu(_)
             | crate::config::PanelAction::ToggleMenu(_)
             | crate::config::PanelAction::OpenProvider(_)
@@ -1394,6 +1514,18 @@ pub(super) fn panel_event_for_action(
                 anchor,
             })
         }
+        crate::config::PanelAction::OpenBarPanel => Some(super::messages::PanelEvent::Open {
+            origin_window,
+            origin,
+            content: crate::surface::panel::PanelContent::BarPanel,
+            anchor,
+        }),
+        crate::config::PanelAction::ToggleBarPanel => Some(super::messages::PanelEvent::Toggle {
+            origin_window,
+            origin,
+            content: crate::surface::panel::PanelContent::BarPanel,
+            anchor,
+        }),
         crate::config::PanelAction::ClosePanel => Some(super::messages::PanelEvent::Close),
         crate::config::PanelAction::OpenMenu(name) => Some(super::messages::PanelEvent::Open {
             origin_window,
@@ -2519,9 +2651,9 @@ mod tests {
             },
         });
 
-        assert_eq!(plan.width, PlannedDimension::Exact(332));
-        assert_eq!(plan.height, PlannedDimension::Exact(348));
-        assert_eq!(panel_window_settings(plan).size, Some((332, 348)));
+        assert_eq!(plan.width, PlannedDimension::Exact(348));
+        assert_eq!(plan.height, PlannedDimension::Exact(364));
+        assert_eq!(panel_window_settings(plan).size, Some((348, 364)));
     }
 
     #[test]
@@ -2595,6 +2727,184 @@ mod tests {
         );
 
         assert_eq!(position, (48, 32));
+    }
+
+    #[test]
+    fn bar_panel_scoped_action_opens_the_activated_modules_details() {
+        use crate::modules::{InteractionEvent, ModuleId};
+        use crate::surface::panel::{PanelContent, PanelOrigin};
+        let (mut config, _) =
+            crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
+        config.bars[0].panel.modules.start = vec!["clock".into()];
+        config.bars[0].panel.modules.center.clear();
+        config.bars[0].panel.modules.end.clear();
+        let (mut app, _) = App::boot(config, vec![]);
+        crate::app::tests::ready_clock(&mut app);
+        let origin_window = iced::window::Id::unique();
+        app.surface_mut(origin_window);
+        let _ = app.open_panel(
+            origin_window,
+            PanelOrigin::Module(ModuleId::new("system")),
+            PanelContent::BarPanel,
+            None,
+        );
+        let window = app.foreground.active_panel_window().unwrap();
+        let id = ModuleId::new("clock");
+        let _ = app.interact_panel_module(window, id.clone(), InteractionEvent::Clicked);
+        let tree = app.foreground.active_panel_tree().unwrap();
+        assert_eq!(tree.content, PanelContent::ModulePanel(id.clone()));
+        assert_eq!(tree.origin, PanelOrigin::Module(id));
+        assert_eq!(tree.origin_window, origin_window);
+    }
+
+    #[test]
+    fn quick_settings_controls_survive_unavailable_sources_and_return_from_providers() {
+        use crate::modules::{InteractionEvent, ModuleId, ModuleState};
+        use crate::surface::panel::{PanelContent, PanelOrigin};
+        let (config, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin_window = iced::window::Id::unique();
+        app.surface_mut(origin_window);
+        for name in ["network", "volume"] {
+            app.modules
+                .set_state(ModuleId::new(name), ModuleState::Unavailable);
+        }
+        let origin = PanelOrigin::Module(ModuleId::new("system"));
+        let anchor = Some(iced::Rectangle {
+            x: 10.0,
+            y: 680.0,
+            width: 44.0,
+            height: 44.0,
+        });
+        let _ = app.open_panel(
+            origin_window,
+            origin.clone(),
+            PanelContent::BarPanel,
+            anchor,
+        );
+        let mut panel_window = app.foreground.active_panel_window().unwrap();
+        let layout =
+            app.panel_module_layout_for_content(origin_window, &origin, &PanelContent::BarPanel);
+        let names: Vec<_> = layout.iter().map(|entry| entry.id.display_name()).collect();
+        assert_eq!(
+            names,
+            ["network", "volume", "notifications", "idle-inhibitor"]
+        );
+        assert!(
+            !app.bar_render_model(origin_window)
+                .end
+                .iter()
+                .any(|entry| entry.id == ModuleId::new("volume"))
+        );
+
+        for (name, provider) in [("network", "wifi"), ("volume", "audio")] {
+            app.set_external_panel_response_for_test(provider, Err("Backend unavailable".into()));
+            let _ = app.interact_panel_module(
+                panel_window,
+                ModuleId::new(name),
+                InteractionEvent::Clicked,
+            );
+            let tree = app.foreground.active_panel_tree().unwrap();
+            let PanelContent::ExternalProvider(content) = &tree.content else {
+                panic!("provider panel");
+            };
+            assert_eq!(content.provider_name, provider);
+            assert_eq!(tree.origin_window, origin_window);
+            assert_eq!(tree.origin, origin);
+            assert_eq!(tree.anchor, anchor);
+            assert!(app.foreground.panel_return_to_bar());
+            let _ = app.handle_panel_event(super::super::messages::PanelEvent::Back);
+            assert_eq!(
+                app.foreground.active_panel_tree().unwrap().content,
+                PanelContent::BarPanel
+            );
+            assert!(!app.foreground.panel_return_to_bar());
+            panel_window = app.foreground.active_panel_window().unwrap();
+        }
+        // Events from a replaced Panel and Modules outside this Panel are ignored.
+        let _ = app.interact_panel_module(
+            iced::window::Id::unique(),
+            ModuleId::new("volume"),
+            InteractionEvent::Clicked,
+        );
+        let _ = app.interact_panel_module(
+            panel_window,
+            ModuleId::new("clock"),
+            InteractionEvent::Clicked,
+        );
+        assert_eq!(
+            app.foreground.active_panel_tree().unwrap().content,
+            PanelContent::BarPanel
+        );
+
+        let _ = app.move_panel_focus(1);
+        assert_eq!(
+            app.foreground.focused_panel_module(),
+            Some(&ModuleId::new("network"))
+        );
+        let _ = app.move_panel_focus(1);
+        assert_eq!(
+            app.foreground.focused_panel_module(),
+            Some(&ModuleId::new("volume"))
+        );
+        let _ = app.activate_panel_entry(None);
+        assert!(matches!(
+            app.foreground.active_panel_tree().unwrap().content,
+            PanelContent::ExternalProvider(_)
+        ));
+        let _ = app.close_active_panel();
+        assert!(!app.foreground.panel_return_to_bar());
+    }
+
+    #[test]
+    fn bundled_controls_button_opens_its_bar_panel_and_repeated_click_dismisses() {
+        let (config, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
+        assert_eq!(
+            config.bars[0].panel.title.as_deref(),
+            Some("Quick settings")
+        );
+        let (mut app, _) = App::boot(config, vec![]);
+        let origin_window = iced::window::Id::unique();
+        app.surface_mut(origin_window);
+        let id = crate::modules::ModuleId::new("system");
+        let action = app
+            .modules
+            .action_for(&id, &crate::config::ActionTrigger::Click)
+            .cloned()
+            .expect("bundled controls action");
+        let origin = crate::surface::panel::PanelOrigin::Module(id.clone());
+        let anchor = iced::Rectangle {
+            x: 10.0,
+            y: 680.0,
+            width: 44.0,
+            height: 44.0,
+        };
+        let event =
+            panel_event_for_action(origin_window, origin.clone(), action.clone(), Some(anchor))
+                .expect("panel action");
+        let _ = app.handle_panel_event(event);
+
+        let tree = app.foreground.active_panel_tree().expect("controls panel");
+        assert_eq!(tree.content, crate::surface::panel::PanelContent::BarPanel);
+        assert_eq!(tree.origin, origin);
+        assert_eq!(tree.origin_window, origin_window);
+        assert_eq!(tree.anchor, Some(anchor));
+        assert!(
+            app.foreground
+                .module_action_targets_active_panel(origin_window, &id, &action)
+        );
+        assert!(!app.foreground.module_action_targets_active_panel(
+            iced::window::Id::unique(),
+            &id,
+            &action,
+        ));
+
+        let _ = app.dispatch_module_interaction(
+            &id,
+            crate::modules::InteractionEvent::Clicked,
+            origin_window,
+        );
+        assert!(app.foreground.active_panel_tree().is_none());
     }
 
     #[test]
@@ -3237,7 +3547,7 @@ mod tests {
         assert_eq!(panel_focus(&app), Some(41));
         assert_eq!(
             app.foreground.panel_menu_scroll_y_for_test(),
-            42.0 * MENU_ROW_EXTENT - DEFAULT_MENU_VIEWPORT_HEIGHT
+            42.0 * app.active_menu_metrics().extent - DEFAULT_MENU_VIEWPORT_HEIGHT
         );
     }
 
@@ -3251,7 +3561,7 @@ mod tests {
         app.foreground
             .handle(super::super::foreground::ForegroundIntent::Panel(
                 super::super::foreground::PanelInteraction::MenuScrolled {
-                    y: 10.0 * MENU_ROW_EXTENT,
+                    y: 10.0 * app.active_menu_metrics().extent,
                     viewport_height: DEFAULT_MENU_VIEWPORT_HEIGHT,
                 },
             ));
@@ -3263,7 +3573,7 @@ mod tests {
         assert_eq!(panel_focus(&app), Some(9));
         assert_eq!(
             app.foreground.panel_menu_scroll_y_for_test(),
-            9.0 * MENU_ROW_EXTENT
+            9.0 * app.active_menu_metrics().extent
         );
     }
 

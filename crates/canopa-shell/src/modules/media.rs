@@ -102,6 +102,21 @@ impl IconLabel for MediaModule {
 }
 
 impl ModuleRender for MediaModule {
+    fn render_bar_panel_with_style(
+        &self,
+        state: &ModuleState,
+        _: &Style,
+        context: super::render::PanelModuleContext,
+    ) -> Option<iced::Element<'_, Message>> {
+        Some(super::view::panel_control(
+            "Media",
+            self.label(state),
+            "›",
+            context.primary,
+            context.focused,
+        ))
+    }
+
     fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
         Some(self)
     }

@@ -165,6 +165,42 @@ impl IconLabel for NotificationsModule {
 }
 
 impl ModuleRender for NotificationsModule {
+    fn bar_panel_activation(
+        &self,
+        state: &ModuleState,
+        window: iced::window::Id,
+    ) -> Option<super::InteractionEvent> {
+        summary(state).map(|_| super::InteractionEvent::RightClicked(window))
+    }
+    fn render_bar_panel_with_style(
+        &self,
+        state: &ModuleState,
+        _: &Style,
+        context: super::render::PanelModuleContext,
+    ) -> Option<iced::Element<'_, Message>> {
+        let summary = summary(state);
+        let description = summary.map_or_else(
+            || "Notifications unavailable".to_owned(),
+            |s| {
+                if s.do_not_disturb {
+                    "Pause notification banners".to_owned()
+                } else {
+                    "Show notification banners".to_owned()
+                }
+            },
+        );
+        Some(super::view::panel_control(
+            "Do Not Disturb",
+            description,
+            summary.map_or(
+                "Unavailable",
+                |s| if s.do_not_disturb { "On" } else { "Off" },
+            ),
+            summary.and(context.primary),
+            context.focused,
+        ))
+    }
+
     fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
         Some(self)
     }

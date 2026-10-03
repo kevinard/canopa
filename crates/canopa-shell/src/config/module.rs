@@ -463,6 +463,8 @@ pub enum PanelAction {
     Launch(Vec<String>),
     OpenPanel,
     TogglePanel,
+    OpenBarPanel,
+    ToggleBarPanel,
     ClosePanel,
     OpenMenu(String),
     ToggleMenu(String),

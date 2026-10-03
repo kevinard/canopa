@@ -103,7 +103,7 @@ def verify(args, session):
     session.wait_for(lambda: "tray registered" in (output / "tray.log").read_text(), "tray fixture")
     def bar_visible():
         session.run(["grim", str(output / "closed.png")])
-        return Image.open(output / "closed.png").convert("RGB").getpixel((800, 20)) == (30, 30, 46)
+        return Image.open(output / "closed.png").convert("RGB").getpixel((800, 20)) == (16, 25, 29)
     session.wait_for(bar_visible, "initial bar frame")
     time.sleep(1)
     session.run([pointer, "15", "20"])
@@ -138,7 +138,7 @@ def verify(args, session):
     def restored_bar_visible():
         session.run(["grim", str(output / "restored.png")])
         frame = Image.open(output / "restored.png").convert("RGB")
-        return frame.getpixel((800, 50)) == (30, 30, 46) and frame.getpixel((800, 60)) != (30, 30, 46)
+        return frame.getpixel((800, 50)) == (16, 25, 29) and frame.getpixel((800, 60)) != (16, 25, 29)
     session.wait_for(restored_bar_visible, "rendered replacement bar at scale 1.25")
     # Outside dismissal also covers an output with no bar, including one
     # connected while the panel is already open.

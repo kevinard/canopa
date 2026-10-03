@@ -368,7 +368,7 @@ async fn installed_apps_keyboard_passes_viewport_edge_with_stationary_pointer() 
         let effects = app.foreground.handle(ForegroundIntent::PanelFocusMove {
             delta,
             scroll: PanelMenuScrollContext {
-                row_extent: MENU_ROW_EXTENT,
+                row_extent: app.active_menu_metrics().extent,
                 default_viewport_height: DEFAULT_MENU_VIEWPORT_HEIGHT,
             },
         });
@@ -461,12 +461,13 @@ async fn check_wheel_scrolling(long_labels: bool) {
         );
         // Hit the first complete row through actual pointer input. This catches
         // spacer seams and accumulated row-height drift, not just total height.
-        let index = (geometry.offset / MENU_ROW_EXTENT).ceil() as usize;
+        let row_extent = app.active_menu_metrics().extent;
+        let index = (geometry.offset / row_extent).ceil() as usize;
         widgets.point_at(
             &mut app,
             Point::new(
                 40.0,
-                geometry.viewport.y + 8.0 + index as f32 * MENU_ROW_EXTENT - geometry.offset + 18.0,
+                geometry.viewport.y + 8.0 + index as f32 * row_extent - geometry.offset + 22.0,
             ),
         );
         assert_eq!(
@@ -484,12 +485,10 @@ async fn installed_apps_tall_drawer_renders_all_visible_rows() {
     widgets.size.height = 4000.0;
     widgets.redraw(&mut app, None);
     let geometry = widgets.redraw(&mut app, None);
+    let row_extent = app.active_menu_metrics().extent;
     widgets.point_at(
         &mut app,
-        Point::new(
-            40.0,
-            geometry.viewport.y + 8.0 + 75.0 * MENU_ROW_EXTENT + 18.0,
-        ),
+        Point::new(40.0, geometry.viewport.y + 8.0 + 75.0 * row_extent + 22.0),
     );
     assert_eq!(
         panel_focus(&app),

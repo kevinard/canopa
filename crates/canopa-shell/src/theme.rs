@@ -148,7 +148,7 @@ pub fn card(theme: &iced::Theme) -> iced::widget::container::Style {
 
 /// Compact bar roles in logical pixels; Iced applies output scaling.
 pub mod bar_metrics {
-    pub const ICON_SIZE: u32 = 16;
+    pub const ICON_SIZE: u32 = 20;
 }
 
 /// Header size includes the same text and close-button metrics used by the view.
@@ -170,7 +170,11 @@ pub fn highlighted_frame(
     let mut base = ui;
     if selected || hover || focus {
         if base.background == ColorValue::Rgba(canopa_theme::Rgb(0, 0, 0), 0) {
-            base.background = ColorValue::Role(ColorRole::Surface);
+            base.background = ColorValue::Role(if selected {
+                ColorRole::AccentSurface
+            } else {
+                ColorRole::Raised
+            });
         }
         if !base.custom_border {
             base.border_width = canopa_theme::Pixels::whole(1);

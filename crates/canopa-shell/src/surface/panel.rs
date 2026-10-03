@@ -200,7 +200,7 @@ pub fn panel_module_frame<'a>(
             background: if focused {
                 Some(iced::Background::Color(crate::theme::palette().background))
             } else {
-                Some(iced::Background::Color(crate::theme::palette().surface))
+                Some(iced::Background::Color(crate::theme::palette().raised))
             },
             border: iced::Border {
                 color: if focused {
@@ -209,7 +209,12 @@ pub fn panel_module_frame<'a>(
                     crate::theme::palette().border
                 },
                 width: 1.0,
-                radius: iced::border::Radius::from(4.0),
+                radius: canopa_ui::frame(
+                    &crate::theme::appearance(),
+                    crate::theme::ui(canopa_theme::UiKind::Card),
+                )
+                .border
+                .radius,
             },
             ..Default::default()
         })
@@ -218,25 +223,49 @@ pub fn panel_module_frame<'a>(
 
 /// The same host-owned heading and dismiss control in both panel presentations.
 pub fn panel_header<'a>(title: String) -> iced::Element<'a, crate::app::Message> {
+    panel_header_with_back(title, false)
+}
+
+pub fn panel_header_with_back<'a>(
+    title: String,
+    back: bool,
+) -> iced::Element<'a, crate::app::Message> {
     use iced::widget::row;
 
-    row![
-        crate::theme::text(title)
-            .size(crate::theme::title_size())
-            .width(iced::Length::Fill),
-        crate::theme::action(
-            crate::theme::text("Close").size(crate::theme::label_size()),
-            Some(crate::app::Message::Panel(
-                crate::app::messages::PanelEvent::Close
-            )),
-            canopa_ui::Action::Quiet,
-            false,
+    let mut header = row![];
+    if back {
+        header = header.push(
+            crate::theme::action(
+                crate::theme::text("‹ Back").size(crate::theme::label_size()),
+                Some(crate::app::Message::Panel(
+                    crate::app::messages::PanelEvent::Back,
+                )),
+                canopa_ui::Action::Quiet,
+                false,
+            )
+            .height(44),
+        );
+    }
+    header
+        .push(
+            crate::theme::text(title)
+                .size(crate::theme::title_size())
+                .width(iced::Length::Fill),
         )
-        .height((crate::theme::panel_header_height() - 24) as f32),
-    ]
-    .spacing(canopa_ui::metrics::GAP)
-    .align_y(iced::Alignment::Center)
-    .into()
+        .push(
+            crate::theme::action(
+                crate::theme::text("Close").size(crate::theme::label_size()),
+                Some(crate::app::Message::Panel(
+                    crate::app::messages::PanelEvent::Close,
+                )),
+                canopa_ui::Action::Quiet,
+                false,
+            )
+            .height((crate::theme::panel_header_height() - 24) as f32),
+        )
+        .spacing(canopa_ui::metrics::GAP)
+        .align_y(iced::Alignment::Center)
+        .into()
 }
 
 #[cfg(test)]

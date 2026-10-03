@@ -85,16 +85,21 @@ mod config_tests {
     fn parse_default_config_succeeds() {
         let config = parse::parse(defaults::DEFAULT_CONFIG).unwrap();
         assert_eq!(config.bars.len(), 1);
-        assert_eq!(config.bars[0].collapsed_width, 48);
+        assert_eq!(config.bars[0].collapsed_width, 64);
+        assert_eq!(config.bars[0].margin, canopa_theme::Insets::all(12));
+        assert_eq!(
+            crate::surface::bar_geometry::BarGeometry::reservation(&config.bars[0]),
+            88
+        );
         // UX-DR18: zone assignments
-        assert_eq!(config.bars[0].modules.start, vec!["workspaces"]);
-        assert_eq!(config.bars[0].modules.center, vec!["focused-window"]);
+        assert_eq!(config.bars[0].modules.start, vec!["launcher", "overview"]);
+        assert_eq!(config.bars[0].modules.center, vec!["workspaces"]);
         assert_eq!(
             config.bars[0].modules.end,
-            vec!["notifications", "volume", "network", "battery", "clock"]
+            vec!["notifications", "system", "clock"]
         );
         // All default modules declared
-        assert_eq!(config.modules.len(), 7);
+        assert_eq!(config.modules.len(), 16);
         let names: Vec<&str> = config.modules.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"workspaces"));
         assert!(names.contains(&"focused-window"));

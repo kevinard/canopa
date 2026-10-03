@@ -25,7 +25,7 @@ fn pill_border(is_focused: bool, is_active: bool) -> iced::Border {
             iced::Color::TRANSPARENT
         },
         width: 1.0,
-        radius: 4.0.into(),
+        radius: 8.0.into(),
     }
 }
 
@@ -627,7 +627,7 @@ mod tests {
                 assert_eq!(parts[0].0, icon.as_deref().unwrap_or("1"));
                 assert_eq!(
                     parts[0].1.size,
-                    Some(if icon.is_some() { 16.0 } else { 12.0 })
+                    Some(if icon.is_some() { 20.0 } else { 12.0 })
                 );
                 assert_eq!(parts[1].1.size, Some(12.0));
                 let parts = module

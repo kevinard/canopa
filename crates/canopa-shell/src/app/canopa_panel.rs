@@ -19,11 +19,22 @@ mod slider_widget;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
 pub(super) fn render<'a>(
     snapshot: &'a CanopaSnapshot,
     provider: &'a str,
     drawer: bool,
     ui: canopa_theme::ResolvedStyle,
+) -> Element<'a, Message> {
+    render_with_back(snapshot, provider, drawer, ui, false)
+}
+
+pub(super) fn render_with_back<'a>(
+    snapshot: &'a CanopaSnapshot,
+    provider: &'a str,
+    drawer: bool,
+    ui: canopa_theme::ResolvedStyle,
+    back: bool,
 ) -> Element<'a, Message> {
     let reading_id = iced::widget::Id::from(format!("canopa-reading/{provider}"));
     let card_ui = crate::theme::ui(canopa_theme::UiKind::Card);
@@ -349,7 +360,11 @@ pub(super) fn render<'a>(
             group,
         ));
     }
-    let title = crate::surface::panel::panel_header(snapshot.content.title.clone());
+    let title = if back {
+        crate::surface::panel::panel_header_with_back(snapshot.content.title.clone(), true)
+    } else {
+        crate::surface::panel::panel_header(snapshot.content.title.clone())
+    };
     let mut header = column![title].spacing(6);
     if let (Some(id), Some(label)) = (snapshot.focused_action_id(), snapshot.focused_label())
         && snapshot.slider(id).is_none()

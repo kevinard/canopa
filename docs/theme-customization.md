@@ -1,6 +1,9 @@
 # Theme and UI customization
 
 Shell and Notify share the `appearance` block in the schema-1 Canopa configuration.
+The built-in Canopa dark and light themes follow the [desktop visual direction](adr/0014-canopa-visual-direction.md).
+Try [the native desktop example](../examples/canopa-desktop.kdl), which selects the
+bundled spine layout. Change its `color-scheme` to `"light"` for the companion theme.
 Start with [the complete example](../examples/custom-theme.kdl) and its
 [Nord theme](../examples/themes/nord.kdl). Validate with
 `canopa config check --file examples/custom-theme.kdl` before installing.
@@ -42,7 +45,9 @@ reset keyword, selector language, or arbitrary CSS.
 `color-scheme "dark"` (default) or `"light"` supplies omitted colors. `palette`
 accepts six-digit `#rrggbb` values for `background`, `surface`, `raised`, `text`,
 `muted`, `disabled`, `border`, `accent`, `danger`, `warning`, `success`, `on-accent`,
-`on-danger`, and `focus`. Filled accent/danger text chooses a contrasting default;
+`on-danger`, `focus`, `spine`, `accent-surface`, and `brand`. `surface` is the panel
+color, `spine` the navigation frame, and `accent-surface` a quiet selected fill.
+`brand` is secondary identity color, not status. Filled accent/danger text chooses a contrasting default;
 focus defaults to accent. Custom palettes are not automatically contrast-corrected.
 
 The legacy `accent "#rrggbb"` setting remains an alias. It cannot be combined with
@@ -86,7 +91,8 @@ A frame's border is drawn inside its bounds. Explicit borders reserve content
 space. Popover/tooltip margins are transparent space included in surface measurement;
 banner margins participate in the banner stack. Notify's screen offset remains
 Notify-owned. Radius is limited by available frame dimensions. Existing attached
-bar separators and square drawers remain unless a border/radius is configured.
+bar separators and square drawers remain unless a border/radius is configured;
+the bundled spine explicitly selects rounded, borderless bar and panel frames.
 
 Supported color-only states are:
 
@@ -126,6 +132,15 @@ shell {
 }
 notifications { banners { ui { margin 4 0; }; }; }
 ```
+
+A bar's `panel { title "System controls"; }` names only its default Bar Panel.
+Omitting `title` retains the Overview title. Menus and module details keep their
+content-specific titles. Titles must be nonempty strings.
+
+Use `open-bar-panel` or `toggle-bar-panel` in a module's action to open its current
+bar's configured panel, retaining the module as the anchor and focus return target.
+The existing `open-panel` and `toggle-panel` actions continue to open that module's
+own details. Bar background actions already target the Bar Panel.
 
 `thickness` is the entire visible bar frame, including padding and border. Its legacy
 alias `collapsed-width` remains supported; specifying both is an error. Thickness

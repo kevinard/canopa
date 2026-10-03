@@ -219,9 +219,9 @@ mod tests {
             screen_size: (0, 0),
         };
         let (w, h) = popup_size(&tree);
-        // height: 1 item * 26 + 8 outer = 34
-        assert_eq!(h, 34);
-        // width: max(150, 4*8 + 24 + 8) = max(150, 64) = 150
+        // height: 1 item * 26 + 16 outer = 42
+        assert_eq!(h, 42);
+        // width: max(150, 4*8 + 24 + 16) = max(150, 72) = 150
         assert_eq!(w, 150);
     }
 
@@ -261,8 +261,8 @@ mod tests {
             screen_size: (0, 0),
         };
         let (_, h) = popup_size(&tree);
-        // 2 items * 26 + 1 sep * 5 + 8 outer = 65
-        assert_eq!(h, 65);
+        // 2 items * 26 + 1 sep * 5 + 16 outer + 2 gaps * 4 = 81
+        assert_eq!(h, 81);
     }
 
     #[test]
@@ -292,8 +292,8 @@ mod tests {
             screen_size: (0, 0),
         };
         let (_, h) = popup_size(&tree);
-        // Only 1 visible item: 26 + 8 = 34
-        assert_eq!(h, 34);
+        // Only 1 visible item: 26 + 16 = 42
+        assert_eq!(h, 42);
     }
 
     #[test]
@@ -323,8 +323,8 @@ mod tests {
             screen_size: (0, 0),
         };
         let (w, _) = popup_size(&tree);
-        // width: max(150, 23*8 + 24 + 8) = max(150, 216) = 216
-        assert_eq!(w, 216);
+        // width: max(150, 23*8 + 24 + 16) = max(150, 224) = 224
+        assert_eq!(w, 224);
     }
 
     #[test]

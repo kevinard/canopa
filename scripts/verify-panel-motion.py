@@ -80,7 +80,7 @@ modules {{ module "button" {{ label "Panel motion"; icon "B"; actions {{ click {
                      "right": (frame.width - inset, frame.height // 2),
                      "top": (frame.width // 2, inset),
                      "bottom": (frame.width // 2, frame.height - inset)}[edge]
-            return frame.getpixel(point) == (30, 30, 46)
+            return frame.getpixel(point) == (16, 25, 29)
         session.wait_for(bar_ready, "first bar frame")
         closed = capture(f"{case}-closed")
         if close_flash_only:

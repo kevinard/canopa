@@ -1,0 +1,8 @@
+// Native Canopa visual direction, using the bundled shell layout.
+// Run: canopa-shell --canopa-config examples/canopa-desktop.kdl
+// Omit shell to use the bundled spine; existing user layouts remain configurable.
+schema-version 1
+appearance {
+    // Change to "light" for the companion palette. Shell reloads the file.
+    color-scheme "dark"
+}

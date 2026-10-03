@@ -255,6 +255,64 @@ impl crate::modules::interaction::ModuleInteractionHandler for VolumeModule {
 }
 
 impl crate::modules::render::ModuleRender for VolumeModule {
+    fn has_bar_panel_content(&self, _: &crate::modules::ModuleState) -> bool {
+        true
+    }
+
+    fn render_bar_panel_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        _: &crate::config::Style,
+        context: crate::modules::render::PanelModuleContext,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        use iced::widget::{column, row};
+        let volume = if let crate::modules::ModuleState::Volume(volume) = state {
+            Some(volume)
+        } else {
+            None
+        };
+        let description = match volume {
+            Some(volume) if volume.muted => "Muted · Speakers and microphones",
+            Some(_) => "Speakers and microphones",
+            None => "Audio unavailable · Open sound settings",
+        };
+        let heading = crate::modules::view::panel_control(
+            "Sound",
+            description,
+            "›",
+            context.primary,
+            context.focused,
+        );
+        let adjust = |label, message| {
+            crate::theme::action(
+                crate::theme::text(label),
+                message,
+                canopa_ui::Action::Normal,
+                false,
+            )
+            .width(44)
+            .height(44)
+        };
+        let level =
+            volume.map_or_else(|| "Unavailable".to_owned(), |v| format!("{:.0}%", v.volume));
+        Some(
+            column![
+                heading,
+                row![
+                    adjust("−", volume.and(context.scroll_down)),
+                    iced::widget::container(crate::theme::text(level))
+                        .width(iced::Length::Fill)
+                        .center_x(iced::Length::Fill),
+                    adjust("+", volume.and(context.scroll_up)),
+                ]
+                .spacing(12)
+                .align_y(iced::Alignment::Center),
+            ]
+            .spacing(8)
+            .into(),
+        )
+    }
+
     fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
         Some(self)
     }

@@ -3,7 +3,16 @@
 Assessed 2026-09-23. This is a record of specific checks and remaining limits,
 not a whole-application WCAG conformance or screen-reader usability claim.
 
-## Default colors
+## Current Canopa colors
+
+The 2026-10-03 [Canopa visual direction](../adr/0014-canopa-visual-direction.md)
+replaces the initial palette. Run `python3 scripts/check-contrast.py` from the
+workspace root for current dark/light ratios. Shared theme tests additionally
+check primary/secondary text on spine, panel, raised and quiet selection fills,
+focus contrast against those fills, and text on the active accent. These numeric
+checks do not establish whole-application accessibility or custom-theme contrast.
+
+## Historical color assessment
 
 The color calculation uses WCAG's sRGB relative luminance and
 `(lighter + 0.05) / (darker + 0.05)`. Thresholds are 4.5:1 for the default small
@@ -69,11 +78,20 @@ frames reserve a two-pixel inset, so opaque workspace pills cannot paint over
 the interaction outline. This also leaves a dark gap between a focused
 workspace's accent fill and its outer interaction outline.
 
-Empty/unavailable modules and workspaces belonging to other outputs are omitted
-from bar frames and keyboard navigation. Empty panel presentations do not retain
-blank framed rows. Source loss clears stale focus and tooltips; recovery restores
+Modules without a useful bar presentation and workspaces belonging to other
+outputs are omitted from bar frames and keyboard navigation. Empty panel
+presentations do not retain blank framed rows. Quick settings retains Wi-Fi and
+Sound controls when status is unavailable so their providers remain reachable;
+Tab/Shift+Tab select cards and Enter activates them. Unavailable DND is disabled,
+and unavailable Keep awake offers retry. Source loss clears stale bar focus and tooltips; recovery restores
 the module to the visible navigation list. These transitions have App-level
 regression tests in addition to the isolated compositor check.
+
+Quick settings keeps its session buttons in a two-column footer with 44-pixel
+activation targets and the shared focus outline. Log out, Reboot and Power off
+open confirmation menus with Cancel focused first; Enter on Cancel returns to
+Quick settings and Escape dismisses without running the action. Native dark/light
+fixtures exercise these paths with harmless command stubs.
 
 Custom colors, alpha blending, user format overrides, external application/tray
 icons and emoji font rendering are outside

@@ -1607,9 +1607,9 @@ mod tests {
         let tree = tooltip_tree(crate::config::Edge::Left);
         let settings = tooltip_popup_window_settings(&tree);
 
-        assert_eq!(settings.size, Some((32, 34)));
+        assert_eq!(settings.size, Some((32, 42)));
         assert_eq!(settings.anchor, Anchor::Left | Anchor::Top);
-        assert_eq!(settings.margin, Some((483, 0, 0, 4)));
+        assert_eq!(settings.margin, Some((479, 0, 0, 4)));
     }
 
     #[test]
@@ -1618,7 +1618,7 @@ mod tests {
         let settings = tooltip_popup_window_settings(&tree);
 
         assert_eq!(settings.anchor, Anchor::Right | Anchor::Top);
-        assert_eq!(settings.margin, Some((483, 4, 0, 0)));
+        assert_eq!(settings.margin, Some((479, 4, 0, 0)));
     }
 
     #[test]

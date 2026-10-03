@@ -1,5 +1,5 @@
 use canopa_config::{Component, Document, Request};
-use canopa_theme::{Rgb, UiKind};
+use canopa_theme::{ColorRole, Rgb, UiKind};
 
 #[test]
 fn theme_file_inline_and_kind_overrides_resolve_per_property() {
@@ -9,7 +9,10 @@ fn theme_file_inline_and_kind_overrides_resolve_per_property() {
     std::fs::write(
         &theme,
         r##"
-        palette { background "#112233"; accent "#445566"; }
+        palette {
+            background "#112233"; accent "#445566";
+            spine "#123456"; accent-surface "#234567"; brand "#345678";
+        }
         typography { family "Inter" "sans-serif"; body-size 18; }
         ui { surface { radius 10; }; panel { padding 20; radius 14; } }
     "##,
@@ -32,6 +35,9 @@ fn theme_file_inline_and_kind_overrides_resolve_per_property() {
         let appearance = document.appearance();
         assert_eq!(appearance.palette().background, Rgb(17, 34, 51));
         assert_eq!(appearance.palette().accent, Rgb(171, 205, 239));
+        assert_eq!(appearance.role(ColorRole::Spine), Rgb(18, 52, 86));
+        assert_eq!(appearance.role(ColorRole::AccentSurface), Rgb(35, 69, 103));
+        assert_eq!(appearance.role(ColorRole::Brand), Rgb(52, 86, 120));
         assert_eq!(appearance.typography().body_size.px(), 18.0);
         let panel = appearance.style(UiKind::Panel);
         assert_eq!(panel.radius[0].px(), 8.0);

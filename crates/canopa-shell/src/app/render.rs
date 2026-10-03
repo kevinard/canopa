@@ -17,6 +17,7 @@ pub(super) struct PopupRenderModel<'a> {
 #[allow(dead_code)]
 pub(super) struct ModuleRenderEntry<'a> {
     pub(super) id: ModuleId,
+    pub(super) kind: ModuleKind,
     pub(super) zone: Zone,
     pub(super) hovered: bool,
     pub(super) focused: bool,
@@ -53,6 +54,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) focused_index: Option<usize>,
     pub(super) keyboard_focus: bool,
     pub(super) can_go_back: bool,
+    pub(super) return_to_bar: bool,
     pub(super) menu_scroll_id: iced::widget::Id,
     pub(super) menu_scroll_y: f32,
     pub(super) menu_viewport_height: f32,
@@ -141,14 +143,24 @@ impl App {
                 let id = entry.id;
                 let kind = self.modules.kind_for(&id)?;
                 let state = self.module_render_state(kind, &id, &origin_surface);
-                let module_view = self.modules.render_module_detail(
-                    super::module_runtime::ModuleDetailRenderRequest {
-                        id: id.clone(),
-                        style: &bar.style,
-                        session: self.foreground.panel_detail_for_render(window, &id),
-                        state_override: Some(state.clone()),
-                    },
-                )?;
+                let request = super::module_runtime::ModuleDetailRenderRequest {
+                    id: id.clone(),
+                    style: &bar.style,
+                    session: self.foreground.panel_detail_for_render(window, &id),
+                    state_override: Some(state.clone()),
+                };
+                let module_view =
+                    if matches!(tree.content, crate::surface::panel::PanelContent::BarPanel) {
+                        self.modules.render_bar_panel_module(
+                            super::module_runtime::BarPanelModuleRenderRequest {
+                                detail: request,
+                                window,
+                                focused: entry.focused,
+                            },
+                        )?
+                    } else {
+                        self.modules.render_module_detail(request)?
+                    };
                 let element = if matches!(
                     tree.content,
                     crate::surface::panel::PanelContent::ModulePanel(_)
@@ -161,6 +173,7 @@ impl App {
 
                 Some(ModuleRenderEntry {
                     id,
+                    kind,
                     zone: entry.zone,
                     hovered: false,
                     focused: entry.focused,
@@ -177,7 +190,11 @@ impl App {
         let title = {
             use crate::surface::panel::PanelContent;
             match &tree.content {
-                PanelContent::BarPanel => "Overview".to_owned(),
+                PanelContent::BarPanel => bar
+                    .panel
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| "Overview".to_owned()),
                 PanelContent::ModulePanel(id) => match self.modules.kind_for(id) {
                     Some(ModuleKind::Clock) => "Calendar".to_owned(),
                     Some(ModuleKind::Volume) => "Sound".to_owned(),
@@ -224,6 +241,7 @@ impl App {
             focused_index: menu.focused_index,
             keyboard_focus: menu.keyboard_focus,
             can_go_back: menu.can_go_back,
+            return_to_bar: self.foreground.panel_return_to_bar(),
             menu_scroll_id: super::panel::panel_menu_scroll_id(window),
             menu_scroll_y: menu.scroll_y,
             menu_viewport_height: menu.viewport_height,
@@ -348,6 +366,7 @@ impl App {
 
             let entry = ModuleRenderEntry {
                 id,
+                kind,
                 zone: zone.clone(),
                 hovered,
                 focused,

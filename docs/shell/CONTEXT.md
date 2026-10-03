@@ -417,6 +417,8 @@ _Avoid_: Search input when the text is provider-owned form data
 
 **Panel Action**:
 A typed configured operation triggered by pointer input, focused keyboard input, **Panel Menu** item activation, or IPC. Examples: `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, `open-provider`, `launch`, and `command`.
+`open-bar-panel` and `toggle-bar-panel` select the originating Bar Surface's
+configured Bar Panel while retaining a Module origin for anchoring and focus return.
 _Avoid_: Shell action when the action is not a command
 
 **Global Panel Toggle**:
@@ -800,6 +802,11 @@ Configured names and child identities are structurally distinct. A child identit
 - A **Bar**'s default **Panel** layout is independent from the **Bar**'s normal module layout.
 - A **Bar**'s default **Panel** layout renders as ordered sections, not as stretched bar zones.
 - A **Panel** module layout may reference **Modules** that are not present in the **Bar**'s normal module layout.
+- **Bar Panel** Modules may render compact controls separately from full **Module Detail Content**. Their input is checked against the active Panel window and layout, retaining its Bar Surface and anchor. Scoped detail actions select the activated Module; provider navigation keeps the originating Panel's origin.
+- Wi-Fi and Sound controls remain reachable in a **Bar Panel** when status is unavailable. Full connection and device controls remain owned by their **External Panel Providers**.
+- Opening an **External Panel Provider** from a **Bar Panel** with the same origin offers Back to that Bar Panel. Provider updates retain this return; dismissal and unrelated replacement discard it.
+- **Bar Panel** card focus follows its visible actionable Modules; activation uses each Module's compact-control interaction (DND uses the notifications secondary action).
+- Trailing Button Modules in a **Bar Panel** form a fixed two-column footer. Their ordering and activation follow the same **Module** layout and actions; the bundled session controls use configured confirmation **Panel Menus** with Cancel first.
 - Placing the same **Module** more than once within one **Panel** module layout is a **Configuration Error**.
 
 ### Panel Actions and Panel Menus

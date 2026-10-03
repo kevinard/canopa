@@ -707,12 +707,12 @@ mod tests {
                 match &parts[0] {
                     crate::modules::view::FormattedSegmentVisual::Image { style, .. }
                     | crate::modules::view::FormattedSegmentVisual::Text { style, .. } => {
-                        assert_eq!(style.size, Some(16.0))
+                        assert_eq!(style.size, Some(20.0))
                     }
                 }
                 assert!(
                     matches!(&parts[1], crate::modules::view::FormattedSegmentVisual::Text { style, .. }
-                    if style.size == Some(16.0))
+                    if style.size == Some(20.0))
                 );
                 let overridden = module
                     .formatted_segment_visuals(

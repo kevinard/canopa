@@ -124,7 +124,7 @@ async fn backend_wire_reload_discovery_and_restart_contract() {
         1
     );
     let accent: (f64, f64, f64) = read(&proxy, "accent-color").await.try_into().unwrap();
-    assert_eq!(accent, (137.0 / 255.0, 180.0 / 255.0, 250.0 / 255.0));
+    assert_eq!(accent, (176.0 / 255.0, 222.0 / 255.0, 195.0 / 255.0));
     for filter in [
         vec![],
         vec![""],

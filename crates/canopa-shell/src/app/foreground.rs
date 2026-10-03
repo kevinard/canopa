@@ -325,6 +325,18 @@ pub(super) struct Foreground {
 }
 
 impl Foreground {
+    pub(super) fn panel_return_to_bar(&self) -> bool {
+        self.active_panel_tree().is_some() && self.panel.return_to_bar()
+    }
+
+    pub(super) fn focused_panel_module(&self) -> Option<&crate::modules::ModuleId> {
+        self.panel.focused_module()
+    }
+
+    pub(super) fn focus_panel_module(&mut self, id: crate::modules::ModuleId) {
+        self.panel.focus_module(id);
+    }
+
     fn pending_apps(&self) -> Option<&super::panel_runtime::PendingPanelOpen> {
         match self.pending.as_ref()? {
             PendingOpening::InstalledApps(pending) => Some(pending),
@@ -549,6 +561,9 @@ impl Foreground {
             return false;
         }
         match (action, &tree.content) {
+            (PanelAction::OpenBarPanel | PanelAction::ToggleBarPanel, PanelContent::BarPanel) => {
+                true
+            }
             (PanelAction::OpenPanel | PanelAction::TogglePanel, PanelContent::ModulePanel(id)) => {
                 id == module
             }

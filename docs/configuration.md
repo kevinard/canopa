@@ -8,7 +8,7 @@ An empty or relative XDG value falls back to `$HOME/.config`.
 schema-version 1
 appearance {
     color-scheme "dark"
-    // accent "#89b4fa"
+    // accent "#b0dec3"
 }
 shell {
     bar "main" { edge "top"; }
@@ -25,8 +25,8 @@ and [notification options](../crates/canopa-notify/README.md). Unknown root node
 namespaces are errors.
 
 `appearance` is shared by both applications, including when `shell` or `notifications`
-is omitted. `color-scheme` accepts `"dark"` (default, Catppuccin Mocha) or `"light"`
-(a contrast-adjusted Latte preset). Optional `accent` accepts an opaque `"#rrggbb"`
+is omitted. `color-scheme` accepts `"dark"` (default, Canopa's warm charcoal and mint)
+or `"light"` (warm white and forest green). Optional `accent` accepts an opaque `"#rrggbb"`
 color; omit it to use the selected preset's accent. Each setting may appear once.
 Colors, font families/sizes, borders, corner radii and spacing can be configured in
 this block or in a reusable theme file. See [theme and UI customization](theme-customization.md)

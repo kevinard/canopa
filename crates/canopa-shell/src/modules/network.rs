@@ -225,6 +225,31 @@ impl crate::modules::data_source::ModuleDataSourceMapper for NetworkModule {
 }
 
 impl crate::modules::render::ModuleRender for NetworkModule {
+    fn has_bar_panel_content(&self, _: &crate::modules::ModuleState) -> bool {
+        true
+    }
+
+    fn render_bar_panel_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        _: &crate::config::Style,
+        context: crate::modules::render::PanelModuleContext,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let description = match state {
+            crate::modules::ModuleState::Network(network) => {
+                format!("{} · Manage connections", Self::default_label(network))
+            }
+            _ => "Status unavailable · Open Wi-Fi settings".to_owned(),
+        };
+        Some(crate::modules::view::panel_control(
+            "Wi-Fi",
+            description,
+            "›",
+            context.primary,
+            context.focused,
+        ))
+    }
+
     fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
         Some(self)
     }

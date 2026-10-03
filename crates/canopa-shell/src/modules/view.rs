@@ -430,6 +430,27 @@ pub(super) fn styled_segment_text<'a>(
     fallback_color: iced::Color,
     style: crate::config::ResolvedStyle,
 ) -> Element<'a, Message> {
+    // Embedded, monochrome shell marks use the same configured size/color as
+    // glyph icons. No filesystem lookup or extra module kind is needed.
+    let icon = match segment.as_str() {
+        "canopa:mark" => Some(include_bytes!("../../assets/canopa-mark.svg").as_slice()),
+        "canopa:overview" => Some(include_bytes!("../../assets/overview.svg").as_slice()),
+        "canopa:controls" => Some(include_bytes!("../../assets/controls.svg").as_slice()),
+        "canopa:lock" => Some(include_bytes!("../../assets/lock.svg").as_slice()),
+        "canopa:logout" => Some(include_bytes!("../../assets/logout.svg").as_slice()),
+        "canopa:reboot" => Some(include_bytes!("../../assets/reboot.svg").as_slice()),
+        "canopa:poweroff" => Some(include_bytes!("../../assets/poweroff.svg").as_slice()),
+        _ => None,
+    };
+    if let Some(bytes) = icon {
+        let size = style.size.unwrap_or(fallback_size as f32);
+        let color = style.color.unwrap_or(fallback_color);
+        return svg(svg::Handle::from_memory(bytes))
+            .width(size)
+            .height(size)
+            .style(move |_, _| svg::Style { color: Some(color) })
+            .into();
+    }
     let font = segment_font(&segment, style);
     crate::theme::text(segment)
         .size(style.size.unwrap_or(fallback_size as f32))
@@ -821,6 +842,39 @@ fn visual_segment_size(style: crate::config::ResolvedStyle, fallback_size: u32) 
     style.size.unwrap_or(fallback_size as f32).max(1.0)
 }
 
+/// A compact, full-width control within the host's Bar Panel card frame.
+pub(super) fn panel_control<'a>(
+    title: impl Into<String>,
+    description: impl Into<String>,
+    trailing: impl Into<String>,
+    on_press: Option<crate::app::Message>,
+    focused: bool,
+) -> iced::Element<'a, crate::app::Message> {
+    use iced::widget::{column, row};
+    crate::theme::action(
+        row![
+            column![
+                crate::theme::text(title.into()).size(16).font(iced::Font {
+                    weight: iced::font::Weight::Semibold,
+                    ..crate::theme::font()
+                }),
+                crate::theme::text(description.into()).style(canopa_ui::muted),
+            ]
+            .spacing(4)
+            .width(iced::Length::Fill),
+            crate::theme::text(trailing.into()).color(crate::theme::palette().accent),
+        ]
+        .spacing(12)
+        .align_y(iced::Alignment::Center),
+        on_press,
+        canopa_ui::Action::Quiet,
+        focused,
+    )
+    .padding([8, 6])
+    .width(iced::Length::Fill)
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::{ColorValue, Style, ThemeToken, Weight};
@@ -869,7 +923,7 @@ mod tests {
                     .iter()
                     .map(|(_, style)| style.size)
                     .collect::<Vec<_>>(),
-                vec![Some(16.0), Some(12.0), Some(12.0)]
+                vec![Some(20.0), Some(12.0), Some(12.0)]
             );
             assert_eq!(segments[2].0, "⚡ 75%");
 

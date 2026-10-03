@@ -554,6 +554,14 @@ fn parse_menu_action_operation(
             require_no_arguments(node, ctx)?;
             Ok(super::PanelAction::TogglePanel)
         }
+        "open-bar-panel" => {
+            require_no_arguments(node, ctx)?;
+            Ok(super::PanelAction::OpenBarPanel)
+        }
+        "toggle-bar-panel" => {
+            require_no_arguments(node, ctx)?;
+            Ok(super::PanelAction::ToggleBarPanel)
+        }
         "close-panel" => {
             require_no_arguments(node, ctx)?;
             Ok(super::PanelAction::ClosePanel)
@@ -565,7 +573,7 @@ fn parse_menu_action_operation(
             node,
             format!("unknown menu item operation {other:?}"),
             Some(
-                "expected `command`, `launch`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
+                "expected `command`, `launch`, `open-panel`, `toggle-panel`, `open-bar-panel`, `toggle-bar-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
                     .into(),
             ),
         )),

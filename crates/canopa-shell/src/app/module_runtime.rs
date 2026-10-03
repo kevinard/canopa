@@ -38,6 +38,12 @@ pub(super) struct ModuleDetailSizeRequest<'a> {
     pub state_override: Option<ModuleState>,
 }
 
+pub(super) struct BarPanelModuleRenderRequest<'a> {
+    pub detail: ModuleDetailRenderRequest<'a>,
+    pub window: iced::window::Id,
+    pub focused: bool,
+}
+
 pub(super) enum ModuleRuntimeIntent<'a> {
     ApplyDataSourceState(crate::modules::data_source::ModuleDataSourceState),
     MarkDataSourceUnavailable(crate::modules::data_source::ModuleDataSourceIdentity),
@@ -431,6 +437,65 @@ impl ModuleRuntime {
             return Some(element);
         }
         Some(module.render_panel_with_style(state, request.style))
+    }
+
+    pub(super) fn has_bar_panel_content(&self, id: &ModuleId, state: &ModuleState) -> bool {
+        self.get(id)
+            .is_some_and(|module| module.has_bar_panel_content(state))
+    }
+
+    pub(super) fn render_bar_panel_module<'a>(
+        &'a self,
+        request: BarPanelModuleRenderRequest<'a>,
+    ) -> Option<iced::Element<'a, super::Message>> {
+        let module = self.get(&request.detail.id)?;
+        let state = request
+            .detail
+            .state_override
+            .as_ref()
+            .or_else(|| self.states.get(&request.detail.id))
+            .unwrap_or(&ModuleState::Empty);
+        let profile = self.interaction_profile_for(&request.detail.id);
+        let message = |event| {
+            super::Message::Panel(super::messages::PanelEvent::ModuleInteraction {
+                window: request.window,
+                target: request.detail.id.clone(),
+                event,
+            })
+        };
+        let context = crate::modules::render::PanelModuleContext {
+            primary: (profile.primary_activation || profile.secondary_activation)
+                .then(|| module.bar_panel_activation(state, request.window))
+                .flatten()
+                .map(message),
+            scroll_up: profile
+                .scroll
+                .then(|| message(crate::modules::InteractionEvent::ScrollUp)),
+            scroll_down: profile
+                .scroll
+                .then(|| message(crate::modules::InteractionEvent::ScrollDown)),
+            focused: request.focused,
+        };
+        if let Some(element) =
+            module.render_bar_panel_with_style(state, request.detail.style, context)
+        {
+            return Some(element);
+        }
+        self.render_module_detail(request.detail)
+    }
+
+    pub(super) fn bar_panel_activation(
+        &self,
+        id: &ModuleId,
+        window: iced::window::Id,
+    ) -> Option<crate::modules::InteractionEvent> {
+        let profile = self.interaction_profile_for(id);
+        if !profile.primary_activation && !profile.secondary_activation {
+            return None;
+        }
+        let state = self.states.get(id).unwrap_or(&ModuleState::Empty);
+        self.get(id)
+            .and_then(|module| module.bar_panel_activation(state, window))
     }
 
     pub(super) fn module_detail_preferred_size(

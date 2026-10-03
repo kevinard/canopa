@@ -66,9 +66,12 @@ pub enum ColorRole {
     OnAccent,
     OnDanger,
     Focus,
+    Spine,
+    AccentSurface,
+    Brand,
 }
 impl ColorRole {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 17] = [
         Self::Background,
         Self::Surface,
         Self::Raised,
@@ -83,6 +86,9 @@ impl ColorRole {
         Self::OnAccent,
         Self::OnDanger,
         Self::Focus,
+        Self::Spine,
+        Self::AccentSurface,
+        Self::Brand,
     ];
     pub fn parse(name: &str) -> Option<Self> {
         Some(match name {
@@ -100,6 +106,9 @@ impl ColorRole {
             "on-accent" => Self::OnAccent,
             "on-danger" => Self::OnDanger,
             "focus" => Self::Focus,
+            "spine" => Self::Spine,
+            "accent-surface" => Self::AccentSurface,
+            "brand" => Self::Brand,
             _ => return None,
         })
     }
@@ -288,17 +297,17 @@ pub struct Typography {
 impl Default for Typography {
     fn default() -> Self {
         Self {
-            family: vec!["sans-serif".into()],
+            family: vec!["Inter".into(), "sans-serif".into()],
             body_size: Pixels::whole(14),
             label_size: Pixels::whole(12),
-            title_size: Pixels::whole(16),
+            title_size: Pixels::whole(20),
         }
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Customization {
-    pub palette: [Option<Rgb>; 14],
+    pub palette: [Option<Rgb>; ColorRole::ALL.len()],
     pub typography: Typography,
     pub ui: [UiStyle; 10],
 }
@@ -324,9 +333,32 @@ impl Appearance {
             ColorRole::Danger => p.danger,
             ColorRole::Warning => p.warning,
             ColorRole::Success => p.success,
-            ColorRole::OnAccent => p.accent.contrasting_text(),
+            ColorRole::OnAccent => {
+                if self.accent.is_some()
+                    || self.customization.palette[ColorRole::Accent as usize].is_some()
+                {
+                    p.accent.contrasting_text()
+                } else {
+                    match self.color_scheme {
+                        crate::ColorScheme::Dark => Rgb(0x18, 0x33, 0x2b),
+                        crate::ColorScheme::Light => Rgb(0xf4, 0xfa, 0xf3),
+                    }
+                }
+            }
             ColorRole::OnDanger => p.danger.contrasting_text(),
             ColorRole::Focus => p.accent,
+            ColorRole::Spine => match self.color_scheme {
+                crate::ColorScheme::Dark => Rgb(0x1b, 0x27, 0x2b),
+                crate::ColorScheme::Light => Rgb(0xf7, 0xf9, 0xf4),
+            },
+            ColorRole::AccentSurface => match self.color_scheme {
+                crate::ColorScheme::Dark => Rgb(0x30, 0x4b, 0x41),
+                crate::ColorScheme::Light => Rgb(0xe0, 0xee, 0xe1),
+            },
+            ColorRole::Brand => match self.color_scheme {
+                crate::ColorScheme::Dark => Rgb(0xb9, 0xb4, 0xdc),
+                crate::ColorScheme::Light => Rgb(0x71, 0x65, 0x9b),
+            },
         }
     }
     pub fn style(&self, kind: UiKind) -> ResolvedStyle {
@@ -335,14 +367,15 @@ impl Appearance {
         let transparent = ColorValue::Rgba(Rgb(0, 0, 0), 0);
         let (padding, radius, width, background, gap) = match kind {
             UiKind::Bar => (Insets::all(4), 0, 0, Role(Background), 4),
-            UiKind::Panel => (Insets::all(16), 8, 1, Role(Background), 8),
-            UiKind::Menu => (Insets::all(4), 4, 1, Role(Raised), 0),
-            UiKind::Tooltip => (Insets::axes(4, 8), 4, 1, Role(Raised), 0),
-            UiKind::Notification | UiKind::Card => (Insets::all(10), 8, 1, Role(Background), 8),
-            UiKind::Module => (Insets::all(2), 4, 0, transparent, 0),
-            UiKind::Button => (Insets::axes(4, 8), 6, 1, Role(Surface), 0),
-            UiKind::Input => (Insets::axes(8, 10), 6, 1, Role(Background), 0),
-            UiKind::MenuRow => (Insets::axes(8, 10), 6, 1, transparent, 0),
+            UiKind::Panel => (Insets::all(24), 24, 1, Role(Surface), 8),
+            UiKind::Menu => (Insets::all(8), 16, 1, Role(Surface), 4),
+            UiKind::Tooltip => (Insets::axes(8, 12), 12, 1, Role(Raised), 0),
+            UiKind::Notification => (Insets::all(16), 24, 1, Role(Surface), 8),
+            UiKind::Card => (Insets::all(16), 16, 1, Role(Raised), 8),
+            UiKind::Module => (Insets::all(2), 12, 0, transparent, 0),
+            UiKind::Button => (Insets::axes(8, 12), 12, 1, Role(Raised), 0),
+            UiKind::Input => (Insets::axes(10, 12), 12, 1, Role(Raised), 0),
+            UiKind::MenuRow => (Insets::axes(10, 12), 12, 0, transparent, 0),
         };
         ResolvedStyle {
             background,

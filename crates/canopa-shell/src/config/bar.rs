@@ -91,6 +91,7 @@ impl Default for PanelAnimationConfig {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PanelConfig {
+    pub title: Option<String>,
     pub ui: canopa_theme::UiStyle,
     pub presentation: PanelPresentation,
     pub drawer_mode: DrawerMode,

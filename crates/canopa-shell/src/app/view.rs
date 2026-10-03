@@ -98,27 +98,56 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
             model.title,
             model.drawer,
             model.ui,
+            model.return_to_bar,
         );
     }
 
-    let entries: Vec<Element<'_, Message>> = model
-        .entries
-        .into_iter()
-        .map(|entry| entry.element)
-        .collect();
-
-    panel_frame(
+    let mut entries = model.entries;
+    let footer_start = if matches!(
+        model.tree.content,
+        crate::surface::panel::PanelContent::BarPanel
+    ) {
+        entries
+            .iter()
+            .rposition(|entry| entry.kind != crate::modules::ModuleKind::Button)
+            .map_or(0, |index| index + 1)
+    } else {
+        entries.len()
+    };
+    let footer_entries = entries.split_off(footer_start);
+    let entries: Vec<Element<'_, Message>> =
+        entries.into_iter().map(|entry| entry.element).collect();
+    let mut content = column![
         scrollable(
             column(entries)
                 .spacing(model.ui.gap.px())
                 .padding(canopa_ui::padding(model.ui.padding)),
         )
         .height(Length::Fill)
-        .into(),
+    ]
+    .height(Length::Fill);
+    if !footer_entries.is_empty() {
+        let mut buttons = footer_entries.into_iter();
+        let mut footer = column![].spacing(model.ui.gap.px());
+        while let Some(first) = buttons.next() {
+            let mut pair = row![first.element].spacing(model.ui.gap.px());
+            if let Some(second) = buttons.next() {
+                pair = pair.push(second.element);
+            } else {
+                pair = pair.push(Space::new().width(Length::Fill));
+            }
+            footer = footer.push(pair);
+        }
+        content = content.push(footer.padding(canopa_ui::padding(model.ui.padding)));
+    }
+
+    panel_frame(
+        content.into(),
         text_color,
         model.title,
         model.drawer,
         model.ui,
+        false,
     )
 }
 
@@ -128,18 +157,33 @@ fn panel_frame<'a>(
     title: String,
     drawer: bool,
     ui: canopa_theme::ResolvedStyle,
+    back: bool,
 ) -> Element<'a, Message> {
+    let bottom_radius = if drawer && !ui.custom_radius {
+        0.0
+    } else {
+        ui.radius[2].px().max(ui.radius[3].px())
+    };
+    // Scrollbars and footer content must stay above the rounded lower corners.
+    let content = container(content)
+        .padding(iced::Padding {
+            bottom: bottom_radius,
+            ..Default::default()
+        })
+        .height(Length::Fill);
     let content = column![
-        container(crate::surface::panel::panel_header(title)).padding(iced::Padding {
-            top: if ui.custom_padding {
-                ui.padding.top.px()
-            } else {
-                12.0
-            },
-            bottom: 12.0,
-            left: ui.padding.left.px(),
-            right: ui.padding.right.px()
-        }),
+        container(crate::surface::panel::panel_header_with_back(title, back)).padding(
+            iced::Padding {
+                top: if ui.custom_padding {
+                    ui.padding.top.px()
+                } else {
+                    12.0
+                },
+                bottom: 12.0,
+                left: ui.padding.left.px(),
+                right: ui.padding.right.px()
+            }
+        ),
         content,
     ]
     .height(Length::Fill);
@@ -177,9 +221,16 @@ fn render_external_panel_model<'a>(
     title: String,
     drawer: bool,
     ui: canopa_theme::ResolvedStyle,
+    back: bool,
 ) -> Element<'a, Message> {
     if let Some(snapshot) = content.document.canopa() {
-        return super::canopa_panel::render(snapshot, &content.provider_name, drawer, ui);
+        return super::canopa_panel::render_with_back(
+            snapshot,
+            &content.provider_name,
+            drawer,
+            ui,
+            back,
+        );
     }
     let mut body = column![]
         .spacing(ui.gap.px())
@@ -291,6 +342,7 @@ fn render_external_panel_model<'a>(
         title,
         drawer,
         ui,
+        back,
     )
 }
 
@@ -644,6 +696,7 @@ fn render_panel_menu_model<'a>(
         model.title,
         model.drawer,
         model.ui,
+        false,
     )
 }
 

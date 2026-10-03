@@ -16,6 +16,8 @@ pub(super) struct PendingPanelOpen {
 #[derive(Debug, Clone, PartialEq)]
 struct ActivePanel {
     tree: crate::surface::panel::PanelTree,
+    return_to_bar: bool,
+    focused_module: Option<crate::modules::ModuleId>,
 }
 
 #[derive(Debug, Clone)]
@@ -303,7 +305,21 @@ impl PanelRuntime {
         self.search_focus_pending = false;
 
         let tree = request.tree();
-        self.active_panel = Some(ActivePanel { tree: tree.clone() });
+        let return_to_bar = self.active_panel.as_ref().is_some_and(|panel| {
+            matches!(
+                panel.tree.content,
+                crate::surface::panel::PanelContent::BarPanel
+            ) && matches!(
+                tree.content,
+                crate::surface::panel::PanelContent::ExternalProvider(_)
+            ) && panel.tree.origin_window == tree.origin_window
+                && panel.tree.origin == tree.origin
+        });
+        self.active_panel = Some(ActivePanel {
+            tree: tree.clone(),
+            return_to_bar,
+            focused_module: None,
+        });
 
         effects.push(PanelRuntimeEffect::PanelPrepared(tree));
         if matches!(
@@ -480,6 +496,24 @@ impl PanelRuntime {
         id: &crate::modules::ModuleId,
     ) -> Option<&crate::modules::ModuleDetailSession> {
         self.module_detail_sessions.get(id)
+    }
+
+    pub(super) fn return_to_bar(&self) -> bool {
+        self.active_panel
+            .as_ref()
+            .is_some_and(|panel| panel.return_to_bar)
+    }
+
+    pub(super) fn focused_module(&self) -> Option<&crate::modules::ModuleId> {
+        self.active_panel
+            .as_ref()
+            .and_then(|panel| panel.focused_module.as_ref())
+    }
+
+    pub(super) fn focus_module(&mut self, id: crate::modules::ModuleId) {
+        if let Some(panel) = &mut self.active_panel {
+            panel.focused_module = Some(id);
+        }
     }
 
     pub(super) fn module_detail_session_for_mut(
@@ -1226,6 +1260,85 @@ mod tests {
                 PanelRuntimeEffect::RequestPanelClose
             ]
         ));
+    }
+
+    #[test]
+    fn bundled_session_confirmations_default_to_cancel_and_emit_only_explicit_actions() {
+        use crate::config::{ActionTrigger, ConfiguredCommandSpec, PanelAction};
+        let (config, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
+        let lock = config
+            .modules
+            .iter()
+            .find(|module| module.name == "session-lock")
+            .unwrap();
+        assert_eq!(
+            lock.actions.action_for(&ActionTrigger::Click),
+            Some(&PanelAction::Launch(vec!["swaylock".into()]))
+        );
+        for (module, menu, program, arguments) in [
+            (
+                "session-logout",
+                "Log out?",
+                "niri",
+                vec!["msg", "action", "quit", "--skip-confirmation"],
+            ),
+            ("session-reboot", "Reboot?", "systemctl", vec!["reboot"]),
+            (
+                "session-poweroff",
+                "Power off?",
+                "systemctl",
+                vec!["poweroff"],
+            ),
+        ] {
+            let button = config
+                .modules
+                .iter()
+                .find(|item| item.name == module)
+                .unwrap();
+            assert_eq!(
+                button.actions.action_for(&ActionTrigger::Click),
+                Some(&PanelAction::OpenMenu(menu.into()))
+            );
+            let mut runtime = PanelRuntime::default();
+            runtime.handle(PanelRuntimeIntent::PrepareOpen {
+                request: open_request(
+                    wid(),
+                    crate::surface::panel::PanelContent::Menu(menu.into()),
+                ),
+                catalog: PanelMenuCatalog::new(&config.menus),
+                module_detail_sessions: HashMap::new(),
+            });
+            let snapshot = runtime.panel_menu_snapshot_for_test().unwrap();
+            assert_eq!(snapshot.focused_index, Some(0));
+            assert_eq!(snapshot.entries[0].label, "Cancel");
+            assert_eq!(
+                runtime.interact(PanelInteraction::Escape),
+                vec![PanelRuntimeEffect::RequestPanelClose]
+            );
+            assert_eq!(
+                runtime.activate(None),
+                vec![
+                    PanelRuntimeEffect::RunPanelAction(PanelAction::OpenBarPanel),
+                    PanelRuntimeEffect::RequestPanelClose,
+                ]
+            );
+            runtime.move_focus(1);
+            let effects = runtime.activate(None);
+            let [
+                PanelRuntimeEffect::RunPanelAction(PanelAction::Command(command)),
+                PanelRuntimeEffect::RequestPanelClose,
+            ] = effects.as_slice()
+            else {
+                panic!("explicit confirmation must emit one bounded command and close");
+            };
+            assert_eq!(
+                command.spec(),
+                &ConfiguredCommandSpec::Argv {
+                    program: program.into(),
+                    args: arguments.into_iter().map(String::from).collect(),
+                }
+            );
+        }
     }
 
     #[test]

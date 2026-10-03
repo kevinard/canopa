@@ -287,6 +287,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
     ctx.validate_child_schema(
         panel_children,
         &[
+            "title",
             "presentation",
             "ui",
             "drawer-mode",
@@ -300,6 +301,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
             "animation",
         ],
         &[
+            "title",
             "presentation",
             "ui",
             "drawer-mode",
@@ -365,6 +367,10 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
     };
 
     Ok(PanelConfig {
+        title: fields::field(panel_children, ctx, "title")
+            .optional()
+            .nonempty_string()
+            .transpose()?,
         ui: super::parse_ui(panel_children, ctx, canopa_theme::UiKind::Panel)?,
         presentation,
         drawer_mode,

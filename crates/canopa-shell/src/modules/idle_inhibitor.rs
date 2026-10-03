@@ -151,6 +151,38 @@ impl IconLabel for IdleInhibitorModule {
 }
 
 impl ModuleRender for IdleInhibitorModule {
+    fn bar_panel_activation(
+        &self,
+        state: &ModuleState,
+        _: iced::window::Id,
+    ) -> Option<InteractionEvent> {
+        (status(state) != IdleInhibitorState::Pending).then_some(InteractionEvent::Clicked)
+    }
+    fn render_bar_panel_with_style(
+        &self,
+        state: &ModuleState,
+        _: &Style,
+        context: super::render::PanelModuleContext,
+    ) -> Option<iced::Element<'_, Message>> {
+        let state = status(state);
+        Some(super::view::panel_control(
+            "Keep awake",
+            match state {
+                IdleInhibitorState::Active => "Prevent automatic screen idle",
+                IdleInhibitorState::Inactive => "Allow automatic screen idle",
+                IdleInhibitorState::Pending => "Updating…",
+                IdleInhibitorState::Unavailable => "Unavailable on this compositor",
+            },
+            if state == IdleInhibitorState::Unavailable {
+                "Retry"
+            } else {
+                state.value()
+            },
+            context.primary,
+            context.focused,
+        ))
+    }
+
     fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
         Some(self)
     }

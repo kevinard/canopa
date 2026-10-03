@@ -83,28 +83,27 @@ impl Appearance {
     pub fn palette(&self) -> Palette {
         let mut palette = match self.color_scheme {
             ColorScheme::Dark => Palette {
-                background: Rgb(0x1e, 0x1e, 0x2e),
-                surface: Rgb(0x31, 0x32, 0x44),
-                raised: Rgb(0x45, 0x47, 0x5a),
-                text: Rgb(0xcd, 0xd6, 0xf4),
-                muted: Rgb(0xa6, 0xad, 0xc8),
-                disabled: Rgb(0x6c, 0x70, 0x86),
-                border: Rgb(0x58, 0x5b, 0x70),
-                accent: Rgb(0x89, 0xb4, 0xfa),
+                background: Rgb(0x10, 0x19, 0x1d),
+                surface: Rgb(0x20, 0x2d, 0x31),
+                raised: Rgb(0x2b, 0x3b, 0x3f),
+                text: Rgb(0xed, 0xf4, 0xf0),
+                muted: Rgb(0xa7, 0xba, 0xb6),
+                disabled: Rgb(0x77, 0x8c, 0x88),
+                border: Rgb(0x58, 0x70, 0x69),
+                accent: Rgb(0xb0, 0xde, 0xc3),
                 danger: Rgb(0xf3, 0x8b, 0xa8),
                 warning: Rgb(0xf9, 0xe2, 0xaf),
                 success: Rgb(0xa6, 0xe3, 0xa1),
             },
-            // Catppuccin Latte with darker status colors and subdued text for contrast.
             ColorScheme::Light => Palette {
-                background: Rgb(0xef, 0xf1, 0xf5),
-                surface: Rgb(0xe6, 0xe9, 0xef),
-                raised: Rgb(0xdc, 0xe0, 0xe8),
-                text: Rgb(0x4c, 0x4f, 0x69),
-                muted: Rgb(0x5c, 0x5f, 0x77),
-                disabled: Rgb(0x8c, 0x8f, 0xa1),
-                border: Rgb(0x9c, 0xa0, 0xb0),
-                accent: Rgb(0x1e, 0x5c, 0xd5),
+                background: Rgb(0xe3, 0xea, 0xe6),
+                surface: Rgb(0xfb, 0xfc, 0xf8),
+                raised: Rgb(0xe7, 0xed, 0xe7),
+                text: Rgb(0x20, 0x34, 0x2c),
+                muted: Rgb(0x52, 0x67, 0x5e),
+                disabled: Rgb(0x78, 0x89, 0x80),
+                border: Rgb(0x88, 0x9b, 0x90),
+                accent: Rgb(0x25, 0x69, 0x48),
                 danger: Rgb(0xb0, 0x18, 0x43),
                 warning: Rgb(0x85, 0x59, 0x00),
                 success: Rgb(0x32, 0x6a, 0x1f),
@@ -139,11 +138,11 @@ impl Appearance {
 pub mod metrics {
     pub const BODY: f32 = 14.0;
     pub const LABEL: f32 = 12.0;
-    pub const TITLE: f32 = 16.0;
+    pub const TITLE: f32 = 20.0;
     pub const GAP: f32 = 8.0;
-    pub const PADDING: f32 = 10.0;
-    pub const CONTROL_RADIUS: f32 = 6.0;
-    pub const SURFACE_RADIUS: f32 = 8.0;
+    pub const PADDING: f32 = 16.0;
+    pub const CONTROL_RADIUS: f32 = 12.0;
+    pub const SURFACE_RADIUS: f32 = 24.0;
 }
 
 #[cfg(test)]
@@ -182,6 +181,41 @@ mod tests {
         }
         for fill in [Rgb(255, 255, 255), Rgb(0, 0, 0), Rgb(127, 127, 127)] {
             assert!(fill.contrast(fill.contrasting_text()) >= 4.5);
+        }
+    }
+
+    #[test]
+    fn composed_canopa_surfaces_and_selected_controls_have_readable_contrast() {
+        for color_scheme in [ColorScheme::Dark, ColorScheme::Light] {
+            let appearance = Appearance {
+                color_scheme,
+                ..Default::default()
+            };
+            for background in [
+                appearance.role(ColorRole::Spine),
+                appearance.role(ColorRole::AccentSurface),
+                appearance.palette().raised,
+                appearance.palette().surface,
+            ] {
+                for foreground in [appearance.palette().text, appearance.palette().muted] {
+                    assert!(foreground.contrast(background) >= 4.5);
+                }
+                assert!(appearance.role(ColorRole::Focus).contrast(background) >= 3.0);
+            }
+            assert!(
+                appearance
+                    .role(ColorRole::OnAccent)
+                    .contrast(appearance.palette().accent)
+                    >= 4.5
+            );
+        }
+        // A user's accent still gets a readable foreground unless they override it.
+        for accent in [Rgb(255, 255, 255), Rgb(0, 0, 0), Rgb(120, 120, 120)] {
+            let appearance = Appearance {
+                accent: Some(accent),
+                ..Default::default()
+            };
+            assert!(appearance.role(ColorRole::OnAccent).contrast(accent) >= 4.5);
         }
     }
 }

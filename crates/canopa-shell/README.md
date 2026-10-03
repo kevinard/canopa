@@ -36,16 +36,40 @@ examples in [config/default.kdl](config/default.kdl), [docs](../../docs/shell/) 
 The adjacent shared `appearance` block controls the dark/light palette and accent
 for the shell, Notification Center, and Notify banners.
 
+The bundled left bar is Canopa's spine: a 64-pixel rounded frame, 12-pixel outer
+spacing and a stable 88-pixel reservation. Launcher and native overview are at the
+top, local workspaces in the middle, and notifications, controls and time below.
+Existing custom bar layouts retain their placement. Inspect the bundled layout
+with `target/debug/canopa-shell --canopa-config examples/canopa-desktop.kdl`; the
+example selects the shared Canopa palette, with `"light"` available as a companion.
+The controls button uses `toggle-bar-panel` to open that bar's configured modules;
+`open-panel` and `toggle-panel` on a module still open its own details.
+Quick settings contains Wi-Fi and Sound cards that open the existing providers,
+volume down/up controls, Do Not Disturb and Keep awake. Wi-Fi and Sound remain
+reachable when status is unavailable; disconnected toggles show their availability.
+Provider Back returns to Quick settings on the same output. Tab/Shift+Tab select
+cards and Enter activates them. Battery and media appear when they have content;
+Calendar opens separately from the clock.
+Lock, Log out, Reboot and Power off occupy a two-column footer. Lock launches
+`swaylock` with session ownership. The other buttons open confirmation menus with
+Cancel selected first; Cancel returns to Quick settings. Log out asks Niri to quit,
+and Reboot/Power off use `systemctl` without force options. These ordinary button
+actions and menus can be rebound in the configuration.
+
 ### Bar text and icons
 
-Bars use compact defaults of 12 logical pixels for status text and 16 for focused-window
-titles and icons, including workspace icons, tray images, and focused-window
-application icons. Each role keeps its size on every edge, including rotated titles.
+Bars use defaults of 12 logical pixels for status text and 20 for icons, including
+workspace icons, tray images and focused-window application icons. Each role
+keeps its size on every edge, including rotated titles.
 The compositor's output scale applies to all three.
 
 Standalone Nerd Font glyphs use `Symbols Nerd Font Mono` when installed, avoiding
 the compressed icon shapes in patched coding fonts. Normal text keeps its default
 font, and systems without the symbols font keep normal glyph fallback.
+
+Unrotated icon segments also accept `canopa:mark`, `canopa:overview`,
+`canopa:controls`, `canopa:lock`, `canopa:logout`, `canopa:reboot`, and
+`canopa:poweroff`: embedded monochrome SVGs following the configured size/color.
 
 In bar formats, a standalone `"{icon}"` segment uses the icon size; other segments
 use the text size. Write `format "{icon}" "{value}"` to keep those roles distinct.
@@ -82,7 +106,8 @@ Closing ends interaction immediately; the remaining exit image cannot receive in
 
 ### Vertical side drawer
 
-The shipped left bar opens panels in a full-height, 360-logical-pixel side drawer.
+The shipped left bar opens panels in a full-height, 392-logical-pixel side drawer,
+with rounded corners and 12-pixel vertical frame margins.
 Clicking another module replaces its contents in the same position; clicking the
 same module again, pressing Escape, or using Close dismisses it. The drawer overlays
 the desktop without resizing tiled windows. Each panel shows its own content;

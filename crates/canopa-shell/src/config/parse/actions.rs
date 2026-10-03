@@ -96,6 +96,14 @@ fn parse_panel_action(
             require_no_arguments(operation, &operation_ctx)?;
             Ok(PanelAction::TogglePanel)
         }
+        "open-bar-panel" => {
+            require_no_arguments(operation, &operation_ctx)?;
+            Ok(PanelAction::OpenBarPanel)
+        }
+        "toggle-bar-panel" => {
+            require_no_arguments(operation, &operation_ctx)?;
+            Ok(PanelAction::ToggleBarPanel)
+        }
         "close-panel" => {
             require_no_arguments(operation, &operation_ctx)?;
             Ok(PanelAction::ClosePanel)
@@ -111,7 +119,7 @@ fn parse_panel_action(
             operation,
             format!("unknown action operation {other:?}"),
             Some(
-                "expected `command`, `launch`, `open-panel`, `toggle-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
+                "expected `command`, `launch`, `open-panel`, `toggle-panel`, `open-bar-panel`, `toggle-bar-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
                     .into(),
             ),
         )),

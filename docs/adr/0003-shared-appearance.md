@@ -2,6 +2,10 @@
 
 Status: accepted for integration phase 4 (2026-09-26).
 
+The initial preset colors and dimensions below are superseded by
+[Canopa's visual direction](0014-canopa-visual-direction.md). Appearance ownership
+and consumer independence remain in place.
+
 The startup-only shell appearance installation below is superseded by
 [Shell ADR 0021](../shell/adr/0021-live-configuration-reload.md).
 

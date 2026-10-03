@@ -313,6 +313,11 @@ pub enum PanelEvent {
     },
     Activate,
     ActivateIndex(usize),
+    ModuleInteraction {
+        window: iced::window::Id,
+        target: ModuleId,
+        event: crate::modules::InteractionEvent,
+    },
     Back,
 }
 
@@ -338,6 +343,7 @@ impl PanelEvent {
             PanelEvent::FocusSearchInput { .. } => "Panel::FocusSearchInput",
             PanelEvent::Activate => "Panel::Activate",
             PanelEvent::ActivateIndex(_) => "Panel::ActivateIndex",
+            PanelEvent::ModuleInteraction { .. } => "Panel::ModuleInteraction",
             PanelEvent::Back => "Panel::Back",
         }
     }

@@ -176,7 +176,8 @@ def run(args):
             if node is None:
                 return False
             rect = node.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
-            return rect.width == 480 and rect.height == output_height - 44
+            # The 448px reading body plus the shared 24px padding on each side.
+            return rect.width == 496 and rect.height == output_height - 44
         eventually(lambda: center_geometry('Notifications', center), 'wide, full-height Center')
         assert find('Delivery', center) is None, 'delivery rules crowd the reading view'
         settings = eventually(lambda: find('Settings', center), 'Center settings navigation')
@@ -247,8 +248,8 @@ def run(args):
         focus = eventually(focus_after_update, 'keyboard focus in Center accessibility tree')
         subprocess.check_call(
             ['grim', '-o', 'HEADLESS-1', str(root / 'desktop.png')], env={**env, 'WAYLAND_DISPLAY': str(outer)})
-        initial = (30, 30, 46) if args.color_scheme == 'dark' else (239, 241, 245)
-        changed = (239, 241, 245) if args.color_scheme == 'dark' else (30, 30, 46)
+        initial = (32, 45, 49) if args.color_scheme == 'dark' else (251, 252, 248)
+        changed = (251, 252, 248) if args.color_scheme == 'dark' else (32, 45, 49)
         def palette_visible(path, left, right):
             frame = Image.open(path).convert('RGB')
             halves = [frame.crop((0, 0, frame.width // 2, frame.height)),
@@ -362,7 +363,7 @@ def run(args):
         (root / 'result.json').write_text(json.dumps({'passed': True, 'sender_actions': seen,
             'built_in_notifications': True, 'dnd_control': True,
             'center_settings_navigation': True, 'center_reading_hierarchy': True,
-            'center_full_height': True, 'center_width': 480, 'center_overflow': True,
+            'center_full_height': True, 'center_width': 496, 'center_overflow': True,
             'center_source_icon': True, 'center_source_accessibility': True,
             'center_settings_icon': True, 'center_chronological_order': True,
             'shell_restart': True, 'daemon_restart': True, 'retained_attention': 2,

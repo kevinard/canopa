@@ -73,7 +73,7 @@ modules {{
             "left": [(10, 400), (reserved - 10, 400)],
             "right": [(1270, 400), (1290 - reserved, 400)],
         }[edge]
-        return all(frame.getpixel(point) == (30, 30, 46) for point in points)
+        return all(frame.getpixel(point) == (16, 25, 29) for point in points)
     session.wait_for(bars_visible, "both bar frames")
     results = []
     for index, environment in enumerate(bars):

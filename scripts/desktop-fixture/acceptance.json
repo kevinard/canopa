@@ -1,5 +1,9 @@
 {
   "scenarios": [
+    {"id": "shell-appearance-dark", "script": "verify-shell-appearance.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scheme", "dark"]},
+    {"id": "shell-appearance-light", "script": "verify-shell-appearance.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scheme", "light", "--scale", "1.5"]},
+    {"id": "quick-settings-dark", "script": "verify-shell-appearance.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scheme", "dark", "--controls", "--session-actions"]},
+    {"id": "quick-settings-light", "script": "verify-shell-appearance.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scheme", "light", "--scale", "1.5", "--controls", "--session-actions"]},
     {"id": "theme-customization", "script": "verify-theme-customization.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25"]},
     {"id": "configuration-reload", "script": "verify-configuration-reload.py", "args": ["--binary", "{shell}", "--output", "{artifacts}"]},
     {"id": "desktop-dark", "script": "test-desktop.py", "args": ["--notify", "{notify}", "--shell", "{shell}", "--artifacts", "{artifacts}", "--color-scheme", "dark"]},

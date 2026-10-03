@@ -5,7 +5,36 @@ pub struct BarRenderContext<'a> {
     pub edge: &'a crate::config::Edge,
 }
 
+/// App-resolved interactions for a Module displayed inside a Bar Panel.
+pub struct PanelModuleContext {
+    pub primary: Option<crate::app::Message>,
+    pub scroll_up: Option<crate::app::Message>,
+    pub scroll_down: Option<crate::app::Message>,
+    pub focused: bool,
+}
+
 pub trait ModuleRender: Send + Sync {
+    fn bar_panel_activation(
+        &self,
+        _state: &ModuleState,
+        _window: iced::window::Id,
+    ) -> Option<super::InteractionEvent> {
+        Some(super::InteractionEvent::Clicked)
+    }
+
+    fn has_bar_panel_content(&self, state: &ModuleState) -> bool {
+        self.has_content(state, crate::config::FormatMode::Expanded)
+    }
+
+    /// Modules may offer compact controls while keeping their full detail view.
+    fn render_bar_panel_with_style(
+        &self,
+        _state: &ModuleState,
+        _style: &crate::config::Style,
+        _context: PanelModuleContext,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        None
+    }
     /// Ordinary modules supply values and optional fallback/decorations. This
     /// boundary owns format layout, style defaults and edge-specific rotation.
     fn presentation(&self) -> Option<&dyn super::view::IconLabel> {

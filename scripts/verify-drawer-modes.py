@@ -78,7 +78,7 @@ modules {{ module "button" {{ label "Open"; icon "B"; actions {{ click {{ toggle
             def bars_ready():
                 frame = capture(f"{case}-ready.png")
                 x = round(24 * scale) if edge == "left" else frame.width - round(24 * scale)
-                return frame.getpixel((x, round(300 * scale))) == (30, 30, 46)
+                return frame.getpixel((x, round(300 * scale))) == (16, 25, 29)
             session.wait_for(bars_ready, "bar frame")
             before = capture(f"{case}-closed.png")
             client_layout = layout()

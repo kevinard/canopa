@@ -166,6 +166,14 @@ where
             - 56.0)
             .max(1.0)
             .ceil() as u32;
+        // A side bar reports the usable output height. Apply the padding
+        // adjustment before bounding provider popovers to that span.
+        if !input.bar.edge.is_horizontal()
+            && input.tree.screen_size.1 > 0
+            && matches!(input.tree.content, PanelContent::ExternalProvider(_))
+        {
+            *height = (*height).min(input.tree.screen_size.1);
+        }
     }
     let fill_width = hint.fill_edge_span && input.bar.edge.is_horizontal();
     let fill_height = hint.fill_height || (hint.fill_edge_span && !input.bar.edge.is_horizontal());
@@ -477,8 +485,8 @@ mod tests {
         let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
 
         assert_eq!(plan.width, PlannedDimension::Fill { span: 1920 });
-        assert_eq!(plan.height, PlannedDimension::Exact(56 + 38 + 32));
-        assert_eq!(plan.layer_size(), (0, 126));
+        assert_eq!(plan.height, PlannedDimension::Exact(56 + 39 + 48));
+        assert_eq!(plan.layer_size(), (0, 143));
     }
 
     #[test]
@@ -491,9 +499,9 @@ mod tests {
 
         let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
 
-        assert_eq!(plan.width, PlannedDimension::Exact(240));
+        assert_eq!(plan.width, PlannedDimension::Exact(256));
         assert_eq!(plan.height, PlannedDimension::Fill { span: 1080 });
-        assert_eq!(plan.layer_size(), (240, 0));
+        assert_eq!(plan.layer_size(), (256, 0));
     }
 
     #[test]
@@ -508,8 +516,8 @@ mod tests {
         let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
 
         assert_eq!(plan.width, PlannedDimension::Exact(500));
-        assert_eq!(plan.height, PlannedDimension::Exact(126));
-        assert_eq!(plan.layer_size(), (500, 126));
+        assert_eq!(plan.height, PlannedDimension::Exact(143));
+        assert_eq!(plan.layer_size(), (500, 143));
     }
 
     #[test]
@@ -524,7 +532,7 @@ mod tests {
         let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
 
         assert_eq!(plan.width, PlannedDimension::Exact(800));
-        assert_eq!(plan.layer_size(), (800, 126));
+        assert_eq!(plan.layer_size(), (800, 143));
     }
 
     #[test]
@@ -540,8 +548,8 @@ mod tests {
             })
         });
 
-        assert_eq!(plan.width, PlannedDimension::Exact(332));
-        assert_eq!(plan.height, PlannedDimension::Exact(348));
+        assert_eq!(plan.width, PlannedDimension::Exact(348));
+        assert_eq!(plan.height, PlannedDimension::Exact(364));
     }
 
     #[test]
@@ -565,7 +573,7 @@ mod tests {
                     screen_size,
                 );
                 let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
-                assert_eq!(plan.layer_size(), (360, 600));
+                assert_eq!(plan.layer_size(), (376, 616));
             }
         }
     }
@@ -600,7 +608,7 @@ mod tests {
                     iced::Size::new(48.0, 30.0),
                 ));
                 let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
-                assert_eq!(plan.layer_size(), (480, 0));
+                assert_eq!(plan.layer_size(), (496, 0));
                 if !edge.is_horizontal() {
                     assert_eq!(plan.placement.position.y, 0);
                 }
@@ -634,24 +642,24 @@ mod tests {
             iced::Size::new(48.0, 30.0),
         ));
         let plan = plan_with(&bar, &tree, &[], empty_menu(), |_| None);
-        assert_eq!(plan.layer_size(), (360, 480));
+        assert_eq!(plan.layer_size(), (376, 480));
         assert_eq!(plan.placement.position.y, 0);
         bar.panel.max_height = Some(400);
         assert_eq!(
             plan_with(&bar, &tree, &[], empty_menu(), |_| None).layer_size(),
-            (360, 400)
+            (376, 400)
         );
         bar.panel.height = Some(300);
         assert_eq!(
             plan_with(&bar, &tree, &[], empty_menu(), |_| None).layer_size(),
-            (360, 300)
+            (376, 300)
         );
         bar.panel.height = None;
         bar.panel.max_height = None;
         tree.screen_size = (0, 0);
         assert_eq!(
             plan_with(&bar, &tree, &[], empty_menu(), |_| None).layer_size(),
-            (360, 600)
+            (376, 616)
         );
     }
 
@@ -688,7 +696,7 @@ mod tests {
                             height: 120,
                         })
                     });
-                    assert_eq!(plan.layer_size(), (360, 0));
+                    assert_eq!(plan.layer_size(), (376, 0));
                     assert_eq!(plan.height, PlannedDimension::Fill { span: 1080 });
                     assert_eq!(plan.placement.position.y, 0);
                     assert_eq!(
@@ -696,7 +704,7 @@ mod tests {
                         if matches!(bar.edge, Edge::Left) {
                             48
                         } else {
-                            1512
+                            1496
                         }
                     );
                 }
@@ -757,7 +765,7 @@ mod tests {
                     height: 260,
                 })
             });
-            assert_eq!(plan.layer_size(), (332, 348));
+            assert_eq!(plan.layer_size(), (348, 364));
         }
     }
 
@@ -802,7 +810,7 @@ mod tests {
         assert_eq!(plan.width, PlannedDimension::Fill { span: 1920 });
         assert_eq!(
             plan.height,
-            PlannedDimension::Exact(20 + 16 + 30 + 16 + 8 + 32 + 56)
+            PlannedDimension::Exact(20 + 16 + 30 + 16 + 8 + 48 + 56)
         );
     }
 
@@ -838,6 +846,6 @@ mod tests {
         let preferred = panel_menu_preferred_size(&menu, 45.0);
 
         assert_eq!(preferred.width, 240);
-        assert_eq!(preferred.height, 56 + 38 + 32 + 45 * 2);
+        assert_eq!(preferred.height, 56 + 39 + 32 + 45 * 2);
     }
 }
