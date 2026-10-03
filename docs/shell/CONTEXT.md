@@ -164,6 +164,9 @@ mute and default-device selection. It shares PulseAudio connection mechanics wit
 the volume **Module**, while its controls and observation end with its **Panel**.
 _Avoid_: Audio daemon, mixer when referring to application streams
 
+The bar's default-output observer sleeps until state changes or cancellation.
+See [ADR 0022](adr/0022-event-driven-volume-observation.md).
+
 **Audio Device**:
 A PulseAudio output sink or non-monitor input source, identified by its live
 connection generation, server cookie, kind, index and name.

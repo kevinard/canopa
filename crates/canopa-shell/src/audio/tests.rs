@@ -783,6 +783,51 @@ async fn pulse_protocol_controls_and_tracks_default_sink_removal_and_reappearanc
 }
 
 #[tokio::test]
+async fn idle_volume_observer_sleeps_until_disconnect_or_cancellation() {
+    let server = AudioServer::new().await;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (thread_tx, thread_rx) = tokio::sync::oneshot::channel();
+    let address = server.server.clone();
+    let observer = std::thread::spawn(move || {
+        let task = std::fs::read_link("/proc/thread-self").unwrap();
+        thread_tx
+            .send(std::path::Path::new("/proc").join(task).join("status"))
+            .unwrap();
+        run_pa_thread_on(Some(&address), tx);
+    });
+    let status = thread_rx.await.unwrap();
+    expect(&mut rx, None).await;
+    // Let the initial subscription callbacks settle before observing a stable server.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let switches = || {
+        std::fs::read_to_string(&status)
+            .unwrap()
+            .lines()
+            .find_map(|line| line.strip_prefix("voluntary_ctxt_switches:"))
+            .unwrap()
+            .trim()
+            .parse::<u64>()
+            .unwrap()
+    };
+    let before = switches();
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(
+        switches() - before <= 2,
+        "an idle volume observer must wait for events instead of periodically polling"
+    );
+    // Cancellation must wake the observer even when the audio server stays ready.
+    drop(rx);
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        tokio::task::spawn_blocking(move || observer.join()),
+    )
+    .await
+    .expect("dropping the volume receiver did not wake the observer")
+    .unwrap()
+    .unwrap();
+}
+
+#[tokio::test]
 async fn audio_slider_sets_exact_output_and_input_levels_without_unmuting() {
     let server = AudioServer::new().await;
     server

@@ -7,8 +7,9 @@ bindings into the artifact directory; generated code is not checked in.
 
 The Python fixture creates one shared Canopa configuration, checks banner and Center
 native actions, sends Tab/Escape through `wtype`, and checks both consumers' palette
-pixels. A Notify reload switches the visible banner palette while the shell keeps
-its startup palette. Run `--color-scheme dark` and `--color-scheme light --scale 1.25`
+pixels. Reloading the shared configuration switches both palettes; the fixture
+reopens the Center after Shell retires its foreground panel during reload.
+Run `--color-scheme dark` and `--color-scheme light --scale 1.25`
 with separate new artifact directories. Screenshots and `result.json` are retained.
 
 `wlr-virtual-pointer-unstable-v1.xml` is copied without modification from

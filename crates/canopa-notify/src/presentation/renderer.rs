@@ -21,6 +21,8 @@ mod accessibility;
 mod accessibility_bounds;
 mod display;
 mod images;
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+mod memory;
 mod revision;
 mod surface;
 
@@ -240,6 +242,7 @@ struct BannerUiState {
     renderer_state: tokio::sync::watch::Sender<BannerRendererState>,
     accessibility_enabled: bool,
     accessibility: Option<(iced::window::Id, u64, accessibility::BannerAccessibility)>,
+    idle_reclamation: Option<(iced::window::Id, iced::task::Handle)>,
 }
 
 #[derive(Clone, Debug)]
@@ -260,6 +263,10 @@ enum BannerUiMessage {
     },
     WindowClosed(iced::window::Id),
     WindowTimedOut(iced::window::Id),
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    ReclaimIdleMemory(iced::window::Id),
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    IdleMemoryReclaimed,
     OpenSurface(iced::window::Id),
     Shutdown,
     Runtime(BannerRuntimeInput),
@@ -486,6 +493,7 @@ fn run_banner_ui(
                 renderer_state: renderer_state.clone(),
                 accessibility_enabled: true,
                 accessibility: None,
+                idle_reclamation: None,
             };
             let window = state.surface.window().unwrap();
             let task = open_banner_surface(&mut state.surface, window);
@@ -532,7 +540,24 @@ fn banner_ui_update(
 ) -> iced::Task<BannerUiMessage> {
     let task = match message {
         BannerUiMessage::OutputsChanged => iced::Task::none(),
-        BannerUiMessage::Shutdown => iced::exit(),
+        BannerUiMessage::Shutdown => {
+            state.idle_reclamation = None;
+            iced::exit()
+        }
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        BannerUiMessage::ReclaimIdleMemory(retired_window) => {
+            if state.surface.is_idle()
+                && state
+                    .idle_reclamation
+                    .as_ref()
+                    .is_some_and(|(id, _)| *id == retired_window)
+            {
+                state.idle_reclamation = None;
+                memory::reclaim()
+            } else {
+                iced::Task::none()
+            }
+        }
         BannerUiMessage::WindowFrame(window) => {
             let effects = state
                 .surface
@@ -797,6 +822,7 @@ fn apply_surface_effects(
 ) -> iced::Task<BannerUiMessage> {
     iced::Task::batch(effects.into_iter().map(|effect| match effect {
         surface::Effect::Open(window) => {
+            state.idle_reclamation = None;
             *state.input_region.lock().unwrap() = None;
             open_banner_surface(&mut state.surface, window)
         }
@@ -816,13 +842,36 @@ fn apply_surface_effects(
             iced::Task::none()
         }
         surface::Effect::Stop => {
+            state.idle_reclamation = None;
             *state.input_region.lock().unwrap() = None;
             state
                 .renderer_state
                 .send_replace(BannerRendererState::Stopped);
             iced::exit()
         }
+        surface::Effect::Idle(window) => schedule_idle_reclamation(state, window),
     }))
+}
+
+fn schedule_idle_reclamation(
+    state: &mut BannerUiState,
+    window: iced::window::Id,
+) -> iced::Task<BannerUiMessage> {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // Construct the timer inside the daemon runtime, as with surface deadlines.
+        let delay = tokio::time::sleep(std::time::Duration::from_secs(2));
+        let (task, handle) =
+            iced::Task::perform(delay, move |_| BannerUiMessage::ReclaimIdleMemory(window))
+                .abortable();
+        state.idle_reclamation = Some((window, handle.abort_on_drop()));
+        task
+    }
+    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+    {
+        let _ = (state, window);
+        iced::Task::none()
+    }
 }
 
 fn acknowledge_banner_frame(
@@ -1180,6 +1229,7 @@ mod tests {
             renderer_state: tokio::sync::watch::channel(BannerRendererState::Starting).0,
             accessibility_enabled: false,
             accessibility: None,
+            idle_reclamation: None,
         }
     }
 

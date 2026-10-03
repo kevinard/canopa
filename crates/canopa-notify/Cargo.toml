@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 default = ["gui", "audio"]
-gui = ["dep:canopa-assets", "dep:canopa-ui", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:wayland-client", "dep:wayland-protocols"]
+gui = ["dep:canopa-assets", "dep:canopa-ui", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:libc", "dep:wayland-client", "dep:wayland-protocols"]
 audio = ["dep:rodio"]
 
 [dependencies]
@@ -32,6 +32,7 @@ iced = { workspace = true, optional = true, features = ["tiny-skia"] }
 iced_layershell = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 kdl.workspace = true
+libc = { workspace = true, optional = true }
 rodio = { workspace = true, optional = true }
 rustix.workspace = true
 tempfile.workspace = true

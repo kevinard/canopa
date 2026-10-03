@@ -1,0 +1,264 @@
+{
+  "standard_checks": [
+    {
+      "command": "CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0 bash scripts/check.sh",
+      "exit_code": 0,
+      "log_sha256": "a3b306be87b13eb0d17352e2c091ff75e193c057585ff70b504ca2acd6d66ecf",
+      "rust_test_suites": 64,
+      "rust_test_counts": {
+        "passed": 1857,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "command": "CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash scripts/check.sh --core",
+      "exit_code": 0,
+      "log_sha256": "02088cb6813fc3e01a0bde6117b6bae59b97878dc266d118da941cba263ea323",
+      "rust_test_suites": 58,
+      "rust_test_counts": {
+        "passed": 456,
+        "failed": 0,
+        "ignored": 0
+      }
+    }
+  ],
+  "native_acceptance": {
+    "initial_attempt": {
+      "manifest": "/home/kevinard/projects/canopa/scripts/desktop-fixture/acceptance.json",
+      "selected": [
+        "quick-settings-dark",
+        "desktop-dark",
+        "desktop-light",
+        "fork-lifetimes",
+        "content-rotation"
+      ],
+      "results": [
+        {
+          "id": "quick-settings-dark",
+          "command": [
+            "/usr/bin/python3",
+            "/home/kevinard/projects/canopa/scripts/verify-shell-appearance.py",
+            "--binary",
+            "/home/kevinard/projects/canopa/target/release/canopa-shell",
+            "--output",
+            "/tmp/canopa-performance-desktop-final/quick-settings-dark",
+            "--scheme",
+            "dark",
+            "--controls",
+            "--session-actions"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 67.38021403800667
+        },
+        {
+          "id": "desktop-dark",
+          "command": [
+            "/usr/bin/python3",
+            "/home/kevinard/projects/canopa/scripts/test-desktop.py",
+            "--notify",
+            "/home/kevinard/projects/canopa/target/release/canopa-notify",
+            "--shell",
+            "/home/kevinard/projects/canopa/target/release/canopa-shell",
+            "--artifacts",
+            "/tmp/canopa-performance-desktop-final/desktop-dark",
+            "--color-scheme",
+            "dark"
+          ],
+          "status": "failed",
+          "returncode": 1,
+          "elapsed_seconds": 23.648123040002247
+        },
+        {
+          "id": "desktop-light",
+          "command": [
+            "/usr/bin/python3",
+            "/home/kevinard/projects/canopa/scripts/test-desktop.py",
+            "--notify",
+            "/home/kevinard/projects/canopa/target/release/canopa-notify",
+            "--shell",
+            "/home/kevinard/projects/canopa/target/release/canopa-shell",
+            "--artifacts",
+            "/tmp/canopa-performance-desktop-final/desktop-light",
+            "--color-scheme",
+            "light",
+            "--scale",
+            "1.25"
+          ],
+          "status": "failed",
+          "returncode": 1,
+          "elapsed_seconds": 23.60112485600257
+        },
+        {
+          "id": "fork-lifetimes",
+          "command": [
+            "/usr/bin/python3",
+            "/home/kevinard/projects/canopa/scripts/test-fork-desktop.py",
+            "--shell",
+            "/home/kevinard/projects/canopa/target/release/canopa-shell",
+            "--artifacts",
+            "/tmp/canopa-performance-desktop-final/fork-lifetimes"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 11.078885704999266
+        },
+        {
+          "id": "content-rotation",
+          "command": [
+            "/usr/bin/python3",
+            "/home/kevinard/projects/canopa/scripts/verify-content-rotation.py",
+            "--binary",
+            "/home/kevinard/projects/canopa/target/release/canopa-shell",
+            "--output",
+            "/tmp/canopa-performance-desktop-final/content-rotation",
+            "--scale",
+            "1.0",
+            "1.25"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 13.412881986994762
+        }
+      ]
+    },
+    "appearance_fixture_rerun": {
+      "manifest": "/home/kevinard/projects/canopa/scripts/desktop-fixture/acceptance.json",
+      "selected": [
+        "desktop-dark",
+        "desktop-light"
+      ],
+      "results": [
+        {
+          "id": "desktop-dark",
+          "command": [
+            "/usr/bin/python3",
+            "/home/kevinard/projects/canopa/scripts/test-desktop.py",
+            "--notify",
+            "/home/kevinard/projects/canopa/target/release/canopa-notify",
+            "--shell",
+            "/home/kevinard/projects/canopa/target/release/canopa-shell",
+            "--artifacts",
+            "/tmp/canopa-performance-desktop-appearance-final/desktop-dark",
+            "--color-scheme",
+            "dark"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 20.20215089100384
+        },
+        {
+          "id": "desktop-light",
+          "command": [
+            "/usr/bin/python3",
+            "/home/kevinard/projects/canopa/scripts/test-desktop.py",
+            "--notify",
+            "/home/kevinard/projects/canopa/target/release/canopa-notify",
+            "--shell",
+            "/home/kevinard/projects/canopa/target/release/canopa-shell",
+            "--artifacts",
+            "/tmp/canopa-performance-desktop-appearance-final/desktop-light",
+            "--color-scheme",
+            "light",
+            "--scale",
+            "1.25"
+          ],
+          "status": "passed",
+          "returncode": 0,
+          "elapsed_seconds": 18.456984010997985
+        }
+      ]
+    },
+    "final_results": [
+      {
+        "id": "quick-settings-dark",
+        "command": [
+          "/usr/bin/python3",
+          "/home/kevinard/projects/canopa/scripts/verify-shell-appearance.py",
+          "--binary",
+          "/home/kevinard/projects/canopa/target/release/canopa-shell",
+          "--output",
+          "/tmp/canopa-performance-desktop-final/quick-settings-dark",
+          "--scheme",
+          "dark",
+          "--controls",
+          "--session-actions"
+        ],
+        "status": "passed",
+        "returncode": 0,
+        "elapsed_seconds": 67.38021403800667
+      },
+      {
+        "id": "desktop-dark",
+        "command": [
+          "/usr/bin/python3",
+          "/home/kevinard/projects/canopa/scripts/test-desktop.py",
+          "--notify",
+          "/home/kevinard/projects/canopa/target/release/canopa-notify",
+          "--shell",
+          "/home/kevinard/projects/canopa/target/release/canopa-shell",
+          "--artifacts",
+          "/tmp/canopa-performance-desktop-appearance-final/desktop-dark",
+          "--color-scheme",
+          "dark"
+        ],
+        "status": "passed",
+        "returncode": 0,
+        "elapsed_seconds": 20.20215089100384
+      },
+      {
+        "id": "desktop-light",
+        "command": [
+          "/usr/bin/python3",
+          "/home/kevinard/projects/canopa/scripts/test-desktop.py",
+          "--notify",
+          "/home/kevinard/projects/canopa/target/release/canopa-notify",
+          "--shell",
+          "/home/kevinard/projects/canopa/target/release/canopa-shell",
+          "--artifacts",
+          "/tmp/canopa-performance-desktop-appearance-final/desktop-light",
+          "--color-scheme",
+          "light",
+          "--scale",
+          "1.25"
+        ],
+        "status": "passed",
+        "returncode": 0,
+        "elapsed_seconds": 18.456984010997985
+      },
+      {
+        "id": "fork-lifetimes",
+        "command": [
+          "/usr/bin/python3",
+          "/home/kevinard/projects/canopa/scripts/test-fork-desktop.py",
+          "--shell",
+          "/home/kevinard/projects/canopa/target/release/canopa-shell",
+          "--artifacts",
+          "/tmp/canopa-performance-desktop-final/fork-lifetimes"
+        ],
+        "status": "passed",
+        "returncode": 0,
+        "elapsed_seconds": 11.078885704999266
+      },
+      {
+        "id": "content-rotation",
+        "command": [
+          "/usr/bin/python3",
+          "/home/kevinard/projects/canopa/scripts/verify-content-rotation.py",
+          "--binary",
+          "/home/kevinard/projects/canopa/target/release/canopa-shell",
+          "--output",
+          "/tmp/canopa-performance-desktop-final/content-rotation",
+          "--scale",
+          "1.0",
+          "1.25"
+        ],
+        "status": "passed",
+        "returncode": 0,
+        "elapsed_seconds": 13.412881986994762
+      }
+    ],
+    "fixture_correction": "enable the configuration log target required by the live reload assertion"
+  }
+}

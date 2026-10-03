@@ -20,6 +20,7 @@ pub(super) enum Effect {
     Open(Id),
     Close(Id),
     Ready,
+    Idle(Id),
     Stop,
 }
 
@@ -51,6 +52,11 @@ impl Surface {
 
     pub(super) fn awaiting_frame(&self) -> bool {
         matches!(self.phase, Phase::Opening(_))
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    pub(super) fn is_idle(&self) -> bool {
+        matches!(self.phase, Phase::Idle)
     }
 
     pub(super) fn displays(&self, window: Id) -> bool {
@@ -90,7 +96,11 @@ impl Surface {
         self.cancel_deadline();
         if matches!(self.phase, Phase::Closing(_) | Phase::Shown(_)) {
             self.phase = Phase::Idle;
-            self.content_changed(has_content)
+            if has_content {
+                self.content_changed(true)
+            } else {
+                vec![Effect::Idle(window)]
+            }
         } else {
             self.phase = Phase::Stopped;
             vec![Effect::Stop]

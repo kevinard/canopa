@@ -15,7 +15,10 @@ mod tests;
 use libpulse_binding as pulse;
 use std::{
     cell::RefCell,
+    future::Future,
     rc::Rc,
+    sync::Arc,
+    task::{Context, Wake, Waker},
     time::{Duration, Instant},
 };
 type VolumeSender = mpsc::UnboundedSender<Result<Option<(f64, bool)>, ()>>;
@@ -69,6 +72,7 @@ impl Drop for PulseConnection {
     fn drop(&mut self) {
         self.mainloop.lock();
         self.context.borrow_mut().set_subscribe_callback(None);
+        self.context.borrow_mut().set_state_callback(None);
         self.context.borrow_mut().disconnect();
         self.mainloop.unlock();
         self.mainloop.stop();
@@ -79,6 +83,18 @@ pub fn run_pa_thread(tx: VolumeSender) {
     run_pa_thread_on(None, tx);
 }
 
+struct VolumeWake(std::thread::Thread);
+
+impl Wake for VolumeWake {
+    fn wake(self: Arc<Self>) {
+        self.0.unpark();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.unpark();
+    }
+}
+
 fn run_pa_thread_on(server: Option<&str>, tx: VolumeSender) {
     use pulse::context::subscribe::{Facility, InterestMaskSet};
     let Ok(mut connection) = PulseConnection::connect(server, || tx.is_closed()) else {
@@ -86,6 +102,12 @@ fn run_pa_thread_on(server: Option<&str>, tx: VolumeSender) {
         return;
     };
     connection.mainloop.lock();
+    let thread = std::thread::current();
+    let state_thread = thread.clone();
+    connection
+        .context
+        .borrow_mut()
+        .set_state_callback(Some(Box::new(move || state_thread.unpark())));
     let revision = Rc::new(std::cell::Cell::new(0));
     let tx_cb = tx.clone();
     let context_cb = Rc::clone(&connection.context);
@@ -110,9 +132,11 @@ fn run_pa_thread_on(server: Option<&str>, tx: VolumeSender) {
     );
     fetch_volume(&connection.context.borrow(), &tx, &revision);
     connection.mainloop.unlock();
+    let waker = Waker::from(Arc::new(VolumeWake(thread)));
+    let mut task = Context::from_waker(&waker);
+    let mut closed = std::pin::pin!(tx.closed());
     loop {
-        std::thread::sleep(Duration::from_millis(50));
-        if tx.is_closed() {
+        if closed.as_mut().poll(&mut task).is_ready() {
             return;
         }
         connection.mainloop.lock();
@@ -124,6 +148,9 @@ fn run_pa_thread_on(server: Option<&str>, tx: VolumeSender) {
         ) {
             break;
         }
+        // Both receiver cancellation and Pulse state changes unpark this thread.
+        // park preserves a wake arriving between the checks and the wait.
+        std::thread::park();
     }
     let _ = tx.send(Err(()));
 }

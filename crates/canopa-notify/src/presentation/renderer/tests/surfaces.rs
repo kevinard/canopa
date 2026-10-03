@@ -55,6 +55,70 @@ async fn first_redraw_retires_the_empty_startup_probe() {
 }
 
 #[tokio::test]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+async fn idle_surface_reclamation_is_cancelled_when_a_new_stack_opens() {
+    let mut state = banner_ui_test_state();
+    let probe = state.surface.window().unwrap();
+    let _ = banner_ui_update(&mut state, BannerUiMessage::WindowFrame(probe));
+    let task = banner_ui_update(&mut state, BannerUiMessage::WindowClosed(probe));
+    let mut reclamation = iced_runtime::task::into_stream(task)
+        .expect("retiring the last surface must schedule idle memory reclamation");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(40), reclamation.next())
+            .await
+            .is_err(),
+        "idle memory reclamation must wait for the idle grace period"
+    );
+    assert!(state.surface.window().is_none());
+    assert!(
+        ready_actions(banner_ui_update(
+            &mut state,
+            BannerUiMessage::WindowClosed(probe),
+        ))
+        .await
+        .is_empty(),
+        "a duplicate close must not schedule another reclamation"
+    );
+    queue_banner_ui_presentation(&mut state, 1, Arc::new(AtomicBool::new(false)));
+    assert!(state.surface.window().is_some());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), reclamation.next())
+            .await
+            .expect("new content did not cancel the idle reclamation timer")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+async fn stale_reclamation_does_not_consume_a_later_idle_period() {
+    let mut state = banner_ui_test_state();
+    let probe = state.surface.window().unwrap();
+    let _ = banner_ui_update(&mut state, BannerUiMessage::WindowFrame(probe));
+    let _ = banner_ui_update(&mut state, BannerUiMessage::WindowClosed(probe));
+    queue_banner_ui_presentation(&mut state, 1, Arc::new(AtomicBool::new(false)));
+    let current = state.surface.window().unwrap();
+    let _ = banner_ui_update(&mut state, BannerUiMessage::WindowFrame(current));
+    let _ = banner_ui_update(
+        &mut state,
+        BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
+            presentation: BannerPresentation::default(),
+            acknowledgement: BannerPresentationAcknowledgement::new(|| {}),
+        }),
+    );
+    let _ = banner_ui_update(&mut state, BannerUiMessage::WindowClosed(current));
+    assert!(
+        ready_actions(banner_ui_update(
+            &mut state,
+            BannerUiMessage::ReclaimIdleMemory(probe),
+        ))
+        .await
+        .is_empty()
+    );
+    assert_eq!(state.idle_reclamation.as_ref().unwrap().0, current);
+}
+
+#[tokio::test]
 async fn stacks_open_serially_keep_their_window_and_ignore_retired_window_events() {
     let mut state = banner_ui_test_state();
     let probe = state.surface.window().unwrap();

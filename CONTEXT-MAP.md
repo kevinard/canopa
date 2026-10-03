@@ -21,6 +21,7 @@ the Notification Center through generic declarative panel content.
 - [Settings portal and shared-only configuration](docs/adr/0008-settings-portal.md)
 - [Configuration user guide](docs/configuration.md)
 - [Workspace decision](docs/adr/0001-shared-workspace-and-upstream-forks.md)
+- [Runtime CPU and memory measurements](docs/performance.md)
 - [Repository layout and tooling ownership](docs/adr/0009-consolidated-repository-layout.md)
 - [Canopa Shell naming and compatibility](docs/adr/0011-canopa-shell-name.md)
 - [Integration proposal and remaining phases](docs/canopa-integration-proposal.md)

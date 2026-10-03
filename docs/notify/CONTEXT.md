@@ -459,6 +459,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - The first banner placement scope is global rather than per-output.
 - If focused output cannot be determined, **Notification Banners** fall back to a configured or default output.
 - Under ADR 0047, each new nonempty banner stack uses a compositor-selected surface; a visible stack keeps that surface across focus changes and replacements. Empty stacks retire their surface without disconnecting the renderer. Losing a displayed surface retries the current stack once on a compositor-selected fallback; failure before redraw is terminal, while notification identities and already-started timeout deadlines remain unchanged.
+- After the last banner surface retires, GNU/Linux builds request best-effort release of unused heap pages following a cancellable two-second idle grace period. Reclamation runs on the blocking executor with one job admitted at a time ([ADR 0053](adr/0053-idle-banner-heap-reclamation.md)).
 - First-version **Notification Banner** styling configuration is minimal.
 - First-version **Notification Banner** keyboard interaction is minimal.
 - **Notification Banners** do not steal keyboard focus.

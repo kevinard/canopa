@@ -858,6 +858,7 @@ dependencies = [
  "iced_runtime",
  "image",
  "kdl",
+ "libc",
  "miette",
  "predicates",
  "rodio",

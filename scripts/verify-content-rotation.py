@@ -115,6 +115,7 @@ Gtk.main()
 ''')
     session.env["NO_AT_BRIDGE"] = "1"
     session.env["GTK_USE_PORTAL"] = "0"
+    session.env["GDK_BACKEND"] = "wayland"
     session.start(["/usr/bin/python3", str(client)], "client.log")
     session.wait_for(
         lambda: json.loads(session.run(["niri", "msg", "--json", "windows"])),

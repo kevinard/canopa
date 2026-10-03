@@ -272,11 +272,18 @@ def run(args):
         alternate = 'light' if args.color_scheme == 'dark' else 'dark'
         common.write_text(common.read_text().replace(f'color-scheme "{args.color_scheme}"', f'color-scheme "{alternate}"'))
         command(str(args.notify), 'ctl', '--socket', str(notify_socket), 'reload')
+        # Live Shell reload also installs appearance and retires the open panel.
+        # Wait for that commit, then reopen the Center for the pixel comparison.
+        eventually(lambda: 'configuration reloaded' in
+                   re.sub(r'\x1b\[[0-9;]*m', '', (root / 'canopa-shell.log').read_text()),
+                   'Shell live configuration reload')
+        command(str(root / 'click'), '25', '20')
+        eventually(lambda: find('Clear active notifications'), 'Center after appearance reload')
         def repainted():
             subprocess.check_call(['grim', '-o', 'HEADLESS-1', str(root / 'reloaded.png')],
                                   env={**env, 'WAYLAND_DISPLAY': str(outer)})
-            return palette_visible(root / 'reloaded.png', initial, changed)
-        eventually(repainted, 'banner repaint with shell unchanged until restart')
+            return palette_visible(root / 'reloaded.png', changed, changed)
+        eventually(repainted, 'live appearance repaint in both consumers')
         command('wtype', '-k', 'Escape')
         def shell_summary(log, available, count, dnd):
             records = re.findall(r'available=(true|false).*requires_attention=(\d+).*dnd=(true|false)',
@@ -434,7 +441,7 @@ if __name__ == '__main__':
         for key in ['runtime','state','config','data','cache']:
             (root / key).mkdir(mode=0o700)
             env['XDG_RUNTIME_DIR' if key == 'runtime' else f'XDG_{key.upper()}_HOME'] = str(root / key)
-        env['RUST_LOG'] = 'canopa_shell::notifications=debug'
+        env['RUST_LOG'] = 'canopa_shell::notifications=debug,canopa_shell::configuration=info'
         env.update(WLR_BACKENDS='headless', WLR_HEADLESS_OUTPUTS='1', WLR_RENDERER='pixman',
                    LIBGL_ALWAYS_SOFTWARE='1', GTK_A11Y='always', DCONF_BACKEND='memory')
         (root / 'alsa.conf').write_text('pcm.!default { type null }\n')
