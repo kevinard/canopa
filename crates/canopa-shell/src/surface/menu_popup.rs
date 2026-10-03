@@ -58,11 +58,8 @@ pub fn view_menu_popup<'a>(
                 let label = crate::theme::text(&item.label)
                     .size(crate::theme::body_size() * 13.0 / 14.0)
                     .wrapping(iced::widget::text::Wrapping::None);
-                let is_highlighted = item.enabled
-                    && hovered_item
-                        .or(focused_item)
-                        .map(|h| h == item.id.as_str())
-                        .unwrap_or(false);
+                let hovered = item.enabled && hovered_item == Some(item.id.as_str());
+                let focused = item.enabled && focused_item == Some(item.id.as_str());
                 let row = container(label)
                     .padding(canopa_ui::content_padding(row_ui))
                     .height(row_height)
@@ -70,10 +67,10 @@ pub fn view_menu_popup<'a>(
                     .style(move |_| {
                         crate::theme::highlighted_frame(
                             row_ui,
-                            is_highlighted,
-                            is_highlighted,
+                            focused,
+                            hovered,
                             !item.enabled,
-                            is_highlighted,
+                            focused,
                         )
                     });
                 let row = container(row).padding(canopa_ui::padding(row_ui.margin));
@@ -185,6 +182,11 @@ pub fn popup_size(tree: &MenuTree) -> (u32, u32) {
         .fold(0.0, f32::max);
     let width = (measured
         + row.padding.horizontal()
+        + if row.custom_border {
+            2.0 * row.border_width.px()
+        } else {
+            0.0
+        }
         + row.margin.horizontal()
         + ui.padding.horizontal()
         + if ui.custom_border {

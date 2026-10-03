@@ -131,7 +131,11 @@ fn panel_frame<'a>(
 ) -> Element<'a, Message> {
     let content = column![
         container(crate::surface::panel::panel_header(title)).padding(iced::Padding {
-            top: 12.0,
+            top: if ui.custom_padding {
+                ui.padding.top.px()
+            } else {
+                12.0
+            },
             bottom: 12.0,
             left: ui.padding.left.px(),
             right: ui.padding.right.px()
@@ -140,6 +144,11 @@ fn panel_frame<'a>(
     ]
     .height(Length::Fill);
     let frame = container(content)
+        .padding(if ui.custom_border {
+            ui.border_width.px()
+        } else {
+            0.0
+        })
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
@@ -174,7 +183,7 @@ fn render_external_panel_model<'a>(
     }
     let mut body = column![]
         .spacing(ui.gap.px())
-        .padding(canopa_ui::content_padding(ui));
+        .padding(canopa_ui::padding(ui.padding));
     for element in content.elements() {
         let rendered: Element<'_, Message> = match element {
             crate::surface::panel::ExternalPanelElement::Text { text: value } => {
@@ -567,22 +576,39 @@ fn render_panel_menu_model<'a>(
         if entry.is_submenu {
             row_content = row_content.push(crate::theme::text(">"));
         }
-        let row = container(row_content)
-            .padding(canopa_ui::content_padding(metrics.row))
-            .width(Length::Fill)
-            // Rendering, virtual spacers and keyboard reveal must use one pitch,
-            // even for long labels or a different font's line metrics.
-            .height(metrics.extent - menu_row_gap - metrics.row.margin.vertical())
-            .align_y(iced::Alignment::Center)
-            .clip(true)
-            .style(move |_| {
-                crate::theme::highlighted_frame(metrics.row, focused, focused, false, focused)
-            });
+        let keyboard_focus = model.keyboard_focus;
+        let row = iced::widget::button(
+            container(row_content)
+                .height(Length::Fill)
+                .align_y(iced::Alignment::Center),
+        )
+        .on_press(Message::Panel(super::messages::PanelEvent::ActivateIndex(
+            index,
+        )))
+        .padding(canopa_ui::content_padding(metrics.row))
+        .width(Length::Fill)
+        // Rendering, virtual spacers and keyboard reveal must use one pitch,
+        // even for long labels or a different font's line metrics.
+        .height(metrics.extent - menu_row_gap - metrics.row.margin.vertical())
+        .clip(true)
+        .style(move |_, status| {
+            let frame = crate::theme::highlighted_frame(
+                metrics.row,
+                focused,
+                status == iced::widget::button::Status::Hovered,
+                false,
+                focused && keyboard_focus,
+            );
+            iced::widget::button::Style {
+                background: frame.background,
+                text_color: frame.text_color.unwrap(),
+                border: frame.border,
+                ..Default::default()
+            }
+        });
         let row = container(row).padding(canopa_ui::padding(metrics.row.margin));
         list = list.push(crate::surface::pointer_focus::pointer_focus(
-            mouse_area(row).on_press(Message::Panel(super::messages::PanelEvent::ActivateIndex(
-                index,
-            ))),
+            row,
             Message::Panel(super::messages::PanelEvent::FocusIndex(index)),
         ));
     }
@@ -676,7 +702,6 @@ fn render_searchable_sni_popup_model<'a>(
 
     let mut entries = column![].spacing(ui.gap.px());
     for (index, entry) in entries_snapshot.iter().enumerate() {
-        let highlighted = hovered_index.or(focused_index) == Some(index);
         let row = container(
             crate::theme::text(entry.label.clone()).size(crate::theme::body_size() * 13.0 / 14.0),
         )
@@ -684,7 +709,13 @@ fn render_searchable_sni_popup_model<'a>(
         .height(row_height)
         .width(Length::Fill)
         .style(move |_| {
-            crate::theme::highlighted_frame(row_ui, highlighted, highlighted, false, highlighted)
+            crate::theme::highlighted_frame(
+                row_ui,
+                focused_index == Some(index),
+                hovered_index == Some(index),
+                false,
+                focused_index == Some(index),
+            )
         });
         let row = container(row).padding(canopa_ui::padding(row_ui.margin));
         let super::selectable_menu_session::SelectableMenuEntryTarget::SniMenuItem(item_id) =

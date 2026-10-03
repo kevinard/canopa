@@ -379,7 +379,7 @@ impl FailingExpiry {
                 } else {
                     status.timeout_retrying == 1
                 } {
-                    return status;
+                    return *status;
                 }
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }

@@ -153,11 +153,9 @@ pub mod bar_metrics {
 
 /// Header size includes the same text and close-button metrics used by the view.
 pub fn panel_header_height() -> u32 {
-    (24.0
-        + (title_size() * 1.3).max(
-            (label_size() * 1.3 + ui(canopa_theme::UiKind::Button).padding.vertical()).max(32.0),
-        ))
-    .ceil() as u32
+    let padding = canopa_ui::content_padding(ui(canopa_theme::UiKind::Button));
+    (24.0 + (title_size() * 1.3).max((label_size() * 1.3 + padding.top + padding.bottom).max(32.0)))
+        .ceil() as u32
 }
 
 pub fn highlighted_frame(

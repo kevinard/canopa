@@ -2251,6 +2251,12 @@ fn close_button<'a>(
     let label = iced::widget::text("x")
         .font(canopa_ui::font(appearance))
         .size(appearance.typography().body_size.px());
+    let style = appearance.style(canopa_theme::UiKind::Button);
+    let padding = if style.custom_padding || style.custom_border {
+        canopa_ui::content_padding(style)
+    } else {
+        iced::Padding::ZERO
+    };
     canopa_ui::styled_action(
         label,
         Some(BannerUiMessage::Dismiss(target)),
@@ -2258,6 +2264,9 @@ fn close_button<'a>(
         false,
         appearance,
     )
+    .padding(padding)
+    .width((appearance.typography().body_size.px() + padding.left + padding.right).max(28.0))
+    .height((appearance.typography().body_size.px() * 1.3 + padding.top + padding.bottom).max(28.0))
 }
 
 fn app_badge_style(theme: &iced::Theme, urgency: Urgency) -> iced::widget::container::Style {

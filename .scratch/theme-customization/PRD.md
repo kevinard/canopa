@@ -1,11 +1,12 @@
 # Theme and UI customization
 
-Status: in-progress
+Status: complete
 
-Design proposal, 2026-10-02; implementation authorized 2026-10-03.
+Design proposal, 2026-10-02; implementation authorized and completed 2026-10-03.
 The original proposal is retained below. The implemented configuration contract is
 [documented here](../../docs/theme-customization.md), with architecture in
 [ADR 0013](../../docs/adr/0013-configurable-theme-and-surface-geometry.md).
+Review corrections and validation evidence are recorded in [the review](review.md).
 
 Users should be able to create and share a complete Canopa appearance, then adjust
 individual elements and bar placement in their own configuration. One shared theme
@@ -47,7 +48,7 @@ Keep appearance and desktop arrangement separate. A theme file contains colors,
 typography and UI defaults. The main configuration selects that file and can
 override its appearance, while application namespaces own placement and behavior.
 
-This example is proposed syntax and is not accepted by current binaries:
+This historical example is proposed syntax; use the implemented contract linked above:
 
 ```kdl
 schema-version 1

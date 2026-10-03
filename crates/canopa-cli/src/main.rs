@@ -137,32 +137,58 @@ fn check(request: &Request, show_source: bool) -> anyhow::Result<bool> {
 
 struct ValidationSnapshot {
     main: tempfile::NamedTempFile,
-    _theme_file: Option<tempfile::NamedTempFile>,
+    _directory: tempfile::TempDir,
     fingerprint: String,
     theme: Option<canopa_config::ThemeSource>,
     combined_fingerprint: Option<String>,
+    reference_length_delta: isize,
 }
 impl ValidationSnapshot {
+    fn restore_offset(&self, report: &mut serde_json::Value) {
+        let Some(theme) = &self.theme else { return };
+        let Some(error) = report.get_mut("error") else {
+            return;
+        };
+        if error.get("source").and_then(|s| s.as_str()) == Some("theme") {
+            return;
+        }
+        if let Some(offset) = error.get("offset").and_then(|v| v.as_u64()) {
+            let replacement_end = theme.reference_span.end as isize + self.reference_length_delta;
+            if offset as isize >= replacement_end {
+                error["offset"] =
+                    serde_json::json!((offset as isize - self.reference_length_delta) as usize);
+            } else if offset as usize >= theme.reference_span.start {
+                error["offset"] = serde_json::json!(theme.reference_span.start);
+            }
+        }
+    }
     fn capture(path: &Path, format: Format) -> anyhow::Result<Self> {
         let text = canopa_config::read(path)?;
         let theme = if format == Format::CanopaV1 {
-            canopa_config::capture_theme(&text, Some(path))?
+            match canopa_config::capture_theme(&text, Some(path)) {
+                Ok(theme) => theme,
+                // A malformed main document has no usable theme reference. Keep
+                // its bytes for the owners, including their opt-in source diagnostics.
+                Err(error) if error.code == canopa_config::Code::Syntax => None,
+                Err(error) => return Err(error.into()),
+            }
         } else {
             None
         };
-        let mut theme_file = None;
+        let directory = tempfile::tempdir()?;
         let mut captured_text = text.clone();
         if let Some(theme) = &theme {
-            let mut file = tempfile::NamedTempFile::new()?;
-            file.write_all(theme.text.as_bytes())?;
-            captured_text = theme.snapshot_text(&text, file.path());
-            theme_file = Some(file);
+            std::fs::write(directory.path().join("t"), theme.text.as_bytes())?;
+            // A one-character relative path cannot inflate a valid source past
+            // the combined input budget. Both files live in the private snapshot.
+            captured_text = theme.snapshot_text(&text, Path::new("t"));
         }
-        let mut main = tempfile::NamedTempFile::new()?;
+        let mut main = tempfile::NamedTempFile::new_in(directory.path())?;
         main.write_all(captured_text.as_bytes())?;
         Ok(Self {
             main,
-            _theme_file: theme_file,
+            _directory: directory,
+            reference_length_delta: captured_text.len() as isize - text.len() as isize,
             fingerprint: canopa_config::fingerprint(&text),
             combined_fingerprint: theme.as_ref().map(|t| t.combined_fingerprint(&text)),
             theme,
@@ -225,6 +251,7 @@ fn check_component(
         "component validator returned an inconsistent result"
     );
     if let Some(path) = original_path {
+        snapshots[path].restore_offset(&mut report);
         if let Some(source) = report.get_mut("source") {
             source["path"] = serde_json::to_value(path)?;
             let snapshot = &snapshots[path];
@@ -303,6 +330,32 @@ mod tests {
         assert_eq!(snapshot.fingerprint, canopa_config::fingerprint(main));
         assert_eq!(snapshot.theme.as_ref().unwrap().path, theme);
         assert!(snapshot.combined_fingerprint.is_some());
+    }
+
+    #[test]
+    fn captured_theme_reference_preserves_original_main_error_offsets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.kdl");
+        let source = "schema-version 1\nappearance { theme \"long-theme-name.kdl\"; typography { body-size -1; }; }\n";
+        std::fs::write(&path, source).unwrap();
+        std::fs::write(dir.path().join("long-theme-name.kdl"), "").unwrap();
+        let direct = canopa_config::Document::load(&Request::common(&path), Component::Shell, "")
+            .unwrap_err();
+        let snapshot = ValidationSnapshot::capture(&path, Format::CanopaV1).unwrap();
+        let captured = canopa_config::Document::load(
+            &Request::common(snapshot.main.path()),
+            Component::Shell,
+            "",
+        )
+        .unwrap_err();
+        assert_ne!(direct.offset, captured.offset);
+        let mut report = serde_json::json!({"error":captured});
+        snapshot.restore_offset(&mut report);
+        assert_eq!(report["error"]["offset"], serde_json::json!(direct.offset));
+        report["error"]["source"] = serde_json::json!("theme");
+        let unchanged = report.clone();
+        snapshot.restore_offset(&mut report);
+        assert_eq!(report, unchanged);
     }
 
     #[test]

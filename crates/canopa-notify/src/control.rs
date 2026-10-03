@@ -28,7 +28,7 @@ impl NotifyControl {
         match command {
             ControlCommand::Status => {
                 let (timeout_retrying, timeout_failed) = self.daemon.timeout_failure_counts();
-                Ok(ControlReply::Status(ControlStatus {
+                Ok(ControlReply::Status(Box::new(ControlStatus {
                     available: true,
                     do_not_disturb: self.daemon.do_not_disturb().await?,
                     configuration: self.daemon.configuration_status(),
@@ -38,7 +38,7 @@ impl NotifyControl {
                     timeout_retrying,
                     timeout_failed,
                     link_opening: self.daemon.link_opening_status(),
-                }))
+                })))
             }
             ControlCommand::DoNotDisturb => Ok(ControlReply::DoNotDisturb(
                 self.daemon.do_not_disturb().await?,
@@ -244,7 +244,7 @@ pub enum NotificationCenterAction {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "reply", content = "value", rename_all = "kebab-case")]
 pub enum ControlReply {
-    Status(ControlStatus),
+    Status(Box<ControlStatus>),
     DoNotDisturb(bool),
     ActiveNotifications(Vec<NotificationThread>),
     ActiveNotificationCount(u64),

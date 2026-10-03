@@ -33,9 +33,14 @@ shell {{
 '''
 
 
-def verify(binary, session):
-    session.start_niri('prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\n'
-                       'hotkey-overlay { skip-at-startup; }\nlayout { gaps 0; }\n')
+def verify(binary, session, scale):
+    output_name = session.start_niri('prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\n'
+                       'hotkey-overlay { skip-at-startup; }\nlayout { gaps 0; }\n',
+                       width=round(1280*scale), height=round(800*scale), scale=scale)
+    logical = json.loads(session.run(["niri", "msg", "--json", "outputs"]))[output_name]["logical"]
+    width, height = logical["width"], logical["height"]
+    session.env["GDK_BACKEND"] = "wayland"
+    session.start(["wtype", "-s", "600000"], "keyboard.log")
     main = session.runtime / "config/canopa/config.kdl"
     main.parent.mkdir(parents=True)
     theme = main.with_name("theme.kdl")
@@ -51,19 +56,22 @@ def verify(binary, session):
         main.write_text(text)
         session.wait_for(lambda: "configuration reloaded" in log()[mark:], "configuration reload")
 
+    def pixel(image, point):
+        return image.getpixel(tuple(round(v*scale) for v in point))
+
     color = (85, 34, 51)
     checks = []
     for edge in ["top", "bottom", "left", "right"]:
         for align in ["start", "center", "end"]:
             save(config(edge, align))
-            span = 1280 if edge in ("top", "bottom") else 800
+            span = width if edge in ("top", "bottom") else height
             start = {"start": 12, "center": (span-400)//2, "end": span-412}[align]
-            x, y = ((start+35, 32 if edge == "top" else 768) if edge in ("top", "bottom")
-                    else (32 if edge == "left" else 1248, start+35))
+            x, y = ((start+35, 32 if edge == "top" else height-32) if edge in ("top", "bottom")
+                    else (32 if edge == "left" else width-32, start+35))
             name = f"{edge}-{align}.png"
-            session.wait_for(lambda: session.capture(name).getpixel((x, y)) == color, name)
+            session.wait_for(lambda: pixel(session.capture(name), (x, y)) == color, name)
             image = session.capture(name)
-            assert image.getpixel((3, 3)) != color, "outer screen margin was painted"
+            assert pixel(image, (3, 3)) != color, "outer screen margin was painted"
             checks.append(f"{edge} {align}")
 
     save(config())
@@ -73,13 +81,14 @@ def verify(binary, session):
                            'typography { family "monospace"; body-size 20; label-size 18; title-size 24; }\n')
     replacement.replace(theme)
     session.wait_for(lambda: "configuration reloaded" in log()[mark:], "theme-only reload")
-    session.wait_for(lambda: session.capture("theme-reloaded.png").getpixel((470, 32)) == (34, 68, 102), "theme repaint")
+    theme_sample = (width/2-170, 32)
+    session.wait_for(lambda: pixel(session.capture("theme-reloaded.png"), theme_sample) == (34, 68, 102), "theme repaint")
     mark = len(log())
     theme.write_text('ui { bar { padding -1; }; }\n')
     session.wait_for(lambda: "reload rejected" in log()[mark:], "invalid theme rejection")
-    assert session.capture("invalid-keeps-theme.png").getpixel((470, 32)) == (34, 68, 102)
+    assert pixel(session.capture("invalid-keeps-theme.png"), theme_sample) == (34, 68, 102)
     theme.write_text('palette { background "#552233"; }\n')
-    session.wait_for(lambda: session.capture("recovered.png").getpixel((470, 32)) == color, "theme recovery")
+    session.wait_for(lambda: pixel(session.capture("recovered.png"), theme_sample) == color, "theme recovery")
 
     # A maximized client covers the unreserved transparent host and rounded corner.
     save(config(reserve=False))
@@ -100,13 +109,31 @@ Gtk.main()
     session.run(["niri", "msg", "action", "maximize-column"])
     pointer = session.build_pointer()
     clicked = session.runtime / "clicked"
-    for x, y in [(100, 32), (441, 13)]:
-        session.run([str(pointer), str(round(x*1600/1280)), str(round(y*1000/800))])
+    for x, y in [(100, 32), (width/2-199, 13)]:
+        session.run([str(pointer), str(round(x*1600/width)), str(round(y*1000/height))])
         session.wait_for(clicked.exists, "transparent bar input pass-through")
         clicked.unlink()
-    session.run([str(pointer), "800", "40"])
+    session.run([str(pointer), "800", str(round(32*1000/height))])
     session.wait_for_layers(2)
-    session.capture("short-bar-panel.png")
+    session.wait_for(lambda: pixel(session.capture("short-bar-panel.png"), (width/2, 100)) == color,
+                     "panel painted beyond the short bar")
+    session.run([str(binary), "--toggle-panel"])
+    session.wait_for_layers(1)
+    layout=lambda: json.loads(session.run(["niri", "msg", "--json", "windows"]))[0]["layout"]
+    unreserved=layout()
+    save(config())
+    reserved=session.wait_for(lambda: (current if (current:=layout()) != unreserved else None), "window space reservation")
+    for align in ["start", "end", "center"]:
+        save(config(align=align))
+        assert layout()==reserved, "alignment changed edge-wide reservation"
+    save(config(length='"50%"'))
+    percentage_start = width/2-(width-24)/4
+    session.wait_for(lambda: pixel(session.capture("percentage.png"),(percentage_start+20,32))==color, "percentage bar length")
+    assert pixel(session.capture("percentage.png"),(percentage_start-20,32))!=color
+    save(config(length="32768"))
+    session.wait_for(lambda: pixel(session.capture("clamped.png"),(width-40,32))==color, "clamped fixed length")
+    desktop.write_json(session.output / "window-reservation.json", {"unreserved":unreserved,"reserved":reserved})
+    checks += ["alignment-independent window reservation", "percentage length", "oversized fixed length fitting"]
     assert shell.poll() is None
     checks += ["theme-only atomic replacement", "invalid theme retained", "theme recovery",
                "transparent host and rounded corner click-through", "short bar panel activation"]
@@ -117,13 +144,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=ROOT / "target/debug/canopa-shell")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--scale", type=float, default=1.0)
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     with tempfile.TemporaryDirectory(prefix="canopa-theme-desktop-") as directory:
         session = desktop.Session(Path(directory), output)
         try:
-            verify(args.binary.resolve(strict=True), session)
+            verify(args.binary.resolve(strict=True), session, args.scale)
         finally:
             session.close()
     print(f"Theme desktop checks passed: {output}")

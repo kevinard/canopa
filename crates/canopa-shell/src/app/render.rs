@@ -51,6 +51,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) menu_prompt: Option<String>,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
+    pub(super) keyboard_focus: bool,
     pub(super) can_go_back: bool,
     pub(super) menu_scroll_id: iced::widget::Id,
     pub(super) menu_scroll_y: f32,
@@ -64,11 +65,7 @@ impl App {
         tree: &crate::surface::panel::PanelTree,
     ) -> canopa_theme::ResolvedStyle {
         let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
-        let mut ui = self
-            .config
-            .appearance
-            .style(canopa_theme::UiKind::Panel)
-            .apply(bar.panel.ui);
+        let mut ui = self.config.appearance.style(canopa_theme::UiKind::Panel);
         if matches!(
             tree.content,
             crate::surface::panel::PanelContent::Menu(_)
@@ -78,6 +75,7 @@ impl App {
                 self.config.appearance.customization.ui[canopa_theme::UiKind::Menu as usize],
             );
         }
+        ui = ui.apply(bar.panel.ui);
         if let crate::surface::panel::PanelContent::Menu(name) = &tree.content {
             ui = ui.apply(
                 self.config
@@ -94,17 +92,10 @@ impl App {
         &self,
         tree: &crate::surface::panel::PanelTree,
     ) -> crate::theme::MenuMetrics {
-        let local = if let crate::surface::panel::PanelContent::Menu(name) = &tree.content {
-            self.config.element_ui.menus.get(name).and_then(|ui| ui.gap)
-        } else {
-            None
-        };
-        crate::theme::menu_metrics_with_gap(
-            local.or(
-                self.config.appearance.customization.ui[canopa_theme::UiKind::Menu as usize].gap,
-            ),
-        )
+        let ui = self.panel_ui(tree);
+        crate::theme::menu_metrics_with_gap(ui.custom_gap.then_some(ui.gap))
     }
+
     pub(super) fn active_menu_metrics(&self) -> crate::theme::MenuMetrics {
         self.foreground
             .active_panel_tree()
@@ -231,6 +222,7 @@ impl App {
             menu_prompt: menu.prompt,
             search_query: menu.search_query,
             focused_index: menu.focused_index,
+            keyboard_focus: menu.keyboard_focus,
             can_go_back: menu.can_go_back,
             menu_scroll_id: super::panel::panel_menu_scroll_id(window),
             menu_scroll_y: menu.scroll_y,
@@ -1168,5 +1160,53 @@ mod tests {
         assert_eq!(model.start[0].zone, Zone::Start);
         assert!(model.start[0].hovered);
         assert!(model.start[0].focused);
+    }
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+    use canopa_theme::{ColorValue, Pixels, Rgb, UiKind, UiStyle};
+    #[test]
+    fn local_panel_and_menu_overrides_win_and_share_the_menu_gap() {
+        let mut config = crate::config::Config::default();
+        std::sync::Arc::make_mut(&mut config.appearance.customization).ui[UiKind::Menu as usize] =
+            UiStyle {
+                background: Some(ColorValue::Rgba(Rgb(1, 2, 3), 255)),
+                gap: Some(Pixels::whole(5)),
+                ..Default::default()
+            };
+        config.bars[0].panel.ui = UiStyle {
+            background: Some(ColorValue::Rgba(Rgb(4, 5, 6), 255)),
+            gap: Some(Pixels::whole(19)),
+            ..Default::default()
+        };
+        let (mut app, _) = App::boot(config, vec![]);
+        let tree = crate::surface::panel::PanelTree {
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::Menu("custom".into()),
+            origin_window: iced::window::Id::unique(),
+            origin_bar_name: "main".into(),
+            origin_output_name: "".into(),
+            anchor: None,
+            screen_size: (1280, 40),
+        };
+        assert_eq!(
+            app.panel_ui(&tree).background,
+            ColorValue::Rgba(Rgb(4, 5, 6), 255)
+        );
+        assert_eq!(app.panel_menu_metrics(&tree).gap, 19.0);
+        app.config.element_ui.menus.insert(
+            "custom".into(),
+            UiStyle {
+                gap: Some(Pixels::ZERO),
+                ..Default::default()
+            },
+        );
+        assert_eq!(app.panel_menu_metrics(&tree).gap, 0.0);
+        assert_eq!(
+            app.panel_ui(&tree).background,
+            ColorValue::Rgba(Rgb(4, 5, 6), 255)
+        );
     }
 }

@@ -1,6 +1,6 @@
 {
   "scenarios": [
-    {"id": "theme-customization", "script": "verify-theme-customization.py", "args": ["--binary", "{shell}", "--output", "{artifacts}"]},
+    {"id": "theme-customization", "script": "verify-theme-customization.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25"]},
     {"id": "configuration-reload", "script": "verify-configuration-reload.py", "args": ["--binary", "{shell}", "--output", "{artifacts}"]},
     {"id": "desktop-dark", "script": "test-desktop.py", "args": ["--notify", "{notify}", "--shell", "{shell}", "--artifacts", "{artifacts}", "--color-scheme", "dark"]},
     {"id": "desktop-light", "script": "test-desktop.py", "args": ["--notify", "{notify}", "--shell", "{shell}", "--artifacts", "{artifacts}", "--color-scheme", "light", "--scale", "1.25"]},
@@ -10,6 +10,7 @@
     {"id": "panel-motion", "script": "verify-panel-motion.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25"]},
     {"id": "panel-close-flash", "script": "verify-panel-motion.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25", "--default-timings", "--close-flash-only"]},
     {"id": "menu-scrolling", "script": "verify-menu-scrolling.py", "args": ["--binary", "{shell}", "--output", "{artifacts}"]},
+    {"id": "menu-customization", "script": "verify-menu-scrolling.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--custom-theme"]},
     {"id": "content-rotation", "script": "verify-content-rotation.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.0", "1.25"]},
     {"id": "focused-window-icons", "script": "verify-focused-window-icons.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25"]},
     {"id": "idle-inhibitor-sway", "script": "verify-idle-inhibitor.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--compositor", "sway"]},

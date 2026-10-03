@@ -210,7 +210,7 @@ fn cli_preserves_success_formats_and_committed_partial_clear_counts() {
             assert!(String::from_utf8_lossy(&output.stderr).contains("3 committed dismissals"));
         }
     }
-    let reply = canopa_notify::ControlReply::Status(canopa_notify::ControlStatus {
+    let reply = canopa_notify::ControlReply::Status(Box::new(canopa_notify::ControlStatus {
         link_opening: Default::default(),
         available: true,
         do_not_disturb: false,
@@ -220,7 +220,7 @@ fn cli_preserves_success_formats_and_committed_partial_clear_counts() {
         timeout_records: 0,
         timeout_retrying: 0,
         timeout_failed: 0,
-    });
+    }));
     let output = cli_with_reply(
         &["status", "--json"],
         (serde_json::to_string(&reply).unwrap() + "\n").into_bytes(),

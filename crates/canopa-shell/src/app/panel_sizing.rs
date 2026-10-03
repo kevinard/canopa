@@ -29,7 +29,6 @@ const PANEL_ENTRY_SPACING: u32 = 8;
 const PANEL_MENU_MIN_WIDTH: u32 = 240;
 const PANEL_MENU_SEARCH_HEIGHT: u32 = 38;
 const PANEL_MENU_LIST_PADDING: u32 = 2 * canopa_ui::panel::PADDING as u32;
-const PANEL_MENU_ROW_H_PADDING: u32 = 20;
 const PANEL_MENU_ICON_SLOT: u32 = 26;
 const PANEL_MENU_SUBMENU_SLOT: u32 = 16;
 
@@ -141,14 +140,29 @@ where
     let mut hint = hint;
     if let Some(width) = hint.preferred_width.as_mut() {
         *width = (*width as f32 + input.ui.padding.horizontal() - 32.0
-            + input.ui.margin.horizontal())
+            + input.ui.margin.horizontal()
+            + if input.ui.custom_border {
+                2.0 * input.ui.border_width.px()
+            } else {
+                0.0
+            })
         .max(1.0)
         .ceil() as u32;
     }
     if let Some(height) = hint.preferred_height.as_mut() {
         *height = (*height as f32 + input.ui.padding.vertical() - 32.0
             + input.ui.margin.vertical()
+            + if input.ui.custom_border {
+                2.0 * input.ui.border_width.px()
+            } else {
+                0.0
+            }
             + crate::theme::panel_header_height() as f32
+            + if input.ui.custom_padding {
+                input.ui.padding.top.px() - 12.0
+            } else {
+                0.0
+            }
             - 56.0)
             .max(1.0)
             .ceil() as u32;
@@ -371,21 +385,20 @@ fn panel_menu_preferred_size(
     } else {
         0
     };
-    let row_width = max_entry_width
-        + PANEL_MENU_ROW_H_PADDING
-        + PANEL_MENU_LIST_PADDING
-        + icon_width
-        + submenu_width;
-    let search_width = prompt_width + PANEL_MENU_ROW_H_PADDING + PANEL_MENU_LIST_PADDING;
+    let row = crate::theme::ui(canopa_theme::UiKind::MenuRow);
+    let padding = canopa_ui::content_padding(row);
+    let row_insets = (padding.left + padding.right + row.margin.horizontal()).ceil() as u32;
+    let input_padding = canopa_ui::content_padding(crate::theme::ui(canopa_theme::UiKind::Input));
+    let input_insets = (input_padding.left + input_padding.right).ceil() as u32;
+    let row_width =
+        max_entry_width + row_insets + PANEL_MENU_LIST_PADDING + icon_width + submenu_width;
+    let search_width = prompt_width + input_insets + PANEL_MENU_LIST_PADDING;
     let width = row_width.max(search_width).max(PANEL_MENU_MIN_WIDTH);
     let row_extent = row_extent.ceil() as u32;
     let height = canopa_ui::panel::HEADER_HEIGHT
-        + (crate::theme::body_size() * 1.3
-            + crate::theme::ui(canopa_theme::UiKind::Input)
-                .padding
-                .vertical())
-        .ceil()
-        .max(PANEL_MENU_SEARCH_HEIGHT as f32) as u32
+        + (crate::theme::body_size() * 1.3 + input_padding.top + input_padding.bottom)
+            .ceil()
+            .max(PANEL_MENU_SEARCH_HEIGHT as f32) as u32
         + PANEL_MENU_LIST_PADDING
         + row_extent * menu.entries.len() as u32;
 
@@ -424,6 +437,7 @@ mod tests {
             prompt: None,
             search_query: String::new(),
             focused_index: None,
+            keyboard_focus: true,
             can_go_back: false,
             scroll_y: 0.0,
             viewport_height: 0.0,
@@ -815,6 +829,7 @@ mod tests {
             prompt: Some("Run".into()),
             search_query: String::new(),
             focused_index: None,
+            keyboard_focus: true,
             can_go_back: false,
             scroll_y: 0.0,
             viewport_height: 0.0,

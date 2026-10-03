@@ -39,6 +39,7 @@ pub(super) struct PanelMenuRenderState {
     pub(super) prompt: Option<String>,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
+    pub(super) keyboard_focus: bool,
     pub(super) can_go_back: bool,
     pub(super) scroll_y: f32,
     pub(super) viewport_height: f32,
@@ -519,6 +520,7 @@ impl PanelRuntime {
 
     fn search_changed(&mut self, query: String) {
         if let Some(session) = self.session.as_mut() {
+            session.clear_hover();
             session.set_search_query(query);
         }
         self.search_focus_pending = false;
@@ -528,6 +530,7 @@ impl PanelRuntime {
     fn focus_index(&mut self, index: usize) {
         if let Some(session) = self.session.as_mut() {
             session.focus_index(index);
+            session.hover_index(index);
         }
         self.search_focus_pending = false;
     }
@@ -538,6 +541,7 @@ impl PanelRuntime {
             return None;
         }
         let session = self.session.as_mut()?;
+        session.clear_hover();
         session.move_focus(delta);
         session.focused_index()
     }
@@ -614,6 +618,7 @@ impl PanelRuntime {
             focused_index: snapshot
                 .as_ref()
                 .and_then(|snapshot| snapshot.focused_index),
+            keyboard_focus: snapshot.as_ref().is_none_or(|s| s.hovered_index.is_none()),
             can_go_back: snapshot
                 .as_ref()
                 .map(|snapshot| snapshot.can_go_back)

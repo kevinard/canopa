@@ -23,6 +23,7 @@ spec.loader.exec_module(desktop)
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary', type=Path, default=ROOT / 'target/debug/canopa-shell')
 parser.add_argument('--output', type=Path, required=True)
+parser.add_argument('--custom-theme', action='store_true', help='Exercise larger fonts and custom menu metrics.')
 args = parser.parse_args()
 out = args.output.resolve()
 out.mkdir(parents=True)
@@ -59,6 +60,19 @@ bar "main" {
 }
 modules { module "button" { label "Apps"; icon "A"; actions { click { toggle-menu "apps"; } } } }
 ''')
+        if args.custom_theme:
+            shared = runtime / 'config/canopa/config.kdl'
+            shared.parent.mkdir(parents=True)
+            shared.write_text('''schema-version 1
+appearance {
+ typography { family "monospace"; body-size 18; label-size 16; title-size 20; }
+ ui {
+  menu { padding 12; gap 6; border width=2 color="accent"; radius 10; }
+  menu-row { padding 10 12; margin 2 0; radius 8; }
+ }
+}
+shell {
+''' + config.read_text() + '\n}\n')
         apps = runtime / 'data/applications'
         apps.mkdir(parents=True)
         icons = runtime / 'data/icons/hicolor/22x22/apps'
@@ -119,6 +133,9 @@ modules { module "button" { label "Apps"; icon "A"; actions { click { toggle-men
         touchpad = []
         for name, delta, samples, interval in [('steady', '0.5', '120', '8333'),
                                                ('bursty', '1.5', '40', '25000')]:
+            # Settle pointer focus before comparing pixels. Otherwise an old
+            # keyboard highlight can change inside the measured strip.
+            session.run([str(out / 'scroll'), '250', '375', '0', '0', '0'])
             before = capture(f'touchpad-{name}-before.png')
             session.run([str(out / 'scroll'), '250', '375', delta, samples, interval])
             after = capture(f'touchpad-{name}-after.png')
@@ -134,6 +151,7 @@ modules { module "button" { label "Apps"; icon "A"; actions { click { toggle-men
             assert displacement == 180 and scores[displacement] < 0.1, result
         # Cross several complete rendered windows, then return to the same pixels.
         crop = (100, 350, 350, 650)
+        session.run([str(out / 'scroll'), '250', '375', '0', '0', '0'])
         before = capture('boundary-before.png').crop(crop)
         session.run([str(out / 'scroll'), '250', '375', '5', '240', '8333'])
         after = capture('boundary-after.png').crop(crop)
@@ -141,7 +159,7 @@ modules { module "button" { label "Apps"; icon "A"; actions { click { toggle-men
         session.run([str(out / 'scroll'), '250', '375', '-5', '240', '8333'])
         returned = capture('boundary-returned.png').crop(crop)
         assert not ImageChops.difference(before, returned).getbbox(), 'cached-row crossings changed scroll geometry'
-        (out / 'result.json').write_text(json.dumps({'keyboard': results, 'touchpad': touchpad, 'boundary_round_trip_pixels': 3600}, indent=2))
+        (out / 'result.json').write_text(json.dumps({'keyboard': results, 'touchpad': touchpad, 'boundary_round_trip_pixels': 3600, 'custom_theme': args.custom_theme}, indent=2))
         print('PASS: icons, idle keyboard redraw, touchpad travel and cached-row crossings', flush=True)
     finally:
         session.close()

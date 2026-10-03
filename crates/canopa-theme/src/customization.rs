@@ -234,6 +234,7 @@ pub struct ResolvedStyle {
     pub custom_border: bool,
     pub custom_radius: bool,
     pub custom_gap: bool,
+    pub custom_padding: bool,
     pub states: [StateColors; 5],
 }
 impl ResolvedStyle {
@@ -243,6 +244,7 @@ impl ResolvedStyle {
         self.border_color = style.border_color.unwrap_or(self.border_color);
         self.border_width = style.border_width.unwrap_or(self.border_width);
         self.radius = style.radius.unwrap_or(self.radius);
+        self.custom_padding |= style.padding.is_some();
         self.padding = style.padding.unwrap_or(self.padding);
         self.margin = style.margin.unwrap_or(self.margin);
         self.custom_gap |= style.gap.is_some();
@@ -354,6 +356,7 @@ impl Appearance {
             custom_border: false,
             custom_radius: false,
             custom_gap: false,
+            custom_padding: false,
             states: Default::default(),
         }
         .apply(self.customization.ui[kind as usize])

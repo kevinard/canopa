@@ -56,6 +56,7 @@ fn icon_work_is_bounded_deduplicated_and_retargets_after_scrolling() {
         prompt: None,
         search_query: String::new(),
         focused_index: None,
+        keyboard_focus: true,
         can_go_back: false,
         scroll_y: 0.0,
         viewport_height: 300.0,

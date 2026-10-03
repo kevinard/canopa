@@ -135,8 +135,10 @@ percentage from `"0.01%"` to `"100%"`. Percentages use the available edge span a
 margins. `align` is `"start"` (default), `"center"`, or `"end"`; start is left on
 horizontal edges and top on vertical edges.
 
-Margins use screen directions. On a top bar, top separates the visible frame from
-the usable edge, left/right reduce the available span, and bottom separates it from
+Bar placement margins round upward to whole logical pixels for native geometry.
+Other UI spacing retains fractional logical precision. Margins use screen directions.
+On a top bar, top separates the visible frame from the usable edge, left/right reduce
+the available span, and bottom separates it from
 application content. `reserve-space #true` (default) reserves near margin + thickness
 + inner margin across the edge, including for a short bar. With `#false`, application
 windows may extend beneath it; panels and tooltips still open beyond the frame.

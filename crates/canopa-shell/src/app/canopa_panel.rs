@@ -330,11 +330,12 @@ pub(super) fn render<'a>(
                         .id(super::canopa_accessibility_bounds::widget_id(
                             &semantic_key(snapshot, provider, &SemanticNode::Item(item.id.clone())),
                         ))
-                        .padding(canopa_ui::padding(
-                            card_overrides
+                        .padding(canopa_ui::content_padding(canopa_theme::ResolvedStyle {
+                            padding: card_overrides
                                 .padding
                                 .unwrap_or(canopa_theme::Insets::all(14)),
-                        ))
+                            ..card_ui
+                        }))
                         .width(Length::Fill)
                         .style(crate::theme::card),
                 )
@@ -370,8 +371,16 @@ pub(super) fn render<'a>(
             &semantic_key(snapshot, provider, &SemanticNode::Root),
         ))
         .padding(iced::Padding {
-            top: canopa_ui::panel::HEADER_PADDING[0] as f32,
-            ..canopa_ui::padding(ui.padding)
+            top: if ui.custom_padding {
+                ui.padding.top.px()
+            } else {
+                canopa_ui::panel::HEADER_PADDING[0] as f32
+            } + if ui.custom_border {
+                ui.border_width.px()
+            } else {
+                0.0
+            },
+            ..canopa_ui::content_padding(ui)
         })
         .width(Length::Fill)
         .height(Length::Fill)
