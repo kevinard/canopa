@@ -5,6 +5,9 @@ use kdl::KdlDocument;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 mod appearance;
+pub use appearance::{dimension, insets, ui_style};
+mod theme_source;
+pub use theme_source::{ThemeSource, capture_theme, theme_path};
 mod shared;
 pub use shared::SharedConfiguration;
 
@@ -142,6 +145,16 @@ pub struct SourceInfo {
     pub fingerprint: String,
     /// Missing namespaces use embedded defaults without consulting legacy files.
     pub defaults: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<SourceDependency>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combined_fingerprint: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceDependency {
+    pub path: PathBuf,
+    pub fingerprint: String,
 }
 
 /// Safe for logs, status, Display and Debug: never contains source text or parser errors.
@@ -149,6 +162,14 @@ pub struct SourceInfo {
 pub struct Diagnostic {
     pub code: Code,
     pub offset: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<DiagnosticSource>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiagnosticSource {
+    Theme,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,7 +185,11 @@ pub enum Code {
 
 impl Diagnostic {
     pub fn new(code: Code, offset: Option<usize>) -> Self {
-        Self { code, offset }
+        Self {
+            code,
+            offset,
+            source: None,
+        }
     }
 }
 impl std::fmt::Display for Diagnostic {
@@ -175,8 +200,11 @@ impl std::fmt::Display for Diagnostic {
             Code::Syntax => "invalid configuration KDL",
             Code::Envelope => "expected schema-version 1 and unique appearance/shell/notifications blocks without arguments or annotations",
             Code::Schema => "invalid component configuration; use the local configuration checker for details",
-            Code::Appearance => "invalid appearance; expected unique color-scheme (dark|light) and accent (#rrggbb) strings",
+            Code::Appearance => "invalid appearance; check theme, palette, typography and UI settings with the local configuration checker",
         })?;
+        if self.source == Some(DiagnosticSource::Theme) {
+            f.write_str(" in theme file")?;
+        }
         if let Some(offset) = self.offset {
             write!(f, " near byte {offset}")?;
         }
@@ -283,6 +311,8 @@ impl Document {
                 format: None,
                 fingerprint: fingerprint(defaults),
                 defaults: true,
+                dependencies: Vec::new(),
+                combined_fingerprint: None,
             },
         })
     }
@@ -298,16 +328,30 @@ impl Document {
             return Err(Diagnostic::new(Code::Read, None));
         }
         let document = parse_kdl(&text)?;
-        let info = SourceInfo {
+        let mut info = SourceInfo {
             path,
             format: Some(format),
             fingerprint: fingerprint(&text),
             defaults: false,
+            dependencies: Vec::new(),
+            combined_fingerprint: None,
         };
         let mut appearance = canopa_theme::Appearance::default();
         if format == Format::CanopaV1 {
             validate_envelope(&document)?;
-            appearance = appearance::parse(&document)?;
+            let theme = capture_theme(&text, info.path.as_deref())?;
+            let theme_document = theme
+                .as_ref()
+                .map(|t| parse_kdl(&t.text).map_err(theme_source::theme_error))
+                .transpose()?;
+            appearance = appearance::parse(&document, theme_document.as_ref())?;
+            if let Some(theme) = theme {
+                info.combined_fingerprint = Some(theme_source::combined_fingerprint(&text, &theme));
+                info.dependencies.push(SourceDependency {
+                    path: theme.path,
+                    fingerprint: fingerprint(&theme.text),
+                });
+            }
             if document.get(component.namespace()).is_none() {
                 let mut fallback = Self::embedded(defaults)?;
                 fallback.appearance = appearance;
@@ -340,11 +384,11 @@ impl Document {
         &self.info
     }
     pub fn appearance(&self) -> canopa_theme::Appearance {
-        self.appearance
+        self.appearance.clone()
     }
 }
 
-fn fingerprint(text: &str) -> String {
+pub fn fingerprint(text: &str) -> String {
     format!("{:x}", Sha256::digest(text.as_bytes()))
 }
 

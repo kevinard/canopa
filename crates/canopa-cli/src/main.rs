@@ -109,7 +109,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
 
 /// Read each selected file once for this invocation. Both owners see the same common bytes.
 fn check(request: &Request, show_source: bool) -> anyhow::Result<bool> {
-    let mut snapshots: HashMap<PathBuf, tempfile::NamedTempFile> = HashMap::new();
+    let mut snapshots = HashMap::new();
     let mut valid = true;
     for component in [Component::Shell, Component::Notifications] {
         let result = check_component(request, component, show_source, &mut snapshots);
@@ -135,11 +135,46 @@ fn check(request: &Request, show_source: bool) -> anyhow::Result<bool> {
     Ok(valid)
 }
 
+struct ValidationSnapshot {
+    main: tempfile::NamedTempFile,
+    _theme_file: Option<tempfile::NamedTempFile>,
+    fingerprint: String,
+    theme: Option<canopa_config::ThemeSource>,
+    combined_fingerprint: Option<String>,
+}
+impl ValidationSnapshot {
+    fn capture(path: &Path, format: Format) -> anyhow::Result<Self> {
+        let text = canopa_config::read(path)?;
+        let theme = if format == Format::CanopaV1 {
+            canopa_config::capture_theme(&text, Some(path))?
+        } else {
+            None
+        };
+        let mut theme_file = None;
+        let mut captured_text = text.clone();
+        if let Some(theme) = &theme {
+            let mut file = tempfile::NamedTempFile::new()?;
+            file.write_all(theme.text.as_bytes())?;
+            captured_text = theme.snapshot_text(&text, file.path());
+            theme_file = Some(file);
+        }
+        let mut main = tempfile::NamedTempFile::new()?;
+        main.write_all(captured_text.as_bytes())?;
+        Ok(Self {
+            main,
+            _theme_file: theme_file,
+            fingerprint: canopa_config::fingerprint(&text),
+            combined_fingerprint: theme.as_ref().map(|t| t.combined_fingerprint(&text)),
+            theme,
+        })
+    }
+}
+
 fn check_component(
     request: &Request,
     component: Component,
     show_source: bool,
-    snapshots: &mut HashMap<PathBuf, tempfile::NamedTempFile>,
+    snapshots: &mut HashMap<PathBuf, ValidationSnapshot>,
 ) -> anyhow::Result<serde_json::Value> {
     let resolved = request.resolve(component)?;
     let mut command = validator(component)?;
@@ -147,10 +182,7 @@ fn check_component(
     match &resolved {
         Request::File { path, format } => {
             if !snapshots.contains_key(path) {
-                let text = canopa_config::read(path)?;
-                let mut snapshot = tempfile::NamedTempFile::new()?;
-                snapshot.write_all(text.as_bytes())?;
-                snapshots.insert(path.clone(), snapshot);
+                snapshots.insert(path.clone(), ValidationSnapshot::capture(path, *format)?);
             }
             let snapshot = &snapshots[path];
             original_path = Some(path);
@@ -159,7 +191,7 @@ fn check_component(
                     Format::CanopaV1 => "--canopa-config",
                     Format::Legacy => "--config",
                 })
-                .arg(snapshot.path());
+                .arg(snapshot.main.path());
         }
         Request::Defaults => {
             command.arg("--defaults");
@@ -195,6 +227,13 @@ fn check_component(
     if let Some(path) = original_path {
         if let Some(source) = report.get_mut("source") {
             source["path"] = serde_json::to_value(path)?;
+            let snapshot = &snapshots[path];
+            source["fingerprint"] = serde_json::to_value(&snapshot.fingerprint)?;
+            if let Some(theme) = &snapshot.theme {
+                source["dependencies"] = serde_json::json!([{ "path": theme.path, "fingerprint": canopa_config::fingerprint(&theme.text) }]);
+                source["combined_fingerprint"] =
+                    serde_json::to_value(&snapshot.combined_fingerprint)?;
+            }
         }
         report["path"] = serde_json::to_value(path)?;
     }
@@ -243,6 +282,29 @@ fn install_new(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+    #[test]
+    fn validation_snapshot_captures_main_and_theme_before_either_consumer_runs() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.kdl");
+        let theme = directory.path().join("theme.kdl");
+        let main = "schema-version 1\nappearance { theme \"theme.kdl\"; }\n";
+        std::fs::write(&path, main).unwrap();
+        std::fs::write(&theme, "palette { accent \"#123456\"; }\n").unwrap();
+        let snapshot = ValidationSnapshot::capture(&path, Format::CanopaV1).unwrap();
+        std::fs::write(&path, "invalid").unwrap();
+        std::fs::remove_file(&theme).unwrap();
+        for consumer in [Component::Shell, Component::Notifications] {
+            let document =
+                canopa_config::Document::load(&Request::common(snapshot.main.path()), consumer, "")
+                    .unwrap();
+            let accent = document.appearance().palette().accent;
+            assert_eq!((accent.0, accent.1, accent.2), (18, 52, 86));
+        }
+        assert_eq!(snapshot.fingerprint, canopa_config::fingerprint(main));
+        assert_eq!(snapshot.theme.as_ref().unwrap().path, theme);
+        assert!(snapshot.combined_fingerprint.is_some());
+    }
+
     #[test]
     fn migration_install_never_clobbers_and_is_private() {
         let dir = tempfile::tempdir().unwrap();

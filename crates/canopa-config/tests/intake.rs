@@ -27,6 +27,7 @@ fn appearance_is_shared_even_when_feature_namespaces_default() {
             canopa_theme::Appearance {
                 color_scheme: canopa_theme::ColorScheme::Light,
                 accent: Some(canopa_theme::Rgb(18, 52, 86)),
+                ..Default::default()
             }
         );
     }

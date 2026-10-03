@@ -61,24 +61,27 @@ fn icon_work_is_bounded_deduplicated_and_retargets_after_scrolling() {
         viewport_height: 300.0,
     };
     let mut icons = PanelIcons::default();
-    let names = icons.request(&menu);
+    let names = icons.request(&menu, 45.0);
     assert_eq!(names, ["icon-0", "icon-1", "icon-2", "icon-3"]);
     menu.scroll_y = 60.0 * super::super::panel::MENU_ROW_EXTENT;
-    assert!(icons.request(&menu).is_empty(), "only one batch in flight");
+    assert!(
+        icons.request(&menu, 45.0).is_empty(),
+        "only one batch in flight"
+    );
     icons.complete(names.into_iter().map(|name| (name, None)).collect());
     assert_eq!(
-        icons.request(&menu),
+        icons.request(&menu, 45.0),
         ["icon-30", "icon-31", "icon-32", "icon-33"]
     );
     icons.complete(vec![]);
     menu.scroll_y = 0.0;
     assert_eq!(
-        icons.request(&menu),
+        icons.request(&menu, 45.0),
         ["icon-4", "icon-5", "icon-6", "icon-7"]
     );
     icons.complete(vec![]);
     menu.show_icons = false;
-    assert!(icons.request(&menu).is_empty());
+    assert!(icons.request(&menu, 45.0).is_empty());
 
     for i in 0..CACHE_SIZE + 10 {
         icons.complete(vec![(format!("bounded-{i}"), None)]);

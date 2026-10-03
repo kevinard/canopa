@@ -51,10 +51,11 @@ impl NumericSlider {
         container(
             column![
                 row![
-                    text(self.spec.label.clone())
-                        .size(metrics::LABEL)
+                    crate::theme::text(self.spec.label.clone())
+                        .size(crate::theme::label_size())
                         .width(Length::Fill),
-                    text(format!("{value}{}", self.spec.unit)).size(metrics::BODY)
+                    crate::theme::text(format!("{value}{}", self.spec.unit))
+                        .size(crate::theme::body_size())
                 ],
                 iced::widget::slider(self.spec.min..=self.spec.max, value, Input::Preview)
                     .step(self.spec.step)

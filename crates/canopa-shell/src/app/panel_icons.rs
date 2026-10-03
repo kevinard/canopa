@@ -28,7 +28,7 @@ impl PanelIcons {
         self.ready.get(name).and_then(Option::as_ref)
     }
 
-    fn request(&mut self, menu: &PanelMenuRenderState) -> Vec<String> {
+    fn request(&mut self, menu: &PanelMenuRenderState, row_extent: f32) -> Vec<String> {
         if self.loading || !menu.show_icons {
             return Vec::new();
         }
@@ -36,9 +36,9 @@ impl PanelIcons {
             menu.entries.len(),
             menu.scroll_y,
             menu.viewport_height,
+            row_extent,
         );
-        let first_visible = ((menu.scroll_y / super::panel::MENU_ROW_EXTENT) as usize)
-            .clamp(range.start, range.end);
+        let first_visible = ((menu.scroll_y / row_extent) as usize).clamp(range.start, range.end);
         let mut names = Vec::new();
         // Visible rows first, then upcoming rows, then the buffer behind us.
         for index in (first_visible..range.end).chain(range.start..first_visible) {
@@ -76,7 +76,8 @@ impl PanelIcons {
 impl App {
     pub(super) fn prepare_panel_icons(&mut self) -> Task<Message> {
         let menu = self.foreground.active_panel_menu_render_state();
-        let names = self.panel_icons.request(&menu);
+        let extent = self.active_menu_metrics().extent;
+        let names = self.panel_icons.request(&menu, extent);
         if names.is_empty() {
             return Task::none();
         }

@@ -2,7 +2,6 @@
 use super::*;
 use crate::NotificationBodyRun;
 use canopa_assets::icons;
-use canopa_ui::metrics;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -584,7 +583,7 @@ fn banner_ui_update(
             acknowledgement,
         }) => {
             if state.presentation.appearance != presentation.appearance {
-                state.theme = canopa_ui::theme(presentation.appearance);
+                state.theme = canopa_ui::theme(presentation.appearance.clone());
             }
             state.presentation = presentation;
             state.presentation_generation = state
@@ -1603,10 +1602,16 @@ fn banner_stack_widget(
             display::observe(
                 // Display means the bounded card viewport is visible, not every
                 // line of oversized content has been read (ADR 0046).
-                container(scrollable(notification_banner_widget(banner)).width(Length::Fill))
-                    .width(Length::Fill)
-                    .max_height(card_height)
-                    .into(),
+                container(
+                    scrollable(notification_banner_widget(
+                        banner,
+                        &state.presentation.appearance,
+                    ))
+                    .width(Length::Fill),
+                )
+                .width(Length::Fill)
+                .max_height(card_height)
+                .into(),
                 banner.target(),
                 state.pending_acknowledgement.as_ref(),
             ),
@@ -1615,7 +1620,10 @@ fn banner_stack_widget(
     if state.presentation.overflow_count > 0 {
         stack = stack.push(
             BannerStackItemKey::Overflow,
-            overflow_count_banner_widget(state.presentation.overflow_count),
+            overflow_count_banner_widget(
+                state.presentation.overflow_count,
+                &state.presentation.appearance,
+            ),
         );
     }
 
@@ -1641,26 +1649,43 @@ fn banner_stack_item_key(banner: &BannerView) -> BannerStackItemKey {
     BannerStackItemKey::Notification(banner.notification_id)
 }
 
-fn notification_banner_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
+fn notification_banner_widget<'a>(
+    banner: &'a BannerView,
+    appearance: &canopa_theme::Appearance,
+) -> iced::Element<'a, BannerUiMessage> {
     // Keep the outer card/scroll state while retiring a press captured before replacement.
-    revision::own(notification_banner_content(banner), banner.target())
+    iced::widget::container(revision::own(
+        notification_banner_content(banner, appearance),
+        banner.target(),
+    ))
+    .padding(canopa_ui::padding(
+        appearance.style(canopa_theme::UiKind::Notification).margin,
+    ))
+    .into()
 }
 
-fn notification_banner_content(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
+fn notification_banner_content<'a>(
+    banner: &'a BannerView,
+    appearance: &canopa_theme::Appearance,
+) -> iced::Element<'a, BannerUiMessage> {
     use iced::widget::{button, column, container, progress_bar, row, text};
     use iced::{Alignment, Length};
 
     let content = column![
         text(banner_title(banner))
-            .size(metrics::TITLE)
+            .font(canopa_ui::font(appearance))
+            .size(appearance.typography().title_size.px())
             .width(Length::Fill)
-            .line_height(iced::Pixels(22.0))
+            .line_height(iced::Pixels(
+                appearance.typography().title_size.px() * 1.375
+            ))
             .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
-        container(notification_body_widget(banner))
+        container(notification_body_widget(banner, appearance))
             .id(accessibility_bounds::widget_id(banner.target(), 1))
             .width(Length::Fill),
         text(&banner.app_name)
-            .size(metrics::LABEL)
+            .font(canopa_ui::font(appearance))
+            .size(appearance.typography().label_size.px())
             .width(Length::Fill)
             .style(canopa_ui::muted),
     ]
@@ -1670,18 +1695,39 @@ fn notification_banner_content(banner: &BannerView) -> iced::Element<'_, BannerU
     let activate = button(container(content).width(Length::Fill).clip(true))
         .padding(0)
         .width(Length::Fill)
-        .style(content_button_style)
+        .style({
+            let appearance = appearance.clone();
+            move |theme, status| {
+                let mut style = content_button_style(theme, status);
+                if appearance.customization.ui[canopa_theme::UiKind::Notification as usize]
+                    .foreground
+                    .is_some()
+                {
+                    style.text_color = canopa_ui::resolve_color(
+                        &appearance,
+                        appearance
+                            .style(canopa_theme::UiKind::Notification)
+                            .foreground,
+                    );
+                }
+                style
+            }
+        })
         .on_press(BannerUiMessage::ActivateRequested(banner.target()));
     let activate = container(activate)
         .id(accessibility_bounds::widget_id(banner.target(), 3))
         .width(Length::Fill);
-    let dismiss = container(close_button(banner.target()))
+    let dismiss = container(close_button(banner.target(), appearance))
         .id(accessibility_bounds::widget_id(banner.target(), 2));
 
     let visual_layout = banner_header_visual_layout(banner);
-    let mut header = row![primary_banner_visual(banner, visual_layout.primary),]
-        .spacing(10)
-        .align_y(Alignment::Start);
+    let mut header = row![primary_banner_visual(
+        banner,
+        visual_layout.primary,
+        appearance
+    ),]
+    .spacing(10)
+    .align_y(Alignment::Start);
     if visual_layout.has_secondary_notification_image
         && let Some(image) = &banner.image
     {
@@ -1689,8 +1735,13 @@ fn notification_banner_content(banner: &BannerView) -> iced::Element<'_, BannerU
     }
     header = header.push(activate).push(dismiss);
 
-    let mut card = column![header, banner_actions_widget(banner)]
-        .spacing(metrics::GAP)
+    let mut card = column![header, banner_actions_widget(banner, appearance)]
+        .spacing(
+            appearance
+                .style(canopa_theme::UiKind::Notification)
+                .gap
+                .px(),
+        )
         .width(Length::Fill);
 
     if let Some(progress) = banner.progress {
@@ -1703,15 +1754,30 @@ fn notification_banner_content(banner: &BannerView) -> iced::Element<'_, BannerU
 
     container(card)
         .id(accessibility_bounds::widget_id(banner.target(), 0))
-        .padding(metrics::PADDING)
+        .padding(canopa_ui::content_padding(
+            appearance.style(canopa_theme::UiKind::Notification),
+        ))
         .width(Length::Fill)
         .height(Length::Shrink)
         .clip(true)
-        .style(card_container_style)
+        .style({
+            let appearance = appearance.clone();
+            move |_| {
+                let mut frame = canopa_ui::frame(
+                    &appearance,
+                    appearance.style(canopa_theme::UiKind::Notification),
+                );
+                frame.shadow = banner_shadow();
+                frame
+            }
+        })
         .into()
 }
 
-fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
+fn banner_actions_widget<'a>(
+    banner: &'a BannerView,
+    appearance: &canopa_theme::Appearance,
+) -> iced::Element<'a, BannerUiMessage> {
     use iced::widget::{column, container, row};
     use iced::{Alignment, Length};
 
@@ -1733,14 +1799,15 @@ fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessa
         for (column_index, action) in pair.iter().enumerate() {
             action_row = action_row.push(
                 container(
-                    canopa_ui::action(
-                        banner_action_content(action),
+                    canopa_ui::styled_action(
+                        banner_action_content(action, appearance),
                         Some(BannerUiMessage::InvokeActionRequested(
                             banner.target(),
                             action.key.clone(),
                         )),
                         canopa_ui::Action::Normal,
                         false,
+                        appearance,
                     )
                     .height(Length::Shrink)
                     .width(Length::Fill),
@@ -1758,13 +1825,19 @@ fn banner_actions_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessa
     container(actions).width(Length::Fill).into()
 }
 
-fn banner_action_content(action: &BannerAction) -> iced::Element<'_, BannerUiMessage> {
+fn banner_action_content<'a>(
+    action: &'a BannerAction,
+    appearance: &canopa_theme::Appearance,
+) -> iced::Element<'a, BannerUiMessage> {
     use iced::widget::{row, text};
     use iced::{Alignment, Length};
 
     let label = text(action.label.as_str())
-        .size(metrics::BODY)
-        .line_height(iced::Pixels(20.0))
+        .font(canopa_ui::font(appearance))
+        .size(appearance.typography().body_size.px())
+        .line_height(iced::Pixels(
+            appearance.typography().body_size.px() * 1.4286,
+        ))
         .width(Length::Fill)
         .wrapping(iced::widget::text::Wrapping::WordOrGlyph);
 
@@ -1778,14 +1851,18 @@ fn banner_action_content(action: &BannerAction) -> iced::Element<'_, BannerUiMes
     }
 }
 
-fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMessage> {
+fn notification_body_widget<'a>(
+    banner: &'a BannerView,
+    appearance: &canopa_theme::Appearance,
+) -> iced::Element<'a, BannerUiMessage> {
     use iced::Length;
     use iced::widget::{column, text};
 
     if banner.body_segments.is_empty() {
         return body_preview(
             text(&banner.body)
-                .size(metrics::BODY)
+                .font(canopa_ui::font(appearance))
+                .size(appearance.typography().body_size.px())
                 .width(Length::Fill)
                 .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
                 .style(canopa_ui::muted)
@@ -1798,9 +1875,10 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
         .iter()
         .any(|segment| !matches!(segment, BannerBodySegment::Text { .. }))
     {
-        return body_preview(banner_body_text_widget(banner_body_text_runs(
-            &banner.body_segments,
-        )));
+        return body_preview(banner_body_text_widget(
+            banner_body_text_runs(&banner.body_segments),
+            appearance,
+        ));
     }
 
     let mut body = column![].spacing(4).width(Length::Fill);
@@ -1817,7 +1895,10 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
                 segment_index,
             } => {
                 if !pending_text.is_empty() {
-                    body = body.push(banner_body_text_widget(std::mem::take(&mut pending_text)));
+                    body = body.push(banner_body_text_widget(
+                        std::mem::take(&mut pending_text),
+                        appearance,
+                    ));
                 }
                 let label = styled_body_widget(
                     vec![NotificationBodyRun::styled(
@@ -1828,13 +1909,32 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
                         },
                     )],
                     true,
+                    appearance,
                 );
                 body = body.push(
                     iced::widget::container(
                         iced::widget::button(label)
                             .padding(2)
                             .width(Length::Fill)
-                            .style(content_button_style)
+                            .style({
+                                let appearance = appearance.clone();
+                                move |theme, status| {
+                                    let mut style = content_button_style(theme, status);
+                                    if appearance.customization.ui
+                                        [canopa_theme::UiKind::Notification as usize]
+                                        .foreground
+                                        .is_some()
+                                    {
+                                        style.text_color = canopa_ui::resolve_color(
+                                            &appearance,
+                                            appearance
+                                                .style(canopa_theme::UiKind::Notification)
+                                                .foreground,
+                                        );
+                                    }
+                                    style
+                                }
+                            })
                             .on_press(BannerUiMessage::OpenLinkRequested(
                                 banner.target(),
                                 *segment_index,
@@ -1849,7 +1949,10 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
             }
             BannerBodySegment::Image { image } => {
                 if !pending_text.is_empty() {
-                    body = body.push(banner_body_text_widget(std::mem::take(&mut pending_text)));
+                    body = body.push(banner_body_text_widget(
+                        std::mem::take(&mut pending_text),
+                        appearance,
+                    ));
                 }
                 body = body.push(body_image_visual(image));
             }
@@ -1857,7 +1960,7 @@ fn notification_body_widget(banner: &BannerView) -> iced::Element<'_, BannerUiMe
     }
 
     if !pending_text.is_empty() {
-        body = body.push(banner_body_text_widget(pending_text));
+        body = body.push(banner_body_text_widget(pending_text, appearance));
     }
 
     body_preview(body.into())
@@ -1889,13 +1992,15 @@ fn banner_body_text_runs(segments: &[BannerBodySegment]) -> Vec<NotificationBody
 
 fn banner_body_text_widget(
     runs: Vec<NotificationBodyRun>,
+    appearance: &canopa_theme::Appearance,
 ) -> iced::Element<'static, BannerUiMessage> {
-    styled_body_widget(runs, false)
+    styled_body_widget(runs, false, appearance)
 }
 
 fn styled_body_widget(
     runs: Vec<NotificationBodyRun>,
     link: bool,
+    appearance: &canopa_theme::Appearance,
 ) -> iced::Element<'static, BannerUiMessage> {
     use iced::widget::{rich_text, span};
     use iced::{Font, Length, font};
@@ -1916,7 +2021,7 @@ fn styled_body_widget(
                     } else {
                         font::Style::Normal
                     },
-                    ..Font::default()
+                    ..canopa_ui::font(appearance)
                 });
             }
             if run.style.underline {
@@ -1927,7 +2032,8 @@ fn styled_body_widget(
         .collect();
 
     rich_text(spans)
-        .size(metrics::BODY)
+        .font(canopa_ui::font(appearance))
+        .size(appearance.typography().body_size.px())
         .width(Length::Fill)
         .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
         .style(move |theme: &iced::Theme| {
@@ -1958,7 +2064,10 @@ fn body_image_visual(visual: &BannerVisual) -> iced::Element<'_, BannerUiMessage
     .into()
 }
 
-fn overflow_count_banner_widget(count: usize) -> iced::Element<'static, BannerUiMessage> {
+fn overflow_count_banner_widget(
+    count: usize,
+    appearance: &canopa_theme::Appearance,
+) -> iced::Element<'static, BannerUiMessage> {
     use iced::widget::{container, row, text};
     use iced::{Alignment, Length};
 
@@ -1967,26 +2076,44 @@ fn overflow_count_banner_widget(count: usize) -> iced::Element<'static, BannerUi
     } else {
         format!("+{count} more notifications")
     };
-    let badge = container(text("+").size(metrics::BODY))
-        .center(26)
-        .style(|theme| app_badge_style(theme, Urgency::Normal));
+    let badge = container(
+        text("+")
+            .font(canopa_ui::font(appearance))
+            .size(appearance.typography().body_size.px()),
+    )
+    .center(26)
+    .style(|theme| app_badge_style(theme, Urgency::Normal));
 
     container(
         row![
             badge,
             text(label)
-                .size(14)
+                .font(canopa_ui::font(appearance))
+                .size(appearance.typography().body_size.px())
                 .width(Length::Fill)
                 .style(canopa_ui::muted)
         ]
-        .spacing(metrics::GAP)
+        .spacing(
+            appearance
+                .style(canopa_theme::UiKind::Notification)
+                .gap
+                .px(),
+        )
         .align_y(Alignment::Center),
     )
     .padding(8)
     .width(Length::Fill)
-    .height(DENSE_BANNER_HEIGHT)
+    .height((appearance.typography().body_size.px() * 1.3 + 16.0).max(DENSE_BANNER_HEIGHT as f32))
     .clip(true)
-    .style(stacked_card_container_style)
+    .style({
+        let appearance = appearance.clone();
+        move |_| {
+            canopa_ui::frame(
+                &appearance,
+                appearance.style(canopa_theme::UiKind::Notification),
+            )
+        }
+    })
     .into()
 }
 
@@ -2007,13 +2134,21 @@ fn app_initial(app_name: &str) -> String {
         .unwrap_or_else(|| "?".to_string())
 }
 
-fn app_badge(app_name: &str, urgency: Urgency) -> iced::Element<'_, BannerUiMessage> {
+fn app_badge<'a>(
+    app_name: &'a str,
+    urgency: Urgency,
+    appearance: &canopa_theme::Appearance,
+) -> iced::Element<'a, BannerUiMessage> {
     use iced::widget::{container, text};
 
-    container(text(app_initial(app_name)).size(metrics::TITLE))
-        .center(34)
-        .style(move |theme| app_badge_style(theme, urgency))
-        .into()
+    container(
+        text(app_initial(app_name))
+            .font(canopa_ui::font(appearance))
+            .size(appearance.typography().title_size.px()),
+    )
+    .center(34)
+    .style(move |theme| app_badge_style(theme, urgency))
+    .into()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2050,23 +2185,24 @@ fn banner_header_visual_layout(banner: &BannerView) -> BannerHeaderVisualLayout 
     }
 }
 
-fn primary_banner_visual(
-    banner: &BannerView,
+fn primary_banner_visual<'a>(
+    banner: &'a BannerView,
     primary: BannerPrimaryVisual,
-) -> iced::Element<'_, BannerUiMessage> {
+    appearance: &canopa_theme::Appearance,
+) -> iced::Element<'a, BannerUiMessage> {
     let size = primary_banner_visual_size(primary);
     match primary {
-        BannerPrimaryVisual::AppBadge => app_badge(&banner.app_name, banner.urgency),
+        BannerPrimaryVisual::AppBadge => app_badge(&banner.app_name, banner.urgency, appearance),
         BannerPrimaryVisual::AppIcon => banner
             .app_icon
             .as_ref()
             .map(|icon| visual_image(icon, size))
-            .unwrap_or_else(|| app_badge(&banner.app_name, banner.urgency)),
+            .unwrap_or_else(|| app_badge(&banner.app_name, banner.urgency, appearance)),
         BannerPrimaryVisual::NotificationImage => banner
             .image
             .as_ref()
             .map(|image| visual_image(image, size))
-            .unwrap_or_else(|| app_badge(&banner.app_name, banner.urgency)),
+            .unwrap_or_else(|| app_badge(&banner.app_name, banner.urgency, appearance)),
     }
 }
 
@@ -2108,26 +2244,20 @@ fn banner_visual_handle(visual: &BannerVisual) -> iced::widget::image::Handle {
     }
 }
 
-fn close_button<'a>(target: BannerTarget) -> iced::widget::Button<'a, BannerUiMessage> {
-    use iced::widget::{button, text};
-
-    button(text("x").size(14))
-        .padding(0)
-        .width(28)
-        .height(28)
-        .style(close_button_style)
-        .on_press(BannerUiMessage::Dismiss(target))
-}
-
-fn card_container_style(theme: &iced::Theme) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        shadow: banner_shadow(),
-        ..canopa_ui::surface(theme)
-    }
-}
-
-fn stacked_card_container_style(theme: &iced::Theme) -> iced::widget::container::Style {
-    canopa_ui::surface(theme)
+fn close_button<'a>(
+    target: BannerTarget,
+    appearance: &canopa_theme::Appearance,
+) -> iced::widget::Button<'a, BannerUiMessage> {
+    let label = iced::widget::text("x")
+        .font(canopa_ui::font(appearance))
+        .size(appearance.typography().body_size.px());
+    canopa_ui::styled_action(
+        label,
+        Some(BannerUiMessage::Dismiss(target)),
+        canopa_ui::Action::Destructive,
+        false,
+        appearance,
+    )
 }
 
 fn app_badge_style(theme: &iced::Theme, urgency: Urgency) -> iced::widget::container::Style {
@@ -2164,13 +2294,6 @@ fn content_button_style(
     status: iced::widget::button::Status,
 ) -> iced::widget::button::Style {
     canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false)
-}
-
-fn close_button_style(
-    theme: &iced::Theme,
-    status: iced::widget::button::Status,
-) -> iced::widget::button::Style {
-    canopa_ui::action_style(theme, status, canopa_ui::Action::Destructive, false)
 }
 
 fn urgency_accent_color(theme: &iced::Theme, urgency: Urgency) -> iced::Color {

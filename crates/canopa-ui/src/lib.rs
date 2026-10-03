@@ -1,7 +1,9 @@
 //! Shared Iced visual treatment. Callers retain events, focus, identity and accessibility trees.
+mod customization;
 pub mod panel;
 pub use canopa_theme::metrics;
 use canopa_theme::{Appearance, ColorScheme, Rgb};
+pub use customization::*;
 use iced::{
     Color, Theme,
     widget::{button, container, text},
@@ -44,8 +46,14 @@ pub fn theme(appearance: Appearance) -> Theme {
             extended.background.stronger = pair(p.border, p.text);
             extended.background.strongest = pair(p.disabled, p.text);
             extended.secondary.base = pair(p.muted, p.background);
-            extended.primary.base = pair(p.accent, p.accent.contrasting_text());
-            extended.danger.base = pair(p.danger, p.danger.contrasting_text());
+            extended.primary.base =
+                pair(p.accent, appearance.role(canopa_theme::ColorRole::OnAccent));
+            extended.danger.base =
+                pair(p.danger, appearance.role(canopa_theme::ColorRole::OnDanger));
+            extended.secondary.strong = pair(
+                appearance.role(canopa_theme::ColorRole::Focus),
+                p.background,
+            );
             extended
         },
     )
@@ -61,6 +69,7 @@ pub struct Colors {
     pub disabled: Color,
     pub border: Color,
     pub accent: Color,
+    pub focus: Color,
     pub on_accent: Color,
     pub danger: Color,
     pub on_danger: Color,
@@ -80,6 +89,7 @@ pub fn colors(theme: &Theme) -> Colors {
         disabled: p.background.strongest.color,
         border: p.background.stronger.color,
         accent: p.primary.base.color,
+        focus: p.secondary.strong.color,
         on_accent: p.primary.base.text,
         danger: p.danger.base.color,
         on_danger: p.danger.base.text,
@@ -171,7 +181,7 @@ pub fn action_style(
         text_color: if disabled { p.disabled } else { foreground },
         border: iced::Border {
             color: if focused && !disabled {
-                p.accent
+                p.focus
             } else {
                 p.border
             },
@@ -211,7 +221,7 @@ mod tests {
                 color_scheme: scheme,
                 ..Default::default()
             };
-            let theme = theme(appearance);
+            let theme = theme(appearance.clone());
             let p = colors(&theme);
             assert_eq!(p.background, color(appearance.palette().background));
             assert_eq!(surface(&theme).text_color, Some(p.text));

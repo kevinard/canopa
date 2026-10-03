@@ -1,5 +1,6 @@
 {
   "scenarios": [
+    {"id": "theme-customization", "script": "verify-theme-customization.py", "args": ["--binary", "{shell}", "--output", "{artifacts}"]},
     {"id": "configuration-reload", "script": "verify-configuration-reload.py", "args": ["--binary", "{shell}", "--output", "{artifacts}"]},
     {"id": "desktop-dark", "script": "test-desktop.py", "args": ["--notify", "{notify}", "--shell", "{shell}", "--artifacts", "{artifacts}", "--color-scheme", "dark"]},
     {"id": "desktop-light", "script": "test-desktop.py", "args": ["--notify", "{notify}", "--shell", "{shell}", "--artifacts", "{artifacts}", "--color-scheme", "light", "--scale", "1.25"]},

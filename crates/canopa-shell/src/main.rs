@@ -285,7 +285,7 @@ fn send_ipc_command(cmd: &str) {
 fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
     // Load config fully before any surface is created (AR7).
     let (config, source) = config::load(request, false)?;
-    theme::install(config.appearance);
+    theme::install(config.appearance.clone());
     tracing::info!(target: "canopa_shell::configuration", source = ?source, "configuration installed; automatic reload enabled");
     tracing::debug!(
         target: "canopa_shell::runtime",
@@ -299,16 +299,14 @@ fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
     // after the Wayland Output Adapter reports named Outputs.
     let anchor = config.bars[0].edge.anchor();
     let layer = config.bars[0].layer.layer_shell();
-    let collapsed_width = config.bars[0].collapsed_width;
     // All dimensions passed to iced_layershell are in logical pixels (NFR11 / Story 7.2).
     // The compositor multiplies by each output's scale factor for physical rendering.
-    let exclusive_zone = i32::try_from(collapsed_width).unwrap_or(48);
+    let exclusive_zone = crate::surface::bar_geometry::BarGeometry::reservation(&config.bars[0]);
     // For horizontal bars (top/bottom) the fixed dimension is the height; for vertical it's width.
-    let size = if config.bars[0].edge.is_horizontal() {
-        Some((0, collapsed_width)) // logical height for horizontal bar
-    } else {
-        Some((collapsed_width, 0)) // logical width for vertical bar
-    };
+    let size = Some(crate::surface::bar_geometry::BarGeometry::host_size(
+        &config.bars[0],
+        0,
+    ));
 
     let start_mode = StartMode::Background;
     let eligible_outputs = EligibleOutputState::Unknown;

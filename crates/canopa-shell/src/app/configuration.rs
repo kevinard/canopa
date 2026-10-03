@@ -46,6 +46,8 @@ impl ConfigurationRuntime {
 struct Observation {
     selected: Result<Request, canopa_config::Diagnostic>,
     metadata: Option<Result<FileStamp, std::io::ErrorKind>>,
+    theme: Option<std::path::PathBuf>,
+    theme_metadata: Option<Result<FileStamp, std::io::ErrorKind>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,23 +59,51 @@ struct FileStamp {
     changed: (i64, i64),
 }
 
+#[cfg(test)]
 fn observe(request: &Request) -> Observation {
+    observe_after(request, None)
+}
+
+fn stamp(path: &std::path::Path) -> Result<FileStamp, std::io::ErrorKind> {
+    std::fs::metadata(path)
+        .map(|meta| FileStamp {
+            device: meta.dev(),
+            inode: meta.ino(),
+            size: meta.len(),
+            modified: (meta.mtime(), meta.mtime_nsec()),
+            changed: (meta.ctime(), meta.ctime_nsec()),
+        })
+        .map_err(|error| error.kind())
+}
+
+fn observe_after(request: &Request, previous: Option<&Observation>) -> Observation {
     let selected = request.resolve(canopa_config::Component::Shell);
     let metadata = match &selected {
-        Ok(Request::File { path, .. }) => Some(
-            std::fs::metadata(path)
-                .map(|meta| FileStamp {
-                    device: meta.dev(),
-                    inode: meta.ino(),
-                    size: meta.len(),
-                    modified: (meta.mtime(), meta.mtime_nsec()),
-                    changed: (meta.ctime(), meta.ctime_nsec()),
-                })
-                .map_err(|error| error.kind()),
-        ),
+        Ok(Request::File { path, .. }) => Some(stamp(path)),
         _ => None,
     };
-    Observation { selected, metadata }
+    let theme = if let Some(previous) =
+        previous.filter(|p| p.selected == selected && p.metadata == metadata)
+    {
+        previous.theme.clone()
+    } else if let Ok(Request::File {
+        path,
+        format: canopa_config::Format::CanopaV1,
+    }) = &selected
+    {
+        canopa_config::read(path)
+            .ok()
+            .and_then(|text| canopa_config::theme_path(&text, Some(path)).ok().flatten())
+    } else {
+        None
+    };
+    let theme_metadata = theme.as_ref().map(|path| stamp(path));
+    Observation {
+        selected,
+        metadata,
+        theme,
+        theme_metadata,
+    }
 }
 
 fn watch(request: Request) -> Subscription<Event> {
@@ -88,8 +118,11 @@ fn watch(request: Request) -> Subscription<Event> {
                     loop {
                         tokio::time::sleep(Duration::from_millis(250)).await;
                         let selection = request.clone();
-                        let Ok(observation) =
-                            tokio::task::spawn_blocking(move || observe(&selection)).await
+                        let prior = previous.clone();
+                        let Ok(observation) = tokio::task::spawn_blocking(move || {
+                            observe_after(&selection, prior.as_ref())
+                        })
+                        .await
                         else {
                             continue;
                         };
@@ -262,7 +295,7 @@ impl App {
         }
 
         self.config = config;
-        crate::theme::install(self.config.appearance);
+        crate::theme::install(self.config.appearance.clone());
         self.configuration.generation += 1;
         self.data_sources.reconfigure(&mut modules);
         self.modules = modules;
@@ -286,6 +319,11 @@ impl App {
         self.reconcile_tray_dynamic_modules(&self.tray.snapshot());
         let effects = self.surfaces.reconcile_bar_surfaces(desired);
         tasks.extend(self.apply_bar_surface_lifecycle_effects(effects));
+        tasks.extend(
+            self.surfaces
+                .keys()
+                .map(|window| self.drawer_bar_input_region(*window)),
+        );
         tasks.extend(self.reconcile_module_visibility());
         Ok(Task::batch(tasks))
     }

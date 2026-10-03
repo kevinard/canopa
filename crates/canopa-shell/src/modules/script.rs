@@ -203,7 +203,7 @@ impl crate::modules::view::IconLabel for ScriptModule {
         if layout == crate::modules::view::IconLabelLayout::Expanded {
             13
         } else {
-            crate::theme::bar_metrics::TEXT_SIZE
+            crate::theme::label_size() as u32
         }
     }
     fn fallback_view(

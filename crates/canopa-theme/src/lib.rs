@@ -1,4 +1,6 @@
 //! Toolkit-independent appearance snapshots. No environment or process-global state.
+mod customization;
+pub use customization::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
@@ -55,10 +57,11 @@ pub enum ColorScheme {
     Light,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Appearance {
     pub color_scheme: ColorScheme,
     pub accent: Option<Rgb>,
+    pub customization: std::sync::Arc<Customization>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,7 +80,7 @@ pub struct Palette {
 }
 
 impl Appearance {
-    pub fn palette(self) -> Palette {
+    pub fn palette(&self) -> Palette {
         let mut palette = match self.color_scheme {
             ColorScheme::Dark => Palette {
                 background: Rgb(0x1e, 0x1e, 0x2e),
@@ -109,6 +112,24 @@ impl Appearance {
         };
         if let Some(accent) = self.accent {
             palette.accent = accent;
+        }
+        for role in ColorRole::ALL {
+            if let Some(color) = self.customization.palette[role as usize] {
+                match role {
+                    ColorRole::Background => palette.background = color,
+                    ColorRole::Surface => palette.surface = color,
+                    ColorRole::Raised => palette.raised = color,
+                    ColorRole::Text => palette.text = color,
+                    ColorRole::Muted => palette.muted = color,
+                    ColorRole::Disabled => palette.disabled = color,
+                    ColorRole::Border => palette.border = color,
+                    ColorRole::Accent => palette.accent = color,
+                    ColorRole::Danger => palette.danger = color,
+                    ColorRole::Warning => palette.warning = color,
+                    ColorRole::Success => palette.success = color,
+                    _ => {}
+                }
+            }
         }
         palette
     }

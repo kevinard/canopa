@@ -7,7 +7,7 @@ use canopa_panel_protocol::{
 };
 use canopa_shell::external_panel::canopa::CanopaSnapshot;
 use canopa_ui::metrics;
-use iced::widget::{Space, column, container, rich_text, row, scrollable, span, text, tooltip};
+use iced::widget::{Space, column, container, rich_text, row, scrollable, span, tooltip};
 use iced::{Element, Length, Theme};
 
 use super::{Message, messages::ExternalPanelEvent};
@@ -23,16 +23,20 @@ pub(super) fn render<'a>(
     snapshot: &'a CanopaSnapshot,
     provider: &'a str,
     drawer: bool,
+    ui: canopa_theme::ResolvedStyle,
 ) -> Element<'a, Message> {
     let reading_id = iced::widget::Id::from(format!("canopa-reading/{provider}"));
-    let mut panel = column![].spacing(20);
+    let card_ui = crate::theme::ui(canopa_theme::UiKind::Card);
+    let card_overrides =
+        crate::theme::appearance().customization.ui[canopa_theme::UiKind::Card as usize];
+    let mut panel = column![].spacing(if ui.custom_gap { ui.gap.px() } else { 20.0 });
     let mut focused_slider = None;
     if let Some(error) = &snapshot.content.error {
         panel = panel.push(semantic(
             snapshot,
             provider,
             &SemanticNode::Error,
-            text(error.clone()).color(crate::theme::palette().danger),
+            crate::theme::text(error.clone()).color(crate::theme::palette().danger),
         ));
     }
     if !snapshot.content.actions.is_empty() {
@@ -52,8 +56,8 @@ pub(super) fn render<'a>(
             });
         let mut group = column![].spacing(10);
         if !section.title.is_empty() && (!identifies_each_item || !section.controls.is_empty()) {
-            let label = text(section.title.clone())
-                .size(metrics::LABEL)
+            let label = crate::theme::text(section.title.clone())
+                .size(crate::theme::label_size())
                 .style(canopa_ui::muted);
             group = group.push(if let Some(icon) = &section.icon {
                 Element::from(
@@ -95,7 +99,7 @@ pub(super) fn render<'a>(
                 provider,
                 &SemanticNode::Control(section.id.clone(), control.key.clone()),
                 column![
-                    text(control.label.clone()).size(metrics::BODY),
+                    crate::theme::text(control.label.clone()).size(crate::theme::body_size()),
                     options.wrap()
                 ]
                 .spacing(metrics::GAP),
@@ -103,11 +107,11 @@ pub(super) fn render<'a>(
         }
         for item in &section.items {
             let mut heading = row![
-                text(item.title.clone())
-                    .size(metrics::TITLE)
+                crate::theme::text(item.title.clone())
+                    .size(crate::theme::title_size())
                     .font(iced::Font {
                         weight: iced::font::Weight::Semibold,
-                        ..iced::Font::DEFAULT
+                        ..crate::theme::font()
                     })
                     .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
                     .width(Length::Fill)
@@ -137,14 +141,15 @@ pub(super) fn render<'a>(
                     heading = heading.push(
                         tooltip(
                             marker,
-                            text(metadata_label(metadata)),
+                            crate::theme::text(metadata_label(metadata)),
                             tooltip::Position::Bottom,
                         )
-                        .style(canopa_ui::surface),
+                        .style(crate::theme::card),
                     );
                 }
             }
-            let mut card = column![heading].spacing(10);
+            let mut card =
+                column![heading].spacing(card_overrides.gap.map(|p| p.px()).unwrap_or(10.0));
             match selected_body(item) {
                 Body::Rich(body) => {
                     let mut runs = Vec::new();
@@ -214,7 +219,7 @@ pub(super) fn render<'a>(
                                         snapshot,
                                         provider,
                                         &SemanticNode::Body(item.id.clone(), Some(index)),
-                                        text(
+                                        crate::theme::text(
                                             image
                                                 .alt
                                                 .clone()
@@ -247,7 +252,7 @@ pub(super) fn render<'a>(
                         snapshot,
                         provider,
                         &SemanticNode::Body(item.id.clone(), None),
-                        text(body.to_owned()).size(metrics::BODY),
+                        crate::theme::text(body.to_owned()).size(crate::theme::body_size()),
                     ));
                 }
                 Body::None => {}
@@ -260,8 +265,8 @@ pub(super) fn render<'a>(
                     snapshot,
                     provider,
                     &SemanticNode::Metadata(item.id.clone(), index),
-                    text(metadata_label(metadata))
-                        .size(metrics::LABEL)
+                    crate::theme::text(metadata_label(metadata))
+                        .size(crate::theme::label_size())
                         .style(canopa_ui::muted),
                 ));
             }
@@ -270,8 +275,8 @@ pub(super) fn render<'a>(
                     snapshot,
                     provider,
                     &SemanticNode::Attribution(item.id.clone()),
-                    text(source.label.clone())
-                        .size(metrics::LABEL)
+                    crate::theme::text(source.label.clone())
+                        .size(crate::theme::label_size())
                         .style(canopa_ui::muted),
                 ));
                 let icon = source_icon(snapshot, source.icon.as_ref(), &source.label);
@@ -320,13 +325,20 @@ pub(super) fn render<'a>(
                 ));
             }
             group = group.push(
-                container(card)
-                    .id(super::canopa_accessibility_bounds::widget_id(
-                        &semantic_key(snapshot, provider, &SemanticNode::Item(item.id.clone())),
-                    ))
-                    .padding(14)
-                    .width(Length::Fill)
-                    .style(canopa_ui::surface),
+                container(
+                    container(card)
+                        .id(super::canopa_accessibility_bounds::widget_id(
+                            &semantic_key(snapshot, provider, &SemanticNode::Item(item.id.clone())),
+                        ))
+                        .padding(canopa_ui::padding(
+                            card_overrides
+                                .padding
+                                .unwrap_or(canopa_theme::Insets::all(14)),
+                        ))
+                        .width(Length::Fill)
+                        .style(crate::theme::card),
+                )
+                .padding(canopa_ui::padding(card_ui.margin)),
             );
         }
         panel = panel.push(semantic(
@@ -343,7 +355,7 @@ pub(super) fn render<'a>(
     {
         header = header.push(action_widget::preview(id, label, provider));
     }
-    reading::wrap(
+    let frame = reading::wrap(
         container(
             column![
                 header,
@@ -359,15 +371,26 @@ pub(super) fn render<'a>(
         ))
         .padding(iced::Padding {
             top: canopa_ui::panel::HEADER_PADDING[0] as f32,
-            ..iced::Padding::from(canopa_ui::panel::PADDING)
+            ..canopa_ui::padding(ui.padding)
         })
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |theme| canopa_ui::panel::surface(theme, drawer))
+        .style(move |_| {
+            let mut frame = canopa_ui::frame(&crate::theme::appearance(), ui);
+            if drawer && !ui.custom_radius {
+                frame.border.radius = 0.0.into();
+            }
+            frame
+        })
         .into(),
         reading_id,
         focused_slider,
-    )
+    );
+    container(frame)
+        .padding(canopa_ui::padding(ui.margin))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 fn source_icon<'a>(
@@ -385,7 +408,7 @@ fn source_icon<'a>(
         })
         .unwrap_or_else(|| {
             container(
-                text(
+                crate::theme::text(
                     label
                         .trim()
                         .chars()
@@ -393,10 +416,10 @@ fn source_icon<'a>(
                         .map(|c| c.to_ascii_uppercase().to_string())
                         .unwrap_or_else(|| "?".into()),
                 )
-                .size(metrics::TITLE),
+                .size(crate::theme::title_size()),
             )
             .center(34)
-            .style(canopa_ui::surface)
+            .style(crate::theme::card)
             .into()
         })
 }
@@ -454,13 +477,13 @@ fn styled_body<'a>(runs: Vec<StyledTextRun>, link: bool) -> Element<'a, Message>
                     } else {
                         iced::font::Style::Normal
                     },
-                    ..iced::Font::DEFAULT
+                    ..crate::theme::font()
                 })
                 .underline(run.style.underline)
         })
         .collect();
     rich_text(spans)
-        .size(metrics::BODY)
+        .size(crate::theme::body_size())
         .width(Length::Fill)
         .style(move |theme: &Theme| {
             if link {

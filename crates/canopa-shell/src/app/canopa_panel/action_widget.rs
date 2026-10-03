@@ -10,7 +10,9 @@ pub(super) fn render<'a>(
     action(
         id,
         provider,
-        text(label.to_owned()).size(metrics::BODY).into(),
+        crate::theme::text(label.to_owned())
+            .size(crate::theme::body_size())
+            .into(),
         false,
         focused,
     )
@@ -22,7 +24,7 @@ pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, 
         provider,
         // Preserve all sender-controlled context without consuming the panel.
         container(scrollable(
-            text(format!("Selected: {label}")).width(Length::Fill),
+            crate::theme::text(format!("Selected: {label}")).width(Length::Fill),
         ))
         .width(Length::Fill)
         .max_height(54)
@@ -59,7 +61,7 @@ fn action<'a>(
     link: bool,
     focused: bool,
 ) -> Element<'a, Message> {
-    let content = canopa_ui::action(
+    let content = crate::theme::action(
         content,
         Some(Message::ExternalPanel(
             ExternalPanelEvent::ButtonActivated {

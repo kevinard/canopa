@@ -1104,6 +1104,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = crate::config::Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -1128,6 +1129,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = crate::config::Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
                 ..BarConfig::default()
@@ -1145,6 +1147,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = crate::config::Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -1257,6 +1260,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = crate::config::Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
                 output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]),
@@ -1283,6 +1287,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = crate::config::Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
                 output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]),
@@ -1319,6 +1324,7 @@ mod tests {
     fn boot_spawns_horizontal_bars_before_side_bars() {
         let config = crate::config::Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 crate::config::BarConfig {
                     name: "left".into(),

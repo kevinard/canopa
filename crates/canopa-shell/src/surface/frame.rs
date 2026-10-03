@@ -12,24 +12,15 @@ use iced::widget::container;
 pub fn module_frame<'a, Message: 'a>(
     content: Element<'a, Message>,
     hovered: bool,
+    focused: bool,
+    selected: bool,
+    ui: canopa_theme::ResolvedStyle,
 ) -> Element<'a, Message> {
-    container(content)
+    let frame = container(content)
         // Reserve a dark gap so opaque workspace pills cannot cover the outline.
-        .padding(2)
-        .style(move |_| {
-            if hovered {
-                container::Style {
-                    background: Some(iced::Background::Color(crate::theme::palette().surface)),
-                    border: iced::Border {
-                        color: crate::theme::palette().accent,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    ..Default::default()
-                }
-            } else {
-                container::Style::default()
-            }
-        })
+        .padding(canopa_ui::content_padding(ui))
+        .style(move |_| crate::theme::highlighted_frame(ui, selected, hovered, false, focused));
+    container(frame)
+        .padding(canopa_ui::padding(ui.margin))
         .into()
 }

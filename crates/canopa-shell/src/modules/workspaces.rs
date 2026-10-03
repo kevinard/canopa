@@ -1,5 +1,5 @@
 use crate::theme;
-use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
+use crate::theme::bar_metrics::ICON_SIZE;
 
 /// Returns `(background, foreground)` colours for a workspace pill.
 ///
@@ -146,7 +146,9 @@ impl WorkspaceItemModule {
         if horizontal {
             if let Some(segments) = styled {
                 return container(crate::modules::view::styled_segments_row(
-                    segments, TEXT_SIZE, fg,
+                    segments,
+                    crate::theme::label_size() as u32,
+                    fg,
                 ))
                 .width(32)
                 .height(Length::Fill)
@@ -171,7 +173,7 @@ impl WorkspaceItemModule {
                 if configured_icon.is_some() {
                     ICON_SIZE
                 } else {
-                    TEXT_SIZE
+                    crate::theme::label_size() as u32
                 },
                 fg,
                 crate::modules::view::fallback_resolved_style(bar_style),
@@ -189,7 +191,9 @@ impl WorkspaceItemModule {
         } else {
             if let Some(segments) = styled {
                 return container(crate::modules::view::styled_segments_row(
-                    segments, TEXT_SIZE, fg,
+                    segments,
+                    crate::theme::label_size() as u32,
+                    fg,
                 ))
                 .width(Length::Fill)
                 .height(20)
@@ -206,7 +210,7 @@ impl WorkspaceItemModule {
             if let Some(content) = formatted.map(|segments| segments.join(" ")) {
                 return container(crate::modules::view::styled_segment_text(
                     content,
-                    TEXT_SIZE,
+                    crate::theme::label_size() as u32,
                     fg,
                     crate::modules::view::fallback_resolved_style(bar_style),
                 ))
@@ -237,7 +241,7 @@ impl WorkspaceItemModule {
             } else {
                 parts.push(crate::modules::view::styled_segment_text(
                     format!("{ws_num}"),
-                    TEXT_SIZE,
+                    crate::theme::label_size() as u32,
                     fg,
                     style,
                 ));
@@ -245,7 +249,7 @@ impl WorkspaceItemModule {
             if let Some(lbl) = label_str {
                 parts.push(crate::modules::view::styled_segment_text(
                     lbl.to_string(),
-                    TEXT_SIZE,
+                    crate::theme::label_size() as u32,
                     fg,
                     style,
                 ));
@@ -287,8 +291,12 @@ impl WorkspaceItemModule {
             crate::config::FormatMode::Collapsed
         };
         let segments = self.styled_segments_with_default(mode, bar_style)?;
-        let content =
-            crate::modules::view::formatted_segments_content(segments, TEXT_SIZE, fg, rotation);
+        let content = crate::modules::view::formatted_segments_content(
+            segments,
+            crate::theme::label_size() as u32,
+            fg,
+            rotation,
+        );
 
         if horizontal {
             Some(
@@ -388,7 +396,7 @@ impl WorkspaceItemModule {
                     if has_icon && template.segment_is_exact_placeholder(index, "icon") {
                         ICON_SIZE as f32
                     } else {
-                        TEXT_SIZE as f32
+                        (crate::theme::label_size() as u32) as f32
                     },
                 );
             }

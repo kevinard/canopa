@@ -214,7 +214,7 @@ impl ClockModule {
         bar_style: &crate::config::Style,
         month_offset: i32,
     ) -> iced::Element<'_, crate::app::Message> {
-        use iced::widget::{button, column, container, row, text};
+        use iced::widget::{column, container, row};
         use iced::{Alignment, Length};
 
         let crate::modules::ModuleState::Clock(_) = state else {
@@ -231,7 +231,7 @@ impl ClockModule {
         let title = first.format("%B %Y").to_string();
 
         let controls = row![
-            button(text("<")).on_press(crate::app::Message::Modules(
+            crate::theme::button(crate::theme::text("<")).on_press(crate::app::Message::Modules(
                 crate::app::messages::ModuleRuntimeEvent::Detail {
                     target: self.id.clone(),
                     message: crate::modules::ModuleDetailMessage::new(
@@ -239,14 +239,14 @@ impl ClockModule {
                     ),
                 }
             )),
-            text(title).width(Length::Fill),
-            button(text("Today")).on_press(crate::app::Message::Modules(
-                crate::app::messages::ModuleRuntimeEvent::Detail {
+            crate::theme::text(title).width(Length::Fill),
+            crate::theme::button(crate::theme::text("Today")).on_press(
+                crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Detail {
                     target: self.id.clone(),
                     message: crate::modules::ModuleDetailMessage::new(ClockDetailMessage::Today),
-                }
-            )),
-            button(text(">")).on_press(crate::app::Message::Modules(
+                })
+            ),
+            crate::theme::button(crate::theme::text(">")).on_press(crate::app::Message::Modules(
                 crate::app::messages::ModuleRuntimeEvent::Detail {
                     target: self.id.clone(),
                     message: crate::modules::ModuleDetailMessage::new(
@@ -263,7 +263,7 @@ impl ClockModule {
         let mut weekdays = row![].spacing(4).width(Length::Fill);
         for label in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] {
             weekdays = weekdays.push(
-                container(text(label).size(10))
+                container(crate::theme::text(label).size(crate::theme::label_size() * 10.0 / 12.0))
                     .width(Length::FillPortion(1))
                     .center_x(Length::Fill),
             );
@@ -275,9 +275,11 @@ impl ClockModule {
             for day in week {
                 let is_today = day == month.today;
                 let label = day.map(|day| day.to_string()).unwrap_or_default();
-                let cell = container(text(label).size(11))
-                    .width(Length::FillPortion(1))
-                    .center_x(Length::Fill);
+                let cell = container(
+                    crate::theme::text(label).size(crate::theme::label_size() * 11.0 / 12.0),
+                )
+                .width(Length::FillPortion(1))
+                .center_x(Length::Fill);
                 let cell = cell.padding([3, 0]).style(move |_| {
                     if is_today {
                         iced::widget::container::Style {
@@ -459,8 +461,12 @@ impl crate::modules::render::ModuleRender for ClockModule {
         _session: Option<&crate::modules::ModuleDetailSession>,
     ) -> Option<crate::surface::panel::PanelPreferredSize> {
         Some(crate::surface::panel::PanelPreferredSize {
-            width: 300,
-            height: 260,
+            width: (300.0
+                * (crate::theme::body_size() / 14.0).max(crate::theme::label_size() / 12.0))
+            .ceil() as u32,
+            height: (260.0
+                * (crate::theme::body_size() / 14.0).max(crate::theme::label_size() / 12.0))
+            .ceil() as u32,
         })
     }
 }
@@ -502,7 +508,7 @@ impl crate::modules::view::IconLabel for ClockModule {
         crate::theme::palette().text
     }
     fn formatted_size(&self, _layout: crate::modules::view::IconLabelLayout) -> u32 {
-        crate::theme::bar_metrics::TEXT_SIZE
+        crate::theme::label_size() as u32
     }
     fn fallback_view(
         &self,

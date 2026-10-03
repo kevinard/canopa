@@ -44,6 +44,34 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
                 ),
             ));
         }
+        let ui = config
+            .appearance
+            .style(canopa_theme::UiKind::Bar)
+            .apply(bar.ui);
+        let padding = if bar.edge.is_horizontal() {
+            ui.padding.vertical()
+        } else {
+            ui.padding.horizontal()
+        };
+        if bar.collapsed_width > 32768
+            || ((bar.ui.padding.is_some()
+                || bar.ui.border_width.is_some()
+                || config.appearance.customization.ui[canopa_theme::UiKind::Bar as usize]
+                    .padding
+                    .is_some()
+                || config.appearance.customization.ui[canopa_theme::UiKind::Bar as usize]
+                    .border_width
+                    .is_some())
+                && padding + 2.0 * ui.border_width.px() >= bar.collapsed_width as f32)
+        {
+            return Err(validation_error(
+                source.clone(),
+                format!(
+                    "bar {:?}: thickness must be at most 32768 and leave content space inside padding and border",
+                    bar.name
+                ),
+            ));
+        }
         if let (Some(width), Some(max_width)) = (bar.panel.width, bar.panel.max_width)
             && width > max_width
         {

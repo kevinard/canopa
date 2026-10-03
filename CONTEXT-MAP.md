@@ -10,6 +10,8 @@ the Notification Center through generic declarative panel content.
 - [Configuration source and reload contract](docs/adr/0002-shared-configuration.md)
 - [Shell live configuration reload](docs/shell/adr/0021-live-configuration-reload.md)
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
+- [Configurable themes and surface geometry](docs/adr/0013-configurable-theme-and-surface-geometry.md)
+- [Theme configuration reference](docs/theme-customization.md)
 - [Local asset mechanisms and caller policies](docs/adr/0005-shared-assets.md)
 - [Shared provider contracts and host state](docs/adr/0006-shared-provider-contracts.md)
 - [Unified built-in provider protocol](docs/adr/0007-unified-panel-protocol.md)

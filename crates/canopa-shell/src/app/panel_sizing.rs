@@ -10,11 +10,12 @@ pub(super) fn menu_render_range(
     count: usize,
     scroll_y: f32,
     viewport_height: f32,
+    row_extent: f32,
 ) -> std::ops::Range<usize> {
     const BUFFER: usize = 8;
-    let first_visible = (scroll_y / MENU_ROW_EXTENT).floor().max(0.0) as usize;
+    let first_visible = (scroll_y / row_extent).floor().max(0.0) as usize;
     let start = first_visible.saturating_sub(BUFFER).min(count);
-    let rows = 40.max((viewport_height / MENU_ROW_EXTENT).ceil() as usize + 2 * BUFFER);
+    let rows = 40.max((viewport_height / row_extent).ceil() as usize + 2 * BUFFER);
     start..(start + rows).min(count)
 }
 
@@ -29,7 +30,6 @@ const PANEL_MENU_MIN_WIDTH: u32 = 240;
 const PANEL_MENU_SEARCH_HEIGHT: u32 = 38;
 const PANEL_MENU_LIST_PADDING: u32 = 2 * canopa_ui::panel::PADDING as u32;
 const PANEL_MENU_ROW_H_PADDING: u32 = 20;
-const PANEL_MENU_CHAR_WIDTH: u32 = 8;
 const PANEL_MENU_ICON_SLOT: u32 = 26;
 const PANEL_MENU_SUBMENU_SLOT: u32 = 16;
 
@@ -38,6 +38,8 @@ where
     F: FnMut(&ModuleId) -> Option<PanelPreferredSize>,
 {
     pub(super) bar: &'a BarConfig,
+    pub(super) ui: canopa_theme::ResolvedStyle,
+    pub(super) menu_row_extent: f32,
     pub(super) tree: &'a PanelTree,
     pub(super) surface_origin: Point,
     pub(super) panel_module_layout: &'a [crate::surface::panel::PanelModuleEntry],
@@ -136,6 +138,21 @@ where
     } else {
         panel_content_size_hint(&mut input)
     };
+    let mut hint = hint;
+    if let Some(width) = hint.preferred_width.as_mut() {
+        *width = (*width as f32 + input.ui.padding.horizontal() - 32.0
+            + input.ui.margin.horizontal())
+        .max(1.0)
+        .ceil() as u32;
+    }
+    if let Some(height) = hint.preferred_height.as_mut() {
+        *height = (*height as f32 + input.ui.padding.vertical() - 32.0
+            + input.ui.margin.vertical()
+            + crate::theme::panel_header_height() as f32
+            - 56.0)
+            .max(1.0)
+            .ceil() as u32;
+    }
     let fill_width = hint.fill_edge_span && input.bar.edge.is_horizontal();
     let fill_height = hint.fill_height || (hint.fill_edge_span && !input.bar.edge.is_horizontal());
     let width = resolve_panel_dimension(
@@ -184,10 +201,16 @@ where
 
     PanelPhysicalPlan {
         edge: input.bar.edge.clone(),
-        edge_offset: if input.bar.drawer_pushes_bar() {
-            -i32::try_from(input.bar.collapsed_width).unwrap_or(i32::MAX)
-        } else {
-            0
+        edge_offset: {
+            let (near, inner, _, _) = input.bar.outer_margins();
+            let occupied = near + input.bar.collapsed_width + inner;
+            let reserve = if input.bar.reserve_space { occupied } else { 0 };
+            let desired = if input.bar.drawer_pushes_bar() {
+                near
+            } else {
+                occupied
+            };
+            desired as i32 - reserve as i32
         },
         width,
         height,
@@ -210,7 +233,7 @@ where
 {
     match &input.tree.content {
         PanelContent::Menu(_) | PanelContent::DmenuRequest => {
-            let preferred = panel_menu_preferred_size(&input.menu);
+            let preferred = panel_menu_preferred_size(&input.menu, input.menu_row_extent);
             PanelContentSizeHint {
                 preferred_width: Some(preferred.width),
                 preferred_height: Some(preferred.height),
@@ -324,12 +347,18 @@ fn panel_module_list_window_size(entries: &[PanelPreferredSize]) -> Option<Panel
     Some(PanelPreferredSize { width, height })
 }
 
-fn panel_menu_preferred_size(menu: &super::foreground::PanelMenuRenderState) -> PanelPreferredSize {
-    let prompt_chars = menu.prompt.as_deref().unwrap_or("Search").chars().count() as u32;
-    let max_entry_chars = menu
+fn panel_menu_preferred_size(
+    menu: &super::foreground::PanelMenuRenderState,
+    row_extent: f32,
+) -> PanelPreferredSize {
+    let prompt = menu.prompt.as_deref().unwrap_or("Search");
+    let prompt_width = crate::theme::text_width(prompt, crate::theme::body_size()).ceil() as u32;
+    let max_entry_width = menu
         .entries
         .iter()
-        .map(|entry| entry.label.chars().count() as u32)
+        .map(|entry| {
+            crate::theme::text_width(&entry.label, crate::theme::body_size()).ceil() as u32
+        })
         .max()
         .unwrap_or(0);
     let icon_width = if menu.show_icons {
@@ -342,17 +371,21 @@ fn panel_menu_preferred_size(menu: &super::foreground::PanelMenuRenderState) -> 
     } else {
         0
     };
-    let row_width = max_entry_chars * PANEL_MENU_CHAR_WIDTH
+    let row_width = max_entry_width
         + PANEL_MENU_ROW_H_PADDING
         + PANEL_MENU_LIST_PADDING
         + icon_width
         + submenu_width;
-    let search_width =
-        prompt_chars * PANEL_MENU_CHAR_WIDTH + PANEL_MENU_ROW_H_PADDING + PANEL_MENU_LIST_PADDING;
+    let search_width = prompt_width + PANEL_MENU_ROW_H_PADDING + PANEL_MENU_LIST_PADDING;
     let width = row_width.max(search_width).max(PANEL_MENU_MIN_WIDTH);
-    let row_extent = MENU_ROW_EXTENT.ceil() as u32;
+    let row_extent = row_extent.ceil() as u32;
     let height = canopa_ui::panel::HEADER_HEIGHT
-        + PANEL_MENU_SEARCH_HEIGHT
+        + (crate::theme::body_size() * 1.3
+            + crate::theme::ui(canopa_theme::UiKind::Input)
+                .padding
+                .vertical())
+        .ceil()
+        .max(PANEL_MENU_SEARCH_HEIGHT as f32) as u32
         + PANEL_MENU_LIST_PADDING
         + row_extent * menu.entries.len() as u32;
 
@@ -409,6 +442,8 @@ mod tests {
     {
         panel_physical_plan(PanelSizingInput {
             bar,
+            ui: crate::theme::ui(canopa_theme::UiKind::Panel),
+            menu_row_extent: 45.0,
             tree,
             surface_origin: Point::default(),
             panel_module_layout,
@@ -673,6 +708,8 @@ mod tests {
         });
         let plan = panel_physical_plan(PanelSizingInput {
             bar: &bar,
+            ui: crate::theme::ui(canopa_theme::UiKind::Panel),
+            menu_row_extent: 45.0,
             tree: &tree,
             surface_origin: Point { x: 0, y: 40 },
             panel_module_layout: &[],
@@ -783,7 +820,7 @@ mod tests {
             viewport_height: 0.0,
         };
 
-        let preferred = panel_menu_preferred_size(&menu);
+        let preferred = panel_menu_preferred_size(&menu, 45.0);
 
         assert_eq!(preferred.width, 240);
         assert_eq!(preferred.height, 56 + 38 + 32 + 45 * 2);

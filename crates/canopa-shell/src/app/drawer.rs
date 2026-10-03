@@ -2,7 +2,6 @@ use iced::Task;
 use iced_layershell::actions::ActionCallback;
 
 use super::{App, Message};
-use crate::config::Edge;
 
 impl App {
     /// Grow the surface around the bar, leaving its exclusive zone unchanged.
@@ -19,7 +18,7 @@ impl App {
             return Task::none();
         }
         let bar = self.bar_for_window(window);
-        let size = (bar.collapsed_width.saturating_add(width), 0);
+        let size = crate::surface::bar_geometry::BarGeometry::host_size(bar, width);
         self.surface_mut(window).drawer_width = width;
         Task::done(Message::SizeChange { id: window, size })
             .chain(self.drawer_bar_input_region(window))
@@ -30,22 +29,25 @@ impl App {
             return Task::none();
         };
         let bar = self.bar_for_window(window);
-        if !bar.drawer_pushes_bar() {
-            return Task::none();
-        }
-        let x = if matches!(bar.edge, Edge::Left) {
-            surface.drawer_width
-        } else {
-            0
-        };
-        let x = i32::try_from(x).unwrap_or(i32::MAX);
-        let width = i32::try_from(bar.collapsed_width).unwrap_or(i32::MAX);
+        let geometry = crate::surface::bar_geometry::BarGeometry::resolve(
+            bar,
+            surface.screen_size,
+            surface.drawer_width,
+        );
+        let style = self
+            .config
+            .appearance
+            .style(canopa_theme::UiKind::Bar)
+            .apply(bar.ui);
+        let rectangles = geometry.input_rectangles(style.radius);
         Task::done(Message::SetInputRegion {
             id: window,
             callback: ActionCallback::new(move |region| {
                 // The backend reuses its region object across surfaces.
                 region.subtract(0, 0, i32::MAX, i32::MAX);
-                region.add(x, 0, width, i32::MAX);
+                for &(x, y, width, height) in &rectangles {
+                    region.add(x, y, width, height);
+                }
             }),
         })
     }
@@ -75,6 +77,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Edge;
     use crate::config::{Config, DrawerMode, PanelPresentation};
     use crate::surface::panel::{PanelContent, PanelOrigin};
 

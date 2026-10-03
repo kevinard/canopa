@@ -27,9 +27,9 @@ pub(super) struct ModuleRenderEntry<'a> {
 }
 
 pub(super) struct BarRenderModel<'a> {
+    pub(super) geometry: crate::surface::bar_geometry::BarGeometry,
+    pub(super) ui: canopa_theme::ResolvedStyle,
     pub(super) edge: Edge,
-    pub(super) drawer_width: u32,
-    pub(super) content_size: u32,
     pub(super) is_horizontal: bool,
     pub(super) start: Vec<ModuleRenderEntry<'a>>,
     pub(super) center: Vec<ModuleRenderEntry<'a>>,
@@ -37,6 +37,8 @@ pub(super) struct BarRenderModel<'a> {
 }
 
 pub(super) struct PanelRenderModel<'a> {
+    pub(super) ui: canopa_theme::ResolvedStyle,
+    pub(super) menu_metrics: crate::theme::MenuMetrics,
     pub(super) title: String,
     pub(super) drawer: bool,
     pub(super) tree: &'a crate::surface::panel::PanelTree,
@@ -57,6 +59,58 @@ pub(super) struct PanelRenderModel<'a> {
 }
 
 impl App {
+    pub(super) fn panel_ui(
+        &self,
+        tree: &crate::surface::panel::PanelTree,
+    ) -> canopa_theme::ResolvedStyle {
+        let bar = Self::bar_for_surface_name(&self.config.bars, &tree.origin_bar_name);
+        let mut ui = self
+            .config
+            .appearance
+            .style(canopa_theme::UiKind::Panel)
+            .apply(bar.panel.ui);
+        if matches!(
+            tree.content,
+            crate::surface::panel::PanelContent::Menu(_)
+                | crate::surface::panel::PanelContent::DmenuRequest
+        ) {
+            ui = ui.apply(
+                self.config.appearance.customization.ui[canopa_theme::UiKind::Menu as usize],
+            );
+        }
+        if let crate::surface::panel::PanelContent::Menu(name) = &tree.content {
+            ui = ui.apply(
+                self.config
+                    .element_ui
+                    .menus
+                    .get(name)
+                    .copied()
+                    .unwrap_or_default(),
+            );
+        }
+        ui
+    }
+    pub(super) fn panel_menu_metrics(
+        &self,
+        tree: &crate::surface::panel::PanelTree,
+    ) -> crate::theme::MenuMetrics {
+        let local = if let crate::surface::panel::PanelContent::Menu(name) = &tree.content {
+            self.config.element_ui.menus.get(name).and_then(|ui| ui.gap)
+        } else {
+            None
+        };
+        crate::theme::menu_metrics_with_gap(
+            local.or(
+                self.config.appearance.customization.ui[canopa_theme::UiKind::Menu as usize].gap,
+            ),
+        )
+    }
+    pub(super) fn active_menu_metrics(&self) -> crate::theme::MenuMetrics {
+        self.foreground
+            .active_panel_tree()
+            .map(|tree| self.panel_menu_metrics(tree))
+            .unwrap_or_else(crate::theme::menu_metrics)
+    }
     pub(super) fn popup_render_model(
         &self,
         window: iced::window::Id,
@@ -160,6 +214,8 @@ impl App {
         };
 
         Some(PanelRenderModel {
+            ui: self.panel_ui(tree),
+            menu_metrics: self.panel_menu_metrics(tree),
             title,
             drawer: bar.uses_drawer(),
             tree,
@@ -188,8 +244,6 @@ impl App {
         let bar = Self::bar_for_surface_name(&self.config.bars, &surface.bar_name);
         let is_horizontal = bar.edge.is_horizontal();
 
-        let surface_size = bar.collapsed_width;
-        let content_size = surface_size.saturating_sub(1);
         let shows_expanded = false;
 
         let mut start = Vec::new();
@@ -215,6 +269,43 @@ impl App {
             let active = self.foreground.active_panel_origin_for(window)
                 == Some(&crate::surface::panel::PanelOrigin::Module(id.clone()));
 
+            let local = self
+                .config
+                .element_ui
+                .modules
+                .get(self.modules.configured_module_name_for_instance(&id))
+                .copied()
+                .unwrap_or_default();
+            let ui = self
+                .config
+                .appearance
+                .style(canopa_theme::UiKind::Module)
+                .apply(local);
+            let mut style = bar.style;
+            let mut bar_ui =
+                self.config.appearance.customization.ui[canopa_theme::UiKind::Bar as usize];
+            bar_ui.overlay(bar.ui);
+            if style.color.is_none()
+                && let Some(color) = bar_ui.foreground
+            {
+                style.color = Some(crate::config::style::ColorValue::Rgba(
+                    canopa_ui::resolve_color(&self.config.appearance, color),
+                ));
+            }
+            let mut overrides =
+                self.config.appearance.customization.ui[canopa_theme::UiKind::Module as usize];
+            overrides.overlay(local);
+            let state_ui = ui.state(active, hovered, false, false, focused);
+            if overrides.foreground.is_some()
+                || [active, hovered, false, false, focused]
+                    .into_iter()
+                    .zip(ui.states)
+                    .any(|(on, state)| on && state.foreground.is_some())
+            {
+                style.color = Some(crate::config::style::ColorValue::Rgba(
+                    canopa_ui::resolve_color(&self.config.appearance, state_ui.foreground),
+                ));
+            }
             let Some(module_view) =
                 self.modules
                     .render_bar_module(super::module_runtime::BarModuleRenderRequest {
@@ -222,13 +313,13 @@ impl App {
                         window,
                         edge: &bar.edge,
                         expanded: shows_expanded,
-                        style: &bar.style,
+                        style: &style,
                         state_override: Some(state.clone()),
                     })
             else {
                 continue;
             };
-            let framed_module = container(module_frame(module_view, hovered || focused || active))
+            let framed_module = container(module_frame(module_view, hovered, focused, active, ui))
                 .id(super::widget_ops::module_widget_id(window, &id));
             let scroll_id = id.clone();
             let element: Element<'_, Message> = mouse_area(framed_module)
@@ -282,9 +373,17 @@ impl App {
         }
 
         BarRenderModel {
+            geometry: crate::surface::bar_geometry::BarGeometry::resolve(
+                bar,
+                surface.screen_size,
+                surface.drawer_width,
+            ),
+            ui: self
+                .config
+                .appearance
+                .style(canopa_theme::UiKind::Bar)
+                .apply(bar.ui),
             edge: bar.edge.clone(),
-            drawer_width: surface.drawer_width,
-            content_size,
             is_horizontal,
             start,
             center,
@@ -944,6 +1043,7 @@ mod tests {
     fn bar_render_model_omits_modules_absent_from_surface_bar_layout() {
         let mut config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -981,6 +1081,7 @@ mod tests {
     fn bar_render_model_uses_surface_bar_order_for_dynamic_tray_icons() {
         let mut config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),

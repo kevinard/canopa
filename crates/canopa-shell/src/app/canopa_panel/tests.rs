@@ -14,7 +14,12 @@ fn pointer_event(
     cursor: iced::Point,
     event: iced::mouse::Event,
 ) -> Vec<Message> {
-    let mut view = render(snapshot, "notifications", false);
+    let mut view = render(
+        snapshot,
+        "notifications",
+        false,
+        crate::theme::ui(canopa_theme::UiKind::Panel),
+    );
     tree.diff(view.as_widget());
     let node = view.as_widget_mut().layout(
         tree,
@@ -50,7 +55,12 @@ async fn replacement_during_a_pointer_press_never_activates_the_new_action() {
         let cursor = if selected {
             iced::Point::new(40.0, 80.0)
         } else {
-            let mut view = render(&old, "notifications", false);
+            let mut view = render(
+                &old,
+                "notifications",
+                false,
+                crate::theme::ui(canopa_theme::UiKind::Panel),
+            );
             tree.diff(view.as_widget());
             let node = view.as_widget_mut().layout(
                 &mut tree,
@@ -166,7 +176,12 @@ async fn scrolling_cards_leave_room_for_the_scrollbar() {
         .expect("software renderer");
     let snapshot = long_title_snapshot().await;
     for width in [220.0, 360.0, 480.0] {
-        let mut view = render(&snapshot, "notifications", false);
+        let mut view = render(
+            &snapshot,
+            "notifications",
+            false,
+            crate::theme::ui(canopa_theme::UiKind::Panel),
+        );
         let mut tree = Tree::new(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,
@@ -224,7 +239,12 @@ async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
         .unwrap();
     for width in [220.0, 360.0] {
         let viewport = Rectangle::with_size(Size::new(width, 600.0));
-        let mut view = render(&snapshot, "notifications", false);
+        let mut view = render(
+            &snapshot,
+            "notifications",
+            false,
+            crate::theme::ui(canopa_theme::UiKind::Panel),
+        );
         let mut tree = Tree::new(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,
@@ -314,7 +334,12 @@ async fn drawer_provider_header_keeps_one_title_and_closes_through_foreground() 
         .expect("software renderer");
     let snapshot = long_title_snapshot().await;
     let viewport = Rectangle::with_size(Size::new(360.0, 800.0));
-    let mut view = render(&snapshot, "notifications", true);
+    let mut view = render(
+        &snapshot,
+        "notifications",
+        true,
+        crate::theme::ui(canopa_theme::UiKind::Panel),
+    );
     let mut tree = Tree::new(view.as_widget());
     let node = view.as_widget_mut().layout(
         &mut tree,
@@ -392,7 +417,12 @@ async fn selected_preview_scrolls_without_activation_and_resets_for_next_action(
     let cursor = iced::Point::new(40.0, 80.0);
     let mut tree = Tree::empty();
     {
-        let mut view = render(&snapshot, "notifications", false);
+        let mut view = render(
+            &snapshot,
+            "notifications",
+            false,
+            crate::theme::ui(canopa_theme::UiKind::Panel),
+        );
         tree.diff(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,
@@ -428,7 +458,12 @@ async fn selected_preview_scrolls_without_activation_and_resets_for_next_action(
         );
     }
     snapshot.move_focus(false);
-    let mut view = render(&snapshot, "notifications", false);
+    let mut view = render(
+        &snapshot,
+        "notifications",
+        false,
+        crate::theme::ui(canopa_theme::UiKind::Panel),
+    );
     tree.diff(view.as_widget());
     let node = view.as_widget_mut().layout(
         &mut tree,
@@ -476,7 +511,12 @@ async fn long_keyboard_selection_leaves_panel_content_visible() {
         .expect("software renderer");
     let mut snapshot = long_title_snapshot().await;
     snapshot.move_focus(false);
-    let mut view = render(&snapshot, "notifications", false);
+    let mut view = render(
+        &snapshot,
+        "notifications",
+        false,
+        crate::theme::ui(canopa_theme::UiKind::Panel),
+    );
     let mut tree = Tree::new(view.as_widget());
     let viewport = Rectangle::with_size(Size::new(360.0, 180.0));
     let node = view.as_widget_mut().layout(
@@ -515,7 +555,12 @@ async fn keyboard_reading_scrolls_content_without_changing_or_invoking_selection
     snapshot.move_focus(false);
     let selected = snapshot.focused_action_id().unwrap().to_owned();
     let viewport = Rectangle::with_size(Size::new(360.0, 180.0));
-    let mut view = render(&snapshot, "notifications", false);
+    let mut view = render(
+        &snapshot,
+        "notifications",
+        false,
+        crate::theme::ui(canopa_theme::UiKind::Panel),
+    );
     let mut tree = Tree::new(view.as_widget());
     let node = view.as_widget_mut().layout(
         &mut tree,
@@ -609,7 +654,12 @@ async fn canopa_body_links_support_selection_clicks_and_replacement_guards() {
     let viewport = Rectangle::with_size(Size::new(360.0, 600.0));
     let mut tree = Tree::empty();
     let point = {
-        let mut view = render(&old, "notifications", false);
+        let mut view = render(
+            &old,
+            "notifications",
+            false,
+            crate::theme::ui(canopa_theme::UiKind::Panel),
+        );
         tree.diff(view.as_widget());
         let node = view.as_widget_mut().layout(
             &mut tree,
@@ -703,7 +753,12 @@ async fn focused_slider_is_revealed_in_a_short_panel() {
     snapshot.move_focus(false);
     let id = snapshot.focused_action_id().unwrap().to_owned();
     let key = semantic_key(&snapshot, "levels", &SemanticNode::Action(id));
-    let mut view = render(&snapshot, "levels", false);
+    let mut view = render(
+        &snapshot,
+        "levels",
+        false,
+        crate::theme::ui(canopa_theme::UiKind::Panel),
+    );
     let mut widgets = Tree::new(view.as_widget());
     let viewport = Rectangle::with_size(Size::new(360.0, 300.0));
     let layout = view.as_widget_mut().layout(
@@ -765,7 +820,12 @@ async fn focused_slider_is_revealed_in_a_short_panel() {
         snapshot.focused_action_id(),
         replacement.focused_action_id()
     );
-    let mut view = render(&replacement, "levels", false);
+    let mut view = render(
+        &replacement,
+        "levels",
+        false,
+        crate::theme::ui(canopa_theme::UiKind::Panel),
+    );
     widgets.diff(view.as_widget());
     let layout = view.as_widget_mut().layout(
         &mut widgets,

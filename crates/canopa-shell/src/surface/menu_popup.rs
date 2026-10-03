@@ -40,8 +40,10 @@ pub fn view_menu_popup<'a>(
     focused_item: Option<&str>,
 ) -> iced::Element<'a, crate::app::Message> {
     use iced::Length;
-    use iced::widget::{column, container, rule, text};
+    use iced::widget::{column, container, rule};
 
+    let ui = crate::theme::ui(canopa_theme::UiKind::Menu);
+    let (row_ui, row_height) = popup_row_metrics();
     let items: Vec<iced::Element<'_, crate::app::Message>> = tree
         .items
         .iter()
@@ -53,37 +55,28 @@ pub fn view_menu_popup<'a>(
                     .width(Length::Fill)
                     .into()
             } else {
-                let color = if item.enabled {
-                    crate::theme::palette().text
-                } else {
-                    crate::theme::palette().disabled
-                };
-                let label = text(&item.label).size(13).color(color);
+                let label = crate::theme::text(&item.label)
+                    .size(crate::theme::body_size() * 13.0 / 14.0)
+                    .wrapping(iced::widget::text::Wrapping::None);
                 let is_highlighted = item.enabled
                     && hovered_item
                         .or(focused_item)
                         .map(|h| h == item.id.as_str())
                         .unwrap_or(false);
                 let row = container(label)
-                    .padding([4, 12])
+                    .padding(canopa_ui::content_padding(row_ui))
+                    .height(row_height)
                     .width(Length::Fill)
-                    .style(move |_| iced::widget::container::Style {
-                        background: if is_highlighted {
-                            Some(iced::Background::Color(crate::theme::palette().surface))
-                        } else {
-                            None
-                        },
-                        border: iced::Border {
-                            color: if is_highlighted {
-                                crate::theme::palette().accent
-                            } else {
-                                iced::Color::TRANSPARENT
-                            },
-                            width: 1.0,
-                            radius: iced::border::Radius::from(3.0),
-                        },
-                        ..Default::default()
+                    .style(move |_| {
+                        crate::theme::highlighted_frame(
+                            row_ui,
+                            is_highlighted,
+                            is_highlighted,
+                            !item.enabled,
+                            is_highlighted,
+                        )
                     });
+                let row = container(row).padding(canopa_ui::padding(row_ui.margin));
 
                 if item.enabled {
                     let menu_item_id: i32 = item.id.parse().unwrap_or(0);
@@ -118,23 +111,17 @@ pub fn view_menu_popup<'a>(
     // Wrap the entire item list in a mouse_area so hover clears only when the pointer
     // leaves the menu, not when crossing between adjacent items.
     let menu_content = iced::widget::mouse_area(
-        container(column(items).spacing(0))
-            .style(|_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(crate::theme::palette().raised)),
-                border: iced::Border {
-                    color: crate::theme::palette().border,
-                    width: 1.0,
-                    radius: iced::border::Radius::from(4.0),
-                },
-                ..Default::default()
-            })
-            .padding(4),
+        container(column(items).spacing(ui.gap.px()))
+            .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui))
+            .padding(canopa_ui::content_padding(ui)),
     )
     .on_exit(crate::app::Message::Menu(
         crate::app::messages::MenuEvent::ItemHoverExit(window),
     ));
 
-    menu_content.into()
+    container(menu_content)
+        .padding(canopa_ui::padding(ui.margin))
+        .into()
 }
 
 /// Estimate the pixel size `(width, height)` needed to display `tree`.
@@ -148,38 +135,66 @@ pub fn view_menu_popup<'a>(
 ///   - outer container: padding(4) = 8px vertical, 8px horizontal
 ///
 /// Width = max(MIN_WIDTH, longest_label_chars * CHAR_WIDTH + item_h_padding + outer_h_padding)
+pub(crate) fn popup_row_metrics() -> (canopa_theme::ResolvedStyle, f32) {
+    let appearance = crate::theme::appearance();
+    let mut base = canopa_theme::Appearance::default().style(canopa_theme::UiKind::MenuRow);
+    base.padding = canopa_theme::Insets::axes(4, 12);
+    base.radius = [canopa_theme::Pixels::whole(3); 4];
+    base.border_color = canopa_theme::ColorValue::Rgba(canopa_theme::Rgb(0, 0, 0), 0);
+    let ui = base.apply(appearance.customization.ui[canopa_theme::UiKind::MenuRow as usize]);
+    let border = if ui.custom_border {
+        2.0 * ui.border_width.px()
+    } else {
+        0.0
+    };
+    let height = (crate::theme::body_size() * 13.0 / 14.0 * 1.3 + ui.padding.vertical() + border)
+        .ceil()
+        + 1.0;
+    (ui, height)
+}
+
 pub fn popup_size(tree: &MenuTree) -> (u32, u32) {
-    const ITEM_HEIGHT: u32 = 26;
-    const SEP_HEIGHT: u32 = 5;
-    const OUTER_V_PADDING: u32 = 8;
-    const OUTER_H_PADDING: u32 = 8;
-    const ITEM_H_PADDING: u32 = 24; // 12 left + 12 right
-    const CHAR_WIDTH: u32 = 8; // size-13 proportional font, conservative
-    const MIN_WIDTH: u32 = 150;
-
-    let visible = tree.items.iter().filter(|i| i.visible);
-
-    let height: u32 = visible
-        .clone()
+    let ui = crate::theme::ui(canopa_theme::UiKind::Menu);
+    let (row, row_height) = popup_row_metrics();
+    let visible = tree.items.iter().filter(|i| i.visible).collect::<Vec<_>>();
+    let height = visible
+        .iter()
         .map(|i| {
             if i.is_separator {
-                SEP_HEIGHT
+                5.0
             } else {
-                ITEM_HEIGHT
+                row_height + row.margin.vertical()
             }
         })
-        .sum::<u32>()
-        + OUTER_V_PADDING;
-
-    let max_label_chars = visible
+        .sum::<f32>()
+        + ui.padding.vertical()
+        + if ui.custom_border {
+            2.0 * ui.border_width.px()
+        } else {
+            0.0
+        }
+        + ui.margin.vertical()
+        + ui.gap.px() * visible.len().saturating_sub(1) as f32;
+    let measured = visible
+        .iter()
         .filter(|i| !i.is_separator)
-        .map(|i| i.label.chars().count() as u32)
-        .max()
-        .unwrap_or(0);
-
-    let width = (max_label_chars * CHAR_WIDTH + ITEM_H_PADDING + OUTER_H_PADDING).max(MIN_WIDTH);
-
-    (width, height)
+        .map(|i| {
+            crate::theme::text_width(&i.label, crate::theme::body_size() * 13.0 / 14.0)
+                .max(i.label.chars().count() as f32 * 8.0 * crate::theme::body_size() / 14.0)
+        })
+        .fold(0.0, f32::max);
+    let width = (measured
+        + row.padding.horizontal()
+        + row.margin.horizontal()
+        + ui.padding.horizontal()
+        + if ui.custom_border {
+            2.0 * ui.border_width.px()
+        } else {
+            0.0
+        }
+        + ui.margin.horizontal())
+    .max(150.0);
+    (width.ceil() as u32, height.ceil() as u32)
 }
 
 #[cfg(test)]

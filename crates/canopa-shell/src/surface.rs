@@ -152,3 +152,4 @@ mod tests {
         assert_eq!(physical, 72.0);
     }
 }
+pub mod bar_geometry;

@@ -218,21 +218,21 @@ pub fn panel_module_frame<'a>(
 
 /// The same host-owned heading and dismiss control in both panel presentations.
 pub fn panel_header<'a>(title: String) -> iced::Element<'a, crate::app::Message> {
-    use iced::widget::{row, text};
+    use iced::widget::row;
 
     row![
-        text(title)
-            .size(canopa_ui::metrics::TITLE)
+        crate::theme::text(title)
+            .size(crate::theme::title_size())
             .width(iced::Length::Fill),
-        canopa_ui::action(
-            text("Close").size(canopa_ui::metrics::LABEL),
+        crate::theme::action(
+            crate::theme::text("Close").size(crate::theme::label_size()),
             Some(crate::app::Message::Panel(
                 crate::app::messages::PanelEvent::Close
             )),
             canopa_ui::Action::Quiet,
             false,
         )
-        .height(canopa_ui::panel::HEADER_CONTROL_HEIGHT),
+        .height((crate::theme::panel_header_height() - 24) as f32),
     ]
     .spacing(canopa_ui::metrics::GAP)
     .align_y(iced::Alignment::Center)

@@ -310,12 +310,20 @@ impl App {
         let offset = self
             .surface(target_window)
             .map_or(0, |surface| surface.drawer_width);
-        let offset = i32::try_from(offset).unwrap_or(i32::MAX);
+        let bar = self.bar_for_window(target_window);
+        let (near, inner, _, _) = bar.outer_margins();
+        let occupied = if bar.reserve_space {
+            0
+        } else {
+            near + bar.collapsed_width + inner
+        };
+        let offset = i32::try_from(offset.saturating_add(occupied)).unwrap_or(i32::MAX);
         if let Some(margin) = &mut settings.margin {
             match tree.bar_edge {
                 crate::config::Edge::Left => margin.3 += offset,
                 crate::config::Edge::Right => margin.1 += offset,
-                _ => {}
+                crate::config::Edge::Top => margin.0 += offset,
+                crate::config::Edge::Bottom => margin.2 += offset,
             }
         }
         let (popup_wid, open_task) = Message::layershell_open(settings);

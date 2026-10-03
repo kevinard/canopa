@@ -48,11 +48,11 @@ impl LoadedNotificationConfiguration {
         let result = (|| {
             let document = Document::load(&request, Component::Notifications, "")?;
             let configuration = NotificationConfiguration::parse_document(document.selected())?;
-            Ok::<_, anyhow::Error>((
-                configuration,
-                document.info().clone(),
-                document.appearance(),
-            ))
+            let mut appearance = document.appearance();
+            std::sync::Arc::make_mut(&mut appearance.customization).ui
+                [canopa_theme::UiKind::Notification as usize]
+                .overlay(configuration.banner_ui);
+            Ok::<_, anyhow::Error>((configuration, document.info().clone(), appearance))
         })();
         match result {
             Ok((configuration, source, appearance)) => {
@@ -87,7 +87,7 @@ impl LoadedNotificationConfiguration {
     }
 
     pub(crate) fn appearance(&self) -> canopa_theme::Appearance {
-        self.appearance
+        self.appearance.clone()
     }
 
     pub(crate) fn icon_settings(&self) -> BannerIconSettings {
@@ -117,6 +117,7 @@ struct NotificationConfiguration {
     rules: Vec<NotificationConfigurationRule>,
     sound: NotificationSoundSettings,
     icons: BannerIconSettings,
+    banner_ui: canopa_theme::UiStyle,
 }
 
 impl NotificationConfiguration {
@@ -129,6 +130,7 @@ impl NotificationConfiguration {
         let mut rules = Vec::new();
         let mut sound = None;
         let mut icons = None;
+        let mut banner_ui = None;
 
         for node in doc.nodes() {
             anyhow::ensure!(
@@ -147,9 +149,29 @@ impl NotificationConfiguration {
                     anyhow::ensure!(icons.is_none(), "duplicate icons nodes");
                     icons = Some(parse_icons(node)?);
                 }
+                "banners" => {
+                    anyhow::ensure!(
+                        banner_ui.is_none() && node.entries().is_empty(),
+                        "invalid or duplicate banners block"
+                    );
+                    let children = node
+                        .children()
+                        .ok_or_else(|| anyhow::anyhow!("banners requires a block"))?;
+                    anyhow::ensure!(
+                        children.nodes().len() <= 1
+                            && children.nodes().iter().all(|n| n.name().value() == "ui"),
+                        "banners accepts one ui block"
+                    );
+                    banner_ui = Some(match children.get("ui") {
+                        Some(ui) => {
+                            canopa_config::ui_style(ui, canopa_theme::UiKind::Notification)?
+                        }
+                        None => Default::default(),
+                    });
+                }
                 _ => {
                     anyhow::bail!(
-                        "invalid Notification Configuration node: expected rule, sound or icons"
+                        "invalid Notification Configuration node: expected rule, sound, icons or banners"
                     );
                 }
             }
@@ -159,6 +181,7 @@ impl NotificationConfiguration {
             rules,
             sound: sound.unwrap_or_default(),
             icons: icons.unwrap_or_default(),
+            banner_ui: banner_ui.unwrap_or_default(),
         })
     }
 

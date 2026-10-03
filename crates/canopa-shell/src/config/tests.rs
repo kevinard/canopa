@@ -405,6 +405,7 @@ mod config_tests {
     fn validate_duplicate_bar_name_errors() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -428,6 +429,7 @@ mod config_tests {
     fn validate_bar_collapsed_width_too_small_errors() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "x".into(),
                 collapsed_width: 1,
@@ -745,6 +747,7 @@ mod config_tests {
     fn bars_for_output_multiple_all_bars_returns_all() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "a".into(),
@@ -767,6 +770,7 @@ mod config_tests {
     fn bars_for_output_mixed_returns_both_matching() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -799,6 +803,7 @@ mod config_tests {
     fn bars_for_output_include_target_matches_exact_case_sensitive_names() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "external".into(),
                 output_target: OutputTarget::Include(vec!["DP-1".into(), "HDMI-A-1".into()]),
@@ -818,6 +823,7 @@ mod config_tests {
     fn bars_for_output_exclude_target_matches_exact_case_sensitive_names() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "not-laptop".into(),
                 output_target: OutputTarget::Exclude(vec!["eDP-1".into()]),
@@ -837,6 +843,7 @@ mod config_tests {
     fn bars_for_output_preserves_order() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "first".into(),
@@ -865,6 +872,7 @@ mod config_tests {
     fn validate_multiple_bars_no_duplicate_names_passes() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -887,6 +895,7 @@ mod config_tests {
     fn validate_duplicate_name_error_includes_bar_name() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "side".into(),
@@ -910,6 +919,7 @@ mod config_tests {
     fn bars_for_output_case_sensitive() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
                 output_target: crate::config::OutputTarget::Include(vec!["dp-1".into()]),
@@ -933,5 +943,45 @@ mod config_tests {
         );
         assert_eq!(states::WORKSPACES, &["focused", "active", "inactive"]);
         assert!(states::EMPTY.is_empty());
+    }
+}
+
+#[test]
+fn appearance_geometry_and_local_overrides_prepare_as_one_candidate() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.kdl");
+    let source = r##"schema-version 1
+appearance { ui { bar { padding 2; }; }; }
+shell {
+    bar "main" {
+        edge "top"
+        thickness 40
+        length "75%"
+        align "center"
+        margin 10 20 4 30
+        reserve-space #false
+        ui { border width=2 color="accent"; radius 10; }
+        panel { ui { padding 24; }; }
+        modules { center "clock"; }
+    }
+    modules { module "clock" { ui { foreground "#ff0000"; }; }; }
+}
+"##;
+    std::fs::write(&path, source).unwrap();
+    let (config, _) = super::load(&canopa_config::Request::common(&path), false).unwrap();
+    let bar = &config.bars[0];
+    assert_eq!(bar.length, super::BarLength::Percent(7500));
+    assert_eq!(bar.align, super::BarAlignment::Center);
+    assert_eq!(bar.outer_margins(), (10, 4, 30, 20));
+    assert!(!bar.reserve_space);
+    assert_eq!(bar.ui.radius.unwrap()[0].px(), 10.0);
+    assert!(config.element_ui.modules.contains_key("clock"));
+    for invalid in [
+        source.replace("thickness 40", "thickness 40; collapsed-width 30"),
+        source.replace("padding 2", "padding 30"),
+        source.replace("length \"75%\"", "length \"101%\""),
+    ] {
+        std::fs::write(&path, invalid).unwrap();
+        assert!(super::load(&canopa_config::Request::common(&path), false).is_err());
     }
 }

@@ -9,8 +9,8 @@ pub mod tooltip_defaults;
 mod validate;
 
 pub use bar::{
-    BarConfig, BarLayer, BarModules, DrawerMode, Edge, OutputTarget, PanelAnimationConfig,
-    PanelConfig, PanelModules, PanelPresentation,
+    BarAlignment, BarConfig, BarLayer, BarLength, BarModules, DrawerMode, Edge, OutputTarget,
+    PanelAnimationConfig, PanelConfig, PanelModules, PanelPresentation,
 };
 pub(crate) use error::{
     ConfigDiagnostic, ConfigDiagnosticKind, ConfigError, ConfigResult, ConfigSource,
@@ -65,6 +65,7 @@ fn bar_module_placements(bar: &BarConfig) -> [(crate::modules::Zone, &[String]);
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub appearance: canopa_theme::Appearance,
+    pub element_ui: ElementUi,
     /// All named bar sections. At least one is always present (falls back to defaults when
     /// no `bar` sections appear in the config file).
     pub bars: Vec<BarConfig>,
@@ -77,12 +78,19 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig::default()],
             modules: vec![],
             menus: vec![],
             panel_providers: vec![],
         }
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ElementUi {
+    pub modules: std::collections::BTreeMap<String, canopa_theme::UiStyle>,
+    pub menus: std::collections::BTreeMap<String, canopa_theme::UiStyle>,
 }
 
 impl Config {

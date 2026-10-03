@@ -360,7 +360,7 @@ mod tests {
     use crate::modules::Module;
     use crate::modules::data_source::ModuleDataSourceMapper;
     use crate::modules::view::IconLabel;
-    use crate::theme::bar_metrics::TEXT_SIZE;
+
     use std::collections::HashMap;
 
     fn format_config(field: &str, raw: &str) -> crate::config::FormatConfig {
@@ -720,7 +720,7 @@ mod tests {
         assert_eq!(
             segments[1].1,
             crate::config::ResolvedStyle {
-                size: Some(TEXT_SIZE as f32),
+                size: Some((crate::theme::label_size() as u32) as f32),
                 ..Default::default()
             }
         );
@@ -753,7 +753,7 @@ mod tests {
         assert_eq!(
             segments[1].1,
             crate::config::ResolvedStyle {
-                size: Some(TEXT_SIZE as f32),
+                size: Some((crate::theme::label_size() as u32) as f32),
                 ..Default::default()
             }
         );

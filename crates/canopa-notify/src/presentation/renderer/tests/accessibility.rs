@@ -172,7 +172,7 @@ registry=$!
         .await
         .unwrap();
     let bounds = {
-        let mut card = notification_banner_widget(&banner);
+        let mut card = notification_banner_widget(&banner, &Default::default());
         let mut widgets = Tree::new(card.as_widget());
         let layout = card.as_widget_mut().layout(
             &mut widgets,

@@ -390,7 +390,7 @@ impl ModuleRuntime {
 
     pub(super) fn render_bar_module<'a>(
         &'a self,
-        request: BarModuleRenderRequest<'a>,
+        request: BarModuleRenderRequest<'_>,
     ) -> Option<iced::Element<'a, super::Message>> {
         let module = self.get(&request.id)?;
         let state = request
@@ -718,7 +718,7 @@ impl ModuleRuntime {
 fn render_bar_form<'a>(
     module: &'a dyn Module,
     state: &ModuleState,
-    request: &BarModuleRenderRequest<'a>,
+    request: &BarModuleRenderRequest<'_>,
 ) -> iced::Element<'a, super::Message> {
     if request.expanded {
         return module.render_panel_with_style(state, request.style);

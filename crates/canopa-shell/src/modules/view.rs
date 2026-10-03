@@ -5,12 +5,12 @@
 /// in every module.
 use std::path::PathBuf;
 
-use iced::widget::{canvas, container, image, row, svg, text};
+use iced::widget::{canvas, container, image, row, svg};
 use iced::{Alignment, Element, Length, Pixels, Point, Rectangle, Size, Vector};
 
 use crate::app::Message;
 use crate::config::FormatMode;
-use crate::theme::bar_metrics::{ICON_SIZE, TEXT_SIZE};
+use crate::theme::bar_metrics::ICON_SIZE;
 
 mod rotated_text;
 
@@ -63,7 +63,7 @@ pub trait IconLabel: Send + Sync {
         }
     }
     fn formatted_size(&self, _layout: IconLabelLayout) -> u32 {
-        TEXT_SIZE
+        crate::theme::label_size() as u32
     }
     fn fallback_view(
         &self,
@@ -155,7 +155,7 @@ pub(super) fn horizontal_icon_label_with_style<'a>(
             ),
             styled_segment_text(
                 label.to_string(),
-                TEXT_SIZE,
+                crate::theme::label_size() as u32,
                 crate::theme::palette().muted,
                 fallback_resolved_style(default_style)
             ),
@@ -192,7 +192,7 @@ pub(super) fn expanded_icon_label_with_style<'a>(
             ),
             styled_segment_text(
                 label.to_string(),
-                TEXT_SIZE,
+                crate::theme::label_size() as u32,
                 crate::theme::palette().muted,
                 fallback_resolved_style(default_style)
             ),
@@ -296,7 +296,7 @@ pub(super) fn stacked_icon_label<'a>(
         styled_segment_text(icon, ICON_SIZE, color, fallback_resolved_style(style)),
         styled_segment_text(
             label,
-            TEXT_SIZE,
+            crate::theme::label_size() as u32,
             crate::theme::palette().text,
             fallback_resolved_style(style)
         ),
@@ -431,7 +431,7 @@ pub(super) fn styled_segment_text<'a>(
     style: crate::config::ResolvedStyle,
 ) -> Element<'a, Message> {
     let font = segment_font(&segment, style);
-    text(segment)
+    crate::theme::text(segment)
         .size(style.size.unwrap_or(fallback_size as f32))
         .color(style.color.unwrap_or(fallback_color))
         .font(font)
@@ -451,14 +451,14 @@ pub(super) fn segment_font(segment: &str, style: crate::config::ResolvedStyle) -
         family: if is_icon {
             iced::font::Family::Name("Symbols Nerd Font Mono")
         } else {
-            iced::Font::DEFAULT.family
+            crate::theme::font().family
         },
         weight: match style.weight.unwrap_or(crate::config::Weight::Normal) {
             crate::config::Weight::Light => iced::font::Weight::Light,
             crate::config::Weight::Normal => iced::font::Weight::Normal,
             crate::config::Weight::Bold => iced::font::Weight::Bold,
         },
-        ..iced::Font::DEFAULT
+        ..crate::theme::font()
     }
 }
 
@@ -475,7 +475,14 @@ pub(super) fn render_format_segments<'a>(
     state: Option<&str>,
     default_style: &crate::config::Style,
 ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-    render_format_segments_with_text_size(format, mode, values, state, default_style, TEXT_SIZE)
+    render_format_segments_with_text_size(
+        format,
+        mode,
+        values,
+        state,
+        default_style,
+        crate::theme::label_size() as u32,
+    )
 }
 
 pub(super) fn render_format_segments_with_text_size<'a>(
@@ -834,7 +841,7 @@ mod tests {
         }
         for text in ["Quarterly planning", "42%", "◆", " Wi-Fi", "", "󰁾󱐋"] {
             let font = super::segment_font(text, style);
-            assert_eq!(font.family, iced::Font::DEFAULT.family);
+            assert_eq!(font.family, crate::theme::font().family);
             assert_eq!(font.weight, iced::font::Weight::Bold);
         }
     }

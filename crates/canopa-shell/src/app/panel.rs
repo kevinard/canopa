@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use super::app_effects::AppEffect;
 use super::external_panel_session::{ExternalPanelPanelIdentity, ExternalPanelSessionEffect};
+#[cfg(test)]
 pub(super) use super::panel_sizing::MENU_ROW_EXTENT;
 use super::panel_sizing::{PanelPhysicalPlan, PanelSizingInput, PlannedDimension};
 use super::{App, Message};
@@ -1145,6 +1146,8 @@ impl App {
         let menu = self.foreground.active_panel_menu_render_state();
         let plan = super::panel_sizing::panel_physical_plan(PanelSizingInput {
             bar,
+            ui: self.panel_ui(&tree),
+            menu_row_extent: self.panel_menu_metrics(&tree).extent,
             tree: &tree,
             // Layer-shell places this panel relative to the usable area.
             // Its origin already includes bars from this and other processes.
@@ -1219,7 +1222,7 @@ impl App {
             .handle(super::foreground::ForegroundIntent::PanelFocusMove {
                 delta,
                 scroll: super::foreground::PanelMenuScrollContext {
-                    row_extent: MENU_ROW_EXTENT,
+                    row_extent: self.active_menu_metrics().extent,
                     default_viewport_height: DEFAULT_MENU_VIEWPORT_HEIGHT,
                 },
             });
@@ -2505,6 +2508,8 @@ mod tests {
 
         let plan = super::super::panel_sizing::panel_physical_plan(PanelSizingInput {
             bar: &bar,
+            ui: crate::theme::ui(canopa_theme::UiKind::Panel),
+            menu_row_extent: 45.0,
             tree: &tree,
             surface_origin: crate::surface::placement::Point::default(),
             panel_module_layout: &panel_module_layout,

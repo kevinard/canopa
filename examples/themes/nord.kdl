@@ -1,0 +1,29 @@
+// An appearance document, referenced by appearance { theme "themes/nord.kdl"; }.
+color-scheme "dark"
+palette {
+    background "#2e3440"
+    surface "#3b4252"
+    raised "#434c5e"
+    text "#eceff4"
+    muted "#d8dee9"
+    disabled "#6c7789"
+    border "#4c566a"
+    accent "#88c0d0"
+    danger "#bf616a"
+    warning "#ebcb8b"
+    success "#a3be8c"
+    focus "#8fbcbb"
+}
+typography {
+    family "Inter" "Noto Sans" "sans-serif"
+    body-size 14
+    label-size 12
+    title-size 16
+}
+ui {
+    surface { border width=1 color="border"; radius 10; }
+    control { radius 6; }
+    panel { padding 18; gap 10; }
+    notification { padding 12; gap 8; }
+    button { state "hover" { background "raised"; }; }
+}

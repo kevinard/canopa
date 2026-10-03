@@ -1,6 +1,4 @@
-use iced::widget::{
-    Space, button, column, container, mouse_area, row, scrollable, text, text_input,
-};
+use iced::widget::{Space, column, container, mouse_area, row, scrollable};
 use iced::{Element, Length};
 
 use super::render::{BarRenderModel, PanelRenderModel, PopupRenderModel};
@@ -94,7 +92,13 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
         return render_panel_menu_model(model, text_color);
     }
     if let Some(content) = model.external_content {
-        return render_external_panel_model(content, text_color, model.title, model.drawer);
+        return render_external_panel_model(
+            content,
+            text_color,
+            model.title,
+            model.drawer,
+            model.ui,
+        );
     }
 
     let entries: Vec<Element<'_, Message>> = model
@@ -106,14 +110,15 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
     panel_frame(
         scrollable(
             column(entries)
-                .spacing(canopa_ui::metrics::GAP)
-                .padding(canopa_ui::panel::PADDING),
+                .spacing(model.ui.gap.px())
+                .padding(canopa_ui::padding(model.ui.padding)),
         )
         .height(Length::Fill)
         .into(),
         text_color,
         model.title,
         model.drawer,
+        model.ui,
     )
 }
 
@@ -122,20 +127,38 @@ fn panel_frame<'a>(
     text_color: Option<iced::Color>,
     title: String,
     drawer: bool,
+    ui: canopa_theme::ResolvedStyle,
 ) -> Element<'a, Message> {
     let content = column![
-        container(crate::surface::panel::panel_header(title))
-            .padding(canopa_ui::panel::HEADER_PADDING),
+        container(crate::surface::panel::panel_header(title)).padding(iced::Padding {
+            top: 12.0,
+            bottom: 12.0,
+            left: ui.padding.left.px(),
+            right: ui.padding.right.px()
+        }),
         content,
     ]
     .height(Length::Fill);
-    container(content)
+    let frame = container(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |theme| iced::widget::container::Style {
-            text_color: text_color.or(Some(canopa_ui::colors(theme).text)),
-            ..canopa_ui::panel::surface(theme, drawer)
-        })
+        .style(move |_| iced::widget::container::Style {
+            text_color: text_color.or(Some(canopa_ui::resolve_color(
+                &crate::theme::appearance(),
+                ui.foreground,
+            ))),
+            ..{
+                let mut style = canopa_ui::frame(&crate::theme::appearance(), ui);
+                if drawer && !ui.custom_radius {
+                    style.border.radius = 0.0.into();
+                }
+                style
+            }
+        });
+    container(frame)
+        .padding(canopa_ui::padding(ui.margin))
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }
 
@@ -144,20 +167,21 @@ fn render_external_panel_model<'a>(
     text_color: Option<iced::Color>,
     title: String,
     drawer: bool,
+    ui: canopa_theme::ResolvedStyle,
 ) -> Element<'a, Message> {
     if let Some(snapshot) = content.document.canopa() {
-        return super::canopa_panel::render(snapshot, &content.provider_name, drawer);
+        return super::canopa_panel::render(snapshot, &content.provider_name, drawer, ui);
     }
     let mut body = column![]
-        .spacing(canopa_ui::metrics::GAP)
-        .padding(canopa_ui::panel::PADDING);
+        .spacing(ui.gap.px())
+        .padding(canopa_ui::content_padding(ui));
     for element in content.elements() {
         let rendered: Element<'_, Message> = match element {
             crate::surface::panel::ExternalPanelElement::Text { text: value } => {
-                text(value.clone()).into()
+                crate::theme::text(value.clone()).into()
             }
             crate::surface::panel::ExternalPanelElement::Button { id, label } => {
-                button(text(label.clone()))
+                crate::theme::button(crate::theme::text(label.clone()))
                     .on_press(Message::ExternalPanel(
                         super::messages::ExternalPanelEvent::ButtonActivated {
                             provider_name: content.provider_name.clone(),
@@ -205,19 +229,25 @@ fn render_external_panel_model<'a>(
                         crate::theme::palette().danger
                     }
                 };
-                container(column![text(title.clone()), text(message.clone()).size(13)].spacing(4))
-                    .padding([8, 10])
-                    .width(Length::Fill)
-                    .style(move |_| iced::widget::container::Style {
-                        background: Some(iced::Background::Color(crate::theme::palette().raised)),
-                        border: iced::Border {
-                            color: border_color,
-                            width: 1.0,
-                            radius: iced::border::Radius::from(4.0),
-                        },
-                        ..Default::default()
-                    })
-                    .into()
+                container(
+                    column![
+                        crate::theme::text(title.clone()),
+                        crate::theme::text(message.clone()).size(13)
+                    ]
+                    .spacing(4),
+                )
+                .padding([8, 10])
+                .width(Length::Fill)
+                .style(move |_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(crate::theme::palette().raised)),
+                    border: iced::Border {
+                        color: border_color,
+                        width: 1.0,
+                        radius: iced::border::Radius::from(4.0),
+                    },
+                    ..Default::default()
+                })
+                .into()
             }
         };
         // Preserve edits and focus on the same field while replacing the
@@ -251,6 +281,7 @@ fn render_external_panel_model<'a>(
         text_color,
         title,
         drawer,
+        ui,
     )
 }
 
@@ -267,7 +298,7 @@ fn render_external_text_input<'a>(
     let provider_for_submit = provider_name.to_string();
     let element_for_submit = element_id.to_string();
     let submit_value = value.to_string();
-    let mut input = text_input(label, value)
+    let mut input = crate::theme::input(label, value)
         .on_input(move |value| {
             Message::ExternalPanel(super::messages::ExternalPanelEvent::TextInputChanged {
                 provider_name: provider_for_change.clone(),
@@ -282,13 +313,12 @@ fn render_external_text_input<'a>(
                 value: submit_value,
             },
         ))
-        .padding([8, 10])
         .width(Length::Fill);
     input = input.secure(secret);
 
     let mut block = column![input].spacing(4);
     if let Some(error) = error {
-        block = block.push(text(error.to_string()).size(12));
+        block = block.push(crate::theme::text(error.to_string()).size(crate::theme::label_size()));
     }
     container(block).width(Length::Fill).into()
 }
@@ -303,7 +333,7 @@ fn render_external_selectable_list<'a>(
 ) -> Element<'a, Message> {
     let provider_for_search = provider_name.to_string();
     let list_for_search = list_id.to_string();
-    let search = text_input("Search", search_query)
+    let search = crate::theme::input("Search", search_query)
         .on_input(move |query| {
             Message::ExternalPanel(super::messages::ExternalPanelEvent::ListSearchChanged {
                 provider_name: provider_for_search.clone(),
@@ -311,7 +341,6 @@ fn render_external_selectable_list<'a>(
                 query,
             })
         })
-        .padding([8, 10])
         .width(Length::Fill);
 
     let mut rows = column![].spacing(6);
@@ -321,12 +350,15 @@ fn render_external_selectable_list<'a>(
                 let provider = provider_name.to_string();
                 let list_id = list_id.to_string();
                 let entry_id = entry.id.clone();
-                let mut row_content = column![text(entry.label.clone())].spacing(2);
+                let mut row_content = column![crate::theme::text(entry.label.clone())].spacing(2);
                 if let Some(description) = &entry.description {
-                    row_content = row_content.push(text(description.clone()).size(12));
+                    row_content = row_content.push(
+                        crate::theme::text(description.clone()).size(crate::theme::label_size()),
+                    );
                 }
                 if let Some(status) = &entry.status {
-                    row_content = row_content.push(text(status.clone()).size(12));
+                    row_content = row_content
+                        .push(crate::theme::text(status.clone()).size(crate::theme::label_size()));
                 }
                 let border_color = if entry.active {
                     crate::theme::palette().accent
@@ -350,8 +382,11 @@ fn render_external_selectable_list<'a>(
                 let provider = provider_name.to_string();
                 let list_id = list_id.to_string();
                 let submitted_value = value.clone();
-                let row_content =
-                    column![text(value), text("Use custom value").size(12)].spacing(2);
+                let row_content = column![
+                    crate::theme::text(value),
+                    crate::theme::text("Use custom value").size(crate::theme::label_size())
+                ]
+                .spacing(2);
                 let row = external_selectable_row(row_content, crate::theme::palette().accent);
                 rows = rows.push(mouse_area(row).on_press(Message::ExternalPanel(
                     super::messages::ExternalPanelEvent::ListCustomValueSubmitted {
@@ -366,7 +401,7 @@ fn render_external_selectable_list<'a>(
 
     let mut block = column![search].spacing(8);
     if let Some(error) = error {
-        block = block.push(text(error.to_owned()).size(12));
+        block = block.push(crate::theme::text(error.to_owned()).size(crate::theme::label_size()));
     }
     container(block.push(rows)).width(Length::Fill).into()
 }
@@ -460,16 +495,16 @@ fn render_panel_menu_model<'a>(
     model: PanelRenderModel<'a>,
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
-    const MENU_ROW_GAP: f32 = canopa_ui::panel::ROW_GAP;
+    let metrics = model.menu_metrics;
+    let menu_row_gap = metrics.gap;
 
     let placeholder = model.menu_prompt.as_deref().unwrap_or("Search");
-    let search = text_input(placeholder, &model.search_query)
+    let search = crate::theme::input(placeholder, &model.search_query)
         .id(model.search_input_id.clone())
         .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
-        .padding([8, 10])
         .width(Length::Fill);
     let back_slot: Element<'_, Message> = if model.can_go_back {
-        button(text("<").size(16))
+        crate::theme::button(crate::theme::text("<").size(crate::theme::title_size()))
             .on_press(Message::Panel(super::messages::PanelEvent::Back))
             .width(40)
             .height(38)
@@ -480,25 +515,29 @@ fn render_panel_menu_model<'a>(
     let header_spacing = if model.can_go_back { 8 } else { 0 };
     let header: Element<'_, Message> = row![search, back_slot].spacing(header_spacing).into();
 
-    let mut list = column![]
-        .spacing(MENU_ROW_GAP)
-        .padding([8, canopa_ui::panel::PADDING]);
+    let mut list = column![].spacing(menu_row_gap).padding(iced::Padding {
+        top: model.ui.padding.top.px() / 2.0,
+        bottom: model.ui.padding.bottom.px() / 2.0,
+        left: model.ui.padding.left.px(),
+        right: model.ui.padding.right.px(),
+    });
     let entry_count = model.menu_entries.len();
     let range = super::panel_sizing::menu_render_range(
         entry_count,
         model.menu_scroll_y,
         model.menu_viewport_height,
+        metrics.extent,
     );
     let (start, end) = (range.start, range.end);
-    let top_spacer = start as f32 * super::panel::MENU_ROW_EXTENT;
-    let bottom_spacer = entry_count.saturating_sub(end) as f32 * super::panel::MENU_ROW_EXTENT;
+    let top_spacer = start as f32 * metrics.extent;
+    let bottom_spacer = entry_count.saturating_sub(end) as f32 * metrics.extent;
 
     if top_spacer > 0.0 {
         // The column supplies the gap between a spacer and its adjacent row.
         list = list.push(
             Space::new()
                 .width(Length::Fill)
-                .height(top_spacer - MENU_ROW_GAP),
+                .height(top_spacer - menu_row_gap),
         );
     }
 
@@ -520,23 +559,26 @@ fn render_panel_menu_model<'a>(
             ));
         }
         row_content = row_content.push(
-            text(entry.label.clone())
-                .size(canopa_ui::metrics::BODY)
+            crate::theme::text(entry.label.clone())
+                .size(crate::theme::body_size())
                 .width(Length::Fill)
                 .wrapping(iced::widget::text::Wrapping::None),
         );
         if entry.is_submenu {
-            row_content = row_content.push(text(">"));
+            row_content = row_content.push(crate::theme::text(">"));
         }
         let row = container(row_content)
-            .padding([8, 10])
+            .padding(canopa_ui::content_padding(metrics.row))
             .width(Length::Fill)
             // Rendering, virtual spacers and keyboard reveal must use one pitch,
             // even for long labels or a different font's line metrics.
-            .height(super::panel::MENU_ROW_EXTENT - MENU_ROW_GAP)
+            .height(metrics.extent - menu_row_gap - metrics.row.margin.vertical())
             .align_y(iced::Alignment::Center)
             .clip(true)
-            .style(move |theme| canopa_ui::panel::row(theme, focused));
+            .style(move |_| {
+                crate::theme::highlighted_frame(metrics.row, focused, focused, false, focused)
+            });
+        let row = container(row).padding(canopa_ui::padding(metrics.row.margin));
         list = list.push(crate::surface::pointer_focus::pointer_focus(
             mouse_area(row).on_press(Message::Panel(super::messages::PanelEvent::ActivateIndex(
                 index,
@@ -549,7 +591,7 @@ fn render_panel_menu_model<'a>(
         list = list.push(
             Space::new()
                 .width(Length::Fill)
-                .height(bottom_spacer - MENU_ROW_GAP),
+                .height(bottom_spacer - menu_row_gap),
         );
     }
 
@@ -562,7 +604,12 @@ fn render_panel_menu_model<'a>(
             })
         });
 
-    let header = container(header).padding([0, canopa_ui::panel::PADDING]);
+    let header = container(header).padding(iced::Padding {
+        top: 0.0,
+        bottom: 0.0,
+        left: model.ui.padding.left.px(),
+        right: model.ui.padding.right.px(),
+    });
     panel_frame(
         column![header, menu_scroll.height(Length::Fill)]
             .height(Length::Fill)
@@ -570,6 +617,7 @@ fn render_panel_menu_model<'a>(
         text_color,
         model.title,
         model.drawer,
+        model.ui,
     )
 }
 
@@ -615,39 +663,30 @@ fn render_searchable_sni_popup_model<'a>(
     window: iced::window::Id,
     session: &'a super::selectable_menu_session::SelectableMenuSession,
 ) -> Element<'a, Message> {
+    let ui = crate::theme::ui(canopa_theme::UiKind::Menu);
+    let (row_ui, row_height) = crate::surface::menu_popup::popup_row_metrics();
     let entries_snapshot = session.entries_snapshot();
     let focused_index = session.focused_index();
     let hovered_index = session.hovered_index();
-    let search = text_input("Search", session.search_query())
+    let search = crate::theme::input("Search", session.search_query())
         .on_input(move |query| {
             Message::Menu(super::messages::MenuEvent::SearchChanged { window, query })
         })
-        .padding([8, 10])
         .width(Length::Fill);
 
-    let mut entries = column![].spacing(0);
+    let mut entries = column![].spacing(ui.gap.px());
     for (index, entry) in entries_snapshot.iter().enumerate() {
         let highlighted = hovered_index.or(focused_index) == Some(index);
-        let row = container(text(entry.label.clone()).size(13))
-            .padding([4, 12])
-            .width(Length::Fill)
-            .style(move |_| iced::widget::container::Style {
-                background: if highlighted {
-                    Some(iced::Background::Color(crate::theme::palette().surface))
-                } else {
-                    None
-                },
-                border: iced::Border {
-                    color: if highlighted {
-                        crate::theme::palette().accent
-                    } else {
-                        iced::Color::TRANSPARENT
-                    },
-                    width: 1.0,
-                    radius: iced::border::Radius::from(3.0),
-                },
-                ..Default::default()
-            });
+        let row = container(
+            crate::theme::text(entry.label.clone()).size(crate::theme::body_size() * 13.0 / 14.0),
+        )
+        .padding(canopa_ui::content_padding(row_ui))
+        .height(row_height)
+        .width(Length::Fill)
+        .style(move |_| {
+            crate::theme::highlighted_frame(row_ui, highlighted, highlighted, false, highlighted)
+        });
+        let row = container(row).padding(canopa_ui::padding(row_ui.margin));
         let super::selectable_menu_session::SelectableMenuEntryTarget::SniMenuItem(item_id) =
             &entry.target
         else {
@@ -673,125 +712,101 @@ fn render_searchable_sni_popup_model<'a>(
 
     let menu = mouse_area(
         container(column![search, entries].spacing(4))
-            .style(|_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(crate::theme::palette().raised)),
-                border: iced::Border {
-                    color: crate::theme::palette().border,
-                    width: 1.0,
-                    radius: iced::border::Radius::from(4.0),
-                },
-                ..Default::default()
-            })
-            .padding(4),
+            .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui))
+            .padding(canopa_ui::content_padding(ui)),
     )
     .on_exit(Message::Menu(super::messages::MenuEvent::ItemHoverExit(
         window,
     )));
 
-    menu.into()
+    container(menu)
+        .padding(canopa_ui::padding(ui.margin))
+        .into()
 }
 
 fn render_bar_model<'a>(
     model: BarRenderModel<'a>,
     window: iced::window::Id,
 ) -> Element<'a, Message> {
-    let is_horizontal = model.is_horizontal;
-    let content_size = model.content_size;
-    let start: Vec<Element<'_, Message>> =
-        model.start.into_iter().map(|entry| entry.element).collect();
-    let center: Vec<Element<'_, Message>> = model
-        .center
-        .into_iter()
-        .map(|entry| entry.element)
-        .collect();
-    let end: Vec<Element<'_, Message>> = model.end.into_iter().map(|entry| entry.element).collect();
-
-    let border_style = |_theme: &_| container::Style {
-        background: Some(iced::Background::Color(crate::theme::palette().raised)),
-        ..Default::default()
-    };
-
-    let (content_w, content_h, border_w, border_h) = if is_horizontal {
-        (
-            Length::Fill,
-            Length::from(content_size),
-            Length::Fill,
-            Length::from(1),
-        )
-    } else {
-        (
-            Length::from(content_size),
-            Length::Fill,
-            Length::from(1),
-            Length::Fill,
-        )
-    };
-
-    let content = container(zone_layout(start, center, end, is_horizontal))
-        .width(content_w)
-        .height(content_h);
-    let border_strip = container(Space::new())
-        .width(border_w)
-        .height(border_h)
-        .style(border_style);
-
-    let bar_content: Element<'_, Message> = match model.edge {
-        Edge::Left => row![content, border_strip]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
-        Edge::Right => row![border_strip, content]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
-        Edge::Top => column![content, border_strip]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
-        Edge::Bottom => column![border_strip, content]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
-    };
-
-    let bar_with_bg = iced::widget::container(bar_content)
-        .width(if model.drawer_width > 0 {
-            Length::from(content_size + 1)
-        } else {
-            Length::Fill
-        })
-        .height(Length::Fill)
-        .style(|_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(crate::theme::palette().background)),
+    let frame = model.geometry.frame;
+    let ui = model.ui;
+    let legacy = !ui.custom_border && !ui.custom_radius;
+    let mut padding = canopa_ui::padding(ui.padding);
+    if !legacy {
+        padding.top += ui.border_width.px();
+        padding.bottom += ui.border_width.px();
+        padding.left += ui.border_width.px();
+        padding.right += ui.border_width.px();
+    }
+    let content: Element<'_, Message> = container(zone_layout(
+        model.start.into_iter().map(|e| e.element).collect(),
+        model.center.into_iter().map(|e| e.element).collect(),
+        model.end.into_iter().map(|e| e.element).collect(),
+        model.is_horizontal,
+        padding,
+        ui.gap.px(),
+    ))
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into();
+    let content = if legacy {
+        let strip = container(Space::new()).style(|_| container::Style {
+            background: Some(crate::theme::palette().raised.into()),
             ..Default::default()
         });
-
-    let bar = mouse_area(bar_with_bg)
-        .on_press(Message::Surface(super::messages::SurfaceEvent::BarClick(
-            window,
-        )))
-        .on_right_press(Message::Surface(
-            super::messages::SurfaceEvent::BarRightClick(window),
-        ))
-        .on_enter(Message::Surface(
-            super::messages::SurfaceEvent::BarHoverEnter(window),
-        ))
-        .on_exit(Message::Surface(
-            super::messages::SurfaceEvent::BarHoverExit(window),
-        ));
-    if model.drawer_width > 0 {
-        container(bar)
+        if model.is_horizontal {
+            let strip = strip.width(Length::Fill).height(1);
+            let body = container(content).height(Length::Fill);
+            match model.edge {
+                Edge::Top => column![body, strip],
+                _ => column![strip, body],
+            }
             .width(Length::Fill)
             .height(Length::Fill)
-            .align_x(if matches!(model.edge, Edge::Left) {
-                iced::alignment::Horizontal::Right
-            } else {
-                iced::alignment::Horizontal::Left
-            })
             .into()
+        } else {
+            let strip = strip.width(1).height(Length::Fill);
+            let body = container(content).width(Length::Fill);
+            match model.edge {
+                Edge::Left => row![body, strip],
+                _ => row![strip, body],
+            }
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+        }
     } else {
-        bar.into()
-    }
+        content
+    };
+    let bar = mouse_area(
+        container(content)
+            .width(frame.width)
+            .height(frame.height)
+            .clip(true)
+            .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui)),
+    )
+    .on_press(Message::Surface(super::messages::SurfaceEvent::BarClick(
+        window,
+    )))
+    .on_right_press(Message::Surface(
+        super::messages::SurfaceEvent::BarRightClick(window),
+    ))
+    .on_enter(Message::Surface(
+        super::messages::SurfaceEvent::BarHoverEnter(window),
+    ))
+    .on_exit(Message::Surface(
+        super::messages::SurfaceEvent::BarHoverExit(window),
+    ));
+    container(bar)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(iced::Padding {
+            top: frame.y,
+            left: frame.x,
+            right: 0.0,
+            bottom: 0.0,
+        })
+        .into()
 }
 
 #[cfg(test)]

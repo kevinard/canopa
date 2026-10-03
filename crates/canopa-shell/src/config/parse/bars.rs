@@ -67,6 +67,12 @@ fn parse_single_bar_node(
             "edge",
             "layer",
             "collapsed-width",
+            "thickness",
+            "length",
+            "align",
+            "margin",
+            "reserve-space",
+            "ui",
             "tooltip-delay",
             "style",
             "modules",
@@ -78,6 +84,12 @@ fn parse_single_bar_node(
             "edge",
             "layer",
             "collapsed-width",
+            "thickness",
+            "length",
+            "align",
+            "margin",
+            "reserve-space",
+            "ui",
             "tooltip-delay",
             "style",
             "modules",
@@ -125,7 +137,19 @@ fn parse_single_bar_node(
         })
         .unwrap_or(defaults.layer)?;
 
-    let collapsed_width = fields::field(children, ctx, "collapsed-width")
+    if children.get("thickness").is_some() && children.get("collapsed-width").is_some() {
+        return Err(ctx.node_err(
+            node,
+            "use either thickness or collapsed-width, not both",
+            None,
+        ));
+    }
+    let thickness_name = if children.get("thickness").is_some() {
+        "thickness"
+    } else {
+        "collapsed-width"
+    };
+    let collapsed_width = fields::field(children, ctx, thickness_name)
         .optional()
         .help("expected a width in logical pixels, e.g. 48")
         .integer_message(
@@ -133,6 +157,63 @@ fn parse_single_bar_node(
         )
         .u32()
         .unwrap_or(defaults.collapsed_width)?;
+
+    let length = match fields::field(children, ctx, "length").optional_node()? {
+        None => crate::config::BarLength::Fill,
+        Some(node) => {
+            if node.ty().is_some()
+                || node.children().is_some()
+                || node.entries().len() != 1
+                || node.entries()[0].name().is_some()
+                || node.entries()[0].ty().is_some()
+            {
+                return Err(ctx.node_err(
+                    node,
+                    "length expects fill, a positive integer or a percentage",
+                    None,
+                ));
+            }
+            let value = node.entries()[0].value();
+            if value.as_string() == Some("fill") {
+                crate::config::BarLength::Fill
+            } else if let Some(n) = value.as_integer().filter(|n| (1..=32768).contains(n)) {
+                crate::config::BarLength::Pixels(n as u32)
+            } else if let Some(p) = value
+                .as_string()
+                .and_then(|s| s.strip_suffix('%'))
+                .and_then(|s| s.parse::<f64>().ok())
+                .filter(|p| p.is_finite() && *p >= 0.01 && *p <= 100.0)
+            {
+                crate::config::BarLength::Percent((p * 100.0).round() as u32)
+            } else {
+                return Err(ctx.node_err(
+                    node,
+                    "length expects fill, 1..32768 logical pixels, or 0.01%..100%",
+                    None,
+                ));
+            }
+        }
+    };
+    let align = fields::field(children, ctx, "align")
+        .optional()
+        .one_of("start, center, end", |v| match v {
+            "start" => Some(crate::config::BarAlignment::Start),
+            "center" => Some(crate::config::BarAlignment::Center),
+            "end" => Some(crate::config::BarAlignment::End),
+            _ => None,
+        })
+        .unwrap_or(crate::config::BarAlignment::Center)?;
+    let margin = fields::field(children, ctx, "margin")
+        .optional_node()?
+        .map(canopa_config::insets)
+        .transpose()
+        .map_err(crate::config::ConfigError::Intake)?
+        .unwrap_or_default();
+    let reserve_space = fields::field(children, ctx, "reserve-space")
+        .optional()
+        .bool()
+        .unwrap_or(true)?;
+    let ui = super::parse_ui(children, ctx, canopa_theme::UiKind::Bar)?;
 
     let tooltip_delay_ms = fields::field(children, ctx, "tooltip-delay")
         .optional()
@@ -161,6 +242,11 @@ fn parse_single_bar_node(
         edge,
         layer,
         collapsed_width,
+        length,
+        align,
+        margin,
+        reserve_space,
+        ui,
         tooltip_delay_ms,
         style,
         modules,
@@ -202,6 +288,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
         panel_children,
         &[
             "presentation",
+            "ui",
             "drawer-mode",
             "width",
             "max-width",
@@ -214,6 +301,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
         ],
         &[
             "presentation",
+            "ui",
             "drawer-mode",
             "width",
             "max-width",
@@ -277,6 +365,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
     };
 
     Ok(PanelConfig {
+        ui: super::parse_ui(panel_children, ctx, canopa_theme::UiKind::Panel)?,
         presentation,
         drawer_mode,
         width,

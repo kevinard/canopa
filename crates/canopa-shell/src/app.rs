@@ -1538,6 +1538,7 @@ mod tests {
         use crate::config::{BarConfig, ClockConfig, ModuleConfig, ModuleParams};
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -1703,6 +1704,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
                 output_target: crate::config::OutputTarget::Include(vec!["eDP-1".into()]),
@@ -1732,6 +1734,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
                 ..BarConfig::default()
@@ -1762,6 +1765,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 BarConfig {
                     name: "main".into(),
@@ -1794,6 +1798,7 @@ mod tests {
     fn wayland_output_snapshot_creates_horizontal_and_side_bars() {
         let config = Config {
             appearance: Default::default(),
+            element_ui: Default::default(),
             bars: vec![
                 crate::config::BarConfig {
                     name: "right".into(),

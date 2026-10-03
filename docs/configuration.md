@@ -28,7 +28,10 @@ namespaces are errors.
 is omitted. `color-scheme` accepts `"dark"` (default, Catppuccin Mocha) or `"light"`
 (a contrast-adjusted Latte preset). Optional `accent` accepts an opaque `"#rrggbb"`
 color; omit it to use the selected preset's accent. Each setting may appear once.
-Font, icon-theme and motion settings are not part of this block yet. Existing shell
+Colors, font families/sizes, borders, corner radii and spacing can be configured in
+this block or in a reusable theme file. See [theme and UI customization](theme-customization.md)
+for the complete schema, local overrides and bar placement. Icon-theme and motion
+settings retain their existing owners. Existing shell
 style tokens resolve against this palette; explicit color overrides still win.
 Presets have contrast checks; custom colors can reduce contrast.
 

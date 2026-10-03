@@ -1,6 +1,5 @@
 use crate::modules::view::collapsed_icon_with_style;
 use crate::theme;
-use crate::theme::bar_metrics::WINDOW_TITLE_SIZE;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FocusedWindowState {
@@ -116,7 +115,7 @@ impl FocusedWindowModule {
             ],
             None,
             default_style,
-            WINDOW_TITLE_SIZE,
+            crate::theme::title_size() as u32,
         )
     }
 
@@ -143,7 +142,7 @@ impl FocusedWindowModule {
             &values,
             None,
             default_style,
-            WINDOW_TITLE_SIZE,
+            crate::theme::title_size() as u32,
         )?
         .into_iter()
         .enumerate()
@@ -261,7 +260,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             info,
             crate::config::FormatMode::Collapsed,
             bar_style,
-            WINDOW_TITLE_SIZE,
+            crate::theme::title_size() as u32,
             theme::palette().text,
         ) {
             return iced::widget::container(content)
@@ -304,7 +303,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segment_visuals_content(
                 segments,
-                WINDOW_TITLE_SIZE,
+                crate::theme::title_size() as u32,
                 theme::palette().text,
                 rotation,
             ))
@@ -395,7 +394,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             info,
             crate::config::FormatMode::Horizontal,
             bar_style,
-            WINDOW_TITLE_SIZE,
+            crate::theme::title_size() as u32,
             theme::palette().text,
         ) {
             return Some(
@@ -416,7 +415,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
         Some(
             container(crate::modules::view::styled_segment_text(
                 display,
-                WINDOW_TITLE_SIZE,
+                crate::theme::title_size() as u32,
                 theme::palette().text,
                 crate::modules::view::fallback_resolved_style(bar_style),
             ))
@@ -453,7 +452,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
         Some(
             iced::widget::container(crate::modules::view::formatted_segment_visuals_content(
                 segments,
-                WINDOW_TITLE_SIZE,
+                crate::theme::title_size() as u32,
                 theme::palette().text,
                 rotation,
             ))

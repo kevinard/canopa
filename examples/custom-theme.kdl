@@ -1,0 +1,24 @@
+schema-version 1
+appearance {
+    theme "themes/nord.kdl"
+    palette { accent "#a3be8c"; }
+}
+shell {
+    bar "main" {
+        edge "top"
+        thickness 44
+        length "85%"
+        align "center"
+        margin 10 16 6 16
+        reserve-space #true
+        ui { padding 4 10; gap 6; radius 12; border width=1 color="accent"; }
+        panel { ui { padding 18; radius 12; }; }
+        modules { start "workspaces"; center "clock"; end "volume" "notifications"; }
+    }
+    modules {
+        module "clock" { ui { padding 2 8; background "surface"; radius 6; }; }
+    }
+}
+notifications {
+    banners { ui { margin 4 0; border width=1 color="accent"; }; }
+}

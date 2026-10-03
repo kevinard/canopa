@@ -29,23 +29,22 @@ impl SharedConfiguration {
                     format: None,
                     fingerprint: fingerprint(""),
                     defaults: true,
+                    dependencies: Vec::new(),
+                    combined_fingerprint: None,
                 },
             }),
             Request::File { path, format } => {
                 let path =
                     std::path::absolute(path).map_err(|_| Diagnostic::new(Code::Location, None))?;
                 let text = read(&path)?;
-                let document = parse_kdl(&text)?;
-                validate_envelope(&document)?;
-                let appearance = appearance::parse(&document)?;
+                let raw = parse_kdl(&text)?;
+                validate_envelope(&raw)?;
+                let document = Document::parse(text, Some(path), format, Component::Shell, "")?;
+                let mut source = document.info().clone();
+                source.defaults = raw.get("appearance").is_none();
                 Ok(Self {
-                    appearance,
-                    source: SourceInfo {
-                        path: Some(path),
-                        format: Some(format),
-                        fingerprint: fingerprint(&text),
-                        defaults: document.get("appearance").is_none(),
-                    },
+                    appearance: document.appearance(),
+                    source,
                 })
             }
             Request::Discover => unreachable!(),

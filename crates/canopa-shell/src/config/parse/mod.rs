@@ -73,11 +73,54 @@ pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigR
     let panel_providers = parse_panel_providers_section(doc, &ctx, &command_policy)?;
     Ok(Config {
         appearance: Default::default(),
+        element_ui: parse_element_ui(doc, &ctx)?,
         bars,
         modules,
         menus,
         panel_providers,
     })
+}
+
+fn parse_ui(
+    doc: &KdlDocument,
+    ctx: &ParseCtx,
+    kind: canopa_theme::UiKind,
+) -> ConfigResult<canopa_theme::UiStyle> {
+    let nodes = doc
+        .nodes()
+        .iter()
+        .filter(|n| n.name().value() == "ui")
+        .collect::<Vec<_>>();
+    if nodes.len() > 1 {
+        return Err(ctx.node_err(nodes[1], "duplicate ui block", None));
+    }
+    match nodes.first() {
+        None => Ok(Default::default()),
+        Some(node) => {
+            canopa_config::ui_style(node, kind).map_err(|e| ctx.node_err(node, e.to_string(), None))
+        }
+    }
+}
+fn parse_element_ui(doc: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<super::ElementUi> {
+    let mut result = super::ElementUi::default();
+    for (section, kind, map) in [
+        ("modules", canopa_theme::UiKind::Module, &mut result.modules),
+        ("menus", canopa_theme::UiKind::Menu, &mut result.menus),
+    ] {
+        if let Some(children) = doc.get(section).and_then(|n| n.children()) {
+            for node in children.nodes() {
+                if let (Some(name), Some(children)) =
+                    (node.get(0).and_then(|e| e.as_string()), node.children())
+                {
+                    let ui = parse_ui(children, &ctx.child(section), kind)?;
+                    if ui != Default::default() {
+                        map.insert(name.to_owned(), ui);
+                    }
+                }
+            }
+        }
+    }
+    Ok(result)
 }
 
 fn parse_command_policy(doc: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<CommandPolicy> {
@@ -193,7 +236,18 @@ fn parse_modules_section(
         })?;
         let module_ctx = module_index_ctx.child(&module_type);
         let actions = actions::parse(node, i, &module_type, &module_ctx, command_policy)?;
-        let params = modules::dispatch(kind, node, i, &actions, &module_ctx, command_policy)?;
+        let mut content_node = node.clone();
+        if let Some(children) = content_node.children_mut() {
+            children.nodes_mut().retain(|n| n.name().value() != "ui");
+        }
+        let params = modules::dispatch(
+            kind,
+            &content_node,
+            i,
+            &actions,
+            &module_ctx,
+            command_policy,
+        )?;
         result.push(ModuleConfig {
             name,
             module_type,
@@ -235,6 +289,7 @@ fn parse_menus_section(
         if let Some(menu_children) = node.children() {
             for child in menu_children.nodes() {
                 match child.name().value() {
+                    "ui" => {}
                     "source" => {
                         if source.is_some() {
                             return Err(menu_ctx.node_err(

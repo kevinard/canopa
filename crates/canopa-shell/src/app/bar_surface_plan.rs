@@ -29,17 +29,12 @@ pub(super) struct BarSurfacePhysicalPlan {
 
 impl BarSurfacePhysicalPlan {
     pub(super) fn from_bar(bar: &BarConfig) -> Self {
-        let collapsed = bar.collapsed_width;
-        let size = if bar.edge.is_horizontal() {
-            (0, collapsed)
-        } else {
-            (collapsed, 0)
-        };
+        let size = crate::surface::bar_geometry::BarGeometry::host_size(bar, 0);
 
         Self {
             anchor: bar.edge.anchor(),
             layer: bar.layer.layer_shell(),
-            exclusive_zone: i32::try_from(collapsed).unwrap_or(48),
+            exclusive_zone: crate::surface::bar_geometry::BarGeometry::reservation(bar),
             size,
             margin: (0, 0, 0, 0),
         }

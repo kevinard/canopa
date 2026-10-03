@@ -10,6 +10,8 @@ fn source() -> SourceInfo {
         format: None,
         fingerprint: "original".into(),
         defaults: true,
+        dependencies: Vec::new(),
+        combined_fingerprint: None,
     }
 }
 
@@ -367,4 +369,35 @@ fn reload_preserves_acknowledged_idle_inhibition_and_release_on_removal() {
         app.modules.state(&ModuleId::new("idle-inhibitor")),
         Some(&ModuleState::IdleInhibitor(IdleInhibitorState::Inactive))
     );
+}
+
+#[test]
+fn theme_dependency_observation_tracks_creation_atomic_replacement_and_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let main = dir.path().join("config.kdl");
+    let theme = dir.path().join("theme.kdl");
+    std::fs::write(
+        &main,
+        "schema-version 1\nappearance { theme \"theme.kdl\"; }\n",
+    )
+    .unwrap();
+    let request = Request::common(main);
+    let missing = observe(&request);
+    assert_eq!(missing.theme.as_ref(), Some(&theme));
+    std::fs::write(&theme, "color-scheme \"light\"\n").unwrap();
+    let created = observe_after(&request, Some(&missing));
+    assert_ne!(created, missing);
+    assert_eq!(created.metadata, missing.metadata);
+    let next = dir.path().join("next.kdl");
+    std::fs::write(&next, "color-scheme \"dark\"\n").unwrap();
+    std::fs::rename(&next, &theme).unwrap();
+    let replaced = observe_after(&request, Some(&created));
+    assert_ne!(replaced, created);
+    std::fs::remove_file(&theme).unwrap();
+    std::fs::write(&next, "color-scheme \"light\"\n").unwrap();
+    std::os::unix::fs::symlink(&next, &theme).unwrap();
+    let linked = observe_after(&request, Some(&replaced));
+    assert_ne!(linked, replaced);
+    std::fs::remove_file(&next).unwrap();
+    assert_ne!(observe_after(&request, Some(&linked)), linked);
 }

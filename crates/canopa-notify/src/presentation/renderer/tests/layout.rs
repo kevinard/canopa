@@ -21,7 +21,7 @@ async fn body_link_click_is_separate_from_the_card_default_action() {
     );
     banner.body_segments = banner_body_segments_from_body_content(&banner.body_content);
     for width in [360.0, 276.0] {
-        let mut card = notification_banner_widget(&banner);
+        let mut card = notification_banner_widget(&banner, &Default::default());
         let mut tree = Tree::new(card.as_widget());
         let node = card.as_widget_mut().layout(
             &mut tree,
@@ -77,7 +77,7 @@ async fn every_named_action_has_a_readable_row_and_invokes_its_opaque_key() {
         })
         .collect();
     for width in [360.0, 276.0] {
-        let mut card = notification_banner_widget(&banner);
+        let mut card = notification_banner_widget(&banner, &Default::default());
         let mut tree = Tree::new(card.as_widget());
         let node = card.as_widget_mut().layout(
             &mut tree,
@@ -154,7 +154,7 @@ async fn pointer_press_cannot_activate_replacement_content() {
     ] {
         banner.revision = revision;
         banner.actions[0].key = format!("revision-{revision}");
-        let mut card = notification_banner_widget(&banner);
+        let mut card = notification_banner_widget(&banner, &Default::default());
         tree.diff(card.as_widget());
         let node = card.as_widget_mut().layout(&mut tree, &renderer, &limits);
         let mut labels = TextBounds::default();
@@ -934,7 +934,7 @@ async fn scrolling_multiple_body_images_preserves_action_hit_regions() {
         icon: None,
     }];
     let renderer = software_renderer().await;
-    let mut card = notification_banner_widget(&banner);
+    let mut card = notification_banner_widget(&banner, &Default::default());
     let mut tree = Tree::new(card.as_widget());
     let node = card.as_widget_mut().layout(
         &mut tree,
@@ -1005,7 +1005,7 @@ async fn multiline_summary_keeps_every_line_above_the_body_and_activates_the_car
     banner.summary = "Download complete\nReview destination\nOpen document".into();
     let renderer = software_renderer().await;
     for width in [360.0, 276.0] {
-        let mut card = notification_banner_widget(&banner);
+        let mut card = notification_banner_widget(&banner, &Default::default());
         let mut tree = Tree::new(card.as_widget());
         let node = card.as_widget_mut().layout(
             &mut tree,
@@ -1077,7 +1077,7 @@ async fn long_named_action_labels_wrap_and_their_last_lines_remain_clickable() {
                     icon: Some(test_banner_visual()),
                 },
             ];
-            let mut card = notification_banner_widget(&banner);
+            let mut card = notification_banner_widget(&banner, &Default::default());
             let mut tree = Tree::new(card.as_widget());
             let node = card.as_widget_mut().layout(
                 &mut tree,
@@ -1158,7 +1158,7 @@ async fn rich_banner_keeps_named_action_labels_inside_the_card() {
         },
     ];
     let renderer = software_renderer().await;
-    let mut card = notification_banner_widget(&banner);
+    let mut card = notification_banner_widget(&banner, &Default::default());
     let mut tree = Tree::new(card.as_widget());
     let node = card.as_widget_mut().layout(
         &mut tree,
@@ -1195,7 +1195,7 @@ async fn rich_body_makes_room_for_text_on_both_sides_of_an_image() {
         BannerBodySegment::plain_text("After"),
     ];
     let renderer = software_renderer().await;
-    let mut body = notification_body_widget(&banner);
+    let mut body = notification_body_widget(&banner, &Default::default());
     let mut tree = Tree::new(body.as_widget());
     let node = body.as_widget_mut().layout(
         &mut tree,
@@ -1636,4 +1636,65 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
         replacement.load(Ordering::SeqCst),
         "replacing wrapped content must shrink and acknowledge the new frame"
     );
+}
+
+#[tokio::test]
+async fn custom_banner_font_and_spacing_reflow_without_losing_action_targets() {
+    let renderer = software_renderer().await;
+    let mut banner = banner_view(
+        48,
+        "A larger body that wraps onto several lines in a narrow notification",
+    );
+    banner.actions = vec![BannerAction {
+        key: "opaque-action".into(),
+        label: "Open message".into(),
+        icon: None,
+    }];
+    let mut appearance = canopa_theme::Appearance::default();
+    let custom = std::sync::Arc::make_mut(&mut appearance.customization);
+    custom.typography.family = vec!["monospace".into()];
+    custom.typography.body_size = canopa_theme::Pixels::whole(22);
+    custom.typography.title_size = canopa_theme::Pixels::whole(26);
+    custom.ui[canopa_theme::UiKind::Notification as usize].padding =
+        Some(canopa_theme::Insets::all(18));
+    custom.ui[canopa_theme::UiKind::Notification as usize].margin =
+        Some(canopa_theme::Insets::all(6));
+    custom.ui[canopa_theme::UiKind::Notification as usize].border_width =
+        Some(canopa_theme::Pixels::whole(3));
+    let mut card = notification_banner_widget(&banner, &appearance);
+    let mut tree = Tree::new(card.as_widget());
+    let node = card.as_widget_mut().layout(
+        &mut tree,
+        &renderer,
+        &core::layout::Limits::new(Size::ZERO, Size::new(360.0, 1500.0)),
+    );
+    let mut labels = TextBounds::default();
+    card.as_widget_mut()
+        .operate(&mut tree, Layout::new(&node), &renderer, &mut labels);
+    let action = labels
+        .0
+        .iter()
+        .find(|(label, _)| label == "Open message")
+        .unwrap()
+        .1;
+    assert!(action.height >= 22.0);
+    assert!(action.x >= 27.0 && action.y + action.height <= node.size().height);
+    let mut messages = Vec::new();
+    for event in [
+        core::mouse::Event::ButtonPressed(core::mouse::Button::Left),
+        core::mouse::Event::ButtonReleased(core::mouse::Button::Left),
+    ] {
+        card.as_widget_mut().update(
+            &mut tree,
+            &core::Event::Mouse(event),
+            Layout::new(&node),
+            core::mouse::Cursor::Available(action.center()),
+            &renderer,
+            &mut core::clipboard::Null,
+            &mut core::Shell::new(&mut messages),
+            &Rectangle::with_size(node.size()),
+        );
+    }
+    assert_eq!(messages.len(), 1);
+    assert!(format!("{:?}", messages[0]).contains("opaque-action"));
 }

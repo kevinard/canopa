@@ -7,9 +7,6 @@ use crate::config::Edge;
 use crate::config::style::ResolvedStyle;
 use iced::advanced::text::{self, Paragraph};
 
-const TEXT_SIZE: f32 = 16.0;
-const H_PADDING: f32 = 8.0;
-const V_PADDING: f32 = 4.0;
 const MIN_WIDTH: u32 = 32;
 const MIN_HEIGHT: u32 = 34;
 const MAX_WIDTH: u32 = 480;
@@ -31,7 +28,7 @@ fn spans(tree: &TooltipTree) -> Vec<text::Span<'_, ()>> {
                     crate::config::style::Weight::Normal => iced::font::Weight::Normal,
                     crate::config::style::Weight::Bold => iced::font::Weight::Bold,
                 },
-                ..iced::Font::DEFAULT
+                ..crate::theme::font()
             });
         }
         spans.push(span);
@@ -60,14 +57,20 @@ pub struct TooltipTree {
 
 /// Measure the same font, spans, and wrapping policy used by `view_tooltip`.
 pub fn popup_size(tree: &TooltipTree) -> (u32, u32) {
+    let ui = crate::theme::ui(canopa_theme::UiKind::Tooltip);
+    let border = if ui.custom_border {
+        2.0 * ui.border_width.px()
+    } else {
+        0.0
+    };
     let spans = spans(tree);
     let measure = |width| {
         iced::advanced::graphics::text::Paragraph::with_spans(text::Text {
             content: spans.as_slice(),
             bounds: iced::Size::new(width, f32::INFINITY),
-            size: iced::Pixels(TEXT_SIZE),
+            size: iced::Pixels(crate::theme::title_size()),
             line_height: text::LineHeight::default(),
-            font: iced::Font::DEFAULT,
+            font: crate::theme::font(),
             align_x: text::Alignment::Default,
             align_y: iced::alignment::Vertical::Top,
             shaping: text::Shaping::Advanced,
@@ -75,11 +78,19 @@ pub fn popup_size(tree: &TooltipTree) -> (u32, u32) {
         })
         .min_bounds()
     };
-    let natural = measure(MAX_WIDTH as f32 - 2.0 * H_PADDING);
-    let width = ((natural.width + 2.0 * H_PADDING).ceil() as u32).clamp(MIN_WIDTH, MAX_WIDTH);
+    let natural = measure(
+        (MAX_WIDTH as f32 - (ui.padding.horizontal() + border) - ui.margin.horizontal()).max(1.0),
+    );
+    let width = ((natural.width + (ui.padding.horizontal() + border) + ui.margin.horizontal())
+        .ceil() as u32)
+        .clamp(MIN_WIDTH, MAX_WIDTH);
     // Re-measure at the rounded surface width, including all wrapped lines.
-    let measured = measure(width as f32 - 2.0 * H_PADDING);
-    let height = ((measured.height + 2.0 * V_PADDING).ceil() as u32).max(MIN_HEIGHT);
+    let measured = measure(
+        (width as f32 - (ui.padding.horizontal() + border) - ui.margin.horizontal()).max(1.0),
+    );
+    let height =
+        ((measured.height + (ui.padding.vertical() + border) + ui.margin.vertical()).ceil() as u32)
+            .max(MIN_HEIGHT);
     (width, height)
 }
 
@@ -87,25 +98,20 @@ pub fn popup_size(tree: &TooltipTree) -> (u32, u32) {
 pub fn view_tooltip<'a, Message: 'a + Clone>(tree: &'a TooltipTree) -> iced::Element<'a, Message> {
     use iced::widget::{container, rich_text};
 
-    container(
+    let ui = crate::theme::ui(canopa_theme::UiKind::Tooltip);
+    let frame = container(
         rich_text(spans(tree))
-            .size(TEXT_SIZE)
-            .font(iced::Font::DEFAULT)
+            .size(crate::theme::title_size())
+            .font(crate::theme::font())
             .wrapping(text::Wrapping::WordOrGlyph),
     )
-    .padding([V_PADDING, H_PADDING])
-    .max_width(MAX_WIDTH)
+    .padding(canopa_ui::content_padding(ui))
+    .max_width((MAX_WIDTH as f32 - ui.margin.horizontal()).max(1.0))
     .height(iced::Length::Shrink)
-    .style(|_| iced::widget::container::Style {
-        background: Some(iced::Background::Color(crate::theme::palette().raised)),
-        border: iced::Border {
-            color: crate::theme::palette().border,
-            width: 1.0,
-            radius: iced::border::Radius::from(4.0),
-        },
-        ..Default::default()
-    })
-    .into()
+    .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui));
+    container(frame)
+        .padding(canopa_ui::padding(ui.margin))
+        .into()
 }
 
 #[cfg(test)]

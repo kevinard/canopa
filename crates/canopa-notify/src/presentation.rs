@@ -622,7 +622,7 @@ impl PresentationCoordinator {
     }
 
     pub(crate) fn appearance(&self) -> canopa_theme::Appearance {
-        *self.appearance.lock().unwrap()
+        self.appearance.lock().unwrap().clone()
     }
 
     pub(crate) fn set_icon_settings(&self, settings: BannerIconSettings) {

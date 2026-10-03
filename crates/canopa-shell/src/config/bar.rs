@@ -91,6 +91,7 @@ impl Default for PanelAnimationConfig {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PanelConfig {
+    pub ui: canopa_theme::UiStyle,
     pub presentation: PanelPresentation,
     pub drawer_mode: DrawerMode,
     pub width: Option<u32>,
@@ -128,6 +129,11 @@ pub struct BarConfig {
     /// Collapsed bar width, in **logical pixels**.
     /// The compositor multiplies this by the output scale factor for physical rendering (NFR11).
     pub collapsed_width: u32,
+    pub length: BarLength,
+    pub align: BarAlignment,
+    pub margin: canopa_theme::Insets,
+    pub reserve_space: bool,
+    pub ui: canopa_theme::UiStyle,
     /// Dwell delay (ms) before a module's tooltip appears on hover.
     /// Default 500. Hide is always immediate on hover-exit.
     pub tooltip_delay_ms: u32,
@@ -147,6 +153,11 @@ impl Default for BarConfig {
             edge: Edge::Left,
             layer: BarLayer::Top,
             collapsed_width: 48,
+            length: BarLength::Fill,
+            align: BarAlignment::Center,
+            margin: Default::default(),
+            reserve_space: true,
+            ui: Default::default(),
             tooltip_delay_ms: 500,
             style: Style::default(),
             modules: BarModules::default(),
@@ -157,6 +168,16 @@ impl Default for BarConfig {
 }
 
 impl BarConfig {
+    pub fn outer_margins(&self) -> (u32, u32, u32, u32) {
+        let m = self.margin;
+        match self.edge {
+            Edge::Top => (m.top.ceil(), m.bottom.ceil(), m.left.ceil(), m.right.ceil()),
+            Edge::Bottom => (m.bottom.ceil(), m.top.ceil(), m.left.ceil(), m.right.ceil()),
+            Edge::Left => (m.left.ceil(), m.right.ceil(), m.top.ceil(), m.bottom.ceil()),
+            Edge::Right => (m.right.ceil(), m.left.ceil(), m.top.ceil(), m.bottom.ceil()),
+        }
+    }
+
     /// A drawer is a vertical-bar presentation; horizontal bars keep automatic sizing.
     pub fn uses_drawer(&self) -> bool {
         self.panel.presentation == PanelPresentation::Drawer && !self.edge.is_horizontal()
@@ -169,6 +190,22 @@ impl BarConfig {
     pub fn matches_output(&self, output_name: &str) -> bool {
         self.output_target.matches(output_name)
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BarLength {
+    #[default]
+    Fill,
+    Pixels(u32),
+    /// Hundredths of one percent, in 1..=10000.
+    Percent(u32),
+}
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BarAlignment {
+    Start,
+    #[default]
+    Center,
+    End,
 }
 
 /// Compositor stacking layer for a Bar Surface.
