@@ -39,6 +39,13 @@ fn resolve_application_icon_uncached(app_id: &str) -> Option<ApplicationIcon> {
     let applications = APPLICATIONS
         .get_or_init(|| crate::desktop_apps::discover_installed_applications().unwrap_or_default());
 
+    resolve_application_icon_from_applications(app_id, applications)
+}
+
+fn resolve_application_icon_from_applications(
+    app_id: &str,
+    applications: &[crate::desktop_apps::DesktopApplication],
+) -> Option<ApplicationIcon> {
     if let Some(application) = match_desktop_application_for_app_id(app_id, applications)
         && let Some(icon) = application.icon.as_deref()
     {
@@ -88,6 +95,20 @@ pub(crate) fn match_desktop_application_for_app_id<'a>(
                 .iter()
                 .find(|application| desktop_id_stem(&application.id) == Some(suffix))
         })
+        .or_else(|| {
+            // XWayland classes can differ in case from their desktop IDs (for
+            // example, Chatgpt and chatgpt.desktop). Preserve exact matches and
+            // only accept an unambiguous case-insensitive fallback.
+            let suffix = app_id.rsplit('.').next()?;
+            let mut matches = applications.iter().filter(|application| {
+                application.id.eq_ignore_ascii_case(app_id)
+                    || desktop_id_stem(&application.id).is_some_and(|stem| {
+                        stem.eq_ignore_ascii_case(app_id) || stem.eq_ignore_ascii_case(suffix)
+                    })
+            });
+            let application = matches.next()?;
+            matches.next().is_none().then_some(application)
+        })
 }
 
 fn desktop_id_stem(id: &str) -> Option<&str> {
@@ -97,6 +118,30 @@ fn desktop_id_stem(id: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use crate::desktop_apps::DesktopApplication;
+
+    #[test]
+    fn xwayland_class_resolves_desktop_icon_despite_casing() {
+        let directory = tempfile::tempdir().unwrap();
+        let icon_path = directory.path().join("chatgpt.png");
+        std::fs::write(&icon_path, []).unwrap();
+        let applications = crate::desktop_apps::applications_from_entries(
+            vec![crate::desktop_apps::RawDesktopEntry {
+                id: "chatgpt.desktop".into(),
+                body: format!(
+                    "[Desktop Entry]\nType=Application\nName=ChatGPT\nExec=chatgpt %U\nIcon={}\n",
+                    icon_path.display()
+                ),
+                path: directory.path().join("chatgpt.desktop"),
+            }],
+            &crate::desktop_apps::DesktopEnvironment::unknown(),
+        );
+
+        assert_eq!(
+            super::resolve_application_icon_from_applications("Chatgpt", &applications)
+                .and_then(|icon| icon.path),
+            Some(icon_path)
+        );
+    }
 
     fn app(id: &str, name: &str) -> DesktopApplication {
         DesktopApplication {
@@ -136,7 +181,53 @@ mod tests {
         assert_eq!(
             super::match_desktop_application_for_app_id("Firefox", &applications)
                 .map(|app| app.id.as_str()),
+            Some("firefox.desktop")
+        );
+        assert_eq!(
+            super::match_desktop_application_for_app_id("Mozilla Firefox", &applications)
+                .map(|app| app.id.as_str()),
             None
         );
+    }
+
+    #[test]
+    fn case_insensitive_matching_covers_desktop_ids_stems_and_dns_suffixes() {
+        let applications = vec![app("chatgpt.desktop", "ChatGPT")];
+
+        for app_id in ["CHATGPT.DESKTOP", "Chatgpt", "com.openai.Chatgpt"] {
+            assert_eq!(
+                super::match_desktop_application_for_app_id(app_id, &applications)
+                    .map(|app| app.id.as_str()),
+                Some("chatgpt.desktop"),
+                "{app_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn exact_matches_take_precedence_over_case_insensitive_matches() {
+        let applications = vec![
+            app("chatgpt.desktop", "Lowercase"),
+            app("Chatgpt.desktop", "Exact"),
+        ];
+
+        for app_id in ["Chatgpt.desktop", "Chatgpt", "com.openai.Chatgpt"] {
+            assert_eq!(
+                super::match_desktop_application_for_app_id(app_id, &applications)
+                    .map(|app| app.id.as_str()),
+                Some("Chatgpt.desktop"),
+                "{app_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn case_insensitive_matching_rejects_ambiguous_desktop_entries() {
+        let applications = vec![
+            app("chatgpt.desktop", "Lowercase"),
+            app("Chatgpt.desktop", "Mixed case"),
+        ];
+
+        assert!(super::match_desktop_application_for_app_id("CHATGPT", &applications).is_none());
     }
 }

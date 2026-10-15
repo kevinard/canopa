@@ -159,7 +159,7 @@ renders non-empty text.
 Application icon resolution uses a two-step lookup:
 
 1. Match `app_id` against discovered desktop entries using conservative normalization:
-   exact desktop id (`firefox.desktop`), exact desktop id stem (`firefox`), then reverse-DNS suffix (`org.mozilla.firefox` to `firefox.desktop`).
+   exact desktop id (`firefox.desktop`), exact desktop id stem (`firefox`), then reverse-DNS suffix (`org.mozilla.firefox` to `firefox.desktop`). If none matches, accept a unique ASCII case-insensitive match against those identifiers, covering XWayland classes such as `Chatgpt` with `chatgpt.desktop`. Ambiguous case-insensitive matches are rejected.
 2. If no desktop entry matches, try `app_id` directly through the icon theme resolver.
 
 Resolution does not fuzzy match display names, comments, or keywords.

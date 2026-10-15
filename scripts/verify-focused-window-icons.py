@@ -3,7 +3,8 @@
 
 Uses a private software-rendered Weston/Niri desktop and a controlled Niri IPC
 stream. Checks fresh PNG and SVG icons, cached switches, both rotation directions,
-and horizontal rendering. Requires Weston, Niri, D-Bus and Pillow.
+horizontal rendering, and XWayland-style app ID casing. Requires Weston, Niri,
+D-Bus and Pillow.
 """
 
 import argparse
@@ -57,7 +58,8 @@ def capture(session, name, scale):
 
 def window(index, name):
     return {
-        "id": index, "title": name + " focused window", "app_id": "org.canopa." + name,
+        "id": index, "title": name + " focused window",
+        "app_id": name if name == "Red" else "org.canopa." + name,
         "pid": None, "workspace_id": 1, "is_focused": False, "is_floating": False,
         "is_urgent": False, "focus_timestamp": None,
         "layout": {"pos_in_scrolling_layout": None, "tile_size": [0, 0],
@@ -107,13 +109,19 @@ def verify(binary, output, session, scale):
     applications.mkdir(parents=True)
     for name, color in COLORS.items():
         icon = runtime / (name + (".svg" if name == "Green" else ".png"))
+        if name == "Red":
+            icon = runtime / "data/pixmaps/red.png"
+            icon.parent.mkdir(parents=True)
         if icon.suffix == ".svg":
             icon.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
                             '<path fill="#00ff00" d="M0 0h32v32H0z"/></svg>')
         else:
             Image.new("RGB", (32, 32), color).save(icon)
-        (applications / f"org.canopa.{name}.desktop").write_text(
-            f"[Desktop Entry]\nType=Application\nName={name}\nExec=true\nIcon={icon}\n"
+        # Like Chatgpt -> chatgpt.desktop, the XWayland class differs in case.
+        desktop_id = "red" if name == "Red" else "org.canopa." + name
+        icon_value = "red" if name == "Red" else str(icon)
+        (applications / f"{desktop_id}.desktop").write_text(
+            f"[Desktop Entry]\nType=Application\nName={name}\nExec=true\nIcon={icon_value}\n"
         )
     config = runtime / "config/niribar/config.kdl"
     config.parent.mkdir(parents=True)
