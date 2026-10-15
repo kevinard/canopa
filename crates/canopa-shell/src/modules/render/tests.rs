@@ -219,6 +219,74 @@ fn size(
 }
 
 #[tokio::test]
+async fn focused_window_length_limit_reaches_bar_layout_on_every_edge() {
+    let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
+        .await
+        .unwrap();
+    // Exercise configuration parsing, the module constructor and the actual Iced layout.
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        file.path(),
+        r#"modules { module "focused-window" { max-length 9 } }"#,
+    )
+    .unwrap();
+    let (config, _) =
+        crate::config::load(&canopa_config::Request::legacy(file.path()), true).unwrap();
+    let module_config = config
+        .modules
+        .iter()
+        .find(|m| m.name == "focused-window")
+        .unwrap();
+    let constructor = crate::modules::build_registry()["focused-window"];
+    let module = constructor(module_config).unwrap();
+    let state = |title: String| {
+        ModuleState::FocusedWindow(crate::modules::focused_window::FocusedWindowState {
+            window: Some(crate::modules::focused_window::FocusedWindowInfo {
+                title: Some(title),
+                app_id: None,
+                application_icon: None,
+            }),
+        })
+    };
+    let long_title = state(format!("ABCD{}WXYZ", "long title ".repeat(100)));
+    let shortened_title = state("ABCD…WXYZ".into());
+    let unbounded = constructor(&crate::config::ModuleConfig {
+        params: crate::config::ModuleParams::FocusedWindow(crate::config::FocusedWindowConfig {
+            max_length: 0,
+            ..Default::default()
+        }),
+        ..module_config.clone()
+    })
+    .unwrap();
+
+    for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
+        let context = BarRenderContext {
+            window: iced::window::Id::unique(),
+            edge: &edge,
+        };
+        let style = Style::default();
+        let bounded_size = size(module.render_bar(&long_title, &context, &style), &renderer);
+        let expected_size = size(
+            module.render_bar(&shortened_title, &context, &style),
+            &renderer,
+        );
+        let unbounded_size = size(
+            unbounded.render_bar(&long_title, &context, &style),
+            &renderer,
+        );
+        assert_eq!(bounded_size, expected_size, "{edge:?}");
+        if edge.is_horizontal() {
+            assert!(bounded_size.width < unbounded_size.width / 2.0, "{edge:?}");
+        } else {
+            assert!(
+                bounded_size.height < unbounded_size.height / 2.0,
+                "{edge:?}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn format_capable_modules_share_mode_inheritance_style_and_rotation_on_all_edges() {
     use crate::config::{FormatMode, ResolvedContentRotation};
     let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))

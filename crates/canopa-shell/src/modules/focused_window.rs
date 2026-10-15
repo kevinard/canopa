@@ -1,5 +1,26 @@
 use crate::modules::view::collapsed_icon_with_style;
 use crate::theme;
+use std::borrow::Cow;
+use unicode_segmentation::UnicodeSegmentation;
+
+fn ellipsize_title(title: &str, max_length: u32) -> Cow<'_, str> {
+    let max_length = max_length as usize;
+    if max_length == 0 || title.graphemes(true).count() <= max_length {
+        return Cow::Borrowed(title);
+    }
+
+    let retained = max_length - 1;
+    let prefix: String = title.graphemes(true).take(retained.div_ceil(2)).collect();
+    let suffix: String = title
+        .graphemes(true)
+        .rev()
+        .take(retained / 2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    Cow::Owned(format!("{prefix}…{suffix}"))
+}
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FocusedWindowState {
@@ -45,35 +66,25 @@ pub(super) struct FocusedWindowModule {
     format: crate::config::FormatConfig,
     content_rotation: crate::config::ContentRotation,
     fallback_icon: String,
+    max_length: u32,
 }
 
 impl FocusedWindowModule {
-    #[cfg(test)]
     pub(super) fn new(
         id: crate::modules::ModuleId,
-        format: crate::config::FormatConfig,
-        fallback_icon: String,
-    ) -> Self {
-        Self::new_with_content_rotation(
-            id,
-            format,
-            crate::config::ContentRotation::None,
-            fallback_icon,
-        )
-    }
-
-    pub(super) fn new_with_content_rotation(
-        id: crate::modules::ModuleId,
-        format: crate::config::FormatConfig,
-        content_rotation: crate::config::ContentRotation,
-        fallback_icon: String,
+        config: crate::config::FocusedWindowConfig,
     ) -> Self {
         FocusedWindowModule {
             id,
-            format,
-            content_rotation,
-            fallback_icon,
+            format: config.format,
+            content_rotation: config.content_rotation,
+            fallback_icon: config.fallback_icon,
+            max_length: config.max_length,
         }
+    }
+
+    fn display_title<'a>(&self, info: &'a FocusedWindowInfo) -> Cow<'a, str> {
+        ellipsize_title(info.title.as_deref().unwrap_or_default(), self.max_length)
     }
 
     fn formatted_text(
@@ -81,7 +92,7 @@ impl FocusedWindowModule {
         info: &FocusedWindowInfo,
         mode: crate::config::FormatMode,
     ) -> Option<String> {
-        let title = info.title.as_deref().unwrap_or_default();
+        let title = self.display_title(info);
         let app_id = info.app_id.as_deref().unwrap_or_default();
         self.format.template_for(mode).map(|template| {
             template.render_joined(&[
@@ -100,17 +111,15 @@ impl FocusedWindowModule {
         mode: crate::config::FormatMode,
         default_style: &crate::config::Style,
     ) -> Option<Vec<(String, crate::config::ResolvedStyle)>> {
-        use std::borrow::Cow;
-
-        let title = info.title.as_deref().unwrap_or_default();
+        let title = self.display_title(info);
         let app_id = info.app_id.as_deref().unwrap_or_default();
         crate::modules::view::render_format_segments_with_text_size(
             &self.format,
             mode,
             &[
                 ("icon", Cow::Borrowed(self.fallback_icon.as_str())),
-                ("value", Cow::Borrowed(title)),
-                ("title", Cow::Borrowed(title)),
+                ("value", Cow::Borrowed(title.as_ref())),
+                ("title", Cow::Borrowed(title.as_ref())),
                 ("app-id", Cow::Borrowed(app_id)),
             ],
             None,
@@ -125,15 +134,13 @@ impl FocusedWindowModule {
         mode: crate::config::FormatMode,
         default_style: &crate::config::Style,
     ) -> Option<Vec<crate::modules::view::FormattedSegmentVisual>> {
-        use std::borrow::Cow;
-
         let template = self.format.template_for(mode)?;
-        let title = info.title.as_deref().unwrap_or_default();
+        let title = self.display_title(info);
         let app_id = info.app_id.as_deref().unwrap_or_default();
         let values = [
             ("icon", Cow::Borrowed(self.fallback_icon.as_str())),
-            ("value", Cow::Borrowed(title)),
-            ("title", Cow::Borrowed(title)),
+            ("value", Cow::Borrowed(title.as_ref())),
+            ("title", Cow::Borrowed(title.as_ref())),
             ("app-id", Cow::Borrowed(app_id)),
         ];
         let parts = crate::modules::view::render_format_segments_with_text_size(
@@ -333,7 +340,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
         let Some(info) = info else {
             return iced::widget::Space::new().into();
         };
-        let title_str = info.title.clone().unwrap_or_default();
+        let title_str = self.display_title(info).into_owned();
 
         if let Some(content) = self.formatted_segments_content_with_icons_default(
             info,
@@ -355,8 +362,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
             .formatted_text(info, crate::config::FormatMode::Expanded)
             .unwrap_or(title_str);
 
-        // Show title, clipped to module width (AC #3).
-        // Iced clips text naturally when container width limits it.
+        // Apply the title limit even when no format template is available.
         container(crate::modules::view::styled_segment_text(
             display,
             12,
@@ -388,7 +394,7 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
         let Some(info) = info else {
             return Some(iced::widget::Space::new().into());
         };
-        let title_str = info.title.clone().unwrap_or_default();
+        let title_str = self.display_title(info).into_owned();
 
         if let Some(content) = self.formatted_segments_content_with_icons_default(
             info,
@@ -469,7 +475,9 @@ impl crate::modules::render::ModuleRender for FocusedWindowModule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ColorValue, SegmentStyles, Style, ThemeToken, Weight};
+    use crate::config::{
+        ColorValue, FocusedWindowConfig, SegmentStyles, Style, ThemeToken, Weight,
+    };
     use crate::modules::Module;
     use crate::modules::render::{BarRenderContext, ModuleRender};
 
@@ -495,11 +503,130 @@ mod tests {
     }
 
     #[test]
+    fn middle_ellipsis_respects_boundaries_and_small_or_disabled_limits() {
+        for (limit, expected) in [
+            (0, "abcdef"),
+            (1, "…"),
+            (2, "a…"),
+            (3, "a…f"),
+            (4, "ab…f"),
+            (5, "ab…ef"),
+            (6, "abcdef"),
+            (7, "abcdef"),
+        ] {
+            assert_eq!(ellipsize_title("abcdef", limit), expected, "limit={limit}");
+            assert_eq!(ellipsize_title("", limit), "");
+        }
+        assert!(matches!(ellipsize_title("short", 50), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn middle_ellipsis_preserves_combining_marks_and_complete_emoji_sequences() {
+        let title = "e\u{301}👩🏽‍💻中🇫🇷o\u{308}👨‍👩‍👧‍👦";
+        let shortened = ellipsize_title(title, 5);
+        assert_eq!(shortened, "e\u{301}👩🏽‍💻…o\u{308}👨‍👩‍👧‍👦");
+        assert_eq!(shortened.graphemes(true).count(), 5);
+        assert_eq!(ellipsize_title(title, 6), title);
+    }
+
+    #[test]
+    fn custom_formats_limit_both_title_aliases_and_preserve_other_values_and_styles() {
+        let mut template = crate::config::FormatTemplate::parse(
+            &["Title: {title}", "{value}", "{app-id}"],
+            &["title", "value", "app-id"],
+            "test.format",
+        )
+        .unwrap();
+        template.set_segment_styles(
+            0,
+            SegmentStyles::Static(Style {
+                weight: Some(Weight::Bold),
+                ..Default::default()
+            }),
+        );
+        let module = FocusedWindowModule::new(
+            crate::modules::ModuleId::new("focused-window"),
+            FocusedWindowConfig {
+                max_length: 5,
+                format: crate::config::FormatConfig {
+                    collapsed: Some(template),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        let info = FocusedWindowInfo {
+            title: Some("abcdefghij".into()),
+            app_id: Some("org.example.Application".into()),
+            application_icon: None,
+        };
+        for mode in [
+            crate::config::FormatMode::Collapsed,
+            crate::config::FormatMode::Expanded,
+            crate::config::FormatMode::Horizontal,
+        ] {
+            let segments = module
+                .styled_segments_with_default(&info, mode, &Style::default())
+                .unwrap();
+            assert_eq!(segments[0].0, "Title: ab…ij");
+            assert_eq!(segments[0].1.weight, Some(Weight::Bold));
+            assert_eq!(segments[1].0, "ab…ij");
+            assert_eq!(segments[2].0, "org.example.Application");
+            assert_eq!(
+                module.formatted_text(&info, mode).unwrap(),
+                "Title: ab…ij ab…ij org.example.Application"
+            );
+        }
+        let missing_title = FocusedWindowInfo {
+            title: None,
+            ..info
+        };
+        assert_eq!(module.display_title(&missing_title), "");
+    }
+
+    #[test]
+    fn long_titles_are_bounded_in_every_render_mode_but_tooltips_keep_the_full_title() {
+        let module = FocusedWindowModule::new(
+            crate::modules::ModuleId::new("focused-window"),
+            FocusedWindowConfig::default(),
+        );
+        let title = format!("{} — Firefox", "Very long window title ".repeat(100));
+        let info = FocusedWindowInfo {
+            title: Some(title.clone()),
+            app_id: Some("firefox".into()),
+            application_icon: None,
+        };
+        for mode in [
+            crate::config::FormatMode::Collapsed,
+            crate::config::FormatMode::Horizontal,
+            crate::config::FormatMode::Expanded,
+        ] {
+            let segments = module
+                .formatted_segment_visuals(&info, mode, &Style::default())
+                .expect("inherited title format");
+            let crate::modules::view::FormattedSegmentVisual::Text { text, .. } = &segments[1]
+            else {
+                panic!("expected title text");
+            };
+            assert_eq!(text.chars().count(), 50, "{mode:?}");
+            assert!(text.starts_with("Very long window title "));
+            assert!(text.contains('…'));
+            assert!(text.ends_with(" — Firefox"));
+        }
+        let state =
+            crate::modules::ModuleState::FocusedWindow(FocusedWindowState { window: Some(info) });
+        for (name, value) in module.tooltip_values(&state) {
+            if matches!(name, "title" | "value") {
+                assert_eq!(value, title);
+            }
+        }
+    }
+
+    #[test]
     fn focused_window_module_id_is_focused_window() {
         let m = FocusedWindowModule::new(
             crate::modules::ModuleId::new("focused-window"),
-            crate::config::FormatConfig::default(),
-            "□".into(),
+            FocusedWindowConfig::default(),
         );
         assert_eq!(m.id().display_name(), "focused-window");
         assert_eq!(m.module_type(), "focused-window");
@@ -529,8 +656,10 @@ mod tests {
     fn tooltip_values_keep_missing_title_empty_when_window_is_present() {
         let m = FocusedWindowModule::new(
             crate::modules::ModuleId::new("focused-window"),
-            crate::config::FormatConfig::default(),
-            "app".into(),
+            FocusedWindowConfig {
+                fallback_icon: "app".into(),
+                ..Default::default()
+            },
         );
         let state = crate::modules::ModuleState::FocusedWindow(FocusedWindowState {
             window: Some(FocusedWindowInfo {
@@ -557,8 +686,10 @@ mod tests {
     fn focused_window_styled_segments_resolve_inline_style() {
         let m = FocusedWindowModule::new(
             crate::modules::ModuleId::new("focused-window"),
-            styled_format_config(),
-            "□".into(),
+            FocusedWindowConfig {
+                format: styled_format_config(),
+                ..Default::default()
+            },
         );
         let info = FocusedWindowInfo {
             title: Some("Firefox".into()),
@@ -642,11 +773,13 @@ mod tests {
         );
         let m = FocusedWindowModule::new(
             crate::modules::ModuleId::new("focused-window"),
-            crate::config::FormatConfig {
-                collapsed: Some(template),
+            FocusedWindowConfig {
+                format: crate::config::FormatConfig {
+                    collapsed: Some(template),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            "□".into(),
         );
         let info = FocusedWindowInfo {
             title: Some("Firefox".into()),
@@ -682,11 +815,13 @@ mod tests {
         .unwrap();
         let module = FocusedWindowModule::new(
             crate::modules::ModuleId::new("focused-window"),
-            crate::config::FormatConfig {
-                collapsed: Some(template),
+            FocusedWindowConfig {
+                format: crate::config::FormatConfig {
+                    collapsed: Some(template),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            "□".into(),
         );
         for path in [None, Some(std::path::PathBuf::from("/tmp/firefox.svg"))] {
             let info = FocusedWindowInfo {
@@ -735,11 +870,13 @@ mod tests {
 
     #[test]
     fn focused_window_auto_rotation_overrides_side_bar_collapsed_format() {
-        let m = FocusedWindowModule::new_with_content_rotation(
+        let m = FocusedWindowModule::new(
             crate::modules::ModuleId::new("focused-window"),
-            styled_format_config(),
-            crate::config::ContentRotation::Auto,
-            "□".into(),
+            FocusedWindowConfig {
+                format: styled_format_config(),
+                content_rotation: crate::config::ContentRotation::Auto,
+                ..Default::default()
+            },
         );
         let state = crate::modules::ModuleState::FocusedWindow(FocusedWindowState {
             window: Some(FocusedWindowInfo {
@@ -768,14 +905,16 @@ mod tests {
             "test.format.horizontal",
         )
         .unwrap();
-        let m = FocusedWindowModule::new_with_content_rotation(
+        let m = FocusedWindowModule::new(
             crate::modules::ModuleId::new("focused-window"),
-            crate::config::FormatConfig {
-                horizontal: Some(horizontal),
+            FocusedWindowConfig {
+                format: crate::config::FormatConfig {
+                    horizontal: Some(horizontal),
+                    ..Default::default()
+                },
+                content_rotation: crate::config::ContentRotation::Clockwise,
                 ..Default::default()
             },
-            crate::config::ContentRotation::Clockwise,
-            "□".into(),
         );
         let state = crate::modules::ModuleState::FocusedWindow(FocusedWindowState {
             window: Some(FocusedWindowInfo {

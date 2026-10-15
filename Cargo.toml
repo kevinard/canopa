@@ -87,6 +87,7 @@ wayland-client = "0.31"
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 url = "2.5"
+unicode-segmentation = "1.13"
 
 [patch.crates-io]
 accesskit_unix = { path = "vendor/accesskit_unix" }

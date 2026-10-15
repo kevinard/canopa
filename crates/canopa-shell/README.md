@@ -80,6 +80,22 @@ Explicit bar `style size=...` and segment sizes override these defaults; segment
 styles take precedence over the bar style. Tray images also follow the explicit
 bar size.
 
+Focused-window titles are limited to 50 displayed characters by default, including
+a middle ellipsis (`…`), so long titles leave room for other modules. The beginning
+and end are preserved, and emoji and combining marks stay intact. Set `max-length`
+on the module to change this limit, or `0` to disable it:
+
+```kdl
+modules {
+    module "focused-window" {
+        max-length 40
+    }
+}
+```
+
+The limit applies to `{title}` and its `{value}` alias in all display formats,
+including rotated bar content. Tooltips keep the full title.
+
 ### Panel appearance and motion
 
 Drawers and automatic popovers share headings, close controls, menu rows, spacing,

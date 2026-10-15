@@ -266,6 +266,9 @@ modules {
         format "{icon}" "{title}"
         content-rotation "auto"
         fallback-icon "□"
+        // Title length including the middle ellipsis; 0 disables truncation.
+        // Counts displayed characters, preserving emoji and combining marks.
+        max-length 50
         // expanded-format "{title}"
         // horizontal-format "{title}"
         //

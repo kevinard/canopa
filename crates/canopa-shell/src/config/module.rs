@@ -359,6 +359,8 @@ pub struct FocusedWindowConfig {
     pub format: FormatConfig,
     pub content_rotation: ContentRotation,
     pub fallback_icon: String,
+    /// Maximum displayed title graphemes, including the middle ellipsis. Zero disables the limit.
+    pub max_length: u32,
     pub tooltip: TooltipSetting,
 }
 
@@ -379,6 +381,7 @@ impl Default for FocusedWindowConfig {
             },
             content_rotation: ContentRotation::Auto,
             fallback_icon: "□".into(),
+            max_length: 50,
             tooltip: TooltipSetting::Default,
         }
     }

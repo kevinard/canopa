@@ -20,6 +20,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<FocusedW
             "horizontal-format",
             "content-rotation",
             "fallback-icon",
+            "max-length",
             "tooltip",
         ],
         &[
@@ -30,6 +31,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<FocusedW
             "horizontal-format",
             "content-rotation",
             "fallback-icon",
+            "max-length",
             "tooltip",
         ],
     )?;
@@ -57,10 +59,16 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<FocusedW
         .optional()
         .nonempty_string()
         .unwrap_or(defaults.fallback_icon)?;
+    let max_length = fields::field(children, ctx, "max-length")
+        .optional()
+        .integer_message("expected a non-negative integer (0 disables title truncation)")
+        .u32()
+        .unwrap_or(defaults.max_length)?;
     Ok(FocusedWindowConfig {
         format,
         content_rotation,
         fallback_icon,
+        max_length,
         tooltip,
     })
 }

@@ -74,6 +74,62 @@ mod tests {
     }
 
     #[test]
+    fn max_length_defaults_to_fifty_and_accepts_custom_limits_or_zero() {
+        let cfg = focused_window_config(r#"modules { module "focused-window" {} }"#);
+        assert_eq!(cfg.max_length, 50);
+        for limit in [0, 1, 20, 100] {
+            let cfg = focused_window_config(&format!(
+                r#"modules {{ module "focused-window" {{ max-length {limit} }} }}"#,
+            ));
+            assert_eq!(cfg.max_length, limit);
+        }
+    }
+
+    #[test]
+    fn max_length_is_supported_for_custom_focused_window_module_names() {
+        let cfg =
+            parse(r#"modules { module "window-title" { type "focused-window"; max-length 24 } }"#)
+                .unwrap();
+        let module = cfg
+            .modules
+            .iter()
+            .find(|m| m.name == "window-title")
+            .unwrap();
+        let crate::config::ModuleParams::FocusedWindow(cfg) = &module.params else {
+            panic!("expected focused-window config");
+        };
+        assert_eq!(cfg.max_length, 24);
+    }
+
+    #[test]
+    fn invalid_max_length_reports_the_field_and_source_span() {
+        for value in ["-1", "4294967296", "\"50\"", "1.5", "#true", ""] {
+            let err = parse(&format!(
+                r#"modules {{ module "focused-window" {{ max-length {value} }} }}"#,
+            ))
+            .unwrap_err();
+            let diagnostic = err.as_diagnostic().expect("config diagnostic");
+            assert_eq!(
+                diagnostic.path(),
+                Some("modules[0].focused-window.max-length")
+            );
+            assert!(diagnostic.has_span(), "expected source span for {value:?}");
+        }
+    }
+
+    #[test]
+    fn duplicate_max_length_is_rejected() {
+        let err = parse(r#"modules { module "focused-window" { max-length 20; max-length 30 } }"#)
+            .unwrap_err();
+        let diagnostic = err.as_diagnostic().expect("config diagnostic");
+        assert_eq!(
+            diagnostic.path(),
+            Some("modules[0].focused-window.max-length")
+        );
+        assert!(diagnostic.has_span(), "expected source span");
+    }
+
+    #[test]
     fn parse_focused_window_fallback_icon() {
         let cfg =
             focused_window_config(r#"modules { module "focused-window" { fallback-icon "app" } }"#);

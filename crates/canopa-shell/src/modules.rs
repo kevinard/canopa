@@ -636,29 +636,14 @@ fn workspaces_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn M
 }
 
 fn focused_window_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
-    let (format, content_rotation, fallback_icon) = match &mc.params {
-        ModuleParams::FocusedWindow(cfg) => (
-            cfg.format.clone(),
-            cfg.content_rotation,
-            cfg.fallback_icon.clone(),
-        ),
-        _ => {
-            let default = crate::config::FocusedWindowConfig::default();
-            (
-                default.format,
-                default.content_rotation,
-                default.fallback_icon,
-            )
-        }
+    let config = match &mc.params {
+        ModuleParams::FocusedWindow(cfg) => cfg.clone(),
+        _ => crate::config::FocusedWindowConfig::default(),
     };
-    Ok(Box::new(
-        focused_window::FocusedWindowModule::new_with_content_rotation(
-            ModuleId::new(&mc.name),
-            format,
-            content_rotation,
-            fallback_icon,
-        ),
-    ))
+    Ok(Box::new(focused_window::FocusedWindowModule::new(
+        ModuleId::new(&mc.name),
+        config,
+    )))
 }
 
 fn tray_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
