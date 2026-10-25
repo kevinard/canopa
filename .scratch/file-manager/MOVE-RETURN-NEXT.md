@@ -1,5 +1,11 @@
 # Selected saved return: current work
 
+Retention update, 2026-10-25: the user requested removal of obsolete generated
+artifacts after the Git checkpoint. LOCAL-ARTIFACTS.md and CURRENT-FAILURES.md
+supersede the old blanket retention instructions and index what remains. Source
+archives, old executables and historical test roots referenced below may have
+been intentionally removed; the validation statements below remain historical.
+
 The full five-area Files goal is active. The user requested a Git checkpoint and
 test-directory cleanup on 2026-10-25; consult git log and LOCAL-ARTIFACTS.md for that
 baseline and relocated fixture paths. Preserve unrelated work, all failed fixtures

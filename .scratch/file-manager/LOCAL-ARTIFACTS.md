@@ -1,38 +1,32 @@
-# Local Files artifacts and the implementation checkpoint
+# Local Files artifacts and retention policy
 
-The implementation is being committed on 2026-10-25 before the uutils migration.
-Source, maintained tests/fixtures, integration scripts, product documents, ADRs,
-and the Markdown investigation/handoff notes belong in Git. Generated logs,
-screenshots, temporary probes, database files, source archives, and protected
-executables remain local and are ignored. The existing evidence occupies about
-8.4 GiB; it is not part of the source checkout or release package.
+The implementation was committed on 2026-10-25 before the uutils migration:
+`88d78d3` records Files and its integration, and `4e7fd47` records shared windowing
+support. Source snapshots can now be recovered from Git.
 
-Crash tests left 142 private output directories directly under the repository
-root and `crates/canopa-files/`. They are relocated, with their data and modes
-preserved, to:
+The user subsequently requested deletion of obsolete binaries, source snapshots,
+and test captures, retaining current failure reproductions and the latest
+verification records. This replaces the blanket artifact-retention instructions
+in older handoffs. Historical references to removed archives or executables are
+records of past checks, not a requirement to recreate those artifacts.
 
-```text
-.scratch/file-manager/retained-fixtures/repository-root/
-.scratch/file-manager/retained-fixtures/canopa-files/
-```
+The cleanup preserves all committed plans, product documents, ADRs and Markdown
+notes, the latest schema60 verification records and source manifests, and the
+small current-failure bundles indexed in `CURRENT-FAILURES.md`. Local generated
+records remain ignored. `artifact-cleanup-2026-10-25.json` records the measured
+size change, retained-file hashes, and deletion counts.
 
-The local `repository-cleanup-2026-10-25.json` records each original path,
-destination, original directory identity and the verification of the move. Empty
-test roots are retained too. This is a relocation, not a deletion of failed-test
-evidence. Original source archives, logs, protected binaries, and private `/tmp`
-experiments have not been removed or installed.
+The 142 test roots previously moved into `retained-fixtures/` were historical
+diagnostic outputs and are removed by this cleanup. The current Move/Undo and
+performance failure bundles are retained separately. Historical fixture-path
+references may therefore no longer exist. Private `/tmp` experiments, root
+`target/`, Git history, and installed executables are outside this cleanup.
 
-Historical receipts and handoffs record the paths that existed when their checks
-ran. Consult the relocation manifest before trying to inspect those fixtures at
-their old locations. If a reproduction requires an original path, restore only
-that exact directory after checking that its old name is unoccupied. Do not run a
-bulk restore while tests or Files are using the same locations.
-
-The checkpoint does not establish complete Files acceptance. The current source
-matches the 903-input schema60 manifest before this documentation/cleanup change;
-the scoped test results and known timing/recovery gaps remain described in
-`IMPLEMENTATION.md`, `MOVE-RETURN-NEXT.md`, and ADR0152. The uutils implementation
-has not begun; see `UUTILS-BACKEND-PLAN.md` for the next task.
+The checkpoint does not establish complete Files acceptance. The 903-input
+schema60 source manifest and its scoped results remain valid for their recorded
+source. Known timing/recovery gaps remain described in `IMPLEMENTATION.md`,
+`MOVE-RETURN-NEXT.md`, and ADR0152. The uutils implementation has not begun; see
+`UUTILS-BACKEND-PLAN.md` for the next task.
 
 Checkpoint checks: vendor provenance, workspace formatting, syntax for 98 Python
 scripts, acceptance JSON, locked workspace metadata, service ordering, and the
