@@ -3,9 +3,10 @@
 Date: 2026-10-25. Scope: Copy and consumers of the prepared-copy seam. The full
 Files product and restart-recovery goal remain unfinished.
 
-Follow-up: [ADR0154](0154-verified-copy-hashing.md) replaces the initial two SHA-256
-computations with complete byte equality and one SHA-256 of the verified common
-stream. The receipt description below includes that refinement; descriptor,
+Follow-up: [ADR0155](0155-trust-upstream-copy.md) supersedes
+[ADR0154](0154-verified-copy-hashing.md): trust upstream copying and hash only
+the actual output for Undo and later destructive checks. The receipt description
+below includes that refinement; descriptor,
 snapshot, durability and history guarantees remain.
 
 ## Decision and bounded proof
@@ -56,21 +57,19 @@ reader, not a bound on kernel/device response time.
 cross-filesystem Move, Recovery export, saved-container migration, and copied Undo
 returns. It registers the empty owned stage and its actual payload before data
 writes, validates held identities through callbacks, copies content, applies
-metadata after verification reads, syncs, and produces the existing prepared receipt. Source validation
+metadata after fingerprint reads, syncs, and produces the existing prepared receipt. Source validation
 and SHA-256 remain in `fingerprint`; publication/history/source removal stay in
 the engine. Existing native rename/unlink primitives remain unchanged.
 
 The previous application read/write-and-hash loop is removed. Transfer and
-verification are separate: after successful content transfer the host compares
-every byte of the still-held source and readable held output, requires both EOFs,
-and hashes their verified common stream once. Both descriptor snapshots span the
-entire comparison; the original source snapshot and current source/stage bindings
-are checked around verification. This catches
-mapped writes that need not produce another timestamp transition and same-inode
-staged edits before the receipt. Positioned output reads work even under a
-mode 0000 stage and leave the writer offset alone. Both full verification reads
-remain and are accounted for in measurements; final mode/timestamps are applied afterward to
-preserve atime. The fingerprint
+fingerprinting are separate: after successful content transfer the host trusts
+uutils and hashes the actual readable held output through EOF once. Its snapshot
+spans that read; the original source metadata snapshot and current source/stage
+bindings are still checked. The source is not reread for Copy equality. Mapped
+source edits without a metadata transition may therefore coexist with a completed
+Copy. Source removal and retained-data disposal keep their separate content checks.
+Positioned output reads work even under a mode 0000 stage and leave the writer
+offset alone. Final mode/timestamps are applied afterward to preserve atime. The fingerprint
 format and meaning remain size, ordinary mode, mtime, link flag, SHA-256 of bytes
 (or raw symlink target). No journal/schema change or uutils-specific recovery
 state is introduced. A completed native copy without a host receipt is still

@@ -1,6 +1,6 @@
 # Current failure reproductions retained after cleanup
 
-Updated 2026-10-25. The pre-migration implementation is checkpointed in Git at
+Updated 2026-10-26. The pre-migration implementation is checkpointed in Git at
 `88d78d3`; the scoped uutils Copy migration is recorded in UUTILS-IMPLEMENTATION.md
 and ADR0153. It does not resolve the wider failures below. All paths below are relative to
 this directory unless absolute. These are failure/research records, not full
@@ -42,6 +42,11 @@ The optimized-hashing follow-up's fresh default-feature target fails at
 28.052798044 seconds, retaining `/tmp/canopa-destination-undo-crash-MEl5sU`;
 see `/tmp/canopa-copy-affected-tests.log` and COPY-HASH-PERFORMANCE.md. This
 hashing change does not claim to solve the batch Undo timing gate.
+The trusted-Copy follow-up fails the same unchanged gate at **25.952629478 s**,
+retaining `/tmp/canopa-destination-undo-crash-oVp1J1`. See
+`/tmp/canopa-copy-trust-affected.log` and COPY-TRUST-PERFORMANCE.md. This is a debug
+batch-Undo result, separate from the optimized Copy measurements; no timing fix is
+claimed.
 `direct-displacement-related-02.log` records the production 29.84-second
 failure. The retained timing/canonical profiling logs are private diagnosis,
 not newer production acceptance or permission to change the limit.
@@ -72,6 +77,10 @@ The optimized-hashing follow-up's normal workspace run reproduces the same
 failure (three pass/one fail in that target); log:
 `/tmp/canopa-copy-workspace.log`. The full Files library passes 370 cases and
 affected follow-up targets are recorded in COPY-HASH-PERFORMANCE.md.
+The trusted-Copy follow-up again reproduces the timeout (3 pass/1 fail in
+11.15 s). A fresh isolated backtrace repeat fails at the same initial
+`answer_replace` call, test line 358, in 10.57 s; see
+`/tmp/canopa-copy-trust-{workspace,catalog}.log` and COPY-TRUST-PERFORMANCE.md.
 
 ## Updater timeout check
 

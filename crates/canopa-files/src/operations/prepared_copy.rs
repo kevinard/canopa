@@ -12,6 +12,8 @@ pub(super) struct PreparedCopy {
     pub identity: Identity,
     pub fingerprint: Fingerprint,
     pub source_identity: Identity,
+    /// The output digest with the selected source metadata. This is the content
+    /// the source must still match before removal; Copy does not reread it.
     pub source_fingerprint: Fingerprint,
 }
 
@@ -137,11 +139,9 @@ fn prepare_using(
         }
         checkpoint()?;
         payload.require_current()?;
-        // Native copying cannot produce our byte receipt. Verify actual output
-        // against the held source byte for byte, hashing their verified common
-        // stream once. Metadata alone misses mapped writes/coarse-clock changes;
-        // neither source nor stage edits may become receipts.
-        let digest = fingerprint::verified_copy_digest(&input, &output, cancellation)?;
+        // Trust upstream copying. Hash only the actual output for Undo and later
+        // destructive checks; source removal separately verifies both contents.
+        let digest = fingerprint::copied_output_digest(&output, cancellation)?;
         if !same_snapshot(before, &input.metadata()?) {
             return Err(changed());
         }

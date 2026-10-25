@@ -4,6 +4,10 @@ Date: 2026-10-25. Baseline: `72f56b9`, initially clean working tree.
 Decision: [ADR0154](../../docs/files/adr/0154-verified-copy-hashing.md).
 The full Files goal remains open.
 
+Historical checkpoint: [ADR0155](../../docs/files/adr/0155-trust-upstream-copy.md)
+subsequently replaces paired comparison with trusted upstream Copy plus one
+output hash, at the user's request. See [current evidence](COPY-TRUST-PERFORMANCE.md).
+
 ## Reproduction
 
 Build the real headless operation engine and measurement example with the root

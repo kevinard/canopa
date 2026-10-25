@@ -3,6 +3,11 @@
 Status: scoped Copy implementation under ADR0153; see UUTILS-IMPLEMENTATION.md for evidence and remaining limits.
 Prepared: 2026-10-25. Workspace: `/home/kevinard/projects/canopa`.
 
+Subsequent user decision: [ADR0155](../../docs/files/adr/0155-trust-upstream-copy.md)
+trusts successful upstream Copy and hashes its output once for Undo. It supersedes
+the independent source/output content-comparison requirement below; Recovery and
+destructive-action safeguards remain. See [current evidence](COPY-TRUST-PERFORMANCE.md).
+
 ## Request and intended outcome
 
 Replace the custom content-copy implementation with maintained uutils code, while

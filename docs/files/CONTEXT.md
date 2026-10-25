@@ -62,6 +62,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Trust upstream Copy and fingerprint its output once](adr/0155-trust-upstream-copy.md).
+
 - [Hash fully compared Copy streams once, preserving verification](adr/0154-verified-copy-hashing.md).
 
 - [uutils descriptor copying in the shared prepared-copy lifecycle, scoped migration](adr/0153-uutils-prepared-copy.md).

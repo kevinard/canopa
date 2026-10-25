@@ -5,11 +5,15 @@ Decision: [Files ADR0153](../../docs/files/adr/0153-uutils-prepared-copy.md).
 Scope: one complete prepared Copy path and every current byte-copy consumer.
 This does **not** complete the full Files goal or all migration acceptance.
 
-Follow-up: [optimized Copy hashing investigation](COPY-HASH-PERFORMANCE.md) and
+Current policy: [ADR0155](../../docs/files/adr/0155-trust-upstream-copy.md) and
+[simplification evidence](COPY-TRUST-PERFORMANCE.md) trust upstream Copy and hash
+only its actual output. Recovery and destructive-action checks remain. The
+earlier follow-up [optimized Copy hashing investigation](COPY-HASH-PERFORMANCE.md) and
 [ADR0154](../../docs/files/adr/0154-verified-copy-hashing.md) replace the two SHA
 computations recorded here with full source/output byte comparison and one SHA
 of their verified common contents. Both full reads and the durable contract
-remain. The measurements and test receipts below describe the original migration.
+remained at that historical checkpoint. The measurements and test receipts below
+describe the original migration, not the current Copy comparison policy.
 
 ## Feasibility and selection
 

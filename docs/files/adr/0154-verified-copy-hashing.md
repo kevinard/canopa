@@ -3,6 +3,10 @@
 Date: 2026-10-25. Scope: prepared-copy verification; the wider Files goal remains
 open. Refines the receipt implementation in ADR0153.
 
+Superseded by [ADR0155](0155-trust-upstream-copy.md): the user subsequently chose
+to trust upstream Copy and hash only its output, retaining destructive-action and
+Recovery safeguards. The comparison policy and measurements below are historical.
+
 ## Evidence and decision
 
 The optimized migration baseline still spends about 1.1 seconds on each SHA-256

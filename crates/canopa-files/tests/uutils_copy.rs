@@ -130,7 +130,7 @@ impl Drop for MappedWriter {
     }
 }
 
-fn receipt_case(mapped_source: bool) {
+fn receipt_case(mapped_source: bool, kind: TransferKind) {
     use std::io::{BufRead, Write};
     let root = tempfile::Builder::new()
         .prefix("canopa-copy-receipt-")
@@ -142,9 +142,28 @@ fn receipt_case(mapped_source: bool) {
         root.display()
     );
     let source = root.join("source");
-    let output = root.join("output");
+    let output = if kind == TransferKind::Move {
+        let device = fs::metadata(&root).unwrap().dev();
+        [std::env::current_dir().unwrap(), "/dev/shm".into()]
+            .into_iter()
+            .find_map(|parent| {
+                (fs::metadata(&parent).ok()?.dev() != device)
+                    .then(|| {
+                        tempfile::Builder::new()
+                            .prefix(".canopa-copy-receipt-")
+                            .tempdir_in(parent)
+                            .ok()
+                    })
+                    .flatten()
+            })
+            .expect("two writable test filesystems")
+            .keep()
+    } else {
+        root.join("output")
+    };
+    eprintln!("private output fixture: {}", output.display());
     fs::write(&source, b"AAAAAAAA").unwrap();
-    fs::create_dir(&output).unwrap();
+    fs::create_dir_all(&output).unwrap();
     let mut writer = mapped_source.then(|| {
         let child = std::process::Command::new("python3").args(["-c", r#"
 import mmap, os, sys
@@ -173,7 +192,7 @@ with open(sys.argv[1], 'r+b', buffering=0) as source:
     let engine = OperationEngine::open(root.join("history")).unwrap();
     let mut edited = false;
     let result = engine.transfer(&TransferRequest {
-        kind: TransferKind::Copy, sources: vec![source.clone()], destination: output.clone(),
+        kind, sources: vec![source.clone()], destination: output.clone(),
     }, &Cancellation::default(), |event| {
         if !edited && matches!(event, canopa_files::transfers::TransferEvent::Progress { bytes, .. } if bytes > 0) {
             edited = true;
@@ -185,45 +204,66 @@ with open(sys.argv[1], 'r+b', buffering=0) as source:
                 fs::write(stage.join("folder"), b"BAAAAAAA").unwrap();
             }
         }
-        TransferReply::Continue
+        if matches!(event, canopa_files::transfers::TransferEvent::Conflict { .. }) {
+            TransferReply::Resolve {
+                choice: canopa_files::transfers::ConflictChoice::Replace,
+                apply_to_remaining: false,
+            }
+        } else {
+            TransferReply::Continue
+        }
     });
     drop(writer);
     assert!(edited);
-    if let Ok(result) = result {
-        assert_eq!(result.completed, 0);
+    let result = result.unwrap();
+    if kind == TransferKind::Copy {
+        assert_eq!(result.completed, 1);
+        assert!(result.failures.is_empty());
+    } else {
+        assert!(!result.failures.is_empty());
     }
-    assert!(!output.join("source").exists());
     let source_bytes = if mapped_source {
         b"BAAAAAAA"
     } else {
         b"AAAAAAAA"
     };
-    let retained_bytes = if mapped_source {
+    let copied_bytes = if mapped_source {
         b"AAAAAAAA"
     } else {
         b"BAAAAAAA"
     };
     assert_eq!(fs::read(&source).unwrap(), source_bytes);
-    let page = engine
-        .recovery_items(None, &Cancellation::default())
-        .unwrap();
-    assert!(
-        page.items
-            .iter()
-            .filter_map(|i| i.entry.as_ref())
-            .any(|entry| fs::read(&entry.path).is_ok_and(|bytes| bytes == retained_bytes))
-    );
-    drop(page);
+    assert_eq!(fs::read(output.join("source")).unwrap(), copied_bytes);
+    // Reopen the persisted history: Undo must recognize the actual output,
+    // including when it differs from the current source, and leave that source.
     drop(engine);
+    let engine = OperationEngine::open(root.join("history")).unwrap();
+    engine.undo(&Cancellation::default()).unwrap();
+    assert!(!output.join("source").exists());
+    assert_eq!(fs::read(&source).unwrap(), source_bytes);
+    drop(engine);
+    if kind == TransferKind::Move {
+        fs::remove_dir_all(output).unwrap();
+    }
     fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
-fn a_mapped_source_edit_without_a_new_timestamp_cannot_become_the_copy_receipt() {
-    receipt_case(true);
+fn copy_trusts_upstream_and_undo_fingerprints_the_output_after_a_mapped_source_edit() {
+    receipt_case(true, TransferKind::Copy);
 }
 
 #[test]
-fn edited_staged_bytes_are_preserved_instead_of_becoming_a_copy_receipt() {
-    receipt_case(false);
+fn undo_records_actual_staged_bytes_instead_of_hashing_the_source() {
+    receipt_case(false, TransferKind::Copy);
+}
+
+#[test]
+fn cross_filesystem_move_retains_a_mapped_source_that_differs_from_the_copy() {
+    receipt_case(true, TransferKind::Move);
+}
+
+#[test]
+fn cross_filesystem_move_retains_its_source_when_staged_bytes_differ() {
+    receipt_case(false, TransferKind::Move);
 }

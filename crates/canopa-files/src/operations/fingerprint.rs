@@ -218,68 +218,33 @@ fn open_regular(path: &Path) -> io::Result<fs::File> {
     source.regular()
 }
 
-/// Compare the complete selected and staged byte streams, hashing matching bytes
-/// once. Equal bytes have equal SHA-256 digests; no second compression is needed.
-/// Keep both snapshots for the entire comparison. The output stays on its held
-/// readable descriptor, even at mode zero, and its writer offset is untouched.
-pub(super) fn verified_copy_digest(
-    source: &fs::File,
+/// Fingerprint the actual output of a successful upstream copy for later Undo
+/// and destructive-action checks. Trust the copier's source/output transfer;
+/// this reads only the held output, without moving its writer offset or reopening
+/// its pathname (including at mode zero).
+pub(super) fn copied_output_digest(
     output: &fs::File,
     cancellation: &Cancellation,
 ) -> io::Result<[u8; 32]> {
-    use std::os::fd::AsRawFd;
     check_cancel(cancellation)?;
-    let source_before = source.metadata()?;
     let output_before = output.metadata()?;
-    if !source_before.is_file() || !output_before.is_file() {
+    if !output_before.is_file() {
         return Err(invalid(
-            "Only opened regular files can verify copied bytes.",
+            "Only an opened regular output can be fingerprinted.",
         ));
     }
-    // As in read_opened, obtain an independent reader of the pinned inode;
-    // neither the user's pathname nor the copier's current offset supplies data.
-    let mut input = fs::File::open(format!("/proc/self/fd/{}", source.as_raw_fd()))?;
-    if !same_snapshot(&source_before, &input.metadata()?) {
-        return Err(changed());
-    }
     let mut hash = Sha256::new();
-    let mut selected = [0; 64 * 1024];
-    let mut staged = [0; 64 * 1024];
+    let mut buffer = [0; 64 * 1024];
     let mut offset = 0;
     loop {
-        check_cancel(cancellation)?;
-        let count = read_retry(&mut input, &mut selected)?;
+        let count = read_at_retry(output, &mut buffer, offset, cancellation)?;
         if count == 0 {
-            if read_at_retry(output, &mut staged[..1], offset, cancellation)? != 0 {
-                return Err(different_copy());
-            }
             break;
         }
-        let mut read = 0;
-        while read < count {
-            let next = read_at_retry(
-                output,
-                &mut staged[read..count],
-                offset + read as u64,
-                cancellation,
-            )?;
-            if next == 0 {
-                return Err(different_copy());
-            }
-            read += next;
-        }
-        if selected[..count] != staged[..count] {
-            return Err(different_copy());
-        }
-        hash.update(&selected[..count]);
+        hash.update(&buffer[..count]);
         offset += count as u64;
         #[cfg(test)]
-        receipt_tests::compared_chunk();
-    }
-    if !same_snapshot(&source_before, &input.metadata()?)
-        || !same_snapshot(&source_before, &source.metadata()?)
-    {
-        return Err(changed());
+        receipt_tests::read_chunk();
     }
     if !same_snapshot(&output_before, &output.metadata()?) {
         return Err(io::Error::new(
@@ -288,13 +253,6 @@ pub(super) fn verified_copy_digest(
         ));
     }
     Ok(hash.finalize().into())
-}
-
-fn different_copy() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::WouldBlock,
-        "The copied bytes differ from the source. Staged data is preserved for Recovery.",
-    )
 }
 
 fn read_at_retry(
@@ -355,7 +313,7 @@ mod receipt_tests {
         AT_CHUNK.with(|slot| assert!(slot.borrow_mut().replace(Box::new(action)).is_none()));
         Reset
     }
-    pub(super) fn compared_chunk() {
+    pub(super) fn read_chunk() {
         let action = AT_CHUNK.with(|slot| slot.borrow_mut().take());
         if let Some(action) = action {
             action();
@@ -369,54 +327,23 @@ mod receipt_tests {
     }
 
     #[test]
-    fn a_verified_copy_receipt_covers_every_byte_and_both_eofs() {
+    fn a_copy_receipt_hashes_the_complete_output_through_eof() {
         let bytes: Vec<_> = (0..2 * 64 * 1024 + 17).map(|n| (n % 251) as u8).collect();
         for length in [0, 1, 63, 64, 65, 65535, 65536, 65537, bytes.len()] {
             let selected = &bytes[..length];
-            let source = containing(selected);
             let output = containing(selected);
-            let digest = verified_copy_digest(&source, &output, &Cancellation::default()).unwrap();
+            let digest = copied_output_digest(&output, &Cancellation::default()).unwrap();
             let expected: [u8; 32] = Sha256::digest(selected).into();
             assert_eq!(digest, expected, "length {length}");
-        }
-        for offset in [0, 63, 64, 65535, 65536, bytes.len() - 1] {
-            let mut different = bytes.clone();
-            different[offset] ^= 0xff;
-            assert_eq!(
-                verified_copy_digest(
-                    &containing(&bytes),
-                    &containing(&different),
-                    &Cancellation::default(),
-                )
-                .unwrap_err()
-                .kind(),
-                io::ErrorKind::WouldBlock,
-                "offset {offset}",
-            );
-        }
-        for (left, right) in [
-            (&bytes[..], &bytes[..bytes.len() - 1]),
-            (&bytes[..bytes.len() - 1], &bytes[..]),
-        ] {
-            assert_eq!(
-                verified_copy_digest(
-                    &containing(left),
-                    &containing(right),
-                    &Cancellation::default()
-                )
-                .unwrap_err()
-                .kind(),
-                io::ErrorKind::WouldBlock,
-            );
         }
     }
 
     #[test]
-    fn a_cancelled_verification_cannot_make_a_copy_receipt() {
+    fn cancelled_output_hashing_cannot_make_a_copy_receipt() {
         let cancellation = Cancellation::default();
         cancellation.cancel();
         assert_eq!(
-            verified_copy_digest(&containing(b"bytes"), &containing(b"bytes"), &cancellation)
+            copied_output_digest(&containing(b"bytes"), &cancellation)
                 .unwrap_err()
                 .kind(),
             io::ErrorKind::Interrupted,
@@ -426,7 +353,7 @@ mod receipt_tests {
         let _reset = at_chunk(move || signal.cancel());
         let bytes = vec![b'x'; 2 * 64 * 1024 + 17];
         assert_eq!(
-            verified_copy_digest(&containing(&bytes), &containing(&bytes), &cancellation)
+            copied_output_digest(&containing(&bytes), &cancellation)
                 .unwrap_err()
                 .kind(),
             io::ErrorKind::Interrupted,
@@ -434,41 +361,35 @@ mod receipt_tests {
     }
 
     #[test]
-    fn snapshots_refuse_edits_to_bytes_already_compared() {
+    fn the_output_snapshot_refuses_edits_to_bytes_already_hashed() {
         use std::os::unix::fs::FileExt;
-        for edit_source in [true, false] {
-            let bytes = vec![b'x'; 2 * 64 * 1024 + 17];
-            let source = containing(&bytes);
-            let output = containing(&bytes);
-            let edited = if edit_source { &source } else { &output }
-                .try_clone()
+        let bytes = vec![b'x'; 2 * 64 * 1024 + 17];
+        let output = containing(&bytes);
+        let edited = output.try_clone().unwrap();
+        let _reset = at_chunk(move || {
+            assert_eq!(edited.write_at(b"y", 0).unwrap(), 1);
+            // Make the snapshot change deterministic even on coarse clocks.
+            edited
+                .set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::UNIX_EPOCH))
                 .unwrap();
-            let _reset = at_chunk(move || {
-                assert_eq!(edited.write_at(b"y", 0).unwrap(), 1);
-                // Make the snapshot change deterministic even on coarse clocks.
-                edited
-                    .set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::UNIX_EPOCH))
-                    .unwrap();
-            });
-            assert_eq!(
-                verified_copy_digest(&source, &output, &Cancellation::default())
-                    .unwrap_err()
-                    .kind(),
-                io::ErrorKind::WouldBlock,
-            );
-        }
+        });
+        assert_eq!(
+            copied_output_digest(&output, &Cancellation::default())
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::WouldBlock,
+        );
     }
 
     #[test]
     fn an_owned_output_receipt_uses_its_readable_fd_even_at_mode_zero() {
-        let source = containing(b"owned copied bytes");
         let mut output = containing(b"owned copied bytes");
         output
             .set_permissions(fs::Permissions::from_mode(0o0))
             .unwrap();
         let expected: [u8; 32] = Sha256::digest(b"owned copied bytes").into();
         assert_eq!(
-            verified_copy_digest(&source, &output, &Cancellation::default()).unwrap(),
+            copied_output_digest(&output, &Cancellation::default()).unwrap(),
             expected
         );
         assert_eq!(
