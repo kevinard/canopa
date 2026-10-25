@@ -27,7 +27,8 @@ def main():
             return [json.loads(line) for line in result.stdout.splitlines()]
 
         default = reports(run("check"))
-        assert len(default) == 2 and all(r["source"]["defaults"] for r in default)
+        assert {r["component"] for r in default} == {"shell", "notifications", "files"}
+        assert all(r["source"]["defaults"] for r in default)
         shell = base / "shell.kdl"
         notifications = base / "notifications.kdl"
         shell.write_text('/- kdl-version 2\n// retained shell comment\nbar "main" {}\n')
@@ -39,7 +40,7 @@ def main():
         assert output.stat().st_mode & 0o777 == 0o600
         checked = reports(run("check", "--file", output))
         assert all(r["source"]["path"] == str(output) for r in checked)
-        assert checked[0]["source"]["fingerprint"] == checked[1]["source"]["fingerprint"]
+        assert len({r["source"]["fingerprint"] for r in checked}) == 1
         run("migrate", "--shell", shell, "--output", output, success=False)
         assert output.read_bytes() == candidate
         assert shell.read_text().startswith("/- kdl-version 2\n// retained shell comment")
@@ -48,19 +49,25 @@ def main():
             invalid.write_text(f'schema-version 1\nappearance {{ color-scheme "{scheme}"; accent "#123456"; }}\n')
             appearance = reports(run("check", "--file", invalid))
             assert all(r["source"]["defaults"] for r in appearance)
-            assert appearance[0]["source"]["fingerprint"] == appearance[1]["source"]["fingerprint"]
+            assert len({r["source"]["fingerprint"] for r in appearance}) == 1
         invalid.write_text('schema-version 1\nappearance { color-scheme "private-appearance"; }\n')
         failed = run("check", "--file", invalid, success=False)
         assert all(r["error"]["code"] == "appearance" for r in reports(failed))
         assert "private-appearance" not in failed.stdout + failed.stderr
-        invalid.write_text('schema-version 1\nshell { private-shell 42; }\nnotifications { private-notify 42; }\n')
+        invalid.write_text('schema-version 1\nshell { private-shell 42; }\nnotifications { private-notify 42; }\nfiles { private-files 42; }\n')
         failed = run("check", "--file", invalid, success=False)
         assert all("error" in r for r in reports(failed))
         assert "private-shell" not in failed.stdout + failed.stderr
         assert "private-notify" not in failed.stdout + failed.stderr
+        assert "private-files" not in failed.stdout + failed.stderr
         invalid.write_text('schema-version 1\nshell {}\nnotifications { private-notify 42; }\n')
         isolated = reports(run("check", "--file", invalid, success=False))
         assert "source" in isolated[0] and "error" in isolated[1]
+        assert "source" in isolated[2]
+        invalid.write_text('schema-version 1\nfiles { private-files 42; }\n')
+        isolated_files = {r["component"]: r for r in reports(run("check", "--file", invalid, success=False))}
+        assert "source" in isolated_files["shell"] and "source" in isolated_files["notifications"]
+        assert "error" in isolated_files["files"]
         invalid.write_text('schema-version 1\nshell { private-syntax {\n')
         safe = run("check", "--file", invalid, success=False)
         assert "private-syntax" not in safe.stdout + safe.stderr
@@ -74,7 +81,7 @@ def main():
         oversized = base / "oversized.kdl"
         oversized.write_bytes(b" " * (1024 * 1024 + 1))
         oversize_reports = reports(run("check", "--file", oversized, success=False))
-        assert len(oversize_reports) == 2
+        assert {r["component"] for r in oversize_reports} == {"shell", "notifications", "files"}
         assert all(r["error"]["code"] == "read" for r in oversize_reports)
         # A legacy file must not override a present invalid shared file.
         (base / "niribar").mkdir()

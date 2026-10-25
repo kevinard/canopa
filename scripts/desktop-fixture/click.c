@@ -39,6 +39,10 @@ int main(int argc, char **argv) {
     zwlr_virtual_pointer_v1_frame(pointer);
     wl_display_roundtrip(display);
     usleep(250000);
+    if (argc == 4 && !strcmp(argv[3], "move")) {
+        wl_display_disconnect(display);
+        return 0;
+    }
     zwlr_virtual_pointer_v1_button(pointer, timestamp(), button, WL_POINTER_BUTTON_STATE_PRESSED);
     zwlr_virtual_pointer_v1_frame(pointer);
     wl_display_roundtrip(display);

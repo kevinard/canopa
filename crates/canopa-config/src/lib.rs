@@ -18,6 +18,7 @@ pub const MAX_BYTES: usize = 1024 * 1024;
 pub enum Component {
     Shell,
     Notifications,
+    Files,
 }
 
 impl Component {
@@ -25,6 +26,7 @@ impl Component {
         match self {
             Self::Shell => "shell",
             Self::Notifications => "notifications",
+            Self::Files => "files",
         }
     }
 
@@ -33,6 +35,7 @@ impl Component {
             // Renaming the shell must not hide an existing pre-Canopa configuration.
             Self::Shell => "niribar",
             Self::Notifications => "canopa-notify",
+            Self::Files => "canopa-files",
         }
     }
 }
@@ -111,6 +114,9 @@ pub fn discover_in(base: &Path, component: Component) -> Result<Request, Diagnos
     let common = discover_common_in(base)?;
     if common != Request::Defaults {
         return Ok(common);
+    }
+    if component == Component::Files {
+        return Ok(Request::Defaults);
     }
     discover_candidates([(
         base.join(component.legacy_directory()).join("config.kdl"),
@@ -198,7 +204,7 @@ impl std::fmt::Display for Diagnostic {
             Code::Location => "configuration requires an absolute XDG_CONFIG_HOME or HOME",
             Code::Read => "configuration must be a readable regular UTF-8 file of at most 1 MiB",
             Code::Syntax => "invalid configuration KDL",
-            Code::Envelope => "expected schema-version 1 and unique appearance/shell/notifications blocks without arguments or annotations",
+            Code::Envelope => "expected schema-version 1 and unique appearance/shell/notifications/files blocks without arguments or annotations",
             Code::Schema => "invalid component configuration; use the local configuration checker for details",
             Code::Appearance => "invalid appearance; check theme, palette, typography and UI settings with the local configuration checker",
         })?;
@@ -421,7 +427,7 @@ fn validate_envelope(document: &KdlDocument) -> Result<(), Diagnostic> {
                     return Err(fail());
                 }
             }
-            "shell" | "notifications" | "appearance" => {
+            "shell" | "notifications" | "appearance" | "files" => {
                 if !node.entries().is_empty() || node.children().is_none() {
                     return Err(fail());
                 }

@@ -2,11 +2,24 @@
 
 Canopa is a desktop environment based on Niri. Canopa Shell is its shell; Canopa Notify
 owns notification receipt, policy, persistence, sound, and banners. The shell hosts
-the Notification Center through generic declarative panel content.
+the Notification Center through generic declarative panel content. Canopa Files
+owns local file browsing, operations, Undo, previews and file-manager preferences.
 
 - [MPRIS media controls](docs/shell/adr/0018-mpris-media-controls.md)
 - [Shell language and ownership](docs/shell/CONTEXT.md)
 - [Notification language and ownership](docs/notify/CONTEXT.md)
+- [File manager language and ownership](docs/files/CONTEXT.md)
+- [File manager Iced and shared controls](docs/adr/0018-files-iced-and-shared-controls.md)
+- [Iced transient toplevel windows](docs/adr/0019-iced-transient-toplevels.md)
+- [Iced input transition boundaries](docs/adr/0020-iced-input-transition-boundaries.md)
+- [Wayland ordinary-window focus, in progress](docs/adr/0021-wayland-window-focus.md)
+- [File manager configuration ownership](docs/adr/0016-files-configuration.md)
+- [File manager distribution and runtime](docs/adr/0017-files-distribution-and-runtime.md)
+- [Ordinary Iced Wayland drag transport, in progress](docs/adr/0023-wayland-drag-transport.md)
+- [Niri drag-source lifetime compatibility, native companion verified; distribution pending](docs/adr/0024-niri-drag-source-lifetime.md)
+- [File manager resident host and activation](docs/adr/0022-files-resident-host-and-activation.md)
+- [File manager standard desktop presentation, scoped core/native verification](docs/adr/0025-files-file-manager-interface.md)
+- [File manager live configuration reload](docs/files/adr/0019-live-configuration-reload.md)
 - [Configuration source and reload contract](docs/adr/0002-shared-configuration.md)
 - [Shell live configuration reload](docs/shell/adr/0021-live-configuration-reload.md)
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)

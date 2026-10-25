@@ -23,7 +23,7 @@ enum Operation {
 }
 #[derive(Subcommand)]
 enum ConfigCommand {
-    /// Check both owning schemas. With no file, use the normal discovery order.
+    /// Check all owning schemas. With no file, use the normal discovery order.
     Check {
         /// Shared Canopa file (never interpreted as a legacy file).
         #[arg(long)]
@@ -32,7 +32,7 @@ enum ConfigCommand {
         #[arg(long)]
         show_source: bool,
     },
-    /// Wrap explicit legacy sources, check both schemas, then create a new file.
+    /// Wrap explicit legacy sources, check all schemas, then create a new file.
     /// Omitting a component uses its embedded defaults. Existing files are never replaced.
     Migrate {
         #[arg(long)]
@@ -107,11 +107,11 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Read each selected file once for this invocation. Both owners see the same common bytes.
+/// Read each selected file once for this invocation. All owners see the same common bytes.
 fn check(request: &Request, show_source: bool) -> anyhow::Result<bool> {
     let mut snapshots = HashMap::new();
     let mut valid = true;
-    for component in [Component::Shell, Component::Notifications] {
+    for component in [Component::Shell, Component::Notifications, Component::Files] {
         let result = check_component(request, component, show_source, &mut snapshots);
         match result {
             Ok(report) => {
@@ -276,15 +276,17 @@ fn validator(component: Component) -> anyhow::Result<Command> {
         .join(match component {
             Component::Shell => "canopa-shell",
             Component::Notifications => "canopa-notify",
+            Component::Files => "canopa-files",
         });
     anyhow::ensure!(
         sibling.is_file(),
-        "install Canopa Shell and Canopa Notify beside the canopa executable"
+        "install Canopa Shell, Canopa Notify and Canopa Files beside the canopa executable"
     );
     let mut command = Command::new(sibling);
     command.arg(match component {
         Component::Shell => "--check-config",
         Component::Notifications => "check-config",
+        Component::Files => "--check-config",
     });
     Ok(command)
 }
@@ -320,7 +322,7 @@ mod tests {
         let snapshot = ValidationSnapshot::capture(&path, Format::CanopaV1).unwrap();
         std::fs::write(&path, "invalid").unwrap();
         std::fs::remove_file(&theme).unwrap();
-        for consumer in [Component::Shell, Component::Notifications] {
+        for consumer in [Component::Shell, Component::Notifications, Component::Files] {
             let document =
                 canopa_config::Document::load(&Request::common(snapshot.main.path()), consumer, "")
                     .unwrap();

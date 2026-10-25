@@ -7,16 +7,31 @@ import shutil
 import subprocess
 import sys
 
+from native_compositor import select_niri
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--shell-root', type=Path,
                         default=Path(__file__).resolve().parents[1] / 'crates/canopa-shell')
+    parser.add_argument('--niri', type=Path, help='Niri executable for private acceptance; default: PATH')
+    parser.add_argument('--niri-sha256', help='Require this exact Niri executable SHA-256')
     args = parser.parse_args()
     failures = []
+    try:
+        niri = select_niri(args.niri, args.niri_sha256)
+        if niri is None:
+            failures.append('niri')
+            print('niri: MISSING')
+        else:
+            print(f'niri: {niri["source"]} ({niri["version"]}; SHA-256 {niri["sha256"]})')
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        failures.append(str(error))
     for command in ['cargo', 'rustc', 'git', 'dbus-daemon', 'dbus-run-session',
-                    'niri', 'sway', 'grim', 'weston', 'wtype', 'busctl', 'swaymsg',
-                    'cc', 'pkg-config', 'wayland-scanner']:
+                    'sway', 'grim', 'weston', 'wtype', 'busctl', 'swaymsg',
+                    'cc', 'pkg-config', 'wayland-scanner', 'pdfinfo', 'pdftoppm', 'wl-copy', 'wl-paste', 'gio', 'gapplication',
+                    'ffmpeg', 'pipewire', 'pipewire-pulse', 'wireplumber', 'pactl', 'paplay', 'parec',
+                    'desktop-file-validate', 'update-desktop-database']:
         path = shutil.which(command)
         print(f'{command}: {path or "MISSING"}')
         if not path:
@@ -32,8 +47,10 @@ def main():
         [sys.executable, '-c',
          "import gi; gi.require_version('Gio', '2.0'); "
          "gi.require_version('Atspi', '2.0'); from gi.repository import Gio, Atspi"],
+        ['/usr/bin/python3', '-c',
+         "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('Gdk', '4.0'); from gi.repository import Gtk, Gdk"],
         [sys.executable, '-c', 'from PIL import Image, ImageChops'],
-        ['pkg-config', '--exists', 'wayland-client', 'alsa', 'libudev', 'xkbcommon', 'libpulse'],
+        ['pkg-config', '--exists', 'wayland-client', 'alsa', 'libudev', 'xkbcommon', 'libpulse', 'gtk4 >= 4.12'],
     ]
     for command in checks:
         try:

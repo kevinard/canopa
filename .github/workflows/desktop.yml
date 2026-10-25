@@ -1,6 +1,16 @@
 name: Desktop acceptance
 on:
   workflow_dispatch:
+    inputs:
+      niri:
+        description: Absolute path to the compatible Niri executable on this runner
+        required: true
+        default: /usr/bin/niri
+        type: string
+      niri_sha256:
+        description: SHA-256 of that exact executable
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -9,19 +19,23 @@ concurrency:
 jobs:
   desktop:
     runs-on: [self-hosted, linux, canopa-desktop]
-    timeout-minutes: 45
+    timeout-minutes: 720
     env:
       CARGO_INCREMENTAL: '0'
+      ACCEPTANCE_NIRI: ${{ inputs.niri }}
+      ACCEPTANCE_NIRI_SHA256: ${{ inputs.niri_sha256 }}
     steps:
       - uses: actions/checkout@v4
       - name: Check runner prerequisites
-        run: dbus-run-session -- python3 scripts/check-desktop-runner.py
+        run: dbus-run-session -- python3 scripts/check-desktop-runner.py --niri "$ACCEPTANCE_NIRI" --niri-sha256 "$ACCEPTANCE_NIRI_SHA256"
       - name: Verify common protocol
         run: bash scripts/check-panel-protocol.sh
       - name: Build the workspace desktop binaries
         run: cargo build --locked --workspace --bins
+      - name: Build the ordinary-window drag transport probe
+        run: cargo build --locked -p canopa-files --example drag_transport
       - name: Run the maintained desktop acceptance matrix
-        run: python3 scripts/run-desktop-acceptance.py --shell target/debug/canopa-shell --notify target/debug/canopa-notify --output desktop-artifacts
+        run: python3 scripts/run-desktop-acceptance.py --shell target/debug/canopa-shell --notify target/debug/canopa-notify --niri "$ACCEPTANCE_NIRI" --niri-sha256 "$ACCEPTANCE_NIRI_SHA256" --output desktop-artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

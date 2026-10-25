@@ -8,8 +8,9 @@ case "${1:-}" in
         bash scripts/check-provider-dependencies.sh
         cargo check --locked -p canopa-shell --no-default-features --all-targets
         dbus-run-session -- cargo test --locked -p canopa-shell --no-default-features --all-targets
-        cargo check --locked -p canopa-notify -p canopa-panel-protocol -p canopa-config -p canopa-file -p canopa-cli -p canopa-notify-client -p canopa-portal --all-targets --no-default-features
+        cargo check --locked -p canopa-notify -p canopa-panel-protocol -p canopa-config -p canopa-file -p canopa-files -p canopa-cli -p canopa-notify-client -p canopa-portal --all-targets --no-default-features
         cargo test --locked -p canopa-config -p canopa-file -p canopa-cli -p canopa-theme -p canopa-notify-client -p canopa-portal
+        cargo test --locked -p canopa-files --no-default-features
         bash scripts/test-notify.sh --no-default-features
         ;;
     '')
@@ -17,6 +18,7 @@ case "${1:-}" in
         bash scripts/check-panel-protocol.sh
         python3 scripts/check-contrast.py
         python3 scripts/run-desktop-acceptance.py --list
+        python3 scripts/test-desktop-runner.py
         python3 scripts/test-update.py
         python3 scripts/test-session-units.py
         cargo fmt --all -- --check

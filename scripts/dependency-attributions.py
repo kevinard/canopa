@@ -20,7 +20,7 @@ def release_packages():
     ], cwd=ROOT, text=True))
     packages = {p["id"]: p for p in metadata["packages"]}
     nodes = {n["id"]: n for n in metadata["resolve"]["nodes"]}
-    pending = [p["id"] for p in packages.values() if p["name"] in {"canopa-shell", "canopa-notify", "canopa-cli", "canopa-portal"}]
+    pending = [p["id"] for p in packages.values() if p["name"] in {"canopa-shell", "canopa-notify", "canopa-files", "canopa-cli", "canopa-portal"}]
     selected = set()
     while pending:
         package = pending.pop()

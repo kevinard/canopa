@@ -4,7 +4,8 @@ This is one Cargo workspace. Run commands from its root unless a script document
 otherwise. `bash scripts/check.sh` is the normal validation entry point;
 `bash scripts/check.sh --core` checks Notify without desktop dependencies.
 
-Application packages live in `crates/canopa-shell/` and `crates/canopa-notify/`, alongside
+Application packages live in `crates/canopa-shell/`, `crates/canopa-notify/`, and
+`crates/canopa-files/`, alongside
 the other workspace crates. Repository tooling and packaging live in root
 `scripts/` and `packaging/`; Cargo outputs go to root `target/`.
 

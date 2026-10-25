@@ -15,7 +15,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-media-provider", "canopa-notify", "canopa")
+PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-media-provider", "canopa-notify", "canopa-files", "canopa")
 SERVICES = ("canopa-notify.service", "canopa-shell.service")
 
 
@@ -86,7 +86,7 @@ def build(jobs, rebuild=False):
         print("Reusing local release build cache; Cargo will rebuild changed sources.", flush=True)
     subprocess.run(["cargo", "build", "--locked", "--release", "--bins",
                     "--package", "canopa-shell", "--package", "canopa-notify",
-                    "--package", "canopa-cli", "--jobs", str(jobs),
+                    "--package", "canopa-cli", "--package", "canopa-files", "--jobs", str(jobs),
                     "--target-dir", "target"], cwd=ROOT, check=True)
     cache.write_text(json.dumps(build_cache_state(packages)) + "\n")
 

@@ -1,0 +1,64 @@
+[package]
+name = "canopa-files"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["desktop"]
+background-actions = ["dep:tokio", "dep:zbus", "dep:futures-util"]
+background-operations = ["dep:tokio", "dep:zbus", "dep:futures-util"]
+media-playback = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
+local-runtime = ["background-actions", "background-operations", "dep:gio", "dep:glib"]
+desktop = ["local-runtime", "media-playback", "dep:iced", "dep:canopa-ui", "dep:clap", "dep:canopa-assets", "dep:resvg", "wayland-clipboard"]
+wayland-clipboard = ["dep:wayland-client", "dep:wayland-protocols", "rustix/event", "rustix/pipe", "rustix/net"]
+
+[[bin]]
+name = "canopa-files"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[[test]]
+name = "device_runtime"
+path = "tests/device_runtime.rs"
+harness = false
+required-features = ["local-runtime"]
+
+[dependencies]
+canopa-file.workspace = true
+chrono.workspace = true
+image = { workspace = true, features = ["gif", "webp"] }
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+sha2.workspace = true
+shlex.workspace = true
+thiserror.workspace = true
+rustix = { workspace = true, features = ["event", "net"] }
+rusqlite.workspace = true
+tempfile.workspace = true
+futures-channel.workspace = true
+futures-util = { workspace = true, optional = true }
+url.workspace = true
+gio = { workspace = true, optional = true, features = ["v2_58"] }
+glib = { workspace = true, optional = true }
+gstreamer = { workspace = true, optional = true }
+gstreamer-app = { workspace = true, optional = true }
+gstreamer-video = { workspace = true, optional = true }
+canopa-config.workspace = true
+kdl.workspace = true
+canopa-theme.workspace = true
+iced = { workspace = true, optional = true, features = ["tiny-skia"] }
+canopa-ui = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+zbus = { workspace = true, optional = true }
+canopa-assets = { workspace = true, optional = true }
+resvg = { workspace = true, optional = true }
+wayland-client = { workspace = true, optional = true }
+wayland-protocols = { workspace = true, optional = true }
+
+[[example]]
+name = "drag_transport"
+path = "examples/drag_transport.rs"
+required-features = ["desktop"]

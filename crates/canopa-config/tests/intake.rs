@@ -11,7 +11,7 @@ use std::{
 #[test]
 fn appearance_is_shared_even_when_feature_namespaces_default() {
     let source = "schema-version 1\nappearance { color-scheme \"light\"; accent \"#123456\"; }\n";
-    for component in [Component::Shell, Component::Notifications] {
+    for component in [Component::Shell, Component::Notifications, Component::Files] {
         let document = Document::parse(
             source.into(),
             None,
@@ -46,7 +46,7 @@ fn invalid_appearance_rejects_both_consumers_with_original_safe_location() {
         "color-scheme 1",
     ] {
         let source = format!("schema-version 1\nappearance {{ {option}; }}\n");
-        for component in [Component::Shell, Component::Notifications] {
+        for component in [Component::Shell, Component::Notifications, Component::Files] {
             let error =
                 Document::parse(source.clone(), None, Format::CanopaV1, component, "").unwrap_err();
             assert_eq!(error.code, Code::Appearance, "{source}");
@@ -61,6 +61,16 @@ fn discovery_prefers_common_even_when_invalid_and_never_merges_legacy() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(
         discover_in(dir.path(), Component::Shell).unwrap(),
+        Request::Defaults
+    );
+    fs::create_dir(dir.path().join("canopa-files")).unwrap();
+    fs::write(
+        dir.path().join("canopa-files/config.kdl"),
+        "invalid legacy syntax",
+    )
+    .unwrap();
+    assert_eq!(
+        discover_in(dir.path(), Component::Files).unwrap(),
         Request::Defaults
     );
     fs::create_dir(dir.path().join("niribar")).unwrap();
@@ -138,6 +148,7 @@ fn envelope_is_strict_but_namespace_semantics_belong_to_owners() {
         "schema-version 1\nprivate-value {}",
         "schema-version 1\nappearance {}\nappearance {}",
         "schema-version 1\nshell {}\nshell {}",
+        "schema-version 1\nfiles {}\nfiles {}",
         "schema-version 1\n(x)shell {}",
         "schema-version (x)1",
         "schema-version 1\nschema-version 1",

@@ -5,6 +5,7 @@ members = [
   "crates/canopa-cli",
   "crates/canopa-assets",
   "crates/canopa-file",
+  "crates/canopa-files",
   "crates/canopa-config",
   "crates/canopa-theme",
   "crates/canopa-ui",
@@ -16,6 +17,9 @@ members = [
 exclude = [
   "vendor/accesskit_unix",
   "vendor/iced_layershell",
+  "vendor/iced_runtime",
+  "vendor/iced_winit",
+  "vendor/winit",
   "vendor/layershellev",
 ]
 
@@ -32,6 +36,7 @@ canopa-config = { path = "crates/canopa-config" }
 canopa-theme = { path = "crates/canopa-theme" }
 canopa-ui = { path = "crates/canopa-ui" }
 sha2 = "0.10"
+shlex = "2"
 canopa-panel-protocol = { path = "crates/canopa-panel-protocol" }
 chrono = { version = "0.4", features = ["clock"] }
 libpulse-binding = "2.30.1"
@@ -48,6 +53,12 @@ anyhow = "1"
 assert_cmd = "2"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
+futures-channel = "0.3"
+gio = "0.22"
+glib = "0.22"
+gstreamer = "0.25"
+gstreamer-app = "0.25"
+gstreamer-video = "0.25"
 iced = { version = "0.14", default-features = false, features = [
   "advanced",
   "wgpu",
@@ -73,6 +84,7 @@ libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+rusqlite = { version = "0.32.1", features = ["bundled"] }
 tempfile = "3"
 tokio = { version = "1", features = [
   "io-util",
@@ -92,6 +104,9 @@ unicode-segmentation = "1.13"
 [patch.crates-io]
 accesskit_unix = { path = "vendor/accesskit_unix" }
 iced_layershell = { path = "vendor/iced_layershell" }
+iced_runtime = { path = "vendor/iced_runtime" }
+iced_winit = { path = "vendor/iced_winit" }
+winit = { path = "vendor/winit" }
 layershellev = { path = "vendor/layershellev" }
 
 [profile.release]

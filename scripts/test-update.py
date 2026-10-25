@@ -18,7 +18,7 @@ from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parent
-PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-media-provider', 'canopa-notify', 'canopa')
+PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-media-provider', 'canopa-notify', 'canopa-files', 'canopa')
 SERVICES = ('canopa-shell.service', 'canopa-notify.service')
 LOCAL_PACKAGES = ('canopa-panel-protocol', 'canopa-config', 'canopa-assets', 'accesskit_unix')
 SYSTEMCTL = r'''#!/usr/bin/env python3
@@ -109,7 +109,7 @@ fn main() {
             std::process::exit(1);
         }
         let exe = std::env::current_exe().unwrap();
-        for name in ["canopa-shell", "canopa-notify"] {
+        for name in ["canopa-shell", "canopa-notify", "canopa-files"] {
             let output = std::process::Command::new(exe.parent().unwrap().join(name))
                 .arg("--version").output().unwrap();
             assert!(String::from_utf8(output.stdout).unwrap().starts_with(VERSION));
@@ -180,7 +180,7 @@ class UpdateTests(unittest.TestCase):
         root.mkdir(parents=True, exist_ok=True)
         (root / 'Cargo.toml').write_text(
             '[workspace]\nresolver = "2"\nmembers = ["crates/canopa-shell", '
-            '"crates/canopa-notify", "crates/canopa-cli"]\n'
+            '"crates/canopa-notify", "crates/canopa-files", "crates/canopa-cli"]\n'
             'exclude = ["vendor/accesskit_unix"]\n'
             '[patch.crates-io]\naccesskit_unix = { path = "vendor/accesskit_unix" }\n')
         for name in LOCAL_PACKAGES:
@@ -194,6 +194,7 @@ class UpdateTests(unittest.TestCase):
                          f'{name} = {{ path = "../../vendor/{name}" }}' for name in LOCAL_PACKAGES)
         source = RUST_MAIN.replace('@VERSION@', version)
         for name, binary in [('canopa-shell', 'canopa-shell'), ('canopa-notify', 'canopa-notify'),
+                             ('canopa-files', 'canopa-files'),
                              ('canopa-cli', 'canopa')]:
             package = root / 'crates' / name
             (package / 'src').mkdir(parents=True)
@@ -322,6 +323,21 @@ class UpdateTests(unittest.TestCase):
             self.assertTrue(os.path.samefile(f"/proc/{state['pid']}/exe",
                                             self.bin_dir / service.removesuffix('.service')))
             self.assertIn(f"PID {state['pid']}", result.stdout)
+
+    def test_files_update_keeps_an_existing_browser_running(self):
+        self.install_previous()
+        process = subprocess.Popen([str(self.bin_dir / 'canopa-files')], env=self.env,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL)
+        self.addCleanup(process.wait)
+        self.addCleanup(process.terminate)
+        self.update()
+        self.assert_versions('current')
+        self.assertIsNone(process.poll(), 'updating the executable stopped Files')
+        running = self.run_command([f'/proc/{process.pid}/exe', '--version'])
+        self.assertEqual(running.stdout.strip(), ' '.join(['old'] * 5))
+        previous = self.run_command([str(self.backup() / 'bin/canopa-files'), '--version'])
+        self.assertEqual(previous.stdout.strip(), ' '.join(['old'] * 5))
 
     def test_recovers_failed_service_but_leaves_stopped_companion_stopped(self):
         self.state('canopa-notify.service', active='failed')

@@ -14,6 +14,7 @@ import statistics
 import subprocess
 import tempfile
 import time
+from xml.sax.saxutils import escape
 
 
 def write_json(path, value):
@@ -88,11 +89,18 @@ class Session:
             time.sleep(0.05)
         raise RuntimeError(f"Timed out waiting for {description}")
 
-    def start_private_bus(self):
-        # Deliberately omit service directories: no installed desktop activation.
+    def start_private_bus(self, *, service_directories=()):
+        # Activation remains opt-in and confined to this fixture's directories.
+        directories = []
+        for directory in service_directories:
+            directory = Path(directory).resolve(strict=True)
+            if not directory.is_dir() or not directory.is_relative_to(self.runtime.resolve()):
+                raise ValueError("Desktop activation needs a fixture-owned service directory")
+            directories.append(f"<servicedir>{escape(str(directory))}</servicedir>")
         config = self.runtime / "bus.conf"
         config.write_text(
-            f'<busconfig><type>session</type><listen>unix:tmpdir={self.runtime}</listen>'
+            f'<busconfig><type>session</type><listen>unix:tmpdir={escape(str(self.runtime))}</listen>'
+            + "".join(directories) +
             '<policy context="default"><allow send_destination="*"/>'
             '<allow receive_sender="*"/><allow own="*"/></policy></busconfig>'
         )
@@ -105,9 +113,9 @@ class Session:
             raise RuntimeError(f"Invalid private bus address: {address}")
         self.env["DBUS_SESSION_BUS_ADDRESS"] = address
 
-    def start_niri(self, config, *, width=1280, height=800, scale=1.0):
+    def start_niri(self, config, *, width=1280, height=800, scale=1.0, service_directories=()):
         """Own a private bus and nested compositor; return a ready, scaled output."""
-        self.start_private_bus()
+        self.start_private_bus(service_directories=service_directories)
         path = self.runtime / "niri.kdl"
         path.write_text(config)
         self.start([
@@ -144,7 +152,7 @@ class Session:
         return name
 
     def build_pointer(self, kind="click"):
-        if kind not in ("click", "scroll"):
+        if kind not in ("click", "scroll", "drag"):
             raise ValueError(f"Unknown pointer fixture: {kind}")
         fixture = Path(__file__).parent / "desktop-fixture"
         protocol = fixture / "wlr-virtual-pointer-unstable-v1.xml"

@@ -11,3 +11,11 @@
 /.scratch/notify/freedesktop-completion-review/NIRIBAR-COMPLETION.patch
 # Original UI alternatives are archived on prototype/niribar-vertical-ui.
 /.scratch/niribar/vertical-ui-prototype/
+# Files crash tests can retain private output beside the workspace/crate.
+/.canopa-*/
+/crates/canopa-files/.canopa-*/
+# Keep plans and investigation notes, not local logs, binaries or source archives.
+/.scratch/file-manager/*
+!/.scratch/file-manager/*.md
+!/.scratch/file-manager/issues/
+!/.scratch/file-manager/issues/*.md

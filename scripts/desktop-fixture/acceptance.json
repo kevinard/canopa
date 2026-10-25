@@ -1,23 +1,2687 @@
 {
   "scenarios": [
-    {"id": "shell-appearance-dark", "script": "verify-shell-appearance.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scheme", "dark"]},
-    {"id": "shell-appearance-light", "script": "verify-shell-appearance.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scheme", "light", "--scale", "1.5"]},
-    {"id": "quick-settings-dark", "script": "verify-shell-appearance.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scheme", "dark", "--controls", "--session-actions"]},
-    {"id": "quick-settings-light", "script": "verify-shell-appearance.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scheme", "light", "--scale", "1.5", "--controls", "--session-actions"]},
-    {"id": "theme-customization", "script": "verify-theme-customization.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25"]},
-    {"id": "configuration-reload", "script": "verify-configuration-reload.py", "args": ["--binary", "{shell}", "--output", "{artifacts}"]},
-    {"id": "desktop-dark", "script": "test-desktop.py", "args": ["--notify", "{notify}", "--shell", "{shell}", "--artifacts", "{artifacts}", "--color-scheme", "dark"]},
-    {"id": "desktop-light", "script": "test-desktop.py", "args": ["--notify", "{notify}", "--shell", "{shell}", "--artifacts", "{artifacts}", "--color-scheme", "light", "--scale", "1.25"]},
-    {"id": "fork-lifetimes", "script": "test-fork-desktop.py", "args": ["--shell", "{shell}", "--artifacts", "{artifacts}"]},
-    {"id": "placement", "script": "verify-overlay-placement.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--edge", "top", "bottom", "left", "right", "--scale", "1.25"]},
-    {"id": "drawer-modes", "script": "verify-drawer-modes.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25"]},
-    {"id": "panel-motion", "script": "verify-panel-motion.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25"]},
-    {"id": "panel-close-flash", "script": "verify-panel-motion.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25", "--default-timings", "--close-flash-only"]},
-    {"id": "menu-scrolling", "script": "verify-menu-scrolling.py", "args": ["--binary", "{shell}", "--output", "{artifacts}"]},
-    {"id": "menu-customization", "script": "verify-menu-scrolling.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--custom-theme"]},
-    {"id": "content-rotation", "script": "verify-content-rotation.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.0", "1.25"]},
-    {"id": "focused-window-icons", "script": "verify-focused-window-icons.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--scale", "1.25"]},
-    {"id": "idle-inhibitor-sway", "script": "verify-idle-inhibitor.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--compositor", "sway"]},
-    {"id": "idle-inhibitor-niri", "script": "verify-idle-inhibitor.py", "args": ["--binary", "{shell}", "--output", "{artifacts}", "--compositor", "niri"]}
+    {
+      "id": "files-filemanager1-dark",
+      "script": "verify-files-manager.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark"
+      ]
+    },
+    {
+      "id": "files-filemanager1-light",
+      "script": "verify-files-manager.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-drop-devices-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drop-devices",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1"
+      ]
+    },
+    {
+      "id": "files-iced-drop-devices-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drop-devices",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-drop-stale-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drop-stale",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1"
+      ]
+    },
+    {
+      "id": "files-iced-drop-stale-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drop-stale",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-drop-choices-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drop-choices"
+      ]
+    },
+    {
+      "id": "files-iced-drop-choices-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drop-choices",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-search-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1",
+        "--iced-search-only"
+      ]
+    },
+    {
+      "id": "files-iced-search-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25",
+        "--iced-search-only"
+      ]
+    },
+    {
+      "id": "files-iced-drop-exchange-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drop-exchange"
+      ]
+    },
+    {
+      "id": "files-iced-drop-exchange-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drop-exchange",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-drops-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drops",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-drops-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "drops"
+      ]
+    },
+    {
+      "id": "files-dnd-transport",
+      "script": "verify-files-dnd-transport.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "files-dnd-cancel-control",
+      "script": "verify-files-dnd-transport.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--cancel-control"
+      ]
+    },
+    {
+      "id": "files-dnd-cancel-gtk-receiver",
+      "script": "verify-files-dnd-transport.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--cancel-control",
+        "--gtk-receiver"
+      ]
+    },
+    {
+      "id": "files-dnd-cancel-gtk-sway",
+      "script": "verify-files-dnd-transport.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--cancel-control",
+        "--gtk-receiver",
+        "--compositor",
+        "sway"
+      ]
+    },
+    {
+      "id": "files-device-drive-commands",
+      "script": "verify-file-device-catalog.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--drives"
+      ]
+    },
+    {
+      "id": "files-iced-device-stop-dark",
+      "script": "verify-files-device-ui.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--removal",
+        "stop"
+      ]
+    },
+    {
+      "id": "files-iced-device-stop-light",
+      "script": "verify-files-device-ui.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--removal",
+        "stop",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-device-eject-dark",
+      "script": "verify-files-device-ui.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--removal",
+        "eject"
+      ]
+    },
+    {
+      "id": "files-iced-device-eject-light",
+      "script": "verify-files-device-ui.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--removal",
+        "eject",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-devices-dark",
+      "script": "verify-files-device-ui.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "files-iced-devices-light",
+      "script": "verify-files-device-ui.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-device-helper-commands",
+      "script": "verify-file-device-catalog.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--commands"
+      ]
+    },
+    {
+      "id": "files-device-catalog",
+      "script": "verify-file-device-catalog.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "files-clipboard-protocol",
+      "script": "verify-files-clipboard.py",
+      "args": [
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "files-iced-focus-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "focus"
+      ]
+    },
+    {
+      "id": "files-iced-focus-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "focus",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-focus-expired-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "focus-expired"
+      ]
+    },
+    {
+      "id": "files-iced-focus-expired-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "focus-expired",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-transfers-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "transfers"
+      ]
+    },
+    {
+      "id": "files-iced-transfers-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "transfers",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-parents-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "parents"
+      ]
+    },
+    {
+      "id": "files-iced-parents-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "parents",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-compact-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "compact"
+      ]
+    },
+    {
+      "id": "files-iced-compact-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "compact",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-mixed-copy-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "mixed-copy"
+      ]
+    },
+    {
+      "id": "files-iced-mixed-copy-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "mixed-copy",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-mixed-move-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "mixed-move"
+      ]
+    },
+    {
+      "id": "files-iced-mixed-move-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "mixed-move",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-unavailable-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "unavailable"
+      ]
+    },
+    {
+      "id": "files-iced-unavailable-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "unavailable",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-question-focus-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "question-focus"
+      ]
+    },
+    {
+      "id": "files-iced-question-focus-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "question-focus",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-move-conflicts-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "move-conflicts"
+      ]
+    },
+    {
+      "id": "files-iced-move-conflicts-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "move-conflicts",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-conflicts-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "conflicts"
+      ]
+    },
+    {
+      "id": "files-iced-conflicts-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "conflicts",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-clipboard-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard"
+      ]
+    },
+    {
+      "id": "files-iced-clipboard-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-operations-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only"
+      ]
+    },
+    {
+      "id": "files-iced-operations-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-job-lifetime-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--transfers-only",
+        "--transfer-case",
+        "lifetime"
+      ]
+    },
+    {
+      "id": "files-job-lifetime-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--transfers-only",
+        "--transfer-case",
+        "lifetime",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-device-clipboard-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "clipboard"
+      ]
+    },
+    {
+      "id": "files-device-clipboard-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "clipboard",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-downloads-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--downloads-only"
+      ]
+    },
+    {
+      "id": "files-downloads-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--downloads-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-media-formats-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--media-formats-only",
+        "--desktop-entry",
+        "packaging/applications/org.canopa.Files.desktop"
+      ]
+    },
+    {
+      "id": "files-media-formats-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--media-formats-only",
+        "--desktop-entry",
+        "packaging/applications/org.canopa.Files.desktop",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-media-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--media-only"
+      ]
+    },
+    {
+      "id": "files-media-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--media-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-device-inflight-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "inflight"
+      ]
+    },
+    {
+      "id": "files-device-inflight-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "inflight",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-device-sources-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "sources"
+      ]
+    },
+    {
+      "id": "files-device-sources-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "sources",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-device-recovery-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "recovery"
+      ]
+    },
+    {
+      "id": "files-device-recovery-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "recovery",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-device-identityless",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "identityless"
+      ]
+    },
+    {
+      "id": "files-device-safety-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "safety"
+      ]
+    },
+    {
+      "id": "files-device-safety-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--device-case",
+        "safety",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-devices-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only"
+      ]
+    },
+    {
+      "id": "files-devices-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--devices-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-reload-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--reload-only"
+      ]
+    },
+    {
+      "id": "files-reload-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--reload-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-interrupted-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--interrupted-only"
+      ]
+    },
+    {
+      "id": "files-interrupted-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--interrupted-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-recovery-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--recovery-only"
+      ]
+    },
+    {
+      "id": "files-recovery-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--recovery-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-cross-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only"
+      ]
+    },
+    {
+      "id": "files-undo-cross-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-cross-current-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "current"
+      ]
+    },
+    {
+      "id": "files-undo-cross-current-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "current",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-cross-directories-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "directories"
+      ]
+    },
+    {
+      "id": "files-undo-cross-directories-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "directories",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-directory-moves-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "moves"
+      ]
+    },
+    {
+      "id": "files-undo-directory-moves-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "moves",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-directory-retry-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "retry"
+      ]
+    },
+    {
+      "id": "files-directory-retry-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "retry",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-recovery-context-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "context"
+      ]
+    },
+    {
+      "id": "files-recovery-context-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-cross-only",
+        "--undo-cross-case",
+        "context",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-hidden-navigation-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--hidden-navigation-only"
+      ]
+    },
+    {
+      "id": "files-hidden-navigation-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--hidden-navigation-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-directories-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-directories-only"
+      ]
+    },
+    {
+      "id": "files-undo-directories-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-directories-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-folders-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-folders-only"
+      ]
+    },
+    {
+      "id": "files-undo-folders-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-folders-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-folder-locations-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-folders-only",
+        "--undo-folders-case",
+        "locations"
+      ]
+    },
+    {
+      "id": "files-undo-folder-locations-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-folders-only",
+        "--undo-folders-case",
+        "locations",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-saved-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-saved-only"
+      ]
+    },
+    {
+      "id": "files-undo-saved-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-saved-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-moves-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-moves-only"
+      ]
+    },
+    {
+      "id": "files-undo-moves-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-moves-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-undo-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-only"
+      ]
+    },
+    {
+      "id": "files-undo-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--undo-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-preferences-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--preferences-only"
+      ]
+    },
+    {
+      "id": "files-preferences-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--preferences-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-drops-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--drops-only"
+      ]
+    },
+    {
+      "id": "files-drops-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--drops-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-actions-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--actions-only"
+      ]
+    },
+    {
+      "id": "files-actions-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--actions-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "files-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "shell-appearance-dark",
+      "script": "verify-shell-appearance.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark"
+      ]
+    },
+    {
+      "id": "shell-appearance-light",
+      "script": "verify-shell-appearance.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.5"
+      ]
+    },
+    {
+      "id": "quick-settings-dark",
+      "script": "verify-shell-appearance.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark",
+        "--controls",
+        "--session-actions"
+      ]
+    },
+    {
+      "id": "quick-settings-light",
+      "script": "verify-shell-appearance.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.5",
+        "--controls",
+        "--session-actions"
+      ]
+    },
+    {
+      "id": "theme-customization",
+      "script": "verify-theme-customization.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "configuration-reload",
+      "script": "verify-configuration-reload.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "desktop-dark",
+      "script": "test-desktop.py",
+      "args": [
+        "--notify",
+        "{notify}",
+        "--shell",
+        "{shell}",
+        "--artifacts",
+        "{artifacts}",
+        "--color-scheme",
+        "dark"
+      ]
+    },
+    {
+      "id": "desktop-light",
+      "script": "test-desktop.py",
+      "args": [
+        "--notify",
+        "{notify}",
+        "--shell",
+        "{shell}",
+        "--artifacts",
+        "{artifacts}",
+        "--color-scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "fork-lifetimes",
+      "script": "test-fork-desktop.py",
+      "args": [
+        "--shell",
+        "{shell}",
+        "--artifacts",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "placement",
+      "script": "verify-overlay-placement.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--edge",
+        "top",
+        "bottom",
+        "left",
+        "right",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "drawer-modes",
+      "script": "verify-drawer-modes.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "panel-motion",
+      "script": "verify-panel-motion.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "panel-close-flash",
+      "script": "verify-panel-motion.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scale",
+        "1.25",
+        "--default-timings",
+        "--close-flash-only"
+      ]
+    },
+    {
+      "id": "menu-scrolling",
+      "script": "verify-menu-scrolling.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "menu-customization",
+      "script": "verify-menu-scrolling.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--custom-theme"
+      ]
+    },
+    {
+      "id": "content-rotation",
+      "script": "verify-content-rotation.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scale",
+        "1.0",
+        "1.25"
+      ]
+    },
+    {
+      "id": "focused-window-icons",
+      "script": "verify-focused-window-icons.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "idle-inhibitor-sway",
+      "script": "verify-idle-inhibitor.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--compositor",
+        "sway"
+      ]
+    },
+    {
+      "id": "idle-inhibitor-niri",
+      "script": "verify-idle-inhibitor.py",
+      "args": [
+        "--binary",
+        "{shell}",
+        "--output",
+        "{artifacts}",
+        "--compositor",
+        "niri"
+      ]
+    },
+    {
+      "id": "files-recovery-directories-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--recovery-directories-only"
+      ]
+    },
+    {
+      "id": "files-recovery-directories-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--recovery-directories-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-recovery-expiry-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--recovery-directories-only",
+        "--recovery-directories-case",
+        "expiry"
+      ]
+    },
+    {
+      "id": "files-recovery-expiry-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--recovery-directories-only",
+        "--recovery-directories-case",
+        "expiry",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-operations-tiling-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--recovery-directories-only",
+        "--recovery-directories-case",
+        "tiling"
+      ]
+    },
+    {
+      "id": "files-operations-tiling-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--recovery-directories-only",
+        "--recovery-directories-case",
+        "tiling",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-source-leases-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "source-leases"
+      ]
+    },
+    {
+      "id": "files-iced-source-leases-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "source-leases",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-clipboard-source-copy-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard-source-copy"
+      ]
+    },
+    {
+      "id": "files-iced-clipboard-source-copy-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard-source-copy",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-clipboard-source-move-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard-source-move"
+      ]
+    },
+    {
+      "id": "files-iced-clipboard-source-move-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard-source-move",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-actions-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-actions-only"
+      ]
+    },
+    {
+      "id": "files-iced-actions-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-actions-only",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-clipboard-capacity-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard-capacity"
+      ]
+    },
+    {
+      "id": "files-iced-clipboard-capacity-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard-capacity"
+      ]
+    },
+    {
+      "id": "files-iced-preferences-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0",
+        "--iced-preferences-only"
+      ]
+    },
+    {
+      "id": "files-iced-preferences-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25",
+        "--iced-preferences-only"
+      ]
+    },
+    {
+      "id": "files-startup-dark",
+      "script": "verify-files-startup.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1",
+        "--attempts",
+        "4"
+      ]
+    },
+    {
+      "id": "files-startup-interrupted-dark",
+      "script": "verify-files-startup.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1",
+        "--attempts",
+        "4",
+        "--fixture",
+        "interrupted"
+      ]
+    },
+    {
+      "id": "files-startup-light",
+      "script": "verify-files-startup.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25",
+        "--attempts",
+        "4"
+      ]
+    },
+    {
+      "id": "files-startup-interrupted-light",
+      "script": "verify-files-startup.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25",
+        "--attempts",
+        "4",
+        "--fixture",
+        "interrupted"
+      ]
+    },
+    {
+      "id": "files-window-navigation-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "window-navigation",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1"
+      ]
+    },
+    {
+      "id": "files-window-navigation-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "window-navigation",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-location-editing-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "location-editing",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-action-host-headless",
+      "script": "verify-files-action-host.py",
+      "args": [
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "files-operation-attention-headless",
+      "script": "verify-files-action-host.py",
+      "args": [
+        "--output",
+        "{artifacts}",
+        "--workflow",
+        "operations"
+      ]
+    },
+    {
+      "id": "files-device-attention-headless",
+      "script": "verify-files-action-host.py",
+      "args": [
+        "--output",
+        "{artifacts}",
+        "--workflow",
+        "devices"
+      ]
+    },
+    {
+      "id": "files-resident-headless",
+      "script": "verify-files-resident.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--headless"
+      ]
+    },
+    {
+      "id": "files-resident-activation",
+      "script": "verify-files-resident.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "files-iced-trash-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "trash",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0"
+      ]
+    },
+    {
+      "id": "files-iced-trash-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "trash",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-recovery-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "recovery",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0"
+      ]
+    },
+    {
+      "id": "files-iced-recovery-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "recovery",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-recovery-directories-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "recovery-directories",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0"
+      ]
+    },
+    {
+      "id": "files-iced-recovery-directories-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "recovery-directories",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-interrupted-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "interrupted",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0"
+      ]
+    },
+    {
+      "id": "files-iced-interrupted-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "interrupted",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-previews-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1",
+        "--iced-preview-only"
+      ]
+    },
+    {
+      "id": "files-iced-previews-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25",
+        "--iced-preview-only"
+      ]
+    },
+    {
+      "id": "files-iced-media-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1",
+        "--iced-media-only"
+      ]
+    },
+    {
+      "id": "files-iced-media-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25",
+        "--iced-media-only"
+      ]
+    },
+    {
+      "id": "files-iced-media-formats-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1",
+        "--iced-media-formats-only"
+      ]
+    },
+    {
+      "id": "files-iced-media-formats-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25",
+        "--iced-media-formats-only"
+      ]
+    },
+    {
+      "id": "files-iced-continuation-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "continuation",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0"
+      ]
+    },
+    {
+      "id": "files-iced-continuation-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "continuation",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-dismissal-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "dismissal",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0"
+      ]
+    },
+    {
+      "id": "files-iced-dismissal-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "dismissal",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-prepared-rename-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "prepared-rename",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0"
+      ]
+    },
+    {
+      "id": "files-iced-prepared-rename-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "prepared-rename",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-claim-review-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "claim-review",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0"
+      ]
+    },
+    {
+      "id": "files-iced-claim-review-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "claim-review",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    },
+    {
+      "id": "files-iced-transfer-completion-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "transfer-completion",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.0"
+      ]
+    },
+    {
+      "id": "files-iced-transfer-completion-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "transfer-completion",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
+    }
   ]
 }

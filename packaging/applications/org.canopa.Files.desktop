@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Canopa Files
+GenericName=File Manager
+Comment=Browse and manage local files
+Exec=canopa-files %U
+TryExec=canopa-files
+Icon=system-file-manager
+Terminal=false
+StartupNotify=true
+Categories=System;FileManager;
+MimeType=inode/directory;
+Keywords=Files;Folders;Browser;

@@ -1,6 +1,6 @@
 # Canopa configuration
 
-Both applications discover `~/.config/canopa/config.kdl`, or
+Canopa Shell, Notify and Files discover `~/.config/canopa/config.kdl`, or
 `$XDG_CONFIG_HOME/canopa/config.kdl` when that variable is an absolute path.
 An empty or relative XDG value falls back to `$HOME/.config`.
 
@@ -18,13 +18,19 @@ notifications {
     sound enabled=#true theme="freedesktop" default="message-new-instant"
     rule "quiet-chat" app="org.example.Chat" outcome="silenced"
 }
+files {
+    action "inspect-images" name="Inspect images" command="my-script %F" {
+        patterns "*.png" "*.jpg"
+    }
+}
 ```
 
 See [the shared example](../config/canopa.kdl), [shell options](../crates/canopa-shell/README.md),
-and [notification options](../crates/canopa-notify/README.md). Unknown root nodes and duplicate
+and [notification options](../crates/canopa-notify/README.md), plus
+[Files interface preferences and custom actions](../crates/canopa-files/README.md). Unknown root nodes and duplicate
 namespaces are errors.
 
-`appearance` is shared by both applications, including when `shell` or `notifications`
+`appearance` is shared by all three applications, including when their own namespace
 is omitted. `color-scheme` accepts `"dark"` (default, Canopa's warm charcoal and mint)
 or `"light"` (warm white and forest green). Optional `accent` accepts an opaque `"#rrggbb"`
 color; omit it to use the selected preset's accent. Each setting may appear once.
@@ -43,11 +49,11 @@ invalid options inside a namespace affect only its owner.
 
 If the common file is absent, Canopa Shell reads `niribar/config.kdl` and Notify reads
 `canopa-notify/config.kdl` under the same config directory. If both are absent, that
-application uses embedded defaults. A present invalid common file is an error,
+application uses embedded defaults. Files uses embedded defaults directly and has no legacy source. A present invalid common file is an error,
 including a broken symlink. Files must be readable regular UTF-8 files at most
 1 MiB; symlinks to regular files work.
 
-Build/install `canopa`, `canopa-shell`, and `canopa-notify` in the same binary directory.
+Build/install `canopa`, `canopa-shell`, `canopa-notify`, and `canopa-files` in the same binary directory.
 Validation opens no desktop surfaces, control socket, or history database:
 
 ```sh
@@ -56,8 +62,8 @@ canopa config check --file /path/to/canopa.kdl
 canopa config check --file /path/to/canopa.kdl --show-source
 ```
 
-The checker reports one JSON line per component and exits nonzero if either fails.
-It validates the same immutable common-file snapshot in both executables. Normal
+The checker reports one JSON line per component and exits nonzero if any fails.
+It validates the same immutable common-file snapshot in all three executables. Normal
 reports contain safe diagnostic codes and available byte offsets. `--show-source`
 adds local diagnostic detail to stderr and may reveal source values. Diagnostics
 refer to the temporary snapshot; the report identifies the original path.
@@ -104,6 +110,21 @@ missing explicit file is an error; `--defaults` stays on embedded defaults.
 Atomic replacement and symlink targets are supported. The shell polls source
 metadata every 250 ms off the UI thread, debounces changes, and prepares one
 bounded candidate at a time.
+
+Canopa Files also reloads automatically after a settled save, including edits to
+an external theme. Files settings, custom actions and appearance are validated
+together; invalid input retains the complete previous candidate and shows a safe
+browser banner until a valid repair. Atomic file replacement, directory replacement
+and symlink targets are supported. Discovery remains discovery after graphical
+saves; missing explicit files retain the last valid state, and `--defaults` stays
+isolated from ambient files.
+
+Comment-only and unrelated-namespace changes preserve browser input and views.
+Appearance changes repaint existing windows and preserve Quick Look's current
+page, zoom and playback objects. Open Preferences and Custom Actions drafts keep
+their fields and show that configuration changed. Stale main-file saves are
+refused; Ctrl+R explicitly reloads either editor, asking before discarding a draft.
+See [Files live reload](files/adr/0019-live-configuration-reload.md).
 
 Notify reloads with:
 
