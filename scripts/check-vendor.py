@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 import tarfile
 
+import vendor_sources
+
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -63,7 +65,7 @@ def check(root, archives):
                     relative = member.name.removeprefix(prefix)
                     data = contents.extractfile(member).read()
                     upstream[relative] = digest(data)
-                    if relative.startswith("src/"):
+                    if relative.startswith("src/") or relative in {"Cargo.toml", "Cargo.toml.orig"}:
                         source[relative] = data.decode("utf-8")
             expected = {
                 path: hashes["upstream"]
@@ -73,7 +75,7 @@ def check(root, archives):
             errors.extend(compare(f"{name} upstream", expected, upstream))
             actual_patch = ""
             for relative in sorted(upstream.keys() | local.keys()):
-                if not relative.startswith("src/") or upstream.get(relative) == local.get(relative):
+                if (not relative.startswith("src/") and relative not in {"Cargo.toml", "Cargo.toml.orig"}) or upstream.get(relative) == local.get(relative):
                     continue
                 path = root / "vendor" / name / relative
                 before = source.get(relative, "")
@@ -84,6 +86,7 @@ def check(root, archives):
                 ))
             if patch.read_text() != actual_patch:
                 errors.append(f"{name}: patch does not describe the actual upstream source changes")
+    errors.extend(vendor_sources.check(root, archives))
     return errors
 
 
@@ -91,7 +94,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--archives", type=Path,
-        help="also verify NAME-VERSION.crate files in this directory (no downloads)",
+        help="also verify published crate and pinned source archives in this directory (no downloads)",
     )
     args = parser.parse_args()
     try:

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import tomllib
 
@@ -27,7 +28,8 @@ def main():
     env['CARGO_TARGET_DIR'] = str(Path(env.get('CARGO_TARGET_DIR', ROOT / 'target')).resolve())
     with tempfile.TemporaryDirectory(prefix='canopa-vendor-tests-') as directory:
         snapshot = Path(directory)
-        for name in ['iced_layershell', 'layershellev']:
+        forks = list(json.loads((ROOT / 'vendor/provenance.json').read_text())['crates'])
+        for name in forks:
             shutil.copytree(ROOT / 'vendor' / name, snapshot / name)
         # Upstream's macro integration test enables Iced's default desktop stack.
         # These library tests use the same Iced features as Canopa's combined build.
@@ -39,8 +41,10 @@ def main():
         manifest.write_text(text.replace(original, '[dev-dependencies.iced]\nworkspace = true'))
         (snapshot / 'Cargo.toml').write_text(
             '[workspace]\nresolver = "3"\nmembers = ["iced_layershell", "layershellev"]\n'
-            '[patch.crates-io]\nlayershellev = { path = "layershellev" }\n'
-            '[workspace.dependencies.iced]\n'
+            f'exclude = {json.dumps([name for name in forks if name not in {"iced_layershell", "layershellev"}])}\n'
+            '[patch.crates-io]\n'
+            + ''.join(f'{name} = {{ path = "{name}" }}\n' for name in forks)
+            + '[workspace.dependencies.iced]\n'
             f'version = {json.dumps(iced["version"])}\ndefault-features = false\n'
             f'features = {json.dumps(sorted(features))}\n')
         shutil.copyfile(ROOT / 'Cargo.lock', snapshot / 'Cargo.lock')
@@ -58,9 +62,19 @@ def main():
             if package['id'] in resolved and package['source'] and key not in locked_registry:
                 raise RuntimeError(f'Vendor tests escaped the root locked graph: {key}')
         subprocess.run([
-            'cargo', 'test', '--locked', '--offline', '--manifest-path', str(snapshot / 'Cargo.toml'),
+            'cargo', 'test', '--locked', '--offline', '-j1', '--manifest-path', str(snapshot / 'Cargo.toml'),
             '-p', 'iced_layershell', '-p', 'layershellev', '--lib',
         ], cwd=ROOT, env=env, check=True)
+        # This adapter seam is std-only. Exercise its actual source without
+        # introducing an excluded crate's optional test dependency graph.
+        event_tests = snapshot / 'iced-winit-event-batch-tests'
+        subprocess.run([
+            'rustc', '--edition=2024', '--test',
+            str(snapshot / 'iced_winit/src/event_batch.rs'), '-o', str(event_tests),
+        ], cwd=ROOT, env=env, check=True)
+        subprocess.run([str(event_tests)], cwd=ROOT, env=env, check=True)
+        subprocess.run([sys.executable, str(ROOT / 'scripts/test-vendor-pipes.py')],
+                       cwd=ROOT, env=env, check=True)
 
 
 if __name__ == '__main__':
