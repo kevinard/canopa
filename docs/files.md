@@ -49,6 +49,13 @@ renderer-independent GStreamer worker and open paused. Tab enters Play/Pause,
 Seek, Mute and Volume after Open; focused seek/volume controls own arrows and
 Home/End. Other preview keys continue navigating the source browser.
 
+Copies retain regular-file permission bits and access/modification times; new
+files belong to the copying user. Symbolic links remain links, including dangling
+links. Hard links become separate files, sparse files allocate their full logical
+size, and ACLs and extended attributes are currently omitted. The shared copy
+preparation and its verification are documented in
+[ADR0153](files/adr/0153-uutils-prepared-copy.md).
+
 The Iced executable uses GIO/GLib 2.58 or newer for live local-volume observation
 through a private helper process. These are platform libraries, with no GTK widgets. The
 helper is the same executable in an internal mode and requires no separate

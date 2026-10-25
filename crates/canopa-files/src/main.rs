@@ -1,9 +1,12 @@
 use clap::Parser;
 use std::path::PathBuf;
+mod copy_check;
 
 #[derive(Parser)]
 #[command(name = "canopa-files", version, about = "Canopa's local file manager")]
 struct Arguments {
+    #[arg(long, hide = true, conflicts_with_all = ["paths", "config", "defaults", "check_config", "show_source", "daemon", "quit", "internal_volume_monitor"])]
+    internal_check_copy: bool,
     #[arg(long, hide = true, conflicts_with_all = ["paths", "config", "defaults", "check_config", "show_source", "daemon", "quit"])]
     internal_volume_monitor: bool,
     /// Local folders or file:// URIs to open. Multiple locations become tabs.
@@ -27,6 +30,15 @@ struct Arguments {
 
 fn main() -> std::process::ExitCode {
     let arguments = Arguments::parse();
+    if arguments.internal_check_copy {
+        return match copy_check::run() {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("canopa-files: {error}");
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
     if arguments.internal_volume_monitor {
         return match canopa_files::local_volumes::run_helper() {
             Ok(()) => std::process::ExitCode::SUCCESS,

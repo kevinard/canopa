@@ -1390,7 +1390,7 @@ fn restore_source(
             "the moved file has changed; choose how to keep newer work",
         ));
     }
-    let prepared = fingerprint::prepare_copy(
+    let prepared = prepared_copy::prepare_copy(
         current,
         original.parent().unwrap(),
         cancellation,

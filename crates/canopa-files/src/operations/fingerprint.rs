@@ -1,6 +1,6 @@
 use super::*;
 use sha2::{Digest, Sha256};
-use std::{io::Write, os::unix::fs::PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 
 pub(super) mod source;
 #[cfg(test)]
@@ -67,6 +67,9 @@ pub(super) struct Fingerprint {
 }
 
 impl Fingerprint {
+    pub(super) fn digest(&self) -> [u8; 32] {
+        self.digest
+    }
     pub(super) fn copied_bytes(&self) -> u64 {
         if self.link { 0 } else { self.size }
     }
@@ -157,7 +160,7 @@ impl Fingerprint {
         )?;
         Ok(())
     }
-    fn from_metadata(metadata: &fs::Metadata, digest: [u8; 32]) -> Self {
+    pub(super) fn from_metadata(metadata: &fs::Metadata, digest: [u8; 32]) -> Self {
         Self {
             size: metadata.len(),
             mode: metadata.mode() & 0o777,
@@ -212,174 +215,41 @@ impl Fingerprint {
     }
 }
 
-pub(super) struct PreparedCopy {
-    pub source: source::Opened,
-    pub opened: staging::Prepared,
-    pub stage: Stage,
-    pub temporary: tempfile::TempDir,
-    pub identity: Identity,
-    pub fingerprint: Fingerprint,
-    pub source_identity: Identity,
-    pub source_fingerprint: Fingerprint,
-}
-
-pub(super) fn prepare_copy(
-    source: &Path,
-    parent: &Path,
-    cancellation: &Cancellation,
-    register: impl FnMut(&staging::Registration<'_>) -> io::Result<()>,
-    progress: impl FnMut(u64),
-    checkpoint: impl FnMut() -> io::Result<()>,
-) -> io::Result<PreparedCopy> {
-    prepare_using(
-        || source::Opened::open(source),
-        parent,
-        None,
-        cancellation,
-        register,
-        progress,
-        checkpoint,
-    )
-}
-
-/// Prepare through the source folder and destination parent already retained
-/// by the actual transfer selection.
-pub(super) fn prepare_pinned(
-    source: source::Opened,
-    parent: &Path,
-    pinned: &fs::File,
-    cancellation: &Cancellation,
-    register: impl FnMut(&staging::Registration<'_>) -> io::Result<()>,
-    progress: impl FnMut(u64),
-    checkpoint: impl FnMut() -> io::Result<()>,
-) -> io::Result<PreparedCopy> {
-    prepare_using(
-        || Ok(source),
-        parent,
-        Some(pinned),
-        cancellation,
-        register,
-        progress,
-        checkpoint,
-    )
-}
-
-fn prepare_using(
-    source: impl FnOnce() -> io::Result<source::Opened>,
-    parent: &Path,
-    pinned: Option<&fs::File>,
-    cancellation: &Cancellation,
-    mut register: impl FnMut(&staging::Registration<'_>) -> io::Result<()>,
-    mut progress: impl FnMut(u64),
-    mut checkpoint: impl FnMut() -> io::Result<()>,
-) -> io::Result<PreparedCopy> {
-    check_cancel(cancellation)?;
-    checkpoint()?;
-    let source = source()?;
-    source.require_current()?;
-    let before = source.metadata();
-    let (opened, mut stage, mut temporary) = match pinned {
-        Some(pinned) => staging::Opened::prepare_in(parent, pinned)?,
-        None => staging::Opened::prepare(parent)?,
-    };
-    register(&opened.registration(&source, &stage)?)?;
-    #[cfg(test)]
-    super::transfer::stage_boundary::preparing("empty", source.path(), &stage);
-    // The durable intent owns this stage from registration onward. Cleanup must
-    // validate its placement/identity instead of running through TempDir::drop.
-    temporary.disable_cleanup(true);
-    checkpoint()?;
-    source.require_current()?;
-    let (payload, digest) = if before.is_symlink() {
-        let target = source.link()?;
-        let file = opened.link(&target)?;
-        let payload = opened.payload(file, &mut stage)?;
-        register(&payload.registration(&source, &stage)?)?;
-        #[cfg(test)]
-        super::transfer::stage_boundary::preparing("payload", source.path(), &stage);
-        payload.require_current()?;
-        (
-            payload,
-            Sha256::digest(target.as_os_str().as_encoded_bytes()).into(),
-        )
-    } else {
-        let mut input = source.regular()?;
-        let file = opened.regular()?;
-        let mut payload = opened.payload(file, &mut stage)?;
-        // Record the actual new leaf before the first data write. A crash
-        // between creation and this save leaves an unknown leaf for review.
-        register(&payload.registration(&source, &stage)?)?;
-        #[cfg(test)]
-        super::transfer::stage_boundary::preparing("payload", source.path(), &stage);
-        payload.require_current()?;
-        let mut hash = Sha256::new();
-        let mut buffer = [0; 64 * 1024];
-        loop {
-            check_cancel(cancellation)?;
-            checkpoint()?;
-            payload.require_current()?;
-            let count = read_retry(&mut input, &mut buffer)?;
-            if count == 0 {
-                break;
-            }
-            payload.file().write_all(&buffer[..count])?;
-            #[cfg(test)]
-            super::transfer::stage_boundary::preparing("written", source.path(), &stage);
-            #[cfg(test)]
-            super::undo::abort_boundary::preparing(source.path(), &stage);
-            #[cfg(test)]
-            super::transfer::stage_boundary::restricted_preparing(
-                source.path(),
-                &stage,
-                cancellation,
-            );
-            hash.update(&buffer[..count]);
-            progress(count as u64);
-        }
-        if !same_snapshot(before, &input.metadata()?) {
-            return Err(changed());
-        }
-        checkpoint()?;
-        payload.require_current()?;
-        let output = payload.file();
-        output.set_permissions(fs::Permissions::from_mode(before.mode() & 0o777))?;
-        let mut times = fs::FileTimes::new();
-        if let Ok(time) = before.modified() {
-            times = times.set_modified(time);
-        }
-        if let Ok(time) = before.accessed() {
-            times = times.set_accessed(time);
-        }
-        output.set_times(times)?;
-        output.sync_all()?;
-        (payload, hash.finalize().into())
-    };
-    source.require_current()?;
-    check_cancel(cancellation)?;
-    checkpoint()?;
-    source.require_current()?;
-    payload.require_current()?;
-    let metadata = payload.metadata()?;
-    let identity = Identity::from_metadata(&metadata);
-    stage.payload_identity = Some(identity);
-    Ok(PreparedCopy {
-        opened: payload,
-        stage,
-        temporary,
-        identity,
-        fingerprint: Fingerprint::from_metadata(&metadata, digest),
-        source_identity: Identity::from_metadata(before),
-        source_fingerprint: Fingerprint::from_metadata(before, digest),
-        source,
-    })
-}
-
 fn open_regular(path: &Path) -> io::Result<fs::File> {
     let source = source::Opened::open(path)?;
     source.require_current()?;
     source.regular()
 }
-fn same_snapshot(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+
+/// Read the owned output through its already-readable descriptor, including
+/// under a restrictive umask. Positioned reads leave the writer offset alone.
+pub(super) fn copied_digest(file: &fs::File, cancellation: &Cancellation) -> io::Result<[u8; 32]> {
+    use std::os::unix::fs::FileExt;
+    let before = file.metadata()?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    let mut offset = 0;
+    loop {
+        check_cancel(cancellation)?;
+        let count = match file.read_at(&mut buffer, offset) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
+        if count == 0 {
+            break;
+        }
+        hash.update(&buffer[..count]);
+        offset += count as u64;
+    }
+    if !same_snapshot(&before, &file.metadata()?) {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "The prepared output changed while its receipt was read.",
+        ));
+    }
+    Ok(hash.finalize().into())
+}
+pub(super) fn same_snapshot(a: &fs::Metadata, b: &fs::Metadata) -> bool {
     Identity::from_metadata(a) == Identity::from_metadata(b)
         && a.len() == b.len()
         && a.mode() == b.mode()
@@ -396,9 +266,29 @@ fn read_retry(file: &mut fs::File, buffer: &mut [u8]) -> io::Result<usize> {
         }
     }
 }
-fn changed() -> io::Error {
+pub(super) fn changed() -> io::Error {
     io::Error::new(
         io::ErrorKind::WouldBlock,
         "the source changed while it was being copied",
     )
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn an_owned_output_receipt_uses_its_readable_fd_even_at_mode_zero() {
+        let mut output = tempfile::tempfile().unwrap();
+        output.write_all(b"owned copied bytes").unwrap();
+        output
+            .set_permissions(fs::Permissions::from_mode(0o0))
+            .unwrap();
+        let expected: [u8; 32] = Sha256::digest(b"owned copied bytes").into();
+        assert_eq!(
+            copied_digest(&output, &Cancellation::default()).unwrap(),
+            expected
+        );
+    }
 }

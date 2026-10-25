@@ -1,4 +1,5 @@
 use super::*;
+use crate::operations::prepared_copy::prepare_copy;
 use std::{cell::RefCell, os::unix::fs::symlink};
 
 #[test]

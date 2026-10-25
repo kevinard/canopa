@@ -1629,7 +1629,7 @@ fn upgrading_schema22_preserves_old_requests_without_inventing_execution_evidenc
         database
             .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
             .unwrap(),
-        57
+        60
     );
 }
 

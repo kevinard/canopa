@@ -189,6 +189,46 @@ fn write_boundary(point: &str, stage: &Stage) {
 fn fixture(point: &str, run: impl FnOnce(&Path, Marker)) {
     fixture_shape(point, "file", run);
 }
+
+#[test]
+fn native_copy_completion_without_a_host_receipt_never_authorizes_publication() {
+    for point in ["transferred", "completed"] {
+        fixture(point, |root, marker| {
+            let stage = work(&marker).clone();
+            let bytes = fs::read(stage.payload()).unwrap();
+            assert_eq!(bytes, vec![b'x'; 128 * 1024]);
+            assert!(!marker.output.join(leaf()).exists());
+            // Loss of the selected source makes even a fully written stage
+            // useful retained data, not a receipt reconstructed from its size.
+            fs::rename(root.join(leaf()), root.join("held-source")).unwrap();
+            fs::write(root.join(leaf()), b"Unselected replacement").unwrap();
+            for _ in 0..2 {
+                let jobs = start(root);
+                // Reconciliation can claim the partial into a different owned
+                // namespace. Recovery, not its old display path, locates it.
+                let mut reply = jobs.recovery_page(None, Cancellation::default()).unwrap();
+                let page = wait(|| reply.try_recv().unwrap()).unwrap();
+                assert!(page.items.iter().any(|item| {
+                    item.entry.as_ref().is_some_and(|entry| {
+                        fs::read(&entry.path).is_ok_and(|contents| contents == bytes)
+                    })
+                }));
+                assert!(!marker.output.join(leaf()).exists());
+                assert_eq!(
+                    fs::read(root.join(leaf())).unwrap(),
+                    b"Unselected replacement"
+                );
+                assert_eq!(
+                    fs::read(marker.output.join("a-done")).unwrap(),
+                    b"Completed prefix"
+                );
+                assert!(jobs.snapshot().undo.is_some());
+                drop(page);
+                close(jobs, root);
+            }
+        });
+    }
+}
 fn fixture_shape(point: &str, shape: &str, run: impl FnOnce(&Path, Marker)) {
     let root = tempfile::Builder::new()
         .prefix("canopa-stage-task-")

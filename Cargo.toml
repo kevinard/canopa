@@ -21,6 +21,7 @@ exclude = [
   "vendor/iced_winit",
   "vendor/winit",
   "vendor/layershellev",
+  "vendor/uucore",
 ]
 
 [workspace.package]
@@ -36,6 +37,7 @@ canopa-config = { path = "crates/canopa-config" }
 canopa-theme = { path = "crates/canopa-theme" }
 canopa-ui = { path = "crates/canopa-ui" }
 sha2 = "0.10"
+uucore = { version = "=0.12.0", features = ["buf-copy"] }
 shlex = "2"
 canopa-panel-protocol = { path = "crates/canopa-panel-protocol" }
 chrono = { version = "0.4", features = ["clock"] }
@@ -108,6 +110,7 @@ iced_runtime = { path = "vendor/iced_runtime" }
 iced_winit = { path = "vendor/iced_winit" }
 winit = { path = "vendor/winit" }
 layershellev = { path = "vendor/layershellev" }
+uucore = { path = "vendor/uucore" }
 
 [profile.release]
 lto = "thin"

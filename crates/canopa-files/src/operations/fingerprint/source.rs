@@ -259,7 +259,7 @@ impl Opened {
         })
     }
 
-    pub(super) fn metadata(&self) -> &fs::Metadata {
+    pub(in crate::operations) fn metadata(&self) -> &fs::Metadata {
         &self.metadata
     }
 
@@ -283,7 +283,7 @@ impl Opened {
         Ok(())
     }
 
-    pub(super) fn regular(&self) -> io::Result<fs::File> {
+    pub(in crate::operations) fn regular(&self) -> io::Result<fs::File> {
         if !self.metadata.is_file() {
             return Err(invalid("The opened copy source is not a regular file."));
         }
@@ -301,7 +301,7 @@ impl Opened {
         Ok(file)
     }
 
-    pub(super) fn link(&self) -> io::Result<PathBuf> {
+    pub(in crate::operations) fn link(&self) -> io::Result<PathBuf> {
         if !self.metadata.is_symlink() {
             return Err(invalid("The opened copy source is not a symbolic link."));
         }

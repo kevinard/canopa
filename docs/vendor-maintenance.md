@@ -12,10 +12,13 @@ below were checked directly against the official crates.io sparse index on 2026-
 | iced_runtime | 0.14.0 | `3997291f318a8bc06fa522f5579836fb3feb94df` (crate VCS metadata) |
 | iced_winit | 0.14.0 | `3997291f318a8bc06fa522f5579836fb3feb94df` (crate VCS metadata) |
 | winit | 0.30.13 | `e9809ef54b18499bb4f2cac945719ecc2a61061b` (crate VCS metadata) |
+| uucore | 0.12.0 | `dc1efd89948a9ca4c78c3a4b9a6ac891019a8c69` (crate VCS metadata) |
 
 The Iced runtime/Winit and native Winit additions were checked against the exact locked published
 archives on 2026-10-18. Iced's MIT notice comes from that upstream revision; Winit retains the Apache
 license in its published archive.
+uucore was checked against its published archive and official sparse-index checksum
+on 2026-10-25; its original MIT notice is retained.
 Source and dependency-manifest changes are included in the reviewable patches.
 
 The two layer-shell crate source trees were compared byte for byte with their tag
@@ -35,6 +38,7 @@ Retained behavior:
 
 | Patch | Why it remains | Verification |
 | --- | --- | --- |
+| Descriptor copy progress with a per-call pipe | Files needs cooperative cancellation and byte reporting without reopening selected paths or sharing residual pipe data after failures. | The private runnable uutils proof, prepared-copy boundary tests, and linked release Copy/Move/cancel/reopen check; Files ADR0153 records scope and limitations. |
 | Named Wayland output snapshots | The shell plans Bar Surfaces from output names even before a window exists; upstream does not expose this snapshot to application messages. | Shell eligible-output/surface reconciliation tests and compositor output checks. |
 | Activation token context | Banner actions need the originating surface and recent input serial on the existing connection. | Notification activation tests and isolated desktop action checks. |
 | Surface-owned idle inhibition | The shell's manual idle-inhibitor module needs optional protocol support, idempotent requests and cleanup when bar surfaces retire. | Shell lifecycle tests, retired-window adapter regression and `scripts/verify-idle-inhibitor.py` with a private compositor and idle daemon. |

@@ -29,4 +29,5 @@ python3 scripts/dependency-attributions.py \
 "$dest/bin/canopa-shell" --version
 "$dest/bin/canopa-notify" --help > /dev/null
 "$dest/bin/canopa-files" --help > /dev/null
+"$dest/bin/canopa-files" --internal-check-copy
 tar -C "$stage" -czf "$output_dir/$bundle.tar.gz" "$bundle"

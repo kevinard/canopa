@@ -168,7 +168,7 @@ fn failed_cleanup_registration_rolls_back_the_step_and_preserves_forward_intent(
     let engine = OperationEngine::open(&history).unwrap();
     let mut state = engine.state.lock().unwrap();
     let id = state.begin("cleanup rollback").unwrap();
-    let prepared = fingerprint::prepare_copy(
+    let prepared = prepared_copy::prepare_copy(
         &source,
         root.path(),
         &Cancellation::default(),
@@ -245,7 +245,7 @@ fn postappend_child() {
     let mut state = engine.state.lock().unwrap();
     let run = |state: &mut Store| -> io::Result<()> {
         let id = state.begin("copy before cleanup death")?;
-        let prepared = fingerprint::prepare_copy(
+        let prepared = prepared_copy::prepare_copy(
             &source,
             &root,
             &Cancellation::default(),

@@ -1,7 +1,8 @@
 # Current failure reproductions retained after cleanup
 
-Updated 2026-10-25. The production implementation is checkpointed in Git at
-`88d78d3`; the uutils migration has not started. All paths below are relative to
+Updated 2026-10-25. The pre-migration implementation is checkpointed in Git at
+`88d78d3`; the scoped uutils Copy migration is recorded in UUTILS-IMPLEMENTATION.md
+and ADR0153. It does not resolve the wider failures below. All paths below are relative to
 this directory unless absolute. These are failure/research records, not full
 product acceptance.
 
@@ -34,7 +35,10 @@ that experiment as the proposed next implementation direction.
 The existing public test
 `restarting_a_killed_keep_both_destination_restore_preserves_newer_files_and_cleans_stages`
 in `crates/canopa-files/tests/undo_destinations.rs` retains its original 20-second
-limit. `direct-displacement-related-02.log` records the production 29.84-second
+limit. The uutils core run still fails at 24.998704253 seconds and retains
+`/tmp/canopa-destination-undo-crash-bqjl27`; its log is
+`/tmp/canopa-uutils-core-rest.log`. The limit is unchanged.
+`direct-displacement-related-02.log` records the production 29.84-second
 failure. The retained timing/canonical profiling logs are private diagnosis,
 not newer production acceptance or permission to change the limit.
 
@@ -42,12 +46,33 @@ not newer production acceptance or permission to change the limit.
 preserve the failed `/tmp/canopa-destination-undo-crash-Y5Xc23` root, 1,507 entries,
 SHA-256 `f49351e708ef22a205e5f7adf984d8312acb401f169301066a534c7ba69b441b`.
 
+## Additional schema60 Undo baseline failures
+
+The uutils validation ran the complete public core target set and reproduced seven
+failures in undo_unavailable_moves and one in undo_unavailable_saved. Direct
+compilation of those same public test files against the preserved pre-migration
+library reproduces identical failure names, errors and counts (5 pass/7 fail/1 ignored
+and 8 pass/1 fail/1 ignored). These saved-only/source-only canonical history binding
+gaps are inherited; no proof was weakened. See UUTILS-IMPLEMENTATION.md and
+`/tmp/canopa-uutils-baseline-unavailable-{moves,saved}.log`.
+
+## Recovery catalog baseline timeout
+
+The uutils full default run and final 15-target run time out after 10 seconds in
+`pages_remain_loaded_and_saved_identity_survives_active_undo_expiry`. Backtraces
+locate the timeout at the initial Replace question, before Reader::start or byte
+copying. Independently compiling the exact pre-migration HEAD source with matching
+default dependencies reproduces the same timeout. Its cause remains open; see
+`/tmp/canopa-uutils-baseline-catalog.log` and UUTILS-IMPLEMENTATION.md.
+
 ## Updater timeout check
 
 The checkpoint's `scripts/test-update.py` run passed 18 of 19 tests. The
 `test_timeout_reports_command_and_decoded_partial_output` case lacked its expected
 stderr after the 0.2-second timeout. The permanent test is the reproducer; it
 does not require an archived executable or retained native-test directory.
+The uutils full validation passed all 19 updater tests; the older observation is
+retained as history, not a current failure in this migration run.
 
 ## Latest verification
 

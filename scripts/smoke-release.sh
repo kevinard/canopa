@@ -8,6 +8,7 @@ bundle="$stage/canopa-x86_64-unknown-linux-gnu"
 python3 "$(dirname -- "${BASH_SOURCE[0]}")/package-documentation.py" --check "$bundle"
 test -x "$bundle/bin/canopa-files"
 "$bundle/bin/canopa-files" --help > /dev/null
+"$bundle/bin/canopa-files" --internal-check-copy
 "$bundle/bin/canopa-files" --check-config --config "$bundle/share/canopa/canopa.kdl" > /dev/null
 test -s "$bundle/share/canopa-files/README.md"
 test -s "$bundle/share/canopa-files/LICENSE-MIT"

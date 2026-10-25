@@ -363,7 +363,7 @@ impl Opened {
         Ok(fs::File::from(openat(
             &self.directory,
             c"folder",
-            OFlags::WRONLY
+            OFlags::RDWR
                 | OFlags::CREATE
                 | OFlags::EXCL
                 | OFlags::NOFOLLOW
@@ -774,7 +774,7 @@ mod tests {
             let engine = OperationEngine::open(&history).unwrap();
             let mut state = engine.state.lock().unwrap();
             let id = state.begin("publication boundary").unwrap();
-            let prepared = fingerprint::prepare_copy(
+            let prepared = prepared_copy::prepare_copy(
                 &source,
                 &parent,
                 &Cancellation::default(),
@@ -869,7 +869,7 @@ mod tests {
         let mut state = engine.state.lock().unwrap();
         let id = state.begin("copy registration boundary").unwrap();
         let mut registered = None;
-        let result = fingerprint::prepare_copy(
+        let result = prepared_copy::prepare_copy(
             &source,
             root.path(),
             &Cancellation::default(),

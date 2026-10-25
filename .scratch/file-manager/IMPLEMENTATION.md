@@ -4,6 +4,22 @@ Goal: implement the entire [product brief](PRD.md), including native behavior
 and verification. This ledger tracks progress; intermediate slices do not
 replace the full goal.
 
+## uutils Copy migration, 2026-10-25
+
+[ADR0153](../../docs/files/adr/0153-uutils-prepared-copy.md) selects direct
+synchronous uucore 0.12.0 descriptor copying with a narrow root vendor patch for
+per-call progress/cancellation and pipe isolation. The path uu_cp API was
+rejected by the runnable private proof. All actual byte-copy consumers use one
+prepared-copy lifecycle; source validation and the unchanged SHA-256 receipt stay
+separate from transfer. Schema60, publication, source removal, saved versions,
+Undo and Recovery ownership stay intact. No schema61 candidate was imported.
+
+[Migration evidence and limitations](UUTILS-IMPLEMENTATION.md) records exact
+checks and debug measurements. The full Files goal, generic incoming-Move/Undo,
+Trash/Restore/legacy cleanup, native acceptance and the 500-item/20-second gate
+remain open. Sparse/reflink, ACL/xattr and hard-link-group improvements are not
+claimed. This checkpoint is a Copy-backend migration, not full goal completion.
+
 ## Current Phase2 work — proved saved-return refusal, 2026-10-24
 
 [ADR0152](../../docs/files/adr/0152-proved-saved-return-refusal.md) tracks schema60

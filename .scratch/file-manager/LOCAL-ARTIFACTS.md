@@ -25,8 +25,8 @@ references may therefore no longer exist. Private `/tmp` experiments, root
 The checkpoint does not establish complete Files acceptance. The 903-input
 schema60 source manifest and its scoped results remain valid for their recorded
 source. Known timing/recovery gaps remain described in `IMPLEMENTATION.md`,
-`MOVE-RETURN-NEXT.md`, and ADR0152. The uutils implementation has not begun; see
-`UUTILS-BACKEND-PLAN.md` for the next task.
+`MOVE-RETURN-NEXT.md`, and ADR0152. The scoped uutils Copy implementation is now recorded in
+`UUTILS-IMPLEMENTATION.md` and ADR0153; the wider Files goal remains unfinished.
 
 Checkpoint checks: vendor provenance, workspace formatting, syntax for 98 Python
 scripts, acceptance JSON, locked workspace metadata, service ordering, and the

@@ -1553,7 +1553,7 @@ fn run_transfer_inner(
                 }
                 return Ok(false);
             } else {
-                let fingerprint::PreparedCopy {
+                let prepared_copy::PreparedCopy {
                     source: source_pin,
                     opened,
                     mut stage,
@@ -1562,7 +1562,7 @@ fn run_transfer_inner(
                     fingerprint,
                     source_identity,
                     source_fingerprint,
-                } = fingerprint::prepare_copy(
+                } = prepared_copy::prepare_copy(
                     &source,
                     destination.parent().unwrap(),
                     cancellation,

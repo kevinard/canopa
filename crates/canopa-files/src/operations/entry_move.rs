@@ -178,14 +178,14 @@ impl Selection {
         register: impl FnMut(&staging::Registration<'_>) -> io::Result<()>,
         progress: impl FnMut(u64),
         mut checkpoint: impl FnMut() -> io::Result<()>,
-    ) -> io::Result<fingerprint::PreparedCopy> {
+    ) -> io::Result<prepared_copy::PreparedCopy> {
         self.require_current()?;
         if !self.directory {
             return Err(invalid("Saved data needs its selected container."));
         }
         let source =
             fingerprint::source::Opened::open_in(&self.original.join("previous"), &self.entry)?;
-        fingerprint::prepare_pinned(
+        prepared_copy::prepare_pinned(
             source,
             &self.destination.path,
             &self.destination.file,

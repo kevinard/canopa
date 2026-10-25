@@ -62,6 +62,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [uutils descriptor copying in the shared prepared-copy lifecycle, scoped migration](adr/0153-uutils-prepared-copy.md).
+
 - [Proved saved-return refusal and paired saved-only history, schema60 verification in progress](adr/0152-proved-saved-return-refusal.md).
 
 - [Original Undo displacement preparation, schema59 focused verification in progress](adr/0151-original-undo-displacement-preparation.md).

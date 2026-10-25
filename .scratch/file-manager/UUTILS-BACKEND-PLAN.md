@@ -1,6 +1,6 @@
 # Implement a uutils-backed copy backend for Canopa Files
 
-Status: implementation plan; production migration has not started.
+Status: scoped Copy implementation under ADR0153; see UUTILS-IMPLEMENTATION.md for evidence and remaining limits.
 Prepared: 2026-10-25. Workspace: `/home/kevinard/projects/canopa`.
 
 ## Request and intended outcome

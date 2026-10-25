@@ -10,9 +10,11 @@ use std::{
     path::{Component, Path, PathBuf},
     sync::Mutex,
 };
+mod copy_backend;
 pub(crate) mod execution;
 mod fingerprint;
 mod history_lock;
+mod prepared_copy;
 pub use execution::RequestEffects;
 mod interrupted;
 mod recovery;

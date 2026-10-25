@@ -530,7 +530,7 @@ fn prepare_inner(
     let mut copied = if let Some(selection) = selection {
         selection.copy_saved(cancellation, register, &mut progress, verify)?
     } else {
-        fingerprint::prepare_copy(
+        prepared_copy::prepare_copy(
             &previous,
             destination.parent().unwrap(),
             cancellation,
