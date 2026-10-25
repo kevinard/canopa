@@ -1,6 +1,6 @@
 [Unit]
 Description=Canopa desktop shell
-After=graphical-session-pre.target
+After=graphical-session-pre.target niri.service
 Before=graphical-session.target
 PartOf=graphical-session.target canopa-session.target
 

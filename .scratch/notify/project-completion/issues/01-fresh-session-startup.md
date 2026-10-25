@@ -13,3 +13,13 @@ Send a normal application notification and open a notification body link. Record
 the fresh-session result in `docs/notify/project-completion-verification.md`.
 
 Backups: `~/.local/state/canopa-rollout/20260921-213137`.
+
+## Comments
+
+2026-10-23: The user's reboot exposed a compositor-readiness race in Notify and
+stale installed Shell/Notify binaries that reject the new shared `files` block.
+Matching optimized binaries restore the live session without changing its config. Both
+companion units now wait for `niri.service` readiness, with a regression for that
+ordering and cycle verification. See the reboot recovery record in
+`docs/notify/project-completion-verification.md`. The next normal reboot still
+needs to confirm the corrected startup; no forced logout was performed.

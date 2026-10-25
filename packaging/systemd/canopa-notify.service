@@ -2,7 +2,7 @@
 Description=Canopa Notify notification daemon
 Documentation=man:canopa-notify(1)
 PartOf=graphical-session.target canopa-session.target
-After=graphical-session-pre.target
+After=graphical-session-pre.target niri.service
 Before=graphical-session.target
 
 [Service]

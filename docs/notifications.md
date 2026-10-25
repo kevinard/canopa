@@ -64,7 +64,10 @@ its windows and workspaces. Repeat the import for a new compositor session, befo
 starting the companions. The session launcher must activate
 `graphical-session.target` for automatic startup and stop it when the session ends.
 The units are ordered after `graphical-session-pre.target` and before
-`graphical-session.target`. Then run:
+`graphical-session.target`. When Niri runs as `niri.service`, both companions also
+wait for its readiness notification, so they inherit the compositor endpoints
+before starting. This ordering does not start Niri itself; other session launchers
+must import their environment before starting the companions. Then run:
 
 ```sh
 systemctl --user daemon-reload

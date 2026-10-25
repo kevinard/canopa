@@ -110,6 +110,38 @@ area resolve the user-reported missing/broken Center for this session.
 A real logout/login has not been performed; service restart
 and target wiring are not recorded as fresh-session evidence.
 
+### Reboot failure and recovery — 2026-10-23
+
+The user's next reported reboot exposed two startup failures. Notify exhausted its
+five rapid restart attempts before Niri imported `WAYLAND_DISPLAY`. The installed
+Shell then kept restarting because its October 15 executable rejected the shared
+`files` namespace added on October 16. Its error offset was exactly the start of
+that block; removing only that namespace in a temporary copy made both installed
+validators pass. All three current validators accepted the unchanged live config.
+
+Both companion units now order themselves after `niri.service`, whose
+`Type=notify` readiness follows compositor environment import in
+[Niri's startup sequence](https://github.com/niri-wm/niri/blob/main/src/main.rs#L205-L229).
+This is an ordering dependency only; it does not launch Niri for another compositor
+session. The session-unit regression first failed for the missing readiness
+dependency, then passed with Niri's service dependencies in the fixture, with no
+Niri service installed, and with the existing ordering-cycle rejection.
+
+Matching current development binaries restored both installed services, with
+their executable identities and Notify renderer health checked. A Shell reload
+request also succeeded. Shared configuration was byte-for-byte unchanged. Old
+binaries, unit definitions, configuration and stopped notification state were
+saved under `~/.local/state/canopa-backups/20261023-222316-startup-recovery-y0ormg0d`;
+the readiness ordering is also installed as per-user service drop-ins. All 19
+updater regression tests pass. The matching optimized binaries are now installed;
+their configuration validators accept the original source fingerprint. Both
+services run the installed executables with zero restarts and loaded Niri
+readiness ordering, and the installed Shell answers a reload request. The
+optimized update's backup is
+`~/.local/state/canopa-backups/20261023-232057-tvgc0rpg`.
+The next normal reboot remains the fresh-session confirmation of this correction;
+the working desktop was not logged out to force it.
+
 ## Hosted CI and backlog
 
 The user confirmed that there is no GitHub repository yet. No hosted run or
