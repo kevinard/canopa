@@ -5,6 +5,12 @@ Decision: [Files ADR0153](../../docs/files/adr/0153-uutils-prepared-copy.md).
 Scope: one complete prepared Copy path and every current byte-copy consumer.
 This does **not** complete the full Files goal or all migration acceptance.
 
+Follow-up: [optimized Copy hashing investigation](COPY-HASH-PERFORMANCE.md) and
+[ADR0154](../../docs/files/adr/0154-verified-copy-hashing.md) replace the two SHA
+computations recorded here with full source/output byte comparison and one SHA
+of their verified common contents. Both full reads and the durable contract
+remain. The measurements and test receipts below describe the original migration.
+
 ## Feasibility and selection
 
 The published, non-yanked uu_cp/uucore 0.12.0 archives were fetched from crates.io,

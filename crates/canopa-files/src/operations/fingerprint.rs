@@ -67,9 +67,6 @@ pub(super) struct Fingerprint {
 }
 
 impl Fingerprint {
-    pub(super) fn digest(&self) -> [u8; 32] {
-        self.digest
-    }
     pub(super) fn copied_bytes(&self) -> u64 {
         if self.link { 0 } else { self.size }
     }
@@ -221,33 +218,99 @@ fn open_regular(path: &Path) -> io::Result<fs::File> {
     source.regular()
 }
 
-/// Read the owned output through its already-readable descriptor, including
-/// under a restrictive umask. Positioned reads leave the writer offset alone.
-pub(super) fn copied_digest(file: &fs::File, cancellation: &Cancellation) -> io::Result<[u8; 32]> {
-    use std::os::unix::fs::FileExt;
-    let before = file.metadata()?;
+/// Compare the complete selected and staged byte streams, hashing matching bytes
+/// once. Equal bytes have equal SHA-256 digests; no second compression is needed.
+/// Keep both snapshots for the entire comparison. The output stays on its held
+/// readable descriptor, even at mode zero, and its writer offset is untouched.
+pub(super) fn verified_copy_digest(
+    source: &fs::File,
+    output: &fs::File,
+    cancellation: &Cancellation,
+) -> io::Result<[u8; 32]> {
+    use std::os::fd::AsRawFd;
+    check_cancel(cancellation)?;
+    let source_before = source.metadata()?;
+    let output_before = output.metadata()?;
+    if !source_before.is_file() || !output_before.is_file() {
+        return Err(invalid(
+            "Only opened regular files can verify copied bytes.",
+        ));
+    }
+    // As in read_opened, obtain an independent reader of the pinned inode;
+    // neither the user's pathname nor the copier's current offset supplies data.
+    let mut input = fs::File::open(format!("/proc/self/fd/{}", source.as_raw_fd()))?;
+    if !same_snapshot(&source_before, &input.metadata()?) {
+        return Err(changed());
+    }
     let mut hash = Sha256::new();
-    let mut buffer = [0; 64 * 1024];
+    let mut selected = [0; 64 * 1024];
+    let mut staged = [0; 64 * 1024];
     let mut offset = 0;
     loop {
         check_cancel(cancellation)?;
-        let count = match file.read_at(&mut buffer, offset) {
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            result => result?,
-        };
+        let count = read_retry(&mut input, &mut selected)?;
         if count == 0 {
+            if read_at_retry(output, &mut staged[..1], offset, cancellation)? != 0 {
+                return Err(different_copy());
+            }
             break;
         }
-        hash.update(&buffer[..count]);
+        let mut read = 0;
+        while read < count {
+            let next = read_at_retry(
+                output,
+                &mut staged[read..count],
+                offset + read as u64,
+                cancellation,
+            )?;
+            if next == 0 {
+                return Err(different_copy());
+            }
+            read += next;
+        }
+        if selected[..count] != staged[..count] {
+            return Err(different_copy());
+        }
+        hash.update(&selected[..count]);
         offset += count as u64;
+        #[cfg(test)]
+        receipt_tests::compared_chunk();
     }
-    if !same_snapshot(&before, &file.metadata()?) {
+    if !same_snapshot(&source_before, &input.metadata()?)
+        || !same_snapshot(&source_before, &source.metadata()?)
+    {
+        return Err(changed());
+    }
+    if !same_snapshot(&output_before, &output.metadata()?) {
         return Err(io::Error::new(
             io::ErrorKind::WouldBlock,
             "The prepared output changed while its receipt was read.",
         ));
     }
     Ok(hash.finalize().into())
+}
+
+fn different_copy() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::WouldBlock,
+        "The copied bytes differ from the source. Staged data is preserved for Recovery.",
+    )
+}
+
+fn read_at_retry(
+    file: &fs::File,
+    buffer: &mut [u8],
+    offset: u64,
+    cancellation: &Cancellation,
+) -> io::Result<usize> {
+    use std::os::unix::fs::FileExt;
+    loop {
+        check_cancel(cancellation)?;
+        match file.read_at(buffer, offset) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => return result,
+        }
+    }
 }
 pub(super) fn same_snapshot(a: &fs::Metadata, b: &fs::Metadata) -> bool {
     Identity::from_metadata(a) == Identity::from_metadata(b)
@@ -276,19 +339,141 @@ pub(super) fn changed() -> io::Error {
 #[cfg(test)]
 mod receipt_tests {
     use super::*;
-    use std::io::Write;
+    use std::io::{Seek, Write};
+
+    type Action = Box<dyn FnOnce()>;
+    thread_local! {
+        static AT_CHUNK: std::cell::RefCell<Option<Action>> = const { std::cell::RefCell::new(None) };
+    }
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            AT_CHUNK.with(|action| action.borrow_mut().take());
+        }
+    }
+    fn at_chunk(action: impl FnOnce() + 'static) -> Reset {
+        AT_CHUNK.with(|slot| assert!(slot.borrow_mut().replace(Box::new(action)).is_none()));
+        Reset
+    }
+    pub(super) fn compared_chunk() {
+        let action = AT_CHUNK.with(|slot| slot.borrow_mut().take());
+        if let Some(action) = action {
+            action();
+        }
+    }
+
+    fn containing(bytes: &[u8]) -> fs::File {
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(bytes).unwrap();
+        file
+    }
+
+    #[test]
+    fn a_verified_copy_receipt_covers_every_byte_and_both_eofs() {
+        let bytes: Vec<_> = (0..2 * 64 * 1024 + 17).map(|n| (n % 251) as u8).collect();
+        for length in [0, 1, 63, 64, 65, 65535, 65536, 65537, bytes.len()] {
+            let selected = &bytes[..length];
+            let source = containing(selected);
+            let output = containing(selected);
+            let digest = verified_copy_digest(&source, &output, &Cancellation::default()).unwrap();
+            let expected: [u8; 32] = Sha256::digest(selected).into();
+            assert_eq!(digest, expected, "length {length}");
+        }
+        for offset in [0, 63, 64, 65535, 65536, bytes.len() - 1] {
+            let mut different = bytes.clone();
+            different[offset] ^= 0xff;
+            assert_eq!(
+                verified_copy_digest(
+                    &containing(&bytes),
+                    &containing(&different),
+                    &Cancellation::default(),
+                )
+                .unwrap_err()
+                .kind(),
+                io::ErrorKind::WouldBlock,
+                "offset {offset}",
+            );
+        }
+        for (left, right) in [
+            (&bytes[..], &bytes[..bytes.len() - 1]),
+            (&bytes[..bytes.len() - 1], &bytes[..]),
+        ] {
+            assert_eq!(
+                verified_copy_digest(
+                    &containing(left),
+                    &containing(right),
+                    &Cancellation::default()
+                )
+                .unwrap_err()
+                .kind(),
+                io::ErrorKind::WouldBlock,
+            );
+        }
+    }
+
+    #[test]
+    fn a_cancelled_verification_cannot_make_a_copy_receipt() {
+        let cancellation = Cancellation::default();
+        cancellation.cancel();
+        assert_eq!(
+            verified_copy_digest(&containing(b"bytes"), &containing(b"bytes"), &cancellation)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::Interrupted,
+        );
+        let cancellation = Cancellation::default();
+        let signal = cancellation.clone();
+        let _reset = at_chunk(move || signal.cancel());
+        let bytes = vec![b'x'; 2 * 64 * 1024 + 17];
+        assert_eq!(
+            verified_copy_digest(&containing(&bytes), &containing(&bytes), &cancellation)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::Interrupted,
+        );
+    }
+
+    #[test]
+    fn snapshots_refuse_edits_to_bytes_already_compared() {
+        use std::os::unix::fs::FileExt;
+        for edit_source in [true, false] {
+            let bytes = vec![b'x'; 2 * 64 * 1024 + 17];
+            let source = containing(&bytes);
+            let output = containing(&bytes);
+            let edited = if edit_source { &source } else { &output }
+                .try_clone()
+                .unwrap();
+            let _reset = at_chunk(move || {
+                assert_eq!(edited.write_at(b"y", 0).unwrap(), 1);
+                // Make the snapshot change deterministic even on coarse clocks.
+                edited
+                    .set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::UNIX_EPOCH))
+                    .unwrap();
+            });
+            assert_eq!(
+                verified_copy_digest(&source, &output, &Cancellation::default())
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::WouldBlock,
+            );
+        }
+    }
 
     #[test]
     fn an_owned_output_receipt_uses_its_readable_fd_even_at_mode_zero() {
-        let mut output = tempfile::tempfile().unwrap();
-        output.write_all(b"owned copied bytes").unwrap();
+        let source = containing(b"owned copied bytes");
+        let mut output = containing(b"owned copied bytes");
         output
             .set_permissions(fs::Permissions::from_mode(0o0))
             .unwrap();
         let expected: [u8; 32] = Sha256::digest(b"owned copied bytes").into();
         assert_eq!(
-            copied_digest(&output, &Cancellation::default()).unwrap(),
+            verified_copy_digest(&source, &output, &Cancellation::default()).unwrap(),
             expected
+        );
+        assert_eq!(
+            output.stream_position().unwrap(),
+            b"owned copied bytes".len() as u64
         );
     }
 }

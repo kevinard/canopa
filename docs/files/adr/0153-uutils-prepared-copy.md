@@ -3,6 +3,11 @@
 Date: 2026-10-25. Scope: Copy and consumers of the prepared-copy seam. The full
 Files product and restart-recovery goal remain unfinished.
 
+Follow-up: [ADR0154](0154-verified-copy-hashing.md) replaces the initial two SHA-256
+computations with complete byte equality and one SHA-256 of the verified common
+stream. The receipt description below includes that refinement; descriptor,
+snapshot, durability and history guarantees remain.
+
 ## Decision and bounded proof
 
 Use the published **uucore 0.12.0**, MIT, revision
@@ -55,14 +60,16 @@ metadata after verification reads, syncs, and produces the existing prepared rec
 and SHA-256 remain in `fingerprint`; publication/history/source removal stay in
 the engine. Existing native rename/unlink primitives remain unchanged.
 
-The previous application read/write-and-hash loop is removed. Transfer and hashing
-are now separate: after successful content transfer the host hashes both the still-held source
-and the readable held output, requires equal digests, and checks the original
-source snapshot around both reads plus current source/stage bindings. This catches
+The previous application read/write-and-hash loop is removed. Transfer and
+verification are separate: after successful content transfer the host compares
+every byte of the still-held source and readable held output, requires both EOFs,
+and hashes their verified common stream once. Both descriptor snapshots span the
+entire comparison; the original source snapshot and current source/stage bindings
+are checked around verification. This catches
 mapped writes that need not produce another timestamp transition and same-inode
 staged edits before the receipt. Positioned output reads work even under a
-mode 0000 stage and leave the writer offset alone. Both full extra reads are
-accounted for in measurements; final mode/timestamps are applied afterward to
+mode 0000 stage and leave the writer offset alone. Both full verification reads
+remain and are accounted for in measurements; final mode/timestamps are applied afterward to
 preserve atime. The fingerprint
 format and meaning remain size, ordinary mode, mtime, link flag, SHA-256 of bytes
 (or raw symlink target). No journal/schema change or uutils-specific recovery

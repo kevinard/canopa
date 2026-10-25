@@ -6,6 +6,13 @@ replace the full goal.
 
 ## uutils Copy migration, 2026-10-25
 
+The follow-up [optimized hashing investigation](COPY-HASH-PERFORMANCE.md) and
+[ADR0154](../../docs/files/adr/0154-verified-copy-hashing.md) replace two SHA-256
+computations with complete source/output byte comparison and one hash of their
+verified common stream. Both full reads, EOF and snapshot checks, SHA-256 receipt
+meaning, durability and Undo/Recovery authority remain. See that evidence for
+optimized results and remaining limitations; this does not complete Files.
+
 [ADR0153](../../docs/files/adr/0153-uutils-prepared-copy.md) selects direct
 synchronous uucore 0.12.0 descriptor copying with a narrow root vendor patch for
 per-call progress/cancellation and pipe isolation. The path uu_cp API was

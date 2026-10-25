@@ -62,6 +62,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Hash fully compared Copy streams once, preserving verification](adr/0154-verified-copy-hashing.md).
+
 - [uutils descriptor copying in the shared prepared-copy lifecycle, scoped migration](adr/0153-uutils-prepared-copy.md).
 
 - [Proved saved-return refusal and paired saved-only history, schema60 verification in progress](adr/0152-proved-saved-return-refusal.md).

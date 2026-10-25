@@ -138,16 +138,10 @@ fn prepare_using(
         checkpoint()?;
         payload.require_current()?;
         // Native copying cannot produce our byte receipt. Verify actual output
-        // against the held source; metadata alone misses some mapped writes and
-        // coarse-clock changes. Neither source nor stage edits become receipts.
-        let source_digest = Fingerprint::read_opened(&input, cancellation)?.digest();
-        let digest = fingerprint::copied_digest(&output, cancellation)?;
-        if digest != source_digest {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "The copied bytes differ from the source. Staged data is preserved for Recovery.",
-            ));
-        }
+        // against the held source byte for byte, hashing their verified common
+        // stream once. Metadata alone misses mapped writes/coarse-clock changes;
+        // neither source nor stage edits may become receipts.
+        let digest = fingerprint::verified_copy_digest(&input, &output, cancellation)?;
         if !same_snapshot(before, &input.metadata()?) {
             return Err(changed());
         }

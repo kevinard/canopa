@@ -38,6 +38,10 @@ in `crates/canopa-files/tests/undo_destinations.rs` retains its original 20-seco
 limit. The uutils core run still fails at 24.998704253 seconds and retains
 `/tmp/canopa-destination-undo-crash-bqjl27`; its log is
 `/tmp/canopa-uutils-core-rest.log`. The limit is unchanged.
+The optimized-hashing follow-up's fresh default-feature target fails at
+28.052798044 seconds, retaining `/tmp/canopa-destination-undo-crash-MEl5sU`;
+see `/tmp/canopa-copy-affected-tests.log` and COPY-HASH-PERFORMANCE.md. This
+hashing change does not claim to solve the batch Undo timing gate.
 `direct-displacement-related-02.log` records the production 29.84-second
 failure. The retained timing/canonical profiling logs are private diagnosis,
 not newer production acceptance or permission to change the limit.
@@ -64,6 +68,10 @@ locate the timeout at the initial Replace question, before Reader::start or byte
 copying. Independently compiling the exact pre-migration HEAD source with matching
 default dependencies reproduces the same timeout. Its cause remains open; see
 `/tmp/canopa-uutils-baseline-catalog.log` and UUTILS-IMPLEMENTATION.md.
+The optimized-hashing follow-up's normal workspace run reproduces the same
+failure (three pass/one fail in that target); log:
+`/tmp/canopa-copy-workspace.log`. The full Files library passes 370 cases and
+affected follow-up targets are recorded in COPY-HASH-PERFORMANCE.md.
 
 ## Updater timeout check
 
