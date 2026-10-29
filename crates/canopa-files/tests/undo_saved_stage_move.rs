@@ -2287,7 +2287,7 @@ fn an_occupied_saved_stage_destination_allows_skip_then_keep_both_without_mergin
 #[test]
 fn a_malformed_migration_stays_inspectable_and_allows_copying_its_prepared_data() {
     use serde_json::json;
-    use sha2::{Digest, Sha256};
+    use xxhash_rust::xxh3::xxh3_128;
     let root = tempfile::tempdir().unwrap();
     let history = root.path().join("state/history");
     let target = root.path().join("created-folder");
@@ -2322,7 +2322,7 @@ fn a_malformed_migration_stays_inspectable_and_allows_copying_its_prepared_data(
     let metadata = fs::symlink_metadata(source.join("previous")).unwrap();
     let fingerprint = json!({"size":metadata.len(),"mode":metadata.mode() & 0o777,
         "modified":metadata.mtime(),"modified_nanos":metadata.mtime_nsec(),
-        "link":false,"digest":Sha256::digest(bytes).to_vec()});
+        "link":false,"xxh3_128":xxh3_128(bytes).to_be_bytes().to_vec()});
     // This is a malformed journal input, not a private-store output assertion:
     // CreatedFolder has no return path and cannot represent a saved-stage move.
     let journal = json!({"direction":"stage-migration","migration":{

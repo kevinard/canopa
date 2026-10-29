@@ -1,10 +1,31 @@
 # Current failure reproductions retained after cleanup
 
-Updated 2026-10-26. The pre-migration implementation is checkpointed in Git at
+Updated 2026-10-29. The pre-migration implementation is checkpointed in Git at
 `88d78d3`; the scoped uutils Copy migration is recorded in UUTILS-IMPLEMENTATION.md
 and ADR0153. It does not resolve the wider failures below. All paths below are relative to
 this directory unless absolute. These are failure/research records, not full
 product acceptance.
+
+## XXH3 follow-up: parallel crash-worker deadlines
+
+The fresh default-feature workspace run passes formatting, all-target Clippy and
+release dependency attribution, then stops in the Files library with 368 passed,
+4 failed and 34 ignored in 235.85 seconds. Four Copy/directory crash workers do not
+reach their requested boundary before their unchanged 25-second deadline. All
+four parent cases pass individually with the same executable in 7.54, 4.66, 3.07
+and 1.28 seconds; no implementation or timeout is changed between runs. The
+parallel suite remains a failed run, rather than a clean workspace result.
+
+See COPY-XXH3-PERFORMANCE.md and the workspace-root receipts
+`target/copy-opt-evidence/resume-{workspace,unit-failures}.log`. The eight original
+failed fixture roots are retained, and their 50 entries are archived and verified
+at `target/copy-opt-evidence/resume-unit-failure-fixtures.tar.gz`, SHA-256
+`bb9e47a374c8894510d47034e79c89dce3d17c3f001efed8b597ce5cfa67b1b1`.
+The matching JSON records exact paths and per-file checksums.
+
+The earlier `/tmp` log paths below are historical references. A session restart
+cleared `/tmp` before this follow-up resumed; archived repository evidence and the
+new `target/copy-opt-evidence/resume-*` receipts survive separately.
 
 ## Incoming Move/Undo name recreation
 
@@ -47,6 +68,13 @@ retaining `/tmp/canopa-destination-undo-crash-oVp1J1`. See
 `/tmp/canopa-copy-trust-affected.log` and COPY-TRUST-PERFORMANCE.md. This is a debug
 batch-Undo result, separate from the optimized Copy measurements; no timing fix is
 claimed.
+The XXH3 follow-up repeats the same 20-second gate at **23.769327158 s**,
+retaining `/tmp/canopa-destination-undo-crash-rrxuYw`. Its 1,507 entries are also
+archived and verified at
+`target/copy-opt-evidence/resume-undo-timing-fixture.tar.gz` (workspace root),
+SHA-256 `89e13a325cfd796f59044a739b0c35c91cd69bf1950d45e5424c3842f006875f`.
+The matching JSON records each entry; the original root is retained. This remains
+a failed debug batch-Undo gate, separate from optimized Copy throughput.
 `direct-displacement-related-02.log` records the production 29.84-second
 failure. The retained timing/canonical profiling logs are private diagnosis,
 not newer production acceptance or permission to change the limit.
@@ -81,6 +109,12 @@ The trusted-Copy follow-up again reproduces the timeout (3 pass/1 fail in
 11.15 s). A fresh isolated backtrace repeat fails at the same initial
 `answer_replace` call, test line 358, in 10.57 s; see
 `/tmp/canopa-copy-trust-{workspace,catalog}.log` and COPY-TRUST-PERFORMANCE.md.
+The XXH3 follow-up's fresh complete catalog target reproduces the same named
+timeout (3 pass/1 fail in 10.99 s); receipt:
+`target/copy-opt-evidence/resume-affected.log` from the workspace root.
+A fresh isolated backtrace repeat fails at the same initial `answer_replace`
+call on test line 358 in 10.29 s; see
+`target/copy-opt-evidence/resume-catalog.log`.
 
 ## Updater timeout check
 

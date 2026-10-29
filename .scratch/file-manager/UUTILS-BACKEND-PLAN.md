@@ -7,6 +7,8 @@ Subsequent user decision: [ADR0155](../../docs/files/adr/0155-trust-upstream-cop
 trusts successful upstream Copy and hashes its output once for Undo. It supersedes
 the independent source/output content-comparison requirement below; Recovery and
 destructive-action safeguards remain. See [current evidence](COPY-TRUST-PERFORMANCE.md).
+The later [ADR0156](../../docs/files/adr/0156-fast-content-fingerprints.md) also
+removes development-history compatibility and uses XXH3-128 content fingerprints.
 
 ## Request and intended outcome
 

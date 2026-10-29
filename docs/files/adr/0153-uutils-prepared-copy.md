@@ -9,6 +9,9 @@ the actual output for Undo and later destructive checks. The receipt description
 below includes that refinement; descriptor,
 snapshot, durability and history guarantees remain.
 
+[ADR0156](0156-fast-content-fingerprints.md) subsequently replaces content SHA-256
+with XXH3-128 after the user removes development-history compatibility.
+
 ## Decision and bounded proof
 
 Use the published **uucore 0.12.0**, MIT, revision
@@ -58,7 +61,7 @@ cross-filesystem Move, Recovery export, saved-container migration, and copied Un
 returns. It registers the empty owned stage and its actual payload before data
 writes, validates held identities through callbacks, copies content, applies
 metadata after fingerprint reads, syncs, and produces the existing prepared receipt. Source validation
-and SHA-256 remain in `fingerprint`; publication/history/source removal stay in
+and content fingerprinting remain in `fingerprint`; publication/history/source removal stay in
 the engine. Existing native rename/unlink primitives remain unchanged.
 
 The previous application read/write-and-hash loop is removed. Transfer and
@@ -70,8 +73,9 @@ source edits without a metadata transition may therefore coexist with a complete
 Copy. Source removal and retained-data disposal keep their separate content checks.
 Positioned output reads work even under a mode 0000 stage and leave the writer
 offset alone. Final mode/timestamps are applied afterward to preserve atime. The fingerprint
-format and meaning remain size, ordinary mode, mtime, link flag, SHA-256 of bytes
-(or raw symlink target). No journal/schema change or uutils-specific recovery
+fields remain size, ordinary mode, mtime, link flag and a checksum of bytes
+(or raw symlink target). ADR0156 uses an incompatible algorithm-specific
+`xxh3_128` field; old SHA receipts are unsupported. No SQL schema change or uutils-specific recovery
 state is introduced. A completed native copy without a host receipt is still
 Preparing; it may never publish merely because its bytes happen to be complete.
 Existing schema60 evidence governs restart and old partial data.

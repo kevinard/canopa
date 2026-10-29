@@ -62,6 +62,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [XXH3-128 content fingerprints without development-history compatibility](adr/0156-fast-content-fingerprints.md).
+
 - [Trust upstream Copy and fingerprint its output once](adr/0155-trust-upstream-copy.md).
 
 - [Hash fully compared Copy streams once, preserving verification](adr/0154-verified-copy-hashing.md).

@@ -8,6 +8,9 @@ This does **not** complete the full Files goal or all migration acceptance.
 Current policy: [ADR0155](../../docs/files/adr/0155-trust-upstream-copy.md) and
 [simplification evidence](COPY-TRUST-PERFORMANCE.md) trust upstream Copy and hash
 only its actual output. Recovery and destructive-action checks remain. The
+later [ADR0156](../../docs/files/adr/0156-fast-content-fingerprints.md) and
+[current hash evidence](COPY-XXH3-PERFORMANCE.md) replace content SHA-256 with
+XXH3-128 without development-history compatibility. The
 earlier follow-up [optimized Copy hashing investigation](COPY-HASH-PERFORMANCE.md) and
 [ADR0154](../../docs/files/adr/0154-verified-copy-hashing.md) replace the two SHA
 computations recorded here with full source/output byte comparison and one SHA

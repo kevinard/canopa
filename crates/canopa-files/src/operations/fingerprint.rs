@@ -1,6 +1,6 @@
 use super::*;
-use sha2::{Digest, Sha256};
 use std::os::unix::fs::PermissionsExt;
+use xxhash_rust::xxh3::{Xxh3, xxh3_128};
 
 pub(super) mod source;
 #[cfg(test)]
@@ -63,7 +63,14 @@ pub(super) struct Fingerprint {
     modified: i64,
     modified_nanos: i64,
     link: bool,
-    digest: [u8; 32],
+    // The algorithm-specific required field rejects old SHA-256 receipts rather
+    // than reinterpreting them. Development histories have no conversion path.
+    xxh3_128: [u8; 16],
+}
+
+/// XXH3-128 in canonical big-endian byte order, without a legacy-hash fallback.
+pub(super) fn content_digest(bytes: &[u8]) -> [u8; 16] {
+    xxh3_128(bytes).to_be_bytes()
 }
 
 impl Fingerprint {
@@ -76,13 +83,13 @@ impl Fingerprint {
         let before = file.metadata()?;
         let digest = if before.is_symlink() {
             let target = rustix::fs::readlinkat(file, c"", Vec::new())?;
-            Sha256::digest(target.as_bytes()).into()
+            content_digest(target.as_bytes())
         } else if before.is_file() {
             let mut input = fs::File::open(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
             if !same_snapshot(&before, &input.metadata()?) {
                 return Err(changed());
             }
-            let mut hash = Sha256::new();
+            let mut hash = Xxh3::new();
             let mut buffer = [0; 64 * 1024];
             loop {
                 check_cancel(cancellation)?;
@@ -95,7 +102,7 @@ impl Fingerprint {
             if !same_snapshot(&before, &input.metadata()?) {
                 return Err(changed());
             }
-            hash.finalize().into()
+            hash.digest128().to_be_bytes()
         } else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -157,14 +164,14 @@ impl Fingerprint {
         )?;
         Ok(())
     }
-    pub(super) fn from_metadata(metadata: &fs::Metadata, digest: [u8; 32]) -> Self {
+    pub(super) fn from_metadata(metadata: &fs::Metadata, digest: [u8; 16]) -> Self {
         Self {
             size: metadata.len(),
             mode: metadata.mode() & 0o777,
             modified: metadata.mtime(),
             modified_nanos: metadata.mtime_nsec(),
             link: metadata.is_symlink(),
-            digest,
+            xxh3_128: digest,
         }
     }
     pub fn read(path: &Path, cancellation: &Cancellation) -> io::Result<Self> {
@@ -173,10 +180,10 @@ impl Fingerprint {
         source.require_current()?;
         let before = source.metadata();
         let digest = if before.is_symlink() {
-            Sha256::digest(source.link()?.as_os_str().as_encoded_bytes()).into()
+            content_digest(source.link()?.as_os_str().as_encoded_bytes())
         } else {
             let mut file = source.regular()?;
-            let mut hash = Sha256::new();
+            let mut hash = Xxh3::new();
             let mut buffer = [0; 64 * 1024];
             loop {
                 check_cancel(cancellation)?;
@@ -189,7 +196,7 @@ impl Fingerprint {
             if !same_snapshot(before, &file.metadata()?) {
                 return Err(changed());
             }
-            hash.finalize().into()
+            hash.digest128().to_be_bytes()
         };
         source.require_current()?;
         Ok(Self::from_metadata(before, digest))
@@ -225,7 +232,7 @@ fn open_regular(path: &Path) -> io::Result<fs::File> {
 pub(super) fn copied_output_digest(
     output: &fs::File,
     cancellation: &Cancellation,
-) -> io::Result<[u8; 32]> {
+) -> io::Result<[u8; 16]> {
     check_cancel(cancellation)?;
     let output_before = output.metadata()?;
     if !output_before.is_file() {
@@ -233,7 +240,7 @@ pub(super) fn copied_output_digest(
             "Only an opened regular output can be fingerprinted.",
         ));
     }
-    let mut hash = Sha256::new();
+    let mut hash = Xxh3::new();
     let mut buffer = [0; 64 * 1024];
     let mut offset = 0;
     loop {
@@ -252,7 +259,7 @@ pub(super) fn copied_output_digest(
             "The prepared output changed while its receipt was read.",
         ));
     }
-    Ok(hash.finalize().into())
+    Ok(hash.digest128().to_be_bytes())
 }
 
 fn read_at_retry(
@@ -327,13 +334,52 @@ mod receipt_tests {
     }
 
     #[test]
+    fn content_fingerprints_use_canonical_xxh3_128_vectors() {
+        for (bytes, expected) in [
+            (&b""[..], 0x99aa06d3014798d86001c324468d497fu128),
+            (&b"abc"[..], 0x06b05ab6733a618578af5f94892f3950u128),
+        ] {
+            assert_eq!(content_digest(bytes), expected.to_be_bytes());
+            let mut streamed = Xxh3::new();
+            for byte in bytes {
+                streamed.update(std::slice::from_ref(byte));
+            }
+            assert_eq!(streamed.digest128().to_be_bytes(), expected.to_be_bytes());
+        }
+    }
+
+    #[test]
+    fn old_or_ambiguous_content_receipts_are_not_reinterpreted() {
+        let file = containing(b"copied bytes");
+        let fingerprint =
+            Fingerprint::from_metadata(&file.metadata().unwrap(), content_digest(b"copied bytes"));
+        let value = serde_json::to_value(&fingerprint).unwrap();
+        assert_eq!(
+            serde_json::from_value::<Fingerprint>(value.clone()).unwrap(),
+            fingerprint
+        );
+        let mut legacy = value.clone();
+        legacy.as_object_mut().unwrap().remove("xxh3_128");
+        legacy["digest"] = serde_json::json!(vec![0; 32]);
+        assert!(serde_json::from_value::<Fingerprint>(legacy).is_err());
+        let mut ambiguous = value.clone();
+        ambiguous["digest"] = serde_json::json!(vec![0; 32]);
+        assert!(serde_json::from_value::<Fingerprint>(ambiguous).is_err());
+        for width in [0, 15, 17, 32] {
+            let mut malformed = value.clone();
+            malformed["xxh3_128"] = serde_json::json!(vec![0; width]);
+            assert!(serde_json::from_value::<Fingerprint>(malformed).is_err());
+        }
+    }
+
+    #[test]
     fn a_copy_receipt_hashes_the_complete_output_through_eof() {
         let bytes: Vec<_> = (0..2 * 64 * 1024 + 17).map(|n| (n % 251) as u8).collect();
         for length in [0, 1, 63, 64, 65, 65535, 65536, 65537, bytes.len()] {
             let selected = &bytes[..length];
             let output = containing(selected);
             let digest = copied_output_digest(&output, &Cancellation::default()).unwrap();
-            let expected: [u8; 32] = Sha256::digest(selected).into();
+            let expected = content_digest(selected);
             assert_eq!(digest, expected, "length {length}");
         }
     }
@@ -387,7 +433,7 @@ mod receipt_tests {
         output
             .set_permissions(fs::Permissions::from_mode(0o0))
             .unwrap();
-        let expected: [u8; 32] = Sha256::digest(b"owned copied bytes").into();
+        let expected = content_digest(b"owned copied bytes");
         assert_eq!(
             copied_output_digest(&output, &Cancellation::default()).unwrap(),
             expected

@@ -5,6 +5,10 @@ Baseline: `699c793`, clean tree on `main`.
 Decision: [ADR0155](../../docs/files/adr/0155-trust-upstream-copy.md).
 The full Files goal remains open.
 
+Historical checkpoint: [ADR0156](../../docs/files/adr/0156-fast-content-fingerprints.md)
+subsequently removes history compatibility and switches content fingerprints to
+XXH3-128. See [current evidence](COPY-XXH3-PERFORMANCE.md).
+
 ## Scope and behavior
 
 The user explicitly authorized simplifying Copy to trust uutils, hash the output

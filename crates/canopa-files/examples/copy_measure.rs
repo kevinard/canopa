@@ -1,15 +1,15 @@
-//! Private-file before/after measurements, including the unchanged SHA-256 receipt.
+//! Private-file measurements, including the active XXH3-128 content receipt.
 use canopa_files::{
     Cancellation,
     operations::OperationEngine,
     transfers::{TransferEvent, TransferKind, TransferReply, TransferRequest},
 };
-use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::{Read, Write},
     time::Instant,
 };
+use xxhash_rust::xxh3::Xxh3;
 fn main() {
     let root = tempfile::tempdir().unwrap();
     let engine = OperationEngine::open(root.path().join("history")).unwrap();
@@ -98,7 +98,7 @@ fn main() {
     let hash_file = |path| {
         let mut input = fs::File::open(path).unwrap();
         let start = Instant::now();
-        let mut hash = Sha256::new();
+        let mut hash = Xxh3::new();
         let mut buffer = [0; 64 * 1024];
         loop {
             let count = input.read(&mut buffer).unwrap();
@@ -107,12 +107,12 @@ fn main() {
             }
             hash.update(&buffer[..count]);
         }
-        std::hint::black_box(hash.finalize());
+        std::hint::black_box(hash.digest128());
         start.elapsed().as_micros()
     };
     let source_hash_us = hash_file(root.path().join("large"));
     let output_hash_us = hash_file(root.path().join("component-output"));
     println!(
-        "{{\"large_128mib_us\":{large_us},\"small_100_us\":{small_us},\"cancel_us\":{cancel_us},\"updates\":{updates},\"mover_us\":{mover_us},\"source_hash_us\":{source_hash_us},\"output_hash_us\":{output_hash_us},\"sync_us\":{sync_us}}}"
+        "{{\"hash_algorithm\":\"xxh3-128\",\"large_128mib_us\":{large_us},\"small_100_us\":{small_us},\"cancel_us\":{cancel_us},\"updates\":{updates},\"mover_us\":{mover_us},\"source_hash_us\":{source_hash_us},\"output_hash_us\":{output_hash_us},\"sync_us\":{sync_us}}}"
     );
 }

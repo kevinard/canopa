@@ -37,6 +37,7 @@ canopa-config = { path = "crates/canopa-config" }
 canopa-theme = { path = "crates/canopa-theme" }
 canopa-ui = { path = "crates/canopa-ui" }
 sha2 = "0.10"
+xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 uucore = { version = "=0.12.0", features = ["buf-copy"] }
 shlex = "2"
 canopa-panel-protocol = { path = "crates/canopa-panel-protocol" }

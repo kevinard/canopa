@@ -2,7 +2,6 @@
 //! Content/metadata transfer has no publication or history authority.
 use super::fingerprint::{Fingerprint, changed, same_snapshot, source};
 use super::*;
-use sha2::{Digest, Sha256};
 
 pub(super) struct PreparedCopy {
     pub source: source::Opened,
@@ -94,7 +93,7 @@ fn prepare_using(
         payload.require_current()?;
         (
             payload,
-            Sha256::digest(target.as_os_str().as_encoded_bytes()).into(),
+            fingerprint::content_digest(target.as_os_str().as_encoded_bytes()),
         )
     } else {
         let mut input = source.regular()?;

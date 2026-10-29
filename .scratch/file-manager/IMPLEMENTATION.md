@@ -6,6 +6,11 @@ replace the full goal.
 
 ## uutils Copy migration, 2026-10-25
 
+The 2026-10-26 follow-up [ADR0156](../../docs/files/adr/0156-fast-content-fingerprints.md)
+drops the development-history compatibility constraint and uses XXH3-128 content
+fingerprints consistently across Copy/Undo/Recovery and destructive checks, with
+no old-hash conversion path. See [current evidence](COPY-XXH3-PERFORMANCE.md).
+
 The user-requested simplification in
 [ADR0155](../../docs/files/adr/0155-trust-upstream-copy.md) trusts successful
 upstream copying and hashes the actual output once for Undo. It removes the
@@ -20,7 +25,7 @@ complete Files.
 synchronous uucore 0.12.0 descriptor copying with a narrow root vendor patch for
 per-call progress/cancellation and pipe isolation. The path uu_cp API was
 rejected by the runnable private proof. All actual byte-copy consumers use one
-prepared-copy lifecycle; source validation and the unchanged SHA-256 receipt stay
+prepared-copy lifecycle; source validation and content fingerprinting stay
 separate from transfer. Schema60, publication, source removal, saved versions,
 Undo and Recovery ownership stay intact. No schema61 candidate was imported.
 

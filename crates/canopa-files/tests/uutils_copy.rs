@@ -267,3 +267,62 @@ fn cross_filesystem_move_retains_a_mapped_source_that_differs_from_the_copy() {
 fn cross_filesystem_move_retains_its_source_when_staged_bytes_differ() {
     receipt_case(false, TransferKind::Move);
 }
+
+#[test]
+fn an_old_sha_receipt_is_refused_without_removing_the_copy_or_source() {
+    use sha2::{Digest, Sha256};
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let output = root.path().join("output");
+    let history = root.path().join("history");
+    let bytes = b"development copy";
+    fs::write(&source, bytes).unwrap();
+    fs::create_dir(&output).unwrap();
+    let engine = OperationEngine::open(&history).unwrap();
+    let result = engine
+        .transfer(
+            &TransferRequest {
+                kind: TransferKind::Copy,
+                sources: vec![source.clone()],
+                destination: output.clone(),
+            },
+            &Cancellation::default(),
+            |_| TransferReply::Continue,
+        )
+        .unwrap();
+    assert_eq!(result.completed, 1);
+    drop(engine);
+    let legacy = {
+        let db = rusqlite::Connection::open(&history).unwrap();
+        let body: String = db
+            .query_row("SELECT body FROM changes", [], |row| row.get(0))
+            .unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let fingerprint = value["fingerprint"].as_object_mut().unwrap();
+        assert!(fingerprint.remove("xxh3_128").is_some());
+        fingerprint.insert(
+            "digest".into(),
+            serde_json::json!(Sha256::digest(bytes).to_vec()),
+        );
+        let legacy = value.to_string();
+        db.execute("UPDATE changes SET body=?1", [&legacy]).unwrap();
+        legacy
+    };
+    let error = match OperationEngine::open(&history) {
+        Err(error) => error,
+        Ok(engine) => engine.undo(&Cancellation::default()).unwrap_err(),
+    };
+    assert!(
+        error.to_string().contains("unknown field `digest`"),
+        "old receipt must be rejected by format: {error}"
+    );
+    assert_eq!(fs::read(&source).unwrap(), bytes);
+    assert_eq!(fs::read(output.join("source")).unwrap(), bytes);
+    let db = rusqlite::Connection::open(history).unwrap();
+    assert_eq!(
+        db.query_row("SELECT body FROM changes", [], |row| row
+            .get::<_, String>(0))
+            .unwrap(),
+        legacy
+    );
+}

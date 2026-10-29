@@ -3,6 +3,11 @@
 Date: 2026-10-25. Scope: the shared prepared-copy lifecycle; the full Files goal
 remains open. Supersedes ADR0154's source/output comparison policy.
 
+Follow-up: [ADR0156](0156-fast-content-fingerprints.md) removes the development-
+history compatibility constraint and replaces content SHA-256 with XXH3-128.
+The transfer/lifecycle policy below remains; its SHA compatibility statements
+describe this historical checkpoint.
+
 ## Decision
 
 The user explicitly chose to trust successful uutils copying, hash the output
