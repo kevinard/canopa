@@ -17,7 +17,7 @@ def main():
     version = next(p["version"] for p in lock if p["name"] == "rustix" and p["version"].startswith("0.38."))
     env = os.environ.copy()
     env["CARGO_TARGET_DIR"] = str((ROOT / "target").resolve())
-    env["CARGO_INCREMENTAL"] = "0"
+    env.setdefault("CARGO_INCREMENTAL", "1")
     with tempfile.TemporaryDirectory(prefix="canopa-pipe-tests-") as directory:
         snapshot = Path(directory)
         shutil.copyfile(ROOT / "vendor/winit/src/platform_impl/linux/wayland/drag_drop/pipes.rs", snapshot / "lib.rs")

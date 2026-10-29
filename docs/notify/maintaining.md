@@ -47,7 +47,8 @@ The root Canopa workspace owns all dependency forks. See
 provenance, retained patches and upgrade checks. The panel protocol is the single
 root `crates/canopa-panel-protocol` source used by both applications.
 
-Run the root `bash scripts/check.sh` and `bash scripts/check.sh --core` entry points.
+Run the root `bash scripts/check.sh --workspace` and `bash scripts/check.sh --core`
+entry points for broad validation; select Notify tests during development.
 For Notify-only Cargo commands select `-p canopa-notify`; `--workspace` now also
 selects the shell. Root `target/` contains the normal build outputs.
 

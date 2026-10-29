@@ -100,7 +100,7 @@ For full archive verification, the `--archives` directory must contain both the
 six published crate archives and the two pinned source archives named in
 `vendor/provenance.json`. Verification performs no downloads.
 
-Run `bash scripts/check.sh` and `bash scripts/check.sh --core`, followed by the
+Run `bash scripts/check.sh --workspace` and `bash scripts/check.sh --core`, followed by the
 isolated desktop fixtures. Compilation alone does not establish popup grabs,
 activation, output removal, fractional scaling, physical input regions, or native
 screen-reader behavior. The experimental rotation prototype's vendored renderer

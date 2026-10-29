@@ -21,7 +21,7 @@ Josef Gajdusek, 2019. The upstream protocol lives in
 ## Acceptance matrix and shared session
 
 `acceptance.json` is the native acceptance inventory. The desktop workflow runs it
-through `scripts/run-desktop-acceptance.py`; `bash scripts/check.sh` validates its
+through `scripts/run-desktop-acceptance.py`; `bash scripts/check.sh --workspace` validates its
 coverage without starting a compositor. Adding a `verify-*.py` fixture requires a
 manifest entry. The matrix includes both appearances, fractional placement, fork
 lifetimes, drawers, transitions and close flashes, scrolling, content rotation,

@@ -17,7 +17,8 @@ Binaries are in root `target/debug/`: `canopa-shell`, `canopa-wifi-provider`, `c
 `canopa-notify`, `canopa-files`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p canopa-shell` or
 `cargo build --locked -p canopa-notify`. Notify's core build remains available with
 `cargo build --locked -p canopa-notify --no-default-features`.
-Files' core can be checked with `cargo test --locked -p canopa-files --no-default-features`.
+Files' core can be checked with explicitly selected `--lib` or `--test` targets
+and `--no-default-features` when desktop dependencies are unavailable.
 See [Files runtime and installation](docs/files.md) for the Iced migration status,
 PDF preview tools and launcher registration.
 
@@ -25,9 +26,19 @@ Run from the repository root:
 
 ```sh
 bash scripts/check.sh
+bash scripts/check.sh --files --test transfers --test undo_changed_copy
+bash scripts/check.sh --files --lib operations::fingerprint::receipt_tests
+bash scripts/check.sh --workspace
 bash scripts/check.sh --core
 python3 scripts/check-vendor.py --archives /path/to/verified-archives
 ```
+
+The default runs the focused Files Copy/fingerprint checks. Select the relevant
+Files library or integration tests for other edits. Development checks enable
+incremental debug compilation and reuse root `target/`; keep features and profiles
+consistent between edits. The explicit `--workspace` gate runs all applications,
+test targets and tooling for CI/releases, shared dependencies or broader changes.
+Files-only edits normally need their affected tests rather than that gate.
 
 Tests use private D-Bus sessions. Full transport tests additionally need
 `libglib2.0-bin`, `pipewire`, `pipewire-bin`, `pipewire-pulse`, and `pulseaudio-utils`.

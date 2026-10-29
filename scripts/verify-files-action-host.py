@@ -24,8 +24,10 @@ def test_binary(output, workflow):
                "--no-default-features", "--features", feature, "--test", target,
                "--no-run", "--message-format=json"]
     # Compile before starting the private bus, as in clipboard acceptance.
+    env = os.environ.copy()
+    env.setdefault("CARGO_INCREMENTAL", "1")
     built = subprocess.run(command, cwd=ROOT, text=True, capture_output=True,
-                           env={**os.environ, "CARGO_INCREMENTAL": "0"})
+                           env=env)
     (output / "build.jsonl").write_text(built.stdout)
     (output / "build.log").write_text(built.stderr)
     built.check_returncode()

@@ -2,7 +2,39 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
-case "${1:-}" in
+usage() {
+    cat <<'EOF'
+Usage: bash scripts/check.sh [--files [copy | --lib [FILTER] | --test TARGET ... [FILTER] [-- TEST_ARGS...]] | --workspace | --core]
+
+Default: focused Files Copy/fingerprint checks with incremental debug builds.
+--files       Select Files tests; see scripts/check-files.sh --help.
+--workspace   Full workspace/tooling gate, including all targets.
+--core        Broad core checks without desktop dependencies.
+EOF
+}
+
+case "${1:---files}" in
+    --files)
+        if [[ $# -gt 0 ]]; then shift; fi
+        exec bash scripts/check-files.sh "$@"
+        ;;
+    --help|-h)
+        usage
+        exit 0
+        ;;
+    --workspace|--core)
+        if [[ $# -ne 1 ]]; then usage >&2; exit 2; fi
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
+
+# Ordinary debug checks use Cargo's incremental cache; CI may explicitly opt out.
+export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-1}"
+
+case "$1" in
     --core)
         bash scripts/check-core-dependencies.sh
         bash scripts/check-provider-dependencies.sh
@@ -13,7 +45,7 @@ case "${1:-}" in
         cargo test --locked -p canopa-files --no-default-features
         bash scripts/test-notify.sh --no-default-features
         ;;
-    '')
+    --workspace)
         python3 scripts/check-vendor.py
         bash scripts/check-panel-protocol.sh
         python3 scripts/check-contrast.py
@@ -21,6 +53,7 @@ case "${1:-}" in
         python3 scripts/test-desktop-runner.py
         python3 scripts/test-update.py
         python3 scripts/test-session-units.py
+        python3 scripts/test-check-scripts.py
         cargo fmt --all -- --check
         cargo clippy --workspace --all-targets --locked -- -D warnings
         python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md --check
@@ -29,9 +62,5 @@ case "${1:-}" in
         cargo build --locked -p canopa-cli
         python3 scripts/test-configuration.py
         python3 scripts/test-vendor.py
-        ;;
-    *)
-        echo 'Usage: bash scripts/check.sh [--core]' >&2
-        exit 2
         ;;
 esac
