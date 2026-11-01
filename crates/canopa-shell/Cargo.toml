@@ -50,6 +50,7 @@ name = "menu_cli"
 required-features = ["desktop"]
 
 [dependencies]
+canopa-widgets.workspace = true
 futures-util.workspace = true
 canopa-assets = { workspace = true, optional = true }
 canopa-file = { workspace = true, optional = true }

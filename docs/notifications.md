@@ -47,7 +47,7 @@ with `module "notifications"` (keeping desired action overrides), or rename that
 button and its placements to `notification-launcher`: `notifications` is now a
 reserved built-in module name. Explicit provider declarations remain supported.
 The user units assume `~/.local/bin`; for another
-prefix, adjust both services' `ExecStart` values.
+prefix, adjust the services' `ExecStart` values.
 The optional Settings portal has separate activation and backend-selection steps;
 see [the portal guide](settings-portal.md).
 
@@ -64,7 +64,7 @@ its windows and workspaces. Repeat the import for a new compositor session, befo
 starting the companions. The session launcher must activate
 `graphical-session.target` for automatic startup and stop it when the session ends.
 The units are ordered after `graphical-session-pre.target` and before
-`graphical-session.target`. When Niri runs as `niri.service`, both companions also
+`graphical-session.target`. When Niri runs as `niri.service`, the companions also
 wait for its readiness notification, so they inherit the compositor endpoints
 before starting. This ordering does not start Niri itself; other session launchers
 must import their environment before starting the companions. Then run:
@@ -75,8 +75,9 @@ systemctl --user enable --now canopa-session.target
 ```
 
 Use one notification daemon in that session; disable any previously configured
-notification daemon before starting Notify. The target starts Canopa Shell and Notify;
-both remain independently restartable. No application writes or installs service
+notification daemon before starting Notify. The target starts Canopa Shell, Notify and Wallpaper;
+they remain independently restartable. Before using the Lock button, install the
+PAM service described in [session tools](session-tools.md). No application writes or installs service
 files automatically. Direct development launch also works without provider wiring:
 
 ```sh

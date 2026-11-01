@@ -16,6 +16,36 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Operation {
+    /// Wallpaper daemon and live image controls.
+    #[command(disable_help_flag = true)]
+    Wallpaper {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
+    /// Secure session lock; pass preview or --help for rendering tools.
+    #[command(disable_help_flag = true)]
+    Lock {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
+    /// Graphical greetd login interface and preview tools.
+    #[command(disable_help_flag = true)]
+    Greeter {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
+    /// Graphical polkit authentication agent and preview tools.
+    #[command(disable_help_flag = true)]
+    Polkit {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
+    /// GnuPG PIN/passphrase dialog and preview tools.
+    #[command(disable_help_flag = true)]
+    Pinentry {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
@@ -53,6 +83,11 @@ fn main() {
 
 fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
+        Operation::Wallpaper { args } => return companion("canopa-wallpaper", args),
+        Operation::Lock { args } => return companion("canopa-lock", args),
+        Operation::Greeter { args } => return companion("canopa-greeter", args),
+        Operation::Polkit { args } => return companion("canopa-polkit", args),
+        Operation::Pinentry { args } => return companion("canopa-pinentry", args),
         Operation::Config {
             command: ConfigCommand::Check { file, show_source },
         } => {
@@ -107,11 +142,31 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn companion(name: &str, args: Vec<std::ffi::OsString>) -> anyhow::Result<()> {
+    let executable = std::env::current_exe()?;
+    let path = executable
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("cannot find installation directory"))?
+        .join(name);
+    use std::os::unix::process::CommandExt;
+    // Replace the forwarding CLI so resident companions have one process lifetime.
+    Err(Command::new(path).args(args).exec().into())
+}
+
 /// Read each selected file once for this invocation. All owners see the same common bytes.
 fn check(request: &Request, show_source: bool) -> anyhow::Result<bool> {
     let mut snapshots = HashMap::new();
     let mut valid = true;
-    for component in [Component::Shell, Component::Notifications, Component::Files] {
+    for component in [
+        Component::Shell,
+        Component::Notifications,
+        Component::Files,
+        Component::Wallpaper,
+        Component::Lockscreen,
+        Component::Greeter,
+        Component::Polkit,
+        Component::Pinentry,
+    ] {
         let result = check_component(request, component, show_source, &mut snapshots);
         match result {
             Ok(report) => {
@@ -277,15 +332,25 @@ fn validator(component: Component) -> anyhow::Result<Command> {
             Component::Shell => "canopa-shell",
             Component::Notifications => "canopa-notify",
             Component::Files => "canopa-files",
+            Component::Wallpaper => "canopa-wallpaper",
+            Component::Lockscreen => "canopa-lock",
+            Component::Greeter => "canopa-greeter",
+            Component::Polkit => "canopa-polkit",
+            Component::Pinentry => "canopa-pinentry",
         });
     anyhow::ensure!(
         sibling.is_file(),
-        "install Canopa Shell, Canopa Notify and Canopa Files beside the canopa executable"
+        "install all Canopa executables beside the canopa executable"
     );
     let mut command = Command::new(sibling);
     command.arg(match component {
         Component::Shell => "--check-config",
-        Component::Notifications => "check-config",
+        Component::Notifications
+        | Component::Wallpaper
+        | Component::Lockscreen
+        | Component::Greeter
+        | Component::Polkit
+        | Component::Pinentry => "check-config",
         Component::Files => "--check-config",
     });
     Ok(command)

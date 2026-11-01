@@ -59,7 +59,7 @@ case "$1" in
         python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md --check
         dbus-run-session -- cargo test --workspace --all-targets --locked
         python3 scripts/test-settings-portal.py --binary "${CARGO_TARGET_DIR:-target}/debug/xdg-desktop-portal-canopa"
-        cargo build --locked -p canopa-cli
+        cargo build --locked -p canopa-cli -p canopa-session -p canopa-greeter -p canopa-polkit -p canopa-pinentry
         python3 scripts/test-configuration.py
         python3 scripts/test-vendor.py
         ;;

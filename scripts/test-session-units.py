@@ -11,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCES = [ROOT / 'packaging/systemd/canopa-session.target',
            ROOT / 'packaging/systemd/canopa-shell.service',
            ROOT / 'packaging/systemd/canopa-notify.service',
+           ROOT / 'packaging/systemd/canopa-wallpaper.service',
+           ROOT / 'packaging/systemd/canopa-lock.service',
+           ROOT / 'packaging/systemd/canopa-polkit.service',
            ROOT / 'packaging/systemd/xdg-desktop-portal-canopa.service']
 
 with tempfile.TemporaryDirectory(prefix='canopa-units-') as directory:
@@ -34,11 +37,16 @@ with tempfile.TemporaryDirectory(prefix='canopa-units-') as directory:
     (wants / 'niri.service').symlink_to('../niri.service')
     for source in SOURCES:
         content = source.read_text()
-        if source.name in ('canopa-shell.service', 'canopa-notify.service'):
+        if source.name in ('canopa-shell.service', 'canopa-notify.service', 'canopa-wallpaper.service', 'canopa-lock.service', 'canopa-polkit.service'):
             unit = configparser.ConfigParser(interpolation=None)
             unit.read_string(content)
             assert 'niri.service' in unit['Unit']['After'].split(), (
                 f'{source.name} can start before Niri publishes WAYLAND_DISPLAY')
+            if source.name == 'canopa-lock.service':
+                assert unit['Service']['Type'] == 'notify'
+                assert unit['Unit']['ConditionPathExists'] == '/etc/pam.d/canopa-lock'
+                assert unit['Service']['KillMode'] == 'process', 'listener stop must preserve an active locker'
+                assert unit['Service']['ExecStart'].endswith('/canopa-lock daemon')
         # Check dependency ordering independent of where release binaries are
         # installed; verify never executes this fixture command.
         content = re.sub(r'^ExecStart=.*$', 'ExecStart=/usr/bin/true', content, flags=re.M)

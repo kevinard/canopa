@@ -2682,6 +2682,62 @@
         "--scale",
         "1.25"
       ]
+    },
+    {
+      "id": "session-wallpaper-lock",
+      "script": "verify-session-tools.py",
+      "args": [
+        "--bin-dir",
+        "{session}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "lockscreen-logind-auth-layout",
+      "script": "verify-lockscreen-integration.py",
+      "args": [
+        "--bin-dir",
+        "{session}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "greeter-login",
+      "script": "verify-greeter.py",
+      "args": [
+        "--binary",
+        "{greeter}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "greeter-weston",
+      "script": "verify-greeter.py",
+      "args": [
+        "--binary", "{greeter}", "--compositor", "weston",
+        "--output", "{artifacts}"
+      ]
+    },
+    {
+      "id": "greeter-cage",
+      "script": "verify-greeter.py",
+      "args": [
+        "--binary", "{greeter}", "--compositor", "cage",
+        "--output", "{artifacts}"
+      ]
+    },
+    {
+      "id": "polkit-agent",
+      "script": "verify-polkit.py",
+      "args": ["--binary", "{polkit}", "--output", "{artifacts}"]
+    },
+    {
+      "id": "pinentry-dialog",
+      "script": "verify-pinentry.py",
+      "args": ["--binary", "{pinentry}", "--output", "{artifacts}"]
     }
   ]
 }

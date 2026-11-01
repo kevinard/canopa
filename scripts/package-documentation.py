@@ -15,7 +15,7 @@ FILES = {
     "config/canopa.kdl": "share/canopa/canopa.kdl",
     **{f"docs/{name}.md": f"share/canopa/{name}.md" for name in (
         "settings-portal", "shell-rename", "audio", "media", "files",
-        "notifications", "configuration", "theme-customization",
+        "notifications", "configuration", "theme-customization", "session-tools", "greeter", "greeter-performance", "polkit", "pinentry",
     )},
     **{f"examples/{name}": f"share/canopa/examples/{name}" for name in (
         "canopa-desktop.kdl", "custom-theme.kdl", "themes/nord.kdl",
@@ -25,6 +25,12 @@ FILES = {
            ("shell", ("README.md", "LICENSE")),
            ("notify", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
            ("files", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
+           ("session", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
+           ("session-ui", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
+           ("greeter", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
+           ("pinentry", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
+           ("polkit", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
+           ("widgets", ("README.md", "LICENSE")),
        ) for name in names},
     "crates/canopa-shell/config/default.kdl": "share/canopa-shell/default.kdl",
     "crates/canopa-notify/examples/config.kdl": "share/canopa-notify/config.kdl",

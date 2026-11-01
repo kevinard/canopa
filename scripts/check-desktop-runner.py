@@ -28,8 +28,8 @@ def main():
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         failures.append(str(error))
     for command in ['cargo', 'rustc', 'git', 'dbus-daemon', 'dbus-run-session',
-                    'sway', 'grim', 'weston', 'wtype', 'busctl', 'swaymsg',
-                    'cc', 'pkg-config', 'wayland-scanner', 'pdfinfo', 'pdftoppm', 'wl-copy', 'wl-paste', 'gio', 'gapplication',
+                    'sway', 'loginctl', 'grim', 'weston', 'cage', 'wtype', 'busctl', 'swaymsg',
+                    'gpg', 'gpg-agent', 'gpgconf', 'cc', 'bwrap', 'pkg-config', 'wayland-scanner', 'pdfinfo', 'pdftoppm', 'wl-copy', 'wl-paste', 'gio', 'gapplication',
                     'ffmpeg', 'pipewire', 'pipewire-pulse', 'wireplumber', 'pactl', 'paplay', 'parec',
                     'desktop-file-validate', 'update-desktop-database']:
         path = shutil.which(command)
@@ -37,6 +37,12 @@ def main():
         if not path:
             failures.append(command)
     workspace = args.shell_root.resolve().parents[1]
+    try:
+        weston_help = subprocess.check_output(['weston', '--help'], text=True, timeout=10)
+        if 'Weston terminates when the program exits.' not in weston_help:
+            failures.append('Weston needs kiosk program-exit support (15+)')
+    except (OSError, subprocess.SubprocessError) as error:
+        failures.append(f'Weston capabilities: {error}')
     for path in [args.shell_root / 'Cargo.toml', workspace / 'Cargo.lock',
                  workspace / 'crates/canopa-panel-protocol/Cargo.toml']:
         if not path.is_file():
@@ -50,7 +56,11 @@ def main():
         ['/usr/bin/python3', '-c',
          "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('Gdk', '4.0'); from gi.repository import Gtk, Gdk"],
         [sys.executable, '-c', 'from PIL import Image, ImageChops'],
-        ['pkg-config', '--exists', 'wayland-client', 'alsa', 'libudev', 'xkbcommon', 'libpulse', 'gtk4 >= 4.12'],
+        ['cc', '-fsyntax-only', str(workspace / 'scripts/desktop-fixture/lock-pam.c')],
+        ['cc', '-fsyntax-only', str(workspace / 'scripts/desktop-fixture/lock-pam-interactive.c')],
+        ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--die-with-parent',
+         '/bin/sh', '-c', ': </dev/null >/dev/null'],
+        ['pkg-config', '--exists', 'wayland-client', 'alsa', 'libudev', 'xkbcommon', 'libpulse', 'polkit-agent-1 >= 0.105', 'gtk4 >= 4.12'],
     ]
     for command in checks:
         try:

@@ -1,0 +1,40 @@
+[package]
+name = "canopa-session"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "canopa-wallpaper"
+path = "src/bin/wallpaper.rs"
+
+[[bin]]
+name = "canopa-lock"
+path = "src/bin/lock.rs"
+
+[dependencies]
+canopa-session-ui.workspace = true
+canopa-widgets.workspace = true
+futures-util.workspace = true
+tokio = { workspace = true, features = ["process"] }
+zbus.workspace = true
+anyhow.workspace = true
+canopa-config.workspace = true
+chrono.workspace = true
+clap.workspace = true
+image.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+wayland-client.workspace = true
+smithay-client-toolkit = "=0.20.0"
+calloop = "0.14.4"
+calloop-wayland-source = "0.4.1"
+zeroize = "1"
+xkbcommon = "0.8"
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true

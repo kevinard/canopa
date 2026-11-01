@@ -1,6 +1,6 @@
 # Canopa configuration
 
-Canopa Shell, Notify and Files discover `~/.config/canopa/config.kdl`, or
+Canopa Shell, Notify, Files, Wallpaper, Lock, Greeter, Polkit and Pinentry discover `~/.config/canopa/config.kdl`, or
 `$XDG_CONFIG_HOME/canopa/config.kdl` when that variable is an absolute path.
 An empty or relative XDG value falls back to `$HOME/.config`.
 
@@ -28,9 +28,10 @@ files {
 See [the shared example](../config/canopa.kdl), [shell options](../crates/canopa-shell/README.md),
 and [notification options](../crates/canopa-notify/README.md), plus
 [Files interface preferences and custom actions](../crates/canopa-files/README.md). Unknown root nodes and duplicate
-namespaces are errors.
+namespaces are errors. Wallpaper and lockscreen settings live in optional `wallpaper`
+and `lockscreen` blocks; see [session tools](session-tools.md).
 
-`appearance` is shared by all three applications, including when their own namespace
+`appearance` is shared by all applications, including when their own namespace
 is omitted. `color-scheme` accepts `"dark"` (default, Canopa's warm charcoal and mint)
 or `"light"` (warm white and forest green). Optional `accent` accepts an opaque `"#rrggbb"`
 color; omit it to use the selected preset's accent. Each setting may appear once.
@@ -44,16 +45,17 @@ Presets have contrast checks; custom colors can reduce contrast.
 A missing namespace uses that application's embedded defaults. An empty `shell {}`
 uses the shell schema's empty-document defaults (one bar and no configured modules);
 omit the namespace to get Canopa Shell's complete embedded configuration. Settings are
-never merged with legacy files. Syntax/envelope/appearance errors affect both consumers;
+never merged with legacy files. Syntax/envelope/appearance errors affect all consumers;
 invalid options inside a namespace affect only its owner.
 
 If the common file is absent, Canopa Shell reads `niribar/config.kdl` and Notify reads
 `canopa-notify/config.kdl` under the same config directory. If both are absent, that
-application uses embedded defaults. Files uses embedded defaults directly and has no legacy source. A present invalid common file is an error,
+application uses embedded defaults. Files, Wallpaper, Lock, Greeter, Polkit and Pinentry use embedded defaults directly and have no legacy source. A present invalid common file is an error,
 including a broken symlink. Files must be readable regular UTF-8 files at most
 1 MiB; symlinks to regular files work.
 
-Build/install `canopa`, `canopa-shell`, `canopa-notify`, and `canopa-files` in the same binary directory.
+Build/install `canopa`, `canopa-shell`, `canopa-notify`, `canopa-files`, `canopa-wallpaper`, `canopa-lock`, `canopa-greeter`, `canopa-polkit` and
+`canopa-pinentry` in the same binary directory.
 Validation opens no desktop surfaces, control socket, or history database:
 
 ```sh
@@ -63,7 +65,7 @@ canopa config check --file /path/to/canopa.kdl --show-source
 ```
 
 The checker reports one JSON line per component and exits nonzero if any fails.
-It validates the same immutable common-file snapshot in all three executables. Normal
+It validates the same immutable common-file snapshot in each owning executable. Normal
 reports contain safe diagnostic codes and available byte offsets. `--show-source`
 adds local diagnostic detail to stderr and may reveal source values. Diagnostics
 refer to the temporary snapshot; the report identifies the original path.
@@ -78,7 +80,7 @@ canopa config check --file /path/to/reviewed-canopa.kdl
 ```
 
 Either legacy input may be omitted; that namespace then uses embedded defaults.
-The command preserves source comments, validates both schemas, and creates a mode
+The command preserves source comments, validates all owning schemas, and creates a mode
 0600 file without replacing an existing output. After reviewing, place the file at
 `~/.config/canopa/config.kdl` (or your XDG equivalent). Originals are left intact.
 
@@ -212,3 +214,14 @@ reload command) after editing the file. Invalid candidates retain the previous
 values; unchanged effective values emit no portal signal. Discovery repeats on
 reload, while an explicit path remains selected. Canopa Shell reloads automatically; the portal still requires its own reload.
 See [Settings portal installation and selection](settings-portal.md).
+
+The `greeter` schema is validated by `canopa-greeter`; see [login screen setup](greeter.md).
+Its deployed configuration lives in `/etc/canopa/greeter.kdl` and is selected
+independently of the authenticated user's shared configuration.
+
+The `polkit` namespace configures the session authorization agent (font and
+authentication deadline). Its appearance uses the shared theme; see [agent settings](polkit.md).
+
+Canopa Pinentry provides on-demand GnuPG PIN/passphrase and confirmation dialogs,
+using shared session presentation. See [pinentry setup](pinentry.md). The optional `pinentry` configuration namespace owns
+`font` and `auth-timeout`; `canopa config check` validates it with the other owners.

@@ -2,19 +2,19 @@
 
 Canopa is a desktop environment built around the Niri Wayland compositor. Its Rust
 workspace currently contains Canopa Shell (the shell, Wi-Fi, audio and media providers), Canopa Notify, Canopa Files,
-the `canopa` configuration tool, a Settings portal backend, and shared configuration, appearance, Iced controls
+a wallpaper daemon, lockscreen, login greeter, polkit agent and GnuPG pinentry, the `canopa` tools, a Settings portal backend, and shared configuration, appearance, Iced controls
 and panel protocol crates. Local icon lookup and bounded raster preparation are
-shared through `canopa-assets`; see the [asset contracts](docs/adr/0005-shared-assets.md).
+shared through `canopa-assets`; battery/media widget data through `canopa-widgets`; see the [asset contracts](docs/adr/0005-shared-assets.md).
 
 Use Rust 1.95.0, selected by `rust-toolchain.toml`. On Debian/Ubuntu:
 
 ```sh
-sudo apt-get install build-essential pkg-config libpulse-dev libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev dbus at-spi2-core
+sudo apt-get install build-essential pkg-config libpulse-dev libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libpam0g-dev fonts-dejavu-core dbus at-spi2-core
 cargo build --workspace --bins --locked
 ```
 
 Binaries are in root `target/debug/`: `canopa-shell`, `canopa-wifi-provider`, `canopa-audio-provider`, `canopa-media-provider`,
-`canopa-notify`, `canopa-files`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p canopa-shell` or
+`canopa-notify`, `canopa-files`, `canopa-wallpaper`, `canopa-lock`, `canopa-greeter`, `canopa-polkit`, `canopa-pinentry`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p canopa-shell` or
 `cargo build --locked -p canopa-notify`. Notify's core build remains available with
 `cargo build --locked -p canopa-notify --no-default-features`.
 Files' core can be checked with explicitly selected `--lib` or `--test` targets
@@ -44,7 +44,7 @@ Tests use private D-Bus sessions. Full transport tests additionally need
 `libglib2.0-bin`, `pipewire`, `pipewire-bin`, `pipewire-pulse`, and `pulseaudio-utils`.
 The Settings frontend fixture also needs `xdg-desktop-portal` and `python3-gi`.
 The optional graphical acceptance workflow uses a dedicated runner with Niri, Sway,
-grim, Weston, wtype, Python GI/AT-SPI/Pillow, and software Mesa;
+grim, Weston 15+, Cage, wtype, Python GI/AT-SPI/Pillow, bubblewrap, Linux-PAM headers, and software Mesa;
 see `scripts/check-desktop-runner.py`.
 The native runner accepts `--niri PATH --niri-sha256 HEX` and preserves that exact
 executable with its results. Hosted dispatch requires both values. See
@@ -72,14 +72,14 @@ disabled theme-detection default. Always select `-p canopa-notify` for core-only
 validation. The rotation prototype in `experiments/focused-window-rotation/`
 retains its independent experimental build.
 
-All three applications discover `$XDG_CONFIG_HOME/canopa/config.kdl` (with the usual
+All applications discover `$XDG_CONFIG_HOME/canopa/config.kdl` (with the usual
 `~/.config` fallback). Existing application files still work when that shared file
-is absent. Run `canopa config check` to validate all three schemas, and see the
+is absent. Run `canopa config check` to validate all five schemas, and see the
 [configuration guide](docs/configuration.md) for explicit migration and reloads.
 Canopa Shell reloads saved configuration automatically, with `canopa-shell reload`
 for an explicit result. Notify supports its own reload while running.
 Files also reloads saved settings and appearance automatically.
-Notify continues to deliver banners while the shell is stopped. All three UIs use the
+Notify continues to deliver banners while the shell is stopped. All UIs use the
 shared `appearance` settings for dark/light palettes and an optional accent color.
 The optional `media` module shows the current track and opens [Media controls](docs/media.md) for existing MPRIS players.
 
@@ -96,10 +96,12 @@ for feature options, using root `target/` paths. Existing Niribar installations
 should follow the [shell rename guide](docs/shell-rename.md) before updating.
 
 Build a release with `cargo build --workspace --bins --locked --release`, then run
-`bash scripts/package-release.sh target/release dist`. The archive contains all eight
+`bash scripts/package-release.sh target/release dist`. The archive contains all eleven
 binaries, current example configurations, service units, manuals, and source license
 notices. The companion user services use `~/.local/bin`; `canopa-session.target` starts
-both. See the session setup guide before enabling them. Packaging does not install or restart anything.
+Shell, Notify, Wallpaper and the logind lock listener. Install the lockscreen PAM service before using Lock;
+see [session tools](docs/session-tools.md) before enabling them. Packaging does not
+install or restart anything.
 Check the archive with `bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz`.
 
 For subsequent updates of an existing local companion installation, run:
@@ -161,3 +163,18 @@ covers summary bounds, attention persistence, companion setup and restart recove
 
 The [shared asset validation record](docs/shared-assets-validation.md) covers format
 isolation, image budgets, icon lookup compatibility and real PNG/SVG rendering.
+
+Wallpaper and lockscreen are provided by `canopa-wallpaper` and `canopa-lock`.
+See [session tools](docs/session-tools.md) for live wallpaper controls, PAM setup,
+lock preview, themes and shared widgets.
+
+Canopa Greeter provides a login screen backed by greetd, sharing the lockscreen
+presentation, automatic user/session discovery and selected-user avatars. See [greeter setup](docs/greeter.md) for the dedicated account, Cage/Weston
+configuration and system installation.
+
+Canopa Polkit supplies graphical action-authorization dialogs using the system
+polkit backend. See [agent setup](docs/polkit.md) for session integration and testing.
+
+Canopa Pinentry provides on-demand GnuPG PIN/passphrase and confirmation dialogs,
+using shared session presentation. See [pinentry setup](docs/pinentry.md). The optional `pinentry` configuration namespace owns
+`font` and `auth-timeout`; `canopa config check` validates it with the other owners.

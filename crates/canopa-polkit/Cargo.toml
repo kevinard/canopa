@@ -1,0 +1,33 @@
+[package]
+name = "canopa-polkit"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+canopa-session-ui.workspace = true
+canopa-config.workspace = true
+canopa-theme.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+zbus.workspace = true
+image.workspace = true
+wayland-client.workspace = true
+smithay-client-toolkit = "=0.20.0"
+calloop = "0.14.4"
+calloop-wayland-source = "0.4.1"
+zeroize = "1"
+xkbcommon = "0.8"
+
+[build-dependencies]
+cc = "1"
+pkg-config = "0.3"
+
+[dev-dependencies]
+tempfile.workspace = true
+assert_cmd.workspace = true

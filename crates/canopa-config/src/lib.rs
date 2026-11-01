@@ -19,6 +19,11 @@ pub enum Component {
     Shell,
     Notifications,
     Files,
+    Wallpaper,
+    Lockscreen,
+    Greeter,
+    Polkit,
+    Pinentry,
 }
 
 impl Component {
@@ -27,6 +32,11 @@ impl Component {
             Self::Shell => "shell",
             Self::Notifications => "notifications",
             Self::Files => "files",
+            Self::Wallpaper => "wallpaper",
+            Self::Lockscreen => "lockscreen",
+            Self::Greeter => "greeter",
+            Self::Polkit => "polkit",
+            Self::Pinentry => "pinentry",
         }
     }
 
@@ -36,6 +46,11 @@ impl Component {
             Self::Shell => "niribar",
             Self::Notifications => "canopa-notify",
             Self::Files => "canopa-files",
+            Self::Wallpaper => "canopa-wallpaper",
+            Self::Lockscreen => "canopa-lock",
+            Self::Greeter => "canopa-greeter",
+            Self::Polkit => "canopa-polkit",
+            Self::Pinentry => "canopa-pinentry",
         }
     }
 }
@@ -115,7 +130,15 @@ pub fn discover_in(base: &Path, component: Component) -> Result<Request, Diagnos
     if common != Request::Defaults {
         return Ok(common);
     }
-    if component == Component::Files {
+    if matches!(
+        component,
+        Component::Files
+            | Component::Wallpaper
+            | Component::Lockscreen
+            | Component::Greeter
+            | Component::Polkit
+            | Component::Pinentry
+    ) {
         return Ok(Request::Defaults);
     }
     discover_candidates([(
@@ -204,7 +227,7 @@ impl std::fmt::Display for Diagnostic {
             Code::Location => "configuration requires an absolute XDG_CONFIG_HOME or HOME",
             Code::Read => "configuration must be a readable regular UTF-8 file of at most 1 MiB",
             Code::Syntax => "invalid configuration KDL",
-            Code::Envelope => "expected schema-version 1 and unique appearance/shell/notifications/files blocks without arguments or annotations",
+            Code::Envelope => "expected schema-version 1 and unique appearance/shell/notifications/files/wallpaper/lockscreen/greeter/polkit/pinentry blocks without arguments or annotations",
             Code::Schema => "invalid component configuration; use the local configuration checker for details",
             Code::Appearance => "invalid appearance; check theme, palette, typography and UI settings with the local configuration checker",
         })?;
@@ -427,7 +450,8 @@ fn validate_envelope(document: &KdlDocument) -> Result<(), Diagnostic> {
                     return Err(fail());
                 }
             }
-            "shell" | "notifications" | "appearance" | "files" => {
+            "shell" | "notifications" | "appearance" | "files" | "wallpaper" | "lockscreen"
+            | "greeter" | "polkit" | "pinentry" => {
                 if !node.entries().is_empty() || node.children().is_none() {
                     return Err(fail());
                 }

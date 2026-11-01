@@ -11,7 +11,16 @@ use std::{
 #[test]
 fn appearance_is_shared_even_when_feature_namespaces_default() {
     let source = "schema-version 1\nappearance { color-scheme \"light\"; accent \"#123456\"; }\n";
-    for component in [Component::Shell, Component::Notifications, Component::Files] {
+    for component in [
+        Component::Shell,
+        Component::Notifications,
+        Component::Files,
+        Component::Wallpaper,
+        Component::Lockscreen,
+        Component::Greeter,
+        Component::Polkit,
+        Component::Pinentry,
+    ] {
         let document = Document::parse(
             source.into(),
             None,
@@ -46,7 +55,16 @@ fn invalid_appearance_rejects_both_consumers_with_original_safe_location() {
         "color-scheme 1",
     ] {
         let source = format!("schema-version 1\nappearance {{ {option}; }}\n");
-        for component in [Component::Shell, Component::Notifications, Component::Files] {
+        for component in [
+            Component::Shell,
+            Component::Notifications,
+            Component::Files,
+            Component::Wallpaper,
+            Component::Lockscreen,
+            Component::Greeter,
+            Component::Polkit,
+            Component::Pinentry,
+        ] {
             let error =
                 Document::parse(source.clone(), None, Format::CanopaV1, component, "").unwrap_err();
             assert_eq!(error.code, Code::Appearance, "{source}");

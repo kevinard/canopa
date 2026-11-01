@@ -18,7 +18,7 @@ from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parent
-PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-media-provider', 'canopa-notify', 'canopa-files', 'canopa')
+PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-media-provider', 'canopa-notify', 'canopa-files', 'canopa', 'canopa-wallpaper', 'canopa-lock', 'canopa-greeter', 'canopa-polkit', 'canopa-pinentry')
 SERVICES = ('canopa-shell.service', 'canopa-notify.service')
 LOCAL_PACKAGES = ('canopa-panel-protocol', 'canopa-config', 'canopa-assets', 'accesskit_unix')
 SYSTEMCTL = r'''#!/usr/bin/env python3
@@ -54,6 +54,9 @@ def stop(service):
     service.update(active='inactive', pid=0)
 
 if 'show' in args:
+    if services[0] not in state:
+        print('not-found')
+        sys.exit(0)
     service = state[services[0]]
     values = {'ActiveState': service['active'], 'MainPID': str(service['pid']),
               'LoadState': 'loaded'}
@@ -180,7 +183,7 @@ class UpdateTests(unittest.TestCase):
         root.mkdir(parents=True, exist_ok=True)
         (root / 'Cargo.toml').write_text(
             '[workspace]\nresolver = "2"\nmembers = ["crates/canopa-shell", '
-            '"crates/canopa-notify", "crates/canopa-files", "crates/canopa-cli"]\n'
+            '"crates/canopa-notify", "crates/canopa-files", "crates/canopa-cli", "crates/canopa-session", "crates/canopa-greeter", "crates/canopa-polkit", "crates/canopa-pinentry"]\n'
             'exclude = ["vendor/accesskit_unix"]\n'
             '[patch.crates-io]\naccesskit_unix = { path = "vendor/accesskit_unix" }\n')
         for name in LOCAL_PACKAGES:
@@ -195,13 +198,16 @@ class UpdateTests(unittest.TestCase):
         source = RUST_MAIN.replace('@VERSION@', version)
         for name, binary in [('canopa-shell', 'canopa-shell'), ('canopa-notify', 'canopa-notify'),
                              ('canopa-files', 'canopa-files'),
-                             ('canopa-cli', 'canopa')]:
+                             ('canopa-cli', 'canopa'), ('canopa-session', 'canopa-lock'), ('canopa-greeter', 'canopa-greeter'), ('canopa-polkit', 'canopa-polkit'), ('canopa-pinentry', 'canopa-pinentry')]:
             package = root / 'crates' / name
             (package / 'src').mkdir(parents=True)
             (package / 'Cargo.toml').write_text(
                 f'[package]\nname = "{name}"\nversion = "0.1.0"\nedition = "2021"\n'
                 f'[[bin]]\nname = "{binary}"\npath = "src/main.rs"\n[dependencies]\n{deps}\n')
             (package / 'src/main.rs').write_text(source)
+            if name == 'canopa-session':
+                (package / 'src/bin').mkdir()
+                (package / 'src/bin/canopa-wallpaper.rs').write_text(source)
             if name == 'canopa-shell':
                 (package / 'src/bin').mkdir()
                 (package / 'src/bin/canopa-wifi-provider.rs').write_text(source)
@@ -323,6 +329,20 @@ class UpdateTests(unittest.TestCase):
             self.assertTrue(os.path.samefile(f"/proc/{state['pid']}/exe",
                                             self.bin_dir / service.removesuffix('.service')))
             self.assertIn(f"PID {state['pid']}", result.stdout)
+
+    def test_optional_session_companions_restart_when_installed(self):
+        state = self.state()
+        for name, active in [('canopa-wallpaper.service', 'failed'),
+                             ('canopa-lock.service', 'active')]:
+            state[name] = dict(active=active, pid=0, mode='normal')
+        self.service.write_text(json.dumps(state))
+        result = self.update()
+        for name in ['canopa-wallpaper.service', 'canopa-lock.service']:
+            service = self.state(name)
+            self.assertEqual(service['active'], 'active')
+            self.assertTrue(os.path.samefile(f"/proc/{service['pid']}/exe",
+                                            self.bin_dir / name.removesuffix('.service')))
+            self.assertIn(f"PID {service['pid']}", result.stdout)
 
     def test_files_update_keeps_an_existing_browser_running(self):
         self.install_previous()

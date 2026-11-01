@@ -1,0 +1,19 @@
+[Unit]
+Description=Canopa polkit authentication agent
+After=graphical-session-pre.target niri.service
+Before=graphical-session.target
+PartOf=graphical-session.target canopa-session.target
+StartLimitIntervalSec=30
+StartLimitBurst=3
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=%h/.local/bin/canopa-polkit
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=15
+TimeoutStopSec=5
+
+[Install]
+WantedBy=graphical-session.target

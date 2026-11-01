@@ -6,6 +6,16 @@ contexts and shared infrastructure:
 - Shell language and decisions: `docs/shell/CONTEXT.md` and `docs/shell/adr/`.
 - Notification language and decisions: `docs/notify/CONTEXT.md` and `docs/notify/adr/`.
 - File manager language and decisions: `docs/files/CONTEXT.md` and `docs/files/adr/`.
+- Wallpaper/lock ownership and setup: `docs/session-tools.md` and integration ADRs
+  0026/0027. The compositor owns lock security; PAM owns authentication policy.
+  `canopa-widgets` shares passive data/command readers while consumers own UI,
+  privacy choices, actions and lifetime.
+- Login/greeter ownership: `docs/greeter.md` and ADR 0028. Greetd owns PAM,
+  privilege changes and login-session lifetime; Canopa owns presentation.
+- Polkit ownership/setup: `docs/polkit.md` and ADR 0029. Native polkit owns action
+  policy, permitted identities, credentials and receipts; Canopa owns the dialog.
+- Pinentry ownership/setup: `docs/pinentry.md` and ADR 0030. GnuPG owns keys,
+  verification, policy and agent caching; Canopa owns the Assuan dialog.
 - Integration decisions: `docs/adr/`.
 
 Use each context's glossary terms when describing its concepts. Shared crates do

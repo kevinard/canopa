@@ -51,7 +51,8 @@ Provider Back returns to Quick settings on the same output. Tab/Shift+Tab select
 cards and Enter activates them. Battery and media appear when they have content;
 Calendar opens separately from the clock.
 Lock, Log out, Reboot and Power off occupy a two-column footer. Lock launches
-`swaylock` with session ownership. The other buttons open confirmation menus with
+`canopa-lock` with session ownership (install its PAM service first; see
+[session tools](../../docs/session-tools.md)). The other buttons open confirmation menus with
 Cancel selected first; Cancel returns to Quick settings. Log out asks Niri to quit,
 and Reboot/Power off use `systemctl` without force options. These ordinary button
 actions and menus can be rebound in the configuration.

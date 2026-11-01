@@ -15,8 +15,8 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-media-provider", "canopa-notify", "canopa-files", "canopa")
-SERVICES = ("canopa-notify.service", "canopa-shell.service")
+PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-media-provider", "canopa-notify", "canopa-files", "canopa", "canopa-wallpaper", "canopa-lock", "canopa-greeter", "canopa-polkit", "canopa-pinentry")
+SERVICES = ("canopa-notify.service", "canopa-shell.service", "canopa-wallpaper.service", "canopa-lock.service", "canopa-polkit.service")
 
 
 def run(*args, check=True, timeout=60):
@@ -86,7 +86,7 @@ def build(jobs, rebuild=False):
         print("Reusing local release build cache; Cargo will rebuild changed sources.", flush=True)
     subprocess.run(["cargo", "build", "--locked", "--release", "--bins",
                     "--package", "canopa-shell", "--package", "canopa-notify",
-                    "--package", "canopa-cli", "--package", "canopa-files", "--jobs", str(jobs),
+                    "--package", "canopa-cli", "--package", "canopa-files", "--package", "canopa-session", "--package", "canopa-greeter", "--package", "canopa-polkit", "--package", "canopa-pinentry", "--jobs", str(jobs),
                     "--target-dir", "target"], cwd=ROOT, check=True)
     cache.write_text(json.dumps(build_cache_state(packages)) + "\n")
 
@@ -144,6 +144,8 @@ def update(jobs, rebuild=False):
     states = {}
     for service in SERVICES:
         if property_value(service, "LoadState") != "loaded":
+            if service in ("canopa-wallpaper.service", "canopa-lock.service", "canopa-polkit.service"):
+                continue  # New optional companion; existing installations can add its unit later.
             raise RuntimeError(
                 f"{service} is not loaded; install the companion user services first "
                 "(existing Niribar installations: see docs/shell-rename.md)")
@@ -152,6 +154,7 @@ def update(jobs, rebuild=False):
             raise RuntimeError(f"{service} is {state}; retry when it has settled")
         states[service] = state
 
+    services = tuple(states)
     build(jobs, rebuild)
     bin_dir = Path.home() / ".local/bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -165,12 +168,12 @@ def update(jobs, rebuild=False):
         print(validated.stdout, end="", flush=True)
 
         # Respect service changes made while the build ran.
-        for service in SERVICES:
+        for service in services:
             state = property_value(service, "ActiveState")
             if state not in ("active", "inactive", "failed"):
                 raise RuntimeError(f"{service} is {state}; retry when it has settled")
             states[service] = state
-        restarted = [service for service in SERVICES if states[service] != "inactive"]
+        restarted = [service for service in services if states[service] != "inactive"]
         state_root = xdg_directory("XDG_STATE_HOME", ".local/state")
         state_dir = state_root / "canopa-notify"
         backup_root = state_root / "canopa-backups"
@@ -190,7 +193,7 @@ def update(jobs, rebuild=False):
         replaced = False
         state_saved = False
         try:
-            systemctl("stop", *SERVICES)
+            systemctl("stop", *services)
             if state_dir.exists():
                 shutil.copytree(state_dir, backup / "notify-state", symlinks=True)
                 state_saved = True
@@ -207,7 +210,7 @@ def update(jobs, rebuild=False):
                 print("Update failed; restoring the previous binaries and notification state.",
                       file=sys.stderr, flush=True)
                 # Never touch a database unless both services have stopped.
-                systemctl("stop", *SERVICES)
+                systemctl("stop", *services)
                 if state_dir.exists():
                     state_dir.rename(backup / "failed-update-notify-state")
                 if state_saved:
@@ -222,7 +225,7 @@ def update(jobs, rebuild=False):
                 systemctl("reset-failed", service, check=False)
                 systemctl("start", service, check=False)
             raise
-        for service in SERVICES:
+        for service in services:
             if service not in restarted:
                 print(f"{service} is inactive; leaving it stopped.")
         print(f"Canopa updated in {bin_dir}. Configuration and user service definitions preserved.")

@@ -1,6 +1,6 @@
 [Unit]
-Description=Canopa desktop shell and notifications
-Wants=canopa-shell.service canopa-notify.service
+Description=Canopa desktop companions
+Wants=canopa-shell.service canopa-notify.service canopa-wallpaper.service canopa-lock.service canopa-polkit.service
 After=graphical-session-pre.target
 Before=graphical-session.target
 PartOf=graphical-session.target

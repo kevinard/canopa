@@ -105,7 +105,7 @@ class CheckScripts(unittest.TestCase):
         cargo = [item["args"] for item in commands if item["tool"] == "cargo"]
         self.assertIn(["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"], cargo)
         self.assertIn(["test", "--workspace", "--all-targets", "--locked"], cargo)
-        self.assertIn(["build", "--locked", "-p", "canopa-cli"], cargo)
+        self.assertIn(["build", "--locked", "-p", "canopa-cli", "-p", "canopa-session", "-p", "canopa-greeter", "-p", "canopa-polkit", "-p", "canopa-pinentry"], cargo)
         self.assertIn("scripts/test-check-scripts.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertEqual(commands[-1]["args"], ["scripts/test-vendor.py"])
         self.assertTrue(all(item["incremental"] == "0" for item in commands))

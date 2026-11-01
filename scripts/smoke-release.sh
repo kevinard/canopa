@@ -15,6 +15,28 @@ test -s "$bundle/share/canopa-files/LICENSE-MIT"
 test -s "$bundle/share/canopa-files/LICENSE-APACHE"
 test -s "$bundle/share/canopa/files.md"
 desktop-file-validate "$bundle/share/applications/org.canopa.Files.desktop"
+test -x "$bundle/bin/canopa-wallpaper"
+test -x "$bundle/bin/canopa-lock"
+test -x "$bundle/bin/canopa-greeter"
+test -x "$bundle/bin/canopa-pinentry"
+"$bundle/bin/canopa-pinentry" --defaults check-config > /dev/null
+test -x "$bundle/bin/canopa-polkit"
+"$bundle/bin/canopa-polkit" --defaults check-config > /dev/null
+test -s "$bundle/share/systemd/user/canopa-polkit.service"
+"$bundle/bin/canopa-greeter" --defaults check-config > /dev/null
+test -s "$bundle/share/canopa/greetd/config.toml"
+test -s "$bundle/share/canopa/greetd/config-weston.toml"
+"$bundle/bin/canopa-greeter" --defaults session --compositor cage --print-command > /dev/null
+"$bundle/bin/canopa-greeter" --defaults session --compositor weston --print-command > /dev/null
+test -s "$bundle/share/canopa/greetd/greeter.kdl"
+test -s "$bundle/share/wayland-sessions/canopa.desktop"
+"$bundle/bin/canopa-wallpaper" check-config --defaults > /dev/null
+"$bundle/bin/canopa-lock" --defaults check-config > /dev/null
+test -s "$bundle/share/systemd/user/canopa-wallpaper.service"
+test -s "$bundle/share/systemd/user/canopa-lock.service"
+test -s "$bundle/share/canopa/pam/canopa-lock.arch"
+test -s "$bundle/share/canopa/pam/canopa-lock.debian"
+test -s "$bundle/share/canopa/session-tools.md"
 test -x "$bundle/bin/canopa"
 "$bundle/bin/canopa" config check --file "$bundle/share/canopa/canopa.kdl"
 "$bundle/bin/canopa" config check --file "$bundle/share/canopa/examples/canopa-desktop.kdl"
@@ -58,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix='canopa-release-files-config-') as direc
     checked = subprocess.run([sys.argv[4], 'config', 'check', '--file', str(config)],
                              capture_output=True, text=True, timeout=15, check=True)
     reports = [json.loads(line) for line in checked.stdout.splitlines()]
-    assert {report['component'] for report in reports} == {'shell', 'notifications', 'files'}
+    assert {report['component'] for report in reports} == {'shell', 'notifications', 'files', 'wallpaper', 'lockscreen', 'greeter', 'polkit', 'pinentry'}
     assert all('source' in report for report in reports), checked.stdout
 
 magic = b'NIRIBAR_EXTERNAL_PANEL_JSON_V1\n'
@@ -107,5 +129,5 @@ message = json.loads(result.stdout)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'rich'
 assert message['content']['body']['title'] == 'Media'
-print('Release bundle: all eight binaries execute; Files assets and v1/v5 provider close pass.')
+print('Release bundle: all eleven binaries execute; Files assets and v1/v5 provider close pass.')
 PY

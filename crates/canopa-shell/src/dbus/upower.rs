@@ -1,30 +1,9 @@
+#[cfg(test)]
 use tokio::sync::mpsc;
 
 use crate::modules::battery::{BatteryEvent, BatteryPowerState};
 
-/// UPower DisplayDevice D-Bus proxy (zbus 5.x).
-///
-/// - Service: org.freedesktop.UPower
-/// - Path:    /org/freedesktop/UPower/devices/DisplayDevice
-/// - Interface: org.freedesktop.UPower.Device
-///
-/// UPower State values: 1=Charging, 2=Discharging, 3=Empty, 4=FullyCharged,
-/// 5=PendingCharge, 6=PendingDischarge
-#[zbus::proxy(
-    interface = "org.freedesktop.UPower.Device",
-    default_service = "org.freedesktop.UPower",
-    default_path = "/org/freedesktop/UPower/devices/DisplayDevice"
-)]
-trait UPowerDevice {
-    #[zbus(property)]
-    fn percentage(&self) -> zbus::Result<f64>;
-
-    #[zbus(property)]
-    fn state(&self) -> zbus::Result<u32>;
-
-    #[zbus(property)]
-    fn is_present(&self) -> zbus::Result<bool>;
-}
+use canopa_widgets::battery::run_upower_task;
 
 /// Wrapper around `zbus::Connection` that implements `Hash` for use as subscription data.
 /// There is at most one battery subscription per app, so a constant hash is correct.
@@ -81,76 +60,6 @@ pub(crate) fn battery_subscription(
     conn: zbus::Connection,
 ) -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(BatteryConnData(conn), build_battery_stream)
-}
-
-/// Drives the UPower property subscription.
-///
-/// Sends (percentage, power state, presence) on initial read and on each property change.
-/// Sends Err(()) on any fatal error (proxy creation, property read failure).
-/// The task owns the proxy for its entire lifetime, avoiding lifetime issues with the generated proxy.
-async fn run_upower_task(
-    conn: zbus::Connection,
-    tx: mpsc::UnboundedSender<Result<(f64, BatteryPowerState, bool), ()>>,
-) -> zbus::Error {
-    // Build proxy — error if UPower not on bus.
-    let proxy = match UPowerDeviceProxy::new(&conn).await {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = tx.send(Err(()));
-            return e;
-        }
-    };
-
-    let mut pct_stream = proxy.receive_percentage_changed().await;
-    let mut state_stream = proxy.receive_state_changed().await;
-    let mut presence_stream = proxy.receive_is_present_changed().await;
-
-    // Send initial state.
-    match read_state(&proxy).await {
-        Ok(data) => {
-            if tx.send(Ok(data)).is_err() {
-                return zbus::Error::Failure("channel closed".into());
-            }
-        }
-        Err(e) => {
-            let _ = tx.send(Err(()));
-            return e;
-        }
-    }
-
-    use iced::futures::StreamExt;
-    loop {
-        let live = tokio::select! {
-            next = pct_stream.next() => next.is_some(),
-            next = state_stream.next() => next.is_some(),
-            next = presence_stream.next() => next.is_some(),
-        };
-        if !live {
-            break;
-        }
-        match read_state(&proxy).await {
-            Ok(data) => {
-                if tx.send(Ok(data)).is_err() {
-                    break;
-                }
-            }
-            Err(_) => {
-                let _ = tx.send(Err(()));
-                break;
-            }
-        }
-    }
-    zbus::Error::Failure("stream ended".into())
-}
-
-async fn read_state(proxy: &UPowerDeviceProxy<'_>) -> zbus::Result<(f64, BatteryPowerState, bool)> {
-    let pct = proxy.percentage().await?;
-    let state = proxy.state().await?;
-    Ok((
-        pct,
-        BatteryPowerState::from_upower(state),
-        proxy.is_present().await?,
-    ))
 }
 
 #[cfg(test)]

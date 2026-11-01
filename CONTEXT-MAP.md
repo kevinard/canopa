@@ -4,7 +4,22 @@ Canopa is a desktop environment based on Niri. Canopa Shell is its shell; Canopa
 owns notification receipt, policy, persistence, sound, and banners. The shell hosts
 the Notification Center through generic declarative panel content. Canopa Files
 owns local file browsing, operations, Undo, previews and file-manager preferences.
+Canopa Wallpaper owns background surfaces and output image assignments; Canopa Lock
+owns secure session locking, authentication and lock presentation. Canopa Greeter
+owns login presentation while greetd owns login authentication and session lifetime.
+Canopa Pinentry presents GnuPG PIN/passphrase and confirmation dialogs.
+Canopa Polkit presents action authorization while native polkit owns policy and credentials. `canopa-widgets`
+shares passive data without transferring shell actions or application lifetimes.
 
+- [Wallpaper, lockscreen and shared widget data](docs/adr/0026-session-tools-and-widget-data.md)
+- [Logind, interactive PAM and lock composition](docs/adr/0027-logind-authentication-and-lock-composition.md)
+- [Greetd greeter and shared session presentation](docs/adr/0028-greetd-greeter-and-shared-session-presentation.md)
+- [Polkit agent and native authorization](docs/adr/0029-polkit-agent-and-native-authorization.md)
+- [Pinentry protocol and shared dialogs](docs/adr/0030-pinentry-protocol-and-shared-dialogs.md)
+- [PIN/passphrase dialog setup](docs/pinentry.md)
+- [Polkit agent setup](docs/polkit.md)
+- [Login screen setup](docs/greeter.md)
+- [Session tools setup and configuration](docs/session-tools.md)
 - [MPRIS media controls](docs/shell/adr/0018-mpris-media-controls.md)
 - [Shell language and ownership](docs/shell/CONTEXT.md)
 - [Notification language and ownership](docs/notify/CONTEXT.md)

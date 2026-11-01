@@ -190,7 +190,7 @@ modules {
         type "button"
         label "Lock"
         icon "canopa:lock"
-        actions { click { launch "swaylock"; } }
+        actions { click { launch "canopa-lock"; } }
     }
     module "session-logout" {
         type "button"
