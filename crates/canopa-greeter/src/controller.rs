@@ -25,7 +25,12 @@ pub struct Controller {
     pub generation: u64,
     started: Instant,
     retry_after: Instant,
-    has_sessions: bool,
+    sessions: Vec<crate::config::Session>,
+    auth_session: Option<crate::config::Session>,
+    pub preferences: crate::preferences::Preferences,
+    pub power_menu: crate::power::Menu,
+    pub power_capabilities: crate::power::Capabilities,
+    session_edited: bool,
     accounts: Vec<Account>,
     user_edited: bool,
 }
@@ -44,7 +49,12 @@ impl Controller {
             generation: 0,
             started: Instant::now(),
             retry_after: Instant::now(),
-            has_sessions: !config.sessions.is_empty(),
+            sessions: config.sessions.clone(),
+            auth_session: None,
+            preferences: Default::default(),
+            power_menu: Default::default(),
+            power_capabilities: Default::default(),
+            session_edited: false,
             accounts: accounts::merge(&config.users, Vec::new()),
             user_edited: false,
         };
@@ -55,6 +65,97 @@ impl Controller {
         });
         this.refresh(config);
         Ok(this)
+    }
+    pub fn apply_preferences(
+        &mut self,
+        config: &Config,
+        preferences: crate::preferences::Preferences,
+    ) {
+        self.preferences = preferences;
+        if config.default_user.is_empty()
+            && let Some(user) = &self.preferences.last_user
+        {
+            self.user = user.clone();
+            self.choose_user("Enter: continue · Tab: session · ↑/↓: user");
+        }
+        self.recall_session();
+        self.refresh(config);
+    }
+    fn recall_session(&mut self) {
+        self.session = self
+            .preferences
+            .sessions
+            .get(&self.user)
+            .and_then(|id| self.sessions.iter().position(|s| &s.id == id))
+            .unwrap_or(0);
+    }
+    pub fn apply_sessions(&mut self, sessions: Vec<crate::config::Session>) -> Option<Command> {
+        if matches!(self.phase, Phase::Starting | Phase::Done) {
+            return None;
+        }
+        let selected = self.sessions.get(self.session).map(|s| s.id.clone());
+        let same = self
+            .auth_session
+            .as_ref()
+            .is_none_or(|active| sessions.iter().any(|s| s == active));
+        self.sessions = sessions;
+        self.session = selected
+            .and_then(|id| self.sessions.iter().position(|s| s.id == id))
+            .unwrap_or(0);
+        if !same && matches!(self.phase, Phase::Waiting | Phase::Prompt) {
+            self.cancel()
+        } else {
+            None
+        }
+    }
+    pub fn power_action(&mut self, id: usize) -> Option<crate::power::Action> {
+        use crate::power::{Action, Menu};
+        match (id, self.power_menu) {
+            (20, Menu::Closed) if matches!(self.phase, Phase::User | Phase::Failed) => {
+                let action = if self.power_capabilities.shutdown {
+                    Action::Shutdown
+                } else if self.power_capabilities.restart {
+                    Action::Restart
+                } else {
+                    return None;
+                };
+                if self.phase == Phase::User {
+                    self.user = self.ui.secret.text().to_owned();
+                }
+                self.ui.secret.clear();
+                self.power_menu = Menu::Choose(action);
+            }
+            (21 | 22, Menu::Choose(_)) => {
+                let action = if id == 21 {
+                    Action::Shutdown
+                } else {
+                    Action::Restart
+                };
+                if self.power_capabilities.allows(action) {
+                    self.power_menu = Menu::Confirm(action);
+                }
+            }
+            (24, Menu::Confirm(action)) if self.power_capabilities.allows(action) => {
+                self.power_menu = Menu::Pending(action);
+                return Some(action);
+            }
+            (23, Menu::Choose(_) | Menu::Confirm(_)) => {
+                self.power_menu = Menu::Closed;
+                self.choose_user("Enter: continue · Tab: session · ↑/↓: user");
+            }
+            _ => {}
+        }
+        None
+    }
+    pub fn power_finished(&mut self, success: bool) {
+        if matches!(self.power_menu, crate::power::Menu::Pending(_)) {
+            self.power_menu = crate::power::Menu::Closed;
+            self.choose_user(if success {
+                "Power request accepted by the system"
+            } else {
+                "Power action unavailable or denied by system policy"
+            });
+        }
     }
     fn choose_user(&mut self, message: &str) {
         self.phase = Phase::User;
@@ -70,6 +171,54 @@ impl Controller {
         self.ui.message = message.into();
     }
     pub fn refresh(&mut self, config: &Config) {
+        use crate::power::{Action, Menu};
+        self.ui.hide_input = self.power_menu != Menu::Closed;
+        if let Menu::Choose(action) | Menu::Confirm(action) | Menu::Pending(action) =
+            self.power_menu
+        {
+            self.ui.prompt = None;
+            self.ui.busy = matches!(self.power_menu, Menu::Pending(_));
+            self.ui.controls.clear();
+            match self.power_menu {
+                Menu::Choose(_) => {
+                    self.ui.message =
+                        "Choose a power action · ↑/↓ selects · Enter continues · Escape returns"
+                            .into();
+                    for (id, value) in [(21, Action::Shutdown), (22, Action::Restart)] {
+                        if self.power_capabilities.allows(value) {
+                            self.ui.controls.push(Control {
+                                id,
+                                label: format!(
+                                    "{}{}",
+                                    if action == value { "› " } else { "" },
+                                    value.label()
+                                ),
+                            });
+                        }
+                    }
+                }
+                Menu::Confirm(_) => {
+                    self.ui.message = format!(
+                        "{} this computer? Unsaved work in other sessions may be lost.",
+                        action.label()
+                    );
+                    self.ui.controls.push(Control {
+                        id: 24,
+                        label: format!("Confirm {}", action.label().to_lowercase()),
+                    });
+                }
+                Menu::Pending(_) => self.ui.message = "Requesting system power action…".into(),
+                Menu::Closed => {}
+            }
+            if !self.ui.busy {
+                self.ui.controls.push(Control {
+                    id: 23,
+                    label: "Back".into(),
+                });
+            }
+            return;
+        }
+
         let displayed_user = if self.phase == Phase::User {
             self.ui.secret.text()
         } else {
@@ -117,6 +266,15 @@ impl Controller {
                 .into(),
             },
         ];
+        if config.power_controls
+            && matches!(self.phase, Phase::User | Phase::Failed)
+            && (self.power_capabilities.shutdown || self.power_capabilities.restart)
+        {
+            self.ui.controls.push(Control {
+                id: 20,
+                label: "Power   · F10".into(),
+            });
+        }
     }
     pub fn avatar_request(&self, config: &Config) -> (String, Vec<std::path::PathBuf>) {
         let username = if self.phase == Phase::User {
@@ -132,9 +290,12 @@ impl Controller {
         (username.into(), config.avatars.paths(username, icon))
     }
     pub fn submit(&mut self) -> Option<Command> {
+        if self.power_menu != crate::power::Menu::Closed {
+            return None;
+        }
         match self.phase {
             Phase::User | Phase::Failed => {
-                if !self.has_sessions {
+                if self.sessions.is_empty() {
                     self.ui.message =
                         "No desktop sessions available. Install a session or configure one.".into();
                     return None;
@@ -152,6 +313,10 @@ impl Controller {
                     self.ui.message = "Enter a valid username".into();
                     return None;
                 }
+                if !self.session_edited {
+                    self.recall_session();
+                }
+                self.auth_session = self.sessions.get(self.session).cloned();
                 self.generation = self.generation.wrapping_add(1);
                 self.started = Instant::now();
                 self.phase = Phase::Waiting;
@@ -198,6 +363,10 @@ impl Controller {
         }
     }
     pub fn escape(&mut self) -> Option<Command> {
+        if self.power_menu != crate::power::Menu::Closed {
+            self.power_action(23);
+            return None;
+        }
         if !self.ui.secret.is_empty() {
             self.clear_input();
             None
@@ -215,6 +384,7 @@ impl Controller {
         ) {
             return None;
         }
+        self.session_edited = true;
         self.session = (self.session + 1) % config.sessions.len();
         if matches!(self.phase, Phase::Waiting | Phase::Prompt) {
             self.cancel()
@@ -235,6 +405,8 @@ impl Controller {
             .map(|i| (i + if previous { n - 1 } else { 1 }) % n)
             .unwrap_or(if previous { n - 1 } else { 0 });
         self.user = self.accounts[index].username.clone();
+        self.session_edited = false;
+        self.recall_session();
         self.choose_user("Enter: continue · Tab: session · ↑/↓: user");
     }
     pub fn apply_accounts(&mut self, config: &Config, detected: Vec<Account>) {
@@ -265,14 +437,17 @@ impl Controller {
         }
     }
     pub fn backspace(&mut self) {
+        self.edit(canopa_session_ui::secret::Edit::Backspace);
+    }
+    pub fn edit(&mut self, edit: canopa_session_ui::secret::Edit) {
         if matches!(self.phase, Phase::User | Phase::Prompt) {
             if self.phase == Phase::User {
                 self.user_edited = true;
             }
-            self.ui.secret.pop();
+            self.ui.secret.edit(edit);
         }
     }
-    pub fn event(&mut self, event: Event, config: &Config) -> Option<Command> {
+    pub fn event(&mut self, event: Event, _config: &Config) -> Option<Command> {
         if matches!(event.kind, Kind::Fatal) {
             self.phase = Phase::Fatal;
             self.ui.secret.clear();
@@ -305,7 +480,7 @@ impl Controller {
                 self.ui.secret.clear();
                 self.ui.prompt = None;
                 self.ui.message = "Starting session…".into();
-                let Some(session) = config.sessions.get(self.session).cloned() else {
+                let Some(session) = self.auth_session.clone() else {
                     self.phase = Phase::Fatal;
                     return None;
                 };
@@ -314,7 +489,12 @@ impl Controller {
                     session,
                 });
             }
-            Kind::Started if self.phase == Phase::Starting => self.phase = Phase::Done,
+            Kind::Started if self.phase == Phase::Starting => {
+                self.phase = Phase::Done;
+                if let Some(session) = &self.auth_session {
+                    self.preferences.record_success(&self.user, &session.id);
+                }
+            }
             Kind::Cancelled(message) => self.choose_user(&message),
             Kind::Failed(message) => {
                 self.retry_after =
@@ -334,6 +514,89 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn preferences_commit_only_after_handoff_and_catalog_changes_cannot_redirect_authentication() {
+        let mut config = configured();
+        config.users = vec!["alice".into(), "bob".into()];
+        let mut other = config.sessions[0].clone();
+        other.id = "other".into();
+        other.label = "Other".into();
+        config.sessions.push(other);
+        let mut preferences = crate::preferences::Preferences::default();
+        preferences.record_success("bob", "other");
+        let mut c = Controller::new(&config).unwrap();
+        c.apply_preferences(&config, preferences.clone());
+        assert_eq!(c.user, "bob");
+        assert_eq!(c.session, 1);
+        c.user_next(true);
+        assert_eq!(c.user, "alice");
+        assert_eq!(c.session, 0);
+        assert!(matches!(c.submit(), Some(Command::Begin { .. })));
+        let generation = c.generation;
+        let commit = c.event(
+            Event {
+                generation,
+                kind: Kind::Authenticated,
+            },
+            &config,
+        );
+        assert!(matches!(commit,Some(Command::Commit{session,..}) if session.id=="test"));
+        assert_eq!(c.preferences, preferences);
+        c.event(
+            Event {
+                generation,
+                kind: Kind::Started,
+            },
+            &config,
+        );
+        assert_eq!(c.preferences.last_user.as_deref(), Some("alice"));
+        assert_eq!(c.preferences.sessions["alice"], "test");
+        let mut c = Controller::new(&config).unwrap();
+        c.submit();
+        let old = c.generation;
+        let mut changed = config.sessions.clone();
+        changed[0].argv = vec!["different-program".into()];
+        assert!(matches!(
+            c.apply_sessions(changed),
+            Some(Command::Cancel { .. })
+        ));
+        assert!(
+            c.event(
+                Event {
+                    generation: old,
+                    kind: Kind::Authenticated
+                },
+                &config
+            )
+            .is_none()
+        );
+        assert!(c.phase == Phase::Canceling);
+    }
+    #[test]
+    fn power_requires_a_permitted_choice_and_separate_confirmation_and_blocks_login_submission() {
+        use crate::power::{Action, Capabilities, Menu};
+        let config = configured();
+        let mut c = Controller::new(&config).unwrap();
+        assert!(c.power_action(20).is_none());
+        assert_eq!(c.power_menu, Menu::Closed);
+        c.power_capabilities = Capabilities {
+            shutdown: true,
+            restart: false,
+        };
+        assert!(c.power_action(20).is_none());
+        assert_eq!(c.power_menu, Menu::Choose(Action::Shutdown));
+        assert!(c.submit().is_none());
+        assert!(c.ui.secret.is_empty());
+        assert!(c.power_action(22).is_none());
+        assert_eq!(c.power_menu, Menu::Choose(Action::Shutdown));
+        assert!(c.power_action(21).is_none());
+        assert_eq!(c.power_menu, Menu::Confirm(Action::Shutdown));
+        assert_eq!(c.power_action(24), Some(Action::Shutdown));
+        assert!(c.power_action(24).is_none());
+        c.power_finished(false);
+        assert_eq!(c.power_menu, Menu::Closed);
+        assert!(c.ui.message.contains("denied"));
+    }
     fn configured() -> Config {
         let (mut config, _) = Config::load(&canopa_config::Request::Defaults).unwrap();
         config.sessions.push(crate::config::Session {

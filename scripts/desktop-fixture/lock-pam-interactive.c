@@ -42,4 +42,23 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *handle,int flags,int argc,const
     return PAM_SUCCESS;
 }
 PAM_EXTERN int pam_sm_setcred(pam_handle_t *handle,int flags,int argc,const char **argv){(void)handle;(void)flags;(void)argc;(void)argv;return PAM_SUCCESS;}
-PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *handle,int flags,int argc,const char **argv){(void)handle;(void)flags;(void)argc;(void)argv;return PAM_SUCCESS;}
+PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *handle,int flags,int argc,const char **argv){
+    (void)flags;if(argc<2)return PAM_SUCCESS;root=argv[1];
+    if(strncmp(argv[0],"expired",7)!=0)return PAM_SUCCESS;
+    const void *changed=NULL;pam_get_data(handle,"fixture-password-changed",&changed);
+    mark(changed?"account rechecked":"password expired");
+    return changed?PAM_SUCCESS:PAM_NEW_AUTHTOK_REQD;
+}
+PAM_EXTERN int pam_sm_chauthtok(pam_handle_t *handle,int flags,int argc,const char **argv){
+    if(argc<2)return PAM_SYSTEM_ERR;
+    root=argv[1];mark("password change called");
+    if(flags&PAM_PRELIM_CHECK)return PAM_SUCCESS;
+    if(!(flags&PAM_UPDATE_AUTHTOK))return PAM_SYSTEM_ERR;
+    int result=converse(handle,PAM_PROMPT_ECHO_OFF,"Current password:","canopa-fixture-password");
+    if(result!=PAM_SUCCESS)return result;
+    result=converse(handle,PAM_PROMPT_ECHO_OFF,"New password:","canopa-fixture-new-password");
+    if(result!=PAM_SUCCESS)return result;
+    result=converse(handle,PAM_PROMPT_ECHO_OFF,"Repeat new password:","canopa-fixture-new-password");
+    if(result!=PAM_SUCCESS || strcmp(argv[0],"expired-fail")==0)return PAM_AUTHTOK_ERR;
+    mark("password changed");return pam_set_data(handle,"fixture-password-changed",(void*)1,NULL);
+}

@@ -2684,6 +2684,16 @@
       ]
     },
     {
+      "id": "session-stasis",
+      "script": "verify-stasis.py",
+      "args": ["--bin-dir", "{session}", "--shell", "{shell}", "--stasis", "{stasis}", "--output", "{artifacts}"]
+    },
+    {
+      "id": "wallpaper-followups",
+      "script": "verify-wallpaper-followups.py",
+      "args": ["--binary", "{session}/canopa-wallpaper", "--output", "{artifacts}"]
+    },
+    {
       "id": "session-wallpaper-lock",
       "script": "verify-session-tools.py",
       "args": [
@@ -2702,6 +2712,11 @@
         "--output",
         "{artifacts}"
       ]
+    },
+    {
+      "id": "greeter-followups",
+      "script": "verify-greeter-followups.py",
+      "args": ["--binary", "{greeter}", "--output", "{artifacts}"]
     },
     {
       "id": "greeter-login",

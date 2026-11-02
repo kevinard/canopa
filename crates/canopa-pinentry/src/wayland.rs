@@ -6,6 +6,7 @@ use crate::{
 use anyhow::Result;
 use calloop::{
     EventLoop, Interest, Mode, PostAction,
+    channel::{self, Event},
     generic::Generic,
     timer::{TimeoutAction, Timer},
 };
@@ -40,6 +41,8 @@ use wayland_client::{
 };
 
 struct App {
+    accessibility: Option<canopa_session_ui::accessibility::Accessibility>,
+    input: canopa_session_ui::input::Keyboard,
     registry: RegistryState,
     outputs: OutputState,
     seats: SeatState,
@@ -60,7 +63,37 @@ struct App {
     exit: bool,
     hits: Vec<(usize, Rect)>,
 }
-pub fn run(settings: &Settings, request: &Request) -> Result<Response> {
+pub fn run_agent(
+    settings: &Settings,
+    request: &Request,
+    agent: &mut dyn crate::agent::Agent,
+) -> Result<Response> {
+    std::thread::scope(|scope| {
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        let (answers, results) = channel::channel();
+        let stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = stopped.clone();
+        scope.spawn(move || {
+            while let Ok(query) = receive.recv() {
+                if flag.load(std::sync::atomic::Ordering::Acquire) {
+                    break;
+                }
+                if answers.send(agent.inquire(query)).is_err() {
+                    break;
+                }
+            }
+        });
+        let result = run_inner(settings, request, send, results);
+        stopped.store(true, std::sync::atomic::Ordering::Release);
+        result
+    })
+}
+fn run_inner(
+    settings: &Settings,
+    request: &Request,
+    inquiries: std::sync::mpsc::SyncSender<crate::agent::Query>,
+    answers: channel::Channel<(u64, crate::agent::Answer)>,
+) -> Result<Response> {
     let connection = Connection::connect_to_env()?;
     let (globals, queue) = registry_queue_init::<App>(&connection)?;
     let qh = queue.handle();
@@ -91,6 +124,8 @@ pub fn run(settings: &Settings, request: &Request) -> Result<Response> {
     window.set_max_size(Some((800, 720)));
     window.commit();
     let mut app = App {
+        accessibility: None,
+        input: Default::default(),
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
         seats: SeatState::new(&globals, &qh),
@@ -111,6 +146,34 @@ pub fn run(settings: &Settings, request: &Request) -> Result<Response> {
         exit: false,
         hits: Vec::new(),
     };
+    let (a11y_sender, a11y_receiver) = channel::channel();
+    app.accessibility = Some(canopa_session_ui::accessibility::Accessibility::new(
+        "Canopa Pinentry",
+        move |request| {
+            let _ = a11y_sender.send(request);
+        },
+    ));
+    loop_
+        .handle()
+        .insert_source(a11y_receiver, |event, _, app| {
+            if let Event::Msg(request) = event {
+                app.accessible(request);
+            }
+        })
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+    loop_
+        .handle()
+        .insert_source(answers, |event, _, app: &mut App| {
+            if let Event::Msg((revision, answer)) = event
+                && let Some(c) = &mut app.controller
+            {
+                c.inquiry_result(revision, answer);
+                app.exit = c.response.is_some();
+                app.dirty = true;
+            }
+        })
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     if request.timeout > 0 {
         loop_
             .handle()
@@ -158,8 +221,34 @@ pub fn run(settings: &Settings, request: &Request) -> Result<Response> {
         .insert(loop_.handle())
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let result = (|| -> Result<Response> {
+        let mut revision = 0;
+        let mut quality_at: Option<std::time::Instant> = None;
         while !app.exit {
-            loop_.dispatch(None, &mut app)?;
+            let wait = quality_at.map(|at| at.saturating_duration_since(std::time::Instant::now()));
+            loop_.dispatch(wait, &mut app)?;
+            let c = app.controller.as_mut().unwrap();
+            if revision != c.revision {
+                revision = c.revision;
+                quality_at = c
+                    .request
+                    .quality
+                    .as_ref()
+                    .map(|_| std::time::Instant::now() + Duration::from_millis(150));
+            }
+            if quality_at.is_some_and(|at| at <= std::time::Instant::now()) {
+                quality_at = None;
+                c.quality_query();
+            }
+            if let Some(query) = c.pending.take() {
+                match inquiries.try_send(query) {
+                    Ok(()) => {}
+                    Err(std::sync::mpsc::TrySendError::Full(query)) => c.pending = Some(query),
+                    Err(_) => {
+                        c.finish(Response::Unavailable);
+                        app.exit = true;
+                    }
+                }
+            }
             if !app.exit {
                 app.paint()?;
             }
@@ -178,12 +267,60 @@ pub fn run(settings: &Settings, request: &Request) -> Result<Response> {
     loop_.handle().remove(wayland_source);
     drop(app);
     let flushed = connection.flush();
+    drop(inquiries);
     let response = result?;
     flushed?;
     Ok(response)
 }
 impl App {
+    fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
+        if let (Some(a), Some(c)) = (&mut self.accessibility, &self.controller) {
+            a.update("Canopa Pinentry", &c.ui, &self.settings, self.focused);
+        }
+        use canopa_session_ui::accessibility::{Operation, select};
+        if !self.focused
+            || !self
+                .accessibility
+                .as_ref()
+                .is_some_and(|a| a.accepts(&request))
+        {
+            return;
+        }
+        match request.operation {
+            Operation::Control(id) => self.action(id),
+            Operation::Submit => self.action(0),
+            Operation::Cancel => self.action(3),
+            Operation::Replace(secret) => {
+                if let Some(c) = &mut self.controller
+                    && c.ui.prompt.is_some()
+                    && !c.ui.hide_input
+                {
+                    c.clear_input();
+                    c.input(secret.text());
+                }
+            }
+            Operation::Select {
+                anchor,
+                focus,
+                echo,
+            } => {
+                if let Some(c) = &mut self.controller
+                    && c.ui.prompt.is_some()
+                    && !c.ui.hide_input
+                {
+                    select(&mut c.ui.secret, anchor, focus, echo);
+                }
+            }
+        }
+        self.dirty = true;
+    }
+
     fn action(&mut self, id: usize) {
+        if id == canopa_session_ui::input::LAYOUT_CONTROL {
+            self.input.cycle();
+            self.dirty = true;
+            return;
+        }
         let c = self.controller.as_mut().unwrap();
         if id == 1 {
             c.cycle();
@@ -196,7 +333,10 @@ impl App {
         self.dirty = true;
     }
     fn key(&mut self, mut event: KeyEvent) {
-        let text = zeroize::Zeroizing::new(event.utf8.take().unwrap_or_default());
+        let (symbol, text) = self
+            .input
+            .translate(event.raw_code, event.keysym, event.utf8.take());
+        event.keysym = symbol;
         if !self.focused {
             return;
         }
@@ -207,12 +347,25 @@ impl App {
             self.dirty = true;
             return;
         }
+        if event.keysym == Keysym::F6 {
+            self.action(canopa_session_ui::input::LAYOUT_CONTROL);
+            return;
+        }
+        if let Some(edit) = self.input.edit(event.keysym)
+            && let Some(c) = &mut self.controller
+            && !c.ui.hide_input
+            && c.ui.prompt.is_some()
+        {
+            c.edit(edit);
+            self.dirty = true;
+            return;
+        }
         match event.keysym {
             Keysym::Return | Keysym::KP_Enter => self.action(0),
             Keysym::Escape => self.action(3),
             Keysym::Tab | Keysym::ISO_Left_Tab => self.action(1),
-            Keysym::Right => self.action(4),
-            Keysym::Left => self.action(5),
+            Keysym::Right | Keysym::Page_Down => self.action(4),
+            Keysym::Left | Keysym::Page_Up => self.action(5),
             Keysym::BackSpace => {
                 if let Some(c) = &mut self.controller {
                     c.backspace();
@@ -231,10 +384,19 @@ impl App {
             return Ok(());
         }
         self.dirty = false;
+
+        if let Some(c) = &mut self.controller {
+            c.ui.layout = self.input.label();
+            c.ui.can_select_layout = self.input.can_select();
+        }
+
         let Some(c) = &mut self.controller else {
             return Ok(());
         };
         c.refresh();
+        if let Some(a) = &mut self.accessibility {
+            a.update("Canopa Pinentry", &c.ui, &self.settings, self.focused);
+        }
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);
         background::dimensions(width, height)?;
@@ -477,12 +639,28 @@ impl KeyboardHandler for App {
         _: &wl_keyboard::WlKeyboard,
         _: u32,
         modifiers: Modifiers,
-        _: RawModifiers,
-        _: u32,
+        raw: RawModifiers,
+        layout: u32,
     ) {
+        self.input.modifiers(
+            [raw.depressed, raw.latched, raw.locked],
+            layout,
+            modifiers.shift,
+            modifiers.ctrl,
+        );
         if let Some(c) = &mut self.controller {
             c.ui.caps = modifiers.caps_lock;
         }
+        self.dirty = true;
+    }
+    fn update_keymap(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        keymap: smithay_client_toolkit::seat::keyboard::Keymap<'_>,
+    ) {
+        self.input.keymap(keymap.as_string());
         self.dirty = true;
     }
 }

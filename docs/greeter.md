@@ -302,8 +302,8 @@ Enter continues/submits; Escape clears nonempty input, then cancels the transact
 Up/Down selects a configured user while entering a username; Tab cycles sessions.
 Clickable User/Session/Continue controls provide the same actions. During a session
 start, selection is frozen until greetd acknowledges or refuses the handoff.
-Input currently uses keyboard and pointer; the software presentation does not yet
-expose an AT-SPI tree or complex-script shaping.
+Input supports keyboard, pointer and protected AT-SPI actions, with complex-script
+shaping and layout selection; see [shared input](session-tools.md#shared-authentication-input).
 
 `view` uses the lockscreen's presentation schema: wallpaper fit/dimming, clock/date,
 font sizes, nine-region layout and named passive script widgets. Authentication
@@ -392,3 +392,33 @@ and [session environment keys](https://specifications.freedesktop.org/desktop-en
 [NSS enumeration](https://man7.org/linux/man-pages/man3/getpwent_r.3.html) and
 [UID defaults](https://man7.org/linux/man-pages/man5/login.defs.5.html).
 [AccountsService IconFile contract](https://sources.debian.org/src/accountsservice/0.6.37-3/data/org.freedesktop.Accounts.User.xml/).
+
+## Remembered choices, refresh and power
+
+The greeter remembers the last successfully started user and that user's desktop
+session ID. It writes only after greetd acknowledges session startup; failed or
+cancelled authentication and refused session launches do not update preferences.
+An explicit `default-user` takes priority over the remembered user. Switching users
+recalls each user's last successful desktop when it is still installed. State is
+bounded, mode 0600, and atomically replaced in the greeter account's
+`$XDG_STATE_HOME/canopa/greeter.json` (or `~/.local/state/canopa/greeter.json`).
+No credentials or desktop commands are stored. Invalid/unreadable state uses the
+configured defaults. Set `remember-selection #false` to disable loading/saving.
+Preview and configuration checks do not read or write this file.
+
+AccountsService signals refresh account names and avatar sources. Local NSS file
+changes, installed session entries and selected avatar files use inotify, including
+atomic replacement. A changed or removed desktop command cancels an in-flight
+login attempt; source updates cannot redirect it to a different command. Session
+handoff already accepted by greetd is not changed. Press **F5** to refresh catalogs
+explicitly, including remote NSS sources, which have no universal change signal.
+Typed usernames and current authentication responses survive unrelated updates.
+
+The Power button (**F10**) appears when logind permits shutdown or restart for the
+greeter account. Choosing an action opens a separate confirmation. Logind policy
+is queried again after confirmation, and the final request also undergoes logind's
+normal authorization. `challenge`, `no`, unavailable services and errors do not
+authorize an action. The unauthenticated greeter does not supply an administrator
+identity. Up/Down selects an action, Enter continues/confirms, and Escape returns.
+Power controls are available before authentication. Set `power-controls #false`
+to hide them. These preferences configure UI behavior, not system authorization.

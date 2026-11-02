@@ -20,6 +20,7 @@ pub struct Controller {
     pub serial: u64,
     uids: Vec<u32>,
     selected: usize,
+    identity: Option<crate::identity::Identity>,
     retry_after: Instant,
     action: String,
     description: String,
@@ -36,6 +37,7 @@ impl Controller {
             serial: 0,
             uids: Vec::new(),
             selected: 0,
+            identity: None,
             retry_after: Instant::now(),
             action: String::new(),
             description: String::new(),
@@ -43,6 +45,25 @@ impl Controller {
             prompt: None,
             details: None,
         })
+    }
+    pub fn selected_uid(&self) -> Option<u32> {
+        self.uids
+            .get(self.selected)
+            .copied()
+            .filter(|_| self.active())
+    }
+    pub fn identity(&mut self, mut identity: crate::identity::Identity) {
+        if Some(identity.uid) == self.selected_uid() {
+            self.ui.set_user_avatar(
+                identity
+                    .rgba
+                    .take()
+                    .and_then(|bytes| image::RgbaImage::from_raw(128, 128, bytes))
+                    .map(std::sync::Arc::new),
+            );
+            self.identity = Some(identity);
+            self.refresh();
+        }
     }
     pub fn active(&self) -> bool {
         self.phase != Phase::Idle
@@ -56,6 +77,8 @@ impl Controller {
                 uids,
                 selected,
             } if generation > self.generation => {
+                self.identity = None;
+                self.ui.set_user_avatar(None);
                 self.generation = generation;
                 self.serial = 0;
                 self.uids = uids;
@@ -149,8 +172,11 @@ impl Controller {
         self.notice.clear();
         self.ui.username.clear();
         self.uids.clear();
+        self.identity = None;
+        self.ui.set_user_avatar(None);
     }
     pub fn refresh(&mut self) {
+        self.ui.interaction_epoch = (self.generation, self.serial);
         self.ui.custom.clear();
         self.ui.prompt = if self.details.is_none() {
             self.prompt.as_ref().map(|p| Prompt {
@@ -189,7 +215,7 @@ impl Controller {
                 .insert(format!("message-{index}"), part.iter().collect());
         }
         self.ui.message = if self.details.is_some() {
-            "Details · Left/Right: page · Enter: back".into()
+            "Details · Page Up/Down: page · Enter: back".into()
         } else {
             self.notice.clone()
         };
@@ -206,6 +232,12 @@ impl Controller {
                 }
             })
             .unwrap_or_default();
+        let label = self
+            .identity
+            .as_ref()
+            .filter(|i| Some(i.uid) == self.selected_uid())
+            .map(|i| i.label())
+            .unwrap_or(label);
         self.ui.username = label.clone();
         self.ui.busy = self.phase == Phase::Waiting || self.details.is_some();
         self.ui.controls = vec![
@@ -256,8 +288,11 @@ impl Controller {
         }
     }
     pub fn backspace(&mut self) {
+        self.edit(canopa_session_ui::secret::Edit::Backspace);
+    }
+    pub fn edit(&mut self, edit: canopa_session_ui::secret::Edit) {
         if self.phase == Phase::Prompt && self.details.is_none() {
-            self.ui.secret.pop();
+            self.ui.secret.edit(edit);
         }
     }
     pub fn clear_input(&mut self) {
@@ -291,6 +326,8 @@ impl Controller {
         {
             return;
         }
+        self.identity = None;
+        self.ui.set_user_avatar(None);
         self.selected = (self.selected + 1) % self.uids.len();
         self.ui.secret.clear();
         self.prompt = None;
@@ -350,6 +387,27 @@ mod tests {
     fn controller() -> Controller {
         let (settings, _) = crate::config::load(&canopa_config::Request::Defaults).unwrap();
         Controller::preview(&settings).unwrap()
+    }
+    #[test]
+    fn metadata_never_adds_an_identity_or_changes_its_uid() {
+        let mut c = controller();
+        let uid = c.selected_uid().unwrap();
+        let data = |uid, name: &str| crate::identity::Identity {
+            uid,
+            username: "alice".into(),
+            name: name.into(),
+            rgba: None,
+        };
+        c.identity(data(uid.wrapping_add(1), "Foreign"));
+        assert!(!c.ui.username.contains("Foreign"));
+        c.identity(data(uid, "Alice Example"));
+        assert!(c.ui.username.contains("Alice Example"));
+        assert_eq!(c.selected_uid(), Some(uid));
+        c.event(Event::Closed {
+            generation: c.generation,
+        });
+        c.identity(data(uid, "Stale"));
+        assert!(c.ui.username.is_empty());
     }
     #[test]
     fn fresh_prompts_clear_input_and_closed_or_cancelled_requests_cannot_be_resurrected() {

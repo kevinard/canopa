@@ -88,11 +88,13 @@ fn run(cli: Cli) -> Result<()> {
     // An unbuffered duplicated stdout keeps protocol data out of stdio buffers.
     use std::os::fd::AsFd;
     let output = std::fs::File::from(std::io::stdout().as_fd().try_clone_to_owned()?);
-    canopa_pinentry::protocol::serve(
-        std::io::stdin().lock(),
+    canopa_pinentry::protocol::serve_agent(
+        canopa_pinentry::agent::Input::new(std::fs::File::from(
+            std::io::stdin().as_fd().try_clone_to_owned()?,
+        )),
         output,
         settings.auth_timeout,
-        |request| match canopa_pinentry::wayland::run(&settings, request) {
+        |request, agent| match canopa_pinentry::wayland::run_agent(&settings, request, agent) {
             Ok(response) => response,
             Err(_) => {
                 eprintln!("canopa-pinentry: graphical dialog unavailable");

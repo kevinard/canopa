@@ -2,3 +2,4 @@
 # Install as /etc/pam.d/canopa-lock on Debian/Ubuntu.
 @include common-auth
 @include common-account
+@include common-password

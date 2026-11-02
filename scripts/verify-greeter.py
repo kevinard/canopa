@@ -4,11 +4,13 @@ import argparse,importlib.util,json,os,subprocess,sys,tempfile,time
 from collections import Counter
 from pathlib import Path
 from PIL import Image
+import native_accessibility as a11y
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('desktop',ROOT/'scripts/validate-desktop.py');desktop=importlib.util.module_from_spec(spec);spec.loader.exec_module(desktop)
 def verify(binary,session,compositor,compositor_binary):
     session.start_niri('prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\nhotkey-overlay { skip-at-startup; }\nwindow-rule { open-fullscreen true; }\n')
+    a11y.start(session)
     root=session.runtime;config=root/'greeter.kdl';marker=root/'widget-runs'
     faces=root/'faces';faces.mkdir()
     for name,color in [('alice',(210,60,70)),('bob',(40,120,220))]:
@@ -24,6 +26,7 @@ def verify(binary,session,compositor,compositor_binary):
     (sessions/'other.desktop').write_text('[Desktop Entry]\nType=Application\nName=Other desktop\nExec=/usr/bin/true "arg with spaces"\nDesktopNames=Other;\n')
     config.write_text(f'''schema-version 1
 greeter {{
+ remember-selection #false
  user-source "accountsservice"
  avatar-dir "{faces}"
  users "alice" "bob"
@@ -131,7 +134,12 @@ greeter {{
     assert event('begin',before,user='bob')
     answer('wrong');time.sleep(2.3);no_handoff(before);assert app.poll() is None;assert event('failed-worker-cleanup',before)
     key('Return');prompt('Password:',before+len(events()[before:])-1)
-    answer('canopa-fixture-password');prompt('One-time code:',before)
+    a11y.request(session,'--window','Canopa Login','--name','Password:','--value','canopa-fixture-password')
+    time.sleep(.2)
+    protected=json.loads(a11y.request(session,'--window','Canopa Login','--name','Password:'))
+    assert protected['role']=='password text' and 'canopa-fixture-password' not in protected['text'],protected
+    a11y.request(session,'--window','Canopa Login','--name','Submit response','--click')
+    prompt('One-time code:',before)
     answer('123456');done(app)
     handoff=event('handoff',before);assert handoff['user']=='bob' and handoff['cmd']==['/usr/bin/true','arg with spaces'] and handoff['env']==['XDG_SESSION_TYPE=wayland','XDG_SESSION_DESKTOP=other','XDG_CURRENT_DESKTOP=Other']
     assert marker.exists();runs=len(marker.read_text().splitlines());time.sleep(1.2);assert len(marker.read_text().splitlines())==runs
@@ -160,7 +168,11 @@ greeter {{
     mode('password');retry_at=len(events());key('Return');prompt('Password:',retry_at);answer('canopa-fixture-password');done(app)
     app,before=start('cancel-blocked','token');key('Return');prompt('Password:',before);answer('canopa-fixture-password');wait(lambda:event('device-wait',before),'blocked backend request')
     (root/'greetd-control.json').write_text(json.dumps({'mode':'token','cancel-blocked':True}))
-    key('Escape');failed(app,'cancel-blocked');no_handoff(before)
+    drain_after=len(events());key('Escape');failed(app,'cancel-blocked');no_handoff(before)
+    # The intentionally stalled peer still owns its old requests after the
+    # frontend's bounded exit. Drain it before starting a different conversation;
+    # its late cancellation must not become input to the next test case.
+    wait(lambda:event('client-close',drain_after,active=0),'blocked peer connection cleanup')
     config.write_text(configured.replace('users "alice" "bob"','users;'))
     app,before=start('accounts-service','password');avatar('avatar-alice.png',(210,60,70));key('Down');avatar('accounts-chooser.png',(40,120,220));key('Return');prompt('Password:',before);assert event('begin',before,user='bob');avatar('avatar-password.png',(40,120,220));answer('canopa-fixture-password');done(app)
     config.write_text(configured.replace('user-source "accountsservice"',f'user-source "accountsservice"; user-avatar "bob" "{root / "override.png"}"'))

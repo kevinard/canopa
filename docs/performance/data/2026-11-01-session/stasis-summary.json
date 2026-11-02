@@ -1,0 +1,59 @@
+{
+  "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+  "cpu_count": 4,
+  "sample_seconds": 30,
+  "settle_seconds": 5,
+  "stasis_sha256": "2438c0f3a705ab57edfcb902c5b06efa52a79ae31ecff9fd526c762b9f5ac0d7",
+  "binaries": {
+    "canopa-idle": "783f2c47ec2ab85d7df404c96d3eebbfb58270e69441f8efe4d5b3aeadedc2f5",
+    "canopa-lock": "a838b286723509e093e8caeb545d1a42253eb232917c78b2393e35210afccbec"
+  },
+  "scope": "Canopa idle supervisor plus real Stasis backend and readiness watch; listener/compositor excluded; optional detectors use private D-Bus and host process/device visibility",
+  "limitations": [
+    "debug executable unless separately built optimized",
+    "scheduler sleeps are not hardware wakeups",
+    "no input or authentication during each measured interval"
+  ],
+  "groups": {
+    "off-stock": {
+      "cpu_percent_one_core": 0.181895379255237,
+      "rss_kib": 29606.0,
+      "pss_kib": 18964.0,
+      "private_kib": 14732.0,
+      "threads": 14.0,
+      "observed_voluntary_context_switches_per_second": 32.34772782547272
+    },
+    "off-1": {
+      "cpu_percent_one_core": 0.14913184301208,
+      "rss_kib": 29142.0,
+      "pss_kib": 18851.0,
+      "private_kib": 14670.0,
+      "threads": 8.0,
+      "observed_voluntary_context_switches_per_second": 28.598548641425218
+    },
+    "on-stock": {
+      "cpu_percent_one_core": 1.723150392151329,
+      "rss_kib": 30420.0,
+      "pss_kib": 19878.0,
+      "private_kib": 15710.0,
+      "threads": 15.0,
+      "observed_voluntary_context_switches_per_second": 43.228891653459996
+    },
+    "on-1": {
+      "cpu_percent_one_core": 1.4589523929036856,
+      "rss_kib": 30024.0,
+      "pss_kib": 19480.5,
+      "private_kib": 15182.0,
+      "threads": 9.0,
+      "observed_voluntary_context_switches_per_second": 41.18617054201012
+    }
+  },
+  "recorded_utc": "2026-11-01T22:12:16.531197+00:00",
+  "upstream_revision": "d84e75e22cc00329712fb1caa83445d2f12ce921",
+  "upstream_version": "1.7.0",
+  "stock_workers": 4,
+  "configuration": "packaging/stasis/stasis.rune, all action timeouts extended to 86400 seconds; only detector flags vary",
+  "build": "workspace debug for Canopa and upstream locked debug for Stasis; no compilation/other acceptance fixture during samples",
+  "sampler_sha256": "757de465b78a04f5505ec8c7fe48606fff73db789abac8fd5d86712b1d25cb35",
+  "clock_ticks_per_second": 100
+}

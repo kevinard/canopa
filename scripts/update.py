@@ -15,8 +15,8 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-media-provider", "canopa-notify", "canopa-files", "canopa", "canopa-wallpaper", "canopa-lock", "canopa-greeter", "canopa-polkit", "canopa-pinentry")
-SERVICES = ("canopa-notify.service", "canopa-shell.service", "canopa-wallpaper.service", "canopa-lock.service", "canopa-polkit.service")
+PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-media-provider", "canopa-notify", "canopa-files", "canopa", "canopa-wallpaper", "canopa-lock", "canopa-idle", "canopa-greeter", "canopa-polkit", "canopa-pinentry")
+SERVICES = ("canopa-notify.service", "canopa-shell.service", "canopa-wallpaper.service", "canopa-lock.service", "canopa-polkit.service", "canopa-idle.service")
 
 
 def run(*args, check=True, timeout=60):
@@ -144,7 +144,7 @@ def update(jobs, rebuild=False):
     states = {}
     for service in SERVICES:
         if property_value(service, "LoadState") != "loaded":
-            if service in ("canopa-wallpaper.service", "canopa-lock.service", "canopa-polkit.service"):
+            if service in ("canopa-wallpaper.service", "canopa-lock.service", "canopa-polkit.service", "canopa-idle.service"):
                 continue  # New optional companion; existing installations can add its unit later.
             raise RuntimeError(
                 f"{service} is not loaded; install the companion user services first "

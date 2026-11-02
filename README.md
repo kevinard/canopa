@@ -14,7 +14,7 @@ cargo build --workspace --bins --locked
 ```
 
 Binaries are in root `target/debug/`: `canopa-shell`, `canopa-wifi-provider`, `canopa-audio-provider`, `canopa-media-provider`,
-`canopa-notify`, `canopa-files`, `canopa-wallpaper`, `canopa-lock`, `canopa-greeter`, `canopa-polkit`, `canopa-pinentry`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p canopa-shell` or
+`canopa-notify`, `canopa-files`, `canopa-wallpaper`, `canopa-lock`, `canopa-greeter`, `canopa-polkit`, `canopa-pinentry`, `canopa-idle`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p canopa-shell` or
 `cargo build --locked -p canopa-notify`. Notify's core build remains available with
 `cargo build --locked -p canopa-notify --no-default-features`.
 Files' core can be checked with explicitly selected `--lib` or `--test` targets
@@ -166,7 +166,10 @@ isolation, image budgets, icon lookup compatibility and real PNG/SVG rendering.
 
 Wallpaper and lockscreen are provided by `canopa-wallpaper` and `canopa-lock`.
 See [session tools](docs/session-tools.md) for live wallpaper controls, PAM setup,
-lock preview, themes and shared widgets.
+lock preview, themes and shared widgets. The wallpaper picker supports per-monitor
+previews and saved assignments; shared authentication input supports layouts and
+accessibility. Optional [Stasis integration](docs/idle.md) coordinates automatic
+locking, sleep readiness and shell idle controls.
 
 Canopa Greeter provides a login screen backed by greetd, sharing the lockscreen
 presentation, automatic user/session discovery and selected-user avatars. See [greeter setup](docs/greeter.md) for the dedicated account, Cage/Weston

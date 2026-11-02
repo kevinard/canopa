@@ -19,6 +19,9 @@ use smithay_client_toolkit::{
     seat::{
         Capability, SeatHandler, SeatState,
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers},
+        pointer::{
+            CursorIcon, PointerEvent, PointerEventKind, PointerHandler, ThemeSpec, ThemedPointer,
+        },
     },
     session_lock::{
         SessionLock, SessionLockHandler, SessionLockState, SessionLockSurface,
@@ -41,7 +44,7 @@ use std::{
 use wayland_client::{
     Connection, QueueHandle,
     globals::registry_queue_init,
-    protocol::{wl_buffer, wl_keyboard, wl_output, wl_seat, wl_shm, wl_surface},
+    protocol::{wl_buffer, wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
 };
 
 pub fn check_config(request: Request, component: Component, show_source: bool) -> Result<()> {
@@ -92,6 +95,7 @@ impl Role {
     }
 }
 struct DisplaySurface {
+    hits: Vec<(usize, canopa_session_ui::layout::Rect)>,
     output: wl_output::WlOutput,
     role: Role,
     width: u32,
@@ -100,13 +104,29 @@ struct DisplaySurface {
     dirty: bool,
     background: Option<image::RgbImage>,
 }
+struct Wallpaper {
+    base: Settings,
+    assignments: crate::wallpaper_state::Saved,
+    persisted: crate::wallpaper_state::Saved,
+    path: Option<std::path::PathBuf>,
+    sources: Vec<std::path::PathBuf>,
+    sources_baseline: crate::file_watch::Snapshot,
+    observer: Option<crate::file_watch::Observer>,
+    timer: Option<calloop::RegistrationToken>,
+    slide_cursor: Option<usize>,
+}
 enum Update {
+    WallpaperChanged,
+    Accessibility(canopa_session_ui::accessibility::Request),
     Authentication { generation: u64, event: auth::Event },
     Battery(canopa_widgets::battery::BatteryState),
     Media(Option<String>),
     Custom { name: String, text: Option<String> },
 }
 struct App {
+    wallpaper: Option<Wallpaper>,
+    accessibility: Option<canopa_session_ui::accessibility::Accessibility>,
+    input: canopa_session_ui::input::Keyboard,
     conn: Connection,
     qh: QueueHandle<Self>,
     handle: LoopHandle<'static, Self>,
@@ -119,6 +139,7 @@ struct App {
     session: Option<SessionLock>,
     surfaces: Vec<DisplaySurface>,
     keyboards: Vec<(wl_seat::WlSeat, wl_keyboard::WlKeyboard)>,
+    pointers: Vec<(wl_seat::WlSeat, ThemedPointer)>,
     layouts: Vec<(wl_keyboard::WlKeyboard, Vec<String>)>,
     settings: Settings,
     request: Request,
@@ -152,6 +173,12 @@ fn initialize(
         .insert_source(receiver, |event, _, app: &mut App| {
             if let Event::Msg(update) = event {
                 match update {
+                    Update::WallpaperChanged => {
+                        if let Err(error) = app.reload_wallpaper(false) {
+                            eprintln!("wallpaper source update rejected: {error}");
+                        }
+                    }
+                    Update::Accessibility(request) => app.accessible(request),
                     Update::Authentication { generation, event } => {
                         app.authentication_event(generation, event);
                     }
@@ -202,7 +229,16 @@ fn initialize(
     } else {
         None
     };
+    let accessibility = ui.as_ref().map(|_| {
+        let sender = updates.clone();
+        canopa_session_ui::accessibility::Accessibility::new("Canopa Lock", move |request| {
+            let _ = sender.send(Update::Accessibility(request));
+        })
+    });
     let mut app = App {
+        wallpaper: None,
+        accessibility,
+        input: Default::default(),
         compositor: CompositorState::bind(&globals, &qh)?,
         outputs: OutputState::new(&globals, &qh),
         seats: SeatState::new(&globals, &qh),
@@ -215,6 +251,7 @@ fn initialize(
         session,
         surfaces: vec![],
         keyboards: vec![],
+        pointers: vec![],
         layouts: vec![],
         settings,
         request,
@@ -240,10 +277,45 @@ fn initialize(
     Ok((app, event_loop))
 }
 pub fn wallpaper(request: Request) -> Result<()> {
-    let (settings, _) = Settings::load(&request, Component::Wallpaper)?;
-    validate_images(&settings)?;
+    let (base, document) = Settings::load(&request, Component::Wallpaper)?;
+    let path = crate::wallpaper_state::Saved::path();
+    let mut saved = path
+        .as_ref()
+        .and_then(|p| crate::wallpaper_state::Saved::load(p).ok())
+        .unwrap_or_default();
+    let mut settings = saved.apply(&base);
+    if validate_images(&settings).is_err() {
+        eprintln!("saved wallpaper unavailable; using configured assignments");
+        saved = Default::default();
+        settings = base.clone();
+        validate_images(&settings)?;
+    }
     let server = ipc::Server::bind()?;
     let (mut app, mut event_loop) = initialize(settings, request, false, None, None)?;
+    let sources = app.wallpaper_sources(&document);
+    app.wallpaper = Some(Wallpaper {
+        base,
+        assignments: saved.clone(),
+        persisted: saved,
+        path,
+        sources_baseline: crate::file_watch::snapshot(
+            &sources
+                .iter()
+                .cloned()
+                .map(canopa_file::watch::Target::File)
+                .collect::<Vec<_>>(),
+        ),
+        sources,
+        observer: None,
+        timer: None,
+        slide_cursor: None,
+    });
+    let updates = app.updates.clone();
+    let observer = crate::file_watch::Observer::start(app.wallpaper_targets(), move || {
+        let _ = updates.send(Update::WallpaperChanged);
+    });
+    app.wallpaper.as_mut().unwrap().observer = Some(observer);
+    app.schedule_slideshow()?;
     let (sender, receiver) = channel::sync_channel(1);
     // One socket reader, one outstanding command, no thread/task per client.
     let listener = server.listener.try_clone()?;
@@ -353,7 +425,61 @@ fn run(app: &mut App, event_loop: &mut EventLoop<'static, App>) -> Result<()> {
     }
     Ok(())
 }
+const CHANGE_PASSWORD: usize = usize::MAX - 2;
+const CANCEL_CHANGE: usize = usize::MAX - 3;
 impl App {
+    fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
+        use canopa_session_ui::accessibility::{Operation, select};
+        if let (Some(a), Some(ui)) = (&mut self.accessibility, &self.ui) {
+            a.update("Canopa Lock", ui, &self.settings, self.confirmed);
+        }
+        if !self.confirmed
+            || !self
+                .accessibility
+                .as_ref()
+                .is_some_and(|a| a.accepts(&request))
+        {
+            return;
+        }
+        match request.operation {
+            Operation::Submit => self.key(KeyEvent {
+                time: 0,
+                raw_code: 28,
+                keysym: Keysym::Return,
+                utf8: None,
+            }),
+            Operation::Cancel => self.key(KeyEvent {
+                time: 0,
+                raw_code: 1,
+                keysym: Keysym::Escape,
+                utf8: None,
+            }),
+            Operation::Control(id) => self.control(id),
+            Operation::Replace(secret) => {
+                if let Some(ui) = &mut self.ui
+                    && ui.prompt.is_some()
+                    && !ui.hide_input
+                {
+                    ui.secret.clear();
+                    ui.secret.push(secret.text());
+                }
+            }
+            Operation::Select {
+                anchor,
+                focus,
+                echo,
+            } => {
+                if let Some(ui) = &mut self.ui
+                    && ui.prompt.is_some()
+                    && !ui.hide_input
+                {
+                    select(&mut ui.secret, anchor, focus, echo);
+                }
+            }
+        }
+        self.redraw();
+    }
+
     fn redraw(&mut self) {
         for surface in &mut self.surfaces {
             surface.dirty = true;
@@ -387,6 +513,7 @@ impl App {
             Role::Wallpaper(layer)
         };
         self.surfaces.push(DisplaySurface {
+            hits: Vec::new(),
             output,
             role,
             width: 0,
@@ -397,6 +524,10 @@ impl App {
         });
     }
     fn paint(&mut self) {
+        if let (Some(a), Some(ui)) = (&mut self.accessibility, &self.ui) {
+            a.update("Canopa Lock", ui, &self.settings, self.confirmed);
+        }
+
         let mut prepared = false;
         for record in &mut self.surfaces {
             if !record.dirty || record.width == 0 || record.height == 0 {
@@ -421,9 +552,16 @@ impl App {
                         LockUi::prepare_background(&self.settings, &name, width, height).ok();
                 }
                 match &record.background {
-                    Some(image) => ui.render_over(&self.settings, image.clone()),
-                    None => ui.render(&self.settings, &name, width, height),
+                    Some(image) => ui.render_with_hits(&self.settings, image.clone()),
+                    None => LockUi::prepare_background(&self.settings, &name, width, height)
+                        .and_then(|image| ui.render_with_hits(&self.settings, image)),
                 }
+            } else if let Some(image) = record
+                .background
+                .take()
+                .filter(|image| image.dimensions() == (width, height))
+            {
+                Ok((image, Vec::new()))
             } else {
                 let bg = self.settings.for_output(&name);
                 background::render(
@@ -433,10 +571,11 @@ impl App {
                     width,
                     height,
                 )
+                .map(|image| (image, Vec::new()))
             };
             // Unavailable wallpaper must never prevent the locker from presenting
             // an opaque, usable authentication view after the compositor locks.
-            let image = match render {
+            let (image, hits) = match render {
                 Ok(image) => image,
                 Err(error) => {
                     eprintln!("session surface preparation failed: {error}");
@@ -444,7 +583,9 @@ impl App {
                         let mut fallback = self.settings.clone();
                         fallback.background.image = None;
                         fallback.outputs.clear();
-                        match ui.render(&fallback, &name, width, height) {
+                        match LockUi::prepare_background(&fallback, &name, width, height)
+                            .and_then(|image| ui.render_with_hits(&fallback, image))
+                        {
                             Ok(image) => image,
                             Err(_) => continue,
                         }
@@ -453,6 +594,7 @@ impl App {
                     }
                 }
             };
+            record.hits = hits;
             let result = (|| -> Result<()> {
                 let mut pool = RawPool::new(background::dimensions(width, height)?, &self.shm)?;
                 for (src, dst) in image.pixels().zip(pool.mmap().chunks_exact_mut(4)) {
@@ -494,44 +636,368 @@ impl App {
             }
         }
     }
+    fn wallpaper_sources(&self, document: &canopa_config::Document) -> Vec<std::path::PathBuf> {
+        let mut paths = document
+            .info()
+            .path
+            .iter()
+            .cloned()
+            .chain(document.info().dependencies.iter().map(|d| d.path.clone()))
+            .collect::<Vec<_>>();
+        if self.request == Request::Discover
+            && let Ok(home) = canopa_config::config_home()
+        {
+            paths.push(home.join("canopa/config.kdl"));
+        }
+        paths
+    }
+    fn wallpaper_targets(&self) -> Vec<canopa_file::watch::Target> {
+        use canopa_file::watch::Target;
+        let Some(wallpaper) = &self.wallpaper else {
+            return Vec::new();
+        };
+        let mut targets = wallpaper
+            .sources
+            .iter()
+            .cloned()
+            .map(Target::File)
+            .collect::<Vec<_>>();
+        for settings in [&self.settings, &wallpaper.base] {
+            targets.extend(
+                std::iter::once(&settings.background)
+                    .chain(settings.outputs.values())
+                    .filter_map(|bg| bg.image.clone())
+                    .map(Target::File),
+            );
+        }
+        if let Some(slideshow) = &wallpaper.assignments.slideshow {
+            targets.push(Target::Directory(slideshow.directory.clone()));
+        }
+        targets.truncate(256);
+        targets
+    }
+    fn prepare_wallpaper(&self, candidate: &Settings) -> Result<Vec<Option<image::RgbImage>>> {
+        type Targets = Vec<(usize, u32, u32, background::Fit)>;
+        let mut groups = std::collections::BTreeMap::<Option<std::path::PathBuf>, Targets>::new();
+        for bg in std::iter::once(&candidate.background).chain(candidate.outputs.values()) {
+            groups.entry(bg.image.clone()).or_default();
+        }
+        let mut prepared: Vec<Option<image::RgbImage>> =
+            (0..self.surfaces.len()).map(|_| None).collect();
+        let mut total = 0usize;
+        for (index, surface) in self.surfaces.iter().enumerate() {
+            if surface.width == 0 || surface.height == 0 {
+                continue;
+            }
+            let width = surface.width.saturating_mul(surface.scale as u32);
+            let height = surface.height.saturating_mul(surface.scale as u32);
+            total = total
+                .checked_add(background::dimensions(width, height)?)
+                .context("wallpaper surface budget overflow")?;
+            ensure!(
+                total <= 256 * 1024 * 1024,
+                "combined wallpaper surfaces exceed the 256 MiB admission budget"
+            );
+            let name = self
+                .outputs
+                .info(&surface.output)
+                .and_then(|i| i.name)
+                .unwrap_or_default();
+            let bg = candidate.for_output(&name);
+            groups
+                .entry(bg.image.clone())
+                .or_default()
+                .push((index, width, height, bg.fit));
+        }
+        // Decode each distinct file once. Only this source and the bounded set
+        // of prepared output buffers are live together during admission.
+        for (path, targets) in groups {
+            let source = path.as_deref().map(background::load).transpose()?;
+            for (index, width, height, fit) in targets {
+                prepared[index] = Some(background::render_source(
+                    source.as_ref(),
+                    fit,
+                    candidate.color,
+                    width,
+                    height,
+                )?);
+            }
+        }
+        Ok(prepared)
+    }
+    fn commit_wallpaper(
+        &mut self,
+        base: Settings,
+        assignments: crate::wallpaper_state::Saved,
+        persisted: Option<crate::wallpaper_state::Saved>,
+    ) -> Result<()> {
+        let candidate = assignments.apply(&base);
+        let mut targets = self.wallpaper_targets();
+        for bg in std::iter::once(&candidate.background).chain(candidate.outputs.values()) {
+            if let Some(path) = &bg.image {
+                targets.push(canopa_file::watch::Target::File(path.clone()));
+            }
+        }
+        let baseline = crate::file_watch::retain_snapshot(
+            &self
+                .wallpaper
+                .as_ref()
+                .context("wallpaper runtime unavailable")?
+                .sources_baseline,
+            &targets,
+        );
+        let prepared = self.prepare_wallpaper(&candidate)?;
+        let wallpaper = self
+            .wallpaper
+            .as_mut()
+            .context("wallpaper runtime unavailable")?;
+        if let Some(saved) = persisted {
+            saved.save(
+                wallpaper
+                    .path
+                    .as_deref()
+                    .context("no writable state location is configured")?,
+            )?;
+            wallpaper.persisted = saved;
+        }
+        wallpaper.base = base;
+        wallpaper.assignments = assignments;
+        self.settings = candidate;
+        for (surface, image) in self.surfaces.iter_mut().zip(prepared) {
+            surface.background = image;
+            surface.dirty = true;
+        }
+        if let Some(observer) = &self.wallpaper.as_ref().unwrap().observer {
+            let final_targets = self.wallpaper_targets();
+            observer.admitted(
+                final_targets.clone(),
+                crate::file_watch::retain_snapshot(&baseline, &final_targets),
+            );
+        }
+        self.paint();
+        self.conn.flush()?;
+        Ok(())
+    }
+    fn reload_wallpaper(&mut self, reset: bool) -> Result<()> {
+        let targets = self.wallpaper_targets();
+        let baseline = crate::file_watch::snapshot(&targets);
+        let loaded = Settings::load(&self.request, Component::Wallpaper);
+        if let Err(error) = loaded {
+            if let Some(observer) = self.wallpaper.as_ref().and_then(|w| w.observer.as_ref()) {
+                observer.admitted(targets, baseline);
+            }
+            return Err(error);
+        }
+        let (base, document) = loaded?;
+        let assignments = if reset {
+            Default::default()
+        } else {
+            self.wallpaper
+                .as_ref()
+                .context("wallpaper runtime unavailable")?
+                .assignments
+                .clone()
+        };
+        let sources = self.wallpaper_sources(&document);
+        let source_targets = sources
+            .iter()
+            .cloned()
+            .map(canopa_file::watch::Target::File)
+            .collect::<Vec<_>>();
+        let source_baseline = crate::file_watch::retain_snapshot(&baseline, &source_targets);
+        let wallpaper = self
+            .wallpaper
+            .as_mut()
+            .context("wallpaper runtime unavailable")?;
+        let previous_sources = std::mem::replace(&mut wallpaper.sources, sources);
+        let previous_baseline = std::mem::replace(&mut wallpaper.sources_baseline, source_baseline);
+        if let Err(error) = self.commit_wallpaper(base, assignments, reset.then(Default::default)) {
+            let wallpaper = self.wallpaper.as_mut().unwrap();
+            wallpaper.sources = previous_sources;
+            wallpaper.sources_baseline = previous_baseline;
+            if let Some(observer) = self.wallpaper.as_ref().and_then(|w| w.observer.as_ref()) {
+                observer.admitted(targets, baseline);
+            }
+            return Err(error);
+        }
+        if reset {
+            self.schedule_slideshow()?;
+        }
+        Ok(())
+    }
+    fn schedule_slideshow(&mut self) -> Result<()> {
+        let Some(wallpaper) = &mut self.wallpaper else {
+            return Ok(());
+        };
+        if let Some(timer) = wallpaper.timer.take() {
+            self.handle.remove(timer);
+        }
+        wallpaper.slide_cursor = None;
+        if let Some(spec) = &wallpaper.assignments.slideshow {
+            let timer = self
+                .handle
+                .insert_source(
+                    Timer::from_duration(Duration::from_secs(spec.interval)),
+                    |_, _, app: &mut App| {
+                        let Some(interval) = app
+                            .wallpaper
+                            .as_ref()
+                            .and_then(|w| w.assignments.slideshow.as_ref())
+                            .map(|s| s.interval)
+                        else {
+                            if let Some(w) = &mut app.wallpaper {
+                                w.timer = None;
+                            }
+                            return TimeoutAction::Drop;
+                        };
+                        if let Err(error) = app.advance_slideshow() {
+                            eprintln!("slideshow image rejected: {error}");
+                        }
+                        TimeoutAction::ToDuration(Duration::from_secs(interval))
+                    },
+                )
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            wallpaper.timer = Some(timer);
+        }
+        Ok(())
+    }
+    fn advance_slideshow(&mut self) -> Result<()> {
+        let wallpaper = self
+            .wallpaper
+            .as_ref()
+            .context("wallpaper runtime unavailable")?;
+        let mut assignments = wallpaper.assignments.clone();
+        let spec = assignments
+            .slideshow
+            .clone()
+            .context("no slideshow is active")?;
+        let images = spec.images()?;
+        let current = spec
+            .output
+            .as_deref()
+            .map(|name| self.settings.for_output(name))
+            .unwrap_or(&self.settings.background)
+            .image
+            .as_ref();
+        let next = wallpaper.slide_cursor.unwrap_or_else(|| {
+            current
+                .and_then(|p| images.iter().position(|i| i == p))
+                .map(|i| (i + 1) % images.len())
+                .unwrap_or(0)
+        }) % images.len();
+        assignments.set(
+            spec.output.as_deref(),
+            Background {
+                image: Some(images[next].clone()),
+                fit: spec.fit,
+            },
+        )?;
+        let base = wallpaper.base.clone();
+        self.wallpaper.as_mut().unwrap().slide_cursor = Some((next + 1) % images.len());
+        self.commit_wallpaper(base, assignments, None)
+    }
     fn command(&mut self, request: ipc::Request) -> Result<ipc::Response> {
         match request {
-            ipc::Request::Set { image, output, fit } => {
-                ensure!(image.is_absolute(), "image path must be absolute");
-                background::load(&image)?;
-                if let Some(output) = output {
-                    ensure!(!output.is_empty(), "empty output name");
-                    self.settings.outputs.insert(
-                        output,
-                        Background {
-                            image: Some(image),
-                            fit,
-                        },
-                    );
+            ipc::Request::Set {
+                image,
+                output,
+                fit,
+                persist,
+            } => {
+                let wallpaper = self
+                    .wallpaper
+                    .as_ref()
+                    .context("wallpaper runtime unavailable")?;
+                let bg = Background {
+                    image: Some(image),
+                    fit,
+                };
+                let mut assignments = wallpaper.assignments.clone();
+                assignments.set(output.as_deref(), bg.clone())?;
+                assignments.slideshow = None;
+                let persisted = if persist {
+                    let mut saved = wallpaper.persisted.clone();
+                    saved.set(output.as_deref(), bg)?;
+                    saved.slideshow = None;
+                    Some(saved)
                 } else {
-                    self.settings.background = Background {
-                        image: Some(image),
-                        fit,
-                    };
-                    self.settings.outputs.clear();
+                    None
+                };
+                self.commit_wallpaper(wallpaper.base.clone(), assignments, persisted)?;
+                self.schedule_slideshow()?;
+            }
+            ipc::Request::SlideshowStart {
+                directory,
+                interval,
+                output,
+                fit,
+            } => {
+                let spec = crate::wallpaper_state::Slideshow {
+                    directory,
+                    interval,
+                    output,
+                    fit,
+                };
+                ensure!(
+                    (10..=86400).contains(&interval),
+                    "slideshow interval must be 10..86400 seconds"
+                );
+                let first = spec.images()?.remove(0);
+                let wallpaper = self
+                    .wallpaper
+                    .as_ref()
+                    .context("wallpaper runtime unavailable")?;
+                let bg = Background {
+                    image: Some(first),
+                    fit,
+                };
+                let mut assignments = wallpaper.assignments.clone();
+                assignments.set(spec.output.as_deref(), bg.clone())?;
+                assignments.slideshow = Some(spec.clone());
+                let mut persisted = wallpaper.persisted.clone();
+                persisted.set(spec.output.as_deref(), bg)?;
+                persisted.slideshow = Some(spec);
+                self.commit_wallpaper(wallpaper.base.clone(), assignments, Some(persisted))?;
+                self.schedule_slideshow()?;
+            }
+            ipc::Request::SlideshowStop {} => {
+                let wallpaper = self
+                    .wallpaper
+                    .as_ref()
+                    .context("wallpaper runtime unavailable")?;
+                if let Some(spec) = &wallpaper.assignments.slideshow {
+                    let mut assignments = wallpaper.assignments.clone();
+                    assignments.slideshow = None;
+                    let mut persisted = wallpaper.persisted.clone();
+                    persisted.set(
+                        spec.output.as_deref(),
+                        spec.output
+                            .as_deref()
+                            .map(|o| self.settings.for_output(o))
+                            .unwrap_or(&self.settings.background)
+                            .clone(),
+                    )?;
+                    persisted.slideshow = None;
+                    self.commit_wallpaper(wallpaper.base.clone(), assignments, Some(persisted))?;
+                    self.schedule_slideshow()?;
                 }
-                self.redraw();
-                self.paint();
-                self.conn.flush()?;
             }
-            ipc::Request::Reload {} => {
-                let (candidate, _) = Settings::load(&self.request, Component::Wallpaper)?;
-                validate_images(&candidate)?;
-                self.settings = candidate;
-                self.redraw();
-                self.paint();
-                self.conn.flush()?;
-            }
+            ipc::Request::Next {} => self.advance_slideshow()?,
+            ipc::Request::Reload {} => self.reload_wallpaper(true)?,
             ipc::Request::Stop {} => self.exit = true,
             ipc::Request::Status {} => {}
         }
         Ok(ipc::Response {
             error: None,
+            color: Some([
+                self.settings.color.0,
+                self.settings.color.1,
+                self.settings.color.2,
+            ]),
+            slideshow: self
+                .wallpaper
+                .as_ref()
+                .and_then(|w| w.assignments.slideshow.clone()),
             outputs: self
                 .surfaces
                 .iter()
@@ -542,6 +1008,7 @@ impl App {
                         background: self.settings.for_output(&name).clone(),
                         width: s.width,
                         height: s.height,
+                        scale: s.scale.max(1) as u32,
                     })
                 })
                 .collect(),
@@ -552,6 +1019,9 @@ impl App {
             return;
         }
         self.auth_generation = self.auth_generation.wrapping_add(1);
+        if let Some(ui) = &mut self.ui {
+            ui.interaction_epoch = (self.auth_generation, 0);
+        }
         let generation = self.auth_generation;
         let updates = self.updates.clone();
         match auth::Worker::start(move |event| {
@@ -590,6 +1060,11 @@ impl App {
         self.redraw();
     }
     fn stop_authentication(&mut self) {
+        if let Some(ui) = &mut self.ui {
+            ui.hide_input = false;
+            ui.controls.clear();
+            ui.action_labels = None;
+        }
         if let Some(token) = self.auth_timeout.take() {
             self.handle.remove(token);
         }
@@ -614,10 +1089,37 @@ impl App {
             auth::Event::Prompt { id, text, echo } => {
                 if let Some(ui) = &mut self.ui {
                     ui.secret.clear();
+                    ui.hide_input = false;
+                    ui.controls.clear();
+                    ui.action_labels = None;
                     if ui.message == "Starting authentication…" {
                         ui.message.clear();
                     }
                     ui.prompt = Some(crate::lock_ui::Prompt { id, text, echo });
+                }
+            }
+            auth::Event::PasswordExpired { id } => {
+                if let Some(ui) = &mut self.ui {
+                    ui.secret.clear();
+                    ui.hide_input = true;
+                    ui.prompt = Some(crate::lock_ui::Prompt {
+                        id,
+                        text: "Password change required".into(),
+                        echo: false,
+                    });
+                    ui.message = "Your password has expired. Change it to unlock, or cancel to remain locked.".into();
+                    ui.action_labels =
+                        Some(("Change password".into(), "Cancel password change".into()));
+                    ui.controls = vec![
+                        canopa_session_ui::view::Control {
+                            id: CHANGE_PASSWORD,
+                            label: "Change password · Enter".into(),
+                        },
+                        canopa_session_ui::view::Control {
+                            id: CANCEL_CHANGE,
+                            label: "Cancel · Escape".into(),
+                        },
+                    ];
                 }
             }
             auth::Event::Message { text, error } => {
@@ -658,12 +1160,45 @@ impl App {
         }
         self.redraw();
     }
+    fn control(&mut self, id: usize) {
+        if id == canopa_session_ui::input::LAYOUT_CONTROL {
+            self.input.cycle();
+            if let Some(ui) = &mut self.ui {
+                ui.layout = self.input.label();
+            }
+        } else if self
+            .ui
+            .as_ref()
+            .is_some_and(|ui| ui.hide_input && ui.prompt.is_some())
+        {
+            let keysym = match id {
+                CHANGE_PASSWORD => Keysym::Return,
+                CANCEL_CHANGE => Keysym::Escape,
+                _ => return,
+            };
+            self.key(KeyEvent {
+                time: 0,
+                raw_code: 0,
+                keysym,
+                utf8: None,
+            });
+        }
+        self.redraw();
+    }
     fn key(&mut self, mut event: KeyEvent) {
-        let text = auth::take_text(event.utf8.take());
+        let (symbol, text) = self
+            .input
+            .translate(event.raw_code, event.keysym, event.utf8.take());
+        event.keysym = symbol;
         if !self.confirmed || self.ui.is_none() {
             return;
         }
-        if event.keysym == Keysym::Escape {
+        if event.keysym == Keysym::F6 {
+            self.input.cycle();
+            let ui = self.ui.as_mut().unwrap();
+            ui.layout = self.input.label();
+            ui.can_select_layout = self.input.can_select();
+        } else if event.keysym == Keysym::Escape {
             if self.ui.as_ref().is_some_and(|ui| !ui.secret.is_empty()) {
                 self.ui.as_mut().unwrap().secret.clear();
             } else {
@@ -673,7 +1208,11 @@ impl App {
             if self.authentication.is_none() {
                 self.begin_authentication();
             } else if let Some(prompt) = self.ui.as_mut().unwrap().prompt.take() {
-                let answer = std::mem::take(&mut self.ui.as_mut().unwrap().secret);
+                let ui = self.ui.as_mut().unwrap();
+                ui.hide_input = false;
+                ui.controls.clear();
+                ui.action_labels = None;
+                let answer = std::mem::take(&mut ui.secret);
                 if self
                     .authentication
                     .as_mut()
@@ -684,10 +1223,14 @@ impl App {
                     self.cancel_authentication("Authentication failed. Enter to retry.");
                 }
             }
-        } else if self.ui.as_ref().unwrap().prompt.is_some() {
+        } else if self
+            .ui
+            .as_ref()
+            .is_some_and(|ui| ui.prompt.is_some() && !ui.hide_input)
+        {
             let ui = self.ui.as_mut().unwrap();
-            if event.keysym == Keysym::BackSpace {
-                ui.secret.pop();
+            if let Some(edit) = self.input.edit(event.keysym) {
+                ui.secret.edit(edit);
             } else {
                 ui.secret.push(&text);
             }
@@ -855,9 +1398,22 @@ impl SeatHandler for App {
             && !self.keyboards.iter().any(|(s, _)| s == &seat)
         {
             match self.seats.get_keyboard(qh, &seat, None) {
-                Ok(keyboard) => self.keyboards.push((seat, keyboard)),
+                Ok(keyboard) => self.keyboards.push((seat.clone(), keyboard)),
                 Err(error) => eprintln!("keyboard unavailable: {error}"),
             }
+        }
+        if self.ui.is_some()
+            && capability == Capability::Pointer
+            && !self.pointers.iter().any(|(s, _)| s == &seat)
+            && let Ok(pointer) = self.seats.get_pointer_with_theme(
+                qh,
+                &seat,
+                self.shm.wl_shm(),
+                self.compositor.create_surface(qh),
+                ThemeSpec::default(),
+            )
+        {
+            self.pointers.push((seat, pointer));
         }
     }
     fn remove_capability(
@@ -870,12 +1426,26 @@ impl SeatHandler for App {
         if capability == Capability::Keyboard {
             self.remove_keyboard(&seat);
         }
+        if capability == Capability::Pointer {
+            self.remove_pointer(&seat);
+        }
     }
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
         self.remove_keyboard(&seat);
+        self.remove_pointer(&seat);
     }
 }
 impl App {
+    fn remove_pointer(&mut self, seat: &wl_seat::WlSeat) {
+        self.pointers.retain(|(s, p)| {
+            if s == seat {
+                p.pointer().release();
+                false
+            } else {
+                true
+            }
+        });
+    }
     fn remove_keyboard(&mut self, seat: &wl_seat::WlSeat) {
         self.layouts.retain(|(keyboard, _)| {
             !self
@@ -950,21 +1520,22 @@ impl KeyboardHandler for App {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        keyboard: &wl_keyboard::WlKeyboard,
+        _: &wl_keyboard::WlKeyboard,
         _: u32,
         modifiers: Modifiers,
-        _: RawModifiers,
+        raw: RawModifiers,
         layout: u32,
     ) {
+        self.input.modifiers(
+            [raw.depressed, raw.latched, raw.locked],
+            layout,
+            modifiers.shift,
+            modifiers.ctrl,
+        );
         if let Some(ui) = &mut self.ui {
             ui.caps = modifiers.caps_lock;
-            ui.layout = self
-                .layouts
-                .iter()
-                .find(|(k, _)| k == keyboard)
-                .and_then(|(_, names)| names.get(layout as usize))
-                .cloned()
-                .unwrap_or_else(|| format!("Layout {}", layout + 1));
+            ui.layout = self.input.label();
+            ui.can_select_layout = self.input.can_select();
             self.redraw();
         }
     }
@@ -975,6 +1546,12 @@ impl KeyboardHandler for App {
         keyboard: &wl_keyboard::WlKeyboard,
         keymap: smithay_client_toolkit::seat::keyboard::Keymap<'_>,
     ) {
+        self.input.keymap(keymap.as_string());
+        if let Some(ui) = &mut self.ui {
+            ui.layout = self.input.label();
+            ui.can_select_layout = self.input.can_select();
+        }
+
         use xkbcommon::xkb;
         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
         if let Some(keymap) = xkb::Keymap::new_from_string(
@@ -988,6 +1565,44 @@ impl KeyboardHandler for App {
                 .collect();
             self.layouts.retain(|(k, _)| k != keyboard);
             self.layouts.push((keyboard.clone(), names));
+        }
+    }
+}
+impl PointerHandler for App {
+    fn pointer_frame(
+        &mut self,
+        conn: &Connection,
+        _: &QueueHandle<Self>,
+        pointer: &wl_pointer::WlPointer,
+        events: &[PointerEvent],
+    ) {
+        for event in events {
+            if matches!(event.kind, PointerEventKind::Enter { .. })
+                && let Some((_, p)) = self.pointers.iter().find(|(_, p)| p.pointer() == pointer)
+            {
+                let _ = p.set_cursor(conn, CursorIcon::Default);
+            }
+            if !self.confirmed || !matches!(event.kind, PointerEventKind::Press { button: 272, .. })
+            {
+                continue;
+            }
+            if let Some(record) = self
+                .surfaces
+                .iter()
+                .find(|s| s.role.surface() == &event.surface)
+            {
+                let (x, y) = (
+                    event.position.0 as f32 * record.scale as f32,
+                    event.position.1 as f32 * record.scale as f32,
+                );
+                if let Some((id, _)) = record
+                    .hits
+                    .iter()
+                    .find(|(_, r)| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
+                {
+                    self.control(*id);
+                }
+            }
         }
     }
 }
@@ -1025,3 +1640,5 @@ fn start_widgets(settings: &Settings, updates: channel::Sender<Update>) -> Optio
             .is_ok()
     })
 }
+
+smithay_client_toolkit::delegate_pointer!(App);

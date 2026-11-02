@@ -1,4 +1,4 @@
-//! One-shot user discovery and AccountsService reader. NSS runs in an isolated helper.
+//! Event-driven user discovery and AccountsService reader. NSS runs in an isolated helper.
 //! Authentication stays in greetd.
 use crate::config::valid_user;
 use anyhow::{Context, Result, ensure};
@@ -247,15 +247,17 @@ pub struct Worker {
     cancel: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
     cancelled: Arc<AtomicBool>,
+    refresh: tokio::sync::watch::Sender<u64>,
 }
 impl Worker {
     pub fn start(
         source: Source,
         policy: crate::nss::Policy,
         avatars: bool,
-        notify: impl FnOnce(Vec<Account>) + Send + 'static,
+        mut notify: impl FnMut(Vec<Account>) + Send + 'static,
     ) -> Self {
-        let (cancel, stopped) = tokio::sync::oneshot::channel();
+        let (cancel, mut stopped) = tokio::sync::oneshot::channel();
+        let (refresh, mut requested) = tokio::sync::watch::channel(0u64);
         let cancelled = Arc::new(AtomicBool::new(false));
         let flag = cancelled.clone();
         let thread = std::thread::spawn(move || {
@@ -266,16 +268,65 @@ impl Worker {
                 return;
             };
             rt.block_on(async {
-                tokio::select! {biased;_ = stopped => {},result=selected(source,&policy,&flag,avatars)=>{
-                    if !flag.load(Ordering::Acquire) && let Ok(accounts)=result { notify(accounts); }
-                }}
+                use futures_util::StreamExt;
+                use canopa_file::watch::{Watcher,Target};
+                let mut files=Watcher::new(vec![Target::File("/etc/passwd".into()),Target::File("/etc/nsswitch.conf".into()),Target::File("/etc/login.defs".into())])
+                    .ok().and_then(|watcher|tokio::io::unix::AsyncFd::new(watcher).ok());
+                let mut last=None;
+                loop {
+                    let connection=if matches!(source,Source::Nss) {None}else {
+                        tokio::time::timeout(DEADLINE,Connection::system()).await.ok().and_then(Result::ok)
+                    };
+                    let mut signals=None;let mut owners=None;
+                    if let Some(conn)=&connection {
+                        let changes=zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).sender(SERVICE).unwrap().path_namespace(ROOT).unwrap().build();
+                        signals=zbus::MessageStream::for_match_rule(changes,conn,Some(64)).await.ok();
+                        let owner=zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).sender("org.freedesktop.DBus").unwrap().interface("org.freedesktop.DBus").unwrap().member("NameOwnerChanged").unwrap().arg(0,SERVICE).unwrap().build();
+                        owners=zbus::MessageStream::for_match_rule(owner,conn,Some(8)).await.ok();
+                    }
+                    let mut reconnect=connection.is_none() && !matches!(source,Source::Nss);
+                    loop {
+                        let result=tokio::select! {biased;
+                            _=&mut stopped=>return,
+                            result=selected(source,&policy,&flag,avatars)=>result,
+                        };
+                        if !flag.load(Ordering::Acquire) && let Ok(accounts)=result && last.as_ref()!=Some(&accounts) {
+                            last=Some(accounts.clone());notify(accounts);
+                        }
+                        let broken=tokio::select! {biased;
+                            _=&mut stopped=>return,
+                            result=requested.changed()=>{if result.is_err(){return;}false},
+                            result=async{match &mut files {Some(f)=>f.readable_mut().await, None=>std::future::pending().await}}=>{
+                                match result {
+                                    Ok(mut ready)=>{
+                                        let changed=ready.get_inner_mut().changed().unwrap_or(false);
+                                        if ready.get_inner().drained() {ready.clear_ready();}
+                                        if !changed {continue;}
+                                    }
+                                    Err(_)=>{files=None;}
+                                }
+                                false
+                            },
+                            message=async{match &mut signals {Some(s)=>s.next().await,None=>std::future::pending().await}}=>{let broken=message.is_none();if broken {signals=None;}broken},
+                            message=async{match &mut owners {Some(s)=>s.next().await,None=>std::future::pending().await}}=>{let broken=message.is_none();if broken {owners=None;}broken},
+                            _=async{if reconnect {tokio::time::sleep(Duration::from_secs(5)).await;}else{std::future::pending().await}}=>true,
+                        };
+                        if broken {break;}
+                        reconnect=connection.is_none() && !matches!(source,Source::Nss);
+                    }
+                }
             });
         });
         Self {
             cancel: Some(cancel),
             thread: Some(thread),
             cancelled,
+            refresh,
         }
+    }
+    pub fn refresh(&self) {
+        self.refresh
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
     }
 }
 impl Drop for Worker {

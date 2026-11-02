@@ -54,15 +54,29 @@ unsafe extern "C" {
     ) -> c_int;
     fn pam_authenticate(handle: *mut c_void, flags: c_int) -> c_int;
     fn pam_acct_mgmt(handle: *mut c_void, flags: c_int) -> c_int;
+    fn pam_chauthtok(handle: *mut c_void, flags: c_int) -> c_int;
     fn pam_end(handle: *mut c_void, status: c_int) -> c_int;
 }
 /// A module-provided authentication event. It never contains a response or secret.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Event {
-    Prompt { id: u64, text: String, echo: bool },
-    Message { text: String, error: bool },
-    Complete { accepted: bool },
+    Prompt {
+        id: u64,
+        text: String,
+        echo: bool,
+    },
+    Message {
+        text: String,
+        error: bool,
+    },
+    /// Authentication passed, but PAM requires an explicit password change.
+    PasswordExpired {
+        id: u64,
+    },
+    Complete {
+        accepted: bool,
+    },
 }
 
 struct Credentials {
@@ -221,8 +235,27 @@ pub fn worker(fd: i32) -> Result<()> {
         let mut status = pam_start(c"canopa-lock".as_ptr(), user.as_ptr(), &conv, &mut handle);
         if status == 0 && !handle.is_null() {
             status = pam_authenticate(handle, 1); // PAM_DISALLOW_NULL_AUTHTOK
+            let mut expired = false;
             if status == 0 {
                 status = pam_acct_mgmt(handle, 1);
+                expired = status == 12; // PAM_NEW_AUTHTOK_REQD
+            }
+            if expired {
+                // PAM_NEW_AUTHTOK_REQD: keep this transaction and its authenticated
+                // identity, but never start a password change without consent.
+                credentials.sequence += 1;
+                let id = credentials.sequence;
+                let consent = send_event(&mut credentials.channel, &Event::PasswordExpired { id })
+                    .map_err(anyhow::Error::from)
+                    .and_then(|()| read_answer(&mut credentials.channel, id));
+                status = if consent.is_ok_and(|answer| answer.is_empty()) {
+                    pam_chauthtok(handle, 0x20) // PAM_CHANGE_EXPIRED_AUTHTOK
+                } else {
+                    CONV_ERROR
+                };
+                if status == 0 {
+                    status = pam_acct_mgmt(handle, 1);
+                }
             }
             let accepted = status == 0;
             let ended = pam_end(handle, status);

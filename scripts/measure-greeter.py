@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 from collections import Counter
+from PIL import __version__ as pillow_version
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
@@ -163,9 +164,15 @@ def main():
     for key in ('binary', 'cage', 'weston'):
         setattr(args, key, getattr(args, key).resolve(strict=True))
     (args.output / 'sampler.py').write_bytes(Path(__file__).read_bytes())
+    sources = {}
+    for name, path in [('desktop-fixture.py', ROOT / 'scripts/validate-desktop.py'),
+                       ('greetd-peer.py', ROOT / 'scripts/desktop-fixture/greetd.py')]:
+        (args.output / name).write_bytes(path.read_bytes())
+        sources[str(path.relative_to(ROOT))] = dict(snapshot=name, sha256=digest(path))
     metadata = dict(started_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                     platform=platform.platform(), cpuinfo=Path('/proc/cpuinfo').read_text(),
                     meminfo=Path('/proc/meminfo').read_text(),
+                    python=sys.version, pillow=pillow_version, fixture_sources=sources,
                     executables={key: dict(path=str(getattr(args, key)), sha256=digest(getattr(args, key)))
                                  for key in ('binary', 'cage', 'weston')},
                     sampler_sha256=digest(__file__),

@@ -36,7 +36,7 @@ Assuan error; there is no terminal/X11 fallback.
 Passphrases stay masked. Enter activates the marked button, Tab moves between
 buttons, Escape/window close cancels, Backspace deletes and Ctrl+U clears input.
 Holding a key does not repeat it, so the toolkit does not retain cleartext repeat
-events. Right opens/paginates full request details, Left goes to the preceding page, and
+events. Page Down opens/paginates full request details, Page Up goes to the preceding page, and
 Enter returns from details. Opening details clears both passphrase entries.
 Requests for a new passphrase show a second entry; mismatches restart the pair.
 Caller descriptions, labels, errors and window titles are displayed as plain text;
@@ -75,16 +75,13 @@ Passphrases support up to 2048 Unicode characters; excess input is rejected with
 visible message. Timeout, cancellation, negative confirmation and unavailable
 Wayland have distinct libgpg-error codes. EOF retires an active dialog.
 
-Quality-bar/tooltip and repeat-success text setters are accepted as optional hints
-without a meter or quality inquiries. External caches, password generation,
-passphrase formatting and agent-side constraint inquiries are unsupported; their
-capability options/commands are rejected. The agent can still enforce its own
-passphrase policy after receiving the entered value.
-
-Canopa-owned secret storage is allocated once, erased on edit/cancel/request end,
-and never included in diagnostics. Core dumps and ptrace dumping are disabled.
-Storage is not locked against swapping; shared rendering currently has no AT-SPI
-accessibility tree or complex-script shaping. Other processes with equivalent
+External caches and passphrase formatting remain unsupported. Quality, constraints
+and generation are described below. Canopa-owned response storage uses dedicated
+best-effort locked, non-dumpable mappings and is erased on edits/cancellation/end.
+Shared presentation supports keyboard selection, compositor layouts, AT-SPI and
+complex-script shaping; see [shared input](session-tools.md#shared-authentication-input).
+Core dumps and ptrace dumping are disabled, and credentials are never logged.
+Other processes with equivalent
 session privileges/compositor access remain outside pinentry's protection.
 
 `scripts/verify-pinentry.py` exercises actual keyboard input in a private Wayland
@@ -94,3 +91,27 @@ See [the design decision](adr/0030-pinentry-protocol-and-shared-dialogs.md).
 
 Protocol references: [GnuPG's pinentry manual](https://github.com/gpg/pinentry/blob/master/doc/pinentry.texi)
 and [Libassuan protocol](https://www.gnupg.org/documentation/manuals/assuan/).
+
+Agent-supplied quality and generation controls are supported through `SETQUALITYBAR`,
+`SETQUALITYBAR_TT`, `SETGENPIN` and `SETGENPIN_TT`. Quality inquiries are debounced
+while editing, run off the rendering loop, and show the agent's signed score.
+`OPTION constraints-enforce` requires a successful `CHECKPIN` inquiry before a
+passphrase can be returned. The agent's short/long constraint hints appear in
+Details. Missing, failed or cancelled checks cannot approve a passphrase. Required
+checks reject values exceeding the upstream inquiry's 300-byte limit rather than
+checking only a prefix. Ordinary passphrases retain the existing 2048-character
+limit when this agent option is absent.
+
+Generation uses `GENPIN` from the calling agent. The result starts masked and must
+be explicitly revealed before acceptance; record it before continuing. It can be
+hidden again before submission. Cursor movement and partial edits preserve the
+reveal requirement; clearing or replacing the entire value starts an ordinary
+entry. There is no clipboard write or local generator.
+Repeat confirmation and agent constraints still apply. Inquiry response bytes and
+requests use erased transport buffers; owned response storage uses best-effort
+locked mappings. An absolute two-second inquiry deadline bounds partial replies.
+An unresponsive inquiry does not prevent cancelling the window.
+
+These exchanges follow the primary
+[GnuPG pinentry implementation](https://github.com/gpg/pinentry/blob/master/pinentry/pinentry.c);
+the calling agent owns password requirements and generated values.

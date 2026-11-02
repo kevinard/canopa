@@ -32,3 +32,8 @@ visibility/privacy choices and keyboard/authentication state. Shared widget data
 not transfer shell actions into the locked session. Explicit passive custom commands
 and interactive authentication are added by ADR 0027.
 Future surfaces can consume these types without depending on shell rendering.
+
+Follow-on wallpaper persistence, the picker and event-driven source reload are
+specified in [ADR 0034](0034-wallpaper-state-picker-and-source-events.md).
+Shared session input/accessibility is specified in
+[ADR 0032](0032-shared-authentication-input-and-accessibility.md).

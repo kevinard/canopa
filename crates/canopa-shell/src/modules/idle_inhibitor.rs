@@ -7,7 +7,7 @@ use super::render::ModuleRender;
 use super::view::{IconLabel, IconLabelLayout};
 use super::{InteractionEvent, Module, ModuleId, ModuleKind, ModuleState};
 use crate::app::{Message, messages::ModuleRuntimeEvent};
-use crate::config::{IdleInhibitorConfig, Style};
+use crate::config::{IdleBackend, IdleInhibitorConfig, Style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdleInhibitorState {
@@ -49,6 +49,13 @@ impl IdleInhibitorState {
 fn status(state: &ModuleState) -> IdleInhibitorState {
     match state {
         ModuleState::IdleInhibitor(state) => *state,
+        ModuleState::Stasis(snapshot) => {
+            if snapshot.manually_paused {
+                IdleInhibitorState::Active
+            } else {
+                IdleInhibitorState::Inactive
+            }
+        }
         ModuleState::Unavailable => IdleInhibitorState::Unavailable,
         _ => IdleInhibitorState::Pending,
     }
@@ -83,17 +90,34 @@ impl ModuleInteractionHandler for IdleInhibitorModule {
             event,
             InteractionEvent::Clicked | InteractionEvent::Activated(_)
         )
-        .then(|| Message::Modules(ModuleRuntimeEvent::ToggleIdleInhibitor))
+        .then(|| {
+            Message::Modules(if self.config.backend == IdleBackend::Stasis {
+                ModuleRuntimeEvent::ToggleStasis
+            } else {
+                ModuleRuntimeEvent::ToggleIdleInhibitor
+            })
+        })
     }
 }
 
 impl ModuleDataSourceMapper for IdleInhibitorModule {
     fn data_source_identity(&self) -> ModuleDataSourceIdentity {
-        ModuleDataSourceIdentity::IdleInhibitor
+        if self.config.backend == IdleBackend::Stasis {
+            ModuleDataSourceIdentity::Stasis
+        } else {
+            ModuleDataSourceIdentity::IdleInhibitor
+        }
     }
     fn map_data_source_state(&self, state: &ModuleDataSourceState) -> ModuleInstanceOutcome {
         match state {
-            ModuleDataSourceState::IdleInhibitor(state) => {
+            ModuleDataSourceState::Stasis(snapshot)
+                if self.config.backend == IdleBackend::Stasis =>
+            {
+                ModuleInstanceOutcome::Visible(ModuleState::Stasis(snapshot.clone()))
+            }
+            ModuleDataSourceState::IdleInhibitor(state)
+                if self.config.backend == IdleBackend::Wayland =>
+            {
                 ModuleInstanceOutcome::Visible(ModuleState::IdleInhibitor(*state))
             }
             _ => ModuleInstanceOutcome::Unavailable,
@@ -120,7 +144,10 @@ impl IconLabel for IdleInhibitorModule {
             .to_owned()
     }
     fn label(&self, state: &ModuleState) -> String {
-        status(state).value().into()
+        match state {
+            ModuleState::Stasis(s) if s.paused && !s.manually_paused => "Inhibited".into(),
+            _ => status(state).value().into(),
+        }
     }
     fn color(&self, state: &ModuleState) -> iced::Color {
         match status(state) {
@@ -171,6 +198,9 @@ impl ModuleRender for IdleInhibitorModule {
                 IdleInhibitorState::Active => "Prevent automatic screen idle",
                 IdleInhibitorState::Inactive => "Allow automatic screen idle",
                 IdleInhibitorState::Pending => "Updating…",
+                IdleInhibitorState::Unavailable if self.config.backend == IdleBackend::Stasis => {
+                    "Stasis unavailable"
+                }
                 IdleInhibitorState::Unavailable => "Unavailable on this compositor",
             },
             if state == IdleInhibitorState::Unavailable {
@@ -192,18 +222,96 @@ impl ModuleRender for IdleInhibitorModule {
     }
     fn tooltip_values(&self, state: &ModuleState) -> Vec<(&'static str, String)> {
         let status = status(state);
+        let help = match state {
+            ModuleState::Stasis(s) => format!(
+                "Stasis: {} · Profile: {} · Manual hold: {} · Click to toggle manual hold",
+                s.state,
+                s.profile,
+                if s.manually_paused { "on" } else { "off" }
+            ),
+            _ if self.config.backend == IdleBackend::Stasis => {
+                "Stasis unavailable · Start canopa-idle and install its backend".into()
+            }
+            _ => status.help().into(),
+        };
         vec![
             ("icon", self.icon(state)),
-            ("value", status.value().into()),
+            ("value", self.label(state)),
             ("state", status.name().into()),
-            ("label", status.help().into()),
+            ("label", help),
         ]
     }
+}
+
+pub fn stasis_subscription() -> iced::Subscription<Message> {
+    iced::Subscription::run(stasis_stream)
+}
+fn stasis_stream() -> impl iced::futures::Stream<Item = Message> {
+    use iced::futures::SinkExt;
+    iced::stream::channel(
+        8,
+        |mut output: iced::futures::channel::mpsc::Sender<Message>| async move {
+            let (sender, mut receiver) = tokio::sync::mpsc::channel(8);
+            let observer = canopa_widgets::idle::observe(sender);
+            tokio::pin!(observer);
+            loop {
+                tokio::select! {
+                    _=&mut observer=>break,
+                    value=receiver.recv()=> {
+                        let Some(value)=value else {break;};
+                        if output.send(Message::Modules(ModuleRuntimeEvent::Stasis(value))).await.is_err() {break;}
+                    }
+                }
+            }
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stasis_uses_its_own_source_and_distinguishes_automatic_from_manual_holds() {
+        let module = IdleInhibitorModule {
+            id: ModuleId::new("awake"),
+            config: IdleInhibitorConfig {
+                backend: IdleBackend::Stasis,
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            module.data_source_identity(),
+            ModuleDataSourceIdentity::Stasis
+        );
+        assert!(matches!(
+            module.on_interaction(InteractionEvent::Clicked),
+            Some(Message::Modules(ModuleRuntimeEvent::ToggleStasis))
+        ));
+        let snapshot = canopa_widgets::idle::Snapshot {
+            state: "inhibited".into(),
+            paused: true,
+            manually_paused: false,
+            profile: "work".into(),
+        };
+        let state = module
+            .map_data_source_state(&ModuleDataSourceState::Stasis(snapshot.clone()))
+            .into_module_state();
+        assert_eq!(module.label(&state), "Inhibited");
+        assert!(
+            module
+                .tooltip_values(&state)
+                .iter()
+                .any(|(key, value)| *key == "label" && value.contains("Manual hold: off"))
+        );
+        let wayland = IdleInhibitorModule {
+            id: ModuleId::new("ordinary"),
+            config: Default::default(),
+        };
+        assert_eq!(
+            wayland.map_data_source_state(&ModuleDataSourceState::Stasis(snapshot)),
+            ModuleInstanceOutcome::Unavailable
+        );
+    }
     #[test]
     fn mouse_and_keyboard_toggle_and_unavailable_stays_visible() {
         let module = IdleInhibitorModule {

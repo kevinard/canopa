@@ -13,6 +13,14 @@ pub struct Controller {
     first: Option<Secret>,
     details: Option<usize>,
     selected: usize,
+    pub revision: u64,
+    pub pending: Option<crate::agent::Query>,
+    checking: bool,
+    quality: Option<i16>,
+    generated: bool,
+    revealed: bool,
+    generated_seen: bool,
+    checked: Option<(Secret, bool)>,
 }
 fn label(value: &str) -> String {
     let mut result = String::new();
@@ -66,11 +74,21 @@ impl Controller {
             first: None,
             details: None,
             selected,
+            revision: 0,
+            pending: None,
+            checking: false,
+            quality: None,
+            generated: false,
+            revealed: false,
+            generated_seen: false,
+            checked: None,
         };
         this.refresh();
         Ok(this)
     }
     pub fn refresh(&mut self) {
+        self.ui.interaction_epoch = (self.revision, u64::from(self.checking));
+        self.ui.busy = self.checking;
         self.ui.custom.clear();
         self.ui
             .custom
@@ -109,7 +127,7 @@ impl Controller {
             Some(Prompt {
                 id: 1,
                 text: excerpt(&label(text), 96),
-                echo: false,
+                echo: self.generated && self.revealed,
             })
         };
         if let Some(page) = self.details {
@@ -119,11 +137,11 @@ impl Controller {
             });
             self.ui.controls.push(Control {
                 id: 4,
-                label: format!("Next page (Right) · {} / {}", page + 1, self.pages()),
+                label: format!("Next page (Page Down) · {} / {}", page + 1, self.pages()),
             });
             self.ui.controls.push(Control {
                 id: 5,
-                label: "Previous page (Left)".into(),
+                label: "Previous page (Page Up)".into(),
             });
         } else {
             self.ui.controls.push(Control {
@@ -144,8 +162,42 @@ impl Controller {
             }
             self.ui.controls.push(Control {
                 id: 4,
-                label: "Details (Right)".into(),
+                label: "Details (Page Down)".into(),
             });
+        }
+        if self.details.is_none() && self.request.kind == Kind::Pin && self.first.is_none() {
+            if let Some(label) = &self.request.generate {
+                self.ui.controls.push(Control {
+                    id: 7,
+                    label: label.clone(),
+                });
+            }
+            if self.generated {
+                self.ui.controls.push(Control {
+                    id: 8,
+                    label: if self.revealed {
+                        "Hide generated passphrase"
+                    } else {
+                        "Reveal generated passphrase"
+                    }
+                    .into(),
+                });
+            }
+        }
+        if let Some(quality) = self.quality
+            && !self.ui.failed
+            && !self.checking
+            && !self.generated
+        {
+            self.ui.message = format!(
+                "{}: {quality}%{}",
+                self.request.quality.as_deref().unwrap_or("Quality"),
+                if quality < 0 {
+                    " · agent rejects this passphrase"
+                } else {
+                    ""
+                }
+            );
         }
         for control in &mut self.ui.controls {
             if control.id == self.selected {
@@ -154,14 +206,18 @@ impl Controller {
         }
     }
     fn details_text(&self) -> String {
-        format!(
-            "{}\n{}\n{}\n{}\n{}",
-            self.request.title,
-            self.request.description,
-            self.request.prompt,
-            self.request.error,
-            self.request.repeat.as_deref().unwrap_or("")
-        )
+        [
+            self.request.title.as_str(),
+            self.request.description.as_str(),
+            self.request.prompt.as_str(),
+            self.request.error.as_str(),
+            self.request.repeat.as_deref().unwrap_or(""),
+            self.request.quality_hint.as_str(),
+            self.request.generate_hint.as_str(),
+            self.request.constraints_hint_short.as_str(),
+            self.request.constraints_hint.as_str(),
+        ]
+        .join("\n")
     }
     fn pages(&self) -> usize {
         lines(&self.details_text()).len().div_ceil(8).max(1)
@@ -182,8 +238,30 @@ impl Controller {
         if self.response.is_some() {
             return;
         }
+        if self.checking && id != 3 {
+            return;
+        }
         match id {
-            2 => self.accept(),
+            7 if !self.checking
+                && self.details.is_none()
+                && self.first.is_none()
+                && self.request.generate.is_some() =>
+            {
+                self.changed();
+                self.forget_generation();
+                self.ui.secret.clear();
+                self.checking = true;
+                self.pending = Some(crate::agent::Query {
+                    revision: self.revision,
+                    kind: crate::agent::Kind::Generate,
+                });
+                self.ui.message = "Requesting a passphrase from the agent…".into();
+            }
+            8 if self.generated => {
+                self.revealed = !self.revealed;
+                self.generated_seen = true;
+            }
+            2 if !self.checking => self.accept(),
             3 => self.finish(Response::Canceled),
             6 if self.request.kind == Kind::Confirm => self.finish(Response::NotConfirmed),
             4 => {
@@ -210,6 +288,11 @@ impl Controller {
             self.finish(Response::Accepted);
             return;
         }
+        if self.generated && !self.generated_seen {
+            self.ui.message =
+                "Reveal and record the generated passphrase before continuing.".into();
+            return;
+        }
         if self.request.repeat.is_some() {
             if let Some(first) = self.first.take() {
                 let mut difference = first.as_bytes().len() ^ self.ui.secret.as_bytes().len();
@@ -226,46 +309,181 @@ impl Controller {
                     return;
                 }
                 self.ui.secret.clear();
-                self.finish(Response::Pin {
-                    secret: first,
-                    repeated: true,
-                });
+                self.complete_pin(first, true);
             } else {
                 self.first = Some(std::mem::replace(
                     &mut self.ui.secret,
                     Secret::with_capacity(8193),
                 ));
+                self.generated = false;
+                self.revealed = false;
+                self.generated_seen = false;
+                self.changed();
                 self.ui.message.clear();
                 self.ui.failed = false;
             }
         } else {
             let secret = std::mem::replace(&mut self.ui.secret, Secret::with_capacity(8193));
-            self.finish(Response::Pin {
-                secret,
-                repeated: false,
+            self.complete_pin(secret, false);
+        }
+    }
+    fn changed(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+        self.quality = None;
+        self.pending = None;
+    }
+    fn forget_generation(&mut self) {
+        if self.generated && !self.ui.failed {
+            self.ui.message.clear();
+        }
+        self.generated = false;
+        self.revealed = false;
+        self.generated_seen = false;
+    }
+    fn copy(secret: &Secret) -> Secret {
+        let mut copy = Secret::with_capacity(8193);
+        copy.push(secret.text());
+        copy
+    }
+    pub fn quality_query(&mut self) {
+        if self.request.quality.is_some()
+            && !self.checking
+            && self.details.is_none()
+            && self.first.is_none()
+            && !self.ui.secret.is_empty()
+            && !self.generated
+        {
+            self.pending = Some(crate::agent::Query {
+                revision: self.revision,
+                kind: crate::agent::Kind::Quality(Self::copy(&self.ui.secret)),
             });
         }
     }
+    fn complete_pin(&mut self, secret: Secret, repeated: bool) {
+        self.forget_generation();
+        if self.request.constraints {
+            self.changed();
+            self.checking = true;
+            if secret.as_bytes().len() > 300 {
+                self.checking = false;
+                self.ui.failed = true;
+                self.ui.message =
+                    "Passphrase exceeds the agent constraint check's 300-byte limit.".into();
+                return;
+            }
+            self.pending = Some(crate::agent::Query {
+                revision: self.revision,
+                kind: crate::agent::Kind::Check(Self::copy(&secret)),
+            });
+            self.checked = Some((secret, repeated));
+            self.ui.message = "Checking the agent's passphrase requirements…".into();
+        } else {
+            self.finish(Response::Pin { secret, repeated });
+        }
+    }
+    pub fn inquiry_result(&mut self, revision: u64, answer: crate::agent::Answer) {
+        if revision != self.revision || self.response.is_some() {
+            return;
+        }
+        match answer {
+            crate::agent::Answer::Quality(quality) => {
+                self.quality = quality;
+                if quality.is_none() {
+                    self.ui.message = "Agent quality feedback unavailable.".into();
+                }
+            }
+            crate::agent::Answer::Check(result) => {
+                self.checking = false;
+                if matches!(result, Ok(None)) {
+                    if let Some((secret, repeated)) = self.checked.take() {
+                        self.finish(Response::Pin { secret, repeated });
+                    }
+                } else {
+                    self.checked = None;
+                    self.ui.failed = true;
+                    self.ui.message = match result { Ok(Some(reason)) => excerpt(&reason, 160), _ => "Could not verify the agent's passphrase requirements. Try again or cancel.".into() };
+                }
+            }
+            crate::agent::Answer::Generated(secret) => {
+                self.checking = false;
+                self.ui.secret.clear();
+                if let Some(secret) = secret {
+                    self.ui.secret = secret;
+                    self.generated = true;
+                    self.revealed = false;
+                    self.ui.failed = false;
+                    self.ui.message =
+                        "Reveal and record this generated passphrase before continuing.".into();
+                } else {
+                    self.ui.failed = true;
+                    self.ui.message = "The agent could not generate a passphrase.".into();
+                }
+            }
+        }
+        self.refresh();
+    }
     pub fn finish(&mut self, response: Response) {
+        self.checking = false;
         self.clear_input();
         self.first = None;
+        self.checked = None;
+        self.pending = None;
+        self.checking = false;
         self.response = Some(response);
     }
     pub fn clear_input(&mut self) {
+        if self.checking {
+            return;
+        }
+        self.changed();
+        self.forget_generation();
         self.ui.secret.clear();
     }
     pub fn backspace(&mut self) {
-        self.ui.secret.pop();
+        self.edit(canopa_session_ui::secret::Edit::Backspace);
+    }
+    pub fn edit(&mut self, edit: canopa_session_ui::secret::Edit) {
+        if self.request.kind == Kind::Pin
+            && self.details.is_none()
+            && self.response.is_none()
+            && !self.checking
+        {
+            let length = self.ui.secret.as_bytes().len();
+            self.ui.secret.edit(edit);
+            if self.ui.secret.as_bytes().len() != length {
+                self.changed();
+                if self.ui.secret.is_empty() {
+                    self.forget_generation();
+                }
+            }
+        }
     }
     pub fn input(&mut self, text: &str) {
-        if self.request.kind != Kind::Pin || self.details.is_some() || self.response.is_some() {
+        if self.request.kind != Kind::Pin
+            || self.details.is_some()
+            || self.response.is_some()
+            || self.checking
+            || text.is_empty()
+            || text.chars().any(char::is_control)
+        {
             return;
         }
-        if self.ui.secret.count() + text.chars().count() > 2048 {
+        if self.ui.secret.count()
+            - self.ui.secret.text()[self.ui.secret.selection()]
+                .chars()
+                .count()
+            + text.chars().count()
+            > 2048
+        {
             self.ui.message = "Passphrase limit: 2048 characters. Input was rejected.".into();
             self.ui.failed = true;
         } else {
+            let replaces_all = self.ui.secret.selection() == (0..self.ui.secret.as_bytes().len());
             self.ui.secret.push(text);
+            self.changed();
+            if replaces_all {
+                self.forget_generation();
+            }
         }
     }
 }
@@ -276,6 +494,107 @@ mod tests {
     fn controller(request: Request) -> Controller {
         let (settings, _) = crate::config::load(&canopa_config::Request::Defaults).unwrap();
         Controller::new(&settings, request).unwrap()
+    }
+    #[test]
+    fn generated_values_require_reveal_after_caret_changes_and_partial_edits() {
+        use canopa_session_ui::secret::Edit;
+        let mut c = controller(Request {
+            generate: Some("Generate".into()),
+            ..Default::default()
+        });
+        let generate = |c: &mut Controller| {
+            c.action(7);
+            let query = c.pending.take().unwrap();
+            let mut secret = Secret::default();
+            secret.push("unseen generated value");
+            c.inquiry_result(
+                query.revision,
+                crate::agent::Answer::Generated(Some(secret)),
+            );
+        };
+        generate(&mut c);
+        c.edit(Edit::Left(false));
+        c.edit(Edit::SelectAll);
+        c.input("");
+        c.action(2);
+        assert!(
+            c.response.is_none(),
+            "caret/selection/empty input bypassed reveal"
+        );
+        c.edit(Edit::End(false));
+        c.edit(Edit::Backspace);
+        c.input("replacement suffix");
+        c.action(2);
+        assert!(c.response.is_none(), "partial edits bypassed reveal");
+        c.action(8);
+        c.action(8);
+        c.action(2);
+        assert!(matches!(c.response.take(), Some(Response::Pin { .. })));
+        generate(&mut c);
+        c.edit(Edit::SelectAll);
+        c.input("entirely typed by the user");
+        c.action(2);
+        assert!(
+            matches!(c.response.take(), Some(Response::Pin { secret, .. }) if secret.text()=="entirely typed by the user")
+        );
+        generate(&mut c);
+        c.clear_input();
+        c.input("fresh typed value");
+        c.action(2);
+        assert!(
+            matches!(c.response.take(), Some(Response::Pin { secret, .. }) if secret.text()=="fresh typed value")
+        );
+    }
+    #[test]
+    fn agent_feedback_is_revision_scoped_and_generation_and_constraints_require_explicit_steps() {
+        let mut c = controller(Request {
+            quality: Some("Quality".into()),
+            generate: Some("Generate".into()),
+            constraints: true,
+            ..Default::default()
+        });
+        c.input("old draft");
+        c.quality_query();
+        let old = c.pending.take().unwrap().revision;
+        c.input(" edited");
+        c.inquiry_result(old, crate::agent::Answer::Quality(Some(99)));
+        assert!(c.quality.is_none());
+        c.action(7);
+        let generated = c.pending.take().unwrap().revision;
+        c.inquiry_result(
+            generated,
+            crate::agent::Answer::Generated(Some(Controller::copy(&{
+                let mut s = Secret::default();
+                s.push("generated phrase");
+                s
+            }))),
+        );
+        c.action(2);
+        assert!(c.response.is_none() && c.pending.is_none());
+        c.action(8);
+        assert!(c.ui.prompt.as_ref().unwrap().echo);
+        c.action(8);
+        assert!(!c.ui.prompt.as_ref().unwrap().echo);
+        c.action(2);
+        let check = c.pending.take().unwrap();
+        assert!(
+            matches!(check.kind, crate::agent::Kind::Check(secret) if secret.text()=="generated phrase")
+        );
+        c.inquiry_result(
+            check.revision,
+            crate::agent::Answer::Check(Ok(Some("Agent refused this passphrase".into()))),
+        );
+        assert!(c.response.is_none() && c.ui.failed && c.checked.is_none());
+        c.input("acceptable phrase");
+        c.action(2);
+        let check = c.pending.take().unwrap();
+        assert!(c.response.is_none());
+        c.inquiry_result(check.revision, crate::agent::Answer::Check(Ok(None)));
+        assert!(
+            matches!(c.response.take(), Some(Response::Pin {secret,..}) if secret.text()=="acceptable phrase")
+        );
+        c.inquiry_result(old, crate::agent::Answer::Generated(None));
+        assert!(!c.generated);
     }
     #[test]
     fn repeat_mismatch_restarts_and_only_matching_pair_returns_a_secret() {

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import native_accessibility as a11y
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('desktop', ROOT / 'scripts/validate-desktop.py')
@@ -48,6 +49,17 @@ class Peer:
                     return result
         raise RuntimeError('Pinentry protocol response timed out')
 
+    def line(self, timeout=4):
+        deadline=time.monotonic()+timeout
+        while b'\n' not in self.buffer:
+            if not select.select([self.process.stdout],[],[],max(0,deadline-time.monotonic()))[0]:
+                raise RuntimeError('Inquiry line timed out')
+            chunk=os.read(self.process.stdout.fileno(),4096)
+            if not chunk:raise RuntimeError('Unexpected inquiry EOF')
+            self.buffer+=chunk
+        line,self.buffer=self.buffer.split(b'\n',1)
+        return line
+
     def command(self, command):
         self.send(command)
         result = self.read()
@@ -66,6 +78,7 @@ class Peer:
 
 def verify(binary, session):
     session.start_niri('prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\nhotkey-overlay { skip-at-startup; }\nwindow-rule { match app-id="org.canopa.Pinentry"; open-floating true; }\n')
+    a11y.start(session)
     protocol = ROOT / 'scripts/desktop-fixture/virtual-keyboard-unstable-v1.xml'
     for mode, name in [('client-header', 'virtual-keyboard.h'), ('private-code', 'virtual-keyboard.c')]:
         subprocess.run(['wayland-scanner', mode, str(protocol), str(session.output/name)], check=True)
@@ -98,6 +111,37 @@ def verify(binary, session):
         peer = Peer(binary, session)
         peers.append(peer)
         assert not windows()
+        peer.command('SETQUALITYBAR Strength')
+        peer.command('SETGENPIN Generate passphrase')
+        peer.command('OPTION constraints-enforce')
+        peer.send('GETPIN');dialog()
+        session.run([str(keyboard),'type','weak +%'])
+        line=peer.line();assert line==b'INQUIRE QUALITY weak+%2B%25',line
+        peer.send('D -40');peer.send('END');time.sleep(.25)
+        # A rejected CHECKPIN keeps the dialog open and never returns the candidate.
+        key('Return');assert peer.line()==b'INQUIRE CHECKPIN weak+%2B%25'
+        peer.send('D Please%20use%20a%20longer%20passphrase');peer.send('END');time.sleep(.3)
+        assert windows() and not select.select([peer.process.stdout],[],[],.1)[0]
+        a11y.request(session,'--window','Canopa Pinentry','--name','Generate passphrase','--click')
+        assert peer.line()==b'INQUIRE GENPIN'
+        peer.send('D generated+phrase%25');peer.send('END');time.sleep(.3)
+        key('Left');key('End');key('BackSpace')
+        session.run([str(keyboard),'type','%'])
+        key('Return');time.sleep(.15)
+        assert not select.select([peer.process.stdout],[],[],.1)[0], 'unrevealed generated phrase accepted'
+        a11y.request(session,'--window','Canopa Pinentry','--name','Reveal generated passphrase','--click')
+        visible=json.loads(a11y.request(session,'--window','Canopa Pinentry','--name','Passphrase:'))
+        assert visible['text']=='generated+phrase%' and visible['role']=='entry',visible
+        a11y.request(session,'--window','Canopa Pinentry','--name','Hide generated passphrase','--click')
+        key('Return');assert peer.line()==b'INQUIRE CHECKPIN generated%2Bphrase%25'
+        peer.send('END');assert peer.read()==[b'D generated+phrase%25',b'OK'];retired()
+        # Missing inquiry replies have a fixed deadline and do not block Cancel.
+        peer.command('RESET');peer.command('SETGENPIN Generate passphrase');peer.send('GETPIN');dialog()
+        a11y.request(session,'--window','Canopa Pinentry','--name','Generate passphrase','--click')
+        assert peer.line()==b'INQUIRE GENPIN'
+        key('Escape');retired();assert code(peer.read())==99
+        peer.close();peers.remove(peer)
+        peer=Peer(binary,session);peers.append(peer)
         peer.command('OPTION ttyname=/must-not-open')
         peer.command('OPTION default-ok=_Unlock')
         peer.command('SETTITLE Test key')
@@ -105,8 +149,33 @@ def verify(binary, session):
         peer.send('GETPIN')
         dialog()
         session.capture('passphrase.png')
-        answer('canopa%fixture')
+        args = ['--window', 'Canopa Pinentry', '--name', 'Passphrase:']
+        a11y.request(session, *args, '--value', 'canopaXfixture')
+        time.sleep(.2)
+        accessible = json.loads(a11y.request(session, *args))
+        assert accessible['role'] == 'password text' and accessible['text'] == '•'*len('canopaXfixture'), accessible
+        a11y.request(session, *args, '--select', '6', '7')
+        time.sleep(.2)
+        session.run([str(keyboard), 'type', '%'])
+        key('End')
+        session.run([str(keyboard), 'type', 'q'])
+        key('Left')
+        key('Delete')
+        a11y.request(session, '--window', 'Canopa Pinentry', '--name', 'Submit response', '--click')
         assert peer.read() == [b'D canopa%25fixture', b'OK']
+        retired()
+        peer.send('GETPIN')
+        dialog()
+        session.env['CANOPA_FIXTURE_LAYOUT'] = 'us,fr'
+        session.run([str(keyboard), 'sequence', 'F6 q Return'])
+        session.env.pop('CANOPA_FIXTURE_LAYOUT')
+        assert peer.read() == [b'D a', b'OK'], 'local French selection did not translate the US q key'
+        retired()
+        peer.send('GETPIN')
+        dialog()
+        session.run([str(keyboard), 'type', 'replace-me'])
+        session.run([str(keyboard), 'sequence', 'Ctrl+a x Return'])
+        assert peer.read() == [b'D x', b'OK']
         retired()
         peer.command('SETREPEAT Repeat passphrase:')
         peer.send('GETPIN')
@@ -132,10 +201,10 @@ def verify(binary, session):
         peer.send('GETPIN')
         dialog()
         session.run([str(keyboard), 'type', 'discarded'])
-        key('Right')
+        key('Next')
         session.capture('details.png')
-        key('Right')
-        key('Left')
+        key('Next')
+        key('Prior')
         key('Return')
         answer('fresh-entry')
         assert peer.read() == [b'D fresh-entry', b'OK']
@@ -212,8 +281,10 @@ def verify(binary, session):
                 if process.poll() is None:
                     desktop.stop(process)
         logs = (session.output/'peer-stderr.log').read_bytes() + (session.output/'gpg-stderr.log').read_bytes()
-        assert all(secret not in logs for secret in [b'canopa%fixture', b'matching-pair', b'fresh-entry', b'canopa-fixture-passphrase'])
-        summary = {'status': 'passed', 'checks': ['idle has no window', 'percent escaping',
+        assert all(secret not in logs for secret in [b'canopa%fixture', b'matching-pair', b'fresh-entry', b'canopa-fixture-passphrase', b'weak +%', b'generated+phrase%'])
+        summary = {'status': 'passed', 'checks': ['agent quality feedback', 'agent constraint rejection and approval', 'generated passphrase reveal survives cursor movement and partial edits', 'unresponsive inquiry bounded cancellation', 'idle has no window', 'percent escaping',
+            'AT-SPI protected field and editable actions', 'AT-SPI selection and submit', 'cursor movement and Delete',
+            'native local keyboard layout selection', 'Ctrl+A replaces selection',
             'repeat mismatch/retry', 'repeat status', 'fresh request cancellation', 'paged context clears input',
             'negative confirmation', 'cancel default focus', 'positive confirmation', 'message',
             'one-button confirmation', 'timeout', 'peer disconnect', 'real GnuPG symmetric encrypt/decrypt', 'no secrets in diagnostics']}

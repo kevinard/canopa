@@ -157,6 +157,7 @@ struct Shared {
     pending: Mutex<Option<(u64, Vec<PathBuf>)>>,
     wake: Condvar,
     generation: AtomicU64,
+    cache_epoch: AtomicU64,
     stopped: AtomicBool,
 }
 pub struct Worker {
@@ -175,11 +176,13 @@ impl Worker {
             pending: Mutex::new(None),
             wake: Condvar::new(),
             generation: AtomicU64::new(0),
+            cache_epoch: AtomicU64::new(0),
             stopped: AtomicBool::new(false),
         });
         let state = shared.clone();
         let thread = std::thread::spawn(move || {
             let mut cache: VecDeque<(Vec<PathBuf>, Thumbnail)> = VecDeque::new();
+            let mut cache_epoch = 0;
             loop {
                 let (generation, paths) = {
                     let mut pending = state.pending.lock().unwrap();
@@ -191,6 +194,11 @@ impl Worker {
                     }
                     pending.take().unwrap()
                 };
+                let epoch = state.cache_epoch.load(Ordering::Acquire);
+                if epoch != cache_epoch {
+                    cache.clear();
+                    cache_epoch = epoch;
+                }
                 let cancelled = || {
                     state.stopped.load(Ordering::Acquire)
                         || state.generation.load(Ordering::Acquire) != generation
@@ -217,6 +225,10 @@ impl Worker {
             shared,
             thread: Some(thread),
         }
+    }
+    pub fn invalidate(&self) {
+        self.shared.cache_epoch.fetch_add(1, Ordering::AcqRel);
+        self.shared.generation.fetch_add(1, Ordering::AcqRel);
     }
     pub fn request(&self, paths: Vec<PathBuf>) -> u64 {
         let mut pending = self.shared.pending.lock().unwrap();

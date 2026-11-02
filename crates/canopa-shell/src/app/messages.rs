@@ -352,6 +352,9 @@ impl PanelEvent {
 #[derive(Debug, Clone)]
 pub enum ModuleRuntimeEvent {
     ToggleIdleInhibitor,
+    ToggleStasis,
+    StasisToggleFinished(bool),
+    Stasis(Option<canopa_widgets::idle::Snapshot>),
     IdleInhibitorApplied {
         window: iced::window::Id,
         requested: bool,
@@ -376,6 +379,9 @@ pub enum ModuleRuntimeEvent {
 impl ModuleRuntimeEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
+            Self::ToggleStasis => "Modules::ToggleStasis",
+            Self::StasisToggleFinished(_) => "Modules::StasisToggleFinished",
+            Self::Stasis(_) => "Modules::Stasis",
             Self::ToggleIdleInhibitor => "Modules::ToggleIdleInhibitor",
             Self::IdleInhibitorApplied { .. } => "Modules::IdleInhibitorApplied",
             ModuleRuntimeEvent::Module(_, event) => module_event_diagnostic_label(event),

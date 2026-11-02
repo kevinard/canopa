@@ -24,6 +24,13 @@ pub struct Request {
     pub repeat_error: String,
     pub timeout: u64,
     pub focus_cancel: bool,
+    pub quality: Option<String>,
+    pub quality_hint: String,
+    pub generate: Option<String>,
+    pub generate_hint: String,
+    pub constraints: bool,
+    pub constraints_hint: String,
+    pub constraints_hint_short: String,
 }
 impl Default for Request {
     fn default() -> Self {
@@ -40,6 +47,13 @@ impl Default for Request {
             repeat_error: "Passphrases do not match. Try again.".into(),
             timeout: 120,
             focus_cancel: false,
+            quality: None,
+            quality_hint: String::new(),
+            generate: None,
+            generate_hint: String::new(),
+            constraints: false,
+            constraints_hint: String::new(),
+            constraints_hint_short: String::new(),
         }
     }
 }
@@ -111,10 +125,18 @@ fn data(writer: &mut impl Write, value: &[u8]) -> io::Result<()> {
 }
 
 pub fn serve(
-    mut reader: impl BufRead,
-    mut writer: impl Write,
+    reader: impl crate::agent::InquiryRead,
+    writer: impl Write + Send,
     timeout: u64,
     mut show: impl FnMut(&Request) -> Response,
+) -> io::Result<()> {
+    serve_agent(reader, writer, timeout, |request, _| show(request))
+}
+pub fn serve_agent(
+    mut reader: impl crate::agent::InquiryRead,
+    mut writer: impl Write + Send,
+    timeout: u64,
+    mut show: impl FnMut(&Request, &mut dyn crate::agent::Agent) -> Response,
 ) -> io::Result<()> {
     let mut defaults = Request {
         timeout,
@@ -124,7 +146,7 @@ pub fn serve(
     writeln!(writer, "OK Canopa Pinentry ready")?;
     writer.flush()?;
     loop {
-        let mut line = Zeroizing::new(Vec::new());
+        let mut line = Zeroizing::new(Vec::with_capacity(1001));
         let count = reader.by_ref().take(1001).read_until(b'\n', &mut line)?;
         if count == 0 {
             return Ok(());
@@ -175,8 +197,17 @@ pub fn serve(
             "SETERROR" => request.error = value,
             "SETREPEAT" => request.repeat = Some(value),
             "SETREPEATERROR" => request.repeat_error = value,
-            // Optional presentation hints; no external cache or quality inquiries.
-            "SETREPEATOK" | "SETQUALITYBAR" | "SETQUALITYBAR_TT" | "SETKEYINFO" => {}
+            "SETREPEATOK" | "SETKEYINFO" => {}
+            "SETQUALITYBAR" => {
+                request.quality = Some(if value.is_empty() {
+                    "Quality".into()
+                } else {
+                    value
+                })
+            }
+            "SETQUALITYBAR_TT" => request.quality_hint = value,
+            "SETGENPIN" => request.generate = (!value.is_empty()).then_some(value),
+            "SETGENPIN_TT" => request.generate_hint = value,
             "SETTIMEOUT" => match value.parse::<u32>() {
                 Ok(seconds) => {
                     defaults.timeout = u64::from(seconds);
@@ -199,6 +230,19 @@ pub fn serve(
                         defaults.prompt = value.into();
                         request.prompt = value.into();
                     }
+                    "constraints-enforce" if value.is_empty() => {
+                        defaults.constraints = true;
+                        request.constraints = true;
+                    }
+                    "constraints-hint-short" => {
+                        defaults.constraints_hint_short = value.into();
+                        request.constraints_hint_short = value.into();
+                    }
+                    "constraints-hint-long" => {
+                        defaults.constraints_hint = value.into();
+                        request.constraints_hint = value.into();
+                    }
+                    "constraints-error-title" => {}
                     // Terminal/X11 metadata is accepted for gpg-agent interoperability.
                     // It never selects another display or causes terminal/file access.
                     "ttyname" | "ttytype" | "lc-ctype" | "lc-messages" | "display" => {}
@@ -228,7 +272,20 @@ pub fn serve(
                         Kind::Confirm
                     };
                     request.focus_cancel = options.contains(&"--focus=cancel");
-                    match show(&request) {
+                    let mut peer = crate::agent::Peer {
+                        reader: &mut reader,
+                        writer: &mut writer,
+                        broken: false,
+                    };
+                    let response = show(&request, &mut peer);
+                    let broken = peer.broken;
+                    let response =
+                        if broken && !matches!(response, Response::Canceled | Response::Timeout) {
+                            Response::Unavailable
+                        } else {
+                            response
+                        };
+                    match response {
                         Response::Pin { secret, repeated } if request.kind == Kind::Pin => {
                             if repeated {
                                 writeln!(writer, "S PIN_REPEATED")?;
@@ -240,6 +297,12 @@ pub fn serve(
                         Response::Timeout => failure = Some((62, "Timeout")),
                         Response::Unavailable => failure = Some((85, "No pinentry available")),
                         _ => failure = Some((99, "Operation canceled")),
+                    }
+                    if broken {
+                        let (code, message) = failure.unwrap_or((85, "No pinentry available"));
+                        error(&mut writer, code, message)?;
+                        writer.flush()?;
+                        return Ok(());
                     }
                     request.error.clear();
                     if request.kind == Kind::Pin {
@@ -261,6 +324,34 @@ pub fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn broken_inquiry_returns_a_terminal_error_and_never_a_candidate() {
+        let mut output = Vec::new();
+        serve_agent(
+            io::Cursor::new(b"GETPIN\nmalformed inquiry reply\n"),
+            &mut output,
+            120,
+            |_, agent| {
+                let mut draft = Secret::default();
+                draft.push("draft");
+                agent.inquire(crate::agent::Query {
+                    revision: 1,
+                    kind: crate::agent::Kind::Quality(draft),
+                });
+                let mut secret = Secret::default();
+                secret.push("must-not-return");
+                Response::Pin {
+                    secret,
+                    repeated: false,
+                }
+            },
+        )
+        .unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("INQUIRE QUALITY draft\n"));
+        assert!(output.lines().last().unwrap().starts_with("ERR "));
+        assert!(!output.contains("must-not-return"));
+    }
     #[test]
     fn commands_escape_reset_defaults_and_repeat_are_serialized() {
         let mut output = Vec::new();

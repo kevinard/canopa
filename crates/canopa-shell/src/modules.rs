@@ -220,6 +220,7 @@ pub enum Zone {
 pub enum ModuleState {
     Media(canopa_shell::media::Player),
     IdleInhibitor(idle_inhibitor::IdleInhibitorState),
+    Stasis(canopa_widgets::idle::Snapshot),
     /// Module has no visible content. Used for available-but-empty Module outcomes
     /// and as the no-state render fallback while first emission is pending inside
     /// the Module Data Source runtime lifecycle.

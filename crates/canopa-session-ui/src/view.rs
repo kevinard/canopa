@@ -1,6 +1,5 @@
 use crate::{background, secret::Secret, settings::Settings};
-use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use canopa_theme::Rgb;
 use image::RgbImage;
 
@@ -16,7 +15,7 @@ pub struct Control {
 }
 
 pub struct SessionView {
-    font: FontArc,
+    text_renderer: std::cell::RefCell<crate::text::Text>,
     avatar: Option<image::RgbaImage>,
     user_avatar: Option<std::sync::Arc<image::RgbaImage>>,
     avatar_initials: Option<String>,
@@ -31,31 +30,18 @@ pub struct SessionView {
     pub failed: bool,
     pub caps: bool,
     pub layout: String,
+    pub can_select_layout: bool,
+    /// Consumer-owned generation for asynchronous actions; contains no response data.
+    pub interaction_epoch: (u64, u64),
+    pub action_labels: Option<(String, String)>,
     pub battery: Option<canopa_widgets::battery::BatteryState>,
     pub media: Option<String>,
     pub custom: std::collections::BTreeMap<String, String>,
 }
 impl SessionView {
     pub fn new(settings: &Settings, username: String) -> Result<Self> {
-        let mut database = fontdb::Database::new();
-        database.load_system_fonts();
-        let id = database
-            .query(&fontdb::Query {
-                families: &[
-                    fontdb::Family::Name(&settings.font),
-                    fontdb::Family::SansSerif,
-                ],
-                ..Default::default()
-            })
-            .or_else(|| database.faces().next().map(|f| f.id))
-            .context("no installed font is available")?;
-        let font = database
-            .with_face_data(id, |bytes, index| {
-                ab_glyph::FontVec::try_from_vec_and_index(bytes.to_vec(), index).map(FontArc::new)
-            })
-            .context("font data is unavailable")??;
         Ok(Self {
-            font,
+            text_renderer: std::cell::RefCell::new(crate::text::Text::new(settings.font.clone())?),
             avatar: settings
                 .avatar
                 .as_deref()
@@ -73,6 +59,9 @@ impl SessionView {
             failed: false,
             caps: false,
             layout: String::new(),
+            can_select_layout: false,
+            interaction_epoch: (0, 0),
+            action_labels: None,
             battery: None,
             media: None,
             custom: Default::default(),
@@ -84,6 +73,18 @@ impl SessionView {
     }
     pub fn set_avatar_initials(&mut self, initials: Option<String>) {
         self.avatar_initials = initials.map(|s| s.chars().take(2).collect());
+    }
+    /// Draw a passive label in consumer-owned content, using shared shaping/fallback.
+    pub fn draw_label(
+        &self,
+        image: &mut RgbImage,
+        text: &str,
+        position: (f32, f32),
+        size: f32,
+        max_width: f32,
+        color: Rgb,
+    ) {
+        self.text(image, text, position, size, max_width, color);
     }
     pub fn preview(settings: &Settings, username: String) -> Result<Self> {
         let mut ui = Self::new(settings, username)?;
@@ -246,9 +247,14 @@ impl SessionView {
             }
         }
         let hints = self.authentication_hints();
+        let layout_control = self.can_select_layout.then(|| Control {
+            id: crate::input::LAYOUT_CONTROL,
+            label: format!("Keyboard: {}   · F6", self.layout),
+        });
         let input_offset = if self.hide_input { 52. } else { 0. };
-        let auth_height =
-            70. - input_offset + 20. * hints.len().max(1) as f32 + 42. * self.controls.len() as f32;
+        let auth_height = 70. - input_offset
+            + 20. * hints.len().max(1) as f32
+            + 42. * (self.controls.len() + usize::from(layout_control.is_some())) as f32;
         let items: Vec<_> = content
             .iter()
             .map(|(name, content)| {
@@ -353,6 +359,9 @@ impl SessionView {
                             18. * scale,
                             palette.surface,
                         );
+                        let (input, selection, cursor) = self
+                            .secret
+                            .presentation(self.prompt.as_ref().is_some_and(|p| p.echo), 48);
                         let prompt = zeroize::Zeroizing::new(if let Some(prompt) = &self.prompt {
                             if self.secret.is_empty() {
                                 if prompt.echo {
@@ -360,26 +369,33 @@ impl SessionView {
                                 } else {
                                     "Enter response".into()
                                 }
-                            } else if prompt.echo {
-                                self.secret.text().to_owned()
                             } else {
-                                "•".repeat(self.secret.count().min(24))
+                                input.to_string()
                             }
                         } else if self.busy {
                             "Waiting for authentication…".into()
                         } else {
                             "Enter to authenticate".into()
                         });
-                        self.text(
+                        self.text_renderer.borrow_mut().draw(
                             &mut image,
                             &prompt,
                             (center, bounds.y + 33. * scale),
                             17. * scale,
                             bounds.width - 20. * scale,
                             palette.text,
+                            self.prompt
+                                .as_ref()
+                                .filter(|_| !self.secret.is_empty())
+                                .map(|_| (selection, cursor, palette.accent)),
                         );
                     }
-                    for (index, control) in self.controls.iter().enumerate() {
+                    for (index, control) in self
+                        .controls
+                        .iter()
+                        .chain(layout_control.iter())
+                        .enumerate()
+                    {
                         let y = bounds.y
                             + (88. - input_offset
                                 + 20. * hints.len().saturating_sub(1) as f32
@@ -460,8 +476,7 @@ impl SessionView {
         hints
     }
     fn text_width(&self, text: &str, size: f32) -> f32 {
-        let font = self.font.as_scaled(PxScale::from(size));
-        text.chars().map(|c| font.h_advance(font.glyph_id(c))).sum()
+        self.text_renderer.borrow_mut().width(text, size)
     }
     fn text(
         &self,
@@ -472,39 +487,15 @@ impl SessionView {
         max_width: f32,
         color: Rgb,
     ) {
-        let (center, baseline) = position;
-        let scaled = self.font.as_scaled(PxScale::from(size));
-        let text: String = text.chars().filter(|c| !c.is_control()).take(100).collect();
-        let width: f32 = text
-            .chars()
-            .map(|c| scaled.h_advance(scaled.glyph_id(c)))
-            .sum();
-        let fit = (max_width.max(1.) / width.max(1.)).min(1.);
-        let scaled = self.font.as_scaled(PxScale::from(size * fit));
-        let mut x = center - width * fit / 2.;
-        for character in text.chars() {
-            let glyph = scaled.scaled_glyph(character);
-            let advance = scaled.h_advance(glyph.id);
-            let mut glyph = glyph;
-            glyph.position = point(x, baseline);
-            if let Some(outline) = self.font.outline_glyph(glyph) {
-                let bounds = outline.px_bounds();
-                outline.draw(|gx, gy, coverage| {
-                    let px = gx as i32 + bounds.min.x as i32;
-                    let py = gy as i32 + bounds.min.y as i32;
-                    if px >= 0 && py >= 0 && px < image.width() as i32 && py < image.height() as i32
-                    {
-                        let pixel = image.get_pixel_mut(px as u32, py as u32);
-                        for (channel, value) in pixel.0.iter_mut().zip([color.0, color.1, color.2])
-                        {
-                            *channel = (*channel as f32 * (1. - coverage) + value as f32 * coverage)
-                                .round() as u8;
-                        }
-                    }
-                });
-            }
-            x += advance;
-        }
+        let text = zeroize::Zeroizing::new(
+            text.chars()
+                .filter(|c| !c.is_control())
+                .take(256)
+                .collect::<String>(),
+        );
+        self.text_renderer
+            .borrow_mut()
+            .draw(image, &text, position, size, max_width, color, None);
     }
 }
 fn rounded_rect(image: &mut RgbImage, x: f32, y: f32, w: f32, h: f32, r: f32, color: Rgb) {

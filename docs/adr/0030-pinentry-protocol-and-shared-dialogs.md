@@ -37,3 +37,8 @@ adds `canopa pinentry`, and release/updater inventory includes the executable an
 setup documentation. Host GnuPG configuration is never modified by installation
 or acceptance. Native validation uses a private compositor and GNUPGHOME, including
 a real GnuPG cryptographic round trip. See [pinentry setup](../pinentry.md).
+
+Follow-on quality, constraint and generation inquiries, protected mappings and
+shared accessibility are specified in [ADR 0035](0035-authentication-recovery-and-agent-inquiries.md)
+and [ADR 0032](0032-shared-authentication-input-and-accessibility.md). They supersede
+the initial limitations above.

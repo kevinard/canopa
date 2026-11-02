@@ -15,7 +15,7 @@ FILES = {
     "config/canopa.kdl": "share/canopa/canopa.kdl",
     **{f"docs/{name}.md": f"share/canopa/{name}.md" for name in (
         "settings-portal", "shell-rename", "audio", "media", "files",
-        "notifications", "configuration", "theme-customization", "session-tools", "greeter", "greeter-performance", "polkit", "pinentry",
+        "notifications", "configuration", "theme-customization", "session-tools", "idle", "greeter", "greeter-performance", "polkit", "pinentry",
     )},
     **{f"examples/{name}": f"share/canopa/examples/{name}" for name in (
         "canopa-desktop.kdl", "custom-theme.kdl", "themes/nord.kdl",

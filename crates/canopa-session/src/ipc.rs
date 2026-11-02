@@ -23,38 +23,73 @@ pub enum Request {
         image: PathBuf,
         output: Option<String>,
         fit: Fit,
+        #[serde(default = "default_persist")]
+        persist: bool,
     },
+    SlideshowStart {
+        directory: PathBuf,
+        interval: u64,
+        output: Option<String>,
+        fit: Fit,
+    },
+    SlideshowStop {},
+    Next {},
     Status {},
     Reload {},
     Stop {},
 }
-#[derive(Debug, Serialize, Deserialize)]
+fn default_persist() -> bool {
+    true
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Output {
     pub name: String,
     pub background: Background,
     pub width: u32,
     pub height: u32,
+    #[serde(default = "default_scale")]
+    pub scale: u32,
+}
+fn default_scale() -> u32 {
+    1
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Response {
     pub error: Option<String>,
     pub outputs: Vec<Output>,
+    #[serde(default)]
+    pub slideshow: Option<crate::wallpaper_state::Slideshow>,
+    #[serde(default)]
+    pub color: Option<[u8; 3]>,
 }
 impl Response {
     pub fn ok() -> Self {
         Self {
             error: None,
             outputs: vec![],
+            slideshow: None,
+            color: None,
         }
     }
     pub fn error(error: impl std::fmt::Display) -> Self {
         Self {
             error: Some(error.to_string()),
             outputs: vec![],
+            slideshow: None,
+            color: None,
         }
     }
 }
 pub fn socket_path() -> Result<PathBuf> {
+    scoped_socket_path("wallpaper")
+}
+pub(crate) fn scoped_socket_path(component: &str) -> Result<PathBuf> {
+    ensure!(
+        component
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b == b'-'),
+        "invalid endpoint component"
+    );
     let runtime = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .context("XDG_RUNTIME_DIR is required")?;
@@ -69,7 +104,7 @@ pub fn socket_path() -> Result<PathBuf> {
     );
     let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".into());
     let key = canopa_config::fingerprint(&display);
-    Ok(runtime.join(format!("canopa-wallpaper-{}.sock", &key[..16])))
+    Ok(runtime.join(format!("canopa-{component}-{}.sock", &key[..16])))
 }
 pub struct Server {
     pub listener: UnixListener,
@@ -80,7 +115,7 @@ impl Server {
     pub fn bind() -> Result<Self> {
         Self::bind_path(socket_path()?)
     }
-    fn bind_path(path: PathBuf) -> Result<Self> {
+    pub(crate) fn bind_path(path: PathBuf) -> Result<Self> {
         let lock = OpenOptions::new()
             .write(true)
             .create(true)

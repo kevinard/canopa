@@ -46,6 +46,12 @@ enum Operation {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<std::ffi::OsString>,
     },
+    /// Stasis idle policy, streaming status and secure suspend integration.
+    #[command(disable_help_flag = true)]
+    Idle {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
@@ -83,6 +89,7 @@ fn main() {
 
 fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
+        Operation::Idle { args } => return companion("canopa-idle", args),
         Operation::Wallpaper { args } => return companion("canopa-wallpaper", args),
         Operation::Lock { args } => return companion("canopa-lock", args),
         Operation::Greeter { args } => return companion("canopa-greeter", args),

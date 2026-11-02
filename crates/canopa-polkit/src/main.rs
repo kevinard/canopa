@@ -18,6 +18,10 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Operation {
+    #[command(hide = true)]
+    InternalIdentity {
+        uid: u32,
+    },
     CheckConfig {
         #[arg(long)]
         show_source: bool,
@@ -33,6 +37,9 @@ fn main() {
     }
 }
 fn run(cli: Cli) -> Result<()> {
+    if let Some(Operation::InternalIdentity { uid }) = cli.command {
+        return canopa_polkit::identity::helper(uid);
+    }
     let notify = std::env::var_os("NOTIFY_SOCKET").map(PathBuf::from);
     // Before any threads/native library calls: polkit debugging can expose cookies.
     unsafe {

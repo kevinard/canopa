@@ -16,6 +16,16 @@ struct ModuleDataSourceCatalogEntry {
 
 const SOURCE_CATALOG: &[ModuleDataSourceCatalogEntry] = &[
     ModuleDataSourceCatalogEntry {
+        identity: ModuleDataSourceIdentity::Stasis,
+        subscription: |enabled, _| {
+            if enabled {
+                crate::modules::idle_inhibitor::stasis_subscription()
+            } else {
+                iced::Subscription::none()
+            }
+        },
+    },
+    ModuleDataSourceCatalogEntry {
         identity: ModuleDataSourceIdentity::Media,
         subscription: |enabled, _| {
             if enabled {
@@ -107,6 +117,7 @@ pub(super) enum ModuleDataSourceTransition {
 
 #[derive(Debug, Default)]
 pub(super) struct ModuleDataSourceRuntime {
+    pub(super) stasis_toggle_pending: bool,
     pub(super) idle_inhibitor: super::idle_inhibitor::IdleInhibitorRuntime,
     sources: HashMap<ModuleDataSourceIdentity, ModuleDataSourceStatus>,
 }
@@ -224,6 +235,16 @@ impl ModuleDataSourceRuntime {
         match summary {
             Some(summary) => self.apply_source_state(ModuleDataSourceState::Notifications(summary)),
             None => self.mark_unavailable(ModuleDataSourceIdentity::Notifications),
+        }
+    }
+
+    pub(super) fn handle_stasis_event(
+        &mut self,
+        snapshot: Option<canopa_widgets::idle::Snapshot>,
+    ) -> ModuleDataSourceTransition {
+        match snapshot {
+            Some(snapshot) => self.apply_source_state(ModuleDataSourceState::Stasis(snapshot)),
+            None => self.mark_unavailable(ModuleDataSourceIdentity::Stasis),
         }
     }
 

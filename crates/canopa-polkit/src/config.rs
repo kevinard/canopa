@@ -22,11 +22,17 @@ pub fn load(request: &Request) -> Result<(Settings, Document)> {
         Component::Polkit,
     )?;
     settings.use_wallpaper = false;
-    settings.widgets = vec!["message-0".into(), "message-1".into(), "action".into()];
+    settings.widgets = vec![
+        "avatar".into(),
+        "message-0".into(),
+        "message-1".into(),
+        "action".into(),
+    ];
     settings.layout = Layout {
         regions: vec![Region {
             anchor: Anchor::Center,
             widgets: vec![
+                "avatar".into(),
                 "message-0".into(),
                 "message-1".into(),
                 "action".into(),

@@ -93,9 +93,9 @@ flag. Every new prompt starts with empty input. Information/error notices and
 passwordless device factors use the native conversation without adding a password
 requirement. Failed attempts offer Retry with a two-second delay; three failures
 close the request. Request details provides paged full description, action and
-conversation text; Left/Right changes pages and Enter returns to authentication.
-Opening details erases unsent input and cannot submit a credential. The shared
-software presentation currently has no AT-SPI tree or complex-script shaping.
+conversation text; Page Up/Page Down changes pages and Enter returns to authentication.
+Opening details erases unsent input and cannot submit a credential. Shared presentation supports AT-SPI, complex-script shaping and keyboard-layout
+selection; see [shared input](session-tools.md#shared-authentication-input).
 
 ## Request lifecycle
 
@@ -150,3 +150,11 @@ lives under `.scratch/polkit-agent/`.
 Protocol references: [writing authentication agents](https://www.freedesktop.org/software/polkit/docs/latest/polkit-agents.html),
 [native session API](https://www.freedesktop.org/software/polkit/docs/latest/PolkitAgentSession.html),
 [agent D-Bus interface](https://www.freedesktop.org/software/polkit/docs/latest/eggdbus-interface-org.freedesktop.PolicyKit1.AuthenticationAgent.html).
+
+The dialog resolves display names and photos only for the authority's selected,
+permitted numeric UID. AccountsService `FindUserById` and individual public
+properties provide labels and an optional icon; NSS supplies a fallback name.
+It never enumerates other accounts or reads password hints, email or home metadata.
+The UID remains the authentication identity regardless of the displayed label.
+Missing metadata leaves the numeric label. Slow NSS and bounded local raster
+loading run in a deadline-owned helper; selection/request changes cancel stale work.

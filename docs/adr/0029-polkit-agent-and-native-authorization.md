@@ -46,3 +46,7 @@ input/lifetime behavior. A namespace test additionally runs the real native
 session/helper against synthetic account/PAM files and verifies its receipt to a
 private authority. These scopes do not establish deployed policy or privileged
 seat/machine acceptance. See [polkit setup](../polkit.md).
+
+Permitted-identity names/photos and shared input are specified in
+[ADR 0035](0035-authentication-recovery-and-agent-inquiries.md) and
+[ADR 0032](0032-shared-authentication-input-and-accessibility.md).

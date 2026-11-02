@@ -105,6 +105,35 @@ pub async fn discover(connection: Connection, selected: Option<&str>) -> Result<
         id,
     })
 }
+pub async fn manager(target: &Target) -> Result<Proxy<'_>> {
+    Ok(zbus::proxy::Builder::new(&target.connection)
+        .destination(SERVICE)?
+        .path(MANAGER)?
+        .interface("org.freedesktop.login1.Manager")?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?)
+}
+pub async fn selected(selected: Option<&str>) -> Result<Target> {
+    connect(selected).await
+}
+async fn sleep_inhibitor(manager: &Proxy<'_>) -> Result<std::os::fd::OwnedFd> {
+    let fd: zbus::zvariant::OwnedFd = tokio::time::timeout(
+        DEADLINE,
+        manager.call(
+            "Inhibit",
+            &(
+                "sleep",
+                "Canopa Lock",
+                "Wait for compositor-confirmed session lock",
+                "delay",
+            ),
+        ),
+    )
+    .await
+    .context("sleep inhibitor timed out")??;
+    Ok(fd.into())
+}
 async fn connect(selected: Option<&str>) -> Result<Target> {
     tokio::time::timeout(DEADLINE, async {
         discover(Connection::system().await?, selected).await
@@ -274,134 +303,190 @@ fn spawn_lock(
     drop(child);
     Ok((child_process, tokio::net::UnixStream::from_std(parent)?))
 }
-fn launch(
-    request: &canopa_config::Request,
-    session: &str,
-    child: &mut Option<tokio::process::Child>,
-    ready: &mut Option<tokio::net::UnixStream>,
-) {
-    match spawn_lock(request, session) {
-        Ok((process, readiness)) => {
-            *child = Some(process);
-            *ready = Some(readiness);
+struct Locker {
+    request: canopa_config::Request,
+    session: String,
+    child: Option<tokio::process::Child>,
+    ready: Option<tokio::net::UnixStream>,
+    locked: Option<bool>,
+    generation: u64,
+    pending: bool,
+    sleep_coordinator: bool,
+    preparing_for_sleep: bool,
+    waiters: crate::control::Waiters,
+}
+impl Locker {
+    fn launch(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.pending = false;
+        match spawn_lock(&self.request, &self.session) {
+            Ok((child, ready)) => {
+                self.child = Some(child);
+                self.ready = Some(ready);
+                self.locked = None;
+            }
+            Err(error) => {
+                eprintln!("cannot launch locker: {error}");
+                self.waiters.finished(self.generation, false);
+            }
         }
-        Err(error) => eprintln!("cannot launch locker: {error}"),
+    }
+    async fn finished(&mut self, target: &Target, success: bool) {
+        if success {
+            let _ = target.set_locked(false).await;
+        }
+        // Unsuccessful locker exit never manufactures an unlocked hint.
+        self.waiters.finished(self.generation, success);
+        self.child = None;
+        self.ready = None;
+        self.locked = None;
+        if self.pending {
+            self.launch();
+        }
+    }
+    async fn reap(&mut self, target: &Target) {
+        if let Some(status) = self
+            .child
+            .as_mut()
+            .and_then(|c| c.try_wait().ok().flatten())
+        {
+            self.finished(target, status.success()).await;
+        }
+    }
+    async fn request(&mut self, target: &Target, request: Option<crate::control::Request>) {
+        use crate::control::{Mode, Outcome, Status};
+        self.reap(target).await;
+        if request
+            .as_ref()
+            .is_some_and(|r| matches!(r.mode, Mode::Status | Mode::Watch))
+        {
+            let _ = request.unwrap().reply.send(Outcome::Status(Status {
+                version: 1,
+                session: self.session.clone(),
+                ready: self.child.is_some() && self.locked == Some(true),
+                pid: self.child.as_ref().and_then(|c| c.id()),
+                generation: self.generation,
+                sleep_coordinator: self.sleep_coordinator,
+                preparing_for_sleep: self.preparing_for_sleep,
+            }));
+            return;
+        }
+        // Authenticated unlock can precede process cleanup. Requests arriving in
+        // that gap belong to the next generation and must not complete with it.
+        let unlocking = self.child.is_some()
+            && self.locked == Some(true)
+            && matches!(
+                tokio::time::timeout(DEADLINE, async {
+                    target
+                        .proxy()
+                        .await?
+                        .get_property::<bool>("LockedHint")
+                        .await
+                        .map_err(anyhow::Error::from)
+                })
+                .await,
+                Ok(Ok(false))
+            );
+        let next = self.child.is_none() || unlocking || self.pending;
+        if let Some(request) = request {
+            self.waiters.add(
+                request,
+                if next {
+                    self.generation.wrapping_add(1)
+                } else {
+                    self.generation
+                },
+            );
+        }
+        if self.child.is_none() {
+            self.launch();
+        } else if unlocking {
+            self.pending = true;
+        } else if self.locked == Some(true) && !self.pending {
+            self.waiters.ready(self.generation);
+        }
     }
 }
 pub fn daemon(request: canopa_config::Request, selected: Option<String>) -> Result<()> {
     crate::settings::Settings::load(&request, canopa_config::Component::Lockscreen)?;
     std::fs::metadata("/etc/pam.d/canopa-lock")
         .context("install canopa-lock PAM service before starting its listener")?;
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?
-        .block_on(async move {
-            let session = Some(connect(selected.as_deref()).await?.id);
-            let _guard = daemon_guard(session.as_ref().unwrap())?;
-            let mut child: Option<tokio::process::Child> = None;
-            let mut ready: Option<tokio::net::UnixStream> = None;
-            let mut locked: Option<bool> = None;
-            let mut notified = false;
-            let mut pending = false;
+    tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async move {
+        let session=connect(selected.as_deref()).await?.id;
+        let _guard=daemon_guard(&session)?;
+        let server=crate::control::Server::bind()?;
+        let (sender,mut controls)=mpsc::channel(32);
+        let _server=tokio::spawn(server.serve(sender));
+        let mut locker=Locker {request,session:session.clone(),child:None,ready:None,locked:None,
+            generation:0,pending:false,sleep_coordinator:false,preparing_for_sleep:false,waiters:Default::default()};
+        let mut notified=false;
+        loop {
+            let target=match connect(Some(&session)).await {
+                Ok(target)=>target,
+                Err(error)=>{eprintln!("logind listener reconnecting: {error}");tokio::time::sleep(Duration::from_secs(1)).await;continue;}
+            };
+            let proxy=target.proxy().await?;
+            let mut requests=proxy.receive_signal("Lock").await?;
+            let mut owners=proxy.receive_owner_changed().await?;
+            let manager=manager(&target).await?;
+            let mut sleep=manager.receive_signal("PrepareForSleep").await?;
+            let mut inhibitor=Some(sleep_inhibitor(&manager).await?);
+            locker.preparing_for_sleep=manager.get_property::<bool>("PreparingForSleep").await?;
+            locker.sleep_coordinator=true;
+            if locker.preparing_for_sleep {
+                locker.request(&target,None).await;
+                if locker.locked==Some(true) && !locker.pending {inhibitor.take();}
+            }
+            if !notified {notify_ready()?;notified=true;}
+            locker.reap(&target).await;
+            if let Some(locked)=locker.locked {let _=target.set_locked(locked).await;}
             loop {
-                let target = match connect(session.as_deref()).await {
-                    Ok(target) => target,
-                    Err(error) => {
-                        eprintln!("logind listener reconnecting: {error}");
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        continue;
-                    }
-                };
-                let proxy = target.proxy().await?;
-                let mut requests = proxy.receive_signal("Lock").await?;
-                let mut owners = proxy.receive_owner_changed().await?;
-                if !notified {
-                    notify_ready()?;
-                    notified = true;
-                }
-                if let Some(status) = child.as_mut().and_then(|child| child.try_wait().ok().flatten()) {
-                    if status.success() {
-                        let _ = target.set_locked(false).await;
-                    }
-                    locked = None;
-                    child = None;
-                    ready = None;
-                    if pending {
-                        pending = false;
-                        launch(&request, &target.id, &mut child, &mut ready);
-                    }
-                }
-                if let Some(locked) = locked {
-                    let _ = target.set_locked(locked).await;
-                }
-                loop {
-                    tokio::select! {
-                        event = requests.next() => {
-                            if event.is_none() { break; }
-                            if let Some(status) = child.as_mut().and_then(|c| c.try_wait().ok().flatten()) {
-                                if status.success() {
-                                    let _ = target.set_locked(false).await;
-                                }
-                                locked = None;
-                                child = None;
-                                ready = None;
-                            }
-                            if child.is_none() {
-                                pending = false;
-                                launch(&request, &target.id, &mut child, &mut ready);
-                            } else if locked == Some(true) && matches!(
-                                tokio::time::timeout(DEADLINE, proxy.get_property::<bool>("LockedHint")).await,
-                                Ok(Ok(false))
-                            ) {
-                                // Authenticated unlock can precede helper cleanup/exit.
-                                // Preserve a new request during that short unlocked gap.
-                                pending = true;
-                            }
-                        },
-                        _ = owners.next() => break,
-                        status = async {
-                            match child.as_mut() {
-                                Some(child) => child.wait().await,
-                                None => std::future::pending().await,
-                            }
-                        } => {
-                            if status.is_ok_and(|status| status.success()) {
-                                let _ = target.set_locked(false).await;
-                            }
-                            // Never clear the bus hint on unsuccessful exit. Stop
-                            // restoring our private copy once its owner is gone:
-                            // a direct recovery locker can now report a new state.
-                            locked = None;
-                            child = None;
-                            ready = None;
-                            if pending {
-                                pending = false;
-                                launch(&request, &target.id, &mut child, &mut ready);
-                            }
-                        },
-                        confirmed = async {
-                            use tokio::io::AsyncReadExt;
-                            match ready.as_mut() {
-                                Some(ready) => {
-                                    let mut byte = [0];
-                                    ready.read_exact(&mut byte).await.map(|_| byte[0] == b'1')
-                                },
-                                None => std::future::pending().await,
-                            }
-                        } => {
-                            ready = None;
-                            if matches!(confirmed, Ok(true)) {
-                                locked = Some(true);
-                                let _ = target.set_locked(true).await;
-                            }
-                        },
-                    }
+                tokio::select! {
+                    event=sleep.next()=> {
+                        let Some(event)=event else {break;};
+                        let preparing:bool=event.body().deserialize()?;
+                        locker.preparing_for_sleep=preparing;
+                        if preparing {
+                            locker.request(&target,None).await;
+                            if locker.locked==Some(true) && !locker.pending {inhibitor.take();}
+                        } else {
+                            inhibitor.take();
+                            inhibitor=Some(sleep_inhibitor(&manager).await?);
+                        }
+                    },
+                    event=requests.next()=> {
+                        if event.is_none() {break;}
+                        locker.request(&target,None).await;
+                    },
+                    request=controls.recv()=> {
+                        let Some(request)=request else {bail!("locker control stopped");};
+                        locker.request(&target,Some(request)).await;
+                    },
+                    _=owners.next()=>break,
+                    status=async {match locker.child.as_mut() {Some(child)=>child.wait().await,None=>std::future::pending().await}}=> {
+                        locker.finished(&target,status.is_ok_and(|s|s.success())).await;
+                    },
+                    confirmed=async {
+                        use tokio::io::AsyncReadExt;
+                        match locker.ready.as_mut() {Some(ready)=>ready.read_u8().await,None=>std::future::pending().await}
+                    }=> {
+                        locker.ready=None;
+                        if crate::control::failed_readiness(confirmed).is_ok() {
+                            locker.locked=Some(true);
+                            let _=target.set_locked(true).await;
+                            locker.waiters.ready(locker.generation);
+                            if locker.preparing_for_sleep && !locker.pending {inhibitor.take();}
+                        } else {
+                            locker.waiters.finished(locker.generation,false);
+                        }
+                    },
                 }
             }
-        })
+        }
+    })
 }
 
-fn notify_ready() -> Result<()> {
+pub(crate) fn notify_ready() -> Result<()> {
     use std::os::{
         linux::net::SocketAddrExt,
         unix::net::{SocketAddr, UnixDatagram},

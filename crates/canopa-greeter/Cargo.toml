@@ -10,6 +10,7 @@ canopa-session-ui.workspace = true
 canopa-widgets.workspace = true
 canopa-config.workspace = true
 canopa-assets.workspace = true
+canopa-file.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 libc.workspace = true
@@ -21,6 +22,7 @@ image.workspace = true
 chrono.workspace = true
 tokio.workspace = true
 zbus.workspace = true
+futures-util.workspace = true
 wayland-client.workspace = true
 smithay-client-toolkit = "=0.20.0"
 calloop = "0.14.4"

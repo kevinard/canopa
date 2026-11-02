@@ -3,11 +3,13 @@
 import argparse,importlib.util,json,os,shlex,signal,socket,subprocess,sys,tempfile,time
 from pathlib import Path
 from PIL import Image
+import native_accessibility as a11y
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('desktop',ROOT/'scripts/validate-desktop.py');desktop=importlib.util.module_from_spec(spec);spec.loader.exec_module(desktop)
 def verify(binary,session):
     session.start_niri('prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\nhotkey-overlay { skip-at-startup; }\nwindow-rule { match app-id="org.canopa.Polkit"; open-floating true; }\n')
+    a11y.start(session)
     root=session.runtime;config=root/'config.kdl'
     config.write_text('schema-version 1\npolkit { auth-timeout 5; }\n')
     session.env['DBUS_SYSTEM_BUS_ADDRESS']=session.env['DBUS_SESSION_BUS_ADDRESS']
@@ -16,6 +18,10 @@ def verify(binary,session):
     session.wait_for(lambda:(root/'logind-ready').exists(),'private logind')
     authority=session.start(['/usr/bin/python3',str(ROOT/'scripts/desktop-fixture/polkit.py'),str(root)],'authority.log')
     session.wait_for(lambda:(root/'polkit-ready').exists(),'private authority')
+    # Public identity metadata is resolved only for authority-permitted UIDs.
+    Image.new('RGBA',(32,48),(220,40,60,255)).save(root/'avatar-alice',format='PNG')
+    session.start(['/usr/bin/python3',str(ROOT/'scripts/desktop-fixture/accounts.py'),str(root)],'accounts.log')
+    session.wait_for(lambda:(root/'accounts-ready').exists(),'private account metadata')
     library=session.output/'session.so';flags=shlex.split(subprocess.check_output(['pkg-config','--cflags','--libs','polkit-agent-1'],text=True))
     subprocess.run(['cc','-shared','-fPIC','-Wall','-Wextra','-Werror','-Wno-misleading-indentation',str(ROOT/'scripts/desktop-fixture/polkit-session.c'),'-o',str(library),*flags],check=True)
     protocol=ROOT/'scripts/desktop-fixture/virtual-keyboard-unstable-v1.xml'
@@ -65,10 +71,23 @@ def verify(binary,session):
     def done(before,authorized=True):
         wait(lambda:any(e['event']=='done' and e['authorized']==authorized for e in events()[before:]),'authorization result')
         wait(lambda:not windows(),'dialog retired');assert app.poll() is None
-    before=request('otp');session.capture('password.png');answer('canopa-fixture-password');wait(lambda:sum(line.startswith('accepted') for line in native_events())>=1,'first factor');time.sleep(.4);session.capture('otp.png');answer('123456');done(before)
+    before=request(uids=[1000])
+    a11y.request(session,'--window','Canopa Authorization','--name','Authenticate as: Alice Example · alice (UID 1000)   ‹ Tab ›')
+    shot=session.capture('identity-avatar.png').convert('RGB')
+    assert sum(r>180 and g<80 and b<100 for r,g,b in shot.getdata())>100, 'identity avatar absent'
+    lookups=[e['uid'] for e in json.loads((root/'accounts-events.json').read_text()) if e.get('event')=='find-user']
+    assert lookups == [1000], lookups
+    answer('canopa-fixture-password');done(before)
+    before=request('otp');session.capture('password.png')
+    a11y.request(session,'--window','Canopa Authorization','--name','Password:','--value','canopa-fixture-password')
+    time.sleep(.2)
+    protected=json.loads(a11y.request(session,'--window','Canopa Authorization','--name','Password:'))
+    assert protected['role']=='password text' and 'canopa-fixture-password' not in protected['text'],protected
+    a11y.request(session,'--window','Canopa Authorization','--name','Submit response','--click')
+    wait(lambda:sum(line.startswith('accepted') for line in native_events())>=1,'first factor');time.sleep(.4);session.capture('otp.png');answer('123456');done(before)
     before=request(uids=[0,os.getuid()]);session.run([str(keyboard),'type','discarded']);key('Tab');time.sleep(.4);answer('canopa-fixture-password');done(before);assert any(e['event']=='receipt' and e['uid']==0 for e in events()[before:])
     before=request();answer('wrong');time.sleep(2.3);key('Return');time.sleep(.4);answer('canopa-fixture-password');done(before)
-    before=request(message='A long authorization description. '*12);key('Right');session.capture('details.png');key('Right');key('Left');key('Return');answer('canopa-fixture-password');done(before)
+    before=request(message='A long authorization description. '*12);key('Next');session.capture('details.png');key('Next');key('Prior');key('Return');answer('canopa-fixture-password');done(before)
     before=request('device');session.capture('device.png');assert not any(line.startswith('accepted') for line in native_events()[-1:]);(root/'polkit-touch').touch();done(before)
     before=request('late');key('Escape');done(before,False)
     before=request();answer('canopa-fixture-password');done(before)
@@ -89,7 +108,7 @@ def verify(binary,session):
     wait(lambda:(root/'polkit-ready').exists(),'restarted authority')
     app=start('agent-after-authority',True);before=request();answer('canopa-fixture-password');done(before);stop(app)
     (session.output/'authority-events.json').write_text(json.dumps(events(),indent=2));(session.output/'session-events').write_text('\n'.join(native_events())+'\n')
-    result=dict(status='passed',checks=['command-free preview','foreign session refused','ambiguous user-manager session refused','owned user-manager session discovery','idle agent has no window','duplicate agent registration refused','password plus fresh visible OTP','authority-supplied identity selection','wrong password retry','paged full request details','device-only factor','user cancellation and late completion ignored','fresh request after cancellation','authority cancellation','bounded request timeout','logout cancellation and registration teardown','restart and fresh authentication','blocked cancellation has bounded process lifetime','recovery after failed backend','authority loss cancels pending authentication','fresh registration after authority restart','systemd readiness after registration'])
+    result=dict(status='passed',checks=['command-free preview','foreign session refused','ambiguous user-manager session refused','owned user-manager session discovery','idle agent has no window','duplicate agent registration refused','password plus fresh visible OTP','authority-supplied identity selection','permitted identity name and photo without enumeration','wrong password retry','paged full request details','device-only factor','user cancellation and late completion ignored','fresh request after cancellation','authority cancellation','bounded request timeout','logout cancellation and registration teardown','restart and fresh authentication','blocked cancellation has bounded process lifetime','recovery after failed backend','authority loss cancels pending authentication','fresh registration after authority restart','systemd readiness after registration'])
     (session.output/'summary.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,default=ROOT/'target/debug/canopa-polkit');parser.add_argument('--output',type=Path,default=ROOT/'.scratch/polkit-agent/desktop');args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)

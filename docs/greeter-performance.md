@@ -7,44 +7,49 @@ deployment and selection.
 
 ## Results and default choice
 
-Measured on 2026-11-01 using Cage 0.3.1 and Weston 15.0.1, with Canopa's normal
+Measured on 2026-11-02 using Cage 0.3.1 and Weston 15.0.1, with Canopa's normal
 release profile (thin LTO, one codegen unit, stripped symbols). The host was an
 Intel Core i5-6500 with four logical CPUs and approximately 15.6 GiB RAM.
 
 | Metric | Cage | Weston |
 | --- | ---: | ---: |
-| Startup median to first frame callback | 125.0 ms | 96.3 ms |
-| Startup range, five runs | 92.3–129.6 ms | 73.2–104.2 ms |
-| Idle CPU, percent of one logical core | 0.033% | 0.027% |
-| Combined RSS median | 52.4 MiB | 77.6 MiB |
-| Range of per-run RSS medians | 48.3–52.5 MiB | 69.6–77.9 MiB |
+| Startup median to first frame callback | 100.5 ms | 85.5 ms |
+| Startup range, five runs | 92.2–131.5 ms | 82.7–112.8 ms |
+| Idle CPU, percent of one logical core | 0.213% | 0.243% |
+| Combined RSS median | 45.1 MiB | 71.0 MiB |
+| Range of per-run RSS medians | 45.0–45.3 MiB | 70.4–74.6 MiB |
 
 **Cage remains the packaged default; Weston is explicitly selectable.** Cage's
-median combined RSS was 25.2 MiB (32.5%) lower. Weston started about 29 ms faster
+median combined RSS was 25.9 MiB (36.4%) lower. Weston started about 15 ms faster
 by the median, with overlapping startup ranges. Memory usage is the clearest
 separation in this fixture and supports retaining Cage for the lightweight default.
 
-Each compositor accumulated 300 seconds of idle observation. Cage recorded ten
-CPU ticks and Weston eight, at 100 ticks/second. One aggregate tick represents
-about 0.0033 percentage points of one core. The two-tick difference does not
-establish a meaningful general CPU advantage. Neither result is a zero-CPU claim.
+Each compositor accumulated 300 seconds of idle observation. Cage recorded 64
+CPU ticks and Weston 73, at 100 ticks/second. One aggregate tick represents
+about 0.0033 percentage points of one core. Both aggregate CPU results were below
+0.25% of one core; this single-host comparison does not establish a general CPU
+ranking. Neither result is a zero-CPU claim.
 
 This choice uses the controlled software-rendering evidence below. Deployment
 still defaults to the compositor's automatic renderer selection; these results
 do not establish a hardware/DRM ranking.
 
-[Results](performance/data/2026-11-01-greeter/summary.json),
-[metadata](performance/data/2026-11-01-greeter/metadata.json),
-[complete samples](performance/data/2026-11-01-greeter/trace.json.gz) and
-[exact measurement sampler](performance/data/2026-11-01-greeter/sampler.py.gz)
-retain the measured conditions and SHA-256 fingerprints. The sampler snapshot
-includes a harmless Pillow deprecation warning corrected in the maintained script
-after this run; pixel checks and measurement calculations are unchanged.
-These measurements predate automatic desktop-session and AccountsService user discovery. The exact
-[measured greeter configuration](performance/data/2026-11-01-greeter/greeter.kdl)
-is retained; current builds/default configuration include discovery startup work
-and can show a different installed-session catalog. The recorded results refer
-to the archived binary/configuration hashes.
+[Results](performance/data/2026-11-02-greeter-followups/summary.json),
+[metadata](performance/data/2026-11-02-greeter-followups/metadata.json),
+[complete samples](performance/data/2026-11-02-greeter-followups/trace.json.gz) and
+[exact measurement sampler](performance/data/2026-11-02-greeter-followups/sampler.py.gz)
+retain the measured conditions and SHA-256 fingerprints. The imported
+[desktop fixture](performance/data/2026-11-02-greeter-followups/desktop-fixture.py.gz)
+and [greetd peer](performance/data/2026-11-02-greeter-followups/greetd-peer.py.gz)
+are archived too. The updated greeter includes automatic session/user discovery,
+live catalog/avatar sources, saved choices, shared shaping/input/accessibility
+and policy-checked power controls. Its exact
+[packaged configuration](performance/data/2026-11-02-greeter-followups/greeter.kdl)
+is retained; the installed-session catalog depends on the host.
+
+[Earlier measurements](performance/data/2026-11-01-greeter/summary.json) predate
+these features and use a different binary/configuration. Keep them as historical
+evidence rather than combining their samples with this comparison.
 
 ## Reproduction and methodology
 
@@ -54,7 +59,7 @@ desktop fixture's dependencies (including Python Pillow). No host display-manage
 or PAM changes are involved.
 
 ```sh
-cargo build --release --locked -j2 -p canopa-greeter --bin canopa-greeter
+cargo build --workspace --bins --locked --release -j2
 python3 scripts/measure-greeter.py --cage /usr/bin/cage --weston /usr/bin/weston \
     --runs 5 --settle-seconds 5 --sample-seconds 60 \
     --output /tmp/canopa-greeter-comparison
@@ -101,13 +106,12 @@ parent desktop is used for both candidates. Distribution versions, fonts, displa
 size and renderer policy can change the result. Startup ranges and raw samples
 should accompany any interpretation of small differences.
 
-Before this comparison, both launch modes passed the complete 22-check native
-greeter matrix, including password/OTP, pointer/keyboard, cancellation, retries,
-failure handling and compositor exit after authenticated handoff. Weston testing
-exposed a buffer-lifetime compatibility issue; the measured frontend uses a slot
-pool that destroys active buffers only after release. An early pilot with a black
-Weston kiosk was excluded and is not a performance result.
+Before this comparison, both release launch modes passed the complete 35-check
+native greeter matrix, including AccountsService/NSS discovery, avatar overrides,
+password/OTP, pointer/keyboard and protected AT-SPI input, cancellation, retries,
+timeouts, failure handling and compositor exit after authenticated handoff.
 
-[Validation outcomes](performance/data/2026-11-01-greeter/validation.json) record
-the native matrices, focused tests and tooling checks. The prior unrelated
-workspace test failures remain recorded in the local greeter work log.
+[Validation outcomes](performance/data/2026-11-02-greeter-followups/validation.json)
+record the native matrices, complete workspace gate, optimized build and the
+broader session follow-up coverage. Initial test-peer isolation failures and their
+resolution remain recorded; no application binary changed during this comparison.

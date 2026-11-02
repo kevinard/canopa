@@ -52,7 +52,7 @@ async fn native_accessibility_exposes_content_actions_and_retires_old_controls()
 set -euo pipefail
 fixture=$CANOPA_ACCESSIBILITY_ROOT
 export XDG_RUNTIME_DIR="$fixture/runtime" XDG_CONFIG_HOME="$fixture/config"
-export DCONF_BACKEND=memory CANOPA_ACCESSIBILITY_FIXTURE=1
+export GSETTINGS_BACKEND=memory CANOPA_ACCESSIBILITY_FIXTURE=1
 unset AT_SPI_BUS_ADDRESS NO_AT_BRIDGE
 mkdir -m 700 "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME"
 launcher= registry=
@@ -65,7 +65,7 @@ launcher_bin=/usr/lib/at-spi-bus-launcher
 registry_bin=/usr/lib/at-spi2-registryd
 if [[ ! -x "$launcher_bin" ]]; then launcher_bin=/usr/libexec/at-spi-bus-launcher; fi
 if [[ ! -x "$registry_bin" ]]; then registry_bin=/usr/libexec/at-spi2-registryd; fi
-"$launcher_bin" --launch-immediately --a11y=1 &
+"$launcher_bin" --launch-immediately &
 launcher=$!
 for attempt in {1..100}; do
     if dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.GetNameOwner string:org.a11y.Bus >/dev/null 2>&1; then break; fi
@@ -87,6 +87,13 @@ registry=$!
         return;
     }
     let session = zbus::Connection::session().await.unwrap();
+    // AT-SPI 2.62 removed --a11y; enable only this private bus through its property.
+    zbus::Proxy::new(&session, "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Status")
+        .await
+        .unwrap()
+        .set_property("IsEnabled", true)
+        .await
+        .unwrap();
     let bus = zbus::Proxy::new(&session, "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus")
         .await
         .unwrap();

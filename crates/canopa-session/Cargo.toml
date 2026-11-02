@@ -13,6 +13,10 @@ path = "src/bin/wallpaper.rs"
 name = "canopa-lock"
 path = "src/bin/lock.rs"
 
+[[bin]]
+name = "canopa-idle"
+path = "src/bin/idle.rs"
+
 [dependencies]
 canopa-session-ui.workspace = true
 canopa-widgets.workspace = true
@@ -21,6 +25,8 @@ tokio = { workspace = true, features = ["process"] }
 zbus.workspace = true
 anyhow.workspace = true
 canopa-config.workspace = true
+canopa-file.workspace = true
+canopa-theme.workspace = true
 chrono.workspace = true
 clap.workspace = true
 image.workspace = true

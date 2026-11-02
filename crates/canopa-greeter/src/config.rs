@@ -3,7 +3,7 @@ use canopa_config::{Component, Document, Request};
 use canopa_session_ui::settings::Settings;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Session {
     pub id: String,
     pub label: String,
@@ -70,8 +70,11 @@ pub struct Config {
     pub nss: crate::nss::Policy,
     pub avatars: crate::avatars::Policy,
     pub default_user: String,
+    pub remember_selection: bool,
+    pub power_controls: bool,
     pub sessions: Vec<Session>,
     pub discovery: crate::sessions::Discovery,
+    pub system_sources: bool,
 }
 impl Config {
     pub fn system_request() -> Request {
@@ -89,6 +92,8 @@ impl Config {
         let mut nss = crate::nss::Policy::default();
         let mut avatars = crate::avatars::Policy::default();
         let mut default_user = String::new();
+        let mut remember_selection = true;
+        let mut power_controls = true;
         let mut sessions = Vec::new();
         let mut seen = std::collections::HashSet::new();
         let mut view = None;
@@ -153,7 +158,12 @@ impl Config {
                         nss.uid_max = Some(value);
                     }
                 }
-                "discover-sessions" | "discover-users" | "nss-include-nologin" | "user-avatars" => {
+                "discover-sessions"
+                | "discover-users"
+                | "nss-include-nologin"
+                | "user-avatars"
+                | "remember-selection"
+                | "power-controls" => {
                     ensure!(
                         node.children().is_none() && node.entries().len() == 1,
                         "discovery setting takes a boolean"
@@ -167,7 +177,11 @@ impl Config {
                         .value()
                         .as_bool()
                         .context("discovery setting takes a boolean")?;
-                    if name == "user-avatars" {
+                    if name == "power-controls" {
+                        power_controls = enabled;
+                    } else if name == "remember-selection" {
+                        remember_selection = enabled;
+                    } else if name == "user-avatars" {
                         avatars.enabled = enabled;
                     } else if name == "nss-include-nologin" {
                         nss.include_nologin = enabled;
@@ -362,17 +376,23 @@ impl Config {
                 nss,
                 avatars,
                 default_user,
+                remember_selection,
+                power_controls,
                 sessions,
                 discovery,
+                system_sources: true,
             },
             document,
         ))
     }
     /// Resolve once at frontend startup; schema validation itself never scans the host.
     pub fn resolve_sessions(&mut self, require_system_ownership: bool) {
+        self.system_sources = require_system_ownership;
         if !self.discovery.enabled {
             return;
         }
+        self.sessions
+            .retain(|session| session.desktop_file.is_none());
         let known: std::collections::HashSet<_> =
             self.sessions.iter().map(|s| s.id.clone()).collect();
         let detected = self.discovery.scan(require_system_ownership);

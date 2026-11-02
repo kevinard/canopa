@@ -7,7 +7,7 @@ libraries installed:
 cargo build --locked -p canopa-session -p canopa-cli
 ```
 
-Install `canopa-wallpaper` and `canopa-lock` beside `canopa` (normally
+Install `canopa-wallpaper`, `canopa-lock` and `canopa-idle` beside `canopa` (normally
 `~/.local/bin`). The repository updater builds and installs both. Neither tool
 uses Iced or creates a GPU device. They target compositors with wlr-layer-shell
 (wallpaper) and ext-session-lock-v1 (locker), including Niri.
@@ -28,26 +28,71 @@ names, logical dimensions and active image/fit assignments. Output names are exa
 Wayland connector names. An assignment to an absent output is retained for when it
 appears. `--all` replaces the default and clears per-output overrides, so newly
 connected monitors receive that image too. Changes do not restart the daemon.
-Runtime assignments last until reload or process exit; edit startup configuration
-for persistence across logins. Changing a file on disk requires `set` or `reload`.
+Changes are saved as private assignment overlays in
+`$XDG_STATE_HOME/canopa/wallpaper.json` (or `~/.local/state/canopa/wallpaper.json`)
+and restored across daemon restarts/logins. `set --temporary` affects only the
+running daemon, including when another monitor's choice is saved later. State
+contains local image paths and fit modes, is bounded, mode 0600 and atomically
+replaced. Concurrent graphical sessions for the same account share these saved
+preferences; their IPC endpoints and running assignments remain display-specific.
+
+Image/configuration changes are watched with inotify, including atomic file
+replacement and missing-parent creation. Valid configuration updates preserve
+manual overlays. Explicit `reload` clears overlays and stops any slideshow,
+restoring the selected configuration. Invalid candidates preserve the displayed
+wallpaper and saved assignments. Filesystem events are coalesced while admission
+is in progress; no periodic filesystem scan is used.
 
 `fill` crops centrally to fill the monitor; `fit` preserves the whole image with
 solid-color letterboxing; `stretch` fills without preserving proportions; `center`
 uses original pixel dimensions and crops oversized images. PNG/JPEG are supported.
 Alpha composites onto the configured background. EXIF orientation is applied.
 
-The daemon has no animation, periodic image polling, or redraw timer. It sleeps
-until IPC or Wayland output events. Images are decoded/resized only when needed;
+By default the daemon has no animation, periodic image polling or redraw timer.
+It sleeps until IPC, source-file or Wayland output events. Images are decoded/resized only when needed;
 after submission the compositor retains the shared-memory backing and the daemon
 drops its decoded pixels and mapping. Admission is bounded to 64 MiB encoded,
 32 megapixels and a 256 MiB decoder allocation budget per image; output buffers
-also have a 32-megapixel limit. These are admission limits, not an RSS guarantee.
+also have a 32-megapixel limit, with a 256 MiB combined output-surface admission
+budget for a candidate. A distinct image is decoded once for all its candidate
+outputs. These are admission limits, not an RSS guarantee.
 
 To start with the graphical session, install
 `packaging/systemd/canopa-wallpaper.service` under `~/.config/systemd/user/`, then
 run `systemctl --user daemon-reload` and
 `systemctl --user enable --now canopa-wallpaper.service`. `canopa-session.target`
 now includes it. The unit waits for Niri readiness, matching the other companions.
+
+## Wallpaper picker and slideshow
+
+```sh
+canopa wallpaper pick
+canopa wallpaper pick ~/Pictures/Wallpapers
+canopa wallpaper pick ~/Pictures/one.jpg ~/Pictures/two.png
+canopa wallpaper slideshow ~/Pictures/Wallpapers --all --interval 300
+canopa wallpaper next
+canopa wallpaper stop-slideshow
+```
+
+The CPU-rendered picker previews selected/all monitors at their actual aspect
+ratios and buffer scale, using the daemon's background color. Choose the image,
+monitor and fit, then Apply. Previewing and closing the picker do not change the
+wallpaper. Left/Right chooses images, Up/Down cycles monitor selection, F cycles
+fit, Tab selects a control, Enter activates it and Escape closes. F5 refreshes
+files/outputs. Pointer and native accessibility actions use the same controls.
+Invalid/unready previews cannot be applied. Default discovery includes active
+wallpapers and `~/Pictures/Wallpapers` (or `~/Pictures`); explicit files/folders
+replace that input list. Folder discovery is bounded to 2,048 entries and 256
+image candidates. All-monitor previews show up to eight outputs at once.
+
+The optional slideshow scans at most 2,048 directory entries and selects up to
+256 PNG/JPEG paths in sorted order. Intervals are 10..86,400 seconds (default 300).
+It can target one `--output NAME` or `--all`. The timer exists only while the
+slideshow is active. Invalid slides retain the last valid frame, and the next
+advance continues to another candidate. Slideshow policy is saved at startup;
+frame changes do not write state on each timer tick. `stop-slideshow` saves its
+current wallpaper, and a manual `set` stops the running slideshow. Source files
+and output hotplug continue to use events. No transitions or GPU device are used.
 
 ## Lock
 
@@ -66,7 +111,7 @@ canopa lock --defaults check-config
 
 `canopa-lock` is the direct executable. It starts on demand and remains in the
 foreground until authenticated unlock. Enter submits the current PAM prompt;
-Backspace deletes. Escape clears nonempty input, or cancels the current PAM
+Backspace edits the response. Escape clears nonempty input, or cancels the current PAM
 transaction when input is empty. After cancellation/failure, Enter starts a fresh
 transaction. Authentication and account checks must both succeed; locked/expired
 accounts cannot unlock. Only one PAM transaction runs at a time, in a cancellable
@@ -99,7 +144,12 @@ Enrollment and module options must match the machine's policy. For fingerprint,
 use the distribution's configured `pam_fprintd` stack; sufficient/required controls
 determine whether fingerprint replaces or supplements a password. PAM runs modules
 serially; this implementation does not race a password stack against a separate
-fingerprint stack. Expired-password changes are not performed by the locker.
+fingerprint stack. When PAM reports an expired password after authentication, the
+locker asks for explicit consent before running the configured PAM password stack.
+Cancel leaves the session locked. Current/new/repeated passwords use fresh protected
+prompts; both the change and a fresh account check must succeed to unlock. Install
+the matching `password` include from the supplied PAM example to enable this recovery
+path.
 
 ## Logind and systemd
 
@@ -112,9 +162,13 @@ loginctl lock-session
 ```
 
 The unit runs `canopa-lock daemon`, a small event-driven listener. It becomes ready
-after subscribing to the selected session's `Lock` signal. With it running,
+after subscribing to the selected session's `Lock` signal, opening its private
+control endpoint and acquiring logind's sleep delay inhibitor. With it running,
 `loginctl lock-session SESSION_ID` and `loginctl lock-sessions` start the locker;
-calling `canopa-lock` directly also works. The session target includes this listener.
+calling `canopa-lock` directly attaches to the same foreground locker. Concurrent
+requests share one locker. `canopa-lock ensure` waits for compositor readiness;
+`canopa-lock status` reports the selected session and readiness as JSON.
+The session target includes this listener.
 Restarting/stopping the listener preserves an already active locker.
 The unit stays inactive if the required PAM service file has not been installed.
 
@@ -140,13 +194,16 @@ images fall back to the theme background and do not prevent session locking.
 `--ready-fd FD` writes `1` and closes a duplicate of that inherited descriptor only
 after the compositor's `locked` event. It is suitable for an external idle/suspend
 coordinator; starting the process alone is not proof of lock readiness. This feature
-does not install an idle daemon, sleep inhibitor, or automatic suspend policy.
+is also used by the listener's sleep coordinator. See [Stasis integration](idle.md)
+for optional automatic idle, monitor power and suspend policy. The listener delays
+external sleep until compositor readiness within logind's bounded delay window;
+it acquires a fresh inhibitor after resume.
 
 A denied lock request exits unsuccessfully. Rendering/authentication failures,
 Escape and process termination never request unlock. Under ext-session-lock,
 killing the locker leaves the session locked; recovery is compositor policy.
-Preview writes a PNG without acquiring a lock or starting PAM. Software text does
-not yet expose an AT-SPI accessibility tree or complex-script shaping.
+Preview writes a PNG without acquiring a lock or starting PAM. See the shared
+authentication input controls below for accessibility and text support.
 
 ## Shared configuration and themes
 
@@ -285,3 +342,63 @@ The second script uses a private logind-compatible D-Bus service and real
 live under `.scratch/lockscreen-integration/evidence/`. These fixtures verify the
 conversation and lifecycle, not a physical token/fingerprint reader or a live
 distribution's PAM policy.
+
+## Shared authentication input
+
+Lock, Greeter, Polkit and Pinentry use the same bounded UTF-8 input. Left/Right
+moves by grapheme, Shift extends a selection, Home/End moves to an edge, and
+Backspace/Delete removes the selected or adjacent grapheme. Ctrl+A selects all;
+Ctrl+U clears. Insertion replaces the selection, with rejected oversized input
+leaving it intact. Deleted bytes and the unused buffer tail are erased.
+
+When the compositor supplies several XKB layout groups, **F6** or the Keyboard
+control cycles the local selection. Compositor-side group changes take priority.
+The selector uses the supplied keymap, modifiers and compose table. It does not
+change the session's keyboard configuration. Configure multiple layouts in the
+compositor to offer them here.
+
+Software text uses advanced shaping, bidirectional layout and installed-font
+fallback. Install fonts covering the desired scripts. Native AT-SPI exposes prompt,
+status, visible request context and control actions. Hidden fields have the password
+role and expose only bullets, including through the text interface. Accessible
+editing, selection and submission follow the same consumer state/policy checks as
+keyboard input; stale prompt actions are rejected. A screen reader and accessibility
+bus must be available in the relevant session, including the dedicated greeter
+session when accessibility is needed before login.
+
+Owned secret buffers use fixed private memory mappings, best-effort `mlock` and
+`MADV_DONTDUMP`, in addition to process core-dump protection and explicit erasure.
+Memory-lock limits can prevent `mlock`; authentication remains usable. These
+protections apply to Canopa's owned storage, not to copies maintained by PAM,
+D-Bus, GnuPG, compositor/input libraries or the operating system.
+
+### Physical seat and device acceptance
+
+The maintained native scenarios use private compositors, buses and PAM mounts.
+They verify multi-output/hotplug behavior and the sleep coordination protocol,
+including real delay-inhibitor descriptors. They do not establish a real machine's
+DRM/VT handoff, kernel suspend/resume or distribution authentication policy.
+Before replacing a login manager on a test installation, validate its greetd PAM
+stack, selected Cage/Weston DRM backend, login/logout/failed handoff, VT switching,
+lock/unlock on every physical output and hotplug while locked. Then check external
+`loginctl lock-session`, lid/power-triggered sleep, resume and authentication with
+the intended distribution password/fingerprint/FIDO policy. Keep an independent
+recovery login available while testing that installation.
+
+An opt-in `scripts/test-lockscreen-device.py` can test a real FIDO key without
+installing a PAM policy. Select `--enroll /path/to/pamu2fcfg` or
+`--u2f-enrollment` (a test-only touch credential for U2F-capable keys), and provide
+`--module /path/to/pam_u2f.so`, `--device /dev/hidrawN` and `--output DIRECTORY`.
+Run it with the native fixture's Python dependencies. It uses a private compositor
+and PAM mount, requests two touches and deletes its temporary mapping afterward.
+The first touch creates a non-resident credential for `pam://canopa-device-test`;
+the second authenticates through Canopa's actual PAM prompt and unlock path. It
+does not read SSH credentials, reset the key, create a resident account, install
+packages or change host login configuration. The U2F mode requires libfido2/OpenSSL
+development headers and a C compiler. It creates a non-resident, presence-required credential without changing PIN policy.
+The pam-u2f global configuration is hidden inside the test mount: the module
+requires root ownership for configuration files, so the helper uses its defaults.
+A FIDO2-only key that requires PIN entry during enrollment needs an interactive
+enrollment setup; never send that PIN through chat.
+This test covers the actual device/module conversation on a private graphical seat,
+not its enrollment in the host's login policy.

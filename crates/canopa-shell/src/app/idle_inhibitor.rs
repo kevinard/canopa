@@ -97,7 +97,7 @@ impl App {
     pub(super) fn sync_idle_inhibitor(&mut self) -> Task<Message> {
         let configured = self
             .modules
-            .has_kind(crate::modules::ModuleKind::IdleInhibitor);
+            .has_data_source(crate::modules::data_source::ModuleDataSourceIdentity::IdleInhibitor);
         if !configured && self.data_sources.idle_inhibitor.surfaces.is_empty() {
             return Task::none();
         }

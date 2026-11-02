@@ -20,6 +20,10 @@ test -x "$bundle/bin/canopa-lock"
 test -x "$bundle/bin/canopa-greeter"
 test -x "$bundle/bin/canopa-pinentry"
 "$bundle/bin/canopa-pinentry" --defaults check-config > /dev/null
+test -x "$bundle/bin/canopa-idle"
+"$bundle/bin/canopa-idle" --help > /dev/null
+test -s "$bundle/share/canopa/stasis/stasis.rune"
+test -s "$bundle/share/systemd/user/canopa-idle.service"
 test -x "$bundle/bin/canopa-polkit"
 "$bundle/bin/canopa-polkit" --defaults check-config > /dev/null
 test -s "$bundle/share/systemd/user/canopa-polkit.service"
@@ -88,6 +92,14 @@ def frame(message):
     body = json.dumps(message).encode()
     return magic + struct.pack('>Q', len(body)) + body
 
+def first_v5(result):
+    messages = [json.loads(line) for line in result.stdout.splitlines()]
+    assert messages, 'provider returned no initial content'
+    assert all(message['protocol_version'] == 5 for message in messages)
+    revisions = [message['revision'] for message in messages]
+    assert revisions[0] == 1 and all(a < b for a, b in zip(revisions, revisions[1:]))
+    return messages[0]
+
 handshake = {'type': 'handshake', 'payload': {'protocol_version': 1,
              'session_id': 'release-smoke', 'provider_name': 'wifi',
              'origin': {'bar_name': 'main', 'output_name': 'test', 'origin_kind': 'bar'}}}
@@ -106,7 +118,7 @@ result = subprocess.run([sys.argv[1], '--protocol', 'canopa-v5'],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[1]),
                              'CANOPA_WIFI_PROVIDER_BACKEND': 'none'}, check=True)
-message = json.loads(result.stdout)
+message = first_v5(result)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'form'
 assert message['content']['body']['elements'][0]['title'] == 'Wi-Fi unavailable'
@@ -115,7 +127,7 @@ result = subprocess.run([sys.argv[2], '--protocol', 'canopa-v5'],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[2]),
                              'PULSE_SERVER': 'unix:/nonexistent-canopa-release-audio'}, check=True)
-message = json.loads(result.stdout)
+message = first_v5(result)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'rich'
 assert message['content']['body']['title'] == 'Sound'
@@ -125,9 +137,9 @@ result = subprocess.run([sys.argv[3], '--protocol', 'canopa-v5'],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[3]),
                              'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/nonexistent-canopa-release-media'}, check=True)
-message = json.loads(result.stdout)
+message = first_v5(result)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'rich'
 assert message['content']['body']['title'] == 'Media'
-print('Release bundle: all eleven binaries execute; Files assets and v1/v5 provider close pass.')
+print('Release bundle: all bundled binaries execute; Files assets and v1/v5 provider close pass.')
 PY

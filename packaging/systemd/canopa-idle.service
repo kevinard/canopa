@@ -1,0 +1,23 @@
+[Unit]
+Description=Canopa Stasis idle supervisor
+Requires=canopa-lock.service
+BindsTo=canopa-lock.service
+After=graphical-session-pre.target niri.service canopa-lock.service
+Before=graphical-session.target
+PartOf=graphical-session.target canopa-session.target
+ConditionPathExists=%h/.config/canopa/stasis.rune
+ConditionPathExists=/etc/pam.d/canopa-lock
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=%h/.local/bin/canopa-idle run
+ExecReload=%h/.local/bin/canopa-idle reload
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=8
+
+[Install]
+WantedBy=graphical-session.target

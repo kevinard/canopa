@@ -2,7 +2,7 @@
 """Test-only greetd-ipc peer. Never authenticates host accounts or executes sessions."""
 import asyncio,json,os,struct,sys,time,shlex
 from pathlib import Path
-root=Path(sys.argv[1]);events=[];current=None;sequence=0
+root=Path(sys.argv[1]);events=[];current=None;sequence=0;active_clients=0
 
 def record(kind,**data):
     events.append(dict(event=kind,**data));p=root/'greetd-events.new';p.write_text(json.dumps(events));p.replace(root/'greetd-events.json')
@@ -67,6 +67,8 @@ async def handle(request):
         record('handoff',cmd=shlex.split(' '.join(request['cmd'])),wire_cmd=request['cmd'],env=request['env'],user=current['user']);return response()
     return error('Unknown request','error')
 async def client(reader,writer):
+    global active_clients
+    active_clients+=1;record('client-open',active=active_clients)
     try:
         while True:
             try:header=await reader.readexactly(4)
@@ -77,7 +79,11 @@ async def client(reader,writer):
             if reply=='oversized':writer.write(struct.pack('=I',1000000));await writer.drain();return
             payload=json.dumps(reply).encode();writer.write(struct.pack('=I',len(payload))+payload);await writer.drain()
     except (BrokenPipeError,ConnectionResetError):cancel();record('broken-client-cancel')
-    finally:writer.close();await writer.wait_closed()
+    finally:
+        writer.close()
+        try:await writer.wait_closed()
+        except (BrokenPipeError,ConnectionResetError):pass
+        active_clients-=1;record('client-close',active=active_clients)
 async def main():
     socket=root/'greetd.sock';socket.unlink(missing_ok=True)
     server=await asyncio.start_unix_server(client,str(socket));socket.chmod(0o600)

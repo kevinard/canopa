@@ -26,7 +26,9 @@ static unsigned code(char c){
 }
 static unsigned named(const char *s){
     if(!strcmp(s,"Return"))return 28;if(!strcmp(s,"Escape"))return 1;if(!strcmp(s,"Tab"))return 15;
-    if(!strcmp(s,"Down"))return 108;if(!strcmp(s,"Up"))return 103;if(!strcmp(s,"Left"))return 105;if(!strcmp(s,"Right"))return 106;if(!strcmp(s,"BackSpace"))return 14;return 0;
+    if(!strcmp(s,"Down"))return 108;if(!strcmp(s,"Up"))return 103;if(!strcmp(s,"Left"))return 105;if(!strcmp(s,"Right"))return 106;if(!strcmp(s,"BackSpace"))return 14;
+    if(!strcmp(s,"Home"))return 102;if(!strcmp(s,"End"))return 107;if(!strcmp(s,"Delete"))return 111;
+    if(!strcmp(s,"Next"))return 109;if(!strcmp(s,"Prior"))return 104;if(!strcmp(s,"F6"))return 64;return 0;
 }
 static void tap(struct wl_display *display,struct zwp_virtual_keyboard_v1 *keyboard,unsigned key){
     zwp_virtual_keyboard_v1_key(keyboard,0,key,1);wl_display_roundtrip(display);usleep(12000);
@@ -37,7 +39,7 @@ int main(int argc,char **argv){
     struct wl_registry *registry=wl_display_get_registry(display);wl_registry_add_listener(registry,&listener,NULL);wl_display_roundtrip(display);
     if(!seat||!manager)return 4;
     struct zwp_virtual_keyboard_v1 *keyboard=zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(manager,seat);
-    struct xkb_context *context=xkb_context_new(XKB_CONTEXT_NO_FLAGS);struct xkb_rule_names names={.layout="us"};
+    struct xkb_context *context=xkb_context_new(XKB_CONTEXT_NO_FLAGS);const char *layouts=getenv("CANOPA_FIXTURE_LAYOUT");struct xkb_rule_names names={.layout=layouts?layouts:"us"};
     struct xkb_keymap *map=xkb_keymap_new_from_names(context,&names,XKB_KEYMAP_COMPILE_NO_FLAGS);char *text=xkb_keymap_get_as_string(map,XKB_KEYMAP_FORMAT_TEXT_V1);size_t length=strlen(text)+1;
     int fd=memfd_create("canopa-keymap",MFD_CLOEXEC);if(fd<0||ftruncate(fd,(off_t)length))return 5;
     if(write(fd,text,length)!=(ssize_t)length)return 6;
@@ -49,10 +51,20 @@ int main(int argc,char **argv){
         zwp_virtual_keyboard_v1_key(keyboard,0,key,0);wl_display_roundtrip(display);
     }
     else if(!strcmp(argv[1],"key")){unsigned key=named(argv[2]);if(!key)return 7;tap(display,keyboard,key);}
+    else if(!strcmp(argv[1],"sequence")){
+        char *sequence=strdup(argv[2]);if(!sequence)return 9;
+        for(char *token=strtok(sequence," ");token;token=strtok(NULL," ")){
+            unsigned mods=0;if(!strncmp(token,"Ctrl+",5)){mods=4;token+=5;}
+            if(!strncmp(token,"Shift+",6)){mods|=1;token+=6;}
+            unsigned key=named(token);if(!key&&strlen(token)==1)key=code((char)tolower(token[0]));if(!key){free(sequence);return 7;}
+            zwp_virtual_keyboard_v1_modifiers(keyboard,mods,0,0,0);wl_display_roundtrip(display);tap(display,keyboard,key);
+            zwp_virtual_keyboard_v1_modifiers(keyboard,0,0,0,0);wl_display_roundtrip(display);
+        }free(sequence);
+    }
     else if(!strcmp(argv[1],"text")||!strcmp(argv[1],"type")){
         for(const unsigned char *p=(const unsigned char*)argv[2];*p;p++){
-            unsigned key=code(*p=='%'?'5':(char)tolower(*p));if(!key)return 8;
-            int shifted=isupper(*p)||*p=='%';
+            unsigned key=code(*p=='%'?'5':*p=='+'?'=':(char)tolower(*p));if(!key)return 8;
+            int shifted=isupper(*p)||*p=='%'||*p=='+';
             if(shifted)zwp_virtual_keyboard_v1_modifiers(keyboard,1,0,0,0);
             tap(display,keyboard,key);
             if(shifted)zwp_virtual_keyboard_v1_modifiers(keyboard,0,0,0,0);

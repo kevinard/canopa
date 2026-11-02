@@ -18,7 +18,7 @@ from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parent
-PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-media-provider', 'canopa-notify', 'canopa-files', 'canopa', 'canopa-wallpaper', 'canopa-lock', 'canopa-greeter', 'canopa-polkit', 'canopa-pinentry')
+PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-media-provider', 'canopa-notify', 'canopa-files', 'canopa', 'canopa-wallpaper', 'canopa-lock', 'canopa-idle', 'canopa-greeter', 'canopa-polkit', 'canopa-pinentry')
 SERVICES = ('canopa-shell.service', 'canopa-notify.service')
 LOCAL_PACKAGES = ('canopa-panel-protocol', 'canopa-config', 'canopa-assets', 'accesskit_unix')
 SYSTEMCTL = r'''#!/usr/bin/env python3
@@ -208,6 +208,7 @@ class UpdateTests(unittest.TestCase):
             if name == 'canopa-session':
                 (package / 'src/bin').mkdir()
                 (package / 'src/bin/canopa-wallpaper.rs').write_text(source)
+                (package / 'src/bin/canopa-idle.rs').write_text(source)
             if name == 'canopa-shell':
                 (package / 'src/bin').mkdir()
                 (package / 'src/bin/canopa-wifi-provider.rs').write_text(source)

@@ -191,7 +191,7 @@ modules {
 }
 ```
 
-The optional declaration supports `format`, `expanded-format`,
+The optional declaration supports `backend` (`wayland` or `stasis`), `format`, `expanded-format`,
 `horizontal-format`, `content-rotation`, `tooltip`, `icons`, and the usual
 `actions` overrides. Format placeholders are `{icon}`, `{value}` (`On`/`Off`),
 `{state}`, and `{label}` (status and help). Icon and segment style states are
@@ -201,6 +201,8 @@ The module uses the compositor's Wayland idle-inhibit protocol, with inhibitors
 attached to live bar surfaces. Output changes preserve the selected toggle;
 switching off, removing the module, or exiting the shell releases its inhibitors.
 An unsupported compositor displays `unavailable`. There is no polling process.
+Set `backend "stasis"` to control the optional Stasis daemon's manual hold and
+consume its streaming state instead. See [idle policy setup](idle.md).
 
 Inhibition applies while a bar surface is visible and depends on the compositor
 and idle daemon honoring the protocol. It does not block explicit lock, suspend,

@@ -21,9 +21,12 @@ shlex.workspace = true
 libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-ab_glyph = "0.2"
-fontdb = "0.23"
 zeroize = "1"
+unicode-segmentation.workspace = true
+accesskit.workspace = true
+accesskit_unix.workspace = true
+cosmic-text = "0.15"
+xkbcommon = "0.8"
 
 [dev-dependencies]
 tempfile.workspace = true

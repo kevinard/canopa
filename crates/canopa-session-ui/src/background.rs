@@ -64,9 +64,20 @@ pub fn render(
     height: u32,
 ) -> Result<RgbImage> {
     dimensions(width, height)?;
+    let source = path.map(load).transpose()?;
+    render_source(source.as_ref(), fit, color, width, height)
+}
+/// Render an already admitted image, so callers can reuse one decode across outputs.
+pub fn render_source(
+    source: Option<&RgbaImage>,
+    fit: Fit,
+    color: Rgb,
+    width: u32,
+    height: u32,
+) -> Result<RgbImage> {
+    dimensions(width, height)?;
     let mut target = RgbImage::from_pixel(width, height, image::Rgb([color.0, color.1, color.2]));
-    if let Some(path) = path {
-        let source = load(path)?;
+    if let Some(source) = source {
         let (sw, sh) = source.dimensions();
         let resized = match fit {
             Fit::Fill => {
@@ -75,18 +86,25 @@ pub fn render(
                 let cw = sw.min((f64::from(sh) * ratio).round().max(1.) as u32);
                 let ch = sh.min((f64::from(sw) / ratio).round().max(1.) as u32);
                 imageops::resize(
-                    &imageops::crop_imm(&source, (sw - cw) / 2, (sh - ch) / 2, cw, ch).to_image(),
+                    &*imageops::crop_imm(source, (sw - cw) / 2, (sh - ch) / 2, cw, ch),
                     width,
                     height,
                     FilterType::Triangle,
                 )
             }
-            Fit::Fit => image::DynamicImage::ImageRgba8(source)
-                .resize(width, height, FilterType::Triangle)
-                .into_rgba8(),
-            Fit::Stretch => imageops::resize(&source, width, height, FilterType::Triangle),
+            Fit::Fit => {
+                let ratio =
+                    (f64::from(width) / f64::from(sw)).min(f64::from(height) / f64::from(sh));
+                imageops::resize(
+                    source,
+                    (f64::from(sw) * ratio).round().clamp(1., f64::from(width)) as u32,
+                    (f64::from(sh) * ratio).round().clamp(1., f64::from(height)) as u32,
+                    FilterType::Triangle,
+                )
+            }
+            Fit::Stretch => imageops::resize(source, width, height, FilterType::Triangle),
             Fit::Center => imageops::crop_imm(
-                &source,
+                source,
                 sw.saturating_sub(width) / 2,
                 sh.saturating_sub(height) / 2,
                 sw.min(width),

@@ -41,12 +41,17 @@ use wayland_client::{
     protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
 };
 enum Update {
+    Power(crate::power::Update),
+    Catalog(Vec<crate::config::Session>, bool),
     Accounts(Vec<accounts::Account>),
     Avatar(u64, Option<std::sync::Arc<image::RgbaImage>>),
     Auth(protocol::Event),
     Widget(widgets::Update),
 }
 struct App {
+    accessibility: Option<canopa_session_ui::accessibility::Accessibility>,
+    preference_path: Option<PathBuf>,
+    input: canopa_session_ui::input::Keyboard,
     handle: LoopHandle<'static, App>,
     compositor: CompositorState,
     layout_names: Vec<String>,
@@ -62,6 +67,8 @@ struct App {
     worker: protocol::Worker,
     _widgets: Option<widgets::Runtime>,
     _accounts: Option<accounts::Worker>,
+    catalog: crate::catalog::Worker,
+    power: Option<crate::power::Worker>,
     avatars: Option<avatars::Worker>,
     avatar_key: Option<(String, Vec<PathBuf>)>,
     avatar_generation: u64,
@@ -118,13 +125,43 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
             let _ = avatar_sender.send(Update::Avatar(generation, image));
         })
     });
+    let catalog_sender = sender.clone();
+    let catalog = crate::catalog::Worker::start(config.clone(), move |sessions, invalidate| {
+        let _ = catalog_sender.send(Update::Catalog(sessions, invalidate));
+    });
+    let power_sender = sender.clone();
+    let power = config.power_controls.then(|| {
+        crate::power::Worker::start(move |update| {
+            let _ = power_sender.send(Update::Power(update));
+        })
+    });
     let observers = widgets::start(&config.view, move |event| {
         sender.send(Update::Widget(event)).is_ok()
     });
-    let controller = Controller::new(&config)?;
+    let mut controller = Controller::new(&config)?;
+    let preference_path = config
+        .remember_selection
+        .then(crate::preferences::Preferences::path)
+        .flatten();
+    if let Some(path) = &preference_path {
+        match crate::preferences::Preferences::load(path) {
+            Ok(preferences) => controller.apply_preferences(&config, preferences),
+            Err(error) => {
+                if error
+                    .downcast_ref::<std::io::Error>()
+                    .is_none_or(|e| e.kind() != std::io::ErrorKind::NotFound)
+                {
+                    eprintln!("greeter: saved selection unavailable; using configured defaults");
+                }
+            }
+        }
+    }
     let shm = Shm::bind(&globals, &qh)?;
     let pool = SlotPool::new(4096, &shm)?;
     let mut app = App {
+        accessibility: None,
+        preference_path,
+        input: Default::default(),
         handle: event_loop.handle(),
         compositor,
         layout_names: Vec::new(),
@@ -140,6 +177,8 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         worker,
         _widgets: observers,
         _accounts: account_worker,
+        catalog,
+        power,
         avatars,
         avatar_key: None,
         avatar_generation: 0,
@@ -158,11 +197,44 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         ready_socket,
         frame_requested: false,
     };
+    let (a11y_sender, a11y_receiver) = channel::channel();
+    app.accessibility = Some(canopa_session_ui::accessibility::Accessibility::new(
+        "Canopa Login",
+        move |request| {
+            let _ = a11y_sender.send(request);
+        },
+    ));
+    event_loop
+        .handle()
+        .insert_source(a11y_receiver, |event, _, app| {
+            if let Event::Msg(request) = event {
+                app.accessible(request);
+            }
+        })
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
     event_loop
         .handle()
         .insert_source(receiver, |event, _, app| {
             if let Event::Msg(event) = event {
                 match event {
+                    Update::Power(crate::power::Update::Capabilities(capabilities)) => {
+                        app.controller.power_capabilities = capabilities
+                    }
+                    Update::Power(crate::power::Update::Finished(success)) => {
+                        app.controller.power_finished(success)
+                    }
+                    Update::Catalog(sessions, invalidate) => {
+                        let command = app.controller.apply_sessions(sessions.clone());
+                        app.config.sessions = sessions;
+                        app.send(command);
+                        if invalidate {
+                            if let Some(avatars) = &app.avatars {
+                                avatars.invalidate();
+                            }
+                            app.avatar_key = None;
+                        }
+                    }
                     Update::Accounts(users) => app.controller.apply_accounts(&app.config, users),
                     Update::Avatar(generation, image) => {
                         if generation != app.avatar_generation {
@@ -174,6 +246,11 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
                         let command = app.controller.event(event, &app.config);
                         app.send(command);
                         if app.controller.phase == Phase::Done {
+                            if let Some(path) = &app.preference_path
+                                && app.controller.preferences.save(path).is_err()
+                            {
+                                eprintln!("greeter: could not save the successful login selection");
+                            }
                             app.exit = true;
                         }
                         if app.controller.phase == Phase::Fatal {
@@ -234,6 +311,47 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
     Ok(())
 }
 impl App {
+    fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
+        if let Some(a) = &mut self.accessibility {
+            a.update("Canopa Login", &self.controller.ui, &self.config.view, true);
+        }
+        use canopa_session_ui::accessibility::{Operation, select};
+        if !self
+            .accessibility
+            .as_ref()
+            .is_some_and(|a| a.accepts(&request))
+        {
+            return;
+        }
+        match request.operation {
+            Operation::Control(id) => self.action(id),
+            Operation::Submit => {
+                let cmd = self.controller.submit();
+                self.send(cmd);
+            }
+            Operation::Cancel => {
+                let cmd = self.controller.escape();
+                self.send(cmd);
+            }
+            Operation::Replace(secret) => {
+                if matches!(self.controller.phase, Phase::User | Phase::Prompt) {
+                    self.controller.clear_input();
+                    self.controller.input(secret.text());
+                }
+            }
+            Operation::Select {
+                anchor,
+                focus,
+                echo,
+            } => {
+                if matches!(self.controller.phase, Phase::User | Phase::Prompt) {
+                    select(&mut self.controller.ui.secret, anchor, focus, echo);
+                }
+            }
+        }
+        self.dirty = true;
+    }
+
     fn send(&mut self, command: Option<Command>) {
         if let Some(command) = command
             && self.worker.send(command).is_err()
@@ -243,6 +361,24 @@ impl App {
         }
     }
     fn action(&mut self, id: usize) {
+        if (20..=24).contains(&id) && self.config.power_controls {
+            if let Some(action) = self.controller.power_action(id)
+                && !self
+                    .power
+                    .as_ref()
+                    .is_some_and(|worker| worker.request(action))
+            {
+                self.controller.power_finished(false);
+            }
+            self.dirty = true;
+            return;
+        }
+
+        if id == canopa_session_ui::input::LAYOUT_CONTROL {
+            self.input.cycle();
+            self.dirty = true;
+            return;
+        }
         let command = match id {
             1 => {
                 if self.controller.phase == Phase::User {
@@ -270,9 +406,59 @@ impl App {
         }
     }
     fn key(&mut self, mut event: KeyEvent) {
-        let text = zeroize::Zeroizing::new(event.utf8.take().unwrap_or_default());
+        let (symbol, text) = self
+            .input
+            .translate(event.raw_code, event.keysym, event.utf8.take());
+        event.keysym = symbol;
         if text.as_str() == "\u{15}" {
             self.controller.clear_input();
+            self.dirty = true;
+            return;
+        }
+        use crate::power::{Action, Menu};
+        if self.controller.power_menu != Menu::Closed {
+            match event.keysym {
+                Keysym::Escape => self.action(23),
+                Keysym::Return | Keysym::KP_Enter => match self.controller.power_menu {
+                    Menu::Choose(Action::Shutdown) => self.action(21),
+                    Menu::Choose(Action::Restart) => self.action(22),
+                    Menu::Confirm(_) => self.action(24),
+                    _ => {}
+                },
+                Keysym::Up | Keysym::Down | Keysym::Tab => {
+                    if let Menu::Choose(action) = self.controller.power_menu {
+                        let other = if action == Action::Shutdown {
+                            Action::Restart
+                        } else {
+                            Action::Shutdown
+                        };
+                        if self.controller.power_capabilities.allows(other) {
+                            self.controller.power_menu = Menu::Choose(other);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            self.dirty = true;
+            return;
+        }
+        if event.keysym == Keysym::F10 {
+            self.action(20);
+            return;
+        }
+        if event.keysym == Keysym::F5 {
+            if let Some(accounts) = &self._accounts {
+                accounts.refresh();
+            }
+            self.catalog.refresh();
+            return;
+        }
+        if event.keysym == Keysym::F6 {
+            self.action(canopa_session_ui::input::LAYOUT_CONTROL);
+            return;
+        }
+        if let Some(edit) = self.input.edit(event.keysym) {
+            self.controller.edit(edit);
             self.dirty = true;
             return;
         }
@@ -305,11 +491,19 @@ impl App {
             return Ok(());
         }
         self.dirty = false;
+        self.controller.ui.layout = self.input.label();
+        self.controller.ui.can_select_layout = self.input.can_select();
+
         self.controller.refresh(&self.config);
+        if let Some(a) = &mut self.accessibility {
+            a.update("Canopa Login", &self.controller.ui, &self.config.view, true);
+        }
+
         if let Some(worker) = &self.avatars {
             let key = self.controller.avatar_request(&self.config);
             if self.avatar_key.as_ref() != Some(&key) {
                 self.controller.ui.set_user_avatar(None);
+                self.catalog.avatars(key.1.clone());
                 self.avatar_generation = worker.request(key.1.clone());
                 self.avatar_key = Some(key);
             }
@@ -588,9 +782,15 @@ impl KeyboardHandler for App {
         _: &wl_keyboard::WlKeyboard,
         _: u32,
         modifiers: Modifiers,
-        _: RawModifiers,
+        raw: RawModifiers,
         layout: u32,
     ) {
+        self.input.modifiers(
+            [raw.depressed, raw.latched, raw.locked],
+            layout,
+            modifiers.shift,
+            modifiers.ctrl,
+        );
         self.controller.ui.caps = modifiers.caps_lock;
         self.controller.ui.layout = self
             .layout_names
@@ -606,6 +806,7 @@ impl KeyboardHandler for App {
         _: &wl_keyboard::WlKeyboard,
         keymap: smithay_client_toolkit::seat::keyboard::Keymap<'_>,
     ) {
+        self.input.keymap(keymap.as_string());
         use xkbcommon::xkb;
         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
         if let Some(map) = xkb::Keymap::new_from_string(

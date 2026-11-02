@@ -40,6 +40,11 @@ use wayland_client::{
 };
 
 struct App {
+    accessibility: Option<canopa_session_ui::accessibility::Accessibility>,
+    identities: crate::identity::Worker,
+    identity_key: Option<(u64, u32)>,
+    identity_epoch: u64,
+    input: canopa_session_ui::input::Keyboard,
     handle: LoopHandle<'static, App>,
     qh: QueueHandle<Self>,
     registry: RegistryState,
@@ -95,7 +100,16 @@ pub fn run(settings: Settings, session: &str, notify: Option<PathBuf>) -> Result
     let pool = SlotPool::new(4096, &shm)?;
     let (sender, receiver) = channel::channel();
     let _native = native::Runtime::start(session, settings.auth_timeout as u32, sender)?;
+    let (identity_sender, identity_receiver) = channel::channel();
+    let identities = crate::identity::Worker::start(move |epoch, identity| {
+        let _ = identity_sender.send((epoch, identity));
+    });
     let mut app = App {
+        identities,
+        identity_key: None,
+        identity_epoch: 0,
+        accessibility: None,
+        input: Default::default(),
         handle: loop_.handle(),
         qh: qh.clone(),
         registry: RegistryState::new(&globals),
@@ -123,6 +137,37 @@ pub fn run(settings: Settings, session: &str, notify: Option<PathBuf>) -> Result
         watchdog: None,
         notify,
     };
+    loop_
+        .handle()
+        .insert_source(identity_receiver, |event, _, app: &mut App| {
+            if let Event::Msg((epoch, Some(identity))) = event
+                && epoch == app.identity_epoch
+                && let Some(c) = &mut app.controller
+            {
+                if app.identity_key != Some((c.generation, identity.uid)) {
+                    return;
+                }
+                c.identity(identity);
+                app.dirty = true;
+            }
+        })
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let (a11y_sender, a11y_receiver) = channel::channel();
+    app.accessibility = Some(canopa_session_ui::accessibility::Accessibility::new(
+        "Canopa Authorization",
+        move |request| {
+            let _ = a11y_sender.send(request);
+        },
+    ));
+    loop_
+        .handle()
+        .insert_source(a11y_receiver, |event, _, app| {
+            if let Event::Msg(request) = event {
+                app.accessible(request);
+            }
+        })
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
     app.watchdog = Some(
         app.handle
             .insert_source(
@@ -166,6 +211,48 @@ pub fn run(settings: Settings, session: &str, notify: Option<PathBuf>) -> Result
     Ok(())
 }
 impl App {
+    fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
+        if let (Some(a), Some(c)) = (&mut self.accessibility, &self.controller) {
+            a.update("Canopa Authorization", &c.ui, &self.settings, self.focused);
+        }
+        use canopa_session_ui::accessibility::{Operation, select};
+        if !self.focused
+            || !self
+                .accessibility
+                .as_ref()
+                .is_some_and(|a| a.accepts(&request))
+        {
+            return;
+        }
+        match request.operation {
+            Operation::Control(id) => self.action(id),
+            Operation::Submit => self.action(2),
+            Operation::Cancel => self.action(3),
+            Operation::Replace(secret) => {
+                if let Some(c) = &mut self.controller
+                    && c.ui.prompt.is_some()
+                    && !c.ui.hide_input
+                {
+                    c.clear_input();
+                    c.input(secret.text());
+                }
+            }
+            Operation::Select {
+                anchor,
+                focus,
+                echo,
+            } => {
+                if let Some(c) = &mut self.controller
+                    && c.ui.prompt.is_some()
+                    && !c.ui.hide_input
+                {
+                    select(&mut c.ui.secret, anchor, focus, echo);
+                }
+            }
+        }
+        self.dirty = true;
+    }
+
     fn remove_watchdog(&mut self) {
         if let Some(token) = self.watchdog.take() {
             self.handle.remove(token);
@@ -286,6 +373,11 @@ impl App {
         Ok(())
     }
     fn action(&mut self, id: usize) {
+        if id == canopa_session_ui::input::LAYOUT_CONTROL {
+            self.input.cycle();
+            self.dirty = true;
+            return;
+        }
         if let Some(c) = &mut self.controller {
             match id {
                 1 => c.select(),
@@ -308,7 +400,10 @@ impl App {
         self.dirty = true;
     }
     fn key(&mut self, mut event: KeyEvent) {
-        let text = zeroize::Zeroizing::new(event.utf8.take().unwrap_or_default());
+        let (symbol, text) = self
+            .input
+            .translate(event.raw_code, event.keysym, event.utf8.take());
+        event.keysym = symbol;
         if !self.focused {
             return;
         }
@@ -319,12 +414,25 @@ impl App {
             self.dirty = true;
             return;
         }
+        if event.keysym == Keysym::F6 {
+            self.action(canopa_session_ui::input::LAYOUT_CONTROL);
+            return;
+        }
+        if let Some(edit) = self.input.edit(event.keysym)
+            && let Some(c) = &mut self.controller
+            && !c.ui.hide_input
+            && c.ui.prompt.is_some()
+        {
+            c.edit(edit);
+            self.dirty = true;
+            return;
+        }
         match event.keysym {
             Keysym::Return | Keysym::KP_Enter => self.action(2),
             Keysym::Escape => self.action(3),
             Keysym::Tab | Keysym::ISO_Left_Tab => self.action(1),
-            Keysym::Right => self.action(4),
-            Keysym::Left => self.action(5),
+            Keysym::Right | Keysym::Page_Down => self.action(4),
+            Keysym::Left | Keysym::Page_Up => self.action(5),
             Keysym::BackSpace => {
                 if let Some(c) = &mut self.controller {
                     c.backspace();
@@ -349,14 +457,32 @@ impl App {
         }
     }
     fn paint(&mut self) -> Result<()> {
+        let key = self
+            .controller
+            .as_ref()
+            .and_then(|c| c.selected_uid().map(|uid| (c.generation, uid)));
+        if key != self.identity_key {
+            self.identity_key = key;
+            self.identity_epoch = self.identities.request(key.map(|(_, uid)| uid));
+        }
+
         if !self.dirty || !self.configured || self.window.is_none() {
             return Ok(());
         }
         self.dirty = false;
+
+        if let Some(c) = &mut self.controller {
+            c.ui.layout = self.input.label();
+            c.ui.can_select_layout = self.input.can_select();
+        }
+
         let Some(c) = &mut self.controller else {
             return Ok(());
         };
         c.refresh();
+        if let Some(a) = &mut self.accessibility {
+            a.update("Canopa Authorization", &c.ui, &self.settings, self.focused);
+        }
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);
         background::dimensions(width, height)?;
@@ -603,12 +729,28 @@ impl KeyboardHandler for App {
         _: &wl_keyboard::WlKeyboard,
         _: u32,
         modifiers: Modifiers,
-        _: RawModifiers,
-        _: u32,
+        raw: RawModifiers,
+        layout: u32,
     ) {
+        self.input.modifiers(
+            [raw.depressed, raw.latched, raw.locked],
+            layout,
+            modifiers.shift,
+            modifiers.ctrl,
+        );
         if let Some(c) = &mut self.controller {
             c.ui.caps = modifiers.caps_lock;
         }
+        self.dirty = true;
+    }
+    fn update_keymap(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        keymap: smithay_client_toolkit::seat::keyboard::Keymap<'_>,
+    ) {
+        self.input.keymap(keymap.as_string());
         self.dirty = true;
     }
 }

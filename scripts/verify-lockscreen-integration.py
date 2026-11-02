@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 from PIL import Image
+import native_accessibility as a11y
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('desktop',ROOT/'scripts/validate-desktop.py')
@@ -23,6 +24,7 @@ desktop=importlib.util.module_from_spec(spec);spec.loader.exec_module(desktop)
 
 def verify(binaries,session):
     session.start_niri('prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\nhotkey-overlay { skip-at-startup; }\n')
+    a11y.start(session)
     session.env['DBUS_SYSTEM_BUS_ADDRESS']=session.env['DBUS_SESSION_BUS_ADDRESS']
     session.env.pop('XDG_SESSION_ID',None)
     root=session.runtime;locker=binaries/'canopa-lock'
@@ -73,7 +75,7 @@ lockscreen {{
     assert red and min(x for x,y in red)>w/2 and min(y for x,y in red)>h/2, 'custom preview placement ignored'
 
     def policy(mode):
-        (pam/'canopa-lock').write_text(f'auth required {module} {mode} {root}\naccount required {module}\n')
+        (pam/'canopa-lock').write_text(f'auth required {module} {mode} {root}\naccount required {module} {mode} {root}\npassword required {module} {mode} {root}\n')
         (root/'touch').unlink(missing_ok=True)
         (root/'slow-pid').unlink(missing_ok=True)
     def state():return json.loads((root/'logind-state.json').read_text())
@@ -132,7 +134,12 @@ lockscreen {{
     # Success needs BOTH fresh password and OTP, including ECHO_ON prompts.
     before,pid=request('otp');wait_event('Password:',before)
     session.run(['loginctl','lock-session','canopa-fixture'])
-    answer('canopa-fixture-password');wait_event('One-time code:',before)
+    a11y.request(session,'--window','Canopa Lock','--name','Password:','--value','canopa-fixture-password')
+    time.sleep(.2)
+    protected=json.loads(a11y.request(session,'--window','Canopa Lock','--name','Password:'))
+    assert protected['role']=='password text' and 'canopa-fixture-password' not in protected['text'],protected
+    a11y.request(session,'--window','Canopa Lock','--name','Submit response','--click')
+    wait_event('One-time code:',before)
     assert state()['locked'] and alive(pid)
     answer('000000');time.sleep(2.3);assert state()['locked'] and alive(pid)
     retry();before=mark();answer('canopa-fixture-password');wait_event('One-time code:',before)
@@ -142,6 +149,25 @@ lockscreen {{
     run_count=len((root/'widget-runs').read_text().splitlines());time.sleep(1.5)
     assert not state()['locked'],'duplicate Lock queued a new lock after authenticated unlock'
     assert len((root/'widget-runs').read_text().splitlines())==run_count,'custom widget kept polling after exit'
+
+    # Expiration is a distinct consent step; cancelling never changes the token.
+    before,pid=request('expired');answer('canopa-fixture-password');wait_event('password expired',before)
+    time.sleep(.5)
+    assert not any(line.endswith('password change called') for line in events()[before:])
+    a11y.request(session,'--window','Canopa Lock','--name','Cancel password change','--click')
+    time.sleep(.4);assert state()['locked']
+    before=retry();answer('canopa-fixture-password');wait_event('password expired',before)
+    a11y.request(session,'--window','Canopa Lock','--name','Change password','--click')
+    wait_event('Current password:',before);answer('canopa-fixture-password')
+    wait_event('New password:',before);answer('canopa-fixture-new-password')
+    wait_event('Repeat new password:',before);answer('canopa-fixture-new-password')
+    wait_event('account rechecked',before);unlocked()
+    before,pid=request('expired-fail');answer('canopa-fixture-password');wait_event('password expired',before)
+    key('Return');wait_event('Current password:',before);answer('canopa-fixture-password')
+    wait_event('New password:',before);answer('canopa-fixture-new-password')
+    wait_event('Repeat new password:',before);answer('canopa-fixture-new-password')
+    time.sleep(2.3);assert state()['locked'], 'failed password change unlocked'
+    policy('password');retry();answer('canopa-fixture-password');unlocked()
 
     # Hardware-touch flow remains locked after password until PAM accepts the device.
     before,pid=request('token',True);wait_event('Password:',before)
@@ -213,6 +239,7 @@ lockscreen {{
     result={'status':'passed','checks':['actual loginctl lock-session and lock-sessions transport',
         'session ownership and ambiguous-session refusal','listener exclusion','foreign signal isolation','duplicate Lock coalesced',
         'compositor-confirmed true / authenticated false hints','password plus fresh OTP',
+        'expired-password explicit consent/cancel/change/account recheck', 'failed password change remains locked',
         'visible PAM prompts','hardware-touch cue and pending device','cancelled worker reaped / stale result refused',
         'fingerprint-style passwordless PAM success','worker death remains locked','authentication timeout and fresh retry',
         'logind restart restores hint','Unlock signal cannot bypass PAM','locker crash preserves hint and cancels worker/command',

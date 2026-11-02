@@ -2,3 +2,4 @@
 # Install as /etc/pam.d/canopa-lock on Arch Linux.
 auth include system-auth
 account include system-auth
+password include system-auth

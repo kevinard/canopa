@@ -20,6 +20,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Preview images for selected/all monitors, then apply and save the selection.
+    Pick {
+        #[arg(num_args=0..=256)]
+        images: Vec<PathBuf>,
+    },
     /// Run in the foreground. Configure startup images in Canopa's wallpaper block.
     Daemon {
         #[arg(long, conflicts_with = "defaults")]
@@ -36,7 +41,26 @@ enum Command {
         all: bool,
         #[arg(long, value_enum, default_value = "fill")]
         fit: Fit,
+        /// Change this running daemon without saving the choice for the next login.
+        #[arg(long)]
+        temporary: bool,
     },
+    /// Start an optional, bounded slideshow of PNG/JPEG images.
+    Slideshow {
+        directory: PathBuf,
+        #[arg(long,default_value_t=300,value_parser=clap::value_parser!(u64).range(10..=86400))]
+        interval: u64,
+        #[arg(long, required_unless_present = "all", conflicts_with = "all")]
+        output: Option<String>,
+        #[arg(long)]
+        all: bool,
+        #[arg(long, value_enum, default_value = "fill")]
+        fit: Fit,
+    },
+    /// Stop the slideshow, retaining and saving its current wallpaper.
+    StopSlideshow,
+    /// Advance an active slideshow now.
+    Next,
     /// List output names, dimensions and active image assignments as JSON.
     Status,
     /// Re-read startup configuration; invalid candidates preserve current assignments.
@@ -69,6 +93,14 @@ fn request(path: Option<PathBuf>, defaults: bool) -> ConfigRequest {
 fn run() -> Result<()> {
     let command = Cli::parse().command;
     let operation = match command {
+        Command::Pick { images } => {
+            let settings = canopa_session::settings::Settings::load(
+                &ConfigRequest::Discover,
+                Component::Wallpaper,
+            )?
+            .0;
+            return canopa_session::picker_wayland::run(settings, images);
+        }
         Command::Daemon {
             canopa_config,
             defaults,
@@ -85,12 +117,31 @@ fn run() -> Result<()> {
             );
         }
         Command::Set {
-            image, output, fit, ..
+            image,
+            output,
+            fit,
+            temporary,
+            ..
         } => Request::Set {
             image: std::path::absolute(image)?,
             output,
             fit,
+            persist: !temporary,
         },
+        Command::Slideshow {
+            directory,
+            interval,
+            output,
+            fit,
+            ..
+        } => Request::SlideshowStart {
+            directory: std::path::absolute(directory)?,
+            interval,
+            output,
+            fit,
+        },
+        Command::StopSlideshow => Request::SlideshowStop {},
+        Command::Next => Request::Next {},
         Command::Status => Request::Status {},
         Command::Reload => Request::Reload {},
         Command::Stop => Request::Stop {},
