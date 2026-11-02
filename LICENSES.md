@@ -12,7 +12,7 @@ The combined repository preserves the original source licenses:
 - Canopa local assets: MIT, with Notify and Niribar attribution in `crates/canopa-assets/LICENSE`.
 - Canopa widget data: MIT, preserving extracted Canopa Shell attribution in
   `crates/canopa-widgets/LICENSE`.
-- Canopa Files, session tools, session presentation, greeter, polkit agent, pinentry,
+- Canopa Files, Settings, session tools, session presentation, greeter, polkit agent, pinentry,
   configuration, appearance, UI, notification client, bounded file intake, portal,
   and CLI: MIT OR Apache-2.0,
   with both texts in their crate directories.

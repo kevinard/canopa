@@ -13,13 +13,14 @@ mkdir -p "$dest/bin" "$dest/share/canopa" "$dest/share/canopa-shell" "$dest/shar
     "$dest/share/dbus-1/services" "$dest/share/xdg-desktop-portal/portals" "$dest/share/applications"
 install -m755 "$build_dir/canopa-shell" "$build_dir/canopa-wifi-provider" \
     "$build_dir/canopa-audio-provider" "$build_dir/canopa-media-provider" \
-    "$build_dir/canopa-notify" "$build_dir/canopa-files" "$build_dir/canopa" \
+    "$build_dir/canopa-notify" "$build_dir/canopa-files" "$build_dir/canopa-settings" "$build_dir/canopa" \
     "$build_dir/xdg-desktop-portal-canopa" "$build_dir/canopa-wallpaper" "$build_dir/canopa-lock" "$build_dir/canopa-idle" "$build_dir/canopa-greeter" "$build_dir/canopa-polkit" "$build_dir/canopa-pinentry" "$dest/bin/"
 install -m644 packaging/portal/*.portal "$dest/share/xdg-desktop-portal/portals/"
 install -m644 packaging/portal/*.service "$dest/share/dbus-1/services/"
 install -m644 packaging/file-manager/org.freedesktop.FileManager1.service "$dest/share/dbus-1/services/"
 install -m644 packaging/systemd/xdg-desktop-portal-canopa.service "$dest/share/systemd/user/"
 install -m644 packaging/applications/org.canopa.Files.desktop "$dest/share/applications/"
+install -m644 packaging/applications/org.canopa.Settings.desktop "$dest/share/applications/"
 mkdir -p "$dest/share/canopa/pam" "$dest/share/canopa/stasis"
 install -m644 packaging/stasis/stasis.rune "$dest/share/canopa/stasis/"
 mkdir -p "$dest/share/canopa/greetd" "$dest/share/wayland-sessions"

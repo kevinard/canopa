@@ -2750,6 +2750,12 @@
       "args": ["--binary", "{polkit}", "--output", "{artifacts}"]
     },
     {
+      "id": "settings-desktop",
+      "script": "verify-settings.py",
+      "args": ["--binary", "{session}/canopa-settings", "--tools-dir", "{session}",
+        "--stasis", "{stasis}", "--output", "{artifacts}"]
+    },
+    {
       "id": "pinentry-dialog",
       "script": "verify-pinentry.py",
       "args": ["--binary", "{pinentry}", "--output", "{artifacts}"]

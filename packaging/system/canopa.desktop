@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Canopa
+Comment=Canopa desktop environment
+Exec=/usr/bin/canopa-session
+TryExec=/usr/lib/canopa/niri
+Type=Application
+DesktopNames=canopa;niri;

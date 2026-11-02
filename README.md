@@ -2,7 +2,7 @@
 
 Canopa is a desktop environment built around the Niri Wayland compositor. Its Rust
 workspace currently contains Canopa Shell (the shell, Wi-Fi, audio and media providers), Canopa Notify, Canopa Files,
-a wallpaper daemon, lockscreen, login greeter, polkit agent and GnuPG pinentry, the `canopa` tools, a Settings portal backend, and shared configuration, appearance, Iced controls
+a wallpaper daemon, lockscreen, login greeter, polkit agent and GnuPG pinentry, Canopa Settings, the `canopa` tools, a Settings portal backend, and shared configuration, appearance, Iced controls
 and panel protocol crates. Local icon lookup and bounded raster preparation are
 shared through `canopa-assets`; battery/media widget data through `canopa-widgets`; see the [asset contracts](docs/adr/0005-shared-assets.md).
 
@@ -14,13 +14,18 @@ bash scripts/cargo.sh build --workspace --bins --locked
 ```
 
 Binaries are in root `target/debug/`: `canopa-shell`, `canopa-wifi-provider`, `canopa-audio-provider`, `canopa-media-provider`,
-`canopa-notify`, `canopa-files`, `canopa-wallpaper`, `canopa-lock`, `canopa-greeter`, `canopa-polkit`, `canopa-pinentry`, `canopa-idle`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `bash scripts/cargo.sh build --locked -p canopa-shell` or
+`canopa-notify`, `canopa-files`, `canopa-settings`, `canopa-wallpaper`, `canopa-lock`, `canopa-greeter`, `canopa-polkit`, `canopa-pinentry`, `canopa-idle`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `bash scripts/cargo.sh build --locked -p canopa-shell` or
 `bash scripts/cargo.sh build --locked -p canopa-notify`. Notify's core build remains available with
 `bash scripts/cargo.sh build --locked -p canopa-notify --no-default-features`.
 Files' core can be checked with explicitly selected `--lib` or `--test` targets
 and `--no-default-features` when desktop dependencies are unavailable.
 See [Files runtime and installation](docs/files.md) for the Iced migration status,
 PDF preview tools and launcher registration.
+
+The [Arch installation guide](docs/installation.md) describes the system packages,
+dedicated Canopa login session, compatible compositor and recovery procedure.
+[Canopa Settings](docs/settings.md) provides displays, keyboard/pointer,
+personalization and power preferences. Open it from the launcher or `canopa settings`.
 
 Run from the repository root:
 
@@ -103,7 +108,7 @@ for feature options, using root `target/` paths. Existing Niribar installations
 should follow the [shell rename guide](docs/shell-rename.md) before updating.
 
 Build a release with `bash scripts/cargo.sh build --workspace --bins --locked --release`, then run
-`bash scripts/package-release.sh target/release dist`. The archive contains all eleven
+`bash scripts/package-release.sh target/release dist`. The archive contains all fifteen
 binaries, current example configurations, service units, manuals, and source license
 notices. The companion user services use `~/.local/bin`; `canopa-session.target` starts
 Shell, Notify, Wallpaper and the logind lock listener. Install the lockscreen PAM service before using Lock;
@@ -118,7 +123,7 @@ For subsequent updates of an existing local companion installation, run:
 ```
 
 This builds the current checkout, including uncommitted changes, and installs
-`canopa-shell`, `canopa-wifi-provider`, `canopa-audio-provider`, `canopa-media-provider`, `canopa-notify`, `canopa-files`, and `canopa` together. It does
+`canopa-shell`, `canopa-wifi-provider`, `canopa-audio-provider`, `canopa-media-provider`, `canopa-notify`, `canopa-files`, `canopa-settings`, and `canopa` together. It does
 not fetch or pull Git commits. The updater requires Python 3, both companion user
 services, their standard `~/.local/bin` executable paths, and default configuration,
 control socket and state discovery in the same graphical-session environment.

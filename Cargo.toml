@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/canopa-settings",
   "crates/canopa-portal",
   "crates/canopa-cli",
   "crates/canopa-session",

@@ -14,7 +14,7 @@ FILES = {
     "LICENSES.md": "share/canopa/LICENSES.md",
     "config/canopa.kdl": "share/canopa/canopa.kdl",
     **{f"docs/{name}.md": f"share/canopa/{name}.md" for name in (
-        "building", "settings-portal", "shell-rename", "audio", "media", "files",
+        "building", "installation", "settings", "settings-portal", "shell-rename", "audio", "media", "files",
         "notifications", "configuration", "theme-customization", "session-tools", "idle", "greeter", "greeter-performance", "polkit", "pinentry",
     )},
     **{f"examples/{name}": f"share/canopa/examples/{name}" for name in (
@@ -31,6 +31,7 @@ FILES = {
            ("pinentry", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
            ("polkit", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
            ("widgets", ("README.md", "LICENSE")),
+           ("settings", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
        ) for name in names},
     "crates/canopa-shell/config/default.kdl": "share/canopa-shell/default.kdl",
     "crates/canopa-notify/examples/config.kdl": "share/canopa-notify/config.kdl",
@@ -62,7 +63,16 @@ def stage(bundle):
             if url.scheme or url.netloc or not url.path:
                 return match[0]
             resolved = (source.parent / unquote(url.path)).resolve()
-            if not resolved.is_relative_to(ROOT) or not resolved.exists():
+            if not resolved.is_relative_to(ROOT):
+                raise ValueError(f"{source.relative_to(ROOT)}: missing source reference {url.path}")
+            # Source distributions intentionally exclude local execution records.
+            # Preserve their references as checkout notes, never broken links or
+            # accidentally bundled private scratch data.
+            if resolved.relative_to(ROOT).parts[:1] == (".scratch",):
+                if match["image"]:
+                    raise ValueError(f"{source.relative_to(ROOT)}: unshipped image {url.path}")
+                return f'{match["label"]} (development checkout: `{resolved.relative_to(ROOT)}`)'
+            if not resolved.exists():
                 raise ValueError(f"{source.relative_to(ROOT)}: missing source reference {url.path}")
             destination = destinations.get(resolved)
             if destination is None:

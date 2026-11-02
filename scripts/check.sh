@@ -53,6 +53,7 @@ case "$1" in
         python3 scripts/test-desktop-runner.py
         python3 scripts/test-update.py
         python3 scripts/test-session-units.py
+        python3 scripts/test-install-system.py
         python3 scripts/test-check-scripts.py
         python3 scripts/test-build-guard.py
         bash scripts/cargo.sh fmt --all -- --check
@@ -60,7 +61,7 @@ case "$1" in
         python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md --check
         dbus-run-session -- bash scripts/cargo.sh test --workspace --all-targets --locked
         python3 scripts/test-settings-portal.py --binary "${CARGO_TARGET_DIR:-target}/debug/xdg-desktop-portal-canopa"
-        bash scripts/cargo.sh build --locked -p canopa-cli -p canopa-session -p canopa-greeter -p canopa-polkit -p canopa-pinentry
+        bash scripts/cargo.sh build --locked -p canopa-cli -p canopa-session -p canopa-greeter -p canopa-polkit -p canopa-pinentry -p canopa-settings
         python3 scripts/test-configuration.py
         python3 scripts/test-vendor.py
         ;;

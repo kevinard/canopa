@@ -15,6 +15,8 @@ test -s "$bundle/share/canopa-files/LICENSE-MIT"
 test -s "$bundle/share/canopa-files/LICENSE-APACHE"
 test -s "$bundle/share/canopa/files.md"
 desktop-file-validate "$bundle/share/applications/org.canopa.Files.desktop"
+desktop-file-validate "$bundle/share/applications/org.canopa.Settings.desktop"
+"$bundle/bin/canopa-settings" --help > /dev/null
 test -x "$bundle/bin/canopa-wallpaper"
 test -x "$bundle/bin/canopa-lock"
 test -x "$bundle/bin/canopa-greeter"

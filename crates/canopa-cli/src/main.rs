@@ -16,6 +16,12 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Operation {
+    /// Open Canopa Settings for displays, input, personalization and idle policy.
+    #[command(disable_help_flag = true)]
+    Settings {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
     /// Wallpaper daemon and live image controls.
     #[command(disable_help_flag = true)]
     Wallpaper {
@@ -89,6 +95,7 @@ fn main() {
 
 fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
+        Operation::Settings { args } => return companion("canopa-settings", args),
         Operation::Idle { args } => return companion("canopa-idle", args),
         Operation::Wallpaper { args } => return companion("canopa-wallpaper", args),
         Operation::Lock { args } => return companion("canopa-lock", args),

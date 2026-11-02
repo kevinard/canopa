@@ -18,7 +18,7 @@ from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parent
-PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-media-provider', 'canopa-notify', 'canopa-files', 'canopa', 'canopa-wallpaper', 'canopa-lock', 'canopa-idle', 'canopa-greeter', 'canopa-polkit', 'canopa-pinentry')
+PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-media-provider', 'canopa-notify', 'canopa-files', 'canopa', 'canopa-wallpaper', 'canopa-lock', 'canopa-idle', 'canopa-greeter', 'canopa-polkit', 'canopa-pinentry', 'canopa-settings')
 SERVICES = ('canopa-shell.service', 'canopa-notify.service')
 LOCAL_PACKAGES = ('canopa-panel-protocol', 'canopa-config', 'canopa-assets', 'accesskit_unix')
 SYSTEMCTL = r'''#!/usr/bin/env python3
@@ -185,7 +185,7 @@ class UpdateTests(unittest.TestCase):
         root.mkdir(parents=True, exist_ok=True)
         (root / 'Cargo.toml').write_text(
             '[workspace]\nresolver = "2"\nmembers = ["crates/canopa-shell", '
-            '"crates/canopa-notify", "crates/canopa-files", "crates/canopa-cli", "crates/canopa-session", "crates/canopa-greeter", "crates/canopa-polkit", "crates/canopa-pinentry"]\n'
+            '"crates/canopa-notify", "crates/canopa-files", "crates/canopa-cli", "crates/canopa-session", "crates/canopa-greeter", "crates/canopa-polkit", "crates/canopa-pinentry", "crates/canopa-settings"]\n'
             'exclude = ["vendor/accesskit_unix"]\n'
             '[patch.crates-io]\naccesskit_unix = { path = "vendor/accesskit_unix" }\n')
         for name in LOCAL_PACKAGES:
@@ -200,7 +200,7 @@ class UpdateTests(unittest.TestCase):
         source = RUST_MAIN.replace('@VERSION@', version)
         for name, binary in [('canopa-shell', 'canopa-shell'), ('canopa-notify', 'canopa-notify'),
                              ('canopa-files', 'canopa-files'),
-                             ('canopa-cli', 'canopa'), ('canopa-session', 'canopa-lock'), ('canopa-greeter', 'canopa-greeter'), ('canopa-polkit', 'canopa-polkit'), ('canopa-pinentry', 'canopa-pinentry')]:
+                             ('canopa-cli', 'canopa'), ('canopa-session', 'canopa-lock'), ('canopa-greeter', 'canopa-greeter'), ('canopa-polkit', 'canopa-polkit'), ('canopa-pinentry', 'canopa-pinentry'), ('canopa-settings', 'canopa-settings')]:
             package = root / 'crates' / name
             (package / 'src').mkdir(parents=True)
             (package / 'Cargo.toml').write_text(

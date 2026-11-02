@@ -1,0 +1,76 @@
+# Generated with an exact source checksum by scripts/package-arch.py.
+pkgbase=canopa
+pkgname=(canopa canopa-compositor canopa-login)
+pkgver=@VERSION@
+pkgrel=1
+arch=(x86_64)
+url='https://github.com/kevinard/canopa'
+license=('MIT' 'Apache-2.0')
+makedepends=(rust git pkgconf python clang cmake wayland-protocols
+    alsa-lib libpulse libxkbcommon wayland pam polkit gtk4 gstreamer
+    gst-plugins-base-libs libinput libdisplay-info libpipewire seatd pango
+    cairo libdrm mesa systemd-libs)
+options=(!lto !debug !strip)
+source=('canopa-@VERSION@.tar.gz'
+    'niri-8ed0da44d974c32c6877d2f4630c314da0717ecb.tar.gz::https://codeload.github.com/niri-wm/niri/tar.gz/8ed0da44d974c32c6877d2f4630c314da0717ecb'
+    'smithay-ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef.tar.gz::https://codeload.github.com/Smithay/smithay/tar.gz/ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef')
+noextract=('niri-8ed0da44d974c32c6877d2f4630c314da0717ecb.tar.gz'
+    'smithay-ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef.tar.gz')
+sha256sums=('@SOURCE_SHA256@'
+    'b065863db54ee44ea64c5019d70655b02f04a252966779f325600e7f953906d0'
+    '2df0f01fd83ee01dc2fcd5976ac0004334b03ef567f467b6c511f11fc1c8a7b9')
+
+build() {
+    cd "$srcdir/canopa-$pkgver"
+    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+    export CARGO_TARGET_DIR="${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}"
+    bash scripts/cargo.sh build --workspace --bins --locked --release
+    local niri_sources="${CANOPA_NIRI_WORK_DIR:-$CARGO_TARGET_DIR/niri-package-sources}"
+    local resume=()
+    if [[ -f "$niri_sources/canopa-build.json" ]]; then resume=(--resume); fi
+    python3 scripts/build-niri-compat.py --archives "$srcdir" \
+        --work-dir "$niri_sources" --target-dir "$CARGO_TARGET_DIR/niri-compat-release" \
+        --release --fetch "${resume[@]}"
+}
+
+package_canopa() {
+    pkgdesc='Canopa desktop environment and settings for Niri'
+    depends=("canopa-compositor=$pkgver" niri bash python systemd dbus
+        alsa-lib libpulse libxkbcommon wayland pam polkit gtk4 gstreamer
+        gst-plugins-base-libs gst-plugins-good gst-libav at-spi2-core
+        fontconfig ttf-dejavu pipewire-pulse wireplumber upower udisks2
+        foot xdg-utils xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome)
+    optdepends=('stasis: automatic idle locking, display power and suspend policy'
+        'networkmanager: Wi-Fi management' 'iwd: Wi-Fi management with networkd'
+        'xwayland-satellite: legacy X11 applications' 'poppler: PDF previews'
+        'gnome-keyring: Secret Service and Secret portal' 'canopa-login: greetd login integration')
+    backup=('etc/pam.d/canopa-lock')
+    cd "$srcdir/canopa-$pkgver"
+    python3 scripts/install-system.py --destdir "$pkgdir" \
+        --build-dir "${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}/release"
+    python3 scripts/dependency-attributions.py --output "$pkgdir/usr/share/canopa/dependency-attributions.md" \
+        --notices "$pkgdir/usr/share/licenses/canopa/dependencies"
+}
+
+package_canopa-compositor() {
+    pkgdesc='Pinned Niri compositor with the Canopa drag-source lifetime correction'
+    license=('GPL-3.0-or-later' 'MIT')
+    depends=(glibc cairo glib2 libdisplay-info libinput libpipewire libxkbcommon
+        mesa pango pixman seatd systemd-libs libgcc)
+    cd "$srcdir/canopa-$pkgver"
+    python3 scripts/install-system.py --destdir "$pkgdir" --component compositor \
+        --compositor "${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}/niri-compat-release/release/niri"
+    local niri_sources="${CANOPA_NIRI_WORK_DIR:-${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}/niri-package-sources}"
+    python3 scripts/dependency-attributions.py \
+        --manifest-path "$niri_sources/niri-8ed0da44d974c32c6877d2f4630c314da0717ecb/Cargo.toml" --root niri \
+        --output "$pkgdir/usr/share/canopa/compositor-dependency-attributions.md" \
+        --notices "$pkgdir/usr/share/licenses/canopa-compositor/dependencies"
+}
+
+package_canopa-login() {
+    pkgdesc='Optional greetd integration for the Canopa login screen'
+    depends=("canopa=$pkgver" greetd cage)
+    backup=('etc/canopa/greeter.kdl')
+    cd "$srcdir/canopa-$pkgver"
+    python3 scripts/install-system.py --destdir "$pkgdir" --component login
+}

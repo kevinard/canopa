@@ -15,7 +15,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-media-provider", "canopa-notify", "canopa-files", "canopa", "canopa-wallpaper", "canopa-lock", "canopa-idle", "canopa-greeter", "canopa-polkit", "canopa-pinentry")
+PROGRAMS = ("canopa-shell", "canopa-wifi-provider", "canopa-audio-provider", "canopa-media-provider", "canopa-notify", "canopa-files", "canopa", "canopa-wallpaper", "canopa-lock", "canopa-idle", "canopa-greeter", "canopa-polkit", "canopa-pinentry", "canopa-settings")
 SERVICES = ("canopa-notify.service", "canopa-shell.service", "canopa-wallpaper.service", "canopa-lock.service", "canopa-polkit.service", "canopa-idle.service")
 
 
@@ -86,7 +86,7 @@ def build(jobs, rebuild=False):
         print("Reusing local release build cache; Cargo will rebuild changed sources.", flush=True)
     subprocess.run(["bash", str(ROOT / "scripts/cargo.sh"), "build", "--locked", "--release", "--bins",
                     "--package", "canopa-shell", "--package", "canopa-notify",
-                    "--package", "canopa-cli", "--package", "canopa-files", "--package", "canopa-session", "--package", "canopa-greeter", "--package", "canopa-polkit", "--package", "canopa-pinentry", "--jobs", str(jobs),
+                    "--package", "canopa-cli", "--package", "canopa-files", "--package", "canopa-session", "--package", "canopa-greeter", "--package", "canopa-polkit", "--package", "canopa-pinentry", "--package", "canopa-settings", "--jobs", str(jobs),
                     "--target-dir", "target"], cwd=ROOT, check=True)
     cache.write_text(json.dumps(build_cache_state(packages)) + "\n")
 

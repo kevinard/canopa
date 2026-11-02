@@ -25,7 +25,7 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends dbus ripgrep pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libpam0g-dev libpolkit-agent-1-dev fonts-dejavu-core libpulse-dev libglib2.0-bin pipewire pipewire-bin pipewire-pulse pulseaudio-utils at-spi2-core xdg-desktop-portal python3-gi
+          sudo apt-get install -y --no-install-recommends dbus ripgrep pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev xkb-data libpam0g-dev libpolkit-agent-1-dev fonts-dejavu-core libpulse-dev libglib2.0-bin pipewire pipewire-bin pipewire-pulse pulseaudio-utils at-spi2-core xdg-desktop-portal python3-gi
       - name: Check core profile
         if: matrix.profile == 'core'
         run: bash scripts/check.sh --core

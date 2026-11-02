@@ -83,7 +83,8 @@ Niri retains its GPL-3.0-or-later licence and Smithay its MIT licence. Both sour
 archive names, URLs and SHA-256 values are recorded. This is the compatibility
 work in [ADR0024](adr/0024-niri-drag-source-lifetime.md). The private companion
 passes strict cancellation, retained-offer and actual Files regressions;
-compatible distribution selection and broader acceptance remain open.
+the Arch recipe now selects that pinned companion at a private system path.
+Physical installation and broader acceptance remain open.
 
 `python3 scripts/build-niri-compat.py --archives ARCHIVES --work-dir target/NEW-SOURCES`
 prepares a new disposable upstream workspace and builds a companion without
@@ -91,8 +92,12 @@ installing it. `--prepare-only` verifies the patch and records the source bindin
 without compiling. The helper changes only the exact Smithay and
 smithay-drm-extras source bindings in Niri's copied manifest/lockfile; every other
 locked dependency stays unchanged. Cargo compilation remains locked/offline,
-single-job and nonincremental, with outputs under root `target/`. Dependency
-fetching is a separate explicit operation. The ordinary Canopa Cargo lockfile is
+single-job and nonincremental, with outputs under root `target/` or an explicit
+`CARGO_TARGET_DIR`. `--fetch` explicitly fetches locked dependencies first.
+`--release` selects the optimized, stripped distribution executable. `--resume`
+reuses prepared sources only after checking every file against the verified
+archives, canonical patch and independently recomputed source bindings; altered
+or extra files are rejected. The ordinary Canopa Cargo lockfile is
 not rewritten. An explicit `--target-dir` can reuse an existing companion build
 cache after preserving any previous executable.
 

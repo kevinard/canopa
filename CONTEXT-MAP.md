@@ -10,6 +10,12 @@ owns login presentation while greetd owns login authentication and session lifet
 Canopa Pinentry presents GnuPG PIN/passphrase and confirmation dialogs.
 Canopa Polkit presents action authorization while native polkit owns policy and credentials. `canopa-widgets`
 shares passive data without transferring shell actions or application lifetimes.
+Canopa Settings presents desktop preferences while their existing owners retain
+policy and lifetime. The supported system installation has a dedicated session.
+
+- [Supported session and Settings ownership](docs/adr/0036-supported-session-and-settings.md)
+- [Arch system installation](docs/installation.md)
+- [Settings application](docs/settings.md)
 
 - [Wallpaper, lockscreen and shared widget data](docs/adr/0026-session-tools-and-widget-data.md)
 - [Logind, interactive PAM and lock composition](docs/adr/0027-logind-authentication-and-lock-composition.md)
@@ -36,7 +42,7 @@ shares passive data without transferring shell actions or application lifetimes.
 - [File manager configuration ownership](docs/adr/0016-files-configuration.md)
 - [File manager distribution and runtime](docs/adr/0017-files-distribution-and-runtime.md)
 - [Ordinary Iced Wayland drag transport, in progress](docs/adr/0023-wayland-drag-transport.md)
-- [Niri drag-source lifetime compatibility, native companion verified; distribution pending](docs/adr/0024-niri-drag-source-lifetime.md)
+- [Niri drag-source lifetime compatibility and pinned Arch package selection](docs/adr/0024-niri-drag-source-lifetime.md)
 - [File manager resident host and activation](docs/adr/0022-files-resident-host-and-activation.md)
 - [File manager standard desktop presentation, scoped core/native verification](docs/adr/0025-files-file-manager-interface.md)
 - [File manager live configuration reload](docs/files/adr/0019-live-configuration-reload.md)

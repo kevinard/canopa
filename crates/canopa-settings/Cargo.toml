@@ -1,0 +1,31 @@
+[package]
+name = "canopa-settings"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["desktop"]
+desktop = ["dep:iced", "dep:canopa-ui"]
+
+[dependencies]
+anyhow.workspace = true
+canopa-config.workspace = true
+canopa-file.workspace = true
+canopa-theme.workspace = true
+canopa-session-ui.workspace = true
+canopa-ui = { workspace = true, optional = true }
+clap.workspace = true
+iced = { workspace = true, optional = true, features = ["tokio", "tiny-skia"] }
+kdl = { workspace = true, features = ["v1"] }
+libc.workspace = true
+niri-ipc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["process", "io-util", "net"] }
+xkbcommon = "0.8"
+
+[dev-dependencies]
+assert_cmd.workspace = true
