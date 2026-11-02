@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the Iced drag transport against an independent GTK peer privately.
 
-Build `cargo build -p canopa-files --example drag_transport` first. This verifies
+Build `bash scripts/cargo.sh build -p canopa-files --example drag_transport` first. This verifies
 native transport only; the actual Files operation workflow has separate gates.
 """
 import argparse

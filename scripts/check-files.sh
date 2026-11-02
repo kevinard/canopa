@@ -62,10 +62,10 @@ esac
 
 # Override stale measurement settings inherited from a terminal or agent wrapper.
 export CARGO_INCREMENTAL=1
-cargo fmt --all -- --check
+bash scripts/cargo.sh fmt --all -- --check
 if [[ ${#selection[@]} -eq 0 ]]; then
-    dbus-run-session -- cargo test --locked -p canopa-files --lib operations::fingerprint::receipt_tests
-    dbus-run-session -- cargo test --locked -p canopa-files --test uutils_copy
+    dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files --lib operations::fingerprint::receipt_tests
+    dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files --test uutils_copy
 else
-    dbus-run-session -- cargo test --locked -p canopa-files "${selection[@]}"
+    dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files "${selection[@]}"
 fi

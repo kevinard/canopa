@@ -84,7 +84,7 @@ def build(jobs, rebuild=False):
         subprocess.run(clean, cwd=ROOT, check=True)
     else:
         print("Reusing local release build cache; Cargo will rebuild changed sources.", flush=True)
-    subprocess.run(["cargo", "build", "--locked", "--release", "--bins",
+    subprocess.run(["bash", str(ROOT / "scripts/cargo.sh"), "build", "--locked", "--release", "--bins",
                     "--package", "canopa-shell", "--package", "canopa-notify",
                     "--package", "canopa-cli", "--package", "canopa-files", "--package", "canopa-session", "--package", "canopa-greeter", "--package", "canopa-polkit", "--package", "canopa-pinentry", "--jobs", str(jobs),
                     "--target-dir", "target"], cwd=ROOT, check=True)

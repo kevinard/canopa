@@ -36,7 +36,7 @@ uu_cp = "=0.12.0"
         shutil.copyfile(ROOT / "scripts/fixtures/uutils-proof.lock", build / "Cargo.lock")
         env = dict(os.environ, CARGO_INCREMENTAL="0", TMPDIR="/tmp",
                    CARGO_TARGET_DIR=str(ROOT / "target/uutils-proof"))
-        subprocess.run(["cargo", "build", "--manifest-path", str(build / "Cargo.toml"),
+        subprocess.run(["bash", str(ROOT / "scripts/cargo.sh"), "build", "--manifest-path", str(build / "Cargo.toml"),
                         "--locked", "--offline", "-j1"], env=env, check=True)
     binary = ROOT / "target/uutils-proof/debug/canopa-uutils-proof"
     root = Path(tempfile.mkdtemp(prefix="canopa-uutils-data-", dir=ROOT / "target"))

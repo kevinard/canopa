@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    workspace = tomllib.loads((ROOT / 'Cargo.toml').read_text())['workspace']
+    root_manifest = tomllib.loads((ROOT / 'Cargo.toml').read_text())
+    workspace = root_manifest['workspace']
     iced = workspace['dependencies']['iced'].copy()
     features = set(iced['features'])
     for member in workspace['members']:
@@ -26,6 +27,8 @@ def main():
     locked_registry = {(p['name'], p['version'], p.get('source')) for p in locked}
     env = os.environ.copy()
     env['CARGO_TARGET_DIR'] = str(Path(env.get('CARGO_TARGET_DIR', ROOT / 'target')).resolve())
+    # The disposable workspace otherwise restores Cargo's full-debug defaults.
+    env.setdefault('CARGO_PROFILE_DEV_DEBUG', root_manifest['profile']['dev']['debug'])
     with tempfile.TemporaryDirectory(prefix='canopa-vendor-tests-') as directory:
         snapshot = Path(directory)
         forks = list(json.loads((ROOT / 'vendor/provenance.json').read_text())['crates'])
@@ -62,7 +65,7 @@ def main():
             if package['id'] in resolved and package['source'] and key not in locked_registry:
                 raise RuntimeError(f'Vendor tests escaped the root locked graph: {key}')
         subprocess.run([
-            'cargo', 'test', '--locked', '--offline', '-j1', '--manifest-path', str(snapshot / 'Cargo.toml'),
+            'bash', str(ROOT / 'scripts/cargo.sh'), 'test', '--locked', '--offline', '-j1', '--manifest-path', str(snapshot / 'Cargo.toml'),
             '-p', 'iced_layershell', '-p', 'layershellev', '--lib',
         ], cwd=ROOT, env=env, check=True)
         # This adapter seam is std-only. Exercise its actual source without

@@ -92,7 +92,7 @@ def main():
     env = os.environ.copy()
     env.update(CARGO_INCREMENTAL="0", CARGO_PROFILE_DEV_DEBUG="0", CARGO_TARGET_DIR=str(args.target_dir.resolve()),
                GIT_CEILING_DIRECTORIES=str(work))
-    subprocess.run(["cargo", "build", "--manifest-path", str(sources["niri"] / "Cargo.toml"),
+    subprocess.run(["bash", str(ROOT / "scripts/cargo.sh"), "build", "--manifest-path", str(sources["niri"] / "Cargo.toml"),
                     "-p", "niri", "--locked", "--offline", "-j1"], cwd=ROOT, env=env, check=True)
     binary = args.target_dir.resolve() / "debug/niri"
     receipt["binary"] = str(binary)

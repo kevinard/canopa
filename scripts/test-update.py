@@ -146,7 +146,7 @@ class UpdateTests(unittest.TestCase):
         self.repo = self.root / 'checkout with spaces'
         self.write_project(self.repo, 'current')
         (self.repo / 'scripts').mkdir()
-        for name in ['update.sh', 'update.py']:
+        for name in ['update.sh', 'update.py', 'cargo.sh', 'build-guard.py']:
             shutil.copy2(SCRIPTS / name, self.repo / 'scripts' / name)
         self.bin_dir = self.root / 'user/.local/bin'
         self.bin_dir.mkdir(parents=True)
@@ -168,6 +168,8 @@ class UpdateTests(unittest.TestCase):
         self.env = os.environ.copy()
         self.env.pop('CARGO_TARGET_DIR', None)
         self.env['CARGO_HOME'] = str(Path(os.environ.get('CARGO_HOME', '~/.cargo')).expanduser())
+        # These tiny fixtures build on /tmp, which can be a small tmpfs.
+        self.env['CANOPA_BUILD_MIN_FREE_GIB'] = '0.1'
         self.env['RUSTUP_HOME'] = str(Path(os.environ.get('RUSTUP_HOME', '~/.rustup')).expanduser())
         self.env.update(HOME=str(self.root / 'user'), PATH=f"{commands}:{self.env['PATH']}",
                         CARGO_NET_OFFLINE='true', CARGO_BUILD_JOBS='1',
@@ -243,7 +245,7 @@ class UpdateTests(unittest.TestCase):
     def install_previous(self):
         baseline = self.root / 'old checkout'
         self.write_project(baseline, 'old')
-        self.run_command(['cargo', 'build', '--release', '--workspace', '--bins',
+        self.run_command(['bash', str(SCRIPTS / 'cargo.sh'), 'build', '--release', '--workspace', '--bins',
                           '--target-dir', str(self.repo / 'target')], baseline)
         for name in PROGRAMS:
             shutil.copy2(self.repo / 'target/release' / name, self.bin_dir / name)
@@ -422,6 +424,17 @@ class UpdateTests(unittest.TestCase):
         result = self.update(check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('invalid test configuration', result.stderr)
+        self.assert_versions('old')
+        self.assertFalse(any('stop' in call for call in self.state()['calls']))
+        self.assertEqual(self.database.read_bytes(), b'original history')
+
+    def test_low_space_preserves_installation_and_running_services(self):
+        self.install_previous()
+        self.state('canopa-notify.service', active='active')
+        self.env['CANOPA_BUILD_MIN_FREE_GIB'] = '1000000000'
+        result = self.update(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('build-guard: refusing to start', result.stderr)
         self.assert_versions('old')
         self.assertFalse(any('stop' in call for call in self.state()['calls']))
         self.assertEqual(self.database.read_bytes(), b'original history')

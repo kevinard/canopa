@@ -30,7 +30,7 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     build = subprocess.run([
-        'cargo', 'test', '--locked', '-p', 'canopa-greeter', '--test', 'greetd_transport',
+        'bash', str(ROOT / 'scripts/cargo.sh'), 'test', '--locked', '-p', 'canopa-greeter', '--test', 'greetd_transport',
         '--no-run', '--message-format=json',
     ], cwd=ROOT, capture_output=True, text=True)
     (output / 'build.log').write_text(build.stderr)

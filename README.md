@@ -10,13 +10,13 @@ Use Rust 1.95.0, selected by `rust-toolchain.toml`. On Debian/Ubuntu:
 
 ```sh
 sudo apt-get install build-essential pkg-config libpulse-dev libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libpam0g-dev fonts-dejavu-core dbus at-spi2-core
-cargo build --workspace --bins --locked
+bash scripts/cargo.sh build --workspace --bins --locked
 ```
 
 Binaries are in root `target/debug/`: `canopa-shell`, `canopa-wifi-provider`, `canopa-audio-provider`, `canopa-media-provider`,
-`canopa-notify`, `canopa-files`, `canopa-wallpaper`, `canopa-lock`, `canopa-greeter`, `canopa-polkit`, `canopa-pinentry`, `canopa-idle`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `cargo build --locked -p canopa-shell` or
-`cargo build --locked -p canopa-notify`. Notify's core build remains available with
-`cargo build --locked -p canopa-notify --no-default-features`.
+`canopa-notify`, `canopa-files`, `canopa-wallpaper`, `canopa-lock`, `canopa-greeter`, `canopa-polkit`, `canopa-pinentry`, `canopa-idle`, `canopa`, and `xdg-desktop-portal-canopa`. Build one application with `bash scripts/cargo.sh build --locked -p canopa-shell` or
+`bash scripts/cargo.sh build --locked -p canopa-notify`. Notify's core build remains available with
+`bash scripts/cargo.sh build --locked -p canopa-notify --no-default-features`.
 Files' core can be checked with explicitly selected `--lib` or `--test` targets
 and `--no-default-features` when desktop dependencies are unavailable.
 See [Files runtime and installation](docs/files.md) for the Iced migration status,
@@ -39,6 +39,13 @@ incremental debug compilation and reuse root `target/`; keep features and profil
 consistent between edits. The explicit `--workspace` gate runs all applications,
 test targets and tooling for CI/releases, shared dependencies or broader changes.
 Files-only edits normally need their affected tests rather than that gate.
+
+Development and test builds keep incremental compilation and source file/line
+backtraces with smaller `line-tables-only` debug information. Use
+`bash scripts/cargo.sh build --profile debugging --locked -p PACKAGE` when you
+need full debugger information. The Cargo wrapper and check/update scripts stop
+builds before or during low-space conditions without deleting artifacts. See
+[build profiles and disk guard](docs/building.md) for reserves and configuration.
 
 Tests use private D-Bus sessions. Full transport tests additionally need
 `libglib2.0-bin`, `pipewire`, `pipewire-bin`, `pipewire-pulse`, and `pulseaudio-utils`.
@@ -95,7 +102,7 @@ Follow the [shell guide](crates/canopa-shell/README.md) and [notification guide]
 for feature options, using root `target/` paths. Existing Niribar installations
 should follow the [shell rename guide](docs/shell-rename.md) before updating.
 
-Build a release with `cargo build --workspace --bins --locked --release`, then run
+Build a release with `bash scripts/cargo.sh build --workspace --bins --locked --release`, then run
 `bash scripts/package-release.sh target/release dist`. The archive contains all eleven
 binaries, current example configurations, service units, manuals, and source license
 notices. The companion user services use `~/.local/bin`; `canopa-session.target` starts

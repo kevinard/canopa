@@ -121,6 +121,18 @@ winit = { path = "vendor/winit" }
 layershellev = { path = "vendor/layershellev" }
 uucore = { path = "vendor/uucore" }
 
+# Keep file/line panic backtraces without duplicating full debugger data in
+# every integration-test executable. The test profile inherits these settings.
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
+
+# Opt in when inspecting variables/types with a debugger. This uses
+# target/debugging/ and leaves the ordinary development cache intact.
+[profile.debugging]
+inherits = "dev"
+debug = "full"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

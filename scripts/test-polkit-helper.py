@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,default=ROOT/'.scratch/polkit-agent/helper');args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
-    build=subprocess.run(['cargo','test','--locked','-p','canopa-polkit','--test','native','--no-run','--message-format=json'],cwd=ROOT,capture_output=True,text=True,check=True)
+    build=subprocess.run(['bash',str(ROOT/'scripts/cargo.sh'),'test','--locked','-p','canopa-polkit','--test','native','--no-run','--message-format=json'],cwd=ROOT,capture_output=True,text=True,check=True)
     executable=next(json.loads(line)['executable'] for line in build.stdout.splitlines() if line.startswith('{') and json.loads(line).get('reason')=='compiler-artifact' and json.loads(line).get('target',{}).get('name')=='native' and json.loads(line).get('executable'))
     with tempfile.TemporaryDirectory(prefix='canopa-polkit-helper-') as directory:
         root=Path(directory);pam=root/'pam';pam.mkdir()

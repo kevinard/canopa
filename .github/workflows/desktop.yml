@@ -31,9 +31,9 @@ jobs:
       - name: Verify common protocol
         run: bash scripts/check-panel-protocol.sh
       - name: Build the workspace desktop binaries
-        run: cargo build --locked --workspace --bins
+        run: bash scripts/cargo.sh build --locked --workspace --bins
       - name: Build the ordinary-window drag transport probe
-        run: cargo build --locked -p canopa-files --example drag_transport
+        run: bash scripts/cargo.sh build --locked -p canopa-files --example drag_transport
       - name: Run the maintained desktop acceptance matrix
         run: python3 scripts/run-desktop-acceptance.py --shell target/debug/canopa-shell --notify target/debug/canopa-notify --niri "$ACCEPTANCE_NIRI" --niri-sha256 "$ACCEPTANCE_NIRI_SHA256" --output desktop-artifacts
       - uses: actions/upload-artifact@v4

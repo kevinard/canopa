@@ -38,11 +38,11 @@ case "$1" in
     --core)
         bash scripts/check-core-dependencies.sh
         bash scripts/check-provider-dependencies.sh
-        cargo check --locked -p canopa-shell --no-default-features --all-targets
-        dbus-run-session -- cargo test --locked -p canopa-shell --no-default-features --all-targets
-        cargo check --locked -p canopa-notify -p canopa-panel-protocol -p canopa-config -p canopa-file -p canopa-files -p canopa-cli -p canopa-notify-client -p canopa-portal --all-targets --no-default-features
-        cargo test --locked -p canopa-config -p canopa-file -p canopa-cli -p canopa-theme -p canopa-notify-client -p canopa-portal
-        cargo test --locked -p canopa-files --no-default-features
+        bash scripts/cargo.sh check --locked -p canopa-shell --no-default-features --all-targets
+        dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-shell --no-default-features --all-targets
+        bash scripts/cargo.sh check --locked -p canopa-notify -p canopa-panel-protocol -p canopa-config -p canopa-file -p canopa-files -p canopa-cli -p canopa-notify-client -p canopa-portal --all-targets --no-default-features
+        bash scripts/cargo.sh test --locked -p canopa-config -p canopa-file -p canopa-cli -p canopa-theme -p canopa-notify-client -p canopa-portal
+        bash scripts/cargo.sh test --locked -p canopa-files --no-default-features
         bash scripts/test-notify.sh --no-default-features
         ;;
     --workspace)
@@ -54,12 +54,13 @@ case "$1" in
         python3 scripts/test-update.py
         python3 scripts/test-session-units.py
         python3 scripts/test-check-scripts.py
-        cargo fmt --all -- --check
-        cargo clippy --workspace --all-targets --locked -- -D warnings
+        python3 scripts/test-build-guard.py
+        bash scripts/cargo.sh fmt --all -- --check
+        bash scripts/cargo.sh clippy --workspace --all-targets --locked -- -D warnings
         python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md --check
-        dbus-run-session -- cargo test --workspace --all-targets --locked
+        dbus-run-session -- bash scripts/cargo.sh test --workspace --all-targets --locked
         python3 scripts/test-settings-portal.py --binary "${CARGO_TARGET_DIR:-target}/debug/xdg-desktop-portal-canopa"
-        cargo build --locked -p canopa-cli -p canopa-session -p canopa-greeter -p canopa-polkit -p canopa-pinentry
+        bash scripts/cargo.sh build --locked -p canopa-cli -p canopa-session -p canopa-greeter -p canopa-polkit -p canopa-pinentry
         python3 scripts/test-configuration.py
         python3 scripts/test-vendor.py
         ;;

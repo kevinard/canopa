@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -12,8 +13,10 @@ STUB = '''#!/usr/bin/python3
 import json, os, pathlib, sys
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
-if name == "bash" and args and args[0] == "scripts/check-files.sh":
+if name == "bash" and args and args[0] in ("scripts/check-files.sh", "scripts/cargo.sh"):
     os.execv("/bin/bash", ["bash", *args])
+if name == "python3" and args and args[0].endswith("/build-guard.py"):
+    os.execv(os.environ["CHECK_SCRIPT_PYTHON"], [os.environ["CHECK_SCRIPT_PYTHON"], *args])
 with open(os.environ["CHECK_SCRIPT_LOG"], "a") as stream:
     stream.write(json.dumps({"tool": name, "args": args, "cwd": os.getcwd(),
                              "incremental": os.environ.get("CARGO_INCREMENTAL"),
@@ -39,6 +42,7 @@ class CheckScripts(unittest.TestCase):
             log = root / "commands.jsonl"
             env = {**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
                    "CHECK_SCRIPT_LOG": str(log), "CARGO_INCREMENTAL": "0",
+                   "CHECK_SCRIPT_PYTHON": sys.executable,
                    "CARGO_TARGET_DIR": "target/retained-development-cache"}
             env.pop("CHECK_SCRIPT_FAIL_LIB", None)
             if fail_lib:

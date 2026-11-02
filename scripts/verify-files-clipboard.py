@@ -18,7 +18,7 @@ spec.loader.exec_module(desktop)
 
 
 def test_binary(output):
-    command = ["cargo", "test", "--offline", "-j", "1", "-p", "canopa-files",
+    command = ["bash", str(ROOT / "scripts/cargo.sh"), "test", "--offline", "-j", "1", "-p", "canopa-files",
                "--no-default-features", "--features", "wayland-clipboard",
                "--test", "file_clipboard_wayland", "--no-run", "--message-format=json"]
     # Finish compilation before creating any native fixture or compositor.
