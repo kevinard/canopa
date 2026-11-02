@@ -49,6 +49,12 @@ fn canonical(c: &Connection, task: &undo::saved_return::Return) -> io::Result<[u
                 identity,
                 retained: Some(retained),
                 ..
+            }
+            | Change::Rename {
+                current: path,
+                identity,
+                retained: Some(retained),
+                ..
             },
             Change::RetainedOnly { .. },
         ) => Change::RetainedOnly {

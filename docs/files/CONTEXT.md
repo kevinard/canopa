@@ -62,6 +62,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Saved-only Rename restoration retains original history binding](adr/0157-saved-only-rename-history-binding.md).
+
 - [XXH3-128 content fingerprints without development-history compatibility](adr/0156-fast-content-fingerprints.md).
 
 - [Trust upstream Copy and fingerprint its output once](adr/0155-trust-upstream-copy.md).

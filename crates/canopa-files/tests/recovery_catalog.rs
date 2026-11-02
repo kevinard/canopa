@@ -47,7 +47,13 @@ fn answer_replace(service: &OperationJobs, id: u64) {
             .jobs
             .into_iter()
             .find(|job| job.id == id)
-            .and_then(|job| job.decision)
+            .and_then(|job| {
+                assert!(
+                    matches!(job.phase, Phase::Queued | Phase::Running | Phase::Waiting),
+                    "Transfer stopped before its replacement question: {job:?}"
+                );
+                job.decision
+            })
     });
     service
         .resolve_transfer(
@@ -346,17 +352,26 @@ fn pages_remain_loaded_and_saved_identity_survives_active_undo_expiry() {
         .unwrap();
         sources.push(source);
     }
+    // Seed the paged catalog through the public engine. A 270-source queued
+    // plan can exceed its independent durable-record budget before any conflict;
+    // this regression exercises catalog paging and Undo expiry, not plan admission.
+    let engine = canopa_files::operations::OperationEngine::open(root.join("history")).unwrap();
+    engine
+        .transfer(
+            &TransferRequest {
+                kind: TransferKind::Copy,
+                sources,
+                destination: root.join("destination"),
+            },
+            &canopa_files::Cancellation::default(),
+            |_| TransferReply::Resolve {
+                choice: ConflictChoice::Replace,
+                apply_to_remaining: true,
+            },
+        )
+        .unwrap();
+    drop(engine);
     let service = start(root);
-    let copy = submit(
-        &service,
-        Request::Transfer(TransferRequest {
-            kind: TransferKind::Copy,
-            sources,
-            destination: root.join("destination"),
-        }),
-    );
-    answer_replace(&service, copy);
-    assert_eq!(settled(&service, copy).phase, Phase::Finished);
     let reader = Reader::start(service.clone()).unwrap();
     wait(|| {
         let s = reader.snapshot();
