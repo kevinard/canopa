@@ -29,6 +29,20 @@ with their owning schemas. Wallpaper uses its existing picker/runtime. Idle
 controls delegate to Canopa Idle/Stasis; native Rune remains the policy source.
 Edits preserve custom policy and reject ambiguous or concurrently changed input.
 
+Settings edits the packaged shortcut set in the Canopa session's main Niri
+configuration. The first explicit save materializes the known defaults in
+place so a reassigned key stops invoking the previous action. Custom includes
+retain their precedence and contents. Shortcut edits and the removable Niri
+animation override each use a validated main-file replacement and compositor
+reload. Shell panel motion and shared text scaling are independent appearance
+preferences in the common Canopa configuration.
+
+Quick settings opens Bluetooth and power controls as built-in v5 providers.
+BlueZ owns device discovery and pairing. Canopa registers an agent only for
+its selected pairing attempt, and closing the provider releases its connection
+and cancels unfinished pairing. logind controls the built-in backlight and
+Power Profiles daemon owns system power policy.
+
 The optional oo7 prompter owns a single D-Bus name on the user bus. It uses
 GCR for the prompt protocol and encrypted credential exchange. The Canopa
 session launcher publishes its PID so the prompter can resolve its logind

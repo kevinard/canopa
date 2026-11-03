@@ -104,6 +104,66 @@ pub fn validate(path: &Path) -> Result<()> {
     )?;
     Ok(())
 }
+
+#[cfg(feature = "desktop")]
+const MOTION_OVERRIDE: &str =
+    "\n// Canopa Settings: reduce window and workspace motion.\nanimations { off; }\n";
+
+#[cfg(feature = "desktop")]
+pub(crate) fn reduced_motion(source: &crate::storage::Snapshot) -> Result<bool> {
+    let enabled = source.text.ends_with(MOTION_OVERRIDE);
+    ensure!(
+        enabled
+            || !source
+                .text
+                .contains("// Canopa Settings: reduce window and workspace motion."),
+        "The compositor motion override was edited outside Settings."
+    );
+    Ok(enabled)
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) fn set_reduced_motion(paths: &crate::session::Paths, enabled: bool) -> Result<()> {
+    ensure!(
+        paths.active(),
+        "Log into the Canopa session to change compositor motion."
+    );
+    let source = crate::storage::Snapshot::load(paths.niri())?;
+    if reduced_motion(&source)? == enabled {
+        return Ok(());
+    }
+    let text = if enabled {
+        format!("{}{}", source.text, MOTION_OVERRIDE)
+    } else {
+        source
+            .text
+            .strip_suffix(MOTION_OVERRIDE)
+            .unwrap()
+            .to_owned()
+    };
+    save_main(&source, &text, || Ok(()))?;
+    Ok(())
+}
+
+pub(crate) fn save_main(
+    source: &crate::storage::Snapshot,
+    text: &str,
+    check_includes: impl Fn() -> Result<()>,
+) -> Result<crate::storage::Snapshot> {
+    let client = Client::discover()?;
+    let saved = source.save(text, |candidate| {
+        check_includes()?;
+        validate(candidate)?;
+        check_includes()
+    })?;
+    if let Err(error) = client.reload() {
+        saved.save(&source.text, validate)?;
+        let _ = client.reload();
+        return Err(error.context("Compositor reload failed. Previous settings restored."));
+    }
+    Ok(saved)
+}
+
 pub fn validate_fragment(
     paths: &crate::session::Paths,
     name: &str,

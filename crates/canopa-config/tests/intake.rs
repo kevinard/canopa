@@ -53,6 +53,9 @@ fn invalid_appearance_rejects_both_consumers_with_original_safe_location() {
         "accent \"#123456\" {}",
         "accent \"#123456\"; accent \"#123456\"",
         "color-scheme 1",
+        "text-scale 151",
+        "text-scale 125.5",
+        "reduced-motion \"yes\"",
     ] {
         let source = format!("schema-version 1\nappearance {{ {option}; }}\n");
         for component in [
@@ -72,6 +75,18 @@ fn invalid_appearance_rejects_both_consumers_with_original_safe_location() {
             assert!(!format!("{error} {error:?}").contains("private-value"));
         }
     }
+}
+
+#[test]
+fn text_scale_applies_to_custom_typography_after_parsing() {
+    let source = "schema-version 1\nappearance { text-scale 125; reduced-motion #true; typography { body-size 20; }; }\n";
+    let appearance = Document::parse(source.into(), None, Format::CanopaV1, Component::Shell, "")
+        .unwrap()
+        .appearance();
+    assert_eq!(appearance.text_scale(), 125);
+    assert!(appearance.reduced_motion());
+    assert_eq!(appearance.typography().body_size.px(), 25.);
+    assert_eq!(appearance.typography().label_size.px(), 15.);
 }
 
 #[test]

@@ -309,10 +309,20 @@ impl Default for Typography {
 pub struct Customization {
     pub palette: [Option<Rgb>; ColorRole::ALL.len()],
     pub typography: Typography,
+    pub text_scale: Option<u16>,
+    pub reduced_motion: bool,
     pub ui: [UiStyle; 10],
 }
 
 impl Appearance {
+    pub const TEXT_SCALE_RANGE: std::ops::RangeInclusive<u16> = 100..=150;
+
+    pub fn text_scale(&self) -> u16 {
+        self.customization.text_scale.unwrap_or(100)
+    }
+    pub fn reduced_motion(&self) -> bool {
+        self.customization.reduced_motion
+    }
     pub fn typography(&self) -> &Typography {
         &self.customization.typography
     }

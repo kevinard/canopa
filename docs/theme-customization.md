@@ -63,6 +63,11 @@ not loaded from configuration. Symbol icons retain their dedicated symbol family
 `body-size`, `label-size`, and `title-size` are positive logical pixels, at most 256.
 Existing explicit module/segment text sizes, weights and colors remain supported.
 
+In the main configuration's `appearance` block, `text-scale 125` applies a
+125% multiplier to the resolved typography sizes. The supported range is 100
+to 150, with a default of 100. `reduced-motion #true` disables Shell panel
+transitions. Canopa Settings exposes both options on the Personalization page.
+
 ## UI properties
 
 All dimensions are logical pixels, with up to three decimal places of precision;

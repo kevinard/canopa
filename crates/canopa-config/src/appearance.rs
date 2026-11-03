@@ -222,6 +222,18 @@ pub(crate) fn parse(
     if let Some(node) = document.get("appearance") {
         apply(&mut appearance, block(node)?, true)?;
     }
+    let factor = f64::from(appearance.text_scale()) / 100.0;
+    if factor != 1.0 {
+        let typography = &mut std::sync::Arc::make_mut(&mut appearance.customization).typography;
+        for size in [
+            &mut typography.body_size,
+            &mut typography.label_size,
+            &mut typography.title_size,
+        ] {
+            *size = Pixels::from_number(f64::from(size.px()) * factor, 384.0)
+                .expect("validated size and scale fit the resolved typography range");
+        }
+    }
     Ok(appearance)
 }
 
@@ -253,6 +265,27 @@ fn apply(
                 string(node)?;
             }
             "color-scheme" => {}
+            "text-scale" if allow_theme => {
+                values(node)?;
+                let [entry] = node.entries() else {
+                    return Err(fail(node));
+                };
+                let scale = entry
+                    .value()
+                    .as_integer()
+                    .and_then(|scale| u16::try_from(scale).ok())
+                    .filter(|scale| Appearance::TEXT_SCALE_RANGE.contains(scale))
+                    .ok_or_else(|| fail(node))?;
+                std::sync::Arc::make_mut(&mut appearance.customization).text_scale = Some(scale);
+            }
+            "reduced-motion" if allow_theme => {
+                values(node)?;
+                let [entry] = node.entries() else {
+                    return Err(fail(node));
+                };
+                let enabled = entry.value().as_bool().ok_or_else(|| fail(node))?;
+                std::sync::Arc::make_mut(&mut appearance.customization).reduced_motion = enabled;
+            }
             "accent" => {
                 let rgb = Rgb::parse_hex(string(node)?).ok_or_else(|| fail(node))?;
                 appearance.accent = Some(rgb);

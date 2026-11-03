@@ -2,7 +2,7 @@
 
 Open **Canopa Settings** from the launcher, press Super+Comma in the packaged
 session, or run `canopa settings`. The window uses the shared Canopa appearance.
-Tab/Shift+Tab navigate controls; Ctrl+1 through Ctrl+4 select pages, and Ctrl+S
+Tab/Shift+Tab navigate controls. Ctrl+1 through Ctrl+6 select pages, and Ctrl+S
 applies the selected page. Closing the
 window leaves the independent desktop services running.
 
@@ -32,6 +32,19 @@ suppression are applied through Niri's validated input include and reload.
 Custom device rules belong in the separate custom include; ambiguous edited
 managed input files are read-only rather than silently losing extra settings.
 
+## Shortcuts
+
+Press Ctrl+6 to find packaged keyboard actions by name or current key. Enter a
+Niri combination such as `Mod+Shift+Space`, then use **Save changes**. In the
+physical Canopa session, Mod is normally Super. **Reset to defaults** stages
+the original keys for review before saving. Save rejects duplicate assignments
+and new conflicts with included bindings.
+
+The first edit copies the packaged defaults into the user's `niri.kdl` in
+place of their include so that changing a key releases its old assignment.
+Other includes stay in order. Keep your own bindings in `niri-custom.kdl`.
+Custom main configurations with a different binding set are edited in KDL.
+
 ## Personalization
 
 Light/dark appearance and an optional accent update the shared configuration.
@@ -44,6 +57,16 @@ validate the entire candidate; unrelated namespaces, custom fields and comments
 are retained. The Settings portal receives its explicit reload request; other
 applications use their existing live-reload contracts. A currently active lock
 screen keeps its own authentication/presentation lifetime.
+
+**Text size** sets 100–150% for Canopa's shared typography in Shell, Files and
+Notify. It also scales the Settings interface. **Reduce Shell panel motion**
+disables the Shell's panel open and close transitions. Save changes to apply
+both preferences.
+
+**Reduce window and workspace motion** applies independently in the Canopa
+session. It adds an animation override to the compositor configuration, which
+Niri validates before applying. **Use Niri animation settings** removes the
+override and restores the effect of your existing Niri settings.
 
 ## Power and idle
 
@@ -66,7 +89,7 @@ so a new appearance file cannot silently hide existing shell/notification settin
 See [configuration](configuration.md) and [installation](installation.md).
 
 The launcher can open a particular page with `canopa-settings --page displays`,
-`--page input`, `--page personal`, `--page power`, or `--page launcher`. The option selects the initial
+`--page input`, `--page personal`, `--page power`, `--page launcher`, or `--page shortcuts`. The option selects the initial
 page only; normal Apply controls remain responsible for writes. It cannot be
 combined with command-line operations such as `outputs` or `check`.
 

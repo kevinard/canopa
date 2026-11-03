@@ -50,6 +50,16 @@ reachable when status is unavailable; disconnected toggles show their availabili
 Provider Back returns to Quick settings on the same output. Tab/Shift+Tab select
 cards and Enter activates them. Battery and media appear when they have content;
 Calendar opens separately from the clock.
+
+**Bluetooth** uses the system BlueZ service. Turn on an adapter, choose **Find
+devices**, and pair or reconnect from the device list. Passkey and PIN
+requests appear in the same panel. Closing the panel ends its discovery and
+cancels an unfinished pairing.
+**Power & brightness** shows the built-in display backlight when the active
+Wayland login can use logind. The power profile list reflects the options
+advertised by the system Power Profiles daemon or a compatible service.
+The launcher can also open both panels.
+
 Lock, Log out, Reboot and Power off occupy a two-column footer. Lock launches
 `canopa-lock` with session ownership (install its PAM service first; see
 [session tools](../../docs/session-tools.md)). The other buttons open confirmation menus with

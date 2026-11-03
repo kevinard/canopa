@@ -6,7 +6,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
@@ -58,7 +60,7 @@ def verify(args):
             return json.loads(session.run(['niri','msg','--json','windows']))
         def launch():
             process=session.start([str(args.binary)],f'settings-{len(session.processes)}.log')
-            session.wait_for(lambda:next((w for w in windows() if w.get('app_id')=='org.canopa.Settings'),None),'settings window')
+            session.wait_for(lambda:next((w for w in windows() if w.get('app_id')=='org.canopa.Settings'),None),'settings window',timeout=45)
             time.sleep(.7)
             return process
         def close(process):
@@ -77,13 +79,13 @@ def verify(args):
             check('ordinary shared-theme settings window')
             # Every key is sent in one native gesture, exercising synchronous Tab
             # traversal before queued text reaches the destination field.
-            key(*tabs(2),'-k','Return',*tabs(4),'-M','ctrl','-k','a','-m','ctrl','us,fr','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(2),'-k','Return',*tabs(5),'-M','ctrl','-k','a','-m','ctrl','us,fr','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:'us,fr' in input_file.read_text(),'saved input layouts')
             session.wait_for(lambda:len(json.loads(session.run(['niri','msg','--json','keyboard-layouts']))['names'])==2,'live keyboard layouts')
             time.sleep(.2);session.screenshot('input-dark.png');check('batched keyboard navigation and validated live input save')
             close(app);app=launch()
             original=displays.read_bytes()
-            key(*tabs(10),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(11),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:abs(scale()-1.25)<.001,'temporary display scale')
             time.sleep(.3);session.screenshot('display-confirmation.png')
             key('-k','Escape')
@@ -91,7 +93,7 @@ def verify(args):
             assert displays.read_bytes()==original
             check('real compositor trial and Escape rollback without persistence')
             close(app);app=launch()
-            key(*tabs(10),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(11),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:abs(scale()-1.25)<.001,'second temporary display scale')
             time.sleep(.5);key('-M','ctrl','-k','Return','-m','ctrl')
             session.wait_for(lambda:'scale 1.25' in displays.read_text(),'confirmed display save')
@@ -100,7 +102,7 @@ def verify(args):
             session.wait_for(lambda:abs(scale()-1.25)<.001,'persisted output reload')
             check('explicit confirmation survives compositor configuration reload')
             app=launch()
-            key(*tabs(10),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(11),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:abs(scale()-1.5)<.001,'crash trial scale')
             saved=displays.read_bytes();app.kill();app.wait(timeout=10)
             session.processes.remove(app)
@@ -111,12 +113,12 @@ def verify(args):
             session.run(['niri','msg','output',name,'scale','1'])
             session.wait_for(lambda:abs(scale()-1.)<.001,'native fixture scale')
             app=launch()
-            key(*tabs(3),'-k','Return',*tabs(3),'-k','space','-k','Tab','-M','ctrl','-k','a','-m','ctrl','#f38ba8','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(3),'-k','Return',*tabs(4),'-k','space','-k','Tab','-M','ctrl','-k','a','-m','ctrl','#f38ba8','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:config.exists() and '#f38ba8' in config.read_text(),'shared appearance save',timeout=30)
             time.sleep(.5);session.screenshot('personalization-light.png')
             assert 'light' in config.read_text();check('native light/accent preference save through owning validators')
             key('-M','ctrl','3','-m','ctrl');time.sleep(.2)
-            key(*tabs(6),'-M','ctrl','-k','a','-m','ctrl','%H:%M:%S','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(9),'-M','ctrl','-k','a','-m','ctrl','%H:%M:%S','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:'%H:%M:%S' in config.read_text(),'native lockscreen preference save')
             wallpaper=args.tools_dir.resolve()/'canopa-wallpaper'
             session.start([str(wallpaper),'daemon'],'wallpaper.log')
@@ -131,7 +133,7 @@ def verify(args):
                    +png_chunk(b'IDAT',zlib.compress((b'\0'+bytes((40,80,110))*64)*64))+png_chunk(b'IEND',b''))
             (library/'fixture.png').write_bytes(image)
             key('-M','ctrl','3','-m','ctrl');time.sleep(.2)
-            key(*tabs(5),'-k','Return')
+            key(*tabs(8),'-k','Return')
             session.wait_for(lambda:any(w.get('app_id')=='org.canopa.WallpaperPicker' for w in windows()),'existing wallpaper picker')
             time.sleep(.3);session.screenshot('wallpaper-picker.png')
             key('-k','Escape')
@@ -155,20 +157,20 @@ def verify(args):
                 session.wait_for(info,'real Stasis policy')
                 app=launch();key('-M','ctrl','4','-m','ctrl');time.sleep(1)
                 session.screenshot('power-stasis-before-pause.png')
-                key(*tabs(2),'-k','Return')
+                key(*tabs(3),'-k','Return')
                 session.wait_for(lambda:info() and info().get('alt')=='manually_inhibited','native idle pause')
-                time.sleep(.2);key(*tabs(2),'-k','Return')
+                time.sleep(.2);key(*tabs(3),'-k','Return')
                 session.wait_for(lambda:info() and info().get('alt')!='manually_inhibited','native idle resume')
                 close(app);app=launch()
                 key('-M','ctrl','4','-m','ctrl');time.sleep(1)
-                key(*tabs(4),'-M','ctrl','-k','a','-m','ctrl','presentation','-k','Tab','-k','Return')
+                key(*tabs(5),'-M','ctrl','-k','a','-m','ctrl','presentation','-k','Tab','-k','Return')
                 session.wait_for(lambda:info() and info().get('profile')=='presentation','native idle profile selection')
                 time.sleep(.3)
                 key('-M','shift','-k','Tab','-m','shift','-M','ctrl','-k','a','-m','ctrl','none','-k','Tab','-k','Return')
                 session.wait_for(lambda:info() and info().get('profile')=='default','native idle default profile restoration')
                 check('native Stasis profile selection and default restoration')
                 close(app);app=launch()
-                key('-M','ctrl','4','-m','ctrl');time.sleep(1);key(*tabs(6),'-M','ctrl','-k','a','-m','ctrl','720','-M','ctrl','-k','s','-m','ctrl')
+                key('-M','ctrl','4','-m','ctrl');time.sleep(1);key(*tabs(7),'-M','ctrl','-k','a','-m','ctrl','720','-M','ctrl','-k','s','-m','ctrl')
                 session.wait_for(lambda:'timeout 720' in idle.read_text(),'native idle timeout save')
                 assert '  lock_screen:\n    timeout 720' in idle.read_text()
                 assert '    lock_screen:\n      timeout 120' in idle.read_text()
@@ -177,6 +179,43 @@ def verify(args):
                 assert 'presentation:\n  mode "overlay"\n  debounce_seconds 10\nend\n' in idle.read_text()
                 session.screenshot('power-stasis.png')
                 check('real Stasis pause/resume and native timeout reload preserve commands')
+            close(app);app=launch()
+            key('-M','ctrl','6','-m','ctrl');time.sleep(.4)
+            key('-k','Tab');time.sleep(.2)
+            key('-d','60','Mod+O');time.sleep(.3)
+            session.screenshot('shortcuts-search.png')
+            key(*tabs(2),'-M','ctrl','-k','a','-m','ctrl','-d','40','Mod+Shift+O')
+            replacement = re.compile(r'^\s*"?Mod\+Shift\+O"?\s*\{\s*toggle-overview\b', re.M)
+            # Niri's virtual keyboard protocol delivers input to the focused
+            # client, bypassing compositor shortcuts. Verify its live reload
+            # event and the exact binding set instead.
+            with socket.socket(socket.AF_UNIX) as reload_socket:
+                reload_socket.settimeout(10)
+                reload_socket.connect(session.env['NIRI_SOCKET'])
+                reload_socket.sendall(b'"EventStream"\n')
+                with reload_socket.makefile('rb') as events:
+                    assert json.loads(events.readline()) == {'Ok':'Handled'}
+                    key('-M','ctrl','-k','s','-m','ctrl')
+                    session.wait_for(lambda:replacement.search(profile.read_text()),'saved overview shortcut')
+                    reload_event = next(event['ConfigLoaded'] for line in events
+                                        if 'ConfigLoaded' in (event:=json.loads(line)))
+                    assert not reload_event['failed']
+            assert not re.search(r'^\s*"?Mod\+O"?\s*\{',profile.read_text(),re.M)
+            check('search and save a replacement shortcut with successful live Niri reload')
+            close(app);app=launch()
+            key('-M','ctrl','3','-m','ctrl');time.sleep(.3)
+            key(*tabs(6),'-k','Right','-k','Tab','-k','space','-M','ctrl','-k','s','-m','ctrl')
+            session.wait_for(lambda:'text-scale 105' in config.read_text() and 'reduced-motion #true' in config.read_text(),'appearance accessibility preferences')
+            close(app);app=launch()
+            key('-M','ctrl','3','-m','ctrl');time.sleep(.3)
+            session.screenshot('personalization-larger-text.png')
+            key(*tabs(18),'-k','Return')
+            session.wait_for(lambda:'Canopa Settings: reduce window and workspace motion.' in profile.read_text(),'compositor motion override')
+            close(app);app=launch()
+            key('-M','ctrl','3','-m','ctrl');time.sleep(.3)
+            key(*tabs(18),'-k','Return')
+            session.wait_for(lambda:'Canopa Settings: reduce window and workspace motion.' not in profile.read_text(),'restored compositor motion')
+            check('save text scale and Shell motion, then apply and remove the compositor motion override')
             result['status']='passed'
             for file in (config,displays,input_file):
                 if file.exists():shutil.copyfile(file,output/file.name)
@@ -187,6 +226,8 @@ def verify(args):
             except Exception: pass
             raise
         finally:
+            if profile.exists():
+                shutil.copyfile(profile, output/'niri-profile.kdl')
             session.close()
             (output/'summary.json').write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result,indent=2))

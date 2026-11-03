@@ -1,6 +1,7 @@
 //! Ordinary settings window with shared controls and bounded background work.
 mod focus;
 mod launcher;
+mod shortcuts;
 use crate::{
     display::{Monitor, TrialRequest, transform_name},
     input::Input,
@@ -43,6 +44,11 @@ enum Message {
     LauncherSearch(usize, bool, String),
     LauncherRemoveSearch(usize),
     LauncherAddSearch,
+    ShortcutsLoaded(Result<crate::shortcuts::Editor, String>),
+    ShortcutsStored(Result<crate::shortcuts::Editor, String>),
+    ShortcutSearch(String),
+    ShortcutKey(usize, String),
+    ResetShortcuts,
     BackendChanged,
     ReloadSaved,
     Page(Page),
@@ -58,6 +64,10 @@ enum Message {
     InputFlag(u8, bool),
     PersonalText(u8, String),
     Light(bool),
+    TextScale(f64),
+    ReducedMotion(bool),
+    CompositorMotion(bool),
+    CompositorMotionStored(Result<bool, String>),
     Dim(f64),
     Widget(String, bool),
     IdleTime(bool, usize, String),
@@ -166,6 +176,9 @@ struct State {
     launcher: crate::launcher::Model,
     clipboard: Option<crate::launcher::ClipboardEditor>,
     clipboard_notice: String,
+    shortcuts: Option<Result<crate::shortcuts::Editor, String>>,
+    shortcut_query: String,
+    compositor_motion: Option<bool>,
     page: Page,
     notice: String,
     busy: bool,
@@ -217,6 +230,14 @@ impl State {
         let input_source = Snapshot::load(paths.input()).ok();
         let common_source = Snapshot::load(paths.common()).ok();
         let idle_source = Snapshot::load(paths.idle()).ok();
+        let compositor_motion = paths
+            .active()
+            .then(|| {
+                Snapshot::load(paths.niri())
+                    .and_then(|source| crate::niri::reduced_motion(&source))
+                    .ok()
+            })
+            .flatten();
         let (lock, _) = canopa_session_ui::settings::Settings::load(
             &canopa_config::Request::Defaults,
             canopa_config::Component::Lockscreen,
@@ -240,10 +261,7 @@ impl State {
                 notice = error.to_string();
                 None
             })
-            .unwrap_or_else(|| Personal {
-                appearance: lock.appearance.clone(),
-                lock,
-            });
+            .unwrap_or_else(|| Personal::from_lock(lock));
         let idle = idle_source
             .as_ref()
             .and_then(|s| IdleTimes::parse(&s.text).ok())
@@ -258,6 +276,9 @@ impl State {
             launcher: Default::default(),
             clipboard: None,
             clipboard_notice: String::new(),
+            shortcuts: None,
+            shortcut_query: String::new(),
+            compositor_motion,
             page: Page::Displays,
             notice,
             busy: false,
@@ -306,6 +327,8 @@ impl State {
                     | Message::InputFlag(..)
                     | Message::PersonalText(..)
                     | Message::Light(..)
+                    | Message::TextScale(..)
+                    | Message::ReducedMotion(..)
                     | Message::Dim(..)
                     | Message::Widget(..)
                     | Message::IdleTime(..)
@@ -418,9 +441,9 @@ impl State {
             Message::ReloadSaved if !self.busy && self.trial.is_none() => {
                 let page = self.page;
                 let (mut reloaded, work) = Self::boot();
-                reloaded.page = page;
+                let page_work = reloaded.update(Message::Page(page));
                 *self = reloaded;
-                return work;
+                return Task::batch([work, page_work]);
             }
             Message::BackendChanged if !self.busy && !self.refreshing && self.trial.is_none() => {
                 self.refreshing = true;
@@ -429,6 +452,39 @@ impl State {
             Message::Page(page) if !self.busy && self.trial.is_none() => {
                 self.page = page;
                 self.idle_available = false;
+                if page == Page::Shortcuts && self.shortcuts.is_none() {
+                    let paths = self.paths.clone();
+                    return task(
+                        move || crate::shortcuts::Editor::load(&paths),
+                        Message::ShortcutsLoaded,
+                    );
+                }
+            }
+            Message::ShortcutsLoaded(result) => self.shortcuts = Some(result),
+            Message::ShortcutsStored(result) => {
+                self.busy = false;
+                match result {
+                    Ok(editor) => {
+                        self.shortcuts = Some(Ok(editor));
+                        self.notice = "Keyboard shortcuts saved.".into();
+                    }
+                    Err(error) => self.notice = error,
+                }
+            }
+            Message::ShortcutSearch(value) if !self.busy => self.shortcut_query = value,
+            Message::ShortcutKey(index, value) if !self.busy => {
+                if let Some(Ok(editor)) = &mut self.shortcuts
+                    && let Some(shortcut) = editor.rows.get_mut(index)
+                {
+                    shortcut.key = value.chars().take(100).collect();
+                }
+            }
+            Message::ResetShortcuts if !self.busy => {
+                if let Some(Ok(editor)) = &mut self.shortcuts {
+                    for row in &mut editor.rows {
+                        row.key.clone_from(&row.default_key);
+                    }
+                }
             }
             Message::Refresh if !self.busy && !self.refreshing && self.trial.is_none() => {
                 self.refreshing = true;
@@ -527,6 +583,37 @@ impl State {
                     canopa_theme::ColorScheme::Dark
                 }
             }
+            Message::TextScale(value) => self.personal.text_scale = value as u16,
+            Message::ReducedMotion(value) => self.personal.reduced_motion = value,
+            Message::CompositorMotion(enabled) if !self.busy && self.trial.is_none() => {
+                if matches!(&self.shortcuts, Some(Ok(editor)) if editor.dirty()) {
+                    self.notice =
+                        "Save or discard your shortcut edits before changing compositor motion."
+                            .into();
+                    return Task::none();
+                }
+                self.busy = true;
+                self.notice.clear();
+                let paths = self.paths.clone();
+                return task(
+                    move || {
+                        crate::niri::set_reduced_motion(&paths, enabled)?;
+                        Ok(enabled)
+                    },
+                    Message::CompositorMotionStored,
+                );
+            }
+            Message::CompositorMotionStored(result) => {
+                self.busy = false;
+                match result {
+                    Ok(enabled) => {
+                        self.compositor_motion = Some(enabled);
+                        self.shortcuts = None;
+                        self.notice = "Compositor motion settings saved.".into();
+                    }
+                    Err(error) => self.notice = error,
+                }
+            }
             Message::Dim(value) => self.personal.lock.dim = value as u8,
             Message::Widget(name, value) => {
                 self.personal.lock.widgets.retain(|v| v != &name);
@@ -607,6 +694,13 @@ impl State {
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
+                    }
+                    Page::Shortcuts => {
+                        let Some(Ok(editor)) = self.shortcuts.clone() else {
+                            self.busy = false;
+                            return Task::none();
+                        };
+                        return task(move || editor.save(&paths), Message::ShortcutsStored);
                     }
                     Page::Displays => {
                         let mut monitors = self.monitors.clone();
@@ -703,9 +797,10 @@ impl State {
                         match page {
                             Page::Input => self.input_source = Some(snapshot),
                             Page::Personal => {
+                                if let Ok(personal) = Personal::load(&snapshot) {
+                                    self.personal = personal;
+                                }
                                 self.common_source = Some(snapshot);
-                                self.personal.appearance.accent =
-                                    parse_accent(&self.accent).ok().flatten();
                             }
                             Page::Power => self.idle_source = Some(snapshot),
                             _ => {}
@@ -849,11 +944,14 @@ impl State {
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),
+            Page::Shortcuts => self.shortcuts_view(),
         });
         let available = (self.page != Page::Launcher || self.launcher.loaded)
             && !self.busy
             && self.trial.is_none()
             && (self.page != Page::Power || self.idle_available)
+            && (self.page != Page::Shortcuts
+                || (matches!(self.shortcuts, Some(Ok(_))) && self.paths.active()))
             && (self.paths.active() || !matches!(self.page, Page::Displays | Page::Input));
         let footer = row![
             self.action(
@@ -1099,7 +1197,7 @@ impl State {
                 ),
             ));
         }
-        column![
+        let content = column![
             text("Appearance").size(22),
             toggle(
                 "light",
@@ -1112,6 +1210,20 @@ impl State {
             field("Accent color (optional, #RRGGBB)", &self.accent, |v| {
                 Message::PersonalText(0, v)
             }),
+            text(format!("Text size · {}%", self.personal.text_scale)),
+            adjust(
+                "settings-text-scale",
+                100.0..=150.0,
+                f64::from(self.personal.text_scale),
+                5.0,
+                Message::TextScale
+            ),
+            toggle(
+                "settings-reduced-motion",
+                "Reduce Shell panel motion",
+                self.personal.reduced_motion,
+                Message::ReducedMotion(!self.personal.reduced_motion)
+            ),
             self.action("Choose wallpaper…", Some(Message::Wallpaper), false),
             text("The wallpaper picker previews and saves per-monitor assignments."),
             text("Add images to ~/Pictures/Wallpapers when no wallpaper folder is configured."),
@@ -1146,9 +1258,22 @@ impl State {
             ),
             text("Lockscreen widgets"),
             widgets
-        ]
-        .spacing(12)
-        .into()
+        ];
+        let mut content = content.push(text("Window and workspace motion").size(22));
+        if let Some(reduced) = self.compositor_motion {
+            content = content.push(self.action(
+                if reduced {
+                    "Use Niri animation settings"
+                } else {
+                    "Reduce window and workspace motion"
+                },
+                Some(Message::CompositorMotion(!reduced)),
+                false,
+            ));
+        } else {
+            content = content.push(text("Compositor motion is editable in a Canopa session with a managed Niri configuration."));
+        }
+        content.spacing(12).into()
     }
     fn power_view(&self) -> Element<'_, Message> {
         let mut ac = column![text("On AC power").size(20)].spacing(12);
@@ -1477,14 +1602,15 @@ pub fn run_page(page: Page) -> Result<()> {
     iced::application(
         move || {
             let (mut state, task) = State::boot();
-            state.page = page;
-            (state, task)
+            let page_task = state.update(Message::Page(page));
+            (state, Task::batch([task, page_task]))
         },
         State::update,
         State::view,
     )
     .title("Canopa Settings")
     .theme(|state: &State| canopa_ui::theme(state.personal.appearance.clone()))
+    .scale_factor(|state: &State| f32::from(state.personal.appearance.text_scale()) / 100.0)
     .subscription(State::subscription)
     .window(iced::window::Settings {
         size: iced::Size::new(1000., 780.),

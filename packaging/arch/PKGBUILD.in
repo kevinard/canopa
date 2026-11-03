@@ -45,6 +45,8 @@ package_canopa() {
         foot libqalculate coreutils tzdata wl-clipboard xdg-utils xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome)
     optdepends=('stasis: automatic idle locking, display power and suspend policy'
         'networkmanager: Wi-Fi management' 'iwd: Wi-Fi management with networkd'
+        'bluez: Bluetooth discovery, pairing and device controls'
+        'power-profiles-daemon: system power profile selection'
         'xwayland-satellite: legacy X11 applications' 'poppler: PDF previews'
         'gnome-keyring: Secret Service and Secret portal' 'canopa-login: greetd login integration')
     backup=('etc/pam.d/canopa-lock')

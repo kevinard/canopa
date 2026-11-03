@@ -436,6 +436,8 @@ pub(super) fn styled_segment_text<'a>(
         "canopa:mark" => Some(include_bytes!("../../assets/canopa-mark.svg").as_slice()),
         "canopa:overview" => Some(include_bytes!("../../assets/overview.svg").as_slice()),
         "canopa:controls" => Some(include_bytes!("../../assets/controls.svg").as_slice()),
+        "canopa:bluetooth" => Some(include_bytes!("../../assets/bluetooth.svg").as_slice()),
+        "canopa:brightness" => Some(include_bytes!("../../assets/brightness.svg").as_slice()),
         "canopa:lock" => Some(include_bytes!("../../assets/lock.svg").as_slice()),
         "canopa:logout" => Some(include_bytes!("../../assets/logout.svg").as_slice()),
         "canopa:reboot" => Some(include_bytes!("../../assets/reboot.svg").as_slice()),

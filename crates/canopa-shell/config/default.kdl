@@ -124,7 +124,7 @@ bar "main" {
         width 392
         ui { margin 12 0; radius 24; border width=0; }
         start "network" "volume"
-        center "notifications" "idle-inhibitor"
+        center "notifications" "idle-inhibitor" "bluetooth" "power-and-brightness"
         // Trailing buttons form a compact footer with two columns.
         end "battery" "media" "session-lock" "session-logout" "session-reboot" "session-poweroff"
     }
@@ -183,6 +183,18 @@ modules {
         tooltip "Quick settings"
         ui { padding 12 0; }
         actions { click { toggle-bar-panel; } }
+    }
+    module "bluetooth" {
+        type "button"
+        label "Bluetooth"
+        icon "canopa:bluetooth"
+        actions { click { open-provider "bluetooth"; } }
+    }
+    module "power-and-brightness" {
+        type "button"
+        label "Power & brightness"
+        icon "canopa:brightness"
+        actions { click { open-provider "power"; } }
     }
     // Session controls use ordinary buttons and can be rebound to another locker
     // or session manager. Launch lets the locker outlive the shell's command timeout.

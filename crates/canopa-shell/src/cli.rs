@@ -5,6 +5,7 @@ pub enum Command {
     PrintVersion,
     ClipboardFrame(crate::launcher::clipboard::Kind),
     LauncherExtension(String, Option<String>),
+    HardwarePanel(String),
     Reload,
     IpcCommand(String),
     OpenMenu(String),
@@ -133,6 +134,20 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     None
                 };
                 special_mode = Some(Command::LauncherExtension(mode, template));
+            }
+            "--hardware-panel" => {
+                if special_mode.is_some() {
+                    return Command::UsageError("choose one command mode".into());
+                }
+                let Some(name) = args
+                    .next()
+                    .filter(|name| matches!(name.as_str(), "bluetooth" | "power"))
+                else {
+                    return Command::UsageError(
+                        "--hardware-panel requires bluetooth or power".into(),
+                    );
+                };
+                special_mode = Some(Command::HardwarePanel(name));
             }
             "--check-config" => check_config = true,
             "--show-source" => configuration.show_source = true,

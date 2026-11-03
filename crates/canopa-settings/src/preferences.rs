@@ -6,8 +6,19 @@ use canopa_theme::{Appearance, ColorScheme, Rgb};
 pub struct Personal {
     pub appearance: Appearance,
     pub lock: canopa_session_ui::settings::Settings,
+    pub text_scale: u16,
+    pub reduced_motion: bool,
 }
 impl Personal {
+    pub fn from_lock(lock: canopa_session_ui::settings::Settings) -> Self {
+        Self {
+            appearance: lock.appearance.clone(),
+            text_scale: lock.appearance.text_scale(),
+            reduced_motion: lock.appearance.reduced_motion(),
+            lock,
+        }
+    }
+
     pub fn load(snapshot: &Snapshot) -> Result<Self> {
         let request = if snapshot.text.is_empty() {
             canopa_config::Request::Defaults
@@ -18,10 +29,7 @@ impl Personal {
             &request,
             canopa_config::Component::Lockscreen,
         )?;
-        Ok(Self {
-            appearance: lock.appearance.clone(),
-            lock,
-        })
+        Ok(Self::from_lock(lock))
     }
     pub fn text(&self, snapshot: &Snapshot) -> Result<String> {
         let mut document: kdl::KdlDocument = if snapshot.text.is_empty() {
@@ -49,6 +57,20 @@ impl Personal {
                 .accent
                 .map(|Rgb(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}").into()),
         );
+        if self.text_scale != 100 || appearance.get("text-scale").is_some() {
+            put(
+                appearance,
+                "text-scale",
+                Some(i128::from(self.text_scale).into()),
+            );
+        }
+        if self.reduced_motion || appearance.get("reduced-motion").is_some() {
+            put(
+                appearance,
+                "reduced-motion",
+                Some(self.reduced_motion.into()),
+            );
+        }
         let lock = block(&mut document, "lockscreen")?;
         put(
             lock,

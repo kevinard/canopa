@@ -123,7 +123,7 @@ Gtk.main()
         stub = runtime / "session-action.py"
         stub.write_text('import pathlib, sys\npathlib.Path(__file__).with_name(sys.argv[1] + ".requested").touch()\n')
         for original, replacement in [
-            ('launch "swaylock";', f'launch "python3" "{stub}" "lock";'),
+            ('launch "canopa-lock";', f'launch "python3" "{stub}" "lock";'),
             ('argv "niri" "msg" "action" "quit" "--skip-confirmation";', f'argv "python3" "{stub}" "logout";'),
             ('argv "systemctl" "reboot";', f'argv "python3" "{stub}" "reboot";'),
             ('argv "systemctl" "poweroff";', f'argv "python3" "{stub}" "poweroff";'),
@@ -225,6 +225,22 @@ Gtk.main()
         click(148, 46)
         session.wait_for(lambda: (session.output / "shell.log").read_text().count('content="bar-panel"') == 3, "back from Sound")
         panel_visible("back-from-sound.png")
+        # The fixture has no hardware system bus. These built-in panels should
+        # remain reachable and return to the same Bar Panel.
+        for steps, name in [(5, "bluetooth"), (6, "power")]:
+            click(260, 40)
+            session.run(["wtype", *["-k", "Tab"] * steps, "-k", "Return"])
+            def hardware_provider_running():
+                children = subprocess.run(["ps", "--ppid", str(shell_process.pid), "-o", "args="],
+                                          env=session.env, capture_output=True, text=True, timeout=5)
+                return f"--hardware-panel {name}" in children.stdout
+            session.wait_for(hardware_provider_running, f"built-in {name} provider")
+            panel_visible(f"{name}.png")
+            bar_count = (session.output / "shell.log").read_text().count('content="bar-panel"')
+            click(148, 46)
+            session.wait_for(lambda: (session.output / "shell.log").read_text().count('content="bar-panel"') == bar_count + 1,
+                             f"back from {name}")
+            panel_visible(f"back-from-{name}.png")
     if session_actions:
         def press_keys(*keys):
             session.run(["wtype", *[arg for key in keys for arg in ("-k", key)]])
@@ -242,12 +258,12 @@ Gtk.main()
             click(260, 40)  # Give the replacement OnDemand surface keyboard focus.
 
         # Source controls above the footer are available in this isolated fixture.
-        # Lock is the fifth keyboard target and uses a session-owned launch.
+        # Lock is the seventh keyboard target and uses a session-owned launch.
         quick_settings_visible("session-controls.png")
-        press_keys(*(["Tab"] * 5), "Return")
+        press_keys(*(["Tab"] * 7), "Return")
         session.wait_for(lambda: (runtime / "lock.requested").exists(), "stub locker launch")
         session.capture("session-controls.png")
-        for target, steps in [("logout", 6), ("reboot", 7), ("poweroff", 8)]:
+        for target, steps in [("logout", 8), ("reboot", 9), ("poweroff", 10)]:
             for confirm in [False, True]:
                 menu_count = count_panels("menu")
                 if confirm:
@@ -309,6 +325,7 @@ Gtk.main()
             "keep_awake_toggle": True, "builtin_wifi_provider": True,
             "builtin_audio_provider_by_keyboard": True,
             "sound_device_controls_rendered": True, "provider_back_navigation": True,
+            "hardware_panels_with_unavailable_bus": True,
         } if controls else None,
     })
 

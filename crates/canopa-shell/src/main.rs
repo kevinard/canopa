@@ -30,6 +30,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::PrintVersion => "version",
         cli::Command::ClipboardFrame(_) => "clipboard-frame",
         cli::Command::LauncherExtension(..) => "launcher-extension",
+        cli::Command::HardwarePanel(_) => "hardware-panel",
         cli::Command::Reload => "reload",
         cli::Command::IpcCommand(_) => "ipc",
         cli::Command::OpenMenu(_) => "open-menu",
@@ -52,6 +53,25 @@ fn main() {
         cli::Command::LauncherExtension(mode, template) => {
             if let Err(error) = launcher::bundled::run(&mode, template.as_deref()) {
                 eprintln!("canopa-shell: {error}");
+                std::process::exit(1);
+            }
+        }
+        cli::Command::HardwarePanel(name) => {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            let result = runtime.map_err(anyhow::Error::from).and_then(|runtime| {
+                runtime.block_on(canopa_shell::hardware_panel::run(
+                    &name,
+                    tokio::io::BufReader::new(tokio::io::stdin()),
+                    tokio::io::stdout(),
+                ))
+            });
+            if result.is_err() {
+                tracing::error!(
+                    component = "hardware_panel",
+                    "hardware provider session failed"
+                );
                 std::process::exit(1);
             }
         }

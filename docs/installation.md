@@ -62,7 +62,9 @@ Stasis is an optional external dependency for automatic idle policy. Install the
 tested Stasis 1.7 implementation separately, as described in [idle integration](idle.md).
 The packaged idle unit remains inactive when its executable is absent. Manual
 locking works independently. Wi-Fi needs NetworkManager or the supported
-networkd/iwd combination. Secret storage remains the chosen system provider;
+networkd/iwd combination. Quick settings uses the system BlueZ service for
+Bluetooth and Power Profiles daemon for power profile selection. Both are
+optional Arch dependencies. Secret storage remains the chosen system provider;
 packaging does not create or replace a password vault.
 
 ## Optional Canopa login screen

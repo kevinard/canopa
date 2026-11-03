@@ -63,7 +63,7 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
         (
             "appearance",
             "Personalization settings",
-            "personalization theme appearance dark light wallpaper accent",
+            "personalization theme appearance dark light wallpaper accent text size accessibility motion",
             "preferences-desktop-theme",
             Action::Launch {
                 argv: vec!["canopa-settings".into(), "--page".into(), "personal".into()],
@@ -93,6 +93,37 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
             "clear forget reset launcher history recent frequent ranking",
             "edit-clear",
             Action::ClearHistory,
+        ),
+        (
+            "bluetooth",
+            "Bluetooth devices",
+            "bluetooth headphones discover pair reconnect",
+            "bluetooth",
+            Action::Provider {
+                name: "bluetooth".into(),
+            },
+        ),
+        (
+            "power-brightness",
+            "Power & brightness",
+            "brightness backlight performance balanced power saver profile",
+            "display-brightness",
+            Action::Provider {
+                name: "power".into(),
+            },
+        ),
+        (
+            "shortcuts",
+            "Keyboard shortcuts",
+            "shortcuts keybindings hotkeys rebind",
+            "input-keyboard",
+            Action::Launch {
+                argv: vec![
+                    "canopa-settings".into(),
+                    "--page".into(),
+                    "shortcuts".into(),
+                ],
+            },
         ),
     ];
     let matches = controls
@@ -142,7 +173,7 @@ mod tests {
         assert!(
             matches!(&results("dnd",false)[0].actions[0].action,Action::Provider{name} if name=="notifications")
         );
-        assert_eq!(results("", true).len(), 10);
+        assert_eq!(results("", true).len(), 13);
         assert!(results("", false).is_empty());
         assert!(results("foobarxyz", false).is_empty());
     }
