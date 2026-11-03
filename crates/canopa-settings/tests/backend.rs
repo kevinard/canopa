@@ -3,6 +3,7 @@ use canopa_settings::{
     input::Input,
     niri::Client,
     preferences::{IdleTimes, Personal},
+    profiles::{Book, Switching},
     session::Paths,
     storage::Snapshot,
 };
@@ -433,8 +434,12 @@ impl Peer {
         }
     }
     fn start_guard(&self, paths: &Paths) -> std::process::Child {
+        self.start_guard_with(paths, &[])
+    }
+    fn start_guard_with(&self, paths: &Paths, args: &[&str]) -> std::process::Child {
         Command::new(assert_cmd::cargo::cargo_bin!("canopa-settings"))
             .arg("display-guard")
+            .args(args)
             .env("NIRI_SOCKET", &self.path)
             .env("NIRI_CONFIG", paths.niri())
             .env("XDG_RUNTIME_DIR", self.path.parent().unwrap())
@@ -613,4 +618,160 @@ fn timeout_reverts_without_a_gui_decision_and_compositor_identity_is_bound() {
             .to_string()
             .contains("restarted")
     );
+}
+
+#[test]
+fn display_profiles_round_trip_without_connector_lock_in_or_overwriting_edits() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = paths(root.path());
+    std::fs::write(paths.profiles(), "// retained comment\nstartup #false\n").unwrap();
+    let book = Book::load(&paths).unwrap();
+    let mut original = output();
+    let mut layout = Monitor::from_output(&original);
+    layout.mode = Some(1);
+    layout.scale = 1.5;
+    layout.transform = Transform::_90;
+    layout.x = -128;
+    let saved = book
+        .save_layout(
+            "Docked",
+            &[layout],
+            &HashMap::from([(original.name.clone(), original.clone())]),
+        )
+        .unwrap();
+    assert!(saved.source.text.contains("retained comment"));
+    assert!(!saved.startup);
+    assert!(book.set_switching(Switching::Manual).is_err());
+
+    original.name = "DP-6".into();
+    let connected = HashMap::from([(original.name.clone(), original)]);
+    let resolved = saved.get("Docked").unwrap().resolve(&connected).unwrap();
+    assert_eq!(resolved[0].name, "DP-6");
+    assert_eq!(resolved[0].mode, Some(1));
+    assert_eq!(resolved[0].scale, 1.5);
+    assert_eq!(resolved[0].transform, Transform::_90);
+    assert_eq!(resolved[0].x, -128);
+    assert!(saved.save_layout("Docked", &resolved, &connected).is_err());
+    let configured = saved.set_switching(Switching::Automatic).unwrap();
+    assert_eq!(configured.switching, Switching::Automatic);
+    assert!(configured.source.text.contains("retained comment"));
+    assert!(configured.remove("Docked").unwrap().profiles.is_empty());
+}
+
+#[test]
+fn matching_requires_a_complete_unique_assignment_and_respects_hotplug_priority() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = paths(root.path());
+    let mut left = output();
+    left.name = "DP-1".into();
+    let mut right = left.clone();
+    right.name = "DP-2".into();
+    let connected = HashMap::from([(left.name.clone(), left), (right.name.clone(), right)]);
+    std::fs::write(
+        paths.profiles(),
+        r#"
+profile "General" {
+    output connector="*"
+    output connector="DP-2" enabled=#false
+}
+profile "Priority" priority=5 {
+    output connector="DP-1"
+    output connector="DP-2"
+}
+profile "Manual" priority=10 hotplug=#false {
+    output connector="DP-1"
+    output connector="DP-2"
+}
+profile "Ambiguous" {
+    output connector="*"
+    output connector="*"
+}
+"#,
+    )
+    .unwrap();
+    let book = Book::load(&paths).unwrap();
+    assert_eq!(
+        book.matching(&connected).unwrap().unwrap().0.name,
+        "Priority"
+    );
+    let general = book.get("General").unwrap().resolve(&connected).unwrap();
+    assert_eq!(general[0].name, "DP-1");
+    assert!(!general[1].enabled);
+    assert!(
+        book.get("Ambiguous")
+            .unwrap()
+            .resolve(&connected)
+            .unwrap_err()
+            .to_string()
+            .contains("ambiguous")
+    );
+    let single = HashMap::from([("DP-1".into(), connected["DP-1"].clone())]);
+    assert!(book.matching(&single).unwrap().is_none());
+
+    let tied = book
+        .source
+        .text
+        .replace("priority=10 hotplug=#false", "priority=5");
+    std::fs::write(paths.profiles(), tied).unwrap();
+    assert!(Book::load(&paths).unwrap().matching(&connected).is_err());
+}
+
+#[test]
+fn profile_guard_keeps_live_layouts_separate_and_rolls_back_stale_automatic_changes() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = paths(root.path());
+    let peer = Peer::start(root.path());
+    let baseline = std::fs::read(paths.displays()).unwrap();
+    let profile = "profile \"Desk\" { output connector=\"TEST-1\" scale=1.5; }\n";
+    std::fs::write(paths.profiles(), profile).unwrap();
+
+    let start = |args: &[&str]| {
+        let outputs = Client::connect(peer.path.clone())
+            .unwrap()
+            .outputs()
+            .unwrap();
+        let book = Book::load(&paths).unwrap();
+        let monitors = book.get("Desk").unwrap().resolve(&outputs).unwrap();
+        let mut child = peer.start_guard_with(&paths, args);
+        let mut input = child.stdin.take().unwrap();
+        let reader = BufReader::new(child.stdout.take().unwrap());
+        serde_json::to_writer(
+            &mut input,
+            &TrialRequest {
+                directory: paths.directory.clone(),
+                monitors,
+            },
+        )
+        .unwrap();
+        input.write_all(b"\n").unwrap();
+        (child, input, reader)
+    };
+    let (mut child, _, mut reader) = start(&["--profile=Desk", "--automatic"]);
+    let error = reply(&mut reader);
+    assert_eq!(error["state"], "error");
+    assert!(error["message"].as_str().unwrap().contains("disabled"));
+    wait(&mut child);
+
+    let (mut child, mut input, mut reader) = start(&["--profile=Desk"]);
+    assert_eq!(reply(&mut reader)["state"], "ready");
+    input.write_all(b"keep\n").unwrap();
+    assert_eq!(reply(&mut reader)["state"], "kept");
+    wait(&mut child);
+    assert_eq!(peer.output.lock().unwrap().logical.unwrap().scale, 1.5);
+    assert_eq!(std::fs::read(paths.displays()).unwrap(), baseline);
+
+    let modified = profile.replace("1.5", "1.25");
+    std::fs::write(
+        paths.profiles(),
+        format!("switching \"automatic\"\n{modified}"),
+    )
+    .unwrap();
+    let (mut child, mut input, mut reader) = start(&["--profile=Desk", "--automatic"]);
+    assert_eq!(reply(&mut reader)["state"], "ready");
+    std::fs::write(paths.profiles(), &modified).unwrap();
+    input.write_all(b"keep\n").unwrap();
+    assert_eq!(reply(&mut reader)["state"], "error");
+    wait(&mut child);
+    assert_eq!(peer.output.lock().unwrap().logical.unwrap().scale, 1.5);
+    assert_eq!(std::fs::read(paths.displays()).unwrap(), baseline);
 }

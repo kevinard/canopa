@@ -1120,6 +1120,7 @@ dependencies = [
  "canopa-theme",
  "canopa-ui",
  "clap",
+ "futures-util",
  "iced",
  "kdl 6.7.1",
  "libc",
@@ -1128,7 +1129,10 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "wayland-client",
+ "wayland-protocols-wlr",
  "xkbcommon",
+ "zbus",
 ]
 
 [[package]]

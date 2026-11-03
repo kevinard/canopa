@@ -1,9 +1,10 @@
 //! Ordinary settings window with shared controls and bounded background work.
 mod focus;
 mod launcher;
+mod profiles;
 mod shortcuts;
 use crate::{
-    display::{Monitor, TrialRequest, transform_name},
+    display::{Monitor, TrialHandle, transform_name},
     input::Input,
     niri::Client,
     preferences::{IdleTimes, Personal},
@@ -16,14 +17,7 @@ use iced::{
     widget::{checkbox, column, container, pick_list, row, scrollable, slider, text, text_input},
 };
 use niri_ipc::{Output, Transform};
-use std::os::unix::process::CommandExt;
-use std::{
-    collections::HashMap,
-    io::{BufRead, BufReader, Read, Write},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::HashMap, process::Stdio, time::Duration};
 
 use crate::Page;
 #[derive(Clone, Debug)]
@@ -54,6 +48,7 @@ enum Message {
     Page(Page),
     Refresh,
     Outputs(std::result::Result<HashMap<String, Output>, String>),
+    DisplayProfiles(profiles::Action),
     Enabled(usize, bool),
     Mode(usize, String),
     Scale(usize, f64),
@@ -85,92 +80,6 @@ enum Message {
     Finished(std::result::Result<String, String>),
     WallpaperFinished(std::result::Result<(), String>),
 }
-#[derive(Debug)]
-struct Trial {
-    child: Child,
-    input: ChildStdin,
-    output: BufReader<ChildStdout>,
-}
-impl Drop for Trial {
-    fn drop(&mut self) {
-        let _ = self.input.write_all(b"revert\n");
-        let _ = self.input.flush();
-        let _ = self.child.wait();
-    }
-}
-#[derive(Clone, Debug)]
-struct TrialHandle(Arc<Mutex<Trial>>);
-impl TrialHandle {
-    fn start(paths: &Paths, monitors: Vec<Monitor>) -> Result<Self> {
-        let mut child = Command::new(std::env::current_exe()?)
-            .arg("display-guard")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .process_group(0)
-            .spawn()?;
-        let input = child.stdin.take().context("missing display helper input")?;
-        let output = BufReader::new(
-            child
-                .stdout
-                .take()
-                .context("missing display helper output")?,
-        );
-        let mut trial = Trial {
-            child,
-            input,
-            output,
-        };
-        serde_json::to_writer(
-            &mut trial.input,
-            &TrialRequest {
-                directory: paths.directory.clone(),
-                monitors,
-            },
-        )?;
-        trial.input.write_all(b"\n")?;
-        trial.input.flush()?;
-        let reply = frame(&mut trial.output)?;
-        ensure!(
-            reply["state"] == "ready",
-            "{}",
-            reply["message"]
-                .as_str()
-                .unwrap_or("display helper did not become ready")
-        );
-        Ok(Self(Arc::new(Mutex::new(trial))))
-    }
-    fn finish(self, keep: bool) -> Result<String> {
-        let mut trial = self
-            .0
-            .lock()
-            .map_err(|_| anyhow::anyhow!("display helper lock failed"))?;
-        // The independent helper may already have reverted on its own deadline.
-        let _ = trial
-            .input
-            .write_all(if keep { b"keep\n" } else { b"revert\n" });
-        let reply = frame(&mut trial.output)?;
-        let _ = trial.child.wait();
-        match reply["state"].as_str() {
-            Some("kept") => Ok("Display settings saved.".into()),
-            Some("reverted") => Ok("Previous display settings restored.".into()),
-            _ => anyhow::bail!(
-                "{}",
-                reply["message"].as_str().unwrap_or("display change failed")
-            ),
-        }
-    }
-}
-fn frame(reader: &mut BufReader<ChildStdout>) -> Result<serde_json::Value> {
-    let mut line = String::new();
-    reader.take(16385).read_line(&mut line)?;
-    ensure!(
-        !line.is_empty() && line.len() <= 16384,
-        "display helper stopped unexpectedly"
-    );
-    Ok(serde_json::from_str(&line)?)
-}
-
 struct State {
     paths: Paths,
     launcher: crate::launcher::Model,
@@ -187,6 +96,7 @@ struct State {
     monitors: Vec<Monitor>,
     positions: Vec<(String, String)>,
     display_dirty: bool,
+    display_profiles: profiles::Editor,
     input: Input,
     input_source: Option<Snapshot>,
     personal: Personal,
@@ -271,6 +181,7 @@ impl State {
             .accent
             .map(|canopa_theme::Rgb(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
             .unwrap_or_default();
+        let profile_task = profiles::Editor::load(&paths);
         let state = Self {
             paths,
             launcher: Default::default(),
@@ -287,6 +198,7 @@ impl State {
             monitors: vec![],
             positions: vec![],
             display_dirty: false,
+            display_profiles: profiles::Editor::default(),
             input,
             input_source,
             personal,
@@ -305,6 +217,7 @@ impl State {
             state,
             Task::batch([
                 task(|| Client::discover()?.outputs(), Message::Outputs),
+                profile_task,
                 task(crate::launcher::Model::load, Message::LauncherLoaded),
                 task(
                     crate::launcher::ClipboardEditor::load,
@@ -449,6 +362,7 @@ impl State {
                 self.refreshing = true;
                 return task(|| Client::discover()?.outputs(), Message::Outputs);
             }
+            Message::DisplayProfiles(action) => return self.update_profiles(action),
             Message::Page(page) if !self.busy && self.trial.is_none() => {
                 self.page = page;
                 self.idle_available = false;
@@ -703,26 +617,16 @@ impl State {
                         return task(move || editor.save(&paths), Message::ShortcutsStored);
                     }
                     Page::Displays => {
-                        let mut monitors = self.monitors.clone();
-                        for (monitor, position) in monitors.iter_mut().zip(&self.positions) {
-                            let parsed = position
-                                .0
-                                .parse::<i32>()
-                                .and_then(|x| position.1.parse::<i32>().map(|y| (x, y)));
-                            match parsed {
-                                Ok((x, y)) => {
-                                    monitor.x = x;
-                                    monitor.y = y;
-                                }
-                                Err(_) => {
-                                    self.busy = false;
-                                    self.notice = "Display positions must be whole numbers.".into();
-                                    return Task::none();
-                                }
+                        let monitors = match self.display_draft() {
+                            Ok(monitors) => monitors,
+                            Err(error) => {
+                                self.busy = false;
+                                self.notice = error.to_string();
+                                return Task::none();
                             }
-                        }
+                        };
                         return task(
-                            move || TrialHandle::start(&paths, monitors),
+                            move || TrialHandle::start(&paths, monitors, None, false),
                             Message::TrialStarted,
                         );
                     }
@@ -1019,6 +923,9 @@ impl State {
             )
         ]
         .spacing(14);
+        if self.display_profiles.prominent {
+            body = body.push(self.profiles_view());
+        }
         if self.monitors.is_empty() {
             body = body.push(text("No connected displays are available."));
         }
@@ -1092,6 +999,9 @@ impl State {
                     .width(Length::Fill)
                     .style(canopa_ui::surface),
             );
+        }
+        if !self.display_profiles.prominent {
+            body = body.push(self.profiles_view());
         }
         body.into()
     }
@@ -1599,9 +1509,14 @@ pub fn run() -> Result<()> {
     run_page(Page::Displays)
 }
 pub fn run_page(page: Page) -> Result<()> {
+    run_with_profile(page, None)
+}
+pub fn run_with_profile(page: Page, profile: Option<String>) -> Result<()> {
     iced::application(
         move || {
             let (mut state, task) = State::boot();
+            state.display_profiles.selected.clone_from(&profile);
+            state.display_profiles.prominent = profile.is_some();
             let page_task = state.update(Message::Page(page));
             (state, Task::batch([task, page_task]))
         },

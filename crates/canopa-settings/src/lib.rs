@@ -34,6 +34,8 @@ pub mod input;
 pub mod launcher;
 pub mod niri;
 pub mod preferences;
+pub mod profile_watch;
+pub mod profiles;
 pub mod session;
 pub mod shortcuts;
 pub mod storage;

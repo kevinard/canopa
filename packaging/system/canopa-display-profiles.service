@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch connected displays for matching Canopa profiles
+ConditionEnvironment=CANOPA_SESSION=1
+PartOf=canopa-session.target graphical-session.target
+After=canopa-compositor.service canopa-notify.service
+
+[Service]
+ExecStart=/usr/bin/canopa-settings watch-display-profiles
+Restart=on-failure
+RestartSec=2s
+Slice=session.slice

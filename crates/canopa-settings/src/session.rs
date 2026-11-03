@@ -21,6 +21,9 @@ impl Paths {
     pub fn displays(&self) -> PathBuf {
         self.directory.join("niri-displays.kdl")
     }
+    pub fn profiles(&self) -> PathBuf {
+        self.directory.join("display-profiles.kdl")
+    }
     pub fn common(&self) -> PathBuf {
         self.directory.join("config.kdl")
     }

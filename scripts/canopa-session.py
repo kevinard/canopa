@@ -60,7 +60,7 @@ def main():
         subprocess.run(["systemctl", "--user", "unset-environment", *VARIABLES], check=True)
         subprocess.run(["systemctl", "--user", "import-environment", *sorted(env)], env=env, check=True)
         subprocess.run(["dbus-update-activation-environment", "--all"], env=env, check=True)
-        units = ["canopa-compositor.service", "canopa-session.target", *[f"canopa-{name}.service" for name in ("shell", "notify", "wallpaper", "lock", "polkit", "idle")]]
+        units = ["canopa-compositor.service", "canopa-session.target", *[f"canopa-{name}.service" for name in ("shell", "notify", "wallpaper", "lock", "polkit", "idle", "display-profiles")]]
         subprocess.run(["systemctl", "--user", "reset-failed", *units], check=True)
         if interrupted:
             return 128 + interrupted[0]

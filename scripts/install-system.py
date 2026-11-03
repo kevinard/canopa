@@ -73,7 +73,7 @@ def stage(destination, binaries, compositor=None, component="desktop"):
         if source.name == "canopa-idle.service":
             text = text.replace("[Service]", "ConditionFileIsExecutable=/usr/bin/stasis\n\n[Service]")
         target.write_text(text)
-    for name in ("canopa-compositor.service", "canopa-session.target", "canopa-shutdown.target"):
+    for name in ("canopa-compositor.service", "canopa-display-profiles.service", "canopa-session.target", "canopa-shutdown.target"):
         install(ROOT / "packaging/system" / name, f"usr/lib/systemd/user/{name}")
     install(ROOT / "packaging/system/canopa.desktop", "usr/share/wayland-sessions/canopa.desktop")
     install(ROOT / "packaging/niri/defaults.kdl", "usr/share/canopa/niri-defaults.kdl")

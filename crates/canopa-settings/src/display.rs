@@ -11,15 +11,19 @@ use niri_ipc::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    io::{BufRead, Read, Write},
-    os::fd::AsRawFd,
+    io::{BufRead, BufReader, Read, Write},
+    os::{fd::AsRawFd, unix::process::CommandExt},
     path::PathBuf,
-    sync::atomic::{AtomicBool, Ordering},
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 pub const CONFIRM_SECONDS: u64 = 20;
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Monitor {
     pub name: String,
@@ -61,7 +65,7 @@ impl Monitor {
             && self.model == output.model
             && self.serial == output.serial
     }
-    fn matches_live(&self, output: &Output) -> bool {
+    pub(crate) fn matches_live(&self, output: &Output) -> bool {
         if !self.identity(output) {
             return false;
         }
@@ -129,20 +133,30 @@ impl Monitor {
 }
 
 fn settled(client: &Client, monitors: &[Monitor]) -> Result<()> {
+    wait_for_outputs(
+        client,
+        |outputs| {
+            monitors.iter().all(|monitor| {
+                outputs
+                    .get(&monitor.name)
+                    .is_some_and(|output| monitor.matches_live(output))
+            })
+        },
+        "the compositor could not apply the requested display configuration",
+    )
+}
+
+fn wait_for_outputs(
+    client: &Client,
+    ready: impl Fn(&HashMap<String, Output>) -> bool,
+    failure: &str,
+) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
-        let outputs = client.outputs()?;
-        if monitors.iter().all(|monitor| {
-            outputs
-                .get(&monitor.name)
-                .is_some_and(|output| monitor.matches_live(output))
-        }) {
+        if ready(&client.outputs()?) {
             return Ok(());
         }
-        ensure!(
-            Instant::now() < deadline,
-            "the compositor could not apply the requested display configuration"
-        );
+        ensure!(Instant::now() < deadline, "{failure}");
         std::thread::sleep(Duration::from_millis(30));
     }
 }
@@ -174,6 +188,63 @@ pub fn validate(monitors: &[Monitor], outputs: &HashMap<String, Output>) -> Resu
         monitor.actions(output)?;
     }
     Ok(())
+}
+
+pub(crate) fn validate_profile(
+    monitors: &[Monitor],
+    outputs: &HashMap<String, Output>,
+) -> Result<()> {
+    ensure!(
+        monitors.len() == outputs.len(),
+        "connected displays changed; choose a matching profile"
+    );
+    validate(monitors, outputs)
+}
+
+fn lease() -> Result<std::fs::File> {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .context("session runtime directory is unavailable")?;
+    lock(&runtime.join("canopa-settings-displays.lock"))
+}
+
+pub(crate) fn recover_after_hotplug(client: &Client) -> Result<()> {
+    let _lease = lease()?;
+    enable_visible_output(client)
+}
+
+fn enable_visible_output(client: &Client) -> Result<()> {
+    let outputs = client.outputs()?;
+    if outputs.values().any(|output| output.current_mode.is_some()) {
+        return Ok(());
+    }
+    let Some(output) = outputs
+        .values()
+        .filter(|output| !output.modes.is_empty())
+        .min_by_key(|output| {
+            let internal = ["eDP-", "LVDS-", "DSI-"]
+                .iter()
+                .any(|prefix| output.name.starts_with(prefix));
+            (!internal, &output.name)
+        })
+    else {
+        return Ok(());
+    };
+    ensure!(
+        matches!(
+            client.request(Request::Output {
+                output: output.name.clone(),
+                action: OutputAction::On,
+            })?,
+            Response::OutputConfigChanged(niri_ipc::OutputConfigChanged::Applied)
+        ),
+        "could not turn on a connected display"
+    );
+    wait_for_outputs(
+        client,
+        |outputs| outputs.values().any(|output| output.current_mode.is_some()),
+        "no connected display turned on",
+    )
 }
 
 fn apply(client: &Client, monitor: &Monitor, output: &Output) -> Result<()> {
@@ -296,7 +367,7 @@ extern "C" fn interrupt(_: libc::c_int) {
     INTERRUPTED.store(true, Ordering::Relaxed);
 }
 
-pub fn guard() -> Result<()> {
+pub fn guard(profile: Option<&str>, automatic: bool) -> Result<()> {
     let mut line = String::new();
     std::io::stdin()
         .lock()
@@ -311,18 +382,43 @@ pub fn guard() -> Result<()> {
         paths.directory.is_absolute() && paths.active(),
         "display persistence requires the Canopa session"
     );
-    let runtime = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .context("session runtime directory is unavailable")?;
-    let _lease = lock(&runtime.join("canopa-settings-displays.lock"))?;
+    let _lease = lease()?;
     let client = Client::discover()?;
     let outputs = client.outputs()?;
-    validate(&request.monitors, &outputs)?;
-    let snapshot = Snapshot::load(paths.displays())?;
-    let candidate = text(&snapshot, &request.monitors, &outputs)?;
-    let mut prepared = tempfile::NamedTempFile::new_in(&paths.directory)?;
-    prepared.write_all(candidate.as_bytes())?;
-    crate::niri::validate_fragment(&paths, "niri-displays.kdl", prepared.path())?;
+    let profile_source = if let Some(name) = profile {
+        use crate::profiles::{Book, Switching};
+        let book = Book::load(&paths)?;
+        let expected = if automatic {
+            ensure!(
+                book.switching == Switching::Automatic,
+                "automatic switching was disabled"
+            );
+            let (profile, layout) = book.matching(&outputs)?.context("no matching profile")?;
+            ensure!(profile.name == name, "the matching profile changed");
+            layout
+        } else {
+            book.get(name)?.resolve(&outputs)?
+        };
+        ensure!(
+            expected == request.monitors,
+            "the profile or connected displays changed"
+        );
+        validate_profile(&request.monitors, &outputs)?;
+        Some(book.source)
+    } else {
+        validate(&request.monitors, &outputs)?;
+        None
+    };
+    let persistence = if profile.is_none() {
+        let snapshot = Snapshot::load(paths.displays())?;
+        let candidate = text(&snapshot, &request.monitors, &outputs)?;
+        let mut prepared = tempfile::NamedTempFile::new_in(&paths.directory)?;
+        prepared.write_all(candidate.as_bytes())?;
+        crate::niri::validate_fragment(&paths, "niri-displays.kdl", prepared.path())?;
+        Some((snapshot, candidate))
+    } else {
+        None
+    };
     for signum in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
         unsafe {
             libc::signal(signum, interrupt as *const () as libc::sighandler_t);
@@ -335,20 +431,45 @@ pub fn guard() -> Result<()> {
         .collect();
     let mut fully_applied = false;
     let outcome = (|| -> Result<bool> {
-        for monitor in request
-            .monitors
-            .iter()
-            .filter(|m| m.enabled)
-            .chain(request.monitors.iter().filter(|m| !m.enabled))
-        {
-            apply(
-                &client,
-                monitor,
-                outputs.get(&monitor.name).context("missing output")?,
-            )?;
+        if let Some(source) = &profile_source {
+            source.unchanged()?;
+        }
+        for enabled in [true, false] {
+            if !enabled && profile.is_some() && request.monitors.iter().any(|m| !m.enabled) {
+                let current = client.outputs()?;
+                validate_profile(&request.monitors, &current)?;
+                ensure!(
+                    request
+                        .monitors
+                        .iter()
+                        .any(|m| m.enabled && current[&m.name].current_mode.is_some()),
+                    "the replacement display did not turn on"
+                );
+            }
+            for monitor in request.monitors.iter().filter(|m| m.enabled == enabled) {
+                let current;
+                let available = if profile.is_some() {
+                    ensure!(
+                        !INTERRUPTED.load(Ordering::Relaxed),
+                        "display switch interrupted"
+                    );
+                    current = client.outputs()?;
+                    validate_profile(&request.monitors, &current)?;
+                    &current
+                } else {
+                    &outputs
+                };
+                let output = available.get(&monitor.name).context("missing output")?;
+                if profile.is_none() || !monitor.matches_live(output) {
+                    apply(&client, monitor, output)?;
+                }
+            }
         }
         settled(&client, &request.monitors)?;
         fully_applied = true;
+        if profile.is_some() {
+            validate_profile(&request.monitors, &client.outputs()?)?;
+        }
         // A vanished GUI is an ordinary I/O failure: it must take the rollback
         // path, including when it disappears before this readiness frame.
         writeln!(
@@ -374,14 +495,22 @@ pub fn guard() -> Result<()> {
                 Ok(_) if byte[0] == b'\n' => {
                     if command == b"keep" {
                         let current = client.outputs()?;
-                        validate(&request.monitors, &current)?;
+                        if let Some(source) = &profile_source {
+                            source.unchanged()?;
+                            validate_profile(&request.monitors, &current)?;
+                        } else {
+                            validate(&request.monitors, &current)?;
+                        }
                         ensure!(
                             request.monitors.iter().all(|monitor| current
                                 .get(&monitor.name)
                                 .is_some_and(|output| monitor.matches_live(output))),
                             "display settings changed outside the trial; reload before saving"
                         );
-                        let saved = snapshot.save(&candidate, |path| {
+                        let Some((snapshot, candidate)) = &persistence else {
+                            return Ok(true);
+                        };
+                        let saved = snapshot.save(candidate, |path| {
                             crate::niri::validate_fragment(&paths, "niri-displays.kdl", path)
                         })?;
                         if let Err(error) = client
@@ -411,7 +540,9 @@ pub fn guard() -> Result<()> {
         Ok(false)
     })();
     if !matches!(outcome, Ok(true)) {
-        let current = client.outputs().unwrap_or_default();
+        let current = client
+            .outputs()
+            .context("cannot inspect displays for restoration")?;
         let mut failures = Vec::new();
         for monitor in before
             .iter()
@@ -422,6 +553,9 @@ pub fn guard() -> Result<()> {
                 .get(&monitor.name)
                 .filter(|output| monitor.identity(output))
             {
+                if profile.is_some() && monitor.matches_live(output) {
+                    continue;
+                }
                 if fully_applied
                     && !request
                         .monitors
@@ -436,10 +570,23 @@ pub fn guard() -> Result<()> {
                     }
                     continue;
                 }
+                if profile.is_some() && !monitor.enabled {
+                    let live = client.outputs()?;
+                    if !live
+                        .values()
+                        .any(|other| other.name != monitor.name && other.current_mode.is_some())
+                    {
+                        // A hot-unplug may have removed the original active display.
+                        continue;
+                    }
+                }
                 if let Err(error) = apply(&client, monitor, output) {
                     failures.push(error.to_string());
                 }
             }
+        }
+        if profile.is_some() && before.iter().any(|monitor| monitor.enabled) {
+            enable_visible_output(&client)?;
         }
         ensure!(
             failures.is_empty(),
@@ -454,4 +601,105 @@ pub fn guard() -> Result<()> {
         if kept { "kept" } else { "reverted" }
     )?;
     Ok(())
+}
+
+#[derive(Debug)]
+struct Trial {
+    child: Child,
+    profile: bool,
+    input: ChildStdin,
+    output: BufReader<ChildStdout>,
+}
+impl Drop for Trial {
+    fn drop(&mut self) {
+        let _ = self.input.write_all(b"revert\n");
+        let _ = self.input.flush();
+        let _ = self.child.wait();
+    }
+}
+#[derive(Clone, Debug)]
+pub(crate) struct TrialHandle(Arc<Mutex<Trial>>);
+impl TrialHandle {
+    pub(crate) fn start(
+        paths: &Paths,
+        monitors: Vec<Monitor>,
+        profile: Option<&str>,
+        automatic: bool,
+    ) -> Result<Self> {
+        let mut command = Command::new(std::env::current_exe()?);
+        command.arg("display-guard");
+        if let Some(name) = profile {
+            command.arg(format!("--profile={name}"));
+        }
+        if automatic {
+            command.arg("--automatic");
+        }
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .process_group(0)
+            .spawn()?;
+        let input = child.stdin.take().context("missing display helper input")?;
+        let output = BufReader::new(
+            child
+                .stdout
+                .take()
+                .context("missing display helper output")?,
+        );
+        let mut trial = Trial {
+            child,
+            profile: profile.is_some(),
+            input,
+            output,
+        };
+        serde_json::to_writer(
+            &mut trial.input,
+            &TrialRequest {
+                directory: paths.directory.clone(),
+                monitors,
+            },
+        )?;
+        trial.input.write_all(b"\n")?;
+        trial.input.flush()?;
+        let reply = frame(&mut trial.output)?;
+        ensure!(
+            reply["state"] == "ready",
+            "{}",
+            reply["message"]
+                .as_str()
+                .unwrap_or("display helper did not become ready")
+        );
+        Ok(Self(Arc::new(Mutex::new(trial))))
+    }
+    pub(crate) fn finish(self, keep: bool) -> Result<String> {
+        let mut trial = self
+            .0
+            .lock()
+            .map_err(|_| anyhow::anyhow!("display helper lock failed"))?;
+        // The independent helper may already have reverted on its own deadline.
+        let _ = trial
+            .input
+            .write_all(if keep { b"keep\n" } else { b"revert\n" });
+        let reply = frame(&mut trial.output)?;
+        let _ = trial.child.wait();
+        match reply["state"].as_str() {
+            Some("kept") if trial.profile => Ok("Display profile applied.".into()),
+            Some("kept") => Ok("Display settings saved.".into()),
+            Some("reverted") => Ok("Previous display settings restored.".into()),
+            _ => anyhow::bail!(
+                "{}",
+                reply["message"].as_str().unwrap_or("display change failed")
+            ),
+        }
+    }
+}
+fn frame(reader: &mut BufReader<ChildStdout>) -> Result<serde_json::Value> {
+    let mut line = String::new();
+    reader.take(16385).read_line(&mut line)?;
+    ensure!(
+        !line.is_empty() && line.len() <= 16384,
+        "display helper stopped unexpectedly"
+    );
+    Ok(serde_json::from_str(&line)?)
 }

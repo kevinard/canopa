@@ -22,6 +22,65 @@ An ordinary Niri session remains separate. **Reload connected displays** discard
 the display draft and uses the current compositor state. Output/workspace events
 refresh an unedited draft; a pending draft is retained for deliberate review.
 
+### Display profiles
+
+Set up the connected displays in **Displays**, then enter a name under **Display
+profiles** and choose **Save layout as profile**. This saves the current draft
+without applying it. To switch manually, select a saved profile, choose **Test
+saved profile**, then **Keep changes**. The same rollback window applies. You can
+open a specific profile for review with `canopa-settings --display-profile "Desk"`.
+
+**Suggest matching profiles** is the default. When you dock or undock, the
+Canopa session offers the matching layout in a notification. **Review layout**
+opens Displays with that profile selected. Choose **Switch automatically** and
+save the policy to apply matching profiles without prompting. **Manual only**
+disables offers and automatic switching.
+If unplugging the dock leaves every connected display off, Canopa turns on one
+available display so the desktop and any review prompt remain visible.
+
+The saved profiles persist across logins. Switching one changes the live
+layout while leaving the default Niri display include intact. The startup
+policy controls whether Canopa offers or applies a matching profile when you
+log in.
+
+Edit `~/.config/canopa/display-profiles.kdl` (under `$XDG_CONFIG_HOME` if set)
+to customize selectors, layouts, priorities and timing.
+
+```kdl
+switching "suggest"
+startup #true
+settle-ms 600
+offer-ms 15000
+
+profile "Laptop" {
+    output connector="eDP-1" scale=1.25
+}
+
+profile "Desk" priority=10 {
+    output connector="eDP-1" enabled=#false
+    output make="Dell" model="U2723QE" serial="12345" width=3840 height=2160 refresh-mhz=60000 scale=1.5 x=0 y=0
+}
+```
+
+Use `canopa-settings outputs` to find connector names and monitor identities.
+Each profile must cover the complete connected set, including any displays it
+turns off, and enable at least one display. A saved layout uses make, model and
+serial where that combination identifies a single monitor. With a missing or
+duplicated serial, it also records the connector. In hand-written rules, combine
+any of `connector`, `make`, `model` and `serial`. Use `"*"` to match any value
+in a field. Each rule must resolve to a unique display across the entire profile.
+
+An output defaults to enabled, preferred mode, scale 1, normal rotation and
+position `x=0 y=0`. Specify all of `width`, `height` and `refresh-mhz` to
+select a particular advertised mode. `custom-mode=#true` preserves an advertised
+custom mode. `transform` accepts `normal`, `90`, `180`, `270`, `flipped`,
+`flipped-90`, `flipped-180` and `flipped-270`.
+
+Higher `priority` wins. Equal highest priorities leave the layout for manual
+selection. Set `hotplug=#false` on a profile to keep it manual under any policy.
+`settle-ms` coalesces hotplug events and accepts 100–5000 ms. `offer-ms` accepts
+1000–120000 ms. File and policy edits take effect on the next topology change.
+
 ## Keyboard and pointer
 
 Choose XKB layout identifiers in switch order, optional matching variants and XKB

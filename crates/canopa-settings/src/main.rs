@@ -14,6 +14,9 @@ struct Cli {
     /// Open the settings window at this page.
     #[arg(long, value_enum)]
     page: Option<canopa_settings::Page>,
+    /// Open Displays with a saved layout selected for review.
+    #[arg(long, value_name = "NAME")]
+    display_profile: Option<String>,
     #[command(subcommand)]
     command: Option<Operation>,
 }
@@ -39,7 +42,14 @@ enum Operation {
         file: PathBuf,
     },
     #[command(hide = true)]
-    DisplayGuard,
+    DisplayGuard {
+        #[arg(long)]
+        profile: Option<String>,
+        #[arg(long, requires = "profile")]
+        automatic: bool,
+    },
+    #[command(hide = true)]
+    WatchDisplayProfiles,
 }
 fn main() {
     if let Err(error) = run() {
@@ -52,6 +62,13 @@ fn run() -> Result<()> {
     anyhow::ensure!(
         cli.page.is_none() || cli.command.is_none(),
         "--page is only available when opening the settings window"
+    );
+    anyhow::ensure!(
+        cli.display_profile.is_none()
+            || cli
+                .page
+                .is_none_or(|page| page == canopa_settings::Page::Displays),
+        "--display-profile opens the Displays page"
     );
     match cli.command {
         Some(Operation::InitSession {
@@ -85,8 +102,8 @@ fn run() -> Result<()> {
             let source = Snapshot::load(paths.input())?;
             canopa_settings::input::apply(&paths, &source, &value)?;
         }
-        Some(Operation::DisplayGuard) => {
-            if let Err(error) = canopa_settings::display::guard() {
+        Some(Operation::DisplayGuard { profile, automatic }) => {
+            if let Err(error) = canopa_settings::display::guard(profile.as_deref(), automatic) {
                 let _ = writeln!(
                     std::io::stdout(),
                     "{}",
@@ -95,9 +112,13 @@ fn run() -> Result<()> {
                 return Err(error);
             }
         }
+        Some(Operation::WatchDisplayProfiles) => canopa_settings::profile_watch::run()?,
         None => {
             #[cfg(feature = "desktop")]
-            canopa_settings::ui::run_page(cli.page.unwrap_or(canopa_settings::Page::Displays))?;
+            canopa_settings::ui::run_with_profile(
+                cli.page.unwrap_or(canopa_settings::Page::Displays),
+                cli.display_profile,
+            )?;
             #[cfg(not(feature = "desktop"))]
             anyhow::bail!("this build does not include the desktop interface");
         }
