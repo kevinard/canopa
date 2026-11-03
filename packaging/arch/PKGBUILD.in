@@ -1,6 +1,6 @@
 # Generated with an exact source checksum by scripts/package-arch.py.
 pkgbase=canopa
-pkgname=(canopa canopa-compositor canopa-login)
+pkgname=(canopa canopa-compositor canopa-login canopa-oo7)
 pkgver=@VERSION@
 pkgrel=1
 arch=(x86_64)
@@ -70,7 +70,16 @@ package_canopa-compositor() {
 package_canopa-login() {
     pkgdesc='Optional greetd integration for the Canopa login screen'
     depends=("canopa=$pkgver" greetd cage)
+    optdepends=('canopa-oo7: optional oo7 keyring and Secret portal integration')
     backup=('etc/canopa/greeter.kdl')
     cd "$srcdir/canopa-$pkgver"
     python3 scripts/install-system.py --destdir "$pkgdir" --component login
+}
+
+package_canopa-oo7() {
+    pkgdesc='Optional oo7 keyring integration for Canopa and greetd'
+    depends=("canopa-login=$pkgver" 'oo7>=0.6.0-5' gcr)
+    backup=('etc/pam.d/canopa-oo7' 'etc/xdg/xdg-desktop-portal/canopa-portals.conf')
+    cd "$srcdir/canopa-$pkgver"
+    python3 scripts/install-system.py --destdir "$pkgdir" --component oo7
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify staged package paths and session lifecycle without host service changes."""
+import configparser
 import contextlib
 import importlib.util
 import io
@@ -87,6 +88,25 @@ class SystemInstallTests(unittest.TestCase):
         record = json.loads((compositor / 'usr/share/canopa/compositor-provenance.json').read_text())
         self.assertEqual(record['source']['sources']['niri']['revision'], '8ed0da44d974c32c6877d2f4630c314da0717ecb')
         self.assertEqual(len(record['binary_sha256']), 64)
+
+    def test_oo7_package_is_separate_and_preserves_other_portal_choices(self):
+        destination = self.root / 'oo7'
+        install.stage(destination, self.bin, component='oo7')
+        self.assertFalse((destination / 'etc/pam.d/greetd').exists())
+        pam = (destination / 'etc/pam.d/canopa-oo7').read_text().splitlines()
+        hooks = [line.split() for line in pam if line and not line.startswith('#')]
+        self.assertEqual(hooks, [[phase, 'optional', 'pam_oo7.so']
+                                 for phase in ('auth', 'session')])
+        portal = configparser.ConfigParser(interpolation=None)
+        portal.optionxform = str
+        portal.read(ROOT / 'packaging/system/canopa-portals.conf')
+        expected = dict(portal['preferred'])
+        expected['org.freedesktop.impl.portal.Secret'] = 'oo7-portal;'
+        portal.clear()
+        portal.read(destination / 'etc/xdg/xdg-desktop-portal/canopa-portals.conf')
+        self.assertEqual(dict(portal['preferred']), expected)
+        self.assertTrue(os.access(destination / 'usr/lib/canopa/oo7-wait-for-pam', os.X_OK))
+        self.assertEqual(list(destination.rglob('*.wants')), [])
 
     def test_system_unit_graph_has_no_ordering_cycle(self):
         destination = self.root / 'desktop'

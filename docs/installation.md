@@ -18,7 +18,7 @@ build reuses root `target/`; the independently locked compositor uses
 `target/niri-compat-release/`. Verified prepared sources remain beneath that
 target root and are checked again before reuse.
 
-The three packages are:
+The build produces these packages.
 
 - `canopa`: applications, Settings, services, session entry, PAM lock policy,
   portal selection and defaults.
@@ -27,6 +27,8 @@ The three packages are:
   the existing ordinary Niri session. See [the compatibility decision](adr/0024-niri-drag-source-lifetime.md).
 - `canopa-login`: optional greetd/Cage integration, a dedicated unprivileged
   `canopa-greeter` account and administrator-owned greeter settings/examples.
+- `canopa-oo7`: optional Secret Service setup for greetd logins, with oo7's Secret
+  portal and the GCR keyring prompt.
 
 Install the desktop and compositor packages together with `pacman -U`, using the
 exact generated package filenames. A distribution package manager owns system
@@ -72,6 +74,58 @@ packaged executable. `/etc/canopa/greeter.kdl` controls presentation. Greetd's P
 stack owns login policy; `/etc/pam.d/canopa-lock` is only the locker's policy.
 Package installation does not enable greetd or replace the running login manager.
 See [greeter setup](greeter.md) before changing display managers.
+
+## Optional oo7 keyring
+
+Choose `canopa-oo7` alongside `canopa-login` to use oo7 for desktop credentials.
+Install the Arch `oo7` and `gcr` dependencies and the matching `canopa-oo7` package.
+The `gcr` package provides the existing graphical keyring prompt. Choose one
+Secret Service provider for the account before enabling the daemon. If switching
+providers, back up the existing keyring and verify migration on a disposable
+account or copy first. This setup is intended for fresh oo7 keyrings and existing
+oo7 collections. Legacy GNOME Keyring migration has a separate lifecycle in oo7.
+
+1. Enable `oo7-daemon.service` for each account that wants automatic unlock.
+   From that account run `systemctl --user enable oo7-daemon.service`. The Canopa
+   drop-in starts the service early and waits up to five seconds for its PAM
+   listener. Use the packaged socket defaults in both the daemon and PAM.
+2. Merge these optional hooks into `/etc/pam.d/greetd`, after the existing
+   policy for each phase. In particular, the session hook follows the include
+   that runs `pam_systemd.so`. A customized password authentication stack must
+   reach the auth hook with `PAM_AUTHTOK` set.
+
+   ```pam
+   auth       include    canopa-oo7
+   session    include    canopa-oo7
+   ```
+
+   The supplied `/etc/pam.d/canopa-oo7` uses optional oo7 hooks. Arch's greetd
+   0.10.3 checks account policy and leaves password changes to a separate PAM
+   service. When the login password changes, update the keyring passphrase
+   separately to restore automatic unlock.
+3. Log out and log back in. The package selects `oo7-portal` for the Secret
+   interface in `/etc/xdg/xdg-desktop-portal/canopa-portals.conf`. Back up any
+   administrator-owned file at that path before installing the package. The
+   portal reads the first matching configuration file, so update the Secret
+   entry in any higher-priority user override as well. The packaged configuration
+   includes Canopa's Settings portal and the usual desktop portal selections.
+
+A matching login password opens the keyring automatically. If the keyring is
+locked after a hardware-only login, the first application that needs it can ask
+for its passphrase through GCR. Use both login methods on a test account to
+verify the chosen PAM policy. `journalctl --user -u
+oo7-daemon.service -u oo7-portal.service` shows the user-service logs. Check
+`journalctl -u greetd.service` for PAM delivery and login errors.
+
+To roll back, remove the `canopa-oo7` includes from greetd before removing the
+opt-in package. Disable `oo7-daemon.service` for
+the account and restore any portal override and prior provider. Keep the keyring
+backup until applications can read their credentials again.
+
+[oo7 PAM documentation](https://github.com/linux-credentials/oo7/blob/main/pam/README.md) ·
+[Arch oo7 package](https://archlinux.org/packages/extra/x86_64/oo7/files/) ·
+[Arch GCR package](https://archlinux.org/packages/extra/x86_64/gcr/files/) ·
+[Portal configuration precedence](https://man.archlinux.org/man/portals.conf.5.en)
 
 ## Upgrade, recovery and validation
 

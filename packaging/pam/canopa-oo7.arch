@@ -1,0 +1,4 @@
+#%PAM-1.0
+# Include these phases after the corresponding greetd system policy.
+auth       optional   pam_oo7.so
+session    optional   pam_oo7.so

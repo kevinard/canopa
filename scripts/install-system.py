@@ -46,6 +46,14 @@ def stage(destination, binaries, compositor=None, component="desktop"):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text('[terminal]\nvt = 1\n\n[default_session]\ncommand = "dbus-run-session /usr/bin/canopa-greeter session --compositor cage"\nuser = "canopa-greeter"\n')
         return
+    if component == "oo7":
+        install(ROOT / "packaging/pam/canopa-oo7.arch", "etc/pam.d/canopa-oo7")
+        install(ROOT / "packaging/system/canopa-oo7-portals.conf",
+                "etc/xdg/xdg-desktop-portal/canopa-portals.conf")
+        install(ROOT / "packaging/system/oo7-early-login.conf",
+                "usr/lib/systemd/user/oo7-daemon.service.d/50-canopa-login.conf")
+        install(ROOT / "packaging/system/oo7-wait-for-pam.py", "usr/lib/canopa/oo7-wait-for-pam", True)
+        return
     for name in PROGRAMS:
         if not (binaries / name).is_file():
             raise ValueError(f"missing build executable: {name}")
@@ -84,7 +92,7 @@ def main():
     parser.add_argument("--destdir", type=Path, required=True)
     parser.add_argument("--build-dir", type=Path, default=ROOT / "target/release")
     parser.add_argument("--compositor", type=Path)
-    parser.add_argument("--component", choices=("desktop", "compositor", "login"), default="desktop")
+    parser.add_argument("--component", choices=("desktop", "compositor", "login", "oo7"), default="desktop")
     args = parser.parse_args()
     stage(args.destdir, args.build_dir.resolve(), args.compositor, args.component)
 

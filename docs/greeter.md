@@ -87,6 +87,8 @@ The distribution's greetd PAM stack must include its normal authentication,
 account and session policy (`pam_systemd` where appropriate). The locker's
 `/etc/pam.d/canopa-lock` service is separate and is not a login PAM template.
 Configure token/fingerprint enrollment and modules through that greetd stack.
+For an Arch installation, the optional oo7 package supplies
+[keyring unlock and Secret portal integration](installation.md#optional-oo7-keyring).
 
 After checking the configuration, select greetd as the system's display manager
 using the distribution's procedure. Its VT must not be used by another display
