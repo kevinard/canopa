@@ -10,6 +10,7 @@ pub struct Controller {
     pub ui: SessionView,
     pub request: Request,
     pub response: Option<Response>,
+    heading: &'static str,
     first: Option<Secret>,
     details: Option<usize>,
     selected: usize,
@@ -58,6 +59,14 @@ fn lines(text: &str) -> Vec<String> {
 }
 impl Controller {
     pub fn new(settings: &Settings, request: Request) -> Result<Self> {
+        Self::new_named(settings, request, "Canopa Pinentry")
+    }
+
+    pub(crate) fn new_named(
+        settings: &Settings,
+        request: Request,
+        heading: &'static str,
+    ) -> Result<Self> {
         let mut ui = SessionView::new(settings, String::new())?;
         ui.secret = Secret::with_capacity(8193);
         ui.message = excerpt(&request.error, 96);
@@ -71,6 +80,7 @@ impl Controller {
             ui,
             request,
             response: None,
+            heading,
             first: None,
             details: None,
             selected,
@@ -90,9 +100,7 @@ impl Controller {
         self.ui.interaction_epoch = (self.revision, u64::from(self.checking));
         self.ui.busy = self.checking;
         self.ui.custom.clear();
-        self.ui
-            .custom
-            .insert("heading".into(), "Canopa Pinentry".into());
+        self.ui.custom.insert("heading".into(), self.heading.into());
         self.ui.controls.clear();
         let description: Vec<_> = if let Some(page) = self.details {
             lines(&self.details_text())

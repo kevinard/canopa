@@ -12,7 +12,7 @@ import sys
 import threading
 
 VARIABLES = ("WAYLAND_DISPLAY", "DISPLAY", "NIRI_SOCKET", "NIRI_CONFIG", "CANOPA_SESSION",
-             "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_SESSION_TYPE")
+             "CANOPA_SESSION_PID", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_SESSION_TYPE")
 COMPOSITOR = Path("/usr/lib/canopa/niri")
 
 
@@ -40,6 +40,7 @@ def main():
     for name in ("GREETD_SOCK", "NOTIFY_SOCKET", "WAYLAND_DISPLAY", "DISPLAY", "NIRI_SOCKET", "SYSTEMD_EXEC_PID"):
         env.pop(name, None)
     env.update(environment)
+    env["CANOPA_SESSION_PID"] = str(os.getpid())
     subprocess.run([settings, "init-session"], env=env, check=True)
     started = False
     waiter = None

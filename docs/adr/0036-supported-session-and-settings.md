@@ -29,6 +29,15 @@ with their owning schemas. Wallpaper uses its existing picker/runtime. Idle
 controls delegate to Canopa Idle/Stasis; native Rune remains the policy source.
 Edits preserve custom policy and reject ambiguous or concurrently changed input.
 
+The optional oo7 prompter owns a single D-Bus name on the user bus. It uses
+GCR for the prompt protocol and encrypted credential exchange. The Canopa
+session launcher publishes its PID so the prompter can resolve its logind
+session at prompt time. Native presentation requires that session to be the
+user's active graphical display and verifies the Wayland socket against the
+Canopa compositor unit's PID. The prompt worker receives that connected socket
+and reuses the Pinentry dialog and bounded secret input. Other desktops use
+GCR's GTK dialog. The user installs an activation link to opt into this routing.
+
 Arch is the first packaging target. Private staging and nested acceptance do not
 establish real DRM/VT, suspend, package-manager upgrade or distribution PAM
 acceptance; those outcomes must retain their own evidence.

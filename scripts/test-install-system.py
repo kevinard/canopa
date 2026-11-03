@@ -34,7 +34,7 @@ STUB = '''#!/usr/bin/python3
 import json, os, pathlib, sys
 name=pathlib.Path(sys.argv[0]).name
 with open(os.environ['CANOPA_TEST_CALLS'],'a') as output:
- output.write(json.dumps({'program':name,'args':sys.argv[1:],'config':os.environ.get('NIRI_CONFIG'),'desktop':os.environ.get('XDG_CURRENT_DESKTOP')})+'\\n')
+ output.write(json.dumps({'program':name,'args':sys.argv[1:],'config':os.environ.get('NIRI_CONFIG'),'desktop':os.environ.get('XDG_CURRENT_DESKTOP'),'session_pid':os.environ.get('CANOPA_SESSION_PID')})+'\\n')
 if name=='systemctl':
  if 'is-active' in sys.argv: sys.exit(0 if os.environ.get('CANOPA_TEST_ACTIVE') else 3)
  if '--wait' in sys.argv and os.environ.get('CANOPA_TEST_WAIT'): __import__('time').sleep(120)
@@ -91,6 +91,7 @@ class SystemInstallTests(unittest.TestCase):
 
     def test_oo7_package_is_separate_and_preserves_other_portal_choices(self):
         destination = self.root / 'oo7'
+        (self.bin / 'canopa-keyring-prompter').write_text('#!/bin/sh\nexit 0\n')
         install.stage(destination, self.bin, component='oo7')
         self.assertFalse((destination / 'etc/pam.d/greetd').exists())
         pam = (destination / 'etc/pam.d/canopa-oo7').read_text().splitlines()
@@ -106,6 +107,11 @@ class SystemInstallTests(unittest.TestCase):
         portal.read(destination / 'etc/xdg/xdg-desktop-portal/canopa-portals.conf')
         self.assertEqual(dict(portal['preferred']), expected)
         self.assertTrue(os.access(destination / 'usr/lib/canopa/oo7-wait-for-pam', os.X_OK))
+        self.assertTrue(os.access(destination / 'usr/lib/canopa/canopa-keyring-prompter', os.X_OK))
+        service = 'org.gnome.keyring.SystemPrompter.service'
+        self.assertFalse((destination / 'usr/share/dbus-1/services' / service).exists())
+        self.assertIn('Exec=/usr/lib/canopa/canopa-keyring-prompter',
+                      (destination / 'usr/share/canopa/dbus-1/services' / service).read_text())
         self.assertEqual(list(destination.rglob('*.wants')), [])
 
     def test_system_unit_graph_has_no_ordering_cycle(self):
@@ -152,6 +158,10 @@ class SystemInstallTests(unittest.TestCase):
         self.assertEqual(settings['desktop'], 'canopa:niri')
         self.assertEqual(settings['config'], str(self.root / 'config/canopa/niri.kdl'))
         self.assertTrue(any('canopa-shutdown.target' in item['args'] for item in calls))
+        imported = next(item for item in calls if 'import-environment' in item['args'])
+        self.assertIn('CANOPA_SESSION_PID', imported['args'])
+        self.assertEqual(imported['session_pid'], str(os.getpid()))
+        self.assertIn('CANOPA_SESSION_PID', calls[-2]['args'])
         self.assertIn('unset-environment', calls[-2]['args'])
         self.assertEqual(calls[-1]['program'], 'dbus-update-activation-environment')
         self.assertFalse(any('enable' in item['args'] for item in calls))

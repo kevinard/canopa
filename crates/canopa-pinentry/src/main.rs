@@ -3,6 +3,8 @@ use canopa_config::Request;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod keyring;
+
 #[derive(Parser)]
 #[command(version, about = "Canopa Wayland PIN and passphrase dialog")]
 struct Cli {
@@ -25,14 +27,19 @@ enum Operation {
     Preview {
         output: PathBuf,
     },
+    #[command(hide = true)]
+    KeyringDialog(keyring::Dialog),
 }
 fn main() {
-    if let Err(error) = run(Cli::parse()) {
-        eprintln!("canopa-pinentry: {error:#}");
-        std::process::exit(1);
+    match run(Cli::parse()) {
+        Ok(status) => std::process::exit(status),
+        Err(error) => {
+            eprintln!("canopa-pinentry: {error:#}");
+            std::process::exit(1);
+        }
     }
 }
-fn run(cli: Cli) -> Result<()> {
+fn run(cli: Cli) -> Result<i32> {
     let request = if cli.defaults {
         Request::Defaults
     } else {
@@ -48,7 +55,7 @@ fn run(cli: Cli) -> Result<()> {
                     "{}",
                     serde_json::json!({"component":"pinentry","source":document.info()})
                 );
-                Ok(())
+                Ok(0)
             }
             Err(error) => {
                 if show_source {
@@ -82,9 +89,12 @@ fn run(cli: Cli) -> Result<()> {
             )?
             .0
             .save_with_format(output, image::ImageFormat::Png)?;
-        return Ok(());
+        return Ok(0);
     }
     canopa_session_ui::secret::protect_process()?;
+    if let Some(Operation::KeyringDialog(dialog)) = cli.command {
+        return keyring::run(&settings, dialog);
+    }
     // An unbuffered duplicated stdout keeps protocol data out of stdio buffers.
     use std::os::fd::AsFd;
     let output = std::fs::File::from(std::io::stdout().as_fd().try_clone_to_owned()?);
@@ -102,5 +112,5 @@ fn run(cli: Cli) -> Result<()> {
             }
         },
     )?;
-    Ok(())
+    Ok(0)
 }

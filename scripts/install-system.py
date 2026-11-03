@@ -47,6 +47,12 @@ def stage(destination, binaries, compositor=None, component="desktop"):
         target.write_text('[terminal]\nvt = 1\n\n[default_session]\ncommand = "dbus-run-session /usr/bin/canopa-greeter session --compositor cage"\nuser = "canopa-greeter"\n')
         return
     if component == "oo7":
+        prompter = binaries / "canopa-keyring-prompter"
+        if not prompter.is_file():
+            raise ValueError(f"missing build executable: {prompter}")
+        install(prompter, "usr/lib/canopa/canopa-keyring-prompter", True)
+        service = "org.gnome.keyring.SystemPrompter.service"
+        install(ROOT / "packaging/keyring" / service, f"usr/share/canopa/dbus-1/services/{service}")
         install(ROOT / "packaging/pam/canopa-oo7.arch", "etc/pam.d/canopa-oo7")
         install(ROOT / "packaging/system/canopa-oo7-portals.conf",
                 "etc/xdg/xdg-desktop-portal/canopa-portals.conf")

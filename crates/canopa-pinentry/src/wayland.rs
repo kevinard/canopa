@@ -83,16 +83,24 @@ pub fn run_agent(
                 }
             }
         });
-        let result = run_inner(settings, request, send, results);
+        let result = run_inner(settings, request, send, results, false);
         stopped.store(true, std::sync::atomic::Ordering::Release);
         result
     })
 }
+pub fn run_keyring(settings: &Settings, request: &Request) -> Result<Response> {
+    // A keyring dialog has no GnuPG agent inquiries.
+    let (inquiries, _requests) = std::sync::mpsc::sync_channel(1);
+    let (_answers, results) = channel::channel();
+    run_inner(settings, request, inquiries, results, true)
+}
+
 fn run_inner(
     settings: &Settings,
     request: &Request,
     inquiries: std::sync::mpsc::SyncSender<crate::agent::Query>,
     answers: channel::Channel<(u64, crate::agent::Answer)>,
+    keyring: bool,
 ) -> Result<Response> {
     let connection = Connection::connect_to_env()?;
     let (globals, queue) = registry_queue_init::<App>(&connection)?;
@@ -102,13 +110,18 @@ fn run_inner(
     let shell = XdgShell::bind(&globals, &qh)?;
     let shm = Shm::bind(&globals, &qh)?;
     let pool = SlotPool::new(4096, &shm)?;
-    let controller = Controller::new(settings, request.clone())?;
+    let (app_id, name) = if keyring {
+        ("org.canopa.Keyring", "Canopa Keyring")
+    } else {
+        ("org.canopa.Pinentry", "Canopa Pinentry")
+    };
+    let controller = Controller::new_named(settings, request.clone(), name)?;
     let window = shell.create_window(
         compositor.create_surface(&qh),
         WindowDecorations::RequestServer,
         &qh,
     );
-    window.set_app_id("org.canopa.Pinentry");
+    window.set_app_id(app_id);
     let title: String = request
         .title
         .chars()
@@ -116,7 +129,7 @@ fn run_inner(
         .take(120)
         .collect();
     window.set_title(format!(
-        "Canopa Pinentry{}{}",
+        "{name}{}{}",
         if title.is_empty() { "" } else { " · " },
         title
     ));
@@ -148,7 +161,7 @@ fn run_inner(
     };
     let (a11y_sender, a11y_receiver) = channel::channel();
     app.accessibility = Some(canopa_session_ui::accessibility::Accessibility::new(
-        "Canopa Pinentry",
+        name,
         move |request| {
             let _ = a11y_sender.send(request);
         },

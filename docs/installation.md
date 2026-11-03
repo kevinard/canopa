@@ -28,7 +28,7 @@ The build produces these packages.
 - `canopa-login`: optional greetd/Cage integration, a dedicated unprivileged
   `canopa-greeter` account and administrator-owned greeter settings/examples.
 - `canopa-oo7`: optional Secret Service setup for greetd logins, with oo7's Secret
-  portal and the GCR keyring prompt.
+  portal and a keyring prompter that can use Canopa's dialog.
 
 Install the desktop and compositor packages together with `pacman -U`, using the
 exact generated package filenames. A distribution package manager owns system
@@ -79,7 +79,7 @@ See [greeter setup](greeter.md) before changing display managers.
 
 Choose `canopa-oo7` alongside `canopa-login` to use oo7 for desktop credentials.
 Install the Arch `oo7` and `gcr` dependencies and the matching `canopa-oo7` package.
-The `gcr` package provides the existing graphical keyring prompt. Choose one
+The `gcr` package provides the prompt protocol and the stock dialog. Choose one
 Secret Service provider for the account before enabling the daemon. If switching
 providers, back up the existing keyring and verify migration on a disposable
 account or copy first. This setup is intended for fresh oo7 keyrings and existing
@@ -112,7 +112,7 @@ oo7 collections. Legacy GNOME Keyring migration has a separate lifecycle in oo7.
 
 A matching login password opens the keyring automatically. If the keyring is
 locked after a hardware-only login, the first application that needs it can ask
-for its passphrase through GCR. Use both login methods on a test account to
+for its passphrase. Use both login methods on a test account to
 verify the chosen PAM policy. `journalctl --user -u
 oo7-daemon.service -u oo7-portal.service` shows the user-service logs. Check
 `journalctl -u greetd.service` for PAM delivery and login errors.
@@ -120,12 +120,35 @@ oo7-daemon.service -u oo7-portal.service` shows the user-service logs. Check
 To roll back, remove the `canopa-oo7` includes from greetd before removing the
 opt-in package. Disable `oo7-daemon.service` for
 the account and restore any portal override and prior provider. Keep the keyring
-backup until applications can read their credentials again.
+backup until applications can read their credentials again. Remove the user
+prompter link described below if you enabled it.
 
 [oo7 PAM documentation](https://github.com/linux-credentials/oo7/blob/main/pam/README.md) ·
 [Arch oo7 package](https://archlinux.org/packages/extra/x86_64/oo7/files/) ·
 [Arch GCR package](https://archlinux.org/packages/extra/x86_64/gcr/files/) ·
 [Portal configuration precedence](https://man.archlinux.org/man/portals.conf.5.en)
+
+### Canopa keyring dialog
+
+To enable desktop-aware prompting for your account, link Canopa's activation
+file into your user D-Bus service directory.
+
+```sh
+service=org.gnome.keyring.SystemPrompter.service
+services="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services"
+mkdir -p "$services"
+ln -s "/usr/share/canopa/dbus-1/services/$service" "$services/$service"
+```
+
+If that path already contains a custom service file, review it before replacing
+it. The new prompter takes effect the next time D-Bus activates the service
+after its current owner exits. Logging out of all sessions for the account and
+logging back in normally starts a fresh user bus.
+
+Canopa's dialog appears in the account's active Canopa desktop. Other desktops
+use the stock GCR dialog. Routing follows the active desktop even when an
+application in another session requested the prompt. To restore GCR directly,
+remove the link and let the service activate again.
 
 ## Upgrade, recovery and validation
 
