@@ -297,6 +297,17 @@ by Shell while the editor was open. Invalid preferences leave the last valid She
 snapshot active and show an error. Shell publishes descriptions/action names/status
 without queries in `$XDG_STATE_HOME/canopa/shell/launcher-extensions.json`.
 
+## Emoji and symbols
+
+In Applications, type `emoji` or `symbol` to browse suggested characters. Add
+a name or keyword to narrow the list. Try `emoji check mark button`,
+`emoji thumbs up medium skin tone`, `symbol em dash` or `symbol infinity`.
+Press Enter to copy the selected character or complete emoji sequence.
+
+Search works offline with a bundled Emoji 17.0 catalog and English keywords.
+Glyph appearance depends on installed fonts. A configured extension that uses
+`emoji` or `symbol` keeps priority for searches with that keyword.
+
 ## Clipboard history and snippets
 
 Open **Canopa Settings → Launcher → Clipboard history** to choose whether to

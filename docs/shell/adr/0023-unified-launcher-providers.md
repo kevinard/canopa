@@ -101,3 +101,8 @@ in memory. Owned wl-paste watchers accept bounded text and optional raster image
 frames and ignore offers marked sensitive. Image selection copies the original
 bytes and MIME type. Snippet naming is a child mode. Clipboard preference editing
 and shared persistence follow [shared ADR 0039](../../adr/0039-launcher-clipboard-settings.md).
+
+Emoji and symbols are native search scopes in the same Panel Menu. Shell matches
+bundled Unicode sequences and English search terms locally, caps the visible
+results, and uses the existing clipboard action to copy the full sequence.
+Configured extensions keep priority when they use either search keyword.

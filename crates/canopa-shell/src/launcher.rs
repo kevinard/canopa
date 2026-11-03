@@ -3,6 +3,7 @@
 pub(crate) mod applications;
 pub(crate) mod bundled;
 mod calculator;
+pub(crate) mod characters;
 pub(crate) mod clipboard;
 pub(crate) mod controls;
 pub(crate) mod files;
@@ -151,6 +152,7 @@ pub(crate) enum Scope {
     Settings,
     Clipboard,
     Snippets,
+    Characters(characters::Kind),
     Extension(usize),
 }
 
@@ -185,6 +187,19 @@ pub(crate) fn scope<'a>(query: &'a str, config: &Config) -> (Scope, &'a str) {
         if scope != Scope::All {
             return (scope, rest.trim());
         }
+    }
+    let kind = match keyword {
+        "emoji" => Some(characters::Kind::Emoji),
+        "symbol" => Some(characters::Kind::Symbol),
+        _ => None,
+    };
+    if let Some(kind) = kind
+        && !config
+            .extensions
+            .iter()
+            .any(|extension| extension.keyword == keyword)
+    {
+        return (Scope::Characters(kind), rest.trim());
     }
     (Scope::All, query.trim())
 }

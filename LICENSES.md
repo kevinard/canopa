@@ -10,6 +10,8 @@ The combined repository preserves the original source licenses:
   Notify and Niribar attribution in `crates/canopa-panel-protocol/LICENSE`.
   The original v4 license texts are also retained in its crate directory.
 - Canopa local assets: MIT, with Notify and Niribar attribution in `crates/canopa-assets/LICENSE`.
+- Launcher emoji and symbol data: [Unicode License v3](crates/canopa-shell/data/characters/LICENSE-UNICODE),
+  with [source attribution](crates/canopa-shell/data/characters/README.md).
 - Canopa widget data: MIT, preserving extracted Canopa Shell attribution in
   `crates/canopa-widgets/LICENSE`.
 - Canopa launcher contracts, Files, Settings, session tools, session presentation, greeter, polkit agent, pinentry,

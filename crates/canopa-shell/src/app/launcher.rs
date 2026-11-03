@@ -6,7 +6,9 @@ use super::{
     messages::PanelEvent,
     panel_menu_session::{PanelMenuEntry, PanelMenuEntryTarget},
 };
-use crate::launcher::{self, Action, Batch, Config, FileIndex, NamedAction, ResultItem, Scope};
+use crate::launcher::{
+    self, Action, Batch, Config, FileIndex, NamedAction, ResultItem, Scope, characters,
+};
 use futures_util::SinkExt;
 use std::{
     collections::BTreeMap,
@@ -172,6 +174,14 @@ impl Session {
         self.batches.clear();
         self.action_error.clear();
         let (scope, text) = self.query_scope();
+        if let Scope::Characters(kind) = scope {
+            if query.len() <= launcher::MAX_QUERY_BYTES {
+                let batch = characters::search(kind, text);
+                self.batches.insert(characters::PROVIDER, batch);
+            }
+            self.app_results.clear();
+            return;
+        }
         self.app_results = if query.len() <= launcher::MAX_QUERY_BYTES
             && matches!(scope, Scope::All | Scope::Apps)
         {
@@ -373,6 +383,15 @@ impl Session {
         let (scope, text) = self.query_scope();
         if matches!(scope, Scope::Clipboard | Scope::Snippets) {
             return self.clipboard_entries(scope, text);
+        }
+        if matches!(scope, Scope::Characters(_)) {
+            return self
+                .batches
+                .get(&characters::PROVIDER)
+                .into_iter()
+                .flat_map(|batch| batch.results.iter().cloned())
+                .map(|result| self.entry(characters::PROVIDER, result))
+                .collect();
         }
         let mut entries = Vec::new();
         if self.open_with.is_none()
@@ -617,6 +636,9 @@ impl Session {
         if matches!(scope, Scope::Clipboard | Scope::Snippets) {
             return self.clipboard_status(scope, text);
         }
+        if let Some(batch) = self.batches.get(&characters::PROVIDER) {
+            return batch.status.clone();
+        }
         if text.is_empty() {
             match scope {
                 Scope::Calculator => return "Enter an arithmetic expression".into(),
@@ -665,9 +687,7 @@ impl Session {
             status.push("No matches".into());
         }
         if status.is_empty() && self.query.is_empty() {
-            status.push(
-                "Search apps, windows and files · = calculator · settings for controls".into(),
-            );
+            status.push("Apps, windows, files · = calculator · settings · emoji · symbol".into());
         }
         for error in [&self.preferences_error, &self.configuration_error]
             .into_iter()
@@ -682,7 +702,12 @@ impl Session {
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        if self.in_actions() || matches!(self.query_scope().0, Scope::Clipboard | Scope::Snippets) {
+        if self.in_actions()
+            || matches!(
+                self.query_scope().0,
+                Scope::Clipboard | Scope::Snippets | Scope::Characters(_)
+            )
+        {
             return iced::Subscription::none();
         }
         if let Some(choice) = &self.open_with {
@@ -1431,7 +1456,7 @@ mod tests {
 
     #[test]
     fn launcher_scopes_route_only_requested_providers() {
-        let config = Config {
+        let mut config = Config {
             extensions: vec![launcher::Extension {
                 id: "custom:Projects".into(),
                 name: "Projects".into(),
@@ -1443,6 +1468,19 @@ mod tests {
         };
         assert_eq!(
             launcher::scope("p shell", &config),
+            (Scope::Extension(0), "shell")
+        );
+        assert_eq!(
+            launcher::scope("emoji", &config),
+            (Scope::Characters(characters::Kind::Emoji), "")
+        );
+        assert_eq!(
+            launcher::scope("symbol em dash", &config),
+            (Scope::Characters(characters::Kind::Symbol), "em dash")
+        );
+        config.extensions[0].keyword = "emoji".into();
+        assert_eq!(
+            launcher::scope("emoji shell", &config),
             (Scope::Extension(0), "shell")
         );
         assert_eq!(

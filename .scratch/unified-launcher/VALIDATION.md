@@ -104,3 +104,18 @@ The full workspace/all-target Rust test suite passed under a private D-Bus
 session. The remaining workspace gate components also passed, including
 configuration checks and vendor tests. Logs use the `clipboard-images-*`
 prefix under `.scratch/artifacts/unified-launcher/`.
+
+## Emoji and symbols
+
+The Shell build, all-target Clippy with warnings denied, formatting, and release
+documentation packaging passed. Regenerating the catalogs from the pinned
+Unicode and CLDR inputs produced identical files. The initial Shell test run
+failed in the existing Qalculate conversion test on `sin(pi/2)`. The full Shell
+suite passed with four test threads, including 1,311 binary unit tests and all
+integration targets. Logs use the `characters-shell-*` prefix in the launcher
+artifact directory.
+
+The first private Wayland run exposed overlapping labels for long emoji names.
+The final run passed all 44 checks at scale 1.25. The fixture verified the
+full-width character labels and exact clipboard output for joined emoji,
+variation selectors, and the em dash. See `characters-native-final-125/`.

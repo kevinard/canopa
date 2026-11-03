@@ -115,6 +115,19 @@ modules {{ module "launcher" {{ type "button"; label "Launcher"; icon "L";
         session.run([str(binary), "--toggle-menu", "Applications"])
         session.wait_for_layers(1)
 
+    for query, expected in [
+        ("emoji", "😀"),
+        ("emoji woman technologist", "👩‍💻"),
+        ("emoji check mark", "✔️"),
+        ("symbol em dash", "—"),
+    ]:
+        open_query(query)
+        if query == "emoji woman technologist":
+            session.run(["grim", str(output / "emoji.png")])
+        session.run(["wtype", "-k", "Return"])
+        session.wait_for_layers(1)
+        clipboard(expected)
+
     open_query("= 12*(8+3)")
     session.run(["grim", str(output / "calculator.png")])
     session.run(["wtype", "-k", "Return"])
@@ -552,7 +565,8 @@ modules {{ module "launcher" {{ type "button"; label "Launcher"; icon "L";
     session.retire(process)
     session.wait_for_layers(0)
     desktop.write_json(output / "result.json", {"status": "passed", "scale": scale,
-        "checks": ["calculator clipboard after close", "length conversion", "temperature conversion",
+        "checks": ["emoji suggestions and exact multi-codepoint clipboard copy",
+                   "named symbol clipboard copy", "calculator clipboard after close", "length conversion", "temperature conversion",
                    "binary data conversion", "speed conversion", "incompatible units recovery",
                    "percentages", "math functions", "functions with conversion",
                    "file copy path", "file opening", "Open with chooser", "reveal parent",

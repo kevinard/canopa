@@ -35,6 +35,8 @@ FILES = {
            ("settings", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
        ) for name in names},
     "crates/canopa-shell/config/default.kdl": "share/canopa-shell/default.kdl",
+    "crates/canopa-shell/data/characters/LICENSE-UNICODE": "share/canopa-shell/characters/LICENSE-UNICODE",
+    "crates/canopa-shell/data/characters/README.md": "share/canopa-shell/characters/README.md",
     "docs/shell/launcher.md": "share/canopa-shell/launcher.md",
     "crates/canopa-shell/examples/launcher-projects.py": "share/canopa-shell/examples/launcher-projects.py",
     "crates/canopa-notify/examples/config.kdl": "share/canopa-notify/config.kdl",

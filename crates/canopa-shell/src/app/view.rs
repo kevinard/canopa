@@ -641,7 +641,9 @@ fn render_panel_menu_model<'a>(
                 .width(Length::Fill)
                 .wrapping(iced::widget::text::Wrapping::None),
         );
-        if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target {
+        if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target
+            && !target.result.description.is_empty()
+        {
             row_content = row_content.push(
                 crate::theme::text(target.result.description.clone())
                     .size(crate::theme::label_size())
